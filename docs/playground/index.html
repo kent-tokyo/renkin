@@ -5,8 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>RENKIN Playground — Interactive Retrosynthesis</title>
   <meta name="description" content="Interactive retrosynthesis planning in the browser — powered by WebAssembly">
-  <!-- bundled by docs.yml: npm install smiles-drawer → site/js/ (avoids CDN on GitHub Pages) -->
-  <script src="../js/smiles-drawer.min.js"></script>
+  <!-- No JS structure rendering library needed — CDK Depict serves SVG via <img> tag -->
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -193,7 +192,7 @@
 
 <footer>
   RENKIN · Pure Rust + WebAssembly ·
-  Structure rendering by <a href="https://github.com/reymond-group/smiles-drawer">SmilesDrawer</a> ·
+  Structure rendering by <a href="https://www.simolecule.com/cdkdepict/">CDK Depict</a> ·
   <a href="https://github.com/kent-tokyo/renkin">GitHub</a> ·
   <a href="../">Documentation</a>
 </footer>
@@ -235,58 +234,33 @@
     statusText.textContent = 'WASM unavailable.';
   }
 
-  // smiles-drawer v1.6.0: canvas-based, string ID API
-  // v1 Drawer.draw(tree, 'canvas-id', theme) is the most reliable browser API
-  let sdDrawer = null, sdDrawerLg = null;
-  if (typeof SmilesDrawer !== 'undefined') {
-    sdDrawer   = new SmilesDrawer.Drawer({ width:180, height:120, padding:10,
-      bondThickness:1.0, fontSizeSmall:7, fontSize:9, themes:{
-        light:{ C:'#222',O:'#c0392b',N:'#2980b9',S:'#b7950b',F:'#16a085',
-                Cl:'#1a5276',Br:'#6e2f8a',I:'#4a235a',P:'#784212',BACKGROUND:'#f4f5f8'}}});
-    sdDrawerLg = new SmilesDrawer.Drawer({ width:220, height:150, padding:12,
-      bondThickness:1.1, fontSizeSmall:8, fontSize:10, themes:{
-        light:{ C:'#222',O:'#c0392b',N:'#2980b9',S:'#b7950b',F:'#16a085',
-                Cl:'#1a5276',Br:'#6e2f8a',I:'#4a235a',P:'#784212',BACKGROUND:'#f4f5f8'}}});
-  }
-
-  let _molId = 0;
-
-  function drawSmiles(id, smiles, large) {
-    if (!sdDrawer) {
-      // SmilesDrawer not available — show SMILES text in canvas
-      const c = document.getElementById(id);
-      if (c) { const ctx = c.getContext('2d'); if (ctx) {
-        ctx.fillStyle = '#f4f5f8'; ctx.fillRect(0,0,c.width,c.height);
-        ctx.fillStyle = '#555'; ctx.font = '8px monospace'; ctx.textAlign = 'center';
-        ctx.fillText(smiles.slice(0,24), c.width/2, c.height/2);
-      }}
-      return;
-    }
-    SmilesDrawer.parse(smiles,
-      t => (large ? sdDrawerLg : sdDrawer).draw(t, id, 'light', false),
-      () => {
-        // parse failed — show SMILES as text
-        const c = document.getElementById(id);
-        if (c) { const ctx = c.getContext('2d'); if (ctx) {
-          ctx.fillStyle = '#f4f5f8'; ctx.fillRect(0,0,c.width,c.height);
-          ctx.fillStyle = '#888'; ctx.font = '8px monospace'; ctx.textAlign = 'center';
-          ctx.fillText(smiles.slice(0,22), c.width/2, c.height/2);
-        }}
-      });
-  }
+  // Structure rendering via CDK Depict — a free public SVG service.
+  // No JS library needed: just an <img> pointing to the depiction URL.
+  const DEPICT = 'https://www.simolecule.com/cdkdepict/depict/cow/svg';
 
   function makeMolCard(smiles, large) {
     const card = document.createElement('div');
     card.className = 'mol-card';
     const wrap = document.createElement('div');
     wrap.className = large ? 'mol-svg-wrap large' : 'mol-svg-wrap';
-    // v1 Drawer.draw() calls document.getElementById(id) internally
-    const id = `mol-${++_molId}`;
-    const c = document.createElement('canvas');
-    c.id = id;
-    c.width  = large ? 220 : 180;
-    c.height = large ? 150 : 120;
-    wrap.appendChild(c);
+
+    const w = large ? 220 : 180;
+    const h = large ? 150 : 120;
+    const img = document.createElement('img');
+    img.width  = w;
+    img.height = h;
+    img.style.display = 'block';
+    img.alt = smiles;
+    img.src = `${DEPICT}?smi=${encodeURIComponent(smiles)}&w=${w}&h=${h}&zoom=1.8`;
+    img.onerror = () => {
+      img.replaceWith((() => {
+        const t = document.createElement('div');
+        t.style.cssText = 'font:8px monospace;color:#666;padding:6px;word-break:break-all;text-align:center;display:flex;align-items:center;justify-content:center;height:100%';
+        t.textContent = smiles;
+        return t;
+      })());
+    };
+    wrap.appendChild(img);
     card.appendChild(wrap);
     const label = document.createElement('div');
     label.className = large ? 'mol-smiles large' : 'mol-smiles';
@@ -302,8 +276,7 @@
         setTimeout(() => card.classList.remove('copied'), 1200);
       });
     });
-    // setTimeout: ensure canvas is in DOM before getElementById is called inside draw()
-    setTimeout(() => drawSmiles(id, smiles, large), 0);
+    // (no deferred drawing needed — img loads asynchronously on its own)
     return card;
   }
 

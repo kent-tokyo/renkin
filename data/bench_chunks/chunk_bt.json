@@ -1,0 +1,809 @@
+{
+  "total": 100,
+  "solved": 25,
+  "success_rate": 0.25,
+  "avg_depth": 2.68,
+  "avg_time_ms": 575.1266120599998,
+  "results": [
+    {
+      "smiles": "[CH3][C@@H]1[CH2][CH2][CH2]N1[CH]1[CH2][CH2]N([CH2]c2c(-c3[cH][cH][cH]c(C(F)(F)F)[cH]3)nc3[cH][cH]c(S([CH3])(=O)=O)[cH]c3c2C(=O)[NH][C@H](c2[cH][cH][cH][cH][cH]2)C(F)(F)F)[CH2][CH2]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 2593.537834
+    },
+    {
+      "smiles": "[CH3]Sc1n[cH][cH][cH]c1C(=O)[CH2]C(=O)[CH]1[CH2][CH2]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 211.873292
+    },
+    {
+      "smiles": "[CH3][CH2]OC(=O)[CH]1[CH2][CH2][CH]([NH]c2n[cH][cH]c(-c3[cH]nc4c([OH])[cH][cH][cH]n34)n2)[CH2][CH2]1",
+      "name": "UNK",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 507.96425
+    },
+    {
+      "smiles": "[CH3]O[CH2][CH2]Oc1[cH][cH]c([CH2][OH])[cH][cH]1",
+      "name": "UNK",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 89.964875
+    },
+    {
+      "smiles": "[CH3][C@H]1[CH2]O[CH](c2[cH][cH][cH][cH]n2)[CH2]N1c1[cH][cH]c([N+](=O)[O-])c([NH2])n1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 314.66775
+    },
+    {
+      "smiles": "[CH3][CH]([NH][CH2][CH2][CH2][NH]C(=O)[CH2][CH2]c1nc2[cH][cH]c(N3[CH2][CH2][CH2][CH2][CH2]3)nc2s1)c1[cH][cH]c([Cl])c([Cl])[cH]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 1099.271958
+    },
+    {
+      "smiles": "O=C([NH]c1[cH][cH][cH][cH]n1)c1n[cH][cH][cH]c1O[CH2][C@H]1[CH2][C@@H](O[CH2]O[CH2]c2[cH][cH][cH][cH][cH]2)[CH2]N1C(=O)[C@H]1[CH2][CH2][C@H](C(F)(F)F)[CH2][CH2]1",
+      "name": "UNK",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 172.711833
+    },
+    {
+      "smiles": "O=C(O[CH2]c1[cH][cH][cH][cH][cH]1)c1[cH][cH]c([OH])[cH]c1O[CH2]c1[cH][cH][cH][cH][cH]1",
+      "name": "UNK",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 42.640583
+    },
+    {
+      "smiles": "Fc1[cH][cH][cH]c([CH2][NH]c2[cH]n[cH]c(-c3[cH][cH]nc(F)[cH]3)[cH]2)[cH]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 360.381416
+    },
+    {
+      "smiles": "[CH3][CH2]Oc1[cH]c([CH2][CH2]N2[CH2][CH2]N([CH3])[CH2][CH2]2)[cH][cH]c1[NH]c1n[cH][cH]c(-c2c(-c3[cH][cH]c(O[CH3])c(C(=O)[NH]c4c(F)[cH][cH][cH]c4F)[cH]3)nc3[cH][cH][cH][cH]n23)n1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 2954.506875
+    },
+    {
+      "smiles": "[CH3]O[CH2][CH2]O[CH2][CH2]Oc1[cH]c(C(=O)[NH]c2nc3c(O[CH3])[cH][cH]c(N4[CH2][CH2]O[CH2][CH2]4)c3s2)[cH][cH]n1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 947.5237920000001
+    },
+    {
+      "smiles": "[CH3][CH2]S(=O)(=O)[NH]C(=O)c1[cH]nn2c([NH]c3[cH]c([CH3])[cH][cH]c3[CH3])c(C(=O)N3[CH2][CH2]C4([CH2][CH2]3)[CH2]Oc3[cH][cH][cH][cH]c34)[cH]nc12",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 1041.880417
+    },
+    {
+      "smiles": "[CH3][CH2]OC(=O)N(n1c(=O)[nH]c2[cH]c(C(F)(F)F)c(-n3[cH][cH]nc3[CH3])[cH]c2c1=O)S([CH3])(=O)=O",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 136.653625
+    },
+    {
+      "smiles": "[CH3]Oc1[cH][cH]c([N+](=O)[O-])[cH]c1-c1[cH][cH]c(N2[CH2][CH2][CH2]2)nc1[CH2]N1C(=O)O[C@H](c2[cH]c(C(F)(F)F)[cH]c(C(F)(F)F)[cH]2)[C@@H]1[CH3]",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 797.9345420000001
+    },
+    {
+      "smiles": "[CH3]c1[cH]nc([Cl])nc1[CH2]c1[cH][cH][cH]c(C(F)(F)F)[cH]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 63.211332999999996
+    },
+    {
+      "smiles": "[CH3][CH2]c1[cH][cH]c(S[CH2][CH2][NH]S(=O)(=O)c2[cH]c([CH3])c([CH3])c(C(=O)O[CH3])[cH]2)[cH][cH]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 280.072084
+    },
+    {
+      "smiles": "[CH3]Oc1[cH]n[cH]c(-c2[cH][cH]c3c([cH]2)-c2nc(-c4n[cH]nn4[CH]([CH3])[CH3])sc2[CH2][CH2]O3)[cH]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 541.737959
+    },
+    {
+      "smiles": "[CH3]Oc1[cH][cH][cH][cH]c1[CH2]O[CH2][CH2][CH2]Oc1[cH][cH]c(N2[CH2][CH2][NH][CH2][C@@H]2[CH2]Oc2[cH][cH]c3[cH][cH][cH][cH]c3[cH]2)[cH][cH]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 1818.167208
+    },
+    {
+      "smiles": "[CH3]N1[CH2][CH2][CH]([NH]C(=O)c2[cH][cH]c([NH]c3n[cH]c4c(n3)N([CH]3[CH2][CH2][CH2][CH2]3)[CH2]C(F)(F)C(=O)N4[CH3])c(C(F)(F)F)[cH]2)[CH2][CH2]1",
+      "name": "UNK",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 1146.574375
+    },
+    {
+      "smiles": "[CH3]c1[cH]nc(N2[CH2][CH2]N(C(=O)c3[cH][cH]c([Br])[cH]c3F)[CH2][CH2]2)c([CH3])[cH]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 476.39175
+    },
+    {
+      "smiles": "[CH3][CH2][NH][CH]1[CH2][CH2]c2[nH]c3[cH][cH]c(O[CH2]c4[cH][cH][cH][cH][cH]4)[cH]c3c2[CH2]1",
+      "name": "UNK",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 20.90375
+    },
+    {
+      "smiles": "[CH3][CH2]O[CH2][CH2][NH]C(=O)c1c([Cl])[cH][cH][cH]c1[Si]([CH3])([CH3])[CH3]",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 291.170125
+    },
+    {
+      "smiles": "[CH3][CH2]OC(=O)[CH2][C@H]1[CH2][CH2][C@H]([CH2]N([CH2][CH3])c2[cH][cH][cH]nc2[CH]=O)[CH2][CH2]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 739.812541
+    },
+    {
+      "smiles": "[CH3]c1[cH][cH]c([CH](O[C@@H]2[CH2][CH2][CH2][C@H]([CH2][CH]3SC(=O)[NH]C3=O)[CH2]2)c2[cH]o[cH]n2)c([CH3])[cH]1",
+      "name": "UNK",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 428.179459
+    },
+    {
+      "smiles": "[CH3]Oc1c([NH]C(=O)[NH]c2[cH][cH]c(C(=O)[OH])c3[cH][cH][cH][cH]c23)[cH]c(C([CH3])([CH3])[CH3])[cH]c1[NH]S([CH3])(=O)=O",
+      "name": "UNK",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 750.36325
+    },
+    {
+      "smiles": "O=C1OC2([CH2][CH2]N(C(=O)c3[cH]n(C(=O)N4[CH2][CH2][CH2][CH2][CH2]4)c4[cH]c([Cl])[cH][cH]c34)[CH2][CH2]2)c2[cH][cH][cH][cH]c21",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 1415.617084
+    },
+    {
+      "smiles": "[CH]#C[CH2]N1[CH2][CH2]N([CH2]c2[cH]c3[cH]n[cH][cH]c3[nH]2)C(=O)[CH2]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 800.957833
+    },
+    {
+      "smiles": "[CH3][CH2]N(C([CH3])=O)S(=O)(=O)c1[cH][cH][cH]c([CH3])c1C#N",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 77.662708
+    },
+    {
+      "smiles": "[CH3]C([CH3])([CH3])OC(=O)N1[CH2][CH2][CH]([CH2]Oc2sn[cH]c2[NH]C(=O)c2[cH][cH]c(F)c(-c3c(F)[cH][cH][cH]c3F)n2)[CH2][CH2]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 795.500834
+    },
+    {
+      "smiles": "O=c1[nH]c2c([OH])[cH][cH]c([C@@H]([OH])[CH2][NH][CH2][CH2][CH2]S[CH2][CH2][CH2]O[CH2][CH2]c3[cH][cH][cH][cH][cH]3)c2s1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 889.445292
+    },
+    {
+      "smiles": "[CH3]c1[cH][cH]c(F)[cH]c1[CH2][CH]([CH3])[NH]c1[cH][cH][nH]c(=O)c1-c1nc2[cH]c3c([cH]c2[nH]1)[CH2]N([CH3])C3=O",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 594.3550829999999
+    },
+    {
+      "smiles": "[CH3][CH2]n1c(=O)c(C(=O)[NH][CH2][CH2]N2[CH2][CH2][NH]C2=O)c([OH])c2n[cH]c([CH2]c3[cH][cH]c(F)[cH][cH]3)[cH]c12",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 1229.1582919999998
+    },
+    {
+      "smiles": "[CH3]OC(=O)c1[cH][cH]c(C(=O)[NH][CH]2[CH2][CH2][CH](OC([CH3])=O)[CH2][CH]2c2[cH][cH]c(O[CH3])c(O[CH3])[cH]2)[cH][cH]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 795.949625
+    },
+    {
+      "smiles": "[CH2]=[CH][CH2]c1c(O[CH3])[cH][cH]c2[cH][cH]c(=O)n([CH3])c12",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 122.59408300000001
+    },
+    {
+      "smiles": "[CH3][Si]([CH3])([CH3])[CH2][CH2]O[CH2]n1nc(/[CH]=[CH]/c2[cH][cH]c([CH2]N3[CH2][CH2]O[CH2][CH2]3)[cH][cH]2)c2[cH][cH]c([CH]=O)[cH]c12",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 1102.03675
+    },
+    {
+      "smiles": "[CH3]N([CH3])[CH]1[CH2][CH2]N(c2[cH][cH]c([NH]C(=O)c3[cH][cH]c(-c4[cH][cH]c(F)[cH]c4F)[cH][cH]3)[cH][cH]2)[CH2]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 616.4606670000001
+    },
+    {
+      "smiles": "O=[CH]c1c([OH])[cH][cH][cH]c1O[CH2]c1[cH][cH][cH][cH]c1C(=O)[OH]",
+      "name": "UNK",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 21.479292
+    },
+    {
+      "smiles": "[CH3]c1c([CH]2[CH2][CH2]2)[cH]c([Cl])c([NH2])c1F",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 137.54108300000001
+    },
+    {
+      "smiles": "[CH3][CH2]N([CH2][CH3])[CH2][CH2][NH]C(=O)c1[cH]c([CH3])c([CH]=C2C(=O)[NH]c3[cH][cH][cH]c(-c4[cH][cH][cH]c([Br])[cH]4)c32)[nH]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 1402.3334169999998
+    },
+    {
+      "smiles": "O=C([CH2][OH])[NH]c1[cH]c(F)[cH]c(C(=O)[NH][CH2]C(F)(F)F)c1[OH]",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 463.9445
+    },
+    {
+      "smiles": "O=C(c1[cH][cH]c([N+](=O)[O-])[cH]c1[Cl])N1[CH2][CH2]c2[cH][cH][cH]n2-c2[cH][cH][cH][cH]c21",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 394.411541
+    },
+    {
+      "smiles": "[CH3][CH2]Sc1[cH][cH][cH][cH]c1-c1[cH]nc2[cH]c(C(F)(F)F)[cH][cH]c2n1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 130.25300000000001
+    },
+    {
+      "smiles": "[CH3]N1C(=O)C([CH3])([CH3])c2[cH]c(F)c([NH]C(=O)c3[cH][cH]n[cH][cH]3)[cH]c21",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 399.855291
+    },
+    {
+      "smiles": "[CH3]OC(=O)[C@@H]1[CH2][CH2][CH2][CH2][CH2][C@@H]1[NH][CH2][CH2][CH]([CH3])[CH3]",
+      "name": "UNK",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 150.45233299999998
+    },
+    {
+      "smiles": "[CH3][CH2]c1[cH][cH]c([Cl])[cH]c1-c1c(C#N)[cH][cH]n1S(=O)(=O)c1[cH][cH][cH][cH][cH]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 241.575083
+    },
+    {
+      "smiles": "[CH3][CH2][CH2][CH](C(=O)O[CH3])c1c([CH3])nc2[cH]c(C([CH3])([CH3])[CH3])nn2c1-c1[cH][cH]c2[cH][cH]n([CH3])c2[cH]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 461.23979199999997
+    },
+    {
+      "smiles": "[CH3]Oc1[cH][cH]c(C(=O)[NH][CH2][CH2]c2c([CH3])[nH]c3c([Cl])[cH][cH]c([Cl])c23)[cH]c1O[CH3]",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 549.777167
+    },
+    {
+      "smiles": "O=C([CH2]Oc1nc(-c2[cH][cH]c(F)[cH][cH]2)[cH]s1)[NH]c1n[cH][cH]s1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 258.672334
+    },
+    {
+      "smiles": "[CH3]N(C(=O)[CH2]C(=O)[NH]c1[cH][cH]c(Oc2[cH][cH]nc3[cH]c(-c4n[cH][cH]n4[CH3])sc23)c(F)[cH]1)c1[cH][cH][cH][cH][cH]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 872.1058750000001
+    },
+    {
+      "smiles": "[CH3]C([CH3])([CH3])OC(=O)N1[CH2]c2[cH][cH]c(C#N)[cH]c2[CH2]1",
+      "name": "UNK",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 41.059042
+    },
+    {
+      "smiles": "[OH][CH2]c1[cH]c(F)[cH][cH]c1Sc1[cH][cH][cH][cH][cH]1",
+      "name": "UNK",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 166.11675
+    },
+    {
+      "smiles": "[CH3]OC(=O)c1[cH][cH]c(-c2nc([NH][CH2]c3[cH][cH]c4c([cH]3)O[CH2]O4)c3c([CH3])c([CH3])sc3n2)[cH][cH]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 591.444375
+    },
+    {
+      "smiles": "[CH3]Oc1n[cH]c(-c2[cH][cH]c3nnc(C#C[CH]([CH3])[OH])n3[cH]2)[cH]c1[NH]S(=O)(=O)c1[cH][cH]c(F)[cH]c1F",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 526.4803340000001
+    },
+    {
+      "smiles": "[CH3]C([CH3])([CH3])OC(=O)N1[CH2][CH2][CH2][C@H]1[CH2][NH]c1[cH][cH]c(-c2[cH][cH][cH][cH][cH]2)[cH]c1Oc1[cH][cH]c(C(=O)[OH])[cH][cH]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 1234.790916
+    },
+    {
+      "smiles": "[CH3][CH]([CH3])[CH2][C@H]1[CH2]N(C(=O)c2[cH]c3[cH][cH][cH][cH]c3o2)[C@@H]([CH2][CH]([CH3])[CH3])C(=O)[NH]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 989.930333
+    },
+    {
+      "smiles": "[CH3]Oc1[cH][cH]c2nc(Sc3[cH][cH]c([NH2])[cH][cH]3)[cH][cH]c2[cH]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 191.723333
+    },
+    {
+      "smiles": "[CH3]OC(=O)C(=[CH]c1[cH][cH][cH]c([Cl])c1[Cl])C([CH3])=O",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 172.833083
+    },
+    {
+      "smiles": "[CH3]C([CH3])([CH3])OC(=O)N1[CH2][CH2]C2([CH2][CH2]1)[CH2]C(=O)c1[cH]c(C#N)[cH][cH]c1O2",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 526.435166
+    },
+    {
+      "smiles": "[CH3]c1nc(C(=O)N2[CH2][CH2][CH2][C@@H]([CH3])[C@H]2[CH2][NH]c2n[cH]c([Br])[cH]n2)c(-c2[cH][cH]c(F)[cH][cH]2)s1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 738.590917
+    },
+    {
+      "smiles": "[CH3]S(=O)(=O)c1[cH][cH]c(-n2nc([CH](F)F)[cH]c2-c2nc3[cH][cH][cH]c(F)c3s2)[cH][cH]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 157.828291
+    },
+    {
+      "smiles": "[CH3]OC(=O)[CH2][CH]1[CH2]c2[cH][cH]c([SH])[cH]c2[CH2]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 188.123333
+    },
+    {
+      "smiles": "[CH3][CH2][CH2][CH2]N([CH2][CH2][OH])C(=O)O[CH2][CH3]",
+      "name": "UNK",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 143.857583
+    },
+    {
+      "smiles": "O=C([OH])c1[cH][cH]c(-c2[cH]n3c(n2)sc2[cH][cH][cH][cH]c32)[cH][cH]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 225.735125
+    },
+    {
+      "smiles": "[CH3]Oc1[cH]c([Br])[cH][cH]c1C(=O)[NH][CH2]c1[cH][cH][cH][cH][cH]1",
+      "name": "UNK",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 116.749708
+    },
+    {
+      "smiles": "[CH3][NH]C(=O)c1[cH]c(-c2nn([CH]3[CH2][CH2][CH2][CH2]3)c3[cH][cH]nc(O[CH3])c23)[cH]s1",
+      "name": "UNK",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 287.239875
+    },
+    {
+      "smiles": "[CH3]c1nc(-c2[cH][cH]c([NH]C(=O)[CH]([Cl])c3[cH][cH][cH][cH][cH]3)[cH]n2)nc([OH])c1[Cl]",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 375.112208
+    },
+    {
+      "smiles": "[NH2]S(=O)(=O)O[CH2][C@H]1[CH2][C@@H]([NH]C(=O)c2[cH][cH]n[cH][cH]2)[C@H](OC(=O)c2[cH][cH][cH][cH][cH]2)[C@@H]1OC(=O)c1[cH][cH][cH][cH][cH]1",
+      "name": "UNK",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 1,
+      "time_ms": 25.784416
+    },
+    {
+      "smiles": "[CH2]=C1[CH2][C@@H]2[C@H]([CH2][CH2][C@]3([CH3])C(=O)[CH2][CH2][C@@H]23)[C@@]2([CH3])[CH2][CH2]C(=O)C(O[CH3])=C12",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 1357.1555420000002
+    },
+    {
+      "smiles": "[CH3]Oc1[cH]c([NH]c2[cH]c(Oc3[cH]c([CH3])c([CH3])nc3-c3[cH][cH][cH]c([CH3])n3)[cH][cH]n2)[cH]c(O[CH3])c1O[CH3]",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 545.19575
+    },
+    {
+      "smiles": "[CH3][CH2]n1[cH]nc2c([NH2])nc([NH][CH2]c3[cH][cH][cH][cH][cH]3)nc12",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 263.390542
+    },
+    {
+      "smiles": "[CH3]N([CH3])c1[cH][cH]c(-c2[cH]nc3[cH][cH]c([NH][C@H]4[CH2][CH2][C@H]([OH])[CH2][CH2]4)nn23)[cH]n1",
+      "name": "UNK",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 402.780458
+    },
+    {
+      "smiles": "[CH3]O[CH]1[CH2]N(C(=O)[CH2][NH2])[CH2]c2[cH][cH][cH][cH]c21",
+      "name": "UNK",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 224.156459
+    },
+    {
+      "smiles": "[CH3][CH]([CH3])[CH2]C(=O)N1[CH2][CH2]O[CH](c2[cH][cH][cH][cH][cH]2)[CH2]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 389.53866700000003
+    },
+    {
+      "smiles": "[CH3][CH2][CH2][CH2][CH2][CH2]OC(=O)[CH]([OH])[C@H]1O[C@@H](n2[cH]nc3c([NH2])n[cH]nc23)[C@H]([OH])[C@@H]1[OH]",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 871.80275
+    },
+    {
+      "smiles": "[CH3][CH2][CH2][CH2][CH2][CH2]C(=O)[CH2][CH2][CH2]n1c([CH2][CH2][CH3])nc2[cH]nc3[cH][cH][cH][cH]c3c12",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 436.136458
+    },
+    {
+      "smiles": "[CH3]c1[cH][cH]c([CH2][CH2]N([CH3])[CH2][CH2][CH2]C(C([NH2])=O)(c2[cH][cH][cH][cH][cH]2)c2[cH][cH][cH][cH][cH]2)[cH][cH]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 824.388375
+    },
+    {
+      "smiles": "[CH3]C([CH3])([CH3])OC(=O)N1[CH2]C2([CH2]1)[CH2]N(c1[cH]c(F)[cH][cH]c1[Cl])[CH2]2",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 392.545125
+    },
+    {
+      "smiles": "[CH3]C([CH3])([CH3])OC(=O)[CH2][NH]C(=O)[C@H]([CH2]c1[cH][cH]c([OH])[cH][cH]1)[NH]C(=O)O[CH2][CH]1c2[cH][cH][cH][cH]c2-c2[cH][cH][cH][cH]c21",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 1311.223667
+    },
+    {
+      "smiles": "[CH3]O[CH](O[CH3])[C@]1([CH3])Oc2[cH][cH]c([NH2])[cH]c2[C@H](N([CH2]c2n[cH][cH][nH]2)c2[cH][cH]c([Cl])[cH][cH]2)[C@H]1[OH]",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 758.686291
+    },
+    {
+      "smiles": "O=C([OH])[CH2]c1nn([CH2]c2[cH][cH]c([NH]C(=O)c3[cH][cH]c4[cH][cH][cH][cH]c4[cH]3)n[cH]2)c2[cH][cH][cH][cH]c12",
+      "name": "UNK",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 899.361542
+    },
+    {
+      "smiles": "[CH3]N1[CH2][CH2]N([CH]2[CH2][CH2]N(C(=O)c3[cH][cH]c(-c4[cH][cH]n5n[cH]c(-c6[cH][cH]c(C#N)[cH][cH]6)c5n4)[cH][cH]3)[CH2][CH2]2)[CH2][CH2]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 1541.78025
+    },
+    {
+      "smiles": "[CH3][NH]C(=O)c1[cH]c([Br])[cH][cH]c1[CH3]",
+      "name": "UNK",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 170.422875
+    },
+    {
+      "smiles": "[CH3][CH2][CH2][CH2][Sn]([CH2][CH2][CH2][CH3])([CH2][CH2][CH2][CH3])c1[cH]n(C(c2[cH][cH][cH][cH][cH]2)(c2[cH][cH][cH][cH][cH]2)c2[cH][cH][cH][cH][cH]2)[cH]n1",
+      "name": "UNK",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 17.284958
+    },
+    {
+      "smiles": "[CH3]C1([CH3])O[C@@H]2O[C@H](/[CH]=[CH]/c3[cH][cH]c(-c4[cH]n[cH]n[cH]4)[cH][cH]3)[C@H]([CH2][CH2]n3nnc4[cH][cH][cH][cH]c4c3=O)[C@@H]2O1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 971.340542
+    },
+    {
+      "smiles": "[CH3]Oc1[cH][cH][cH][cH]c1-c1[cH][cH]c([Cl])c2c1S(=O)(=O)[NH]C([CH]1[CH2][CH2][CH2][CH2][CH2]1)=N2",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 388.602167
+    },
+    {
+      "smiles": "[CH3]N([CH3])C(=O)[C@@H]1[CH2][C@H](n2[cH]c(-c3[cH]nc([NH2])c(-c4[cH]c5c([Cl])[cH][cH]c(F)c5[cH]n4)[cH]3)[cH]n2)[CH2][NH]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 1040.279875
+    },
+    {
+      "smiles": "[CH3][CH2]OC(=O)c1[cH]c2[cH]c(OC([CH3])=O)[cH][cH]c2n1[CH2]c1[cH][cH]c([Cl])c([Cl])[cH]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 313.801875
+    },
+    {
+      "smiles": "[CH3][CH](c1[cH][nH]c2[cH]c(F)[cH][cH]c12)[CH]1OC(N([CH3])[CH3])=NC1=O",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 153.48662499999998
+    },
+    {
+      "smiles": "[CH3]C(=O)S[CH2][CH2][CH2][CH2][CH2]C(=O)[NH][CH2][CH2][CH2][CH2][CH2][NH2]",
+      "name": "UNK",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 373.455666
+    },
+    {
+      "smiles": "[NH2]c1[cH][cH]c2[cH]c(-c3[cH][cH][cH][cH]c3C(=O)N3[CH2][CH2][CH](F)[CH2][CH2]3)[cH][cH]c2n1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 772.501708
+    },
+    {
+      "smiles": "[CH3]C1([NH]S([CH3])(=O)=O)[CH2]O[CH](c2nc(-c3[cH][cH]n[cH][cH]3)c(-c3[cH][cH]c(F)[cH][cH]3)[nH]2)O[CH2]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 230.3515
+    },
+    {
+      "smiles": "[CH3]c1[cH][cH][cH]c2n[cH]c(C(=O)[NH][CH]3[CH2][CH2][CH2][CH2]3)c(=O)n12",
+      "name": "UNK",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 250.299416
+    },
+    {
+      "smiles": "N#CS[CH2]C(=O)c1[cH][cH][cH]c([Cl])[cH]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 86.37608300000001
+    },
+    {
+      "smiles": "[CH3][CH]([CH3])N1[CH2]C2([CH2][CH2]N(c3[cH][cH]c(O[CH2][CH2][CH2]N4[CH2][CH2][CH2][C@H]4[CH3])[cH][cH]3)[CH2][CH2]2)O[CH2]C1=O",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 1798.2968750000002
+    },
+    {
+      "smiles": "[CH3]C(=O)[NH]c1[cH][cH]c(-c2[cH][cH]c([NH]C(=O)c3[cH]c(C(F)(F)F)nn3-c3[cH][cH][cH][cH]c3[Cl])[cH][cH]2)[cH][cH]1",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 726.54925
+    },
+    {
+      "smiles": "[CH3]Oc1[cH][cH]c(C([OH])(C(=O)O[CH2]C#C[CH2]N2[CH2][C@H]3[CH2][C@H]3[CH2]2)[CH]2[CH2][CH2][CH2][CH2]2)[cH][cH]1",
+      "name": "UNK",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 734.330417
+    },
+    {
+      "smiles": "[CH3]C([CH3])=[CH][CH2][CH2][C@@H]([CH3])OS([CH3])(=O)=O",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 58.448541
+    },
+    {
+      "smiles": "N#C[CH2][CH]1c2[cH][cH][cH][cH]c2-c2[cH][cH][cH][cH]c21",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 165.249625
+    },
+    {
+      "smiles": "FC(F)(F)c1[cH][cH][cH]c(N2[CH2][CH2][NH][CH2][CH2]2)c1[Cl]",
+      "name": "UNK",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 67.771334
+    },
+    {
+      "smiles": "[CH3]O[CH2][CH2][NH][CH2]c1[cH]c2c([NH]c3[cH][cH][cH]c([Cl])c3F)n[cH]nc2[cH]c1O[CH3]",
+      "name": "UNK",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 524.359375
+    }
+  ]
+}

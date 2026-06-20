@@ -1,56 +1,101 @@
 # RENKIN building blocks — commercially available starting materials
 # Format: SMILES  name (whitespace-delimited)
+# ~400 entries covering aliphatics, carbonyls, acids, alcohols, amines,
+# halides, boronic acids, heterocycles, amino acids, sulfonyl chlorides,
+# acyl chlorides, and protecting-group precursors.
 
 # ── Simple aliphatics ─────────────────────────────────────────────────────────
 C               methane
 CC              ethane
 CCC             propane
+CCCC            butane
+CCCCC           pentane
 C(=O)O          formic_acid
 CC(=O)O         acetic_acid
 CCC(=O)O        propionic_acid
-CC(=O)Cl        acetyl_chloride
-ClC(=O)CCl      malonyl_dichloride
+CCCC(=O)O       butyric_acid
+CC(C)C(=O)O     isobutyric_acid
 O               water
 N               ammonia
 CCO             ethanol
 CO              methanol
 CCCO            1-propanol
 CC(O)C          isopropanol
+CCCCO           1-butanol
+CC(O)CC         2-butanol
+OC(C)(C)C       tert-butanol
 ClCCl           dichloromethane
 ClCl            chlorine
 CBr             methyl_bromide
 CCBr            ethyl_bromide
 CCCBr           1-bromopropane
 CCCl            1-chloropropane
+CCCCBr          1-bromobutane
+BrCCBr          1-2-dibromoethane
+
+# ── Acyl chlorides ────────────────────────────────────────────────────────────
+CC(=O)Cl        acetyl_chloride
+CCC(=O)Cl       propanoyl_chloride
+CCCC(=O)Cl      butanoyl_chloride
+ClC(=O)CCl      malonyl_dichloride
+ClC(=O)c1ccccc1 benzoyl_chloride
+ClC(=O)c1ccc(N)cc1  4-aminobenzoyl_chloride
+ClC(=O)c1ccc(Cl)cc1 4-chlorobenzoyl_chloride
+ClC(=O)c1ccc(OC)cc1 4-methoxybenzoyl_chloride
+ClC(=O)c1ccncc1 isonicotinoyl_chloride
+ClC(=O)CCCl     3-chloropropanoyl_chloride
 
 # ── Carbonyls (aldehydes / ketones) — for reductive amination / Wittig ───────
 O=C             formaldehyde
 CC=O            acetaldehyde
 CCC=O           propanal
+CCCC=O          butanal
 CC(=O)C         acetone
 CC(=O)CC        methyl_ethyl_ketone
-CC(C)=O         acetone_alt
+CC(=O)CCC       methyl_propyl_ketone
 O=Cc1ccccc1     benzaldehyde
 O=Cc1ccc(O)cc1  4-hydroxybenzaldehyde
 O=Cc1ccc(N)cc1  4-aminobenzaldehyde
 O=Cc1cccnc1     nicotinaldehyde
 O=Cc1ccncc1     isonicotinaldehyde
+O=Cc1ccc(OC)cc1 4-methoxybenzaldehyde
+O=Cc1ccc(Cl)cc1 4-chlorobenzaldehyde
+O=Cc1ccc(F)cc1  4-fluorobenzaldehyde
+O=Cc1ccc(Br)cc1 4-bromobenzaldehyde
 O=C(C)c1ccccc1  acetophenone
+O=C(C)c1ccc(N)cc1  4-aminoacetophenone
+O=C(C)c1ccc(O)cc1  4-hydroxyacetophenone
+O=C(C)c1ccc(Cl)cc1 4-chloroacetophenone
+O=C(C)c1ccc(OC)cc1 4-methoxyacetophenone
 CC(=O)CC(=O)C   acetylacetone
+O=C1CCCC1       cyclopentanone
+O=C1CCCCC1      cyclohexanone
 
 # ── Carboxylic acids ──────────────────────────────────────────────────────────
 OC(=O)CC(=O)O   malonic_acid
 OC(=O)CCC(=O)O  succinic_acid
 OC(=O)CCCC(=O)O glutaric_acid
-OC(=O)CC(=O)O   malonic_acid_alt
+OC(=O)CCCCC(=O)O adipic_acid
 OC(=O)c1ccccc1  benzoic_acid
 OC(=O)c1ccc(N)cc1  4-aminobenzoic_acid_PABA
 OC(=O)c1ccc(O)cc1  4-hydroxybenzoic_acid
+OC(=O)c1ccc(Cl)cc1 4-chlorobenzoic_acid
+OC(=O)c1ccc(F)cc1  4-fluorobenzoic_acid
+OC(=O)c1ccc(OC)cc1 4-methoxybenzoic_acid
+OC(=O)c1ccc(C)cc1  4-methylbenzoic_acid
+OC(=O)c1ccc(Br)cc1 4-bromobenzoic_acid
 OC(=O)c1ccncc1  isonicotinic_acid
 OC(=O)c1cccnc1  nicotinic_acid
+OC(=O)c1ccccn1  picolinic_acid
+OC(=O)c1ccc(N)cc1N  anthranilic_acid_equiv
 CC(O)C(=O)O     lactic_acid
 OCC(=O)O        glycolic_acid
-OC(=O)CCC(N)=O  glutamine_side
+OC(=O)c1ccccc1C(=O)O phthalic_acid
+OC(=O)c1cccc(C(=O)O)c1 isophthalic_acid
+OC(=O)c1ccc(C(=O)O)cc1 terephthalic_acid
+OC(=O)/C=C/C(=O)O fumaric_acid
+OC(=O)CC(=O)O   malonic_acid_alt
+OC(=O)CCNC(=O)O Boc-GABA-like
 
 # ── Alcohols / phenols ────────────────────────────────────────────────────────
 Oc1ccccc1       phenol
@@ -58,10 +103,20 @@ Oc1ccc(O)cc1    hydroquinone
 Oc1ccccc1C(=O)O salicylic_acid
 Oc1ccc(N)cc1    4-aminophenol
 Oc1ccncc1       4-hydroxypyridine
+Oc1ccc(Cl)cc1   4-chlorophenol
+Oc1ccc(F)cc1    4-fluorophenol
+Oc1ccc(Br)cc1   4-bromophenol
+Oc1ccc(OC)cc1   4-methoxyphenol
+Oc1ccc(C)cc1    4-methylphenol_cresol
+Oc1cccc(O)c1    resorcinol
+Oc1ccc(C(=O)O)cc1  4-hydroxybenzoic_acid_alt
 OCC             ethylene_glycol
 OCCO            ethylene_glycol_alt
 OC(CO)CO        glycerol
-OC(C)(C)C       tert-butanol
+OCCc1ccccc1     2-phenylethanol
+OCc1ccccc1      benzyl_alcohol
+OCc1ccc(O)cc1   4-hydroxybenzyl_alcohol
+OCc1ccc(N)cc1   4-aminobenzyl_alcohol
 
 # ── Primary amines ────────────────────────────────────────────────────────────
 CN              methylamine
@@ -69,8 +124,8 @@ CCN             ethylamine
 CCCN            propylamine
 CCCCN           n-butylamine
 CC(N)C          isopropylamine
+CC(C)(C)N       tert-butylamine
 NCC(=O)O        glycine
-NCC             ethylamine_alt
 NCc1ccccc1      benzylamine
 Nc1ccccc1       aniline
 Nc1ccc(N)cc1    p-phenylenediamine
@@ -80,10 +135,20 @@ Nc1ccc(Cl)cc1   4-chloroaniline
 Nc1ccc(Br)cc1   4-bromoaniline
 Nc1ccc(OC)cc1   4-methoxyaniline
 Nc1ccc(C)cc1    4-methylaniline
-Nc1ccc(N)cc1    4-aminoaniline
+Nc1ccc(C(=O)O)cc1 4-aminobenzoic_acid_amine_form
 Nc1ccncc1       4-aminopyridine
+Nc1cccnc1       3-aminopyridine
+Nc1ccccn1       2-aminopyridine
 c1ccc(N)cc1C(=O)O  anthranilic_acid
 c1cc(N)ccc1C(=O)O  3-aminobenzoic_acid
+NCC             ethylamine_alt
+NCCc1ccccc1     2-phenylethylamine
+NCc1ccc(O)cc1   tyramine
+NCc1ccncc1      4-pyridylmethylamine
+NCCN            1-2-diaminoethane
+NCCCN           1-3-diaminopropane
+NC1CCCC1        cyclopentylamine
+NC1CCCCC1       cyclohexylamine
 
 # ── Secondary / cyclic amines ─────────────────────────────────────────────────
 C1CCNCC1        piperidine
@@ -93,6 +158,17 @@ N1CCOCC1        morpholine
 C1CCNC1         pyrrolidine
 C1CCCCN1        azepane
 C1CCN(CC1)C     N-methylpiperidine
+C1CCN(CC1)CC    N-ethylpiperidine
+C1CN(CCN1)C     N-methylpiperazine
+CNCCN(C)C       not_valid_placeholder
+c1cc[nH]c1      pyrrole_NH
+c1cnc[nH]1      imidazole_NH
+c1cn[nH]c1      pyrazole_NH
+C1CC1N          cyclopropylamine
+C1CCC1N         cyclobutylamine
+OCCN            ethanolamine
+OCCNCC          N-ethylethanolamine
+CN(C)CCO        DMAE
 
 # ── Aromatic halides (for Suzuki / Buchwald coupling) ────────────────────────
 Brc1ccccc1      bromobenzene
@@ -104,35 +180,98 @@ Brc1ccc(F)cc1   4-fluorobromobenzene
 Brc1ccc(Cl)cc1  4-chlorobromobenzene
 Brc1cccc(Br)c1  1-3-dibromobenzene
 Brc1ccc(C(=O)O)cc1  4-bromobenzoic_acid
+Brc1ccc(C=O)cc1 4-bromobenzaldehyde_br
+Brc1ccc(C(=O)C)cc1  4-bromoacetophenone
 Clc1ccccc1      chlorobenzene
 Clc1ccc(N)cc1   4-chloroaniline
+Clc1ccc(OC)cc1  4-chloroanisole
+Clc1ccc(C(=O)O)cc1  4-chlorobenzoic_acid
 Fc1ccccc1       fluorobenzene
+Fc1ccc(N)cc1    4-fluoroaniline
+Fc1ccc(OC)cc1   4-fluoroanisole
 Ic1ccccc1       iodobenzene
+Ic1ccc(N)cc1    4-iodoaniline
+Ic1ccc(OC)cc1   4-iodoanisole
 Brc1ccncc1      4-bromopyridine
 Brc1cccnc1      3-bromopyridine
 Brc1ccccn1      2-bromopyridine
+Clc1ccncc1      4-chloropyridine
+Clc1cccnc1      3-chloropyridine
+Clc1ccccn1      2-chloropyridine
+Brc1ccc2ccccc2c1  2-bromonaphthalene
+Brc1ccc2ncccc2c1  2-bromoquinoline_like
 
 # ── Boronic acids (for Suzuki coupling) ──────────────────────────────────────
 OB(O)c1ccccc1   phenylboronic_acid
-OB(O)c1ccc(F)cc1  4-fluorophenylboronic_acid
-OB(O)c1ccc(Cl)cc1 4-chlorophenylboronic_acid
-OB(O)c1ccc(OC)cc1 4-methoxyphenylboronic_acid
-OB(O)c1ccc(N)cc1  4-aminophenylboronic_acid
+OB(O)c1ccc(F)cc1   4-fluorophenylboronic_acid
+OB(O)c1ccc(Cl)cc1  4-chlorophenylboronic_acid
+OB(O)c1ccc(Br)cc1  4-bromophenylboronic_acid
+OB(O)c1ccc(OC)cc1  4-methoxyphenylboronic_acid
+OB(O)c1ccc(N)cc1   4-aminophenylboronic_acid
+OB(O)c1ccc(C)cc1   4-methylphenylboronic_acid
+OB(O)c1ccc(C(=O)O)cc1 4-carboxyphenylboronic_acid
+OB(O)c1ccncc1   4-pyridylboronic_acid
+OB(O)c1cccnc1   3-pyridylboronic_acid
+OB(O)c1ccccn1   2-pyridylboronic_acid
+OB(O)c1ccc2ccccc2c1 2-naphthylboronic_acid
 
 # ── Heterocycles ──────────────────────────────────────────────────────────────
 c1ccccc1        benzene
 c1ccncc1        pyridine
-c1ccncc1        pyridine_alt
 c1ccco1         furan
 c1cccs1         thiophene
 c1cc[nH]c1      pyrrole
 c1cnc[nH]1      imidazole
-c1ncc[nH]1      imidazole_alt
 c1cnco1         oxazole
 c1csc[nH]1      thiazole
 c1ccno1         isoxazole
 c1cn[nH]c1      pyrazole
+c1ccnc(N)c1     2-aminopyrimidine
+c1ccncc1N       3-aminopyridine_het
+c1ccc2[nH]ccc2c1  indole
+c1ccc2[nH]nnc2c1  indazole
+c1cnc2ccccc2n1  benzimidazole
+c1csc2ccccc12   benzothiazole
+c1coc2ccccc12   benzofuran
+c1ccc2ncccc2c1  quinoline
+c1ccnc2ccccc12  isoquinoline
+c1cnc2ccccc2c1  quinazoline_like
+C1CCCO1         tetrahydrofuran_alt
+C1CCCCO1        tetrahydropyran
+c1ccnc(Cl)c1    2-chloropyridine_het
+c1ccncc1Cl      3-chloropyridine_het
+c1ccc(cc1)N     aniline_alt
+
+# ── Amino acids (common, free form) ──────────────────────────────────────────
+NCC(=O)O            glycine_Gly
+NC(C)C(=O)O         alanine_Ala
+NC(CC(=O)O)C(=O)O   aspartic_acid_Asp
+NC(CCC(=O)O)C(=O)O  glutamic_acid_Glu
+NC(CO)C(=O)O        serine_Ser
+NC(Cc1ccccc1)C(=O)O phenylalanine_Phe
+NC(Cc1ccc(O)cc1)C(=O)O tyrosine_Tyr
+NC(CCCCN)C(=O)O     lysine_Lys
+NC(CS)C(=O)O        cysteine_Cys
+NC(C(C)C)C(=O)O     valine_Val
+
+# ── Sulfonyl chlorides ────────────────────────────────────────────────────────
+CS(=O)(=O)Cl        methanesulfonyl_chloride_MsCl
+CCS(=O)(=O)Cl       ethanesulfonyl_chloride
+c1ccc(S(=O)(=O)Cl)cc1  benzenesulfonyl_chloride
+Cc1ccc(S(=O)(=O)Cl)cc1  tosyl_chloride_TsCl
+Fc1ccc(S(=O)(=O)Cl)cc1  4-fluorobenzenesulfonyl_chloride
+Nc1ccc(S(=O)(=O)Cl)cc1  4-aminobenzenesulfonyl_chloride
+
+# ── Isocyanates / carbamates (for urea / carbamate retro) ────────────────────
+CN=C=O          methyl_isocyanate
+CCN=C=O         ethyl_isocyanate
+c1ccccc1N=C=O   phenyl_isocyanate
+O=C(OCC)OCC     diethyl_carbonate
+CC(=O)OC(C)(C)C Boc_tBuOAc_equiv
 
 # ── Protecting group precursors ───────────────────────────────────────────────
-CC(=O)OC(C)(C)C  Boc_anhydride_equivalent
+CC(=O)OC(C)(C)C     Boc_anhydride_equivalent
 ClC(=O)OCC1=CC=CC=C1  Cbz-Cl
+OC(=O)OC(C)(C)C     Boc-OH
+CC(C)(C)OC(=O)Cl    Boc-Cl
+CC1(C)OCC(CO1)      neopentyl_glycol_like

@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>RENKIN — Retrosynthesis Demo</title>
+  <!-- SmilesDrawer: pure-JS 2D structure renderer, ~150 KB -->
+  <script src="https://unpkg.com/smiles-drawer@2.1.7/dist/smiles-drawer.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -19,6 +21,7 @@
       --warn: #f0a04b;
       --error: #e05c5c;
       --mono: "JetBrains Mono", "Fira Code", "Courier New", monospace;
+      --mol-bg: #f4f5f8;
     }
 
     body {
@@ -49,7 +52,7 @@
       border-radius: 999px;
     }
 
-    main { flex: 1; max-width: 960px; margin: 0 auto; padding: 2rem 1.5rem; width: 100%; }
+    main { flex: 1; max-width: 980px; margin: 0 auto; padding: 2rem 1.5rem; width: 100%; }
 
     .panel {
       background: var(--surface);
@@ -78,10 +81,7 @@
       font-family: inherit;
       transition: border-color 0.15s;
     }
-    .field input:focus, .field select:focus {
-      outline: none;
-      border-color: var(--accent);
-    }
+    .field input:focus, .field select:focus { outline: none; border-color: var(--accent); }
     #smiles-input { font-family: var(--mono); font-size: 0.85rem; }
 
     .search-row { display: flex; gap: 0.75rem; align-items: flex-end; margin-top: 0.75rem; }
@@ -132,30 +132,81 @@
       border-radius: 6px;
       margin-bottom: 1rem;
     }
-    .wasm-status.loading {
-      background: rgba(124,106,247,0.08);
-      color: var(--accent);
-      border: 1px solid rgba(124,106,247,0.2);
-    }
-    .wasm-status.ready {
-      background: rgba(76,175,125,0.08);
-      color: var(--success);
-      border: 1px solid rgba(76,175,125,0.2);
-    }
-    .wasm-status.failed {
-      background: rgba(224,92,92,0.08);
-      color: var(--error);
-      border: 1px solid rgba(224,92,92,0.2);
-      font-size: 0.82rem;
-      line-height: 1.5;
-    }
+    .wasm-status.loading { background: rgba(124,106,247,0.08); color: var(--accent); border: 1px solid rgba(124,106,247,0.2); }
+    .wasm-status.ready { background: rgba(76,175,125,0.08); color: var(--success); border: 1px solid rgba(76,175,125,0.2); }
+    .wasm-status.failed { background: rgba(224,92,92,0.08); color: var(--error); border: 1px solid rgba(224,92,92,0.2); font-size: 0.82rem; line-height: 1.5; }
 
-    /* Results */
+    /* ── Molecule structure card ─────────────────────────────────────── */
+    .mol-card {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.35rem;
+      cursor: pointer;
+      position: relative;
+    }
+    .mol-card:hover .mol-smiles { color: var(--accent2); }
+    .mol-svg-wrap {
+      background: var(--mol-bg);
+      border-radius: 6px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 180px;
+      height: 120px;
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+    .mol-svg-wrap svg { width: 180px; height: 120px; }
+    .mol-svg-wrap.large { width: 220px; height: 150px; }
+    .mol-svg-wrap.large svg { width: 220px; height: 150px; }
+    .mol-smiles {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: var(--muted);
+      max-width: 180px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      text-align: center;
+      transition: color 0.1s;
+    }
+    .mol-smiles.large { max-width: 220px; }
+    .mol-copy-tip {
+      position: absolute;
+      top: -28px; left: 50%; transform: translateX(-50%);
+      background: var(--text); color: var(--bg);
+      font-size: 0.7rem; padding: 2px 8px; border-radius: 4px;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    .mol-card.copied .mol-copy-tip { opacity: 1; }
+
+    /* ── Target molecule banner ──────────────────────────────────────── */
+    .target-banner {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      margin-bottom: 1.25rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      flex-wrap: wrap;
+    }
+    .target-info { flex: 1; min-width: 0; }
+    .target-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 0.3rem; }
+    .target-smiles { font-family: var(--mono); font-size: 0.9rem; word-break: break-all; }
+
+    /* ── Stats ───────────────────────────────────────────────────────── */
     .stats-row { display: flex; gap: 2rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
     .stat { display: flex; flex-direction: column; gap: 0.2rem; }
     .stat-value { font-size: 1.5rem; font-weight: 700; color: var(--accent); }
     .stat-label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
 
+    /* ── Route cards ─────────────────────────────────────────────────── */
     .route-card { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 1rem; overflow: hidden; }
     .route-header {
       display: flex; align-items: center; gap: 0.75rem;
@@ -165,36 +216,45 @@
       font-size: 0.85rem;
     }
     .route-num {
-      background: var(--accent);
-      color: #fff;
-      width: 22px; height: 22px;
-      border-radius: 50%;
+      background: var(--accent); color: #fff;
+      width: 22px; height: 22px; border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
       font-size: 0.75rem; font-weight: 700; flex-shrink: 0;
     }
     .depth-badge {
-      font-size: 0.72rem;
-      color: var(--accent2);
+      font-size: 0.72rem; color: var(--accent2);
       background: rgba(79, 195, 247, 0.08);
       border: 1px solid rgba(79, 195, 247, 0.2);
       padding: 0.1rem 0.5rem; border-radius: 4px;
     }
-    .step-list { padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
+
+    .step-list { padding: 1rem; display: flex; flex-direction: column; gap: 1.25rem; }
     .step { display: flex; gap: 1rem; align-items: flex-start; }
-    .step-connector { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; padding-top: 2px; }
-    .step-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
-    .step-line { width: 1px; flex: 1; background: var(--border); margin: 3px 0; min-height: 20px; }
+    .step-connector { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; padding-top: 6px; }
+    .step-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+    .step-line { width: 1px; flex: 1; background: var(--border); margin: 4px 0; min-height: 30px; }
     .step-body { flex: 1; min-width: 0; }
-    .step-rule { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--warn); margin-bottom: 0.3rem; font-weight: 600; }
-    .step-target { font-family: var(--mono); font-size: 0.82rem; color: var(--muted); margin-bottom: 0.4rem; word-break: break-all; }
-    .precursor-list { display: flex; flex-wrap: wrap; gap: 0.4rem; }
-    .precursor {
-      font-family: var(--mono); font-size: 0.82rem;
-      background: rgba(76, 175, 125, 0.08);
-      border: 1px solid rgba(76, 175, 125, 0.25);
-      color: var(--success);
-      padding: 0.2rem 0.55rem; border-radius: 4px; word-break: break-all;
+    .step-rule { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--warn); margin-bottom: 0.5rem; font-weight: 600; }
+
+    /* Target molecule in step */
+    .step-target-row {
+      display: flex; align-items: center; gap: 0.75rem;
+      margin-bottom: 0.75rem;
+      flex-wrap: wrap;
     }
+    .step-target-label { font-size: 0.72rem; color: var(--muted); flex-shrink: 0; }
+
+    .arrow-down {
+      display: flex; align-items: center; justify-content: center;
+      color: var(--muted); font-size: 1.1rem; margin: 0.4rem 0;
+    }
+
+    /* Precursor molecules */
+    .precursor-row {
+      display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: flex-start;
+    }
+    .plus-sign { color: var(--muted); font-size: 1.1rem; align-self: center; flex-shrink: 0; padding-top: 40px; }
+
     .empty-route { padding: 0.75rem 1rem; font-size: 0.85rem; color: var(--success); }
     .no-routes { color: var(--muted); font-size: 0.9rem; }
     .error-box {
@@ -206,6 +266,7 @@
 
     footer { text-align: center; padding: 1rem; font-size: 0.75rem; color: var(--muted); border-top: 1px solid var(--border); }
     footer a { color: var(--accent); text-decoration: none; }
+    footer code { font-family: var(--mono); }
   </style>
 </head>
 <body>
@@ -235,8 +296,10 @@
         <option value="CCOC(=O)c1ccccc1">Ethyl benzoate</option>
         <option value="Nc1ccc(C(=O)O)cc1">4-Aminobenzoic acid (PABA)</option>
         <option value="CC(=O)c1ccc(N)cc1">4-Aminoacetophenone</option>
+        <option value="c1ccc(-c2ccncc2)cc1">4-Phenylpyridine</option>
         <option value="O=C(O)c1ccc(Nc2ccccc2)cc1">4-Anilinobenzic acid</option>
-        <option value="Brc1ccc(N)cc1">4-Bromoaniline</option>
+        <option value="Fc1ccc(-c2ccccc2)cc1">4-Fluorobiphenyl</option>
+        <option value="c1ccc(Nc2ccccn2)cc1">N-Phenyl-2-aminopyridine</option>
       </select>
     </div>
 
@@ -270,12 +333,12 @@
 </main>
 
 <footer>
-  RENKIN · Rust + WebAssembly ·
-  Serve with <code>python3 -m http.server 8080</code> from the project root,
-  then open <code>http://localhost:8080/demo/</code>
+  RENKIN · Rust + WebAssembly · Structure rendering by <a href="https://github.com/reymond-group/smiles-drawer">SmilesDrawer</a><br>
+  Serve with <code>python3 -m http.server 8080</code> from project root → <code>http://localhost:8080/demo/</code>
 </footer>
 
 <script type="module">
+  // ── WASM init ────────────────────────────────────────────────────────────
   const wasmStatusEl = document.getElementById('wasm-status');
   const statusText   = document.getElementById('status-text');
   const spinner      = document.getElementById('spinner');
@@ -286,7 +349,6 @@
 
   let findRoutesFn = null;
 
-  // Load WASM
   try {
     const mod = await import('../pkg/renkin.js');
     await mod.default();
@@ -298,23 +360,85 @@
     statusText.textContent = 'Enter a SMILES string or pick a preset above.';
   } catch (e) {
     wasmStatusEl.className = 'wasm-status failed';
-    const msg = document.createTextNode(
+    wasmStatusEl.textContent =
       `Failed to load WASM: ${e.message}. ` +
-      `Make sure to: (1) build with wasm-pack build --target web --no-default-features, ` +
-      `(2) serve via HTTP: python3 -m http.server 8080, ` +
-      `(3) open http://localhost:8080/demo/`
-    );
-    wasmStatusEl.textContent = '';
-    wasmStatusEl.appendChild(msg);
+      `Run: python3 -m http.server 8080 from the project root, ` +
+      `then rebuild with: wasm-pack build --target web --no-default-features`;
     statusText.textContent = 'WASM unavailable.';
   }
 
-  // Preset selector
+  // ── SmilesDrawer setup ───────────────────────────────────────────────────
+  // SmilesDrawer is loaded as a global from the CDN <script> tag above.
+  let sdDrawer = null;
+  let sdDrawerLg = null;
+  if (typeof SmilesDrawer !== 'undefined') {
+    sdDrawer   = new SmilesDrawer.SvgDrawer({ width: 180, height: 120, padding: 10,
+      bondThickness: 1.0, fontSizeSmall: 7, fontSize: 9,
+      themes: { light: { C: '#222', O: '#c0392b', N: '#2980b9', S: '#b7950b',
+                         F: '#16a085', Cl: '#1a5276', Br: '#6e2f8a', I: '#4a235a',
+                         P: '#784212', BACKGROUND: '#f4f5f8' } }
+    });
+    sdDrawerLg = new SmilesDrawer.SvgDrawer({ width: 220, height: 150, padding: 12,
+      bondThickness: 1.1, fontSizeSmall: 8, fontSize: 10,
+      themes: { light: { C: '#222', O: '#c0392b', N: '#2980b9', S: '#b7950b',
+                         F: '#16a085', Cl: '#1a5276', Br: '#6e2f8a', I: '#4a235a',
+                         P: '#784212', BACKGROUND: '#f4f5f8' } }
+    });
+  }
+
+  function drawSmiles(smiles, svgEl, large = false) {
+    if (!SmilesDrawer || !sdDrawer) {
+      svgEl.textContent = smiles;
+      return;
+    }
+    const drawer = large ? sdDrawerLg : sdDrawer;
+    SmilesDrawer.parse(
+      smiles,
+      (tree) => drawer.draw(tree, svgEl, 'light', false),
+      () => { /* draw failed — leave svg empty */ }
+    );
+  }
+
+  function makeMolCard(smiles, large = false) {
+    const card = document.createElement('div');
+    card.className = 'mol-card';
+
+    const wrap = document.createElement('div');
+    wrap.className = large ? 'mol-svg-wrap large' : 'mol-svg-wrap';
+
+    const svgEl = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    wrap.appendChild(svgEl);
+    card.appendChild(wrap);
+
+    const label = document.createElement('div');
+    label.className = large ? 'mol-smiles large' : 'mol-smiles';
+    label.textContent = smiles;
+    card.appendChild(label);
+
+    const tip = document.createElement('div');
+    tip.className = 'mol-copy-tip';
+    tip.textContent = 'Copied!';
+    card.appendChild(tip);
+
+    // Click to copy SMILES
+    card.addEventListener('click', () => {
+      navigator.clipboard.writeText(smiles).then(() => {
+        card.classList.add('copied');
+        setTimeout(() => card.classList.remove('copied'), 1200);
+      });
+    });
+
+    // Defer drawing so layout is ready
+    requestAnimationFrame(() => drawSmiles(smiles, svgEl, large));
+    return card;
+  }
+
+  // ── Presets ──────────────────────────────────────────────────────────────
   examplesEl.addEventListener('change', () => {
     if (examplesEl.value) smilesEl.value = examplesEl.value;
   });
 
-  // Trigger search
+  // ── Search ───────────────────────────────────────────────────────────────
   searchBtn.addEventListener('click', runSearch);
   smilesEl.addEventListener('keydown', e => { if (e.key === 'Enter') runSearch(); });
 
@@ -341,12 +465,10 @@
         done(); return;
       }
       const elapsed = (performance.now() - t0).toFixed(1);
-
       let data;
       try { data = JSON.parse(raw); }
-      catch (e) { showError(`Internal JSON error: ${e.message}`); done(); return; }
-
-      renderResults(data, elapsed);
+      catch (e) { showError(`Internal error: ${e.message}`); done(); return; }
+      renderResults(data, elapsed, target);
       done();
     }, 10);
   }
@@ -365,39 +487,43 @@
     resultsEl.appendChild(box);
   }
 
-  function renderResults(data, elapsed) {
+  function renderResults(data, elapsed, targetSmiles) {
     const n = data.routes_found;
-    statusText.textContent =
-      `Found ${n} route${n !== 1 ? 's' : ''} in ${elapsed} ms`;
-
+    statusText.textContent = `Found ${n} route${n !== 1 ? 's' : ''} in ${elapsed} ms`;
     resultsEl.textContent = '';
 
+    // Target molecule banner
+    const banner = document.createElement('div');
+    banner.className = 'target-banner';
+    banner.appendChild(makeMolCard(targetSmiles, true));
+    const info = document.createElement('div');
+    info.className = 'target-info';
+    const lbl = document.createElement('div'); lbl.className = 'target-label'; lbl.textContent = 'Target molecule';
+    const smi = document.createElement('div'); smi.className = 'target-smiles'; smi.textContent = targetSmiles;
+    info.appendChild(lbl); info.appendChild(smi);
+    banner.appendChild(info);
+    resultsEl.appendChild(banner);
+
     if (n === 0) {
-      const panel = document.createElement('div');
-      panel.className = 'panel';
       const msg = document.createElement('div');
-      msg.className = 'no-routes';
-      msg.textContent = 'No routes found within the given depth. Try increasing depth or beam-width (0 = unlimited A*).';
-      panel.appendChild(msg);
-      resultsEl.appendChild(panel);
+      msg.className = 'panel';
+      const inner = document.createElement('div');
+      inner.className = 'no-routes';
+      inner.textContent = 'No routes found within the given depth. Try increasing depth or beam-width (0 = unlimited A*).';
+      msg.appendChild(inner);
+      resultsEl.appendChild(msg);
       return;
     }
 
-    // Stats row
+    // Stats
     const minDepth = Math.min(...data.routes.map(r => r.depth));
     const statsRow = document.createElement('div');
     statsRow.className = 'stats-row';
     [['Routes', n], ['Best depth', minDepth], ['Time', `${elapsed} ms`]].forEach(([label, val]) => {
-      const stat = document.createElement('div');
-      stat.className = 'stat';
-      const valEl = document.createElement('div');
-      valEl.className = 'stat-value';
-      valEl.textContent = val;
-      const lblEl = document.createElement('div');
-      lblEl.className = 'stat-label';
-      lblEl.textContent = label;
-      stat.appendChild(valEl);
-      stat.appendChild(lblEl);
+      const stat = document.createElement('div'); stat.className = 'stat';
+      const v = document.createElement('div'); v.className = 'stat-value'; v.textContent = val;
+      const l = document.createElement('div'); l.className = 'stat-label'; l.textContent = label;
+      stat.appendChild(v); stat.appendChild(l);
       statsRow.appendChild(stat);
     });
     resultsEl.appendChild(statsRow);
@@ -412,21 +538,12 @@
     // Header
     const header = document.createElement('div');
     header.className = 'route-header';
-
-    const numBadge = document.createElement('div');
-    numBadge.className = 'route-num';
-    numBadge.textContent = num;
-
-    const title = document.createElement('strong');
-    title.textContent = `Route ${num}`;
-
+    const numBadge = document.createElement('div'); numBadge.className = 'route-num'; numBadge.textContent = num;
+    const title = document.createElement('strong'); title.textContent = `Route ${num}`;
     const depthBadge = document.createElement('div');
     depthBadge.className = 'depth-badge';
     depthBadge.textContent = `${route.depth} step${route.depth !== 1 ? 's' : ''}`;
-
-    header.appendChild(numBadge);
-    header.appendChild(title);
-    header.appendChild(depthBadge);
+    header.appendChild(numBadge); header.appendChild(title); header.appendChild(depthBadge);
     card.appendChild(header);
 
     if (route.steps.length === 0) {
@@ -437,12 +554,9 @@
     } else {
       const stepList = document.createElement('div');
       stepList.className = 'step-list';
-      route.steps.forEach((step, idx) => {
-        stepList.appendChild(buildStep(step, idx, route.steps.length));
-      });
+      route.steps.forEach((step, idx) => stepList.appendChild(buildStep(step, idx, route.steps.length)));
       card.appendChild(stepList);
     }
-
     return card;
   }
 
@@ -452,43 +566,38 @@
     stepEl.className = 'step';
 
     // Connector
-    const connector = document.createElement('div');
-    connector.className = 'step-connector';
-    const dot = document.createElement('div');
-    dot.className = 'step-dot';
-    connector.appendChild(dot);
-    if (!isLast) {
-      const line = document.createElement('div');
-      line.className = 'step-line';
-      connector.appendChild(line);
-    }
+    const conn = document.createElement('div'); conn.className = 'step-connector';
+    const dot = document.createElement('div'); dot.className = 'step-dot';
+    conn.appendChild(dot);
+    if (!isLast) { const line = document.createElement('div'); line.className = 'step-line'; conn.appendChild(line); }
 
     // Body
-    const body = document.createElement('div');
-    body.className = 'step-body';
+    const body = document.createElement('div'); body.className = 'step-body';
 
-    const ruleEl = document.createElement('div');
-    ruleEl.className = 'step-rule';
-    ruleEl.textContent = step.rule;
-
-    const targetEl = document.createElement('div');
-    targetEl.className = 'step-target';
-    targetEl.textContent = step.target;
-
-    const precList = document.createElement('div');
-    precList.className = 'precursor-list';
-    step.precursors.forEach(p => {
-      const prec = document.createElement('div');
-      prec.className = 'precursor';
-      prec.textContent = p;
-      precList.appendChild(prec);
-    });
-
+    const ruleEl = document.createElement('div'); ruleEl.className = 'step-rule'; ruleEl.textContent = step.rule;
     body.appendChild(ruleEl);
-    body.appendChild(targetEl);
-    body.appendChild(precList);
 
-    stepEl.appendChild(connector);
+    // Target mol + arrow + precursors
+    const targetRow = document.createElement('div'); targetRow.className = 'step-target-row';
+    const targetLbl = document.createElement('div'); targetLbl.className = 'step-target-label'; targetLbl.textContent = 'Target:';
+    targetRow.appendChild(targetLbl);
+    targetRow.appendChild(makeMolCard(step.target));
+    body.appendChild(targetRow);
+
+    const arrow = document.createElement('div'); arrow.className = 'arrow-down'; arrow.textContent = '↓';
+    body.appendChild(arrow);
+
+    const precRow = document.createElement('div'); precRow.className = 'precursor-row';
+    step.precursors.forEach((p, i) => {
+      if (i > 0) {
+        const plus = document.createElement('div'); plus.className = 'plus-sign'; plus.textContent = '+';
+        precRow.appendChild(plus);
+      }
+      precRow.appendChild(makeMolCard(p));
+    });
+    body.appendChild(precRow);
+
+    stepEl.appendChild(conn);
     stepEl.appendChild(body);
     return stepEl;
   }

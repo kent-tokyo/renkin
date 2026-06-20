@@ -21,31 +21,41 @@ pub struct RetroRule {
 /// One entry in the building-block library.
 struct BbEntry {
     query: QueryMolecule,
-    atom_count: usize,
-    bond_count: usize,
 }
 
+/// Building-block library indexed by (atom_count, bond_count) for O(1) candidate
+/// pre-filtering. With millions of entries this reduces VF2 calls to only the
+/// molecules that share the same heavy-atom / bond count as the query.
 pub struct ChemEnv {
-    building_blocks: Vec<BbEntry>,
+    building_blocks: HashMap<(usize, usize), Vec<BbEntry>>,
+    bb_count: usize,
 }
 
 impl ChemEnv {
     pub fn load(path: &str) -> Result<Self> {
         let content = fs::read_to_string(path)
             .with_context(|| format!("Failed to read building blocks from {path}"))?;
-        let building_blocks = Self::parse_smi_content(&content);
-        Ok(Self { building_blocks })
+        Ok(Self::from_entries(Self::parse_smi_content(&content)))
     }
 
     pub fn in_memory(smiles_list: &[&str]) -> Self {
-        let building_blocks = smiles_list
+        let entries: Vec<_> = smiles_list
             .iter()
             .filter_map(|s| Self::smiles_to_entry(s))
             .collect();
-        Self { building_blocks }
+        Self::from_entries(entries)
     }
 
-    fn parse_smi_content(content: &str) -> Vec<BbEntry> {
+    fn from_entries(entries: Vec<(usize, usize, BbEntry)>) -> Self {
+        let bb_count = entries.len();
+        let mut building_blocks: HashMap<(usize, usize), Vec<BbEntry>> = HashMap::new();
+        for (n_atoms, n_bonds, entry) in entries {
+            building_blocks.entry((n_atoms, n_bonds)).or_default().push(entry);
+        }
+        Self { building_blocks, bb_count }
+    }
+
+    fn parse_smi_content(content: &str) -> Vec<(usize, usize, BbEntry)> {
         content
             .lines()
             .map(str::trim)
@@ -57,27 +67,27 @@ impl ChemEnv {
             .collect()
     }
 
-    fn smiles_to_entry(smiles: &str) -> Option<BbEntry> {
+    fn smiles_to_entry(smiles: &str) -> Option<(usize, usize, BbEntry)> {
         let mol = parse(smiles).ok()?;
         let query = parse_smarts(smiles).ok()?;
-        Some(BbEntry {
-            atom_count: mol.atom_count(),
-            bond_count: mol.bonds().count(),
-            query,
-        })
+        Some((mol.atom_count(), mol.bonds().count(), BbEntry { query }))
+    }
+
+    /// Number of building blocks in the library.
+    pub fn bb_count(&self) -> usize {
+        self.bb_count
     }
 
     /// Check if `mol` is identical to any building block using VF2 isomorphism.
+    /// Pre-filtered by (atom_count, bond_count) → O(1) HashMap lookup before VF2.
     pub fn is_building_block(&self, mol: &Molecule) -> bool {
+        let key = (mol.atom_count(), mol.bonds().count());
+        let Some(candidates) = self.building_blocks.get(&key) else { return false; };
         let n_atoms = mol.atom_count();
-        let n_bonds = mol.bonds().count();
-        self.building_blocks
-            .iter()
-            .filter(|bb| bb.atom_count == n_atoms && bb.bond_count == n_bonds)
-            .any(|bb| {
-                let matches = find_matches(&bb.query, mol);
-                matches.iter().any(|m| m.len() == n_atoms)
-            })
+        candidates.iter().any(|bb| {
+            let matches = find_matches(&bb.query, mol);
+            matches.iter().any(|m| m.len() == n_atoms)
+        })
     }
 }
 

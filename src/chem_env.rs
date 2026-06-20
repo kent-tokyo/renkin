@@ -864,4 +864,309 @@ mod tests {
             "products should contain oxygen; got {smiles:?}"
         );
     }
+
+    // ── Layer 2: graph function unit tests ───────────────────────────────────
+
+    fn all_bond_pairs(mol: &Molecule) -> Vec<(AtomIdx, AtomIdx)> {
+        mol.bonds().map(|(_, b)| (b.atom1, b.atom2)).collect()
+    }
+
+    #[test]
+    fn is_bridge_bond_linear_chain() {
+        // CCC: both C-C bonds are bridges (removing either disconnects the chain).
+        let mol = mol_from_smiles("CCC").unwrap();
+        for (a, b) in all_bond_pairs(&mol) {
+            assert!(
+                is_bridge_bond(&mol, a, b),
+                "every bond in CCC must be a bridge"
+            );
+        }
+    }
+
+    #[test]
+    fn is_bridge_bond_ring_is_not_bridge() {
+        // Benzene: removing any single bond still leaves a path through the ring.
+        let mol = mol_from_smiles("c1ccccc1").unwrap();
+        for (a, b) in all_bond_pairs(&mol) {
+            assert!(!is_bridge_bond(&mol, a, b), "benzene has no bridge bonds");
+        }
+    }
+
+    #[test]
+    fn is_bridge_bond_biphenyl_inter_ring() {
+        // Biphenyl: exactly ONE inter-ring bond is a bridge; ring-internal bonds are not.
+        let mol = mol_from_smiles("c1ccc(-c2ccccc2)cc1").unwrap();
+        let bridges: Vec<_> = all_bond_pairs(&mol)
+            .into_iter()
+            .filter(|&(a, b)| is_bridge_bond(&mol, a, b))
+            .collect();
+        assert_eq!(bridges.len(), 1, "biphenyl must have exactly 1 bridge bond");
+    }
+
+    #[test]
+    fn build_sub_molecule_with_br_gives_bromobenzene() {
+        // Split biphenyl at the inter-ring bond; the phenyl component + Br should
+        // produce a molecule whose canonical SMILES matches bromobenzene.
+        let mol = mol_from_smiles("c1ccc(-c2ccccc2)cc1").unwrap();
+        let (a, b) = all_bond_pairs(&mol)
+            .into_iter()
+            .find(|&(a, b)| is_bridge_bond(&mol, a, b))
+            .expect("biphenyl must have a bridge bond");
+        let comp = get_component(&mol, a, a, b);
+        let frag = build_sub_molecule_with_br(&mol, &comp, a).unwrap();
+        let smi = canonical_smiles(&frag);
+        // chematic's canonical form for bromobenzene
+        let expected = canonical_smiles(&mol_from_smiles("Brc1ccccc1").unwrap());
+        assert_eq!(
+            smi, expected,
+            "phenyl + Br should give bromobenzene; got {smi}"
+        );
+    }
+
+    #[test]
+    fn build_sub_molecule_with_oh_gives_acetic_acid() {
+        // Amide cleavage of acetanilide (CC(=O)Nc1ccccc1): C side + OH → acetic acid.
+        let mol = mol_from_smiles("CC(=O)Nc1ccccc1").unwrap();
+        // Find the amide C-N bond (bridge).
+        let (c_idx, n_idx) = all_bond_pairs(&mol)
+            .into_iter()
+            .find(|&(a, b)| {
+                mol.atom(a).element == Element::C
+                    && mol.atom(b).element == Element::N
+                    && is_bridge_bond(&mol, a, b)
+                    && mol.neighbors(a).any(|(nb, bi)| {
+                        mol.atom(nb).element == Element::O
+                            && mol.bond(bi).order == BondOrder::Double
+                    })
+            })
+            .or_else(|| {
+                all_bond_pairs(&mol)
+                    .into_iter()
+                    .find(|&(a, b)| {
+                        mol.atom(b).element == Element::C
+                            && mol.atom(a).element == Element::N
+                            && is_bridge_bond(&mol, a, b)
+                            && mol.neighbors(b).any(|(nb, bi)| {
+                                mol.atom(nb).element == Element::O
+                                    && mol.bond(bi).order == BondOrder::Double
+                            })
+                    })
+                    .map(|(a, b)| (b, a))
+            })
+            .expect("acetanilide must have an amide C-N bridge bond");
+        let comp_c = get_component(&mol, c_idx, c_idx, n_idx);
+        let frag = build_sub_molecule_with_oh(&mol, &comp_c, c_idx).unwrap();
+        let smi = canonical_smiles(&frag);
+        let expected = canonical_smiles(&mol_from_smiles("CC(=O)O").unwrap());
+        assert_eq!(
+            smi, expected,
+            "acetyl + OH should give acetic acid; got {smi}"
+        );
+    }
+
+    // ── Layer 1: retro rule unit tests ───────────────────────────────────────
+
+    fn smiles_set(results: &[Vec<PrecursorMol>], idx: usize) -> Vec<String> {
+        results[idx].iter().map(|p| p.smiles.clone()).collect()
+    }
+
+    #[test]
+    fn friedel_crafts_retro_on_acetophenone() {
+        let mol = mol_from_smiles("CC(=O)c1ccccc1").unwrap();
+        let rule = RetroRule {
+            name: "friedel_crafts_acylation_retro",
+            smirks: "[c:1][C:2](=[O:3])>>[c:1].[C:2](=[O:3])Cl",
+        };
+        let results = apply_retro(&mol, &rule);
+        assert!(
+            !results.is_empty(),
+            "friedel_crafts_retro must fire on acetophenone"
+        );
+        let flat: Vec<_> = results
+            .iter()
+            .flat_map(|s| s.iter().map(|p| p.smiles.as_str()))
+            .collect();
+        assert!(
+            flat.iter().any(|s| s.contains("Cl")),
+            "products must include acyl chloride; got {flat:?}"
+        );
+    }
+
+    #[test]
+    fn heck_retro_terminal_on_styrene() {
+        let mol = mol_from_smiles("C=Cc1ccccc1").unwrap();
+        let rule = RetroRule {
+            name: "heck_retro_terminal",
+            smirks: "[c:1][CH:2]=[CH2:3]>>[c:1][Br].[CH2:2]=[CH2:3]",
+        };
+        let results = apply_retro(&mol, &rule);
+        assert!(
+            !results.is_empty(),
+            "heck_retro_terminal must fire on styrene"
+        );
+        let flat: Vec<String> = results
+            .iter()
+            .flat_map(|s| s.iter().map(|p| p.smiles.clone()))
+            .collect();
+        assert!(
+            flat.iter().any(|s| s.contains("Br")),
+            "products must include aryl bromide; got {flat:?}"
+        );
+        // chematic may serialise ethylene as "C=C" or "[CH2]=[CH2]" depending on
+        // whether the Molecule was constructed with implicit or explicit H counts.
+        assert!(
+            flat.iter().any(|s| s == "C=C" || s == "[CH2]=[CH2]"),
+            "products must include ethylene; got {flat:?}"
+        );
+    }
+
+    #[test]
+    fn heck_retro_internal_on_stilbene() {
+        // (E)-stilbene: c1ccccc1/C=C/c1ccccc1
+        let mol = mol_from_smiles("C(=Cc1ccccc1)c1ccccc1").unwrap();
+        let rule = RetroRule {
+            name: "heck_retro",
+            smirks: "[c:1][CH:2]=[CH:3]>>[c:1][Br].[CH2:2]=[CH:3]",
+        };
+        let results = apply_retro(&mol, &rule);
+        assert!(!results.is_empty(), "heck_retro must fire on stilbene");
+        let flat: Vec<_> = results
+            .iter()
+            .flat_map(|s| s.iter().map(|p| p.smiles.as_str()))
+            .collect();
+        assert!(
+            flat.iter().any(|s| s.contains("Br")),
+            "products must include aryl bromide; got {flat:?}"
+        );
+    }
+
+    #[test]
+    fn negishi_retro_on_ethylbenzene() {
+        // negishi_retro SMIRKS [c:1][CH2:2] matches the benzylic CH2 in ethylbenzene,
+        // not the methyl (CH3) in toluene (toluene has 3H on that carbon, not 2H).
+        let mol = mol_from_smiles("CCc1ccccc1").unwrap();
+        let rule = RetroRule {
+            name: "negishi_retro",
+            smirks: "[c:1][CH2:2]>>[c:1][Br].[CH3:2]",
+        };
+        let results = apply_retro(&mol, &rule);
+        assert!(
+            !results.is_empty(),
+            "negishi_retro must fire on ethylbenzene (benzylic CH2)"
+        );
+        let flat: Vec<_> = results
+            .iter()
+            .flat_map(|s| s.iter().map(|p| p.smiles.as_str()))
+            .collect();
+        assert!(
+            flat.iter().any(|s| s.contains("Br")),
+            "products must include aryl bromide; got {flat:?}"
+        );
+    }
+
+    #[test]
+    fn alcohol_oxidation_retro_on_ethanol() {
+        let mol = mol_from_smiles("CCO").unwrap();
+        let rule = RetroRule {
+            name: "alcohol_oxidation_retro",
+            smirks: "[C:1][OH:2]>>[C:1]=O",
+        };
+        let results = apply_retro(&mol, &rule);
+        assert!(
+            !results.is_empty(),
+            "alcohol_oxidation_retro must fire on ethanol"
+        );
+        let flat: Vec<_> = results
+            .iter()
+            .flat_map(|s| s.iter().map(|p| p.smiles.as_str()))
+            .collect();
+        assert!(
+            flat.iter().any(|s| s.contains("=O") || s.contains("O=")),
+            "products must include a carbonyl; got {flat:?}"
+        );
+    }
+
+    #[test]
+    fn aryl_chloride_retro_on_chlorobenzene() {
+        let mol = mol_from_smiles("Clc1ccccc1").unwrap();
+        let rule = RetroRule {
+            name: "aryl_chloride_retro",
+            smirks: "[c:1][Cl]>>[c:1]",
+        };
+        let results = apply_retro(&mol, &rule);
+        assert!(
+            !results.is_empty(),
+            "aryl_chloride_retro must fire on chlorobenzene"
+        );
+        let flat: Vec<_> = results
+            .iter()
+            .flat_map(|s| s.iter().map(|p| p.smiles.as_str()))
+            .collect();
+        let benzene_smi = canonical_smiles(&mol_from_smiles("c1ccccc1").unwrap());
+        assert!(
+            flat.iter().any(|s| *s == benzene_smi),
+            "products must include benzene; got {flat:?}"
+        );
+    }
+
+    #[test]
+    fn amide_cleavage_graph_gives_clean_two_fragments() {
+        // Graph-based amide_cleavage must not produce BFS-leaked extra fragments.
+        // Acetanilide: CC(=O)Nc1ccccc1 → acetic acid + aniline (exactly 2 fragments).
+        let mol = mol_from_smiles("CC(=O)Nc1ccccc1").unwrap();
+        let rule = RetroRule {
+            name: "amide_cleavage",
+            smirks: "",
+        };
+        let results = apply_retro(&mol, &rule);
+        assert!(
+            !results.is_empty(),
+            "amide_cleavage must fire on acetanilide"
+        );
+        // Every candidate precursor set must contain exactly 2 fragments.
+        for set in &results {
+            assert_eq!(
+                set.len(),
+                2,
+                "amide cleavage must yield exactly 2 fragments (no BFS leakage); got {:?}",
+                set.iter().map(|p| p.smiles.as_str()).collect::<Vec<_>>()
+            );
+        }
+        let acetic = canonical_smiles(&mol_from_smiles("CC(=O)O").unwrap());
+        let aniline = canonical_smiles(&mol_from_smiles("Nc1ccccc1").unwrap());
+        let flat: Vec<_> = results
+            .iter()
+            .flat_map(|s| s.iter().map(|p| p.smiles.clone()))
+            .collect();
+        assert!(
+            flat.contains(&acetic),
+            "must include acetic acid; got {flat:?}"
+        );
+        assert!(
+            flat.contains(&aniline),
+            "must include aniline; got {flat:?}"
+        );
+    }
+
+    #[test]
+    fn reductive_amination_retro_on_benzylamine() {
+        let mol = mol_from_smiles("NCc1ccccc1").unwrap();
+        let rule = RetroRule {
+            name: "reductive_amination_retro",
+            smirks: "[C:1][N:2]>>[C:1]=O.[N:2]",
+        };
+        let results = apply_retro(&mol, &rule);
+        assert!(
+            !results.is_empty(),
+            "reductive_amination_retro must fire on benzylamine"
+        );
+        let flat: Vec<_> = results
+            .iter()
+            .flat_map(|s| s.iter().map(|p| p.smiles.as_str()))
+            .collect();
+        assert!(
+            flat.iter().any(|s| s.contains("=O") || s.contains("O=")),
+            "products must include aldehyde/ketone; got {flat:?}"
+        );
+    }
 }

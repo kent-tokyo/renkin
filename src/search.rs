@@ -338,4 +338,102 @@ mod tests {
         // depth=0 not possible (aspirin ≠ water); we just check it doesn't panic.
         let _ = routes;
     }
+
+    // ── Layer 3: search behaviour tests ──────────────────────────────────────
+
+    #[test]
+    fn invalid_smiles_returns_err() {
+        let env = aspirin_env();
+        let rules = default_rules();
+        // Unclosed bracket is guaranteed to be rejected by SMILES parsers.
+        let result = find_routes("[C(", &env, &rules, &cfg(3));
+        assert!(result.is_err(), "invalid SMILES must return Err");
+    }
+
+    #[test]
+    fn max_depth_one_caps_all_routes() {
+        let env = aspirin_env();
+        let rules = default_rules();
+        let routes = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg(1)).unwrap();
+        // No route should exceed depth=1 when max_depth=1.
+        for r in &routes {
+            assert!(
+                r.depth <= 1,
+                "route with depth {} exceeds max_depth=1",
+                r.depth
+            );
+        }
+    }
+
+    #[test]
+    fn beam_width_one_does_not_exceed_unrestricted() {
+        let env = aspirin_env();
+        let rules = default_rules();
+        let cfg_beam = SearchConfig {
+            max_depth: 3,
+            max_routes: 10,
+            beam_width: 1,
+        };
+        let cfg_full = SearchConfig {
+            max_depth: 3,
+            max_routes: 10,
+            beam_width: 0,
+        };
+        let routes_beam = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg_beam).unwrap();
+        let routes_full = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg_full).unwrap();
+        assert!(
+            routes_beam.len() <= routes_full.len(),
+            "beam=1 ({}) should find ≤ routes than beam=0 ({})",
+            routes_beam.len(),
+            routes_full.len()
+        );
+    }
+
+    #[test]
+    fn route_steps_are_populated() {
+        // Non-BB target must produce routes whose steps are non-empty.
+        let env = aspirin_env();
+        let rules = default_rules();
+        let routes = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg(3)).unwrap();
+        let non_zero: Vec<_> = routes.iter().filter(|r| r.depth > 0).collect();
+        assert!(
+            !non_zero.is_empty(),
+            "must find at least one multi-step route"
+        );
+        for r in non_zero {
+            assert!(
+                !r.steps.is_empty(),
+                "route with depth>0 must have non-empty steps"
+            );
+            for step in &r.steps {
+                assert!(!step.rule.is_empty(), "step.rule must be non-empty");
+                assert!(!step.target.is_empty(), "step.target must be non-empty");
+                assert!(
+                    !step.precursors.is_empty(),
+                    "step.precursors must be non-empty"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn symmetric_biaryl_routes_deduplicated() {
+        // Biphenyl is symmetric: both orientations of Suzuki retro yield the same
+        // precursor set {Brc1ccccc1, c1ccccc1}. The search must dedup to ≤ 1 route.
+        let env = ChemEnv::in_memory(&["Brc1ccccc1", "c1ccccc1"]);
+        let rules = default_rules();
+        let cfg = SearchConfig {
+            max_depth: 2,
+            max_routes: 10,
+            beam_width: 0,
+        };
+        let routes = find_routes("c1ccc(-c2ccccc2)cc1", &env, &rules, &cfg).unwrap();
+        // Both orientations resolve to identical BB sets — expect exactly 1 unique route.
+        assert_eq!(
+            routes.len(),
+            1,
+            "symmetric biphenyl should produce exactly 1 deduplicated route; got {}",
+            routes.len()
+        );
+    }
 }

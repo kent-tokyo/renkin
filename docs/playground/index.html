@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RENKIN Playground — Interactive Retrosynthesis</title>
+  <meta name="description" content="Interactive retrosynthesis planning in the browser — powered by WebAssembly">
+  <script src="https://unpkg.com/smiles-drawer@2.1.7/dist/smiles-drawer.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f1117; --surface: #1a1d27; --border: #2a2d3a;
+      --accent: #7c6af7; --accent2: #4fc3f7; --text: #e8eaf0;
+      --muted: #8890a4; --success: #4caf7d; --warn: #f0a04b;
+      --error: #e05c5c; --mono: "JetBrains Mono", "Fira Code", monospace;
+      --mol-bg: #f4f5f8;
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; }
+    header { padding: 1.2rem 2rem; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 1rem; }
+    .logo { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.5px; color: var(--accent); }
+    .logo a { color: inherit; text-decoration: none; }
+    .tagline { color: var(--muted); font-size: 0.85rem; }
+    .nav-links { margin-left: auto; display: flex; gap: 1rem; }
+    .nav-links a { font-size: 0.85rem; color: var(--muted); text-decoration: none; transition: color 0.15s; }
+    .nav-links a:hover { color: var(--text); }
+    .badge { font-size: 0.75rem; color: var(--accent2); background: rgba(79,195,247,0.08);
+      border: 1px solid rgba(79,195,247,0.25); padding: 0.2rem 0.7rem; border-radius: 999px; }
+    main { flex: 1; max-width: 980px; margin: 0 auto; padding: 2rem 1.5rem; width: 100%; }
+    .panel { background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 1.5rem; margin-bottom: 1.5rem; }
+    .panel h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--muted); margin-bottom: 1rem; }
+    .field { display: flex; flex-direction: column; gap: 0.35rem; }
+    .field label { font-size: 0.78rem; color: var(--muted); }
+    .field input, .field select { background: var(--bg); border: 1px solid var(--border);
+      color: var(--text); padding: 0.55rem 0.75rem; border-radius: 6px;
+      font-size: 0.9rem; font-family: inherit; transition: border-color 0.15s; }
+    .field input:focus, .field select:focus { outline: none; border-color: var(--accent); }
+    #smiles-input { font-family: var(--mono); font-size: 0.85rem; }
+    .search-row { display: flex; gap: 0.75rem; align-items: flex-end; margin-top: 0.75rem; flex-wrap: wrap; }
+    .search-row .field { flex: 1; min-width: 160px; }
+    .num-field { width: 90px !important; flex: none !important; min-width: 80px !important; }
+    button { background: var(--accent); color: #fff; border: none; padding: 0.55rem 1.4rem;
+      border-radius: 6px; font-size: 0.9rem; font-weight: 600; cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s; white-space: nowrap; align-self: flex-end; height: 36px; }
+    button:hover { opacity: 0.85; }
+    button:active { transform: scale(0.97); }
+    button:disabled { opacity: 0.4; cursor: default; }
+    #status-bar { display: flex; align-items: center; gap: 0.75rem; font-size: 0.85rem;
+      color: var(--muted); min-height: 1.5rem; margin-bottom: 1rem; }
+    .spinner { width: 14px; height: 14px; border: 2px solid var(--border);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin 0.6s linear infinite; display: none; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner.active { display: block; }
+    .wasm-status { font-size: 0.8rem; padding: 0.5rem 0.75rem; border-radius: 6px; margin-bottom: 1rem; }
+    .wasm-status.loading { background: rgba(124,106,247,0.08); color: var(--accent); border: 1px solid rgba(124,106,247,0.2); }
+    .wasm-status.ready { background: rgba(76,175,125,0.08); color: var(--success); border: 1px solid rgba(76,175,125,0.2); }
+    .wasm-status.failed { background: rgba(224,92,92,0.08); color: var(--error); border: 1px solid rgba(224,92,92,0.2); font-size: 0.82rem; line-height: 1.6; }
+    .mol-card { display: inline-flex; flex-direction: column; align-items: center;
+      gap: 0.35rem; cursor: pointer; position: relative; }
+    .mol-card:hover .mol-smiles { color: var(--accent2); }
+    .mol-svg-wrap { background: var(--mol-bg); border-radius: 6px; overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+      width: 180px; height: 120px; border: 1px solid rgba(255,255,255,0.06); }
+    .mol-svg-wrap svg { width: 180px; height: 120px; }
+    .mol-svg-wrap.large { width: 220px; height: 150px; }
+    .mol-svg-wrap.large svg { width: 220px; height: 150px; }
+    .mol-smiles { font-family: var(--mono); font-size: 0.72rem; color: var(--muted);
+      max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      text-align: center; transition: color 0.1s; }
+    .mol-smiles.large { max-width: 220px; }
+    .mol-copy-tip { position: absolute; top: -28px; left: 50%; transform: translateX(-50%);
+      background: var(--text); color: var(--bg); font-size: 0.7rem; padding: 2px 8px;
+      border-radius: 4px; white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity 0.2s; }
+    .mol-card.copied .mol-copy-tip { opacity: 1; }
+    .target-banner { display: flex; align-items: center; gap: 1.5rem; margin-bottom: 1.25rem;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 1rem 1.25rem; flex-wrap: wrap; }
+    .target-info { flex: 1; min-width: 0; }
+    .target-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--muted); margin-bottom: 0.3rem; }
+    .target-smiles { font-family: var(--mono); font-size: 0.9rem; word-break: break-all; }
+    .stats-row { display: flex; gap: 2rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
+    .stat { display: flex; flex-direction: column; gap: 0.2rem; }
+    .stat-value { font-size: 1.5rem; font-weight: 700; color: var(--accent); }
+    .stat-label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    .route-card { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 1rem; overflow: hidden; }
+    .route-header { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem;
+      background: rgba(124,106,247,0.06); border-bottom: 1px solid var(--border); font-size: 0.85rem; }
+    .route-num { background: var(--accent); color: #fff; width: 22px; height: 22px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 700; flex-shrink: 0; }
+    .depth-badge { font-size: 0.72rem; color: var(--accent2); background: rgba(79,195,247,0.08);
+      border: 1px solid rgba(79,195,247,0.2); padding: 0.1rem 0.5rem; border-radius: 4px; }
+    .step-list { padding: 1rem; display: flex; flex-direction: column; gap: 1.25rem; }
+    .step { display: flex; gap: 1rem; align-items: flex-start; }
+    .step-connector { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; padding-top: 6px; }
+    .step-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+    .step-line { width: 1px; flex: 1; background: var(--border); margin: 4px 0; min-height: 30px; }
+    .step-body { flex: 1; min-width: 0; }
+    .step-rule { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--warn); margin-bottom: 0.5rem; font-weight: 600; }
+    .step-target-row { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
+    .step-target-label { font-size: 0.72rem; color: var(--muted); flex-shrink: 0; }
+    .arrow-down { display: flex; align-items: center; justify-content: center;
+      color: var(--muted); font-size: 1.1rem; margin: 0.4rem 0; }
+    .precursor-row { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: flex-start; }
+    .plus-sign { color: var(--muted); font-size: 1.1rem; align-self: center; flex-shrink: 0; padding-top: 40px; }
+    .empty-route { padding: 0.75rem 1rem; font-size: 0.85rem; color: var(--success); }
+    .no-routes { color: var(--muted); font-size: 0.9rem; }
+    .error-box { background: rgba(224,92,92,0.08); border: 1px solid rgba(224,92,92,0.3);
+      color: var(--error); padding: 0.9rem 1rem; border-radius: 8px; font-size: 0.85rem; }
+    footer { text-align: center; padding: 1rem; font-size: 0.75rem;
+      color: var(--muted); border-top: 1px solid var(--border); }
+    footer a { color: var(--accent); text-decoration: none; }
+  </style>
+</head>
+<body>
+<header>
+  <div>
+    <div class="logo"><a href="../">RENKIN</a></div>
+    <div class="tagline">Retrosynthesis Playground — powered by WebAssembly</div>
+  </div>
+  <nav class="nav-links">
+    <a href="../">Docs</a>
+    <a href="https://github.com/kent-tokyo/renkin">GitHub</a>
+    <a href="https://crates.io/crates/renkin">crates.io</a>
+    <a href="https://pypi.org/project/renkin/">PyPI</a>
+  </nav>
+  <div class="badge">WASM · Pure Rust</div>
+</header>
+
+<main>
+  <div id="wasm-status" class="wasm-status loading">Loading WebAssembly module…</div>
+
+  <div class="panel">
+    <h2>Target Molecule</h2>
+    <div class="field">
+      <label for="examples-select">Preset examples</label>
+      <select id="examples-select">
+        <option value="">— select a molecule —</option>
+        <optgroup label="Pharmaceuticals">
+          <option value="CC(=O)Oc1ccccc1C(=O)O">Aspirin</option>
+          <option value="CC(=O)Nc1ccc(O)cc1">Paracetamol (Acetaminophen)</option>
+          <option value="CC(=O)Nc1ccccc1">Acetanilide</option>
+          <option value="Nc1ccc(C(=O)O)cc1">4-Aminobenzoic acid (PABA)</option>
+        </optgroup>
+        <optgroup label="C-C Coupling Products">
+          <option value="c1ccc(-c2ccccc2)cc1">Biphenyl (Suzuki)</option>
+          <option value="c1ccc(-c2ccncc2)cc1">4-Phenylpyridine</option>
+          <option value="Fc1ccc(-c2ccccc2)cc1">4-Fluorobiphenyl</option>
+          <option value="O=Cc1ccc(-c2ccco2)nc1">Pyridine-furan biaryl</option>
+        </optgroup>
+        <optgroup label="Aryl C-N / C-O">
+          <option value="c1ccc(Nc2ccccn2)cc1">N-Phenyl-2-aminopyridine (B-H)</option>
+          <option value="CC(=O)c1ccc(N)cc1">4-Aminoacetophenone</option>
+        </optgroup>
+        <optgroup label="Ester / Wittig">
+          <option value="C=Cc1ccccc1">Styrene (Wittig)</option>
+          <option value="CCOC(=O)c1ccccc1">Ethyl benzoate (ester)</option>
+        </optgroup>
+      </select>
+    </div>
+    <div class="search-row">
+      <div class="field">
+        <label for="smiles-input">Target SMILES</label>
+        <input id="smiles-input" type="text" placeholder="e.g. CC(=O)Oc1ccccc1C(=O)O" spellcheck="false" autocomplete="off">
+      </div>
+      <div class="field num-field">
+        <label for="depth-input">Depth</label>
+        <input id="depth-input" type="number" value="5" min="1" max="10">
+      </div>
+      <div class="field num-field">
+        <label for="routes-input">Max routes</label>
+        <input id="routes-input" type="number" value="5" min="1" max="20">
+      </div>
+      <div class="field num-field">
+        <label for="beam-input" title="0 = unlimited A*">Beam (0=∞)</label>
+        <input id="beam-input" type="number" value="0" min="0" max="500">
+      </div>
+      <button id="search-btn" disabled>Search</button>
+    </div>
+  </div>
+
+  <div id="status-bar">
+    <div class="spinner" id="spinner"></div>
+    <span id="status-text">Load the WASM module to begin.</span>
+  </div>
+
+  <div id="results"></div>
+</main>
+
+<footer>
+  RENKIN · Pure Rust + WebAssembly ·
+  Structure rendering by <a href="https://github.com/reymond-group/smiles-drawer">SmilesDrawer</a> ·
+  <a href="https://github.com/kent-tokyo/renkin">GitHub</a> ·
+  <a href="../">Documentation</a>
+</footer>
+
+<script type="module">
+  const wasmStatusEl = document.getElementById('wasm-status');
+  const statusText   = document.getElementById('status-text');
+  const spinner      = document.getElementById('spinner');
+  const searchBtn    = document.getElementById('search-btn');
+  const resultsEl    = document.getElementById('results');
+  const examplesEl   = document.getElementById('examples-select');
+  const smilesEl     = document.getElementById('smiles-input');
+
+  let findRoutesFn = null;
+
+  try {
+    const mod = await import('../pkg/renkin.js');
+    await mod.default();
+    findRoutesFn = mod.find_routes;
+    const ver = mod.version ? mod.version() : 'renkin';
+    wasmStatusEl.textContent = `WASM ready — ${ver} · 480+ building blocks · 20 reaction rules`;
+    wasmStatusEl.className = 'wasm-status ready';
+    searchBtn.disabled = false;
+    statusText.textContent = 'Enter a SMILES string or pick a preset above, then click Search.';
+  } catch (e) {
+    wasmStatusEl.className = 'wasm-status failed';
+    // Build failure message using textContent-safe DOM nodes (no innerHTML with user data)
+    const errTitle = document.createElement('strong');
+    errTitle.textContent = 'Failed to load WASM module.';
+    wasmStatusEl.appendChild(errTitle);
+    wasmStatusEl.appendChild(document.createElement('br'));
+    const hint = document.createTextNode('If running locally: rebuild with wasm-pack build --target web --no-default-features, then serve from project root.');
+    wasmStatusEl.appendChild(hint);
+    wasmStatusEl.appendChild(document.createElement('br'));
+    const errLabel = document.createTextNode('Error: ');
+    const errText = document.createTextNode(String(e.message));
+    wasmStatusEl.appendChild(errLabel);
+    wasmStatusEl.appendChild(errText);
+    statusText.textContent = 'WASM unavailable.';
+  }
+
+  const molTheme = { C:'#222', O:'#c0392b', N:'#2980b9', S:'#b7950b',
+                     F:'#16a085', Cl:'#1a5276', Br:'#6e2f8a', I:'#4a235a',
+                     P:'#784212', BACKGROUND:'#f4f5f8' };
+  let sdDrawer = null, sdDrawerLg = null;
+  if (typeof SmilesDrawer !== 'undefined') {
+    sdDrawer   = new SmilesDrawer.SvgDrawer({ width:180, height:120, padding:10,
+      bondThickness:1.0, fontSizeSmall:7, fontSize:9, themes:{light:molTheme} });
+    sdDrawerLg = new SmilesDrawer.SvgDrawer({ width:220, height:150, padding:12,
+      bondThickness:1.1, fontSizeSmall:8, fontSize:10, themes:{light:molTheme} });
+  }
+
+  function drawSmiles(smiles, svgEl, large) {
+    if (!sdDrawer) { svgEl.textContent = smiles; return; }
+    SmilesDrawer.parse(smiles, t => (large ? sdDrawerLg : sdDrawer).draw(t, svgEl, 'light', false), () => {});
+  }
+
+  function makeMolCard(smiles, large) {
+    const card = document.createElement('div');
+    card.className = 'mol-card';
+    const wrap = document.createElement('div');
+    wrap.className = large ? 'mol-svg-wrap large' : 'mol-svg-wrap';
+    const svgEl = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    wrap.appendChild(svgEl);
+    card.appendChild(wrap);
+    const label = document.createElement('div');
+    label.className = large ? 'mol-smiles large' : 'mol-smiles';
+    label.textContent = smiles;
+    card.appendChild(label);
+    const tip = document.createElement('div');
+    tip.className = 'mol-copy-tip';
+    tip.textContent = 'Copied!';
+    card.appendChild(tip);
+    card.addEventListener('click', () => {
+      navigator.clipboard.writeText(smiles).then(() => {
+        card.classList.add('copied');
+        setTimeout(() => card.classList.remove('copied'), 1200);
+      });
+    });
+    requestAnimationFrame(() => drawSmiles(smiles, svgEl, large));
+    return card;
+  }
+
+  examplesEl.addEventListener('change', () => { if (examplesEl.value) smilesEl.value = examplesEl.value; });
+  searchBtn.addEventListener('click', runSearch);
+  smilesEl.addEventListener('keydown', e => { if (e.key === 'Enter') runSearch(); });
+
+  function runSearch() {
+    if (!findRoutesFn) return;
+    const target    = smilesEl.value.trim();
+    const depth     = parseInt(document.getElementById('depth-input').value) || 5;
+    const maxRoutes = parseInt(document.getElementById('routes-input').value) || 5;
+    const beamWidth = parseInt(document.getElementById('beam-input').value) || 0;
+    if (!target) return;
+
+    searchBtn.disabled = true;
+    spinner.classList.add('active');
+    statusText.textContent = 'Searching…';
+    resultsEl.textContent = '';
+
+    setTimeout(() => {
+      const t0 = performance.now();
+      let raw;
+      try { raw = findRoutesFn(target, depth, maxRoutes, beamWidth); }
+      catch (e) { showError(`SMILES parse error: ${e.message}`); done(); return; }
+      const elapsed = (performance.now() - t0).toFixed(1);
+      let data;
+      try { data = JSON.parse(raw); }
+      catch (e) { showError(`Internal error: ${e.message}`); done(); return; }
+      renderResults(data, elapsed, target);
+      done();
+    }, 10);
+  }
+
+  function done() { searchBtn.disabled = false; spinner.classList.remove('active'); }
+
+  function showError(msg) {
+    statusText.textContent = 'Error.';
+    resultsEl.textContent = '';
+    const box = document.createElement('div');
+    box.className = 'error-box';
+    box.textContent = msg;
+    resultsEl.appendChild(box);
+  }
+
+  function renderResults(data, elapsed, targetSmiles) {
+    const n = data.routes_found;
+    statusText.textContent = `Found ${n} route${n !== 1 ? 's' : ''} in ${elapsed} ms`;
+    resultsEl.textContent = '';
+
+    const banner = document.createElement('div'); banner.className = 'target-banner';
+    banner.appendChild(makeMolCard(targetSmiles, true));
+    const info = document.createElement('div'); info.className = 'target-info';
+    const lbl = document.createElement('div'); lbl.className = 'target-label'; lbl.textContent = 'Target molecule';
+    const smi = document.createElement('div'); smi.className = 'target-smiles'; smi.textContent = targetSmiles;
+    info.appendChild(lbl); info.appendChild(smi);
+    banner.appendChild(info);
+    resultsEl.appendChild(banner);
+
+    if (n === 0) {
+      const msg = document.createElement('div'); msg.className = 'panel';
+      const inner = document.createElement('div'); inner.className = 'no-routes';
+      inner.textContent = 'No routes found within the given depth. Try increasing depth or beam-width (0 = unlimited A*).';
+      msg.appendChild(inner);
+      resultsEl.appendChild(msg);
+      return;
+    }
+
+    const minDepth = Math.min(...data.routes.map(r => r.depth));
+    const statsRow = document.createElement('div'); statsRow.className = 'stats-row';
+    [['Routes', n], ['Best depth', minDepth], ['Time', `${elapsed} ms`]].forEach(([label, val]) => {
+      const stat = document.createElement('div'); stat.className = 'stat';
+      const v = document.createElement('div'); v.className = 'stat-value'; v.textContent = val;
+      const l = document.createElement('div'); l.className = 'stat-label'; l.textContent = label;
+      stat.appendChild(v); stat.appendChild(l); statsRow.appendChild(stat);
+    });
+    resultsEl.appendChild(statsRow);
+    data.routes.forEach((route, i) => resultsEl.appendChild(buildRouteCard(route, i + 1)));
+  }
+
+  function buildRouteCard(route, num) {
+    const card = document.createElement('div'); card.className = 'route-card';
+    const header = document.createElement('div'); header.className = 'route-header';
+    const nb = document.createElement('div'); nb.className = 'route-num'; nb.textContent = num;
+    const title = document.createElement('strong'); title.textContent = `Route ${num}`;
+    const db = document.createElement('div'); db.className = 'depth-badge';
+    db.textContent = `${route.depth} step${route.depth !== 1 ? 's' : ''}`;
+    header.appendChild(nb); header.appendChild(title); header.appendChild(db);
+    card.appendChild(header);
+    if (route.steps.length === 0) {
+      const empty = document.createElement('div'); empty.className = 'empty-route';
+      empty.textContent = '✓ This molecule is a building block — available commercially.';
+      card.appendChild(empty);
+    } else {
+      const sl = document.createElement('div'); sl.className = 'step-list';
+      route.steps.forEach((step, idx) => sl.appendChild(buildStep(step, idx, route.steps.length)));
+      card.appendChild(sl);
+    }
+    return card;
+  }
+
+  function buildStep(step, idx, total) {
+    const stepEl = document.createElement('div'); stepEl.className = 'step';
+    const conn = document.createElement('div'); conn.className = 'step-connector';
+    const dot = document.createElement('div'); dot.className = 'step-dot'; conn.appendChild(dot);
+    if (idx < total - 1) {
+      const line = document.createElement('div'); line.className = 'step-line'; conn.appendChild(line);
+    }
+    const body = document.createElement('div'); body.className = 'step-body';
+    const ruleEl = document.createElement('div'); ruleEl.className = 'step-rule'; ruleEl.textContent = step.rule;
+    body.appendChild(ruleEl);
+    const targetRow = document.createElement('div'); targetRow.className = 'step-target-row';
+    const tlbl = document.createElement('div'); tlbl.className = 'step-target-label'; tlbl.textContent = 'Target:';
+    targetRow.appendChild(tlbl); targetRow.appendChild(makeMolCard(step.target));
+    body.appendChild(targetRow);
+    const arrow = document.createElement('div'); arrow.className = 'arrow-down'; arrow.textContent = '↓';
+    body.appendChild(arrow);
+    const precRow = document.createElement('div'); precRow.className = 'precursor-row';
+    step.precursors.forEach((p, i) => {
+      if (i > 0) {
+        const plus = document.createElement('div'); plus.className = 'plus-sign'; plus.textContent = '+';
+        precRow.appendChild(plus);
+      }
+      precRow.appendChild(makeMolCard(p));
+    });
+    body.appendChild(precRow);
+    stepEl.appendChild(conn); stepEl.appendChild(body);
+    return stepEl;
+  }
+</script>
+</body>
+</html>

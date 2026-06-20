@@ -33,3 +33,6 @@ pub const DEFAULT_BUILDING_BLOCKS: &[&str] = &[
     "c1ccc(N)cc1C(=O)O",    // anthranilic acid
     "c1cc(N)ccc1C(=O)O",    // 3-aminobenzoic acid
 ];
+
+#[cfg(test)]
+mod trace_test;

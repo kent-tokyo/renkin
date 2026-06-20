@@ -275,3 +275,246 @@ ClC(=O)OCC1=CC=CC=C1  Cbz-Cl
 OC(=O)OC(C)(C)C     Boc-OH
 CC(C)(C)OC(=O)Cl    Boc-Cl
 CC1(C)OCC(CO1)      neopentyl_glycol_like
+
+# ── Aryl / heteroaryl bromides (Suzuki / Buchwald / Negishi donors) ───────────
+Brc1ccccc1          bromobenzene
+Brc1cccnc1          3-bromopyridine
+Brc1ccncc1          4-bromopyridine
+Brc1ccccn1          2-bromopyridine
+Brc1ccc(F)cc1       4-bromo-fluorobenzene
+Brc1ccc(Cl)cc1      4-bromo-chlorobenzene
+Brc1ccc(OC)cc1      4-bromoanisole
+Brc1ccc(N)cc1       4-bromoaniline
+Brc1ccc(C(=O)O)cc1  4-bromobenzoic_acid
+Brc1ccc(C#N)cc1     4-bromobenzonitrile
+Brc1ccc(CC)cc1      4-bromoethylbenzene
+Brc1cc(OC)ccc1OC    2-bromo-4-5-dimethoxybenzene
+Brc1ccc(N+](=O)[O-])cc1  4-bromonitrobenzene
+Brc1cccc(Br)c1      1-3-dibromobenzene
+Brc1ccc(Br)cc1      1-4-dibromobenzene
+Brc1ccccc1Br        1-2-dibromobenzene
+Brc1cncc1           3-bromo-4-azapyridine
+Brc1ccncc1OC        4-bromo-3-methoxypyridine
+Brc1ccc2[nH]ccc2c1  5-bromoindole
+Brc1cccc2ccccc12    1-bromonaphthalene
+Brc1ccc2cccc(c2n1)  3-bromoisoquinoline
+Brc1cnc2ccccc2n1    2-bromobenzimidazole
+Brc1sc2ccccc2n1     2-bromobenzothiazole
+Brc1oc2ccccc2n1     2-bromobenzoxazole
+Brc1cnc(N)nc1       2-amino-5-bromopyrimidine
+Brc1ccc(Br)nc1      2-5-dibromopyridine
+Brc1ccnc(N)c1       5-bromo-2-aminopyridine
+Brc1ccc(F)cn1       5-bromo-2-fluoropyridine
+Brc1cccc(C=O)c1     3-bromobenzaldehyde
+Brc1ccc(C=O)cc1     4-bromobenzaldehyde
+Brc1ccc(cc1)C(=O)C  4-bromoacetophenone
+Brc1ccc(C(F)(F)F)cc1 4-bromo-trifluoromethylbenzene
+Brc1ccc2ncccc2c1    3-bromoquinoline
+Brc1ccc2ccncc2c1    6-bromoisoquinoline
+Brc1cncc2ccccc12    3-bromoquinoxaline
+
+# ── Aryl chlorides (SNAr, Pd-C-Cl activation donors) ────────────────────────
+Clc1ccccc1          chlorobenzene
+Clc1ccccn1          2-chloropyridine
+Clc1ccncc1          4-chloropyridine
+Clc1cccnc1          3-chloropyridine
+Clc1ccc(Cl)cc1      1-4-dichlorobenzene
+Clc1ccc(F)cc1       4-chlorofluorobenzene
+Clc1ccc(OC)cc1      4-chloroanisole
+Clc1ccc(N)cc1       4-chloroaniline
+Clc1ccc(C(=O)O)cc1  4-chlorobenzoic_acid
+Clc1ccc(C#N)cc1     4-chlorobenzonitrile
+Clc1cnc(Cl)nc1      2-4-dichloropyrimidine
+Clc1ccnc(Cl)c1      2-5-dichloropyridine
+Clc1nccc2ccccc12    4-chloroquinoline
+Clc1cnc2ccccc2n1    2-chlorobenzimidazole
+Clc1cccc2ncccc12    4-chloroisoquinoline
+Clc1ccc(N+](=O)[O-])cc1 4-chloronitrobenzene
+Clc1ccc(CF)cc1      4-chloro-benzyl_fluoride
+Clc1nc(Cl)nc(Cl)n1  2-4-6-trichlorotriazine
+
+# ── Boronic acids / pinacol boronates (Suzuki acceptors) ─────────────────────
+OB(O)c1ccccc1           phenylboronic_acid
+OB(O)c1ccccn1           2-pyridineboronic_acid
+OB(O)c1ccncc1           4-pyridineboronic_acid
+OB(O)c1cccnc1           3-pyridineboronic_acid
+OB(O)c1ccc(F)cc1        4-fluorophenylboronic_acid
+OB(O)c1ccc(Cl)cc1       4-chlorophenylboronic_acid
+OB(O)c1ccc(OC)cc1       4-methoxyphenylboronic_acid
+OB(O)c1ccc(N)cc1        4-aminophenylboronic_acid
+OB(O)c1ccc(C(=O)O)cc1   4-carboxyphenylboronic_acid
+OB(O)c1ccc(C#N)cc1      4-cyanophenylboronic_acid
+OB(O)c1ccc(C(F)(F)F)cc1 4-trifluoromethylphenylboronic_acid
+OB(O)c1ccc2[nH]ccc2c1   5-indoleboronic_acid
+OB(O)c1ccc2ncccc2c1     3-quinolineboronic_acid
+OB(O)c1ccc(N+](=O)[O-])cc1 4-nitrophenylboronic_acid
+OB(O)c1cccc(OC)c1       3-methoxyphenylboronic_acid
+OB(O)c1ccc(CC)cc1       4-ethylphenylboronic_acid
+B1(OC(C)(C)C(C)(C)O1)c1ccccc1  phenylboronic_pinacol_ester
+
+# ── Pyridines (methyl/halo/amino substituted) ────────────────────────────────
+Cc1ccccn1           2-methylpyridine
+Cc1cccnc1           3-methylpyridine
+Cc1ccncc1           4-methylpyridine
+Cc1cccc(C)n1        2-6-dimethylpyridine
+Cc1ccc(C)cn1        2-4-dimethylpyridine
+Nc1ccccn1           2-aminopyridine
+Nc1cccnc1           3-aminopyridine
+Nc1ccncc1           4-aminopyridine
+Nc1cccc(N)n1        2-6-diaminopyridine
+OC1=CC=CC=N1        2-hydroxypyridine
+OC1=NC=CC=C1        3-hydroxypyridine
+Oc1ccncc1           4-hydroxypyridine
+FC1=CC=CN=C1        2-fluoropyridine
+FC1=CC=NC=C1        3-fluoropyridine
+FC1=CC=CC=N1        2-6-difluoropyridine
+c1cc2ccccc2nc1      quinoline_alt
+c1ccc2ncccc2c1      isoquinoline_alt
+Cc1ccncc1C          3-5-dimethylpyridine
+Cc1nc(C)cc(C)c1     2-4-6-trimethylpyridine
+c1cnc2ccccc2c1      quinazoline_alt
+
+# ── Pyrimidines and diazines ──────────────────────────────────────────────────
+c1ccnc(N)c1N        2-3-diaminopyridine
+Nc1ncccn1           2-aminopyrimidine_alt
+Nc1nccnc1           2-aminopyrazine
+Nc1ncncc1           2-aminopyrimidine
+c1cnc(N)nc1         2-aminopyrimidine_4
+Cc1ncccn1           2-methylpyrimidine
+Cc1ccnc(N)c1        2-amino-4-methylpyridine
+c1ccnc(Cl)n1        2-chloropyrimidine
+c1ccnc(N)n1         2-aminopyrimidine
+Clc1ccnc(Cl)n1      2-4-dichloropyrimidine
+
+# ── Pyrazoles and imidazoles (37% of unsolved!) ──────────────────────────────
+c1cn[nH]c1              pyrazole_alt
+c1c[nH]nc1              imidazole_alt
+Cc1cc[nH]n1             3-methylpyrazole
+Cc1ccn[nH]1             5-methylpyrazole
+Cc1cc(C)n[nH]1          3-5-dimethylpyrazole
+c1c[nH]nn1              1H-tetrazole
+c1cc[nH]n1              1H-pyrazole
+c1c[nH]cn1              imidazole
+Cn1ccnc1                1-methylimidazole
+Cc1cnc[nH]1             4-methylimidazole
+Cc1ncc[nH]1             2-methylimidazole
+c1cnco1                 oxazole
+c1cncs1                 thiazole
+Cc1csc[nH]1             4-methylthiazole
+c1ncs[nH]1              thiadiazole
+c1nnco1                 1-2-4-oxadiazole
+c1nncs1                 1-2-4-thiadiazole
+Cc1ccc[nH]1             3-methylpyrrole
+c1cc[nH]c1              1H-pyrrole
+c1cco[nH]1              isoxazole_like
+Cn1cccc1                1-methylpyrrole
+Cn1cncn1                1-methyltetrazole
+Cn1ccc(C)c1C            1-2-4-trimethylpyrrole
+
+# ── Furans and thiophenes ─────────────────────────────────────────────────────
+c1ccoc1                 furan
+c1ccsc1                 thiophene
+Cc1ccco1                2-methylfuran
+Cc1cccs1                2-methylthiophene
+Brc1ccco1               2-bromofuran
+Brc1cccs1               2-bromothiophene
+Brc1ccc(s1)C            5-bromo-2-methylthiophene
+c1cc2ccccc2o1           benzofuran_alt
+c1cc2ccccc2s1           benzothiophene
+Brc1cc2ccccc2o1         3-bromobenzofuran
+OB(O)c1ccco1            furan-2-boronic_acid
+OB(O)c1cccs1            thiophen-2-boronic_acid
+
+# ── Common pharma amines and protected amines ────────────────────────────────
+C1CCNCC1                piperidine
+C1COCCN1                morpholine
+C1CNCCN1                piperazine
+C1CCN(CC1)C(=O)OC(C)(C)C   N-Boc-piperidine
+C1CN(CCO1)C(=O)OC(C)(C)C   N-Boc-morpholine
+C1CN(CCN1)C(=O)OC(C)(C)C   N-Boc-piperazine
+C(C(=O)O)(N)CCC         homoserine_like
+CCN(CC)CC               triethylamine
+CCCCN                   1-butylamine
+CN(C)C                  trimethylamine
+CNC                     dimethylamine
+C(C)(C)N                tert-butylamine
+CCN(C)C                 dimethylethylamine
+C(CC)N                  propylamine
+NCC1CCCC1               cyclopentylmethylamine
+NC1CCCC1                cyclopentylamine
+NC1CCCCC1               cyclohexylamine
+NCC1CCCCC1              cyclohexylmethylamine
+N1CCOCC1                morpholine_alt
+N1CCNCC1                piperazine_alt
+C1CCNC1                 pyrrolidine
+C1CCCC1N                cyclopentylamine_alt
+c1ccc(cc1)CN            benzylamine
+c1ccc(cc1)N(C)C         N-N-dimethylaniline
+c1cccc(N)c1             3-aminobenzene
+c1ccc(N)c(N)c1          1-2-phenylenediamine
+
+# ── Aldehydes (for reductive amination / condensation) ───────────────────────
+O=Cc1ccccc1             benzaldehyde
+O=Cc1ccccn1             2-pyridinecarboxaldehyde
+O=Cc1cccnc1             3-pyridinecarboxaldehyde
+O=Cc1ccncc1             4-pyridinecarboxaldehyde
+O=Cc1ccc(F)cc1          4-fluorobenzaldehyde
+O=Cc1ccc(Cl)cc1         4-chlorobenzaldehyde
+O=Cc1ccc(OC)cc1         4-methoxybenzaldehyde
+O=Cc1ccc(N)cc1          4-aminobenzaldehyde
+O=Cc1ccc(C(F)(F)F)cc1   4-trifluoromethylbenzaldehyde
+O=Cc1ccc(C#N)cc1        4-cyanobenzaldehyde
+O=Cc1ccco1              furfural
+O=Cc1cccs1              thiophene-2-carboxaldehyde
+O=CC1CCCC1              cyclopentanecarbaldehyde
+O=CC1CCCCC1             cyclohexanecarbaldehyde
+CC(=O)c1ccccc1          acetophenone
+CC(=O)c1ccccn1          2-acetylpyridine
+CC(=O)c1cccnc1          3-acetylpyridine
+CC(=O)c1ccncc1          4-acetylpyridine
+
+# ── Common acids for amide coupling ──────────────────────────────────────────
+OC(=O)c1ccccc1          benzoic_acid_alt
+OC(=O)c1ccccn1          picolinic_acid
+OC(=O)c1cccnc1          nicotinic_acid
+OC(=O)c1ccncc1          isonicotinic_acid
+OC(=O)c1ccc(F)cc1       4-fluorobenzoic_acid
+OC(=O)c1ccc(Cl)cc1      4-chlorobenzoic_acid
+OC(=O)c1ccc(OC)cc1      4-methoxybenzoic_acid
+OC(=O)c1ccc(N)cc1       4-aminobenzoic_acid
+OC(=O)c1ccco1           2-furoic_acid
+OC(=O)c1cccs1           2-thenoic_acid
+OC(=O)c1ccc2[nH]ccc2c1  indole-5-carboxylic_acid
+OC(=O)c1ccc(C(F)(F)F)cc1 4-trifluoromethylbenzoic_acid
+OC(=O)c1ccc(C#N)cc1     4-cyanobenzoic_acid
+OC(=O)c1cc(Cl)ccc1Cl    2-4-dichlorobenzoic_acid
+OC(=O)CC1CCCC1          cyclopentylacetic_acid
+OC(=O)CC1CCCCC1         cyclohexylacetic_acid
+OC(=O)Cc1ccccc1         phenylacetic_acid
+OC(=O)Cc1ccccn1         2-pyridylacetic_acid
+
+# ── Nitrile precursors ────────────────────────────────────────────────────────
+N#Cc1ccccc1             benzonitrile
+N#Cc1ccccn1             2-pyridinecarbonitrile
+N#Cc1cccnc1             3-pyridinecarbonitrile
+N#Cc1ccncc1             4-pyridinecarbonitrile
+N#Cc1ccc(F)cc1          4-fluorobenzonitrile
+N#Cc1ccc(Cl)cc1         4-chlorobenzonitrile
+N#Cc1ccc(OC)cc1         4-methoxybenzonitrile
+N#CC1CCCC1              cyclopentanecarbonitrile
+N#CC1CCCCC1             cyclohexanecarbonitrile
+N#CCC(=O)c1ccccc1       benzoylacetonitrile
+
+# ── Halogenated aromatics (for Grignard / Li-halogen exchange) ───────────────
+Ic1ccccc1               iodobenzene
+Ic1ccccn1               2-iodopyridine
+Ic1cccnc1               3-iodopyridine
+Ic1ccncc1               4-iodopyridine
+Ic1ccc(F)cc1            4-fluoroiodobenzene
+Fc1ccc(F)cc1            4-4-difluorobenzene
+Fc1ccccc1F              1-2-difluorobenzene
+Fc1cccc(F)c1            1-3-difluorobenzene
+Fc1ccccc1               fluorobenzene
+Fc1ccccn1               2-fluoropyridine
+FC(F)(F)c1ccccc1        trifluoromethylbenzene
+FC(F)(F)c1ccccn1        2-trifluoromethylpyridine

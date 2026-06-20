@@ -342,12 +342,43 @@ pub fn default_rules() -> Vec<RetroRule> {
             // Ar-O → Ar-OH + leaving fragment (retro-Ullmann ether synthesis)
             smirks: "[c:1][O:2]>>[c:1]O.[O:2]",
         },
+        // ── Aryl C-halide disconnections ────────────────────────────────
+        RetroRule {
+            name: "aryl_chloride_retro",
+            // Ar-Cl → Ar-H + HCl (retro-SNAr or retro-Pd C-Cl activation)
+            smirks: "[c:1][Cl]>>[c:1]",
+        },
+        RetroRule {
+            name: "aryl_iodide_retro",
+            // Ar-I → Ar-H (retro-Pd/Cu C-I; iodides are activated leaving groups)
+            smirks: "[c:1][I]>>[c:1]",
+        },
+        RetroRule {
+            name: "aryl_fluoride_snAr_retro",
+            // Ar-F → Ar-H (retro-SNAr; fluorine is best SNAr leaving group)
+            smirks: "[c:1][F]>>[c:1]",
+        },
+        RetroRule {
+            name: "aryl_chloride_to_bromide",
+            // Ar-Cl → Ar-Br (halogen exchange retro; Ar-Br is often a cheaper BB)
+            smirks: "[c:1][Cl]>>[c:1][Br]",
+        },
         // ── Aryl C-C disconnections ──────────────────────────────────────
         RetroRule {
             name: "suzuki_retro",
             // Graph-based: find Ar-Ar bridge bonds and split into Ar-Br + Ar.
             // smirks is empty; apply_retro dispatches to biaryl_cleavage().
             smirks: "",
+        },
+        RetroRule {
+            name: "heck_retro",
+            // Ar-CH=CH-R → Ar-Br + CH2=CH-R (retro-Heck coupling)
+            smirks: "[c:1][CH:2]=[CH:3]>>[c:1][Br].[CH2:2]=[CH:3]",
+        },
+        RetroRule {
+            name: "negishi_retro",
+            // Ar-alkyl → Ar-Br + alkyl (retro-Negishi; Pd-catalyzed C-C)
+            smirks: "[c:1][CH2:2]>>[c:1][Br].[CH3:2]",
         },
         // ── Aliphatic C-C disconnections ─────────────────────────────────
         RetroRule {

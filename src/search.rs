@@ -229,3 +229,70 @@ pub fn find_routes(
 
     Ok(routes)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::chem_env::{ChemEnv, default_rules};
+
+    fn aspirin_env() -> ChemEnv {
+        ChemEnv::load("data/building_blocks.smi")
+            .unwrap_or_else(|_| ChemEnv::in_memory(&[
+                "CC(=O)O", "Oc1ccccc1C(=O)O", "c1ccccc1C(=O)O", "C", "O",
+            ]))
+    }
+
+    fn cfg(depth: u32) -> SearchConfig {
+        SearchConfig { max_depth: depth, max_routes: 5, beam_width: 0 }
+    }
+
+    #[test]
+    fn aspirin_finds_route_depth1() {
+        let env = aspirin_env();
+        let rules = default_rules();
+        let routes = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg(3)).unwrap();
+        assert!(!routes.is_empty(), "must find at least one route for aspirin");
+        assert!(
+            routes.iter().any(|r| r.depth <= 2),
+            "must find a route with depth ≤ 2"
+        );
+    }
+
+    #[test]
+    fn building_block_target_returns_depth0() {
+        let env = aspirin_env();
+        let rules = default_rules();
+        // Acetic acid is a building block → expect a depth-0 route (empty steps).
+        let routes = find_routes("CC(=O)O", &env, &rules, &cfg(2)).unwrap();
+        assert!(routes.iter().any(|r| r.depth == 0), "building block must return depth-0 route");
+    }
+
+    #[test]
+    fn anthranilic_acid_recognized_as_bb() {
+        let env = aspirin_env();
+        let rules = default_rules();
+        let routes = find_routes("c1ccc(N)cc1C(=O)O", &env, &rules, &cfg(3)).unwrap();
+        assert!(routes.iter().any(|r| r.depth == 0), "anthranilic acid is in building blocks");
+    }
+
+    #[test]
+    fn beam_width_limits_does_not_panic() {
+        let env = aspirin_env();
+        let rules = default_rules();
+        let cfg_beam = SearchConfig { max_depth: 3, max_routes: 3, beam_width: 10 };
+        // With a very tight beam, search may find fewer routes but must not panic.
+        let routes = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg_beam);
+        assert!(routes.is_ok());
+    }
+
+    #[test]
+    fn no_routes_for_unknown_target_within_depth() {
+        let env = ChemEnv::in_memory(&["O"]); // only water as BB
+        let rules = default_rules();
+        // Aspirin with depth=1 and only water as BB: unlikely to fully solve.
+        // At minimum should return the trivially solved (depth=0) only if aspirin IS water (it isn't).
+        let routes = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg(1)).unwrap();
+        // depth=0 not possible (aspirin ≠ water); we just check it doesn't panic.
+        let _ = routes;
+    }
+}

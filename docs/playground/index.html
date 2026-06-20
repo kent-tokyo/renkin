@@ -525,7 +525,7 @@
     await mod.default();
     findRoutesFn = mod.find_routes;
     const ver = mod.version ? mod.version() : 'renkin';
-    wasmStatusEl.textContent = `WASM ready — ${ver} · 480+ building blocks · 20 reaction rules`;
+    wasmStatusEl.textContent = `WASM ready — ${ver} · 45 building blocks · 20 reaction rules`;
     wasmStatusEl.className = 'wasm-status ready';
     searchBtn.disabled = false;
     statusTextEl.dataset.state = 'status_init';

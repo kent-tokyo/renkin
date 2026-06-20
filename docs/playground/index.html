@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>RENKIN Playground — Interactive Retrosynthesis</title>
   <meta name="description" content="Interactive retrosynthesis planning in the browser — powered by WebAssembly">
-  <script src="https://unpkg.com/smiles-drawer@2.1.7/dist/smiles-drawer.min.js"></script>
+  <!-- bundled by docs.yml: npm install smiles-drawer → site/js/ (avoids CDN on GitHub Pages) -->
+  <script src="../js/smiles-drawer.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -234,28 +235,25 @@
     statusText.textContent = 'WASM unavailable.';
   }
 
-  // canvas-based drawer (more reliable than SvgDrawer across environments)
+  // SvgDrawer: takes SVG DOM element directly (no string ID, no canvas)
+  const molTheme = { C:'#222', O:'#c0392b', N:'#2980b9', S:'#b7950b',
+                     F:'#16a085', Cl:'#1a5276', Br:'#6e2f8a', I:'#4a235a',
+                     P:'#784212', BACKGROUND:'#f4f5f8' };
   let sdDrawer = null, sdDrawerLg = null;
   if (typeof SmilesDrawer !== 'undefined') {
-    sdDrawer   = new SmilesDrawer.Drawer({ width:180, height:120, padding:10,
-      bondThickness:1.0, fontSizeSmall:7, fontSize:9, themes:{
-        light: { C:'#222', O:'#c0392b', N:'#2980b9', S:'#b7950b',
-                 F:'#16a085', Cl:'#1a5276', Br:'#6e2f8a', I:'#4a235a',
-                 P:'#784212', BACKGROUND:'#f4f5f8' } } });
-    sdDrawerLg = new SmilesDrawer.Drawer({ width:220, height:150, padding:12,
-      bondThickness:1.1, fontSizeSmall:8, fontSize:10, themes:{
-        light: { C:'#222', O:'#c0392b', N:'#2980b9', S:'#b7950b',
-                 F:'#16a085', Cl:'#1a5276', Br:'#6e2f8a', I:'#4a235a',
-                 P:'#784212', BACKGROUND:'#f4f5f8' } } });
+    sdDrawer   = new SmilesDrawer.SvgDrawer({ width:180, height:120, padding:10,
+      bondThickness:1.0, fontSizeSmall:7, fontSize:9, themes:{ light: molTheme } });
+    sdDrawerLg = new SmilesDrawer.SvgDrawer({ width:220, height:150, padding:12,
+      bondThickness:1.1, fontSizeSmall:8, fontSize:10, themes:{ light: molTheme } });
+  } else {
+    console.error('SmilesDrawer not loaded — check ../js/smiles-drawer.min.js');
   }
 
-  let _molId = 0;
-
-  function drawSmiles(id, smiles, large) {
-    if (!sdDrawer) return;
+  function drawSmiles(svgEl, smiles, large) {
+    if (!sdDrawer) { svgEl.textContent = smiles; return; }
     SmilesDrawer.parse(smiles,
-      t => (large ? sdDrawerLg : sdDrawer).draw(t, id, 'light', false),
-      () => { /* parse failed — leave canvas blank */ });
+      t => (large ? sdDrawerLg : sdDrawer).draw(t, svgEl, 'light', false),
+      () => { svgEl.textContent = smiles; });
   }
 
   function makeMolCard(smiles, large) {
@@ -263,13 +261,13 @@
     card.className = 'mol-card';
     const wrap = document.createElement('div');
     wrap.className = large ? 'mol-svg-wrap large' : 'mol-svg-wrap';
-    // SmilesDrawer.Drawer.draw() requires a string canvas ID, not the element
-    const id = `mol-${++_molId}`;
-    const canvasEl = document.createElement('canvas');
-    canvasEl.id     = id;
-    canvasEl.width  = large ? 220 : 180;
-    canvasEl.height = large ? 150 : 120;
-    wrap.appendChild(canvasEl);
+    // Explicit xmlns+dimensions required for programmatic SVG in some browsers
+    const ns = 'http://www.w3.org/2000/svg';
+    const svgEl = document.createElementNS(ns, 'svg');
+    svgEl.setAttribute('xmlns', ns);
+    svgEl.setAttribute('width',  large ? '220' : '180');
+    svgEl.setAttribute('height', large ? '150' : '120');
+    wrap.appendChild(svgEl);
     card.appendChild(wrap);
     const label = document.createElement('div');
     label.className = large ? 'mol-smiles large' : 'mol-smiles';
@@ -285,7 +283,8 @@
         setTimeout(() => card.classList.remove('copied'), 1200);
       });
     });
-    requestAnimationFrame(() => drawSmiles(id, smiles, large));
+    // setTimeout 0: fires after synchronous DOM appends complete (safer than rAF here)
+    setTimeout(() => drawSmiles(svgEl, smiles, large), 0);
     return card;
   }
 

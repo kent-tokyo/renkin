@@ -365,26 +365,24 @@
     statusText.textContent = 'WASM unavailable.';
   }
 
-  // ── SmilesDrawer setup (canvas-based; more reliable than SvgDrawer) ────────
+  // ── SmilesDrawer setup ───────────────────────────────────────────────────
+  const molTheme = { C: '#222', O: '#c0392b', N: '#2980b9', S: '#b7950b',
+                     F: '#16a085', Cl: '#1a5276', Br: '#6e2f8a', I: '#4a235a',
+                     P: '#784212', BACKGROUND: '#f4f5f8' };
   let sdDrawer = null, sdDrawerLg = null;
   if (typeof SmilesDrawer !== 'undefined') {
-    const molTheme = { C: '#222', O: '#c0392b', N: '#2980b9', S: '#b7950b',
-                       F: '#16a085', Cl: '#1a5276', Br: '#6e2f8a', I: '#4a235a',
-                       P: '#784212', BACKGROUND: '#f4f5f8' };
-    sdDrawer   = new SmilesDrawer.Drawer({ width: 180, height: 120, padding: 10,
+    sdDrawer   = new SmilesDrawer.SvgDrawer({ width: 180, height: 120, padding: 10,
       bondThickness: 1.0, fontSizeSmall: 7, fontSize: 9, themes: { light: molTheme } });
-    sdDrawerLg = new SmilesDrawer.Drawer({ width: 220, height: 150, padding: 12,
+    sdDrawerLg = new SmilesDrawer.SvgDrawer({ width: 220, height: 150, padding: 12,
       bondThickness: 1.1, fontSizeSmall: 8, fontSize: 10, themes: { light: molTheme } });
   }
 
-  let _molId = 0;
-
-  function drawSmiles(id, smiles, large = false) {
-    if (!sdDrawer) return;
+  function drawSmiles(svgEl, smiles, large = false) {
+    if (!sdDrawer) { svgEl.textContent = smiles; return; }
     SmilesDrawer.parse(
       smiles,
-      (tree) => (large ? sdDrawerLg : sdDrawer).draw(tree, id, 'light', false),
-      () => { /* parse failed — leave canvas blank */ }
+      (tree) => (large ? sdDrawerLg : sdDrawer).draw(tree, svgEl, 'light', false),
+      () => { svgEl.textContent = smiles; }
     );
   }
 
@@ -395,13 +393,12 @@
     const wrap = document.createElement('div');
     wrap.className = large ? 'mol-svg-wrap large' : 'mol-svg-wrap';
 
-    // SmilesDrawer.Drawer.draw() requires a string canvas ID, not the element
-    const id = `mol-${++_molId}`;
-    const canvasEl = document.createElement('canvas');
-    canvasEl.id     = id;
-    canvasEl.width  = large ? 220 : 180;
-    canvasEl.height = large ? 150 : 120;
-    wrap.appendChild(canvasEl);
+    const ns = 'http://www.w3.org/2000/svg';
+    const svgEl = document.createElementNS(ns, 'svg');
+    svgEl.setAttribute('xmlns', ns);
+    svgEl.setAttribute('width',  large ? '220' : '180');
+    svgEl.setAttribute('height', large ? '150' : '120');
+    wrap.appendChild(svgEl);
     card.appendChild(wrap);
 
     const label = document.createElement('div');
@@ -422,7 +419,7 @@
       });
     });
 
-    requestAnimationFrame(() => drawSmiles(id, smiles, large));
+    setTimeout(() => drawSmiles(svgEl, smiles, large), 0);
     return card;
   }
 

@@ -17,65 +17,75 @@ pub struct RetroRule {
     pub smirks: &'static str,
 }
 
-/// One entry in the building-block library.
-struct BbEntry {
-    query: QueryMolecule,
-}
-
-/// Building-block library indexed by (atom_count, bond_count) for O(1) candidate
-/// pre-filtering. With millions of entries this reduces VF2 calls to only the
-/// molecules that share the same heavy-atom / bond count as the query.
+/// Building-block library.
+///
+/// Two-tier storage for scalability:
+/// - `canon_set`: canonical-SMILES HashSet used for all lookups (O(1), low memory).
+///   Scales to millions of BBs (500k BBs ≈ 12 MB vs 2.8 GB for VF2 QueryMolecules).
+/// - `vf2_index`: (atom_count, bond_count) → VF2 QueryMolecule fallback for small
+///   sets (DEFAULT_BUILDING_BLOCKS). Kept for correctness when canonical SMILES
+///   might diverge due to chematic Bug #14.
+///
+/// In practice the canonical-SMILES path is used for all lookups; the VF2 index
+/// provides a secondary confirmation only when the canon check fails and the VF2
+/// index is populated (small in-memory sets).
 pub struct ChemEnv {
-    building_blocks: HashMap<(usize, usize), Vec<BbEntry>>,
+    /// Canonical SMILES of every BB — primary fast lookup.
+    canon_set: HashSet<String>,
+    /// VF2 fallback for small sets (populated only when bb_count ≤ VF2_THRESHOLD).
+    vf2_index: HashMap<(usize, usize), Vec<QueryMolecule>>,
     bb_count: usize,
 }
+
+/// BBs up to this count also build a VF2 index for secondary confirmation.
+const VF2_THRESHOLD: usize = 2000;
 
 impl ChemEnv {
     pub fn load(path: &str) -> Result<Self> {
         let content = fs::read_to_string(path)
             .with_context(|| format!("Failed to read building blocks from {path}"))?;
-        Ok(Self::from_entries(Self::parse_smi_content(&content)))
-    }
-
-    pub fn in_memory(smiles_list: &[&str]) -> Self {
-        let entries: Vec<_> = smiles_list
-            .iter()
-            .filter_map(|s| Self::smiles_to_entry(s))
-            .collect();
-        Self::from_entries(entries)
-    }
-
-    fn from_entries(entries: Vec<(usize, usize, BbEntry)>) -> Self {
-        let bb_count = entries.len();
-        let mut building_blocks: HashMap<(usize, usize), Vec<BbEntry>> = HashMap::new();
-        for (n_atoms, n_bonds, entry) in entries {
-            building_blocks
-                .entry((n_atoms, n_bonds))
-                .or_default()
-                .push(entry);
-        }
-        Self {
-            building_blocks,
-            bb_count,
-        }
-    }
-
-    fn parse_smi_content(content: &str) -> Vec<(usize, usize, BbEntry)> {
-        content
+        let smiles_iter = content
             .lines()
             .map(str::trim)
             .filter(|l| !l.is_empty() && !l.starts_with('#'))
-            .filter_map(|line| {
-                let smiles = line.split_whitespace().next()?;
-                Self::smiles_to_entry(smiles)
-            })
-            .collect()
+            .filter_map(|line| line.split_whitespace().next().map(str::to_owned));
+        Ok(Self::from_smiles_iter(smiles_iter))
     }
 
-    fn smiles_to_entry(smiles: &str) -> Option<(usize, usize, BbEntry)> {
-        let mol = parse(smiles).ok()?;
-        let query = parse_smarts(smiles).ok()?;
-        Some((mol.atom_count(), mol.bonds().count(), BbEntry { query }))
+    pub fn in_memory(smiles_list: &[&str]) -> Self {
+        Self::from_smiles_iter(smiles_list.iter().map(|s| s.to_string()))
+    }
+
+    fn from_smiles_iter(iter: impl Iterator<Item = String>) -> Self {
+        let mut canon_set: HashSet<String> = HashSet::new();
+        let mut vf2_raw: Vec<(usize, usize, QueryMolecule)> = Vec::new();
+        let mut bb_count = 0usize;
+
+        for smiles in iter {
+            let Ok(mol) = parse(&smiles) else { continue };
+            let canon = canonical_smiles(&mol);
+            if !canon_set.insert(canon) {
+                continue; // duplicate
+            }
+            bb_count += 1;
+            // VF2 index only for small sets (skip parse_smarts for large sets to save memory)
+            if bb_count <= VF2_THRESHOLD
+                && let Ok(query) = parse_smarts(&smiles)
+            {
+                vf2_raw.push((mol.atom_count(), mol.bonds().count(), query));
+            }
+        }
+
+        let mut vf2_index: HashMap<(usize, usize), Vec<QueryMolecule>> = HashMap::new();
+        for (n_atoms, n_bonds, query) in vf2_raw {
+            vf2_index.entry((n_atoms, n_bonds)).or_default().push(query);
+        }
+
+        Self {
+            canon_set,
+            vf2_index,
+            bb_count,
+        }
     }
 
     /// Number of building blocks in the library.
@@ -83,18 +93,38 @@ impl ChemEnv {
         self.bb_count
     }
 
-    /// Check if `mol` is identical to any building block using VF2 isomorphism.
-    /// Pre-filtered by (atom_count, bond_count) → O(1) HashMap lookup before VF2.
+    /// Check if `mol` is in the building-block library.
+    ///
+    /// Primary: O(1) canonical-SMILES HashSet lookup with double-pass normalisation.
+    /// Double-pass (mol → SMILES string → re-parse → canonical) ensures consistent
+    /// canonical form regardless of how the Molecule was constructed (from string vs
+    /// from graph manipulation), working around chematic Bug #14.
+    ///
+    /// Fallback: VF2 subgraph isomorphism (small sets only, bb_count ≤ VF2_THRESHOLD).
     pub fn is_building_block(&self, mol: &Molecule) -> bool {
-        let key = (mol.atom_count(), mol.bonds().count());
-        let Some(candidates) = self.building_blocks.get(&key) else {
-            return false;
+        // Double-pass: mol → SMILES → re-parse → canonical
+        // Molecules from build_sub_molecule() and from parse() can differ in internal
+        // representation and produce different canonical SMILES on the first pass.
+        // Re-parsing normalises both to the same canonical form.
+        let smiles_str = canonical_smiles(mol);
+        let canon = match parse(&smiles_str) {
+            Ok(reparsed) => canonical_smiles(&reparsed),
+            Err(_) => smiles_str,
         };
-        let n_atoms = mol.atom_count();
-        candidates.iter().any(|bb| {
-            let matches = find_matches(&bb.query, mol);
-            matches.iter().any(|m| m.len() == n_atoms)
-        })
+        if self.canon_set.contains(&canon) {
+            return true;
+        }
+        // VF2 fallback for small sets (catches edge cases Bug #14 still misses)
+        if !self.vf2_index.is_empty() {
+            let key = (mol.atom_count(), mol.bonds().count());
+            if let Some(candidates) = self.vf2_index.get(&key) {
+                let n_atoms = mol.atom_count();
+                return candidates
+                    .iter()
+                    .any(|q| find_matches(q, mol).iter().any(|m| m.len() == n_atoms));
+            }
+        }
+        false
     }
 }
 

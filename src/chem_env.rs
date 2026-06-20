@@ -1357,3 +1357,34 @@ mod tests {
         );
     }
 }
+
+#[test]
+#[ignore]
+fn debug_canonical_smiles_consistency() {
+    // Check if chematic gives consistent canonical SMILES
+    // for the same molecule represented in different input forms.
+    let pairs = [
+        ("Nc1ccccc1", "c1ccc(N)cc1", "aniline"),
+        ("Oc1ccccc1", "c1ccc(O)cc1", "phenol"),
+        ("c1ccccc1", "C1=CC=CC=C1", "benzene"),
+        ("Brc1ccccc1", "c1ccc(Br)cc1", "bromobenzene"),
+        ("CC(=O)O", "OC(C)=O", "acetic acid"),
+    ];
+    for (s1, s2, name) in pairs {
+        let c1 = canonical_smiles(&parse(s1).unwrap());
+        let c2 = canonical_smiles(&parse(s2).unwrap());
+        let dp1 = canonical_smiles(&parse(&c1).unwrap());
+        let dp2 = canonical_smiles(&parse(&c2).unwrap());
+        eprintln!(
+            "{}: '{}' → '{}' (2-pass '{}'), '{}' → '{}' (2-pass '{}'), match={}",
+            name,
+            s1,
+            c1,
+            dp1,
+            s2,
+            c2,
+            dp2,
+            dp1 == dp2
+        );
+    }
+}

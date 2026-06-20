@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RENKIN — Retrosynthesis Demo</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --border: #2a2d3a;
+      --accent: #7c6af7;
+      --accent2: #4fc3f7;
+      --text: #e8eaf0;
+      --muted: #8890a4;
+      --success: #4caf7d;
+      --warn: #f0a04b;
+      --error: #e05c5c;
+      --mono: "JetBrains Mono", "Fira Code", "Courier New", monospace;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      padding: 1.2rem 2rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .logo { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.5px; color: var(--accent); }
+    .tagline { color: var(--muted); font-size: 0.85rem; }
+    .badge {
+      margin-left: auto;
+      font-size: 0.75rem;
+      color: var(--accent2);
+      background: rgba(79, 195, 247, 0.08);
+      border: 1px solid rgba(79, 195, 247, 0.25);
+      padding: 0.2rem 0.7rem;
+      border-radius: 999px;
+    }
+
+    main { flex: 1; max-width: 960px; margin: 0 auto; padding: 2rem 1.5rem; width: 100%; }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+    .panel h2 {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 1rem;
+    }
+
+    .field { display: flex; flex-direction: column; gap: 0.35rem; }
+    .field label { font-size: 0.78rem; color: var(--muted); }
+    .field input, .field select {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.55rem 0.75rem;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      font-family: inherit;
+      transition: border-color 0.15s;
+    }
+    .field input:focus, .field select:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    #smiles-input { font-family: var(--mono); font-size: 0.85rem; }
+
+    .search-row { display: flex; gap: 0.75rem; align-items: flex-end; margin-top: 0.75rem; }
+    .search-row .field { flex: 1; }
+    .num-field { width: 90px !important; flex: none !important; }
+
+    button {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 0.55rem 1.4rem;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+      white-space: nowrap;
+      align-self: flex-end;
+      height: 36px;
+    }
+    button:hover { opacity: 0.85; }
+    button:active { transform: scale(0.97); }
+    button:disabled { opacity: 0.4; cursor: default; }
+
+    #status-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 0.85rem;
+      color: var(--muted);
+      min-height: 1.5rem;
+      margin-bottom: 1rem;
+    }
+    .spinner {
+      width: 14px; height: 14px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      display: none;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner.active { display: block; }
+
+    .wasm-status {
+      font-size: 0.8rem;
+      padding: 0.5rem 0.75rem;
+      border-radius: 6px;
+      margin-bottom: 1rem;
+    }
+    .wasm-status.loading {
+      background: rgba(124,106,247,0.08);
+      color: var(--accent);
+      border: 1px solid rgba(124,106,247,0.2);
+    }
+    .wasm-status.ready {
+      background: rgba(76,175,125,0.08);
+      color: var(--success);
+      border: 1px solid rgba(76,175,125,0.2);
+    }
+    .wasm-status.failed {
+      background: rgba(224,92,92,0.08);
+      color: var(--error);
+      border: 1px solid rgba(224,92,92,0.2);
+      font-size: 0.82rem;
+      line-height: 1.5;
+    }
+
+    /* Results */
+    .stats-row { display: flex; gap: 2rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
+    .stat { display: flex; flex-direction: column; gap: 0.2rem; }
+    .stat-value { font-size: 1.5rem; font-weight: 700; color: var(--accent); }
+    .stat-label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+
+    .route-card { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 1rem; overflow: hidden; }
+    .route-header {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.75rem 1rem;
+      background: rgba(124, 106, 247, 0.06);
+      border-bottom: 1px solid var(--border);
+      font-size: 0.85rem;
+    }
+    .route-num {
+      background: var(--accent);
+      color: #fff;
+      width: 22px; height: 22px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.75rem; font-weight: 700; flex-shrink: 0;
+    }
+    .depth-badge {
+      font-size: 0.72rem;
+      color: var(--accent2);
+      background: rgba(79, 195, 247, 0.08);
+      border: 1px solid rgba(79, 195, 247, 0.2);
+      padding: 0.1rem 0.5rem; border-radius: 4px;
+    }
+    .step-list { padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
+    .step { display: flex; gap: 1rem; align-items: flex-start; }
+    .step-connector { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; padding-top: 2px; }
+    .step-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+    .step-line { width: 1px; flex: 1; background: var(--border); margin: 3px 0; min-height: 20px; }
+    .step-body { flex: 1; min-width: 0; }
+    .step-rule { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--warn); margin-bottom: 0.3rem; font-weight: 600; }
+    .step-target { font-family: var(--mono); font-size: 0.82rem; color: var(--muted); margin-bottom: 0.4rem; word-break: break-all; }
+    .precursor-list { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+    .precursor {
+      font-family: var(--mono); font-size: 0.82rem;
+      background: rgba(76, 175, 125, 0.08);
+      border: 1px solid rgba(76, 175, 125, 0.25);
+      color: var(--success);
+      padding: 0.2rem 0.55rem; border-radius: 4px; word-break: break-all;
+    }
+    .empty-route { padding: 0.75rem 1rem; font-size: 0.85rem; color: var(--success); }
+    .no-routes { color: var(--muted); font-size: 0.9rem; }
+    .error-box {
+      background: rgba(224, 92, 92, 0.08);
+      border: 1px solid rgba(224, 92, 92, 0.3);
+      color: var(--error);
+      padding: 0.9rem 1rem; border-radius: 8px; font-size: 0.85rem;
+    }
+
+    footer { text-align: center; padding: 1rem; font-size: 0.75rem; color: var(--muted); border-top: 1px solid var(--border); }
+    footer a { color: var(--accent); text-decoration: none; }
+  </style>
+</head>
+<body>
+<header>
+  <div>
+    <div class="logo">RENKIN</div>
+    <div class="tagline">Retrosynthetic Exploration Network for Knowledge-Informed Navigation</div>
+  </div>
+  <div class="badge">WASM · Pure Rust</div>
+</header>
+
+<main>
+  <div id="wasm-status" class="wasm-status loading">Loading WASM module…</div>
+
+  <div class="panel">
+    <h2>Search</h2>
+
+    <div class="field">
+      <label for="examples-select">Preset examples</label>
+      <select id="examples-select">
+        <option value="">— select a molecule —</option>
+        <option value="CC(=O)Oc1ccccc1C(=O)O">Aspirin</option>
+        <option value="CC(=O)Nc1ccc(O)cc1">Paracetamol (Acetaminophen)</option>
+        <option value="CC(=O)Nc1ccccc1">Acetanilide</option>
+        <option value="c1ccc(-c2ccccc2)cc1">Biphenyl</option>
+        <option value="C=Cc1ccccc1">Styrene</option>
+        <option value="CCOC(=O)c1ccccc1">Ethyl benzoate</option>
+        <option value="Nc1ccc(C(=O)O)cc1">4-Aminobenzoic acid (PABA)</option>
+        <option value="CC(=O)c1ccc(N)cc1">4-Aminoacetophenone</option>
+        <option value="O=C(O)c1ccc(Nc2ccccc2)cc1">4-Anilinobenzic acid</option>
+        <option value="Brc1ccc(N)cc1">4-Bromoaniline</option>
+      </select>
+    </div>
+
+    <div class="search-row">
+      <div class="field">
+        <label for="smiles-input">Target SMILES</label>
+        <input id="smiles-input" type="text" placeholder="e.g. CC(=O)Oc1ccccc1C(=O)O" spellcheck="false" autocomplete="off">
+      </div>
+      <div class="field num-field">
+        <label for="depth-input">Depth</label>
+        <input id="depth-input" type="number" value="5" min="1" max="10">
+      </div>
+      <div class="field num-field">
+        <label for="routes-input">Max routes</label>
+        <input id="routes-input" type="number" value="5" min="1" max="20">
+      </div>
+      <div class="field num-field">
+        <label for="beam-input" title="0 = unlimited A*">Beam (0=∞)</label>
+        <input id="beam-input" type="number" value="0" min="0" max="500">
+      </div>
+      <button id="search-btn" disabled>Search</button>
+    </div>
+  </div>
+
+  <div id="status-bar">
+    <div class="spinner" id="spinner"></div>
+    <span id="status-text">Load the WASM module to begin.</span>
+  </div>
+
+  <div id="results"></div>
+</main>
+
+<footer>
+  RENKIN · Rust + WebAssembly ·
+  Serve with <code>python3 -m http.server 8080</code> from the project root,
+  then open <code>http://localhost:8080/demo/</code>
+</footer>
+
+<script type="module">
+  const wasmStatusEl = document.getElementById('wasm-status');
+  const statusText   = document.getElementById('status-text');
+  const spinner      = document.getElementById('spinner');
+  const searchBtn    = document.getElementById('search-btn');
+  const resultsEl    = document.getElementById('results');
+  const examplesEl   = document.getElementById('examples-select');
+  const smilesEl     = document.getElementById('smiles-input');
+
+  let findRoutesFn = null;
+
+  // Load WASM
+  try {
+    const mod = await import('../pkg/renkin.js');
+    await mod.default();
+    findRoutesFn = mod.find_routes;
+    const ver = mod.version ? mod.version() : 'renkin';
+    wasmStatusEl.textContent = `WASM ready — ${ver}`;
+    wasmStatusEl.className = 'wasm-status ready';
+    searchBtn.disabled = false;
+    statusText.textContent = 'Enter a SMILES string or pick a preset above.';
+  } catch (e) {
+    wasmStatusEl.className = 'wasm-status failed';
+    const msg = document.createTextNode(
+      `Failed to load WASM: ${e.message}. ` +
+      `Make sure to: (1) build with wasm-pack build --target web --no-default-features, ` +
+      `(2) serve via HTTP: python3 -m http.server 8080, ` +
+      `(3) open http://localhost:8080/demo/`
+    );
+    wasmStatusEl.textContent = '';
+    wasmStatusEl.appendChild(msg);
+    statusText.textContent = 'WASM unavailable.';
+  }
+
+  // Preset selector
+  examplesEl.addEventListener('change', () => {
+    if (examplesEl.value) smilesEl.value = examplesEl.value;
+  });
+
+  // Trigger search
+  searchBtn.addEventListener('click', runSearch);
+  smilesEl.addEventListener('keydown', e => { if (e.key === 'Enter') runSearch(); });
+
+  function runSearch() {
+    if (!findRoutesFn) return;
+    const target    = smilesEl.value.trim();
+    const depth     = parseInt(document.getElementById('depth-input').value)  || 5;
+    const maxRoutes = parseInt(document.getElementById('routes-input').value) || 5;
+    const beamWidth = parseInt(document.getElementById('beam-input').value)   || 0;
+    if (!target) return;
+
+    searchBtn.disabled = true;
+    spinner.classList.add('active');
+    statusText.textContent = 'Searching…';
+    resultsEl.textContent = '';
+
+    setTimeout(() => {
+      const t0 = performance.now();
+      let raw;
+      try {
+        raw = findRoutesFn(target, depth, maxRoutes, beamWidth);
+      } catch (e) {
+        showError(`SMILES parse error: ${e.message}`);
+        done(); return;
+      }
+      const elapsed = (performance.now() - t0).toFixed(1);
+
+      let data;
+      try { data = JSON.parse(raw); }
+      catch (e) { showError(`Internal JSON error: ${e.message}`); done(); return; }
+
+      renderResults(data, elapsed);
+      done();
+    }, 10);
+  }
+
+  function done() {
+    searchBtn.disabled = false;
+    spinner.classList.remove('active');
+  }
+
+  function showError(msg) {
+    statusText.textContent = 'Error.';
+    const box = document.createElement('div');
+    box.className = 'error-box';
+    box.textContent = msg;
+    resultsEl.textContent = '';
+    resultsEl.appendChild(box);
+  }
+
+  function renderResults(data, elapsed) {
+    const n = data.routes_found;
+    statusText.textContent =
+      `Found ${n} route${n !== 1 ? 's' : ''} in ${elapsed} ms`;
+
+    resultsEl.textContent = '';
+
+    if (n === 0) {
+      const panel = document.createElement('div');
+      panel.className = 'panel';
+      const msg = document.createElement('div');
+      msg.className = 'no-routes';
+      msg.textContent = 'No routes found within the given depth. Try increasing depth or beam-width (0 = unlimited A*).';
+      panel.appendChild(msg);
+      resultsEl.appendChild(panel);
+      return;
+    }
+
+    // Stats row
+    const minDepth = Math.min(...data.routes.map(r => r.depth));
+    const statsRow = document.createElement('div');
+    statsRow.className = 'stats-row';
+    [['Routes', n], ['Best depth', minDepth], ['Time', `${elapsed} ms`]].forEach(([label, val]) => {
+      const stat = document.createElement('div');
+      stat.className = 'stat';
+      const valEl = document.createElement('div');
+      valEl.className = 'stat-value';
+      valEl.textContent = val;
+      const lblEl = document.createElement('div');
+      lblEl.className = 'stat-label';
+      lblEl.textContent = label;
+      stat.appendChild(valEl);
+      stat.appendChild(lblEl);
+      statsRow.appendChild(stat);
+    });
+    resultsEl.appendChild(statsRow);
+
+    data.routes.forEach((route, i) => resultsEl.appendChild(buildRouteCard(route, i + 1)));
+  }
+
+  function buildRouteCard(route, num) {
+    const card = document.createElement('div');
+    card.className = 'route-card';
+
+    // Header
+    const header = document.createElement('div');
+    header.className = 'route-header';
+
+    const numBadge = document.createElement('div');
+    numBadge.className = 'route-num';
+    numBadge.textContent = num;
+
+    const title = document.createElement('strong');
+    title.textContent = `Route ${num}`;
+
+    const depthBadge = document.createElement('div');
+    depthBadge.className = 'depth-badge';
+    depthBadge.textContent = `${route.depth} step${route.depth !== 1 ? 's' : ''}`;
+
+    header.appendChild(numBadge);
+    header.appendChild(title);
+    header.appendChild(depthBadge);
+    card.appendChild(header);
+
+    if (route.steps.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'empty-route';
+      empty.textContent = '✓ This molecule is a building block — buy it directly.';
+      card.appendChild(empty);
+    } else {
+      const stepList = document.createElement('div');
+      stepList.className = 'step-list';
+      route.steps.forEach((step, idx) => {
+        stepList.appendChild(buildStep(step, idx, route.steps.length));
+      });
+      card.appendChild(stepList);
+    }
+
+    return card;
+  }
+
+  function buildStep(step, idx, total) {
+    const isLast = idx === total - 1;
+    const stepEl = document.createElement('div');
+    stepEl.className = 'step';
+
+    // Connector
+    const connector = document.createElement('div');
+    connector.className = 'step-connector';
+    const dot = document.createElement('div');
+    dot.className = 'step-dot';
+    connector.appendChild(dot);
+    if (!isLast) {
+      const line = document.createElement('div');
+      line.className = 'step-line';
+      connector.appendChild(line);
+    }
+
+    // Body
+    const body = document.createElement('div');
+    body.className = 'step-body';
+
+    const ruleEl = document.createElement('div');
+    ruleEl.className = 'step-rule';
+    ruleEl.textContent = step.rule;
+
+    const targetEl = document.createElement('div');
+    targetEl.className = 'step-target';
+    targetEl.textContent = step.target;
+
+    const precList = document.createElement('div');
+    precList.className = 'precursor-list';
+    step.precursors.forEach(p => {
+      const prec = document.createElement('div');
+      prec.className = 'precursor';
+      prec.textContent = p;
+      precList.appendChild(prec);
+    });
+
+    body.appendChild(ruleEl);
+    body.appendChild(targetEl);
+    body.appendChild(precList);
+
+    stepEl.appendChild(connector);
+    stepEl.appendChild(body);
+    return stepEl;
+  }
+</script>
+</body>
+</html>

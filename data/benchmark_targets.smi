@@ -1,0 +1,76 @@
+# RENKIN benchmark target set — representative of USPTO-50k reaction classes
+# Format: SMILES  name
+# Reaction class coverage: ester (class 1), amide (class 2), C-N (class 3),
+#   C-O (class 4), Suzuki (class 9), Buchwald-Hartwig (class 11), Wittig (class 18)
+#
+# Usage:
+#   cargo run --bin renkin-bench -- \
+#     --input data/benchmark_targets.smi \
+#     --depth 5 --max-routes 3
+#
+# For the full USPTO-50k dataset, download from:
+#   https://github.com/coleygroup/rxn-ebm (test_canonicalized.csv)
+# then extract the product column:
+#   python3 -c "
+#   import csv, sys
+#   for row in csv.DictReader(open('test_canonicalized.csv')):
+#       print(row['prod_smiles'], row.get('class',''))
+#   " > data/uspto50k_products.smi
+
+# ── Ester hydrolysis (class 1) ────────────────────────────────────────────────
+CC(=O)Oc1ccccc1C(=O)O      aspirin
+CCOC(=O)c1ccccc1           ethyl_benzoate
+CC(=O)OCCO                 ethylene_glycol_monoacetate
+CCOC(=O)CC(=O)OCC          diethyl_malonate
+CC(=O)OCC                  ethyl_acetate
+CC(=O)Oc1ccc(N)cc1         4-aminophenyl_acetate
+CC(=O)Oc1ccc(Br)cc1        4-bromophenyl_acetate
+CCOC(=O)c1ccc(N)cc1        ethyl_4-aminobenzoate_benzocaine
+
+# ── Amide hydrolysis / amide formation (class 2) ──────────────────────────────
+CC(=O)Nc1ccc(O)cc1         paracetamol
+CC(=O)Nc1ccccc1            acetanilide
+CC(=O)Nc1ccc(Cl)cc1        4-chloroacetanilide
+CC(=O)Nc1ccc(F)cc1         4-fluoroacetanilide
+CC(=O)Nc1ccc(OC)cc1        4-methoxy-acetanilide
+c1ccccc1C(=O)N             benzamide
+CC(=O)N1CCOCC1             4-acetylmorpholine
+
+# ── C-N bond formation — reductive amination / N-alkylation (class 3) ─────────
+CNCC(=O)O                  N-methylglycine_sarcosine
+c1ccc(N)cc1CC(=O)O         4-aminophenylacetic_acid
+Nc1ccc(CC(=O)O)cc1         tyramine_related
+c1ccc(NC2CCCC2)cc1         N-cyclohexylaniline
+CCNCc1ccccc1               N-ethylbenzylamine
+
+# ── C-O bond formation — Mitsunobu / Williamson ether (class 4) ───────────────
+COc1ccc(N)cc1              4-methoxyaniline
+COc1ccccc1C(=O)O           methyl_salicylate
+CCOc1ccccc1                phenetole
+COc1ccc(C(=O)O)cc1         methyl_4-methoxybenzoate
+
+# ── Suzuki coupling / biaryl C-C (class 9) ────────────────────────────────────
+c1ccc(-c2ccccc2)cc1        biphenyl
+c1ccc(-c2ccc(N)cc2)cc1     4-aminobiphenyl
+c1ccc(-c2ccncc2)cc1        4-phenylpyridine
+c1cnc(-c2ccccc2)cc1        2-phenylpyridine
+Fc1ccc(-c2ccccc2)cc1       4-fluorobiphenyl
+
+# ── Buchwald-Hartwig C-N coupling (class 11) ─────────────────────────────────
+c1ccc(Nc2ccccc2)cc1        diphenylamine
+Nc1ccc(-c2ccccc2)cc1       4-aminobiphenyl_via_NH2
+c1ccc(N2CCOCC2)cc1         4-morpholinobenzene
+c1ccc(Nc2ccccn2)cc1        N-phenyl-2-aminopyridine
+
+# ── Wittig / olefin from carbonyls (class 18) ────────────────────────────────
+C=Cc1ccccc1                styrene
+C=CC(=O)O                  acrylic_acid
+C=Cc1ccc(OC)cc1            4-methoxystyrene
+C=Cc1ccc(N)cc1             4-aminostyrene
+
+# ── Challenging (multi-step, may exceed depth) ────────────────────────────────
+CC(=O)Oc1ccc2ccccc2c1      2-naphthyl_acetate
+Nc1ccc2ccccc2c1            2-naphthylamine
+c1ccc2ccccc2c1             naphthalene
+CC(=O)c1ccc(O)cc1          4-hydroxyacetophenone
+O=c1[nH]cc2ccccc21         oxindole

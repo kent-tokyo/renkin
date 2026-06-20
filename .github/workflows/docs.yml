@@ -53,6 +53,12 @@ jobs:
       - name: Build MkDocs site
         run: mkdocs build -d site
 
+      - name: Bundle SmilesDrawer v2.3.0
+        run: |
+          npm install smiles-drawer@2.3.0
+          mkdir -p site/js
+          cp node_modules/smiles-drawer/dist/smiles-drawer.min.js site/js/smiles-drawer.min.js
+
       - name: Copy WASM and playground into site
         run: |
           cp -r wasm-out site/pkg

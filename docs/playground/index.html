@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>RENKIN Playground — Interactive Retrosynthesis</title>
   <meta name="description" content="Interactive retrosynthesis planning in the browser — powered by WebAssembly">
+  <!-- smiles-drawer bundled locally by docs.yml workflow -->
+  <script src="../js/smiles-drawer.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -87,6 +89,7 @@
     .mol-img-wrap:hover { box-shadow:0 0 0 2px var(--accent); }
     .mol-img-wrap.large { width:300px; height:220px; }
     .mol-img-wrap img { display:block; }
+    .mol-img-wrap svg { display:block; }
     .mol-smiles { font-family:var(--mono); font-size:0.72rem; color:var(--muted);
       max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
       text-align:center; transition:color 0.1s; cursor:pointer; }
@@ -537,7 +540,22 @@
     wasmStatusEl.appendChild(document.createTextNode(String(e.message)));
   }
 
-  // ── CDK Depict molecule card ───────────────────────────────────────────────
+  // ── SmilesDrawer v2.x init (SvgDrawer) ────────────────────────────────────
+  // Correct API (from official playground source smiles-website.js):
+  //   svgDrawer.draw(tree, svgElement, 'light', null, false)  ← 5 args
+  // Previously we used 4 args with false as 4th — that was wrong.
+  const ns = 'http://www.w3.org/2000/svg';
+  let sdDrawer = null, sdDrawerLg = null;
+  if (typeof SmilesDrawer !== 'undefined') {
+    const base = { padding:10, bondThickness:1.0, fontSizeSmall:7, fontSize:9,
+      themes:{ light:{ C:'#222',O:'#c0392b',N:'#2980b9',S:'#b7950b',F:'#16a085',
+                       Cl:'#1a5276',Br:'#6e2f8a',I:'#4a235a',P:'#784212',BACKGROUND:'#f4f5f8' }}};
+    sdDrawer   = new SmilesDrawer.SvgDrawer({ ...base, width:220, height:160 });
+    sdDrawerLg = new SmilesDrawer.SvgDrawer({ ...base, width:300, height:220,
+      bondThickness:1.1, fontSize:10, fontSizeSmall:8 });
+  }
+
+  // ── CDK Depict fallback ────────────────────────────────────────────────────
   const DEPICT = 'https://www.simolecule.com/cdkdepict/depict/cow/svg';
 
   // Zoom modal
@@ -582,6 +600,8 @@
 
     const w = large ? 300 : 220;
     const h = large ? 220 : 160;
+
+    // CDK Depict <img> — shown initially, hidden if SmilesDrawer succeeds
     const img = document.createElement('img');
     img.width = w; img.height = h; img.style.display = 'block';
     img.alt = smiles;
@@ -592,9 +612,38 @@
       fb.textContent = smiles;
       img.replaceWith(fb);
     };
-    // Click image → zoom modal
-    wrap.addEventListener('click', () => openZoom(smiles));
+
+    // SmilesDrawer SVG — hidden initially, shown on successful draw
+    const svgEl = document.createElementNS(ns, 'svg');
+    svgEl.setAttribute('xmlns', ns);
+    svgEl.setAttribute('width',  String(w));
+    svgEl.setAttribute('height', String(h));
+    svgEl.style.display = 'none';
+
     wrap.appendChild(img);
+    wrap.appendChild(svgEl);
+
+    // Attempt SmilesDrawer after DOM insertion (setTimeout ensures card is in document)
+    if (sdDrawer) {
+      const drawer = large ? sdDrawerLg : sdDrawer;
+      setTimeout(() => {
+        SmilesDrawer.parse(smiles,
+          tree => {
+            // Correct 5-arg API from official playground source (smiles-website.js):
+            // draw(tree, svgElement, theme, successCallback, isStereochemistry)
+            drawer.draw(tree, svgEl, 'light', null, false);
+            if (svgEl.childElementCount > 0) {
+              img.style.display   = 'none';
+              svgEl.style.display = 'block';
+            }
+          },
+          () => { /* parse failed — CDK Depict img stays visible */ }
+        );
+      }, 0);
+    }
+
+    // Click image/svg → zoom modal
+    wrap.addEventListener('click', () => openZoom(smiles));
     card.appendChild(wrap);
 
     const label = document.createElement('div');

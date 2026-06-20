@@ -1,4 +1,4 @@
-# RENKIN — Retrosynthesis Engine
+# RENKIN — **R**etrosynthetic **E**xploration **N**etwork for **K**nowledge-**I**nformed **N**avigation
 
 > **Computer-Aided Synthesis Planning (CASP) · Pure Rust · WebAssembly · Python**  
 > Named after 錬金 (れんきん, *renkin*) — Japanese for alchemy: just as alchemists transformed base metals into gold, RENKIN transforms target molecules back into cheap starting materials.

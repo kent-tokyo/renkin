@@ -1,4 +1,4 @@
-# RENKIN — 逆合成エンジン
+# RENKIN — **R**etrosynthetic **E**xploration **N**etwork for **K**nowledge-**I**nformed **N**avigation
 
 > **コンピュータ支援合成計画（CASP）· Pure Rust · WebAssembly · Python**  
 > 錬金（れんきん）― 錬金術のように、目標分子を安価な原料へと逆変換する。

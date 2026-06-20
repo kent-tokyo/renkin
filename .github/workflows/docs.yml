@@ -39,7 +39,8 @@ jobs:
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
       - name: Build WASM
-        run: wasm-pack build --target web --no-default-features --out-dir site/pkg
+        # Output to a temp dir — mkdocs build -d site would wipe site/ otherwise
+        run: wasm-pack build --target web --no-default-features --out-dir wasm-out
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -52,8 +53,9 @@ jobs:
       - name: Build MkDocs site
         run: mkdocs build -d site
 
-      - name: Copy playground page
+      - name: Copy WASM and playground into site
         run: |
+          cp -r wasm-out site/pkg
           mkdir -p site/playground
           cp docs/playground/index.html site/playground/index.html
 

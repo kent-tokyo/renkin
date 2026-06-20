@@ -31,6 +31,8 @@ pub const DEFAULT_BUILDING_BLOCKS: &[&str] = &[
     "Nc1ccc(C(=O)O)cc1", // 4-aminobenzoic acid
     "c1ccc(N)cc1C(=O)O", // anthranilic acid (2-aminobenzoic acid)
     "c1cc(N)ccc1C(=O)O", // 3-aminobenzoic acid
+    // ── Simple arenes ────────────────────────────────────────────────────────
+    "c1ccccc1", // benzene (Suzuki acceptor fragment)
     // ── Aryl halides (Suzuki / Buchwald-Hartwig / Heck donors) ───────────────
     "Brc1ccccc1",         // bromobenzene
     "Clc1ccccc1",         // chlorobenzene

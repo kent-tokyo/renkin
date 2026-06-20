@@ -658,6 +658,38 @@ mod tests {
     }
 
     #[test]
+    fn default_bbs_solve_biphenyl() {
+        // Verify that DEFAULT_BUILDING_BLOCKS (the actual WASM runtime set) contains
+        // the BBs needed for the Biphenyl (Suzuki) playground preset.
+        use crate::search::{SearchConfig, find_routes};
+        let env = ChemEnv::in_memory(crate::DEFAULT_BUILDING_BLOCKS);
+
+        // First confirm bromobenzene and benzene are recognized as BBs.
+        let bromobenzene = mol_from_smiles("Brc1ccccc1").unwrap();
+        let benzene = mol_from_smiles("c1ccccc1").unwrap();
+        assert!(
+            env.is_building_block(&bromobenzene),
+            "DEFAULT_BUILDING_BLOCKS must contain bromobenzene"
+        );
+        assert!(
+            env.is_building_block(&benzene),
+            "DEFAULT_BUILDING_BLOCKS must contain benzene"
+        );
+
+        let rules = default_rules();
+        let cfg = SearchConfig {
+            max_depth: 3,
+            max_routes: 5,
+            beam_width: 0,
+        };
+        let routes = find_routes("c1ccc(-c2ccccc2)cc1", &env, &rules, &cfg).unwrap();
+        assert!(
+            !routes.is_empty(),
+            "biphenyl must be solvable with DEFAULT_BUILDING_BLOCKS"
+        );
+    }
+
+    #[test]
     fn wittig_retro_cleaves_alkene() {
         let mol = mol_from_smiles("C=C").unwrap(); // ethylene
         let rule = RetroRule {

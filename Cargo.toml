@@ -2,6 +2,9 @@
 name = "renkin"
 version = "0.1.0"
 edition = "2024"
+repository = "https://github.com/kent-tokyo/renkin"
+description = "Ultra-fast retrosynthesis engine — pure Rust, WASM-ready"
+license = "MIT"
 
 [[bin]]
 name = "renkin"

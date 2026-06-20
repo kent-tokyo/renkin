@@ -17,7 +17,7 @@ use std::time::Instant;
 
 use anyhow::{Result, bail};
 use renkin::DEFAULT_BUILDING_BLOCKS;
-use renkin::chem_env::{ChemEnv, default_rules};
+use renkin::chem_env::{ChemEnv, default_rules, load_rules_from_file};
 use renkin::search::{SearchConfig, find_routes};
 use serde::Serialize;
 
@@ -46,6 +46,7 @@ fn main() -> Result<()> {
 
     let mut input_path: Option<String> = None;
     let mut bb_path: Option<String> = None;
+    let mut templates_path: Option<String> = None;
     let mut max_depth: u32 = 5;
     let mut beam_width: usize = 0;
     let mut max_routes: usize = 1;
@@ -83,6 +84,12 @@ fn main() -> Result<()> {
                     bb_path = Some(args[i].clone());
                 }
             }
+            "--templates" => {
+                i += 1;
+                if i < args.len() {
+                    templates_path = Some(args[i].clone());
+                }
+            }
             _ => {}
         }
         i += 1;
@@ -91,7 +98,7 @@ fn main() -> Result<()> {
     let Some(input) = input_path else {
         bail!(
             "Usage: renkin-bench --input <smiles_file> [--depth <N>] \
-             [--beam-width <N>] [--building-blocks <path>]"
+             [--beam-width <N>] [--building-blocks <path>] [--templates <path>]"
         );
     };
 
@@ -118,7 +125,12 @@ fn main() -> Result<()> {
             .unwrap_or_else(|_| ChemEnv::in_memory(DEFAULT_BUILDING_BLOCKS)),
     };
 
-    let rules = default_rules();
+    let mut rules = default_rules();
+    if let Some(ref path) = templates_path {
+        let extra = load_rules_from_file(path);
+        eprintln!("Loaded {} templates from {path}", extra.len());
+        rules.extend(extra);
+    }
     let config = SearchConfig {
         max_depth,
         max_routes,

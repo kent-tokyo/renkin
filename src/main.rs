@@ -18,6 +18,7 @@ fn main() -> Result<()> {
     let mut target: Option<String> = None;
     let mut max_depth: u32 = 5;
     let mut bb_path: Option<String> = None;
+    let mut templates_path: Option<String> = None;
     let mut max_routes: usize = 5;
     let mut beam_width: usize = 0;
 
@@ -42,6 +43,12 @@ fn main() -> Result<()> {
                     bb_path = Some(args[i].clone());
                 }
             }
+            "--templates" => {
+                i += 1;
+                if i < args.len() {
+                    templates_path = Some(args[i].clone());
+                }
+            }
             "--max-routes" | "-n" => {
                 i += 1;
                 if i < args.len() {
@@ -62,14 +69,15 @@ fn main() -> Result<()> {
     let Some(target_smiles) = target else {
         bail!(
             "Usage: renkin --target <SMILES> [--depth <N>] [--max-routes <N>] \
-             [--beam-width <N>] [--building-blocks <path>]\n\
+             [--beam-width <N>] [--building-blocks <path>] [--templates <path>]\n\
              \n\
              Options:\n  \
              --target / -t      Target molecule SMILES\n  \
              --depth  / -d      Max retrosynthesis depth (default: 5)\n  \
              --max-routes / -n  Max routes to return (default: 5)\n  \
              --beam-width / -w  Beam search width, 0 = unlimited A* (default: 0)\n  \
-             --building-blocks  Path to .smi file of commercial starting materials"
+             --building-blocks  Path to .smi file of commercial starting materials\n  \
+             --templates        Path to extracted SMIRKS templates file (tab-separated)"
         );
     };
 
@@ -79,7 +87,12 @@ fn main() -> Result<()> {
             .unwrap_or_else(|_| chem_env::ChemEnv::in_memory(DEFAULT_BUILDING_BLOCKS)),
     };
 
-    let rules = chem_env::default_rules();
+    let mut rules = chem_env::default_rules();
+    if let Some(ref path) = templates_path {
+        let extra = chem_env::load_rules_from_file(path);
+        eprintln!("Loaded {} templates from {path}", extra.len());
+        rules.extend(extra);
+    }
     let config = SearchConfig {
         max_depth,
         max_routes,

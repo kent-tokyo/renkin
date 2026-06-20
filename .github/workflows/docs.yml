@@ -55,7 +55,7 @@ jobs:
 
       - name: Bundle SmilesDrawer (avoid CDN dependency on GitHub Pages)
         run: |
-          npm install smiles-drawer@2.1.7
+          npm install smiles-drawer@1.6.0
           mkdir -p site/js
           cp node_modules/smiles-drawer/dist/smiles-drawer.min.js site/js/smiles-drawer.min.js
 

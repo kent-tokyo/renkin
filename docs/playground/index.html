@@ -235,25 +235,44 @@
     statusText.textContent = 'WASM unavailable.';
   }
 
-  // SvgDrawer: takes SVG DOM element directly (no string ID, no canvas)
-  const molTheme = { C:'#222', O:'#c0392b', N:'#2980b9', S:'#b7950b',
-                     F:'#16a085', Cl:'#1a5276', Br:'#6e2f8a', I:'#4a235a',
-                     P:'#784212', BACKGROUND:'#f4f5f8' };
+  // smiles-drawer v1.6.0: canvas-based, string ID API
+  // v1 Drawer.draw(tree, 'canvas-id', theme) is the most reliable browser API
   let sdDrawer = null, sdDrawerLg = null;
   if (typeof SmilesDrawer !== 'undefined') {
-    sdDrawer   = new SmilesDrawer.SvgDrawer({ width:180, height:120, padding:10,
-      bondThickness:1.0, fontSizeSmall:7, fontSize:9, themes:{ light: molTheme } });
-    sdDrawerLg = new SmilesDrawer.SvgDrawer({ width:220, height:150, padding:12,
-      bondThickness:1.1, fontSizeSmall:8, fontSize:10, themes:{ light: molTheme } });
-  } else {
-    console.error('SmilesDrawer not loaded — check ../js/smiles-drawer.min.js');
+    sdDrawer   = new SmilesDrawer.Drawer({ width:180, height:120, padding:10,
+      bondThickness:1.0, fontSizeSmall:7, fontSize:9, themes:{
+        light:{ C:'#222',O:'#c0392b',N:'#2980b9',S:'#b7950b',F:'#16a085',
+                Cl:'#1a5276',Br:'#6e2f8a',I:'#4a235a',P:'#784212',BACKGROUND:'#f4f5f8'}}});
+    sdDrawerLg = new SmilesDrawer.Drawer({ width:220, height:150, padding:12,
+      bondThickness:1.1, fontSizeSmall:8, fontSize:10, themes:{
+        light:{ C:'#222',O:'#c0392b',N:'#2980b9',S:'#b7950b',F:'#16a085',
+                Cl:'#1a5276',Br:'#6e2f8a',I:'#4a235a',P:'#784212',BACKGROUND:'#f4f5f8'}}});
   }
 
-  function drawSmiles(svgEl, smiles, large) {
-    if (!sdDrawer) { svgEl.textContent = smiles; return; }
+  let _molId = 0;
+
+  function drawSmiles(id, smiles, large) {
+    if (!sdDrawer) {
+      // SmilesDrawer not available — show SMILES text in canvas
+      const c = document.getElementById(id);
+      if (c) { const ctx = c.getContext('2d'); if (ctx) {
+        ctx.fillStyle = '#f4f5f8'; ctx.fillRect(0,0,c.width,c.height);
+        ctx.fillStyle = '#555'; ctx.font = '8px monospace'; ctx.textAlign = 'center';
+        ctx.fillText(smiles.slice(0,24), c.width/2, c.height/2);
+      }}
+      return;
+    }
     SmilesDrawer.parse(smiles,
-      t => (large ? sdDrawerLg : sdDrawer).draw(t, svgEl, 'light', false),
-      () => { svgEl.textContent = smiles; });
+      t => (large ? sdDrawerLg : sdDrawer).draw(t, id, 'light', false),
+      () => {
+        // parse failed — show SMILES as text
+        const c = document.getElementById(id);
+        if (c) { const ctx = c.getContext('2d'); if (ctx) {
+          ctx.fillStyle = '#f4f5f8'; ctx.fillRect(0,0,c.width,c.height);
+          ctx.fillStyle = '#888'; ctx.font = '8px monospace'; ctx.textAlign = 'center';
+          ctx.fillText(smiles.slice(0,22), c.width/2, c.height/2);
+        }}
+      });
   }
 
   function makeMolCard(smiles, large) {
@@ -261,13 +280,13 @@
     card.className = 'mol-card';
     const wrap = document.createElement('div');
     wrap.className = large ? 'mol-svg-wrap large' : 'mol-svg-wrap';
-    // Explicit xmlns+dimensions required for programmatic SVG in some browsers
-    const ns = 'http://www.w3.org/2000/svg';
-    const svgEl = document.createElementNS(ns, 'svg');
-    svgEl.setAttribute('xmlns', ns);
-    svgEl.setAttribute('width',  large ? '220' : '180');
-    svgEl.setAttribute('height', large ? '150' : '120');
-    wrap.appendChild(svgEl);
+    // v1 Drawer.draw() calls document.getElementById(id) internally
+    const id = `mol-${++_molId}`;
+    const c = document.createElement('canvas');
+    c.id = id;
+    c.width  = large ? 220 : 180;
+    c.height = large ? 150 : 120;
+    wrap.appendChild(c);
     card.appendChild(wrap);
     const label = document.createElement('div');
     label.className = large ? 'mol-smiles large' : 'mol-smiles';
@@ -283,8 +302,8 @@
         setTimeout(() => card.classList.remove('copied'), 1200);
       });
     });
-    // setTimeout 0: fires after synchronous DOM appends complete (safer than rAF here)
-    setTimeout(() => drawSmiles(svgEl, smiles, large), 0);
+    // setTimeout: ensure canvas is in DOM before getElementById is called inside draw()
+    setTimeout(() => drawSmiles(id, smiles, large), 0);
     return card;
   }
 

@@ -94,6 +94,9 @@
       max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
       text-align:center; transition:color 0.1s; cursor:pointer; }
     .mol-smiles.large { max-width:300px; }
+    .haber-badge { font-size:0.68rem; background:rgba(124,106,247,0.12);
+      color:var(--accent); border-radius:4px; padding:2px 7px; margin-top:4px;
+      white-space:nowrap; text-align:center; line-height:1.5; }
     .mol-copy-tip { position:absolute; top:-28px; left:50%; transform:translateX(-50%);
       background:var(--text); color:var(--bg); font-size:0.7rem; padding:2px 8px;
       border-radius:4px; white-space:nowrap; pointer-events:none; opacity:0; transition:opacity 0.2s; }
@@ -236,6 +239,9 @@
           <option value="C=Cc1ccccc1">Styrene (Wittig)</option>
           <option value="CCOC(=O)c1ccccc1">Ethyl benzoate</option>
         </optgroup>
+        <optgroup id="grp-haber" label="Ammonia / Haber-Bosch">
+          <option value="CC(=O)N">Acetamide</option>
+        </optgroup>
       </select>
     </div>
 
@@ -327,6 +333,8 @@
       grp_cc: 'C-C Coupling Products',
       grp_cn: 'Aryl C-N / C-O',
       grp_misc: 'Ester / Wittig',
+      grp_haber: 'Ammonia / Haber-Bosch',
+      haber_bosch_note: '⚡ NH₃ — produced industrially via Haber-Bosch (N₂ + 3H₂ → 2NH₃)',
       tip_retro: 'Retrosynthesis works backwards from a target molecule to find commercial starting materials. Each arrow = one bond disconnection. End nodes = commercially available building blocks.',
       tip_depth: 'Maximum synthesis steps. Deeper = more complex routes, but slower.',
       tip_beam: 'Beam width limits parallel search paths. 0 = unlimited A*. Smaller = faster but may miss routes.',
@@ -362,6 +370,8 @@
       grp_cc: 'C-Cカップリング生成物',
       grp_cn: 'アリール C-N / C-O',
       grp_misc: 'エステル / Wittig',
+      grp_haber: 'アンモニア / ハーバーボッシュ法',
+      haber_bosch_note: '⚡ NH₃ — ハーバーボッシュ法で工業生産 (N₂ + 3H₂ → 2NH₃)',
       tip_retro: '逆合成は目標分子から出発して市販原料へと逆向きに経路を設計する手法です。各矢印=1つの結合切断（逆反応）、末端ノード=市販原料（ビルディングブロック）。',
       tip_depth: '合成ステップの最大数。深くするほど複雑な経路が見つかりますが時間がかかります。',
       tip_beam: 'ビーム幅は並列探索パス数の上限。0=無制限（A*）。小さいほど高速ですが経路を見逃す可能性あり。',
@@ -397,6 +407,8 @@
       grp_cc: 'C-C 偶联产物',
       grp_cn: '芳基 C-N / C-O',
       grp_misc: '酯 / Wittig',
+      grp_haber: '氨 / 哈伯-博世法',
+      haber_bosch_note: '⚡ NH₃ — 由哈伯-博世法工业生产 (N₂ + 3H₂ → 2NH₃)',
       tip_retro: '逆合成从目标分子出发，追溯到商业可购原料的合成路径。每个箭头=一次化学键断裂（逆反应），末端节点=商业可购原料（构建块）。',
       tip_depth: '合成步骤的最大数目。越深找到路径越复杂，但速度越慢。',
       tip_beam: '束宽限制并行探索路径数。0=无限制（A*）。值越小速度越快，但可能遗漏路径。',
@@ -501,6 +513,7 @@
     document.getElementById('grp-cc').label     = t('grp_cc');
     document.getElementById('grp-cn').label     = t('grp_cn');
     document.getElementById('grp-misc').label   = t('grp_misc');
+    document.getElementById('grp-haber').label  = t('grp_haber');
     // Tooltip text on help icons
     document.querySelectorAll('[data-i18n-tip]').forEach(el => {
       el.dataset.tip = t(el.dataset.i18nTip);
@@ -655,6 +668,14 @@
     tip.textContent = t('copied');
     card.appendChild(label);
     card.appendChild(tip);
+
+    // Special annotation for ammonia building block (Haber-Bosch process)
+    if (smiles === 'N') {
+      const badge = document.createElement('div');
+      badge.className = 'haber-badge';
+      badge.textContent = t('haber_bosch_note');
+      card.appendChild(badge);
+    }
 
     // Click SMILES label → copy to clipboard
     label.addEventListener('click', () => {

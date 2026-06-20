@@ -388,6 +388,8 @@ pub fn apply_retro(mol: &Molecule, rule: &RetroRule) -> Vec<Vec<PrecursorMol>> {
         return match rule.name {
             "suzuki_retro" => biaryl_cleavage(mol),
             "amide_cleavage" => amide_cleavage(mol),
+            "boc_deprotection_retro" => boc_deprotection(mol),
+            "cbz_deprotection_retro" => cbz_deprotection(mol),
             _ => vec![],
         };
     }
@@ -559,7 +561,162 @@ pub fn default_rules() -> Vec<RetroRule> {
             // Alcohol → ketone/aldehyde (retro-reduction; converts C-OH to C=O)
             smirks: "[C:1][OH:2]>>[C:1]=O",
         },
+        // ── Sonogashira coupling ─────────────────────────────────────────────
+        RetroRule {
+            name: "sonogashira_retro",
+            // Ar-C≡C-R → Ar-Br + HC≡C-R (retro-Sonogashira, Pd/Cu catalysis)
+            smirks: "[c:1][C:2]#[C:3]>>[c:1]Br.[C:2]#[C:3]",
+        },
+        // ── Sulfonamide disconnection ────────────────────────────────────────
+        RetroRule {
+            name: "sulfonamide_retro",
+            // Ar-SO2-NHR → Ar-SO2Cl + HNR (sulfonyl chloride + amine)
+            smirks: "[S:1](=O)(=O)[N:2]>>[S:1](=O)(=O)Cl.[N:2]",
+        },
+        // ── N-protection / deprotection ──────────────────────────────────────
+        RetroRule {
+            name: "boc_deprotection_retro",
+            // N-Boc → N-H (deprotect: TFA removes Boc). Graph-based to avoid leakage.
+            smirks: "",
+        },
+        // ── N-alkylation (more specific than cn_aliphatic_cleavage) ──────────
+        RetroRule {
+            name: "n_benzylation_retro",
+            // N-CH2Ar → N-H + BrCH2Ar (N-benzyl retro)
+            smirks: "[N:1][CH2:2][c:3]>>[N:1].[Br][CH2:2][c:3]",
+        },
+        // ── Grignard / organolithium retro ───────────────────────────────────
+        RetroRule {
+            name: "grignard_addition_retro",
+            // Tertiary alcohol → ketone + R-MgBr (retro-Grignard)
+            smirks: "[C:1]([OH:2])([C:3])[C:4]>>[C:1](=O)[C:3].[C:4]",
+        },
+        // ── Claisen / Dieckmann condensation ────────────────────────────────
+        RetroRule {
+            name: "claisen_retro",
+            // β-ketoester → ester + ester (retro-Claisen condensation)
+            smirks: "[C:1](=O)[CH2:2][C:3](=O)[O:4]>>[C:1](=O)O.[C:2]=[C:3][O:4]",
+        },
+        // ── Michael addition retro ───────────────────────────────────────────
+        RetroRule {
+            name: "michael_retro",
+            // R-CH2-C(=O)R' ← CH2=C(=O)R' + H (retro-1,4-addition at α)
+            smirks: "[C:1][CH2:2][C:3]=[O:4]>>[C:1].[CH2:2]=[C:3][OH:4]",
+        },
+        // ── Acyl chloride as electrophile source ─────────────────────────────
+        RetroRule {
+            name: "acyl_chloride_from_acid",
+            // Acid chloride → carboxylic acid (SOCl2 activation retro)
+            smirks: "[C:1](=[O:2])Cl>>[C:1](=[O:2])O",
+        },
+        // ── N-formylation / N-acylation (Cbz retro) ─────────────────────────
+        RetroRule {
+            name: "cbz_deprotection_retro",
+            // N-Cbz → N-H (hydrogenolysis retro, graph-based)
+            smirks: "",
+        },
     ]
+}
+
+/// Graph-based Boc deprotection retro:
+/// N-C(=O)-O-C(C)(C)C → N-H  (removes Boc group, "protected amine" retro synthesis)
+fn boc_deprotection(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
+    // Find N–C(=O)–O–C(C)(C)C substructure via SMARTS and remove the Boc group.
+    // This is modelled as: cut the N–C bond of the carbamate.
+    let boc_smarts = "[N;!$(N=*)]C(=O)OC(C)(C)C";
+    let Ok(query) = chematic::smarts::parse_smarts(boc_smarts) else {
+        return vec![];
+    };
+    let matches = chematic::smarts::find_matches(&query, mol);
+    if matches.is_empty() {
+        return vec![];
+    }
+
+    let mut results = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for m in matches {
+        // m[0] = N, m[1] = carbonyl C
+        if m.len() < 2 {
+            continue;
+        }
+        let Some(&n_idx) = m.get(&0) else { continue };
+        let Some(&c_idx) = m.get(&1) else { continue };
+
+        if !is_bridge_bond(mol, n_idx, c_idx) {
+            continue;
+        }
+
+        let comp_n = get_component(mol, n_idx, n_idx, c_idx);
+        let Some(frag_n) = build_sub_molecule(mol, &comp_n) else {
+            continue;
+        };
+
+        let precs = split_fragments(&frag_n);
+        if precs.is_empty() {
+            continue;
+        }
+
+        let key = precs
+            .iter()
+            .map(|p| p.smiles.as_str())
+            .collect::<Vec<_>>()
+            .join("|");
+        if !seen.insert(key) {
+            continue;
+        }
+        results.push(precs);
+    }
+    results
+}
+
+/// Graph-based Cbz deprotection retro:
+/// N-C(=O)-O-CH2-Ph → N-H  (hydrogenolysis removes Cbz group)
+fn cbz_deprotection(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
+    let cbz_smarts = "[N;!$(N=*)]C(=O)OCc1ccccc1";
+    let Ok(query) = chematic::smarts::parse_smarts(cbz_smarts) else {
+        return vec![];
+    };
+    let matches = chematic::smarts::find_matches(&query, mol);
+    if matches.is_empty() {
+        return vec![];
+    }
+
+    let mut results = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for m in matches {
+        if m.len() < 2 {
+            continue;
+        }
+        let Some(&n_idx) = m.get(&0) else { continue };
+        let Some(&c_idx) = m.get(&1) else { continue };
+
+        if !is_bridge_bond(mol, n_idx, c_idx) {
+            continue;
+        }
+
+        let comp_n = get_component(mol, n_idx, n_idx, c_idx);
+        let Some(frag_n) = build_sub_molecule(mol, &comp_n) else {
+            continue;
+        };
+
+        let precs = split_fragments(&frag_n);
+        if precs.is_empty() {
+            continue;
+        }
+
+        let key = precs
+            .iter()
+            .map(|p| p.smiles.as_str())
+            .collect::<Vec<_>>()
+            .join("|");
+        if !seen.insert(key) {
+            continue;
+        }
+        results.push(precs);
+    }
+    results
 }
 
 #[cfg(test)]

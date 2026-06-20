@@ -2,7 +2,6 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 
 use anyhow::{Context, Result};
-use chematic::chem::aromatic_ring_count;
 use chematic::chem::standardize::{StandardizeOptions, ZwitterionHandling, standardize};
 use chematic::core::{Atom, AtomIdx, BondOrder, Element, MoleculeBuilder};
 use chematic::rxn::run_reactants;
@@ -315,12 +314,17 @@ fn split_fragments(mol: &Molecule) -> Vec<PrecursorMol> {
         .filter_map(|frag| {
             let m = parse(frag).ok()?;
             let std_mol = standardize(&m, &STANDARDIZE_OPTS);
-            // Reject fragments that have aromatic atoms but no rings —
-            // these are open-chain aromatic chains produced by BFS leakage.
-            let has_aromatic = canonical_smiles(&std_mol)
-                .chars()
-                .any(|c| matches!(c, 'c' | 'n' | 'o' | 's' | 'p'));
-            if has_aromatic && aromatic_ring_count(&std_mol) == 0 {
+            // Reject fragments that have aromatic atoms but no ring closure —
+            // these are open-chain aromatic chains produced by BFS leakage (L4).
+            //
+            // We detect rings by the presence of SMILES ring-closure digits rather
+            // than aromatic_ring_count(), because chematic's aromatic_ring_count does
+            // not count heteroaromatic rings (e.g. pyridine → 0), which incorrectly
+            // filtered valid fragments like 4-bromopyridine in biaryl cleavage.
+            let smi_check = canonical_smiles(&std_mol);
+            let has_aromatic = smi_check.chars().any(|c| matches!(c, 'c' | 'n' | 'o' | 's' | 'p'));
+            let has_ring = smi_check.chars().any(|c| c.is_ascii_digit());
+            if has_aromatic && !has_ring {
                 return None;
             }
             let smi = to_canonical(&std_mol);
@@ -515,6 +519,7 @@ mod tests {
 
     #[test]
     fn aromatic_ring_fragment_filter() {
+        use chematic::chem::aromatic_ring_count;
         // Open-chain aromatic fragments (BFS leakage, L4) must be discarded.
         let mol = mol_from_smiles("c1ccc(N)cc1C(=O)O").unwrap();
         let rule = RetroRule {
@@ -538,6 +543,22 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn suzuki_retro_4_phenylpyridine_solvable() {
+        // 4-Phenylpyridine was returning 0 routes because aromatic_ring_count()
+        // returned 0 for pyridine (heteroaromatic), causing the BFS-leakage filter
+        // to incorrectly discard the 4-bromopyridine fragment.
+        use crate::search::{SearchConfig, find_routes};
+        let bbs = ["Brc1ccccc1", "c1ccccc1", "Brc1ccncc1", "c1ccncc1",
+                   "OB(O)c1ccccc1", "OB(O)c1ccncc1"];
+        let env = ChemEnv::in_memory(&bbs);
+        let rules = crate::chem_env::default_rules();
+        let config = SearchConfig { max_depth: 3, max_routes: 5, beam_width: 0 };
+        let routes = find_routes("c1ccc(-c2ccncc2)cc1", &env, &rules, &config)
+            .expect("find_routes must not error");
+        assert!(!routes.is_empty(), "4-phenylpyridine must be solvable via suzuki_retro");
     }
 
     #[test]

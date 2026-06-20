@@ -5,186 +5,246 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>RENKIN Playground — Interactive Retrosynthesis</title>
   <meta name="description" content="Interactive retrosynthesis planning in the browser — powered by WebAssembly">
-  <!-- No JS structure rendering library needed — CDK Depict serves SVG via <img> tag -->
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
       --bg: #0f1117; --surface: #1a1d27; --border: #2a2d3a;
       --accent: #7c6af7; --accent2: #4fc3f7; --text: #e8eaf0;
       --muted: #8890a4; --success: #4caf7d; --warn: #f0a04b;
-      --error: #e05c5c; --mono: "JetBrains Mono", "Fira Code", monospace;
+      --error: #e05c5c; --mono: "JetBrains Mono","Fira Code",monospace;
       --mol-bg: #f4f5f8;
     }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; }
-    header { padding: 1.2rem 2rem; border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; gap: 1rem; }
-    .logo { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.5px; color: var(--accent); }
-    .logo a { color: inherit; text-decoration: none; }
-    .tagline { color: var(--muted); font-size: 0.85rem; }
-    .nav-links { margin-left: auto; display: flex; gap: 1rem; }
-    .nav-links a { font-size: 0.85rem; color: var(--muted); text-decoration: none; transition: color 0.15s; }
-    .nav-links a:hover { color: var(--text); }
-    .badge { font-size: 0.75rem; color: var(--accent2); background: rgba(79,195,247,0.08);
-      border: 1px solid rgba(79,195,247,0.25); padding: 0.2rem 0.7rem; border-radius: 999px; }
-    main { flex: 1; max-width: 980px; margin: 0 auto; padding: 2rem 1.5rem; width: 100%; }
-    .panel { background: var(--surface); border: 1px solid var(--border);
-      border-radius: 10px; padding: 1.5rem; margin-bottom: 1.5rem; }
-    .panel h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em;
-      color: var(--muted); margin-bottom: 1rem; }
-    .field { display: flex; flex-direction: column; gap: 0.35rem; }
-    .field label { font-size: 0.78rem; color: var(--muted); }
-    .field input, .field select { background: var(--bg); border: 1px solid var(--border);
-      color: var(--text); padding: 0.55rem 0.75rem; border-radius: 6px;
-      font-size: 0.9rem; font-family: inherit; transition: border-color 0.15s; }
-    .field input:focus, .field select:focus { outline: none; border-color: var(--accent); }
-    #smiles-input { font-family: var(--mono); font-size: 0.85rem; }
-    .search-row { display: flex; gap: 0.75rem; align-items: flex-end; margin-top: 0.75rem; flex-wrap: wrap; }
-    .search-row .field { flex: 1; min-width: 160px; }
-    .num-field { width: 90px !important; flex: none !important; min-width: 80px !important; }
-    button { background: var(--accent); color: #fff; border: none; padding: 0.55rem 1.4rem;
-      border-radius: 6px; font-size: 0.9rem; font-weight: 600; cursor: pointer;
-      transition: opacity 0.15s, transform 0.1s; white-space: nowrap; align-self: flex-end; height: 36px; }
-    button:hover { opacity: 0.85; }
-    button:active { transform: scale(0.97); }
-    button:disabled { opacity: 0.4; cursor: default; }
-    #status-bar { display: flex; align-items: center; gap: 0.75rem; font-size: 0.85rem;
-      color: var(--muted); min-height: 1.5rem; margin-bottom: 1rem; }
-    .spinner { width: 14px; height: 14px; border: 2px solid var(--border);
-      border-top-color: var(--accent); border-radius: 50%;
-      animation: spin 0.6s linear infinite; display: none; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .spinner.active { display: block; }
-    .wasm-status { font-size: 0.8rem; padding: 0.5rem 0.75rem; border-radius: 6px; margin-bottom: 1rem; }
-    .wasm-status.loading { background: rgba(124,106,247,0.08); color: var(--accent); border: 1px solid rgba(124,106,247,0.2); }
-    .wasm-status.ready { background: rgba(76,175,125,0.08); color: var(--success); border: 1px solid rgba(76,175,125,0.2); }
-    .wasm-status.failed { background: rgba(224,92,92,0.08); color: var(--error); border: 1px solid rgba(224,92,92,0.2); font-size: 0.82rem; line-height: 1.6; }
-    .mol-card { display: inline-flex; flex-direction: column; align-items: center;
-      gap: 0.35rem; cursor: pointer; position: relative; }
-    .mol-card:hover .mol-smiles { color: var(--accent2); }
-    .mol-svg-wrap { background: var(--mol-bg); border-radius: 6px; overflow: hidden;
-      display: flex; align-items: center; justify-content: center;
-      width: 180px; height: 120px; border: 1px solid rgba(255,255,255,0.06); }
-    .mol-svg-wrap.large { width: 220px; height: 150px; }
-    .mol-smiles { font-family: var(--mono); font-size: 0.72rem; color: var(--muted);
-      max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-      text-align: center; transition: color 0.1s; }
-    .mol-smiles.large { max-width: 220px; }
-    .mol-copy-tip { position: absolute; top: -28px; left: 50%; transform: translateX(-50%);
-      background: var(--text); color: var(--bg); font-size: 0.7rem; padding: 2px 8px;
-      border-radius: 4px; white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity 0.2s; }
-    .mol-card.copied .mol-copy-tip { opacity: 1; }
-    .target-banner { display: flex; align-items: center; gap: 1.5rem; margin-bottom: 1.25rem;
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 8px; padding: 1rem 1.25rem; flex-wrap: wrap; }
-    .target-info { flex: 1; min-width: 0; }
-    .target-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em;
-      color: var(--muted); margin-bottom: 0.3rem; }
-    .target-smiles { font-family: var(--mono); font-size: 0.9rem; word-break: break-all; }
-    .stats-row { display: flex; gap: 2rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
-    .stat { display: flex; flex-direction: column; gap: 0.2rem; }
-    .stat-value { font-size: 1.5rem; font-weight: 700; color: var(--accent); }
-    .stat-label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
-    .route-card { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 1rem; overflow: hidden; }
-    .route-header { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem;
-      background: rgba(124,106,247,0.06); border-bottom: 1px solid var(--border); font-size: 0.85rem; }
-    .route-num { background: var(--accent); color: #fff; width: 22px; height: 22px; border-radius: 50%;
-      display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 700; flex-shrink: 0; }
-    .depth-badge { font-size: 0.72rem; color: var(--accent2); background: rgba(79,195,247,0.08);
-      border: 1px solid rgba(79,195,247,0.2); padding: 0.1rem 0.5rem; border-radius: 4px; }
-    .step-list { padding: 1rem; display: flex; flex-direction: column; gap: 1.25rem; }
-    .step { display: flex; gap: 1rem; align-items: flex-start; }
-    .step-connector { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; padding-top: 6px; }
-    .step-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
-    .step-line { width: 1px; flex: 1; background: var(--border); margin: 4px 0; min-height: 30px; }
-    .step-body { flex: 1; min-width: 0; }
-    .step-rule { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em;
-      color: var(--warn); margin-bottom: 0.5rem; font-weight: 600; }
-    .step-target-row { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
-    .step-target-label { font-size: 0.72rem; color: var(--muted); flex-shrink: 0; }
-    .arrow-down { display: flex; align-items: center; justify-content: center;
-      color: var(--muted); font-size: 1.1rem; margin: 0.4rem 0; }
-    .precursor-row { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: flex-start; }
-    .plus-sign { color: var(--muted); font-size: 1.1rem; align-self: center; flex-shrink: 0; padding-top: 40px; }
-    .empty-route { padding: 0.75rem 1rem; font-size: 0.85rem; color: var(--success); }
-    .no-routes { color: var(--muted); font-size: 0.9rem; }
-    .error-box { background: rgba(224,92,92,0.08); border: 1px solid rgba(224,92,92,0.3);
-      color: var(--error); padding: 0.9rem 1rem; border-radius: 8px; font-size: 0.85rem; }
-    footer { text-align: center; padding: 1rem; font-size: 0.75rem;
-      color: var(--muted); border-top: 1px solid var(--border); }
-    footer a { color: var(--accent); text-decoration: none; }
+    body { font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      background:var(--bg); color:var(--text); min-height:100vh; display:flex; flex-direction:column; }
+
+    /* ── Header ─────────────────────────────────────────────────── */
+    header { padding:1.2rem 2rem; border-bottom:1px solid var(--border);
+      display:flex; align-items:center; gap:1rem; flex-wrap:wrap; }
+    .logo { font-size:1.4rem; font-weight:700; letter-spacing:-0.5px; color:var(--accent); }
+    .logo a { color:inherit; text-decoration:none; }
+    .tagline { color:var(--muted); font-size:0.85rem; }
+    .header-right { margin-left:auto; display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap; }
+    .nav-links { display:flex; gap:1rem; }
+    .nav-links a { font-size:0.85rem; color:var(--muted); text-decoration:none; transition:color 0.15s; }
+    .nav-links a:hover { color:var(--text); }
+    .badge { font-size:0.75rem; color:var(--accent2); background:rgba(79,195,247,0.08);
+      border:1px solid rgba(79,195,247,0.25); padding:0.2rem 0.7rem; border-radius:999px; }
+
+    /* ── Language switcher ──────────────────────────────────────── */
+    .lang-btns { display:flex; gap:0.25rem; }
+    .lang-btn { background:transparent; border:1px solid var(--border); color:var(--muted);
+      padding:0.2rem 0.55rem; border-radius:4px; font-size:0.72rem; height:auto; cursor:pointer;
+      transition:all 0.15s; }
+    .lang-btn:hover { border-color:var(--accent); color:var(--text); }
+    .lang-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+
+    /* ── Main layout ─────────────────────────────────────────────── */
+    main { flex:1; max-width:980px; margin:0 auto; padding:2rem 1.5rem; width:100%; }
+    .panel { background:var(--surface); border:1px solid var(--border);
+      border-radius:10px; padding:1.5rem; margin-bottom:1.5rem; }
+    .panel-title { font-size:0.85rem; text-transform:uppercase; letter-spacing:0.08em;
+      color:var(--muted); margin-bottom:1rem; display:flex; align-items:center; gap:0.5rem; }
+
+    /* ── Form fields ─────────────────────────────────────────────── */
+    .field { display:flex; flex-direction:column; gap:0.35rem; }
+    .field label { font-size:0.78rem; color:var(--muted); }
+    .field input,.field select { background:var(--bg); border:1px solid var(--border);
+      color:var(--text); padding:0.55rem 0.75rem; border-radius:6px;
+      font-size:0.9rem; font-family:inherit; transition:border-color 0.15s; }
+    .field input:focus,.field select:focus { outline:none; border-color:var(--accent); }
+    #smiles-input { font-family:var(--mono); font-size:0.85rem; }
+    .search-row { display:flex; gap:0.75rem; align-items:flex-end; margin-top:0.75rem; flex-wrap:wrap; }
+    .search-row .field { flex:1; min-width:160px; }
+    .num-field { width:90px !important; flex:none !important; min-width:80px !important; }
+    button { background:var(--accent); color:#fff; border:none; padding:0.55rem 1.4rem;
+      border-radius:6px; font-size:0.9rem; font-weight:600; cursor:pointer;
+      transition:opacity 0.15s,transform 0.1s; white-space:nowrap; align-self:flex-end; height:36px; }
+    button:hover { opacity:0.85; }
+    button:active { transform:scale(0.97); }
+    button:disabled { opacity:0.4; cursor:default; }
+
+    /* ── Status ──────────────────────────────────────────────────── */
+    #status-bar { display:flex; align-items:center; gap:0.75rem; font-size:0.85rem;
+      color:var(--muted); min-height:1.5rem; margin-bottom:1rem; }
+    .spinner { width:14px; height:14px; border:2px solid var(--border);
+      border-top-color:var(--accent); border-radius:50%;
+      animation:spin 0.6s linear infinite; display:none; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .spinner.active { display:block; }
+    .wasm-status { font-size:0.8rem; padding:0.5rem 0.75rem; border-radius:6px; margin-bottom:1rem; }
+    .wasm-status.loading { background:rgba(124,106,247,0.08); color:var(--accent); border:1px solid rgba(124,106,247,0.2); }
+    .wasm-status.ready   { background:rgba(76,175,125,0.08);  color:var(--success); border:1px solid rgba(76,175,125,0.2); }
+    .wasm-status.failed  { background:rgba(224,92,92,0.08);   color:var(--error);   border:1px solid rgba(224,92,92,0.2); font-size:0.82rem; line-height:1.6; }
+
+    /* ── Molecule cards ──────────────────────────────────────────── */
+    .mol-card { display:inline-flex; flex-direction:column; align-items:center;
+      gap:0.35rem; cursor:pointer; position:relative; }
+    .mol-card:hover .mol-smiles { color:var(--accent2); }
+    .mol-img-wrap { background:var(--mol-bg); border-radius:6px; overflow:hidden;
+      display:flex; align-items:center; justify-content:center;
+      width:180px; height:120px; border:1px solid rgba(255,255,255,0.06); }
+    .mol-img-wrap.large { width:220px; height:150px; }
+    .mol-img-wrap img { display:block; }
+    .mol-smiles { font-family:var(--mono); font-size:0.72rem; color:var(--muted);
+      max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+      text-align:center; transition:color 0.1s; }
+    .mol-smiles.large { max-width:220px; }
+    .mol-copy-tip { position:absolute; top:-28px; left:50%; transform:translateX(-50%);
+      background:var(--text); color:var(--bg); font-size:0.7rem; padding:2px 8px;
+      border-radius:4px; white-space:nowrap; pointer-events:none; opacity:0; transition:opacity 0.2s; }
+    .mol-card.copied .mol-copy-tip { opacity:1; }
+
+    /* ── Results layout ──────────────────────────────────────────── */
+    .target-banner { display:flex; align-items:center; gap:1.5rem; margin-bottom:1.25rem;
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:8px; padding:1rem 1.25rem; flex-wrap:wrap; }
+    .target-info { flex:1; min-width:0; }
+    .target-label { font-size:0.72rem; text-transform:uppercase; letter-spacing:0.06em;
+      color:var(--muted); margin-bottom:0.3rem; }
+    .target-smiles-txt { font-family:var(--mono); font-size:0.9rem; word-break:break-all; }
+    .stats-row { display:flex; gap:2rem; flex-wrap:wrap; margin-bottom:1.25rem; }
+    .stat { display:flex; flex-direction:column; gap:0.2rem; }
+    .stat-value { font-size:1.5rem; font-weight:700; color:var(--accent); }
+    .stat-label { font-size:0.72rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; }
+    .route-card { border:1px solid var(--border); border-radius:8px; margin-bottom:1rem; overflow:hidden; }
+    .route-header { display:flex; align-items:center; gap:0.75rem; padding:0.75rem 1rem;
+      background:rgba(124,106,247,0.06); border-bottom:1px solid var(--border); font-size:0.85rem; }
+    .route-num { background:var(--accent); color:#fff; width:22px; height:22px; border-radius:50%;
+      display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:700; flex-shrink:0; }
+    .depth-badge { font-size:0.72rem; color:var(--accent2); background:rgba(79,195,247,0.08);
+      border:1px solid rgba(79,195,247,0.2); padding:0.1rem 0.5rem; border-radius:4px; }
+    .step-list { padding:1rem; display:flex; flex-direction:column; gap:1.25rem; }
+    .step { display:flex; gap:1rem; align-items:flex-start; }
+    .step-connector { display:flex; flex-direction:column; align-items:center; flex-shrink:0; padding-top:6px; }
+    .step-dot { width:8px; height:8px; border-radius:50%; background:var(--accent); flex-shrink:0; }
+    .step-line { width:1px; flex:1; background:var(--border); margin:4px 0; min-height:30px; }
+    .step-body { flex:1; min-width:0; }
+    .step-target-row { display:flex; align-items:center; gap:0.75rem; margin-bottom:0.75rem; flex-wrap:wrap; }
+    .step-target-label { font-size:0.72rem; color:var(--muted); flex-shrink:0; }
+    .arrow-down { display:flex; align-items:center; justify-content:center;
+      color:var(--muted); font-size:1.1rem; margin:0.4rem 0; }
+    .precursor-row { display:flex; flex-wrap:wrap; gap:0.75rem; align-items:flex-start; }
+    .plus-sign { color:var(--muted); font-size:1.1rem; align-self:center; flex-shrink:0; padding-top:40px; }
+    .empty-route { padding:0.75rem 1rem; font-size:0.85rem; color:var(--success); }
+    .no-routes { color:var(--muted); font-size:0.9rem; }
+    .error-box { background:rgba(224,92,92,0.08); border:1px solid rgba(224,92,92,0.3);
+      color:var(--error); padding:0.9rem 1rem; border-radius:8px; font-size:0.85rem; }
+
+    /* ── Tooltip ─────────────────────────────────────────────────── */
+    [data-tip] { position:relative; cursor:help;
+      border-bottom:1px dashed var(--warn); display:inline-block; }
+    [data-tip]::after {
+      content: attr(data-tip);
+      position:absolute; bottom:calc(100% + 8px); left:0;
+      background:#1e2235; color:var(--text);
+      font-size:0.72rem; font-weight:400; text-transform:none; letter-spacing:0;
+      padding:0.45rem 0.65rem; border-radius:6px; border:1px solid var(--border);
+      white-space:normal; max-width:280px; line-height:1.5; z-index:200;
+      pointer-events:none; opacity:0; transition:opacity 0.15s;
+      box-shadow:0 4px 12px rgba(0,0,0,0.4); }
+    [data-tip]:hover::after { opacity:1; }
+
+    /* ── Rule name chip ──────────────────────────────────────────── */
+    .step-rule { font-size:0.72rem; text-transform:uppercase; letter-spacing:0.06em;
+      color:var(--warn); margin-bottom:0.5rem; font-weight:600; }
+
+    /* ── Help icon ───────────────────────────────────────────────── */
+    .help-icon { font-size:0.8rem; color:var(--muted); cursor:help; border-bottom:none;
+      opacity:0.7; }
+    .help-icon:hover { opacity:1; }
+
+    footer { text-align:center; padding:1rem; font-size:0.75rem;
+      color:var(--muted); border-top:1px solid var(--border); }
+    footer a { color:var(--accent); text-decoration:none; }
   </style>
 </head>
 <body>
 <header>
   <div>
     <div class="logo"><a href="../">RENKIN</a></div>
-    <div class="tagline">Retrosynthesis Playground — powered by WebAssembly</div>
+    <div class="tagline" data-i18n="tagline">Retrosynthesis Playground — powered by WebAssembly</div>
   </div>
-  <nav class="nav-links">
-    <a href="../">Docs</a>
-    <a href="https://github.com/kent-tokyo/renkin">GitHub</a>
-    <a href="https://crates.io/crates/renkin">crates.io</a>
-    <a href="https://pypi.org/project/renkin/">PyPI</a>
-  </nav>
-  <div class="badge">WASM · Pure Rust</div>
+  <div class="header-right">
+    <div class="lang-btns">
+      <button class="lang-btn active" onclick="setLang('en')">EN</button>
+      <button class="lang-btn" onclick="setLang('ja')">日本語</button>
+      <button class="lang-btn" onclick="setLang('zh')">中文</button>
+    </div>
+    <nav class="nav-links">
+      <a href="../" data-i18n="nav_docs">Docs</a>
+      <a href="https://github.com/kent-tokyo/renkin">GitHub</a>
+    </nav>
+    <div class="badge">WASM · Pure Rust</div>
+  </div>
 </header>
 
 <main>
-  <div id="wasm-status" class="wasm-status loading">Loading WebAssembly module…</div>
+  <div id="wasm-status" class="wasm-status loading" data-i18n="wasm_loading">Loading WebAssembly module…</div>
 
   <div class="panel">
-    <h2>Target Molecule</h2>
+    <div class="panel-title">
+      <span data-i18n="panel_title">Target Molecule</span>
+      <span class="help-icon" data-tip="Retrosynthesis works backwards from a target molecule to find commercial starting materials. Each arrow = one bond disconnection. End nodes = commercially available building blocks (building blocks).">?</span>
+    </div>
+
     <div class="field">
-      <label for="examples-select">Preset examples</label>
+      <label for="examples-select" data-i18n="presets_label">Preset examples</label>
       <select id="examples-select">
-        <option value="">— select a molecule —</option>
-        <optgroup label="Pharmaceuticals">
+        <option value="" data-i18n="preset_placeholder">— select a molecule —</option>
+        <optgroup id="grp-pharma" label="Pharmaceuticals">
           <option value="CC(=O)Oc1ccccc1C(=O)O">Aspirin</option>
           <option value="CC(=O)Nc1ccc(O)cc1">Paracetamol (Acetaminophen)</option>
           <option value="CC(=O)Nc1ccccc1">Acetanilide</option>
           <option value="Nc1ccc(C(=O)O)cc1">4-Aminobenzoic acid (PABA)</option>
         </optgroup>
-        <optgroup label="C-C Coupling Products">
+        <optgroup id="grp-cc" label="C-C Coupling Products">
           <option value="c1ccc(-c2ccccc2)cc1">Biphenyl (Suzuki)</option>
           <option value="c1ccc(-c2ccncc2)cc1">4-Phenylpyridine</option>
           <option value="Fc1ccc(-c2ccccc2)cc1">4-Fluorobiphenyl</option>
           <option value="O=Cc1ccc(-c2ccco2)nc1">Pyridine-furan biaryl</option>
         </optgroup>
-        <optgroup label="Aryl C-N / C-O">
+        <optgroup id="grp-cn" label="Aryl C-N / C-O">
           <option value="c1ccc(Nc2ccccn2)cc1">N-Phenyl-2-aminopyridine (B-H)</option>
           <option value="CC(=O)c1ccc(N)cc1">4-Aminoacetophenone</option>
         </optgroup>
-        <optgroup label="Ester / Wittig">
+        <optgroup id="grp-misc" label="Ester / Wittig">
           <option value="C=Cc1ccccc1">Styrene (Wittig)</option>
-          <option value="CCOC(=O)c1ccccc1">Ethyl benzoate (ester)</option>
+          <option value="CCOC(=O)c1ccccc1">Ethyl benzoate</option>
         </optgroup>
       </select>
     </div>
+
     <div class="search-row">
       <div class="field">
-        <label for="smiles-input">Target SMILES</label>
-        <input id="smiles-input" type="text" placeholder="e.g. CC(=O)Oc1ccccc1C(=O)O" spellcheck="false" autocomplete="off">
+        <label for="smiles-input" data-i18n="smiles_label">Target SMILES</label>
+        <input id="smiles-input" type="text" spellcheck="false" autocomplete="off"
+          placeholder="e.g. CC(=O)Oc1ccccc1C(=O)O" data-i18n-ph="smiles_placeholder">
       </div>
       <div class="field num-field">
-        <label for="depth-input">Depth</label>
+        <label for="depth-input">
+          <span data-i18n="depth_label">Depth</span>
+          <span class="help-icon" data-tip="Maximum synthesis steps. Deeper = more complex routes, but slower." style="margin-left:3px">?</span>
+        </label>
         <input id="depth-input" type="number" value="5" min="1" max="10">
       </div>
       <div class="field num-field">
-        <label for="routes-input">Max routes</label>
+        <label for="routes-input" data-i18n="routes_label">Max routes</label>
         <input id="routes-input" type="number" value="5" min="1" max="20">
       </div>
       <div class="field num-field">
-        <label for="beam-input" title="0 = unlimited A*">Beam (0=∞)</label>
+        <label for="beam-input">
+          <span data-i18n="beam_label">Beam (0=∞)</span>
+          <span class="help-icon" data-tip="Beam width limits parallel search paths. 0 = unlimited A*. Smaller = faster but may miss routes." style="margin-left:3px">?</span>
+        </label>
         <input id="beam-input" type="number" value="0" min="0" max="500">
       </div>
-      <button id="search-btn" disabled>Search</button>
+      <button id="search-btn" disabled data-i18n="search_btn">Search</button>
     </div>
   </div>
 
   <div id="status-bar">
     <div class="spinner" id="spinner"></div>
-    <span id="status-text">Load the WASM module to begin.</span>
+    <span id="status-text" data-i18n="status_init">Load the WASM module to begin.</span>
   </div>
 
   <div id="results"></div>
@@ -192,14 +252,231 @@
 
 <footer>
   RENKIN · Pure Rust + WebAssembly ·
-  Structure rendering by <a href="https://www.simolecule.com/cdkdepict/">CDK Depict</a> ·
+  <span data-i18n="footer_rendering">Structure rendering by</span>
+  <a href="https://www.simolecule.com/cdkdepict/">CDK Depict</a> ·
   <a href="https://github.com/kent-tokyo/renkin">GitHub</a> ·
-  <a href="../">Documentation</a>
+  <a href="../" data-i18n="footer_docs">Documentation</a>
 </footer>
 
 <script type="module">
+  // ── i18n ───────────────────────────────────────────────────────────────────
+  const T = {
+    en: {
+      tagline: 'Retrosynthesis Playground — powered by WebAssembly',
+      nav_docs: 'Docs',
+      panel_title: 'Target Molecule',
+      presets_label: 'Preset examples',
+      preset_placeholder: '— select a molecule —',
+      smiles_label: 'Target SMILES',
+      smiles_placeholder: 'e.g. CC(=O)Oc1ccccc1C(=O)O',
+      depth_label: 'Depth',
+      routes_label: 'Max routes',
+      beam_label: 'Beam (0=∞)',
+      search_btn: 'Search',
+      wasm_loading: 'Loading WebAssembly module…',
+      status_init: 'Enter a SMILES string or pick a preset, then click Search.',
+      status_searching: 'Searching…',
+      target_mol: 'Target molecule',
+      stat_routes: 'Routes',
+      stat_depth: 'Best depth',
+      stat_time: 'Time',
+      route_label: 'Route',
+      step_s: 'step', steps_s: 'steps',
+      target_lbl: 'Target:',
+      bb_msg: '✓ Commercially available — buy directly.',
+      no_routes: 'No routes found. Try increasing Depth or Beam (0 = unlimited A*).',
+      copied: 'Copied!',
+      footer_rendering: 'Structure rendering by',
+      footer_docs: 'Documentation',
+      grp_pharma: 'Pharmaceuticals',
+      grp_cc: 'C-C Coupling Products',
+      grp_cn: 'Aryl C-N / C-O',
+      grp_misc: 'Ester / Wittig',
+      tip_retro: 'Retrosynthesis works backwards from a target molecule to find commercial starting materials. Each arrow = one bond disconnection. End nodes = commercially available building blocks.',
+      tip_depth: 'Maximum synthesis steps. Deeper = more complex routes, but slower.',
+      tip_beam: 'Beam width limits parallel search paths. 0 = unlimited A*. Smaller = faster but may miss routes.',
+    },
+    ja: {
+      tagline: '逆合成プレイグラウンド — WebAssembly 搭載',
+      nav_docs: 'ドキュメント',
+      panel_title: '目標分子',
+      presets_label: 'プリセット例',
+      preset_placeholder: '— 分子を選択 —',
+      smiles_label: '目標分子 SMILES',
+      smiles_placeholder: '例: CC(=O)Oc1ccccc1C(=O)O',
+      depth_label: '深さ',
+      routes_label: '最大経路数',
+      beam_label: 'ビーム幅',
+      search_btn: '探索',
+      wasm_loading: 'WebAssembly モジュールを読み込み中…',
+      status_init: 'SMILES を入力またはプリセットを選んで「探索」をクリック。',
+      status_searching: '探索中…',
+      target_mol: '目標分子',
+      stat_routes: '経路数',
+      stat_depth: '最短深さ',
+      stat_time: '時間',
+      route_label: '経路',
+      step_s: 'ステップ', steps_s: 'ステップ',
+      target_lbl: '目標:',
+      bb_msg: '✓ 市販原料 — 直接購入可能。',
+      no_routes: '経路が見つかりません。「深さ」またはビーム幅（0=無制限）を増やしてください。',
+      copied: 'コピー済み!',
+      footer_rendering: '構造式描画:',
+      footer_docs: 'ドキュメント',
+      grp_pharma: '医薬品',
+      grp_cc: 'C-Cカップリング生成物',
+      grp_cn: 'アリール C-N / C-O',
+      grp_misc: 'エステル / Wittig',
+      tip_retro: '逆合成は目標分子から出発して市販原料へと逆向きに経路を設計する手法です。各矢印=1つの結合切断（逆反応）、末端ノード=市販原料（ビルディングブロック）。',
+      tip_depth: '合成ステップの最大数。深くするほど複雑な経路が見つかりますが時間がかかります。',
+      tip_beam: 'ビーム幅は並列探索パス数の上限。0=無制限（A*）。小さいほど高速ですが経路を見逃す可能性あり。',
+    },
+    zh: {
+      tagline: '逆合成演示台 — 基于 WebAssembly',
+      nav_docs: '文档',
+      panel_title: '目标分子',
+      presets_label: '预设示例',
+      preset_placeholder: '— 请选择分子 —',
+      smiles_label: '目标分子 SMILES',
+      smiles_placeholder: '例如: CC(=O)Oc1ccccc1C(=O)O',
+      depth_label: '深度',
+      routes_label: '最大路径数',
+      beam_label: '束宽',
+      search_btn: '搜索',
+      wasm_loading: '正在加载 WebAssembly 模块…',
+      status_init: '请输入 SMILES 或选择预设分子，然后点击"搜索"。',
+      status_searching: '搜索中…',
+      target_mol: '目标分子',
+      stat_routes: '路径数',
+      stat_depth: '最短深度',
+      stat_time: '时间',
+      route_label: '路径',
+      step_s: '步', steps_s: '步',
+      target_lbl: '目标:',
+      bb_msg: '✓ 商业可购 — 可直接购买。',
+      no_routes: '未找到合成路径。请增大"深度"或束宽（0=无限制）。',
+      copied: '已复制!',
+      footer_rendering: '结构渲染:',
+      footer_docs: '文档',
+      grp_pharma: '药物',
+      grp_cc: 'C-C 偶联产物',
+      grp_cn: '芳基 C-N / C-O',
+      grp_misc: '酯 / Wittig',
+      tip_retro: '逆合成从目标分子出发，追溯到商业可购原料的合成路径。每个箭头=一次化学键断裂（逆反应），末端节点=商业可购原料（构建块）。',
+      tip_depth: '合成步骤的最大数目。越深找到路径越复杂，但速度越慢。',
+      tip_beam: '束宽限制并行探索路径数。0=无限制（A*）。值越小速度越快，但可能遗漏路径。',
+    },
+  };
+
+  // Reaction rule explanations (3 languages)
+  const RULE_TIP = {
+    en: {
+      ester_cleavage:                 'Ester hydrolysis: R-C(=O)-O-R\' → acid + alcohol',
+      amide_cleavage:                 'Amide hydrolysis: R-C(=O)-N → acid + amine',
+      friedel_crafts_acylation_retro: 'Retro Friedel-Crafts: Ar-CO-R → Ar-H + acyl chloride',
+      aryl_carboxylation_retro:       'Retro decarboxylation: Ar-COOH → Ar-H + CO₂',
+      aryl_amine_retro:               'Retro C-N coupling: Ar-NR₂ → Ar-H + amine (SNAr retro)',
+      buchwald_hartwig_retro:         'Retro Buchwald-Hartwig (Pd): Ar-NR₂ → Ar-Br + amine',
+      aryl_ether_retro:               'Retro Ullmann ether (Cu/Pd): Ar-OR → Ar-OH + alcohol',
+      aryl_chloride_retro:            'C-Cl cleavage: Ar-Cl → Ar-H (retro SNAr or Pd C-Cl)',
+      aryl_iodide_retro:              'C-I cleavage: Ar-I → Ar-H (retro Pd/Cu C-I coupling)',
+      aryl_fluoride_snAr_retro:       'Retro SNAr: Ar-F → Ar-H (F = best SNAr leaving group)',
+      aryl_chloride_to_bromide:       'Halogen exchange: Ar-Cl → Ar-Br (Ar-Br = cheaper BB)',
+      suzuki_retro:                   'Retro Suzuki (Pd): Ar-Ar → Ar-Br + Ar-B(OH)₂',
+      heck_retro:                     'Retro Heck (Pd): Ar-CH=CH-R → Ar-Br + vinyl',
+      negishi_retro:                  'Retro Negishi (Pd): Ar-CH₂ → Ar-Br + alkylzinc',
+      cc_single_cleavage:             'Generic C-C bond cleavage',
+      wittig_retro:                   'Retro Wittig/HWE: alkene C=C → two carbonyls (C=O)',
+      reductive_amination_retro:      'Retro reductive amination: C-N → carbonyl + amine',
+      cn_aliphatic_cleavage:          'Retro N-alkylation: aliphatic C-N → amine + electrophile',
+      co_aliphatic_cleavage:          'Retro O-alkylation: aliphatic C-O → alcohol + electrophile',
+      alcohol_oxidation_retro:        'Retro reduction: C-OH → C=O (ketone/aldehyde)',
+    },
+    ja: {
+      ester_cleavage:                 'エステル加水分解: R-C(=O)-O-R\' → 酸 + アルコール',
+      amide_cleavage:                 'アミド加水分解: R-C(=O)-N → 酸 + アミン',
+      friedel_crafts_acylation_retro: '逆フリーデル・クラフツ: Ar-CO-R → Ar-H + 酸クロリド',
+      aryl_carboxylation_retro:       '逆脱炭酸: Ar-COOH → Ar-H + CO₂',
+      aryl_amine_retro:               '逆C-Nカップリング: Ar-NR₂ → Ar-H + アミン（逆SNAr）',
+      buchwald_hartwig_retro:         '逆Buchwald-Hartwig（Pd）: Ar-NR₂ → Ar-Br + アミン',
+      aryl_ether_retro:               '逆Ullmannエーテル（Cu/Pd）: Ar-OR → Ar-OH + アルコール',
+      aryl_chloride_retro:            'Ar-Cl切断: Ar-Cl → Ar-H（逆SNArまたはPd C-Cl活性化）',
+      aryl_iodide_retro:              'Ar-I切断: Ar-I → Ar-H（逆Pd/Cu C-Iカップリング）',
+      aryl_fluoride_snAr_retro:       '逆SNAr: Ar-F → Ar-H（FはSNAr最良脱離基）',
+      aryl_chloride_to_bromide:       'ハロゲン交換: Ar-Cl → Ar-Br（Ar-Brはより安価なBB）',
+      suzuki_retro:                   '逆鈴木カップリング（Pd）: Ar-Ar → Ar-Br + Ar-B(OH)₂',
+      heck_retro:                     '逆Heck反応（Pd）: Ar-CH=CH-R → Ar-Br + ビニル',
+      negishi_retro:                  '逆根岸カップリング（Pd）: Ar-CH₂ → Ar-Br + アルキル亜鉛',
+      cc_single_cleavage:             '汎用C-C結合切断',
+      wittig_retro:                   '逆Wittig/HWE: C=C → 2つのカルボニル（C=O）',
+      reductive_amination_retro:      '逆還元的アミノ化: C-N → カルボニル + アミン',
+      cn_aliphatic_cleavage:          '逆N-アルキル化: 脂肪族C-N → アミン + 求電子剤',
+      co_aliphatic_cleavage:          '逆O-アルキル化: 脂肪族C-O → アルコール + 求電子剤',
+      alcohol_oxidation_retro:        '逆還元: C-OH → C=O（ケトン/アルデヒド）',
+    },
+    zh: {
+      ester_cleavage:                 '酯水解: R-C(=O)-O-R\' → 酸 + 醇',
+      amide_cleavage:                 '酰胺水解: R-C(=O)-N → 酸 + 胺',
+      friedel_crafts_acylation_retro: '逆Friedel-Crafts酰化: Ar-CO-R → Ar-H + 酰氯',
+      aryl_carboxylation_retro:       '逆脱羧: Ar-COOH → Ar-H + CO₂',
+      aryl_amine_retro:               '逆C-N偶联: Ar-NR₂ → Ar-H + 胺（逆SNAr）',
+      buchwald_hartwig_retro:         '逆Buchwald-Hartwig（Pd）: Ar-NR₂ → Ar-Br + 胺',
+      aryl_ether_retro:               '逆Ullmann醚化（Cu/Pd）: Ar-OR → Ar-OH + 醇',
+      aryl_chloride_retro:            'Ar-Cl断裂: Ar-Cl → Ar-H（逆SNAr或Pd C-Cl活化）',
+      aryl_iodide_retro:              'Ar-I断裂: Ar-I → Ar-H（逆Pd/Cu C-I偶联）',
+      aryl_fluoride_snAr_retro:       '逆SNAr: Ar-F → Ar-H（F是最佳SNAr离去基）',
+      aryl_chloride_to_bromide:       '卤素交换: Ar-Cl → Ar-Br（Ar-Br是更便宜的构建块）',
+      suzuki_retro:                   '逆铃木偶联（Pd）: Ar-Ar → Ar-Br + Ar-B(OH)₂',
+      heck_retro:                     '逆Heck反应（Pd）: Ar-CH=CH-R → Ar-Br + 乙烯基',
+      negishi_retro:                  '逆根岸偶联（Pd）: Ar-CH₂ → Ar-Br + 烷基锌',
+      cc_single_cleavage:             '通用C-C键断裂',
+      wittig_retro:                   '逆Wittig/HWE: C=C → 两个羰基（C=O）',
+      reductive_amination_retro:      '逆还原胺化: C-N → 羰基 + 胺',
+      cn_aliphatic_cleavage:          '逆N-烷基化: 脂肪族C-N → 胺 + 亲电试剂',
+      co_aliphatic_cleavage:          '逆O-烷基化: 脂肪族C-O → 醇 + 亲电试剂',
+      alcohol_oxidation_retro:        '逆还原: C-OH → C=O（酮/醛）',
+    },
+  };
+
+  let lang = 'en';
+  const t = k => (T[lang] && T[lang][k]) || T.en[k] || k;
+  const ruleTip = rule => (RULE_TIP[lang] && RULE_TIP[lang][rule]) || RULE_TIP.en[rule] || rule;
+
+  window.setLang = function(l) {
+    lang = l;
+    // Update html lang attribute
+    document.documentElement.lang = l === 'zh' ? 'zh-CN' : l;
+    // Active button
+    document.querySelectorAll('.lang-btn').forEach(b => {
+      b.classList.toggle('active', b.textContent === (l === 'en' ? 'EN' : l === 'ja' ? '日本語' : '中文'));
+    });
+    // Static data-i18n elements
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      const k = el.dataset.i18n;
+      if (el.tagName === 'INPUT') el.placeholder = t(k);
+      else el.textContent = t(k);
+    });
+    // Placeholder inputs
+    document.querySelectorAll('[data-i18n-ph]').forEach(el => {
+      el.placeholder = t(el.dataset.i18nPh);
+    });
+    // Optgroup labels
+    document.getElementById('grp-pharma').label = t('grp_pharma');
+    document.getElementById('grp-cc').label     = t('grp_cc');
+    document.getElementById('grp-cn').label     = t('grp_cn');
+    document.getElementById('grp-misc').label   = t('grp_misc');
+    // Tooltip text on help icons
+    document.querySelectorAll('[data-i18n-tip]').forEach(el => {
+      el.dataset.tip = t(el.dataset.i18nTip);
+    });
+    // Dynamic status text (only if it matches known states)
+    const st = document.getElementById('status-text');
+    if (st && st.dataset.state) st.textContent = t(st.dataset.state);
+  };
+
+  // ── WASM init ──────────────────────────────────────────────────────────────
   const wasmStatusEl = document.getElementById('wasm-status');
-  const statusText   = document.getElementById('status-text');
+  const statusTextEl = document.getElementById('status-text');
   const spinner      = document.getElementById('spinner');
   const searchBtn    = document.getElementById('search-btn');
   const resultsEl    = document.getElementById('results');
@@ -216,70 +493,63 @@
     wasmStatusEl.textContent = `WASM ready — ${ver} · 480+ building blocks · 20 reaction rules`;
     wasmStatusEl.className = 'wasm-status ready';
     searchBtn.disabled = false;
-    statusText.textContent = 'Enter a SMILES string or pick a preset above, then click Search.';
+    statusTextEl.dataset.state = 'status_init';
+    statusTextEl.textContent = t('status_init');
   } catch (e) {
     wasmStatusEl.className = 'wasm-status failed';
-    // Build failure message using textContent-safe DOM nodes (no innerHTML with user data)
     const errTitle = document.createElement('strong');
     errTitle.textContent = 'Failed to load WASM module.';
     wasmStatusEl.appendChild(errTitle);
     wasmStatusEl.appendChild(document.createElement('br'));
-    const hint = document.createTextNode('If running locally: rebuild with wasm-pack build --target web --no-default-features, then serve from project root.');
-    wasmStatusEl.appendChild(hint);
-    wasmStatusEl.appendChild(document.createElement('br'));
-    const errLabel = document.createTextNode('Error: ');
-    const errText = document.createTextNode(String(e.message));
-    wasmStatusEl.appendChild(errLabel);
-    wasmStatusEl.appendChild(errText);
-    statusText.textContent = 'WASM unavailable.';
+    wasmStatusEl.appendChild(document.createTextNode('Error: '));
+    wasmStatusEl.appendChild(document.createTextNode(String(e.message)));
   }
 
-  // Structure rendering via CDK Depict — a free public SVG service.
-  // No JS library needed: just an <img> pointing to the depiction URL.
+  // ── CDK Depict molecule card ───────────────────────────────────────────────
   const DEPICT = 'https://www.simolecule.com/cdkdepict/depict/cow/svg';
 
   function makeMolCard(smiles, large) {
     const card = document.createElement('div');
     card.className = 'mol-card';
     const wrap = document.createElement('div');
-    wrap.className = large ? 'mol-svg-wrap large' : 'mol-svg-wrap';
+    wrap.className = large ? 'mol-img-wrap large' : 'mol-img-wrap';
 
     const w = large ? 220 : 180;
     const h = large ? 150 : 120;
     const img = document.createElement('img');
-    img.width  = w;
-    img.height = h;
-    img.style.display = 'block';
+    img.width = w; img.height = h; img.style.display = 'block';
     img.alt = smiles;
     img.src = `${DEPICT}?smi=${encodeURIComponent(smiles)}&w=${w}&h=${h}&zoom=1.8`;
     img.onerror = () => {
-      img.replaceWith((() => {
-        const t = document.createElement('div');
-        t.style.cssText = 'font:8px monospace;color:#666;padding:6px;word-break:break-all;text-align:center;display:flex;align-items:center;justify-content:center;height:100%';
-        t.textContent = smiles;
-        return t;
-      })());
+      const fb = document.createElement('div');
+      fb.style.cssText = 'font:8px monospace;color:#666;padding:6px;word-break:break-all;text-align:center;display:flex;align-items:center;justify-content:center;height:100%';
+      fb.textContent = smiles;
+      img.replaceWith(fb);
     };
     wrap.appendChild(img);
     card.appendChild(wrap);
+
     const label = document.createElement('div');
     label.className = large ? 'mol-smiles large' : 'mol-smiles';
     label.textContent = smiles;
     card.appendChild(label);
+
     const tip = document.createElement('div');
     tip.className = 'mol-copy-tip';
-    tip.textContent = 'Copied!';
+    tip.textContent = t('copied');
     card.appendChild(tip);
+
     card.addEventListener('click', () => {
       navigator.clipboard.writeText(smiles).then(() => {
+        tip.textContent = t('copied');
         card.classList.add('copied');
         setTimeout(() => card.classList.remove('copied'), 1200);
       });
     });
-    // (no deferred drawing needed — img loads asynchronously on its own)
     return card;
   }
 
+  // ── Search ─────────────────────────────────────────────────────────────────
   examplesEl.addEventListener('change', () => { if (examplesEl.value) smilesEl.value = examplesEl.value; });
   searchBtn.addEventListener('click', runSearch);
   smilesEl.addEventListener('keydown', e => { if (e.key === 'Enter') runSearch(); });
@@ -294,18 +564,19 @@
 
     searchBtn.disabled = true;
     spinner.classList.add('active');
-    statusText.textContent = 'Searching…';
+    statusTextEl.dataset.state = 'status_searching';
+    statusTextEl.textContent = t('status_searching');
     resultsEl.textContent = '';
 
     setTimeout(() => {
       const t0 = performance.now();
       let raw;
       try { raw = findRoutesFn(target, depth, maxRoutes, beamWidth); }
-      catch (e) { showError(`SMILES parse error: ${e.message}`); done(); return; }
+      catch (err) { showError(`SMILES: ${err.message}`); done(); return; }
       const elapsed = (performance.now() - t0).toFixed(1);
       let data;
       try { data = JSON.parse(raw); }
-      catch (e) { showError(`Internal error: ${e.message}`); done(); return; }
+      catch (err) { showError(`Internal: ${err.message}`); done(); return; }
       renderResults(data, elapsed, target);
       done();
     }, 10);
@@ -314,7 +585,7 @@
   function done() { searchBtn.disabled = false; spinner.classList.remove('active'); }
 
   function showError(msg) {
-    statusText.textContent = 'Error.';
+    statusTextEl.textContent = 'Error.';
     resultsEl.textContent = '';
     const box = document.createElement('div');
     box.className = 'error-box';
@@ -324,14 +595,14 @@
 
   function renderResults(data, elapsed, targetSmiles) {
     const n = data.routes_found;
-    statusText.textContent = `Found ${n} route${n !== 1 ? 's' : ''} in ${elapsed} ms`;
+    statusTextEl.textContent = `${n} ${t('stat_routes').toLowerCase()} · ${elapsed} ms`;
     resultsEl.textContent = '';
 
     const banner = document.createElement('div'); banner.className = 'target-banner';
     banner.appendChild(makeMolCard(targetSmiles, true));
     const info = document.createElement('div'); info.className = 'target-info';
-    const lbl = document.createElement('div'); lbl.className = 'target-label'; lbl.textContent = 'Target molecule';
-    const smi = document.createElement('div'); smi.className = 'target-smiles'; smi.textContent = targetSmiles;
+    const lbl = document.createElement('div'); lbl.className = 'target-label'; lbl.textContent = t('target_mol');
+    const smi = document.createElement('div'); smi.className = 'target-smiles-txt'; smi.textContent = targetSmiles;
     info.appendChild(lbl); info.appendChild(smi);
     banner.appendChild(info);
     resultsEl.appendChild(banner);
@@ -339,15 +610,14 @@
     if (n === 0) {
       const msg = document.createElement('div'); msg.className = 'panel';
       const inner = document.createElement('div'); inner.className = 'no-routes';
-      inner.textContent = 'No routes found within the given depth. Try increasing depth or beam-width (0 = unlimited A*).';
-      msg.appendChild(inner);
-      resultsEl.appendChild(msg);
+      inner.textContent = t('no_routes');
+      msg.appendChild(inner); resultsEl.appendChild(msg);
       return;
     }
 
     const minDepth = Math.min(...data.routes.map(r => r.depth));
     const statsRow = document.createElement('div'); statsRow.className = 'stats-row';
-    [['Routes', n], ['Best depth', minDepth], ['Time', `${elapsed} ms`]].forEach(([label, val]) => {
+    [[t('stat_routes'), n], [t('stat_depth'), minDepth], [t('stat_time'), `${elapsed} ms`]].forEach(([label, val]) => {
       const stat = document.createElement('div'); stat.className = 'stat';
       const v = document.createElement('div'); v.className = 'stat-value'; v.textContent = val;
       const l = document.createElement('div'); l.className = 'stat-label'; l.textContent = label;
@@ -361,14 +631,15 @@
     const card = document.createElement('div'); card.className = 'route-card';
     const header = document.createElement('div'); header.className = 'route-header';
     const nb = document.createElement('div'); nb.className = 'route-num'; nb.textContent = num;
-    const title = document.createElement('strong'); title.textContent = `Route ${num}`;
+    const title = document.createElement('strong');
+    title.textContent = `${t('route_label')} ${num}`;
     const db = document.createElement('div'); db.className = 'depth-badge';
-    db.textContent = `${route.depth} step${route.depth !== 1 ? 's' : ''}`;
+    db.textContent = `${route.depth} ${route.depth === 1 ? t('step_s') : t('steps_s')}`;
     header.appendChild(nb); header.appendChild(title); header.appendChild(db);
     card.appendChild(header);
     if (route.steps.length === 0) {
       const empty = document.createElement('div'); empty.className = 'empty-route';
-      empty.textContent = '✓ This molecule is a building block — available commercially.';
+      empty.textContent = t('bb_msg');
       card.appendChild(empty);
     } else {
       const sl = document.createElement('div'); sl.className = 'step-list';
@@ -386,14 +657,25 @@
       const line = document.createElement('div'); line.className = 'step-line'; conn.appendChild(line);
     }
     const body = document.createElement('div'); body.className = 'step-body';
-    const ruleEl = document.createElement('div'); ruleEl.className = 'step-rule'; ruleEl.textContent = step.rule;
+
+    // Rule name with tooltip
+    const ruleEl = document.createElement('div'); ruleEl.className = 'step-rule';
+    const ruleSpan = document.createElement('span');
+    ruleSpan.textContent = step.rule;
+    const tip = ruleTip(step.rule);
+    if (tip) ruleSpan.dataset.tip = tip;
+    ruleEl.appendChild(ruleSpan);
     body.appendChild(ruleEl);
+
     const targetRow = document.createElement('div'); targetRow.className = 'step-target-row';
-    const tlbl = document.createElement('div'); tlbl.className = 'step-target-label'; tlbl.textContent = 'Target:';
+    const tlbl = document.createElement('div'); tlbl.className = 'step-target-label';
+    tlbl.textContent = t('target_lbl');
     targetRow.appendChild(tlbl); targetRow.appendChild(makeMolCard(step.target));
     body.appendChild(targetRow);
+
     const arrow = document.createElement('div'); arrow.className = 'arrow-down'; arrow.textContent = '↓';
     body.appendChild(arrow);
+
     const precRow = document.createElement('div'); precRow.className = 'precursor-row';
     step.precursors.forEach((p, i) => {
       if (i > 0) {
@@ -406,6 +688,9 @@
     stepEl.appendChild(conn); stepEl.appendChild(body);
     return stepEl;
   }
+
+  // Apply initial language
+  setLang('en');
 </script>
 </body>
 </html>

@@ -65,9 +65,7 @@
     .mol-svg-wrap { background: var(--mol-bg); border-radius: 6px; overflow: hidden;
       display: flex; align-items: center; justify-content: center;
       width: 180px; height: 120px; border: 1px solid rgba(255,255,255,0.06); }
-    .mol-svg-wrap svg { width: 180px; height: 120px; }
     .mol-svg-wrap.large { width: 220px; height: 150px; }
-    .mol-svg-wrap.large svg { width: 220px; height: 150px; }
     .mol-smiles { font-family: var(--mono); font-size: 0.72rem; color: var(--muted);
       max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       text-align: center; transition: color 0.1s; }
@@ -236,20 +234,26 @@
     statusText.textContent = 'WASM unavailable.';
   }
 
-  const molTheme = { C:'#222', O:'#c0392b', N:'#2980b9', S:'#b7950b',
-                     F:'#16a085', Cl:'#1a5276', Br:'#6e2f8a', I:'#4a235a',
-                     P:'#784212', BACKGROUND:'#f4f5f8' };
+  // canvas-based drawer (more reliable than SvgDrawer across environments)
   let sdDrawer = null, sdDrawerLg = null;
   if (typeof SmilesDrawer !== 'undefined') {
-    sdDrawer   = new SmilesDrawer.SvgDrawer({ width:180, height:120, padding:10,
-      bondThickness:1.0, fontSizeSmall:7, fontSize:9, themes:{light:molTheme} });
-    sdDrawerLg = new SmilesDrawer.SvgDrawer({ width:220, height:150, padding:12,
-      bondThickness:1.1, fontSizeSmall:8, fontSize:10, themes:{light:molTheme} });
+    sdDrawer   = new SmilesDrawer.Drawer({ width:180, height:120, padding:10,
+      bondThickness:1.0, fontSizeSmall:7, fontSize:9, themes:{
+        light: { C:'#222', O:'#c0392b', N:'#2980b9', S:'#b7950b',
+                 F:'#16a085', Cl:'#1a5276', Br:'#6e2f8a', I:'#4a235a',
+                 P:'#784212', BACKGROUND:'#f4f5f8' } } });
+    sdDrawerLg = new SmilesDrawer.Drawer({ width:220, height:150, padding:12,
+      bondThickness:1.1, fontSizeSmall:8, fontSize:10, themes:{
+        light: { C:'#222', O:'#c0392b', N:'#2980b9', S:'#b7950b',
+                 F:'#16a085', Cl:'#1a5276', Br:'#6e2f8a', I:'#4a235a',
+                 P:'#784212', BACKGROUND:'#f4f5f8' } } });
   }
 
-  function drawSmiles(smiles, svgEl, large) {
-    if (!sdDrawer) { svgEl.textContent = smiles; return; }
-    SmilesDrawer.parse(smiles, t => (large ? sdDrawerLg : sdDrawer).draw(t, svgEl, 'light', false), () => {});
+  function drawSmiles(smiles, canvasEl, large) {
+    if (!sdDrawer) return;
+    SmilesDrawer.parse(smiles,
+      t => (large ? sdDrawerLg : sdDrawer).draw(t, canvasEl, 'light', false),
+      () => { /* parse failed — leave canvas blank */ });
   }
 
   function makeMolCard(smiles, large) {
@@ -257,8 +261,11 @@
     card.className = 'mol-card';
     const wrap = document.createElement('div');
     wrap.className = large ? 'mol-svg-wrap large' : 'mol-svg-wrap';
-    const svgEl = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    wrap.appendChild(svgEl);
+    // canvas needs explicit pixel dimensions; SmilesDrawer.Drawer renders into it directly
+    const canvasEl = document.createElement('canvas');
+    canvasEl.width  = large ? 220 : 180;
+    canvasEl.height = large ? 150 : 120;
+    wrap.appendChild(canvasEl);
     card.appendChild(wrap);
     const label = document.createElement('div');
     label.className = large ? 'mol-smiles large' : 'mol-smiles';
@@ -274,7 +281,7 @@
         setTimeout(() => card.classList.remove('copied'), 1200);
       });
     });
-    requestAnimationFrame(() => drawSmiles(smiles, svgEl, large));
+    requestAnimationFrame(() => drawSmiles(smiles, canvasEl, large));
     return card;
   }
 

@@ -157,9 +157,7 @@
       height: 120px;
       border: 1px solid rgba(255,255,255,0.06);
     }
-    .mol-svg-wrap svg { width: 180px; height: 120px; }
     .mol-svg-wrap.large { width: 220px; height: 150px; }
-    .mol-svg-wrap.large svg { width: 220px; height: 150px; }
     .mol-smiles {
       font-family: var(--mono);
       font-size: 0.72rem;
@@ -367,35 +365,24 @@
     statusText.textContent = 'WASM unavailable.';
   }
 
-  // ── SmilesDrawer setup ───────────────────────────────────────────────────
-  // SmilesDrawer is loaded as a global from the CDN <script> tag above.
-  let sdDrawer = null;
-  let sdDrawerLg = null;
+  // ── SmilesDrawer setup (canvas-based; more reliable than SvgDrawer) ────────
+  let sdDrawer = null, sdDrawerLg = null;
   if (typeof SmilesDrawer !== 'undefined') {
-    sdDrawer   = new SmilesDrawer.SvgDrawer({ width: 180, height: 120, padding: 10,
-      bondThickness: 1.0, fontSizeSmall: 7, fontSize: 9,
-      themes: { light: { C: '#222', O: '#c0392b', N: '#2980b9', S: '#b7950b',
-                         F: '#16a085', Cl: '#1a5276', Br: '#6e2f8a', I: '#4a235a',
-                         P: '#784212', BACKGROUND: '#f4f5f8' } }
-    });
-    sdDrawerLg = new SmilesDrawer.SvgDrawer({ width: 220, height: 150, padding: 12,
-      bondThickness: 1.1, fontSizeSmall: 8, fontSize: 10,
-      themes: { light: { C: '#222', O: '#c0392b', N: '#2980b9', S: '#b7950b',
-                         F: '#16a085', Cl: '#1a5276', Br: '#6e2f8a', I: '#4a235a',
-                         P: '#784212', BACKGROUND: '#f4f5f8' } }
-    });
+    const molTheme = { C: '#222', O: '#c0392b', N: '#2980b9', S: '#b7950b',
+                       F: '#16a085', Cl: '#1a5276', Br: '#6e2f8a', I: '#4a235a',
+                       P: '#784212', BACKGROUND: '#f4f5f8' };
+    sdDrawer   = new SmilesDrawer.Drawer({ width: 180, height: 120, padding: 10,
+      bondThickness: 1.0, fontSizeSmall: 7, fontSize: 9, themes: { light: molTheme } });
+    sdDrawerLg = new SmilesDrawer.Drawer({ width: 220, height: 150, padding: 12,
+      bondThickness: 1.1, fontSizeSmall: 8, fontSize: 10, themes: { light: molTheme } });
   }
 
-  function drawSmiles(smiles, svgEl, large = false) {
-    if (!SmilesDrawer || !sdDrawer) {
-      svgEl.textContent = smiles;
-      return;
-    }
-    const drawer = large ? sdDrawerLg : sdDrawer;
+  function drawSmiles(smiles, canvasEl, large = false) {
+    if (!sdDrawer) return;
     SmilesDrawer.parse(
       smiles,
-      (tree) => drawer.draw(tree, svgEl, 'light', false),
-      () => { /* draw failed — leave svg empty */ }
+      (tree) => (large ? sdDrawerLg : sdDrawer).draw(tree, canvasEl, 'light', false),
+      () => { /* parse failed — leave canvas blank */ }
     );
   }
 
@@ -406,8 +393,10 @@
     const wrap = document.createElement('div');
     wrap.className = large ? 'mol-svg-wrap large' : 'mol-svg-wrap';
 
-    const svgEl = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    wrap.appendChild(svgEl);
+    const canvasEl = document.createElement('canvas');
+    canvasEl.width  = large ? 220 : 180;
+    canvasEl.height = large ? 150 : 120;
+    wrap.appendChild(canvasEl);
     card.appendChild(wrap);
 
     const label = document.createElement('div');
@@ -428,8 +417,7 @@
       });
     });
 
-    // Defer drawing so layout is ready
-    requestAnimationFrame(() => drawSmiles(smiles, svgEl, large));
+    requestAnimationFrame(() => drawSmiles(smiles, canvasEl, large));
     return card;
   }
 

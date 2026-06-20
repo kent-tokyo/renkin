@@ -274,6 +274,109 @@ fn biaryl_cleavage(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
     results
 }
 
+/// Graph-based amide cleavage: C(=O)-N → carboxylic acid + amine.
+///
+/// Uses graph splitting to avoid BFS-leakage from chematic's run_reactants,
+/// which duplicates unmapped atoms into both product templates.
+fn amide_cleavage(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
+    let mut results: Vec<Vec<PrecursorMol>> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+
+    for (_, bond) in mol.bonds() {
+        let (a, b) = (bond.atom1, bond.atom2);
+        if bond.order != BondOrder::Single {
+            continue;
+        }
+
+        // Identify which end is the carbonyl C and which is N.
+        let (c_idx, n_idx) = {
+            let aa = mol.atom(a);
+            let ab = mol.atom(b);
+            if aa.element == Element::C && ab.element == Element::N {
+                (a, b)
+            } else if aa.element == Element::N && ab.element == Element::C {
+                (b, a)
+            } else {
+                continue;
+            }
+        };
+
+        // The carbon must have an adjacent double-bond O (i.e. be a carbonyl C).
+        let has_keto_o = mol.neighbors(c_idx).any(|(nb, bond_idx)| {
+            nb != n_idx
+                && mol.atom(nb).element == Element::O
+                && mol.bond(bond_idx).order == BondOrder::Double
+        });
+        if !has_keto_o {
+            continue;
+        }
+
+        // Only bridge bonds produce two clean fragments.
+        if !is_bridge_bond(mol, c_idx, n_idx) {
+            continue;
+        }
+
+        let comp_c = get_component(mol, c_idx, c_idx, n_idx);
+        let comp_n = get_component(mol, n_idx, c_idx, n_idx);
+
+        // C side: add explicit OH to mimic carboxylic acid.
+        let Some(frag_acid) = build_sub_molecule_with_oh(mol, &comp_c, c_idx) else {
+            continue;
+        };
+        let Some(frag_amine) = build_sub_molecule(mol, &comp_n) else {
+            continue;
+        };
+
+        let precs_acid = split_fragments(&frag_acid);
+        let precs_amine = split_fragments(&frag_amine);
+        if precs_acid.is_empty() || precs_amine.is_empty() {
+            continue;
+        }
+
+        let mut key_parts: Vec<&str> = precs_acid
+            .iter()
+            .chain(precs_amine.iter())
+            .map(|p| p.smiles.as_str())
+            .collect();
+        key_parts.sort_unstable();
+        let key = key_parts.join("|");
+        if !seen.insert(key) {
+            continue;
+        }
+
+        let mut prec_set = precs_acid;
+        prec_set.extend(precs_amine);
+        results.push(prec_set);
+    }
+    results
+}
+
+/// Build a sub-molecule and append an OH group bonded to `cut_atom`.
+fn build_sub_molecule_with_oh(
+    mol: &Molecule,
+    atoms: &HashSet<AtomIdx>,
+    cut_atom: AtomIdx,
+) -> Option<Molecule> {
+    let mut builder = MoleculeBuilder::new();
+    let mut idx_map: HashMap<AtomIdx, AtomIdx> = HashMap::new();
+
+    for &old_idx in atoms {
+        let new_idx = builder.add_atom(mol.atom(old_idx).clone());
+        idx_map.insert(old_idx, new_idx);
+    }
+    for (_, bond) in mol.bonds() {
+        let (a, b) = (bond.atom1, bond.atom2);
+        if atoms.contains(&a) && atoms.contains(&b) {
+            let (&new_a, &new_b) = (idx_map.get(&a)?, idx_map.get(&b)?);
+            builder.add_bond(new_a, new_b, bond.order).ok()?;
+        }
+    }
+    let o_idx = builder.add_atom(Atom::new(Element::O));
+    let &cut_new = idx_map.get(&cut_atom)?;
+    builder.add_bond(cut_new, o_idx, BondOrder::Single).ok()?;
+    Some(builder.build())
+}
+
 /// Apply a single retro-rule to a molecule.
 /// Returns all possible precursor sets as (canonical_smiles, Molecule) pairs.
 ///
@@ -284,6 +387,7 @@ pub fn apply_retro(mol: &Molecule, rule: &RetroRule) -> Vec<Vec<PrecursorMol>> {
     if rule.smirks.is_empty() {
         return match rule.name {
             "suzuki_retro" => biaryl_cleavage(mol),
+            "amide_cleavage" => amide_cleavage(mol),
             _ => vec![],
         };
     }
@@ -349,8 +453,9 @@ pub fn default_rules() -> Vec<RetroRule> {
         },
         RetroRule {
             name: "amide_cleavage",
-            // Amide C(=O)-N → carboxylic acid + amine
-            smirks: "[C:1](=[O:2])[N:3]>>[C:1](=[O:2])O.[N:3]",
+            // Graph-based: dispatched in apply_retro, not run_reactants
+            // (SMIRKS-based version had BFS-leakage producing spurious fragments)
+            smirks: "",
         },
         RetroRule {
             name: "friedel_crafts_acylation_retro",
@@ -408,8 +513,13 @@ pub fn default_rules() -> Vec<RetroRule> {
         },
         RetroRule {
             name: "heck_retro",
-            // Ar-CH=CH-R → Ar-Br + CH2=CH-R (retro-Heck coupling)
+            // Ar-CH=CH-R → Ar-Br + CH2=CH-R (retro-Heck, internal alkene)
             smirks: "[c:1][CH:2]=[CH:3]>>[c:1][Br].[CH2:2]=[CH:3]",
+        },
+        RetroRule {
+            name: "heck_retro_terminal",
+            // Ar-CH=CH2 → Ar-Br + CH2=CH2 (retro-Heck, terminal alkene / styrene)
+            smirks: "[c:1][CH:2]=[CH2:3]>>[c:1][Br].[CH2:2]=[CH2:3]",
         },
         RetroRule {
             name: "negishi_retro",
@@ -687,6 +797,55 @@ mod tests {
             !routes.is_empty(),
             "biphenyl must be solvable with DEFAULT_BUILDING_BLOCKS"
         );
+    }
+
+    #[test]
+    fn amide_cleavage_paracetamol() {
+        // Verify amide_cleavage rule fires on paracetamol.
+        let mol = mol_from_smiles("CC(=O)Nc1ccc(O)cc1").unwrap();
+        let rule = RetroRule {
+            name: "amide_cleavage",
+            smirks: "[C:1](=[O:2])[N:3]>>[C:1](=[O:2])O.[N:3]",
+        };
+        let results = apply_retro(&mol, &rule);
+        assert!(
+            !results.is_empty(),
+            "amide_cleavage must fire on paracetamol"
+        );
+    }
+
+    #[test]
+    fn default_bbs_solve_playground_presets() {
+        // Smoke-test: every playground preset must find at least 1 route
+        // using DEFAULT_BUILDING_BLOCKS. Add missing BBs to lib.rs when this fails.
+        use crate::search::{SearchConfig, find_routes};
+        let env = ChemEnv::in_memory(crate::DEFAULT_BUILDING_BLOCKS);
+        let rules = default_rules();
+        let cfg = SearchConfig {
+            max_depth: 3,
+            max_routes: 3,
+            beam_width: 0,
+        };
+
+        let presets = [
+            ("CC(=O)Oc1ccccc1C(=O)O", "Aspirin"),
+            ("CC(=O)Nc1ccc(O)cc1", "Paracetamol"),
+            ("CC(=O)Nc1ccccc1", "Acetanilide"),
+            ("c1ccc(-c2ccccc2)cc1", "Biphenyl"),
+            ("c1ccc(-c2ccncc2)cc1", "4-Phenylpyridine"),
+            ("Fc1ccc(-c2ccccc2)cc1", "4-Fluorobiphenyl"),
+            ("O=Cc1ccc(-c2ccco2)nc1", "Pyridine-furan biaryl"),
+            ("C=Cc1ccccc1", "Styrene"),
+            ("CCOC(=O)c1ccccc1", "Ethyl benzoate"),
+        ];
+
+        for (smiles, name) in presets {
+            let routes = find_routes(smiles, &env, &rules, &cfg).unwrap();
+            assert!(
+                !routes.is_empty(),
+                "{name} ({smiles}) must be solvable with DEFAULT_BUILDING_BLOCKS"
+            );
+        }
     }
 
     #[test]

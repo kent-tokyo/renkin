@@ -377,11 +377,13 @@
       bondThickness: 1.1, fontSizeSmall: 8, fontSize: 10, themes: { light: molTheme } });
   }
 
-  function drawSmiles(smiles, canvasEl, large = false) {
+  let _molId = 0;
+
+  function drawSmiles(id, smiles, large = false) {
     if (!sdDrawer) return;
     SmilesDrawer.parse(
       smiles,
-      (tree) => (large ? sdDrawerLg : sdDrawer).draw(tree, canvasEl, 'light', false),
+      (tree) => (large ? sdDrawerLg : sdDrawer).draw(tree, id, 'light', false),
       () => { /* parse failed — leave canvas blank */ }
     );
   }
@@ -393,7 +395,10 @@
     const wrap = document.createElement('div');
     wrap.className = large ? 'mol-svg-wrap large' : 'mol-svg-wrap';
 
+    // SmilesDrawer.Drawer.draw() requires a string canvas ID, not the element
+    const id = `mol-${++_molId}`;
     const canvasEl = document.createElement('canvas');
+    canvasEl.id     = id;
     canvasEl.width  = large ? 220 : 180;
     canvasEl.height = large ? 150 : 120;
     wrap.appendChild(canvasEl);
@@ -417,7 +422,7 @@
       });
     });
 
-    requestAnimationFrame(() => drawSmiles(smiles, canvasEl, large));
+    requestAnimationFrame(() => drawSmiles(id, smiles, large));
     return card;
   }
 

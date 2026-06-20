@@ -249,10 +249,12 @@
                  P:'#784212', BACKGROUND:'#f4f5f8' } } });
   }
 
-  function drawSmiles(smiles, canvasEl, large) {
+  let _molId = 0;
+
+  function drawSmiles(id, smiles, large) {
     if (!sdDrawer) return;
     SmilesDrawer.parse(smiles,
-      t => (large ? sdDrawerLg : sdDrawer).draw(t, canvasEl, 'light', false),
+      t => (large ? sdDrawerLg : sdDrawer).draw(t, id, 'light', false),
       () => { /* parse failed — leave canvas blank */ });
   }
 
@@ -261,8 +263,10 @@
     card.className = 'mol-card';
     const wrap = document.createElement('div');
     wrap.className = large ? 'mol-svg-wrap large' : 'mol-svg-wrap';
-    // canvas needs explicit pixel dimensions; SmilesDrawer.Drawer renders into it directly
+    // SmilesDrawer.Drawer.draw() requires a string canvas ID, not the element
+    const id = `mol-${++_molId}`;
     const canvasEl = document.createElement('canvas');
+    canvasEl.id     = id;
     canvasEl.width  = large ? 220 : 180;
     canvasEl.height = large ? 150 : 120;
     wrap.appendChild(canvasEl);
@@ -281,7 +285,7 @@
         setTimeout(() => card.classList.remove('copied'), 1200);
       });
     });
-    requestAnimationFrame(() => drawSmiles(smiles, canvasEl, large));
+    requestAnimationFrame(() => drawSmiles(id, smiles, large));
     return card;
   }
 

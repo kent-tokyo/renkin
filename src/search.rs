@@ -5,7 +5,9 @@ use anyhow::Result;
 use rayon::prelude::*;
 use serde::Serialize;
 
-use crate::chem_env::{ChemEnv, PrecursorMol, RetroRule, apply_retro, mol_from_smiles, to_canonical};
+use crate::chem_env::{
+    ChemEnv, PrecursorMol, RetroRule, apply_retro, mol_from_smiles, to_canonical,
+};
 use crate::score::{heuristic, step_cost};
 
 #[derive(Debug, Clone, Serialize)]
@@ -55,7 +57,10 @@ impl PartialOrd for Node {
 impl Ord for Node {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         // Min-heap by f = g + h (best = lowest cost first).
-        other.f().partial_cmp(&self.f()).unwrap_or(std::cmp::Ordering::Equal)
+        other
+            .f()
+            .partial_cmp(&self.f())
+            .unwrap_or(std::cmp::Ordering::Equal)
     }
 }
 
@@ -96,7 +101,11 @@ fn beam_prune(heap: &mut BinaryHeap<Node>, beam_width: usize) {
     let mut nodes: Vec<Node> = heap.drain().collect();
     // Sort best (lowest f) first; BinaryHeap is max-heap but our Ord reverses it,
     // so after drain+sort we need ascending f order.
-    nodes.sort_by(|a, b| a.f().partial_cmp(&b.f()).unwrap_or(std::cmp::Ordering::Equal));
+    nodes.sort_by(|a, b| {
+        a.f()
+            .partial_cmp(&b.f())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     nodes.truncate(beam_width);
     *heap = nodes.into_iter().collect();
 }
@@ -110,7 +119,11 @@ pub struct SearchConfig {
 
 impl Default for SearchConfig {
     fn default() -> Self {
-        Self { max_depth: 5, max_routes: 5, beam_width: 0 }
+        Self {
+            max_depth: 5,
+            max_routes: 5,
+            beam_width: 0,
+        }
     }
 }
 
@@ -127,9 +140,17 @@ pub fn find_routes(
     let mut closed: HashSet<String> = HashSet::new();
     let mut heap: BinaryHeap<Node> = BinaryHeap::new();
 
-    let initial = vec![FEntry { smiles: target_canonical }];
+    let initial = vec![FEntry {
+        smiles: target_canonical,
+    }];
     let h0 = compute_h(&initial, env);
-    heap.push(Node { frontier: initial, path: vec![], depth: 0, g: 0.0, h: h0 });
+    heap.push(Node {
+        frontier: initial,
+        path: vec![],
+        depth: 0,
+        g: 0.0,
+        h: h0,
+    });
 
     while let Some(node) = heap.pop() {
         if routes.len() >= config.max_routes {
@@ -137,7 +158,10 @@ pub fn find_routes(
         }
 
         if count_unsolved(&node.frontier, env) == 0 {
-            routes.push(Route { steps: node.path.clone(), depth: node.depth });
+            routes.push(Route {
+                steps: node.path.clone(),
+                depth: node.depth,
+            });
         }
 
         if node.depth >= config.max_depth {
@@ -194,14 +218,17 @@ pub fn find_routes(
                 continue;
             }
 
-            let precursor_smiles: Vec<String> = precursors.iter().map(|p| p.smiles.clone()).collect();
+            let precursor_smiles: Vec<String> =
+                precursors.iter().map(|p| p.smiles.clone()).collect();
 
             let new_frontier: Vec<FEntry> = node
                 .frontier
                 .iter()
                 .filter(|e| e.smiles != target_smi)
                 .cloned()
-                .chain(precursors.iter().map(|p| FEntry { smiles: p.smiles.clone() }))
+                .chain(precursors.iter().map(|p| FEntry {
+                    smiles: p.smiles.clone(),
+                }))
                 .collect();
 
             let step_c = step_cost(&precursors.iter().map(|p| &p.mol).collect::<Vec<_>>());
@@ -236,14 +263,17 @@ mod tests {
     use crate::chem_env::{ChemEnv, default_rules};
 
     fn aspirin_env() -> ChemEnv {
-        ChemEnv::load("data/building_blocks.smi")
-            .unwrap_or_else(|_| ChemEnv::in_memory(&[
-                "CC(=O)O", "Oc1ccccc1C(=O)O", "c1ccccc1C(=O)O", "C", "O",
-            ]))
+        ChemEnv::load("data/building_blocks.smi").unwrap_or_else(|_| {
+            ChemEnv::in_memory(&["CC(=O)O", "Oc1ccccc1C(=O)O", "c1ccccc1C(=O)O", "C", "O"])
+        })
     }
 
     fn cfg(depth: u32) -> SearchConfig {
-        SearchConfig { max_depth: depth, max_routes: 5, beam_width: 0 }
+        SearchConfig {
+            max_depth: depth,
+            max_routes: 5,
+            beam_width: 0,
+        }
     }
 
     #[test]
@@ -251,7 +281,10 @@ mod tests {
         let env = aspirin_env();
         let rules = default_rules();
         let routes = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg(3)).unwrap();
-        assert!(!routes.is_empty(), "must find at least one route for aspirin");
+        assert!(
+            !routes.is_empty(),
+            "must find at least one route for aspirin"
+        );
         assert!(
             routes.iter().any(|r| r.depth <= 2),
             "must find a route with depth ≤ 2"
@@ -264,7 +297,10 @@ mod tests {
         let rules = default_rules();
         // Acetic acid is a building block → expect a depth-0 route (empty steps).
         let routes = find_routes("CC(=O)O", &env, &rules, &cfg(2)).unwrap();
-        assert!(routes.iter().any(|r| r.depth == 0), "building block must return depth-0 route");
+        assert!(
+            routes.iter().any(|r| r.depth == 0),
+            "building block must return depth-0 route"
+        );
     }
 
     #[test]
@@ -272,14 +308,21 @@ mod tests {
         let env = aspirin_env();
         let rules = default_rules();
         let routes = find_routes("c1ccc(N)cc1C(=O)O", &env, &rules, &cfg(3)).unwrap();
-        assert!(routes.iter().any(|r| r.depth == 0), "anthranilic acid is in building blocks");
+        assert!(
+            routes.iter().any(|r| r.depth == 0),
+            "anthranilic acid is in building blocks"
+        );
     }
 
     #[test]
     fn beam_width_limits_does_not_panic() {
         let env = aspirin_env();
         let rules = default_rules();
-        let cfg_beam = SearchConfig { max_depth: 3, max_routes: 3, beam_width: 10 };
+        let cfg_beam = SearchConfig {
+            max_depth: 3,
+            max_routes: 3,
+            beam_width: 10,
+        };
         // With a very tight beam, search may find fewer routes but must not panic.
         let routes = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg_beam);
         assert!(routes.is_ok());

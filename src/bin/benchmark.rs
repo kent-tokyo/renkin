@@ -15,10 +15,10 @@
 ///   }
 use std::time::Instant;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
+use renkin::DEFAULT_BUILDING_BLOCKS;
 use renkin::chem_env::{ChemEnv, default_rules};
 use renkin::search::{SearchConfig, find_routes};
-use renkin::DEFAULT_BUILDING_BLOCKS;
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -55,23 +55,33 @@ fn main() -> Result<()> {
         match args[i].as_str() {
             "--input" | "-i" => {
                 i += 1;
-                if i < args.len() { input_path = Some(args[i].clone()); }
+                if i < args.len() {
+                    input_path = Some(args[i].clone());
+                }
             }
             "--depth" | "-d" => {
                 i += 1;
-                if i < args.len() { max_depth = args[i].parse().unwrap_or(5); }
+                if i < args.len() {
+                    max_depth = args[i].parse().unwrap_or(5);
+                }
             }
             "--beam-width" | "-w" => {
                 i += 1;
-                if i < args.len() { beam_width = args[i].parse().unwrap_or(0); }
+                if i < args.len() {
+                    beam_width = args[i].parse().unwrap_or(0);
+                }
             }
             "--max-routes" | "-n" => {
                 i += 1;
-                if i < args.len() { max_routes = args[i].parse().unwrap_or(1); }
+                if i < args.len() {
+                    max_routes = args[i].parse().unwrap_or(1);
+                }
             }
             "--building-blocks" | "-b" => {
                 i += 1;
-                if i < args.len() { bb_path = Some(args[i].clone()); }
+                if i < args.len() {
+                    bb_path = Some(args[i].clone());
+                }
             }
             _ => {}
         }
@@ -109,9 +119,18 @@ fn main() -> Result<()> {
     };
 
     let rules = default_rules();
-    let config = SearchConfig { max_depth, max_routes, beam_width };
+    let config = SearchConfig {
+        max_depth,
+        max_routes,
+        beam_width,
+    };
 
-    eprintln!("Benchmarking {} targets (depth={}, beam_width={}) ...", targets.len(), max_depth, beam_width);
+    eprintln!(
+        "Benchmarking {} targets (depth={}, beam_width={}) ...",
+        targets.len(),
+        max_depth,
+        beam_width
+    );
 
     let mut results = Vec::new();
     let mut total_depth_sum = 0u32;
@@ -127,11 +146,19 @@ fn main() -> Result<()> {
 
         if solved {
             solved_count += 1;
-            if let Some(d) = best_depth { total_depth_sum += d; }
+            if let Some(d) = best_depth {
+                total_depth_sum += d;
+            }
         }
 
-        eprintln!("  [{}/{}] {} → {} route(s) in {:.1}ms",
-            results.len() + 1, targets.len(), smiles, routes.len(), elapsed_ms);
+        eprintln!(
+            "  [{}/{}] {} → {} route(s) in {:.1}ms",
+            results.len() + 1,
+            targets.len(),
+            smiles,
+            routes.len(),
+            elapsed_ms
+        );
 
         results.push(BenchResult {
             smiles: smiles.clone(),

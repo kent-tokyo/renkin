@@ -36,13 +36,16 @@ pub fn find_routes_py(
             let refs: Vec<&str> = bbs.iter().map(|s| s.as_str()).collect();
             ChemEnv::in_memory(&refs)
         }
-        None => ChemEnv::load("data/building_blocks.smi").unwrap_or_else(|_| {
-            ChemEnv::in_memory(crate::DEFAULT_BUILDING_BLOCKS)
-        }),
+        None => ChemEnv::load("data/building_blocks.smi")
+            .unwrap_or_else(|_| ChemEnv::in_memory(crate::DEFAULT_BUILDING_BLOCKS)),
     };
 
     let rules = default_rules();
-    let config = SearchConfig { max_depth: depth, max_routes, beam_width };
+    let config = SearchConfig {
+        max_depth: depth,
+        max_routes,
+        beam_width,
+    };
     let routes = find_routes(target, &env, &rules, &config)
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
 

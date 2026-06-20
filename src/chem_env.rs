@@ -2,8 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 
 use anyhow::{Context, Result};
-use chematic::chem::standardize::{StandardizeOptions, ZwitterionHandling, standardize};
 use chematic::chem::aromatic_ring_count;
+use chematic::chem::standardize::{StandardizeOptions, ZwitterionHandling, standardize};
 use chematic::core::{Atom, AtomIdx, BondOrder, Element, MoleculeBuilder};
 use chematic::rxn::run_reactants;
 use chematic::smarts::{QueryMolecule, find_matches, parse_smarts};
@@ -50,9 +50,15 @@ impl ChemEnv {
         let bb_count = entries.len();
         let mut building_blocks: HashMap<(usize, usize), Vec<BbEntry>> = HashMap::new();
         for (n_atoms, n_bonds, entry) in entries {
-            building_blocks.entry((n_atoms, n_bonds)).or_default().push(entry);
+            building_blocks
+                .entry((n_atoms, n_bonds))
+                .or_default()
+                .push(entry);
         }
-        Self { building_blocks, bb_count }
+        Self {
+            building_blocks,
+            bb_count,
+        }
     }
 
     fn parse_smi_content(content: &str) -> Vec<(usize, usize, BbEntry)> {
@@ -82,7 +88,9 @@ impl ChemEnv {
     /// Pre-filtered by (atom_count, bond_count) → O(1) HashMap lookup before VF2.
     pub fn is_building_block(&self, mol: &Molecule) -> bool {
         let key = (mol.atom_count(), mol.bonds().count());
-        let Some(candidates) = self.building_blocks.get(&key) else { return false; };
+        let Some(candidates) = self.building_blocks.get(&key) else {
+            return false;
+        };
         let n_atoms = mol.atom_count();
         candidates.iter().any(|bb| {
             let matches = find_matches(&bb.query, mol);
@@ -123,7 +131,9 @@ fn is_bridge_bond(mol: &Molecule, a: AtomIdx, b: AtomIdx) -> bool {
     visited.insert(a);
     while let Some(cur) = stack.pop() {
         for (neighbor, _) in mol.neighbors(cur) {
-            if cur == a && neighbor == b { continue; }
+            if cur == a && neighbor == b {
+                continue;
+            }
             if visited.insert(neighbor) {
                 stack.push(neighbor);
             }
@@ -133,7 +143,12 @@ fn is_bridge_bond(mol: &Molecule, a: AtomIdx, b: AtomIdx) -> bool {
 }
 
 /// Collect all atoms reachable from `start` when the bond (bridge_a, bridge_b) is removed.
-fn get_component(mol: &Molecule, start: AtomIdx, bridge_a: AtomIdx, bridge_b: AtomIdx) -> HashSet<AtomIdx> {
+fn get_component(
+    mol: &Molecule,
+    start: AtomIdx,
+    bridge_a: AtomIdx,
+    bridge_b: AtomIdx,
+) -> HashSet<AtomIdx> {
     let mut visited = HashSet::new();
     let mut stack = vec![start];
     visited.insert(start);
@@ -210,35 +225,47 @@ fn biaryl_cleavage(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
         // Both endpoints must be aromatic carbon
         let atom_a = mol.atom(a);
         let atom_b = mol.atom(b);
-        if !atom_a.aromatic || atom_a.element != Element::C { continue; }
-        if !atom_b.aromatic || atom_b.element != Element::C { continue; }
+        if !atom_a.aromatic || atom_a.element != Element::C {
+            continue;
+        }
+        if !atom_b.aromatic || atom_b.element != Element::C {
+            continue;
+        }
 
         // Must be a bridge bond (not inside any ring)
-        if !is_bridge_bond(mol, a, b) { continue; }
+        if !is_bridge_bond(mol, a, b) {
+            continue;
+        }
 
         let comp_a = get_component(mol, a, a, b);
         let comp_b = get_component(mol, b, a, b);
 
         // Generate both orientations: which ring gets Br
-        for (comp_br, cut, comp_plain) in [
-            (&comp_a, a, &comp_b),
-            (&comp_b, b, &comp_a),
-        ] {
-            let Some(frag_br)    = build_sub_molecule_with_br(mol, comp_br, cut) else { continue };
-            let Some(frag_plain) = build_sub_molecule(mol, comp_plain)           else { continue };
+        for (comp_br, cut, comp_plain) in [(&comp_a, a, &comp_b), (&comp_b, b, &comp_a)] {
+            let Some(frag_br) = build_sub_molecule_with_br(mol, comp_br, cut) else {
+                continue;
+            };
+            let Some(frag_plain) = build_sub_molecule(mol, comp_plain) else {
+                continue;
+            };
 
-            let precs_br    = split_fragments(&frag_br);
+            let precs_br = split_fragments(&frag_br);
             let precs_plain = split_fragments(&frag_plain);
-            if precs_br.is_empty() || precs_plain.is_empty() { continue; }
+            if precs_br.is_empty() || precs_plain.is_empty() {
+                continue;
+            }
 
             // De-duplicate identical orientations (e.g. symmetric biaryls)
-            let mut key_parts: Vec<&str> = precs_br.iter()
+            let mut key_parts: Vec<&str> = precs_br
+                .iter()
                 .chain(precs_plain.iter())
                 .map(|p| p.smiles.as_str())
                 .collect();
             key_parts.sort_unstable();
             let key = key_parts.join("|");
-            if !seen.insert(key) { continue; }
+            if !seen.insert(key) {
+                continue;
+            }
 
             let mut prec_set = precs_br;
             prec_set.extend(precs_plain);
@@ -298,7 +325,10 @@ fn split_fragments(mol: &Molecule) -> Vec<PrecursorMol> {
             }
             let smi = to_canonical(&std_mol);
             let final_mol = parse(&smi).ok()?;
-            Some(PrecursorMol { smiles: smi, mol: final_mol })
+            Some(PrecursorMol {
+                smiles: smi,
+                mol: final_mol,
+            })
         })
         .collect()
 }
@@ -434,22 +464,31 @@ mod tests {
     fn building_block_recognized_by_vf2() {
         let env = env_aspirin_bbs();
         let mol = mol_from_smiles("CC(=O)O").unwrap();
-        assert!(env.is_building_block(&mol), "acetic acid should be a building block");
+        assert!(
+            env.is_building_block(&mol),
+            "acetic acid should be a building block"
+        );
     }
 
     #[test]
     fn non_building_block_rejected() {
         let env = env_aspirin_bbs();
         let mol = mol_from_smiles("CC(=O)Oc1ccccc1C(=O)O").unwrap();
-        assert!(!env.is_building_block(&mol), "aspirin should not be a building block");
+        assert!(
+            !env.is_building_block(&mol),
+            "aspirin should not be a building block"
+        );
     }
 
     #[test]
     fn building_block_canonical_form_variant() {
         // VF2 must match even when canonical SMILES differ (L2 in lessons.md).
         let env = ChemEnv::in_memory(&["CC(=O)O"]);
-        let mol = mol_from_smiles("OC(C)=O").unwrap();   // different SMILES, same molecule
-        assert!(env.is_building_block(&mol), "OC(C)=O is the same as CC(=O)O");
+        let mol = mol_from_smiles("OC(C)=O").unwrap(); // different SMILES, same molecule
+        assert!(
+            env.is_building_block(&mol),
+            "OC(C)=O is the same as CC(=O)O"
+        );
     }
 
     #[test]
@@ -457,13 +496,19 @@ mod tests {
         // Different SMILES representations of benzoic acid must match via VF2 (L2).
         let env = ChemEnv::in_memory(&["c1ccccc1C(=O)O"]);
         let mol = mol_from_smiles("c1c(C(=O)O)cccc1").unwrap();
-        assert!(env.is_building_block(&mol), "c1c(C(=O)O)cccc1 is benzoic acid");
+        assert!(
+            env.is_building_block(&mol),
+            "c1c(C(=O)O)cccc1 is benzoic acid"
+        );
     }
 
     #[test]
     fn ester_cleavage_fires_on_aspirin() {
         let mol = mol_from_smiles("CC(=O)Oc1ccccc1C(=O)O").unwrap();
-        let rule = RetroRule { name: "ester_cleavage", smirks: "[C:1](=[O:2])[O:3]>>[C:1](=[O:2])O.[O:3]" };
+        let rule = RetroRule {
+            name: "ester_cleavage",
+            smirks: "[C:1](=[O:2])[O:3]>>[C:1](=[O:2])O.[O:3]",
+        };
         let results = apply_retro(&mol, &rule);
         assert!(!results.is_empty(), "ester_cleavage must match aspirin");
     }
@@ -472,13 +517,18 @@ mod tests {
     fn aromatic_ring_fragment_filter() {
         // Open-chain aromatic fragments (BFS leakage, L4) must be discarded.
         let mol = mol_from_smiles("c1ccc(N)cc1C(=O)O").unwrap();
-        let rule = RetroRule { name: "aryl_carboxylation_retro", smirks: "[c:1][C:2](=O)O>>[c:1].[C:2](=O)O" };
+        let rule = RetroRule {
+            name: "aryl_carboxylation_retro",
+            smirks: "[c:1][C:2](=O)O>>[c:1].[C:2](=O)O",
+        };
         let results = apply_retro(&mol, &rule);
         // All returned fragments must have rings if they contain aromatic atoms.
         for precursor_set in &results {
             for p in precursor_set {
                 let smi = &p.smiles;
-                let has_lowercase = smi.chars().any(|c| matches!(c, 'c'|'n'|'o'|'s'|'p'));
+                let has_lowercase = smi
+                    .chars()
+                    .any(|c| matches!(c, 'c' | 'n' | 'o' | 's' | 'p'));
                 if has_lowercase {
                     let m = mol_from_smiles(smi).unwrap();
                     assert!(
@@ -496,7 +546,10 @@ mod tests {
         // This test just verifies that for anthranilic acid the aryl_carboxylation
         // rule returns aniline-like and acid-like fragments without crashing.
         let mol = mol_from_smiles("c1ccc(N)cc1C(=O)O").unwrap();
-        let rule = RetroRule { name: "aryl_carboxylation_retro", smirks: "[c:1][C:2](=O)O>>[c:1].[C:2](=O)O" };
+        let rule = RetroRule {
+            name: "aryl_carboxylation_retro",
+            smirks: "[c:1][C:2](=O)O>>[c:1].[C:2](=O)O",
+        };
         let results = apply_retro(&mol, &rule);
         assert!(!results.is_empty());
     }
@@ -504,18 +557,31 @@ mod tests {
     #[test]
     fn suzuki_retro_biphenyl_gives_bromobenzene_and_benzene() {
         let mol = mol_from_smiles("c1ccc(-c2ccccc2)cc1").unwrap();
-        let rule = RetroRule { name: "suzuki_retro", smirks: "" };
+        let rule = RetroRule {
+            name: "suzuki_retro",
+            smirks: "",
+        };
         let results = apply_retro(&mol, &rule);
-        assert!(!results.is_empty(), "suzuki_retro must find at least one biaryl disconnection");
+        assert!(
+            !results.is_empty(),
+            "suzuki_retro must find at least one biaryl disconnection"
+        );
 
-        let all_smiles: Vec<String> =
-            results.iter().flat_map(|set| set.iter().map(|p| p.smiles.clone())).collect();
+        let all_smiles: Vec<String> = results
+            .iter()
+            .flat_map(|set| set.iter().map(|p| p.smiles.clone()))
+            .collect();
 
         // Expect exactly bromobenzene and benzene (in some canonical form)
-        let has_bromobenzene = all_smiles.iter().any(|s| s.contains("Br") && s.contains("c1ccccc1"));
-        let has_benzene      = all_smiles.iter().any(|s| s == "c1ccccc1");
-        assert!(has_bromobenzene, "expected bromobenzene fragment; got {all_smiles:?}");
-        assert!(has_benzene,      "expected benzene fragment; got {all_smiles:?}");
+        let has_bromobenzene = all_smiles
+            .iter()
+            .any(|s| s.contains("Br") && s.contains("c1ccccc1"));
+        let has_benzene = all_smiles.iter().any(|s| s == "c1ccccc1");
+        assert!(
+            has_bromobenzene,
+            "expected bromobenzene fragment; got {all_smiles:?}"
+        );
+        assert!(has_benzene, "expected benzene fragment; got {all_smiles:?}");
     }
 
     #[test]
@@ -524,10 +590,20 @@ mod tests {
         use crate::search::{SearchConfig, find_routes};
         let env = ChemEnv::in_memory(&["Brc1ccccc1", "c1ccccc1"]);
         let rules = default_rules();
-        let cfg = SearchConfig { max_depth: 2, max_routes: 3, beam_width: 0 };
+        let cfg = SearchConfig {
+            max_depth: 2,
+            max_routes: 3,
+            beam_width: 0,
+        };
         let routes = find_routes("c1ccc(-c2ccccc2)cc1", &env, &rules, &cfg).unwrap();
-        assert!(!routes.is_empty(), "biphenyl must be solvable with Br-PhH + PhH BBs");
-        assert!(routes.iter().any(|r| r.depth == 1), "should need only 1 step");
+        assert!(
+            !routes.is_empty(),
+            "biphenyl must be solvable with Br-PhH + PhH BBs"
+        );
+        assert!(
+            routes.iter().any(|r| r.depth == 1),
+            "should need only 1 step"
+        );
     }
 
     #[test]
@@ -536,7 +612,11 @@ mod tests {
         let env = ChemEnv::load("data/building_blocks.smi")
             .unwrap_or_else(|_| ChemEnv::in_memory(&["Brc1ccccc1", "Brc1ccc(F)cc1", "c1ccccc1"]));
         let rules = default_rules();
-        let cfg = SearchConfig { max_depth: 2, max_routes: 3, beam_width: 0 };
+        let cfg = SearchConfig {
+            max_depth: 2,
+            max_routes: 3,
+            beam_width: 0,
+        };
         let routes = find_routes("Fc1ccc(-c2ccccc2)cc1", &env, &rules, &cfg).unwrap();
         assert!(!routes.is_empty(), "4-fluorobiphenyl must be solvable");
     }
@@ -544,7 +624,10 @@ mod tests {
     #[test]
     fn wittig_retro_cleaves_alkene() {
         let mol = mol_from_smiles("C=C").unwrap(); // ethylene
-        let rule = RetroRule { name: "wittig_retro", smirks: "[C:1]=[C:2]>>[C:1]=O.[C:2]=O" };
+        let rule = RetroRule {
+            name: "wittig_retro",
+            smirks: "[C:1]=[C:2]>>[C:1]=O.[C:2]=O",
+        };
         let results = apply_retro(&mol, &rule);
         assert!(!results.is_empty(), "wittig_retro must match ethylene");
         // Products must contain oxygen atoms (carbonyls — canonical form may be C=O or O=C).

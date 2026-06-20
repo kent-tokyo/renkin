@@ -1,8 +1,8 @@
+use renkin::DEFAULT_BUILDING_BLOCKS;
 use renkin::chem_env;
 use renkin::search::{self, SearchConfig};
-use renkin::DEFAULT_BUILDING_BLOCKS;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -26,23 +26,33 @@ fn main() -> Result<()> {
         match args[i].as_str() {
             "--target" | "-t" => {
                 i += 1;
-                if i < args.len() { target = Some(args[i].clone()); }
+                if i < args.len() {
+                    target = Some(args[i].clone());
+                }
             }
             "--depth" | "-d" => {
                 i += 1;
-                if i < args.len() { max_depth = args[i].parse().unwrap_or(5); }
+                if i < args.len() {
+                    max_depth = args[i].parse().unwrap_or(5);
+                }
             }
             "--building-blocks" | "-b" => {
                 i += 1;
-                if i < args.len() { bb_path = Some(args[i].clone()); }
+                if i < args.len() {
+                    bb_path = Some(args[i].clone());
+                }
             }
             "--max-routes" | "-n" => {
                 i += 1;
-                if i < args.len() { max_routes = args[i].parse().unwrap_or(5); }
+                if i < args.len() {
+                    max_routes = args[i].parse().unwrap_or(5);
+                }
             }
             "--beam-width" | "-w" => {
                 i += 1;
-                if i < args.len() { beam_width = args[i].parse().unwrap_or(0); }
+                if i < args.len() {
+                    beam_width = args[i].parse().unwrap_or(0);
+                }
             }
             _ => {}
         }
@@ -70,7 +80,11 @@ fn main() -> Result<()> {
     };
 
     let rules = chem_env::default_rules();
-    let config = SearchConfig { max_depth, max_routes, beam_width };
+    let config = SearchConfig {
+        max_depth,
+        max_routes,
+        beam_width,
+    };
     let routes = search::find_routes(&target_smiles, &env, &rules, &config)?;
 
     let output = Output {

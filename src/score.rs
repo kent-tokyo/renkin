@@ -12,10 +12,13 @@ use crate::chem_env::Molecule;
 /// Normalized: (sa - 1) / 9 → [0, 1]. Weight 0.5 keeps h admissible because
 /// step_cost ≥ 1.0, so total h ≤ 1.5 per unsolved molecule < true cost ≥ 1.0.
 pub fn heuristic(unsolved_mols: &[&Molecule]) -> f64 {
-    unsolved_mols.iter().map(|m| {
-        let sa = sa_score(m).clamp(1.0, 10.0);
-        1.0 + 0.5 * (sa - 1.0) / 9.0   // base 1.0 + up to 0.5 for complexity
-    }).sum()
+    unsolved_mols
+        .iter()
+        .map(|m| {
+            let sa = sa_score(m).clamp(1.0, 10.0);
+            1.0 + 0.5 * (sa - 1.0) / 9.0 // base 1.0 + up to 0.5 for complexity
+        })
+        .sum()
 }
 
 /// g(n) step cost: penalize expansions that produce heavy molecules.

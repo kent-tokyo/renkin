@@ -1,8 +1,8 @@
 use wasm_bindgen::prelude::*;
 
+use crate::DEFAULT_BUILDING_BLOCKS;
 use crate::chem_env::{ChemEnv, default_rules};
 use crate::search::{SearchConfig, find_routes as rs_find_routes};
-use crate::DEFAULT_BUILDING_BLOCKS;
 
 /// Find retrosynthetic routes for a target molecule (WASM entry point).
 ///
@@ -25,7 +25,11 @@ use crate::DEFAULT_BUILDING_BLOCKS;
 pub fn find_routes(target: &str, depth: u32, max_routes: usize, beam_width: usize) -> String {
     let env = ChemEnv::in_memory(DEFAULT_BUILDING_BLOCKS);
     let rules = default_rules();
-    let config = SearchConfig { max_depth: depth, max_routes, beam_width };
+    let config = SearchConfig {
+        max_depth: depth,
+        max_routes,
+        beam_width,
+    };
 
     match rs_find_routes(target, &env, &rules, &config) {
         Ok(routes) => {
@@ -34,9 +38,8 @@ pub fn find_routes(target: &str, depth: u32, max_routes: usize, beam_width: usiz
                 "routes_found": routes.len(),
                 "routes": routes,
             });
-            serde_json::to_string(&output).unwrap_or_else(|e| {
-                format!(r#"{{"error":"serialization: {e}"}}"#)
-            })
+            serde_json::to_string(&output)
+                .unwrap_or_else(|e| format!(r#"{{"error":"serialization: {e}"}}"#))
         }
         Err(e) => format!(r#"{{"error":"{e}"}}"#),
     }

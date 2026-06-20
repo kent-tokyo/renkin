@@ -3,7 +3,10 @@
 > **Computer-Aided Synthesis Planning (CASP) · Pure Rust · WebAssembly · Python**  
 > Named after 錬金 (れんきん, *renkin*) — Japanese for alchemy: just as alchemists transformed base metals into gold, RENKIN transforms target molecules back into cheap starting materials.
 
+[![CI](https://github.com/kent-tokyo/renkin/actions/workflows/ci.yml/badge.svg)](https://github.com/kent-tokyo/renkin/actions/workflows/ci.yml)
 [![Crates.io](https://img.shields.io/crates/v/renkin)](https://crates.io/crates/renkin)
+[![PyPI](https://img.shields.io/pypi/v/renkin)](https://pypi.org/project/renkin/)
+[![npm](https://img.shields.io/npm/v/renkin)](https://www.npmjs.com/package/renkin)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![WASM](https://img.shields.io/badge/WASM-ready-brightgreen)](https://github.com/kent-tokyo/renkin/tree/master/demo)
 [![Pure Rust](https://img.shields.io/badge/Pure-Rust-orange?logo=rust)](https://www.rust-lang.org)

@@ -485,8 +485,9 @@
     document.querySelectorAll('.lang-btn').forEach(b => {
       b.classList.toggle('active', b.textContent === (l === 'en' ? 'EN' : l === 'ja' ? '日本語' : '中文'));
     });
-    // Static data-i18n elements
+    // Static data-i18n elements (skip wasm-status — managed dynamically by WASM loader)
     document.querySelectorAll('[data-i18n]').forEach(el => {
+      if (el.id === 'wasm-status') return;
       const k = el.dataset.i18n;
       if (el.tagName === 'INPUT') el.placeholder = t(k);
       else el.textContent = t(k);

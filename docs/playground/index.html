@@ -78,21 +78,43 @@
 
     /* ── Molecule cards ──────────────────────────────────────────── */
     .mol-card { display:inline-flex; flex-direction:column; align-items:center;
-      gap:0.35rem; cursor:pointer; position:relative; }
+      gap:0.35rem; position:relative; }
     .mol-card:hover .mol-smiles { color:var(--accent2); }
     .mol-img-wrap { background:var(--mol-bg); border-radius:6px; overflow:hidden;
       display:flex; align-items:center; justify-content:center;
-      width:180px; height:120px; border:1px solid rgba(255,255,255,0.06); }
-    .mol-img-wrap.large { width:220px; height:150px; }
+      width:220px; height:160px; border:1px solid rgba(255,255,255,0.06);
+      cursor:zoom-in; transition:box-shadow 0.15s; }
+    .mol-img-wrap:hover { box-shadow:0 0 0 2px var(--accent); }
+    .mol-img-wrap.large { width:300px; height:220px; }
     .mol-img-wrap img { display:block; }
     .mol-smiles { font-family:var(--mono); font-size:0.72rem; color:var(--muted);
-      max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-      text-align:center; transition:color 0.1s; }
-    .mol-smiles.large { max-width:220px; }
+      max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+      text-align:center; transition:color 0.1s; cursor:pointer; }
+    .mol-smiles.large { max-width:300px; }
     .mol-copy-tip { position:absolute; top:-28px; left:50%; transform:translateX(-50%);
       background:var(--text); color:var(--bg); font-size:0.7rem; padding:2px 8px;
       border-radius:4px; white-space:nowrap; pointer-events:none; opacity:0; transition:opacity 0.2s; }
     .mol-card.copied .mol-copy-tip { opacity:1; }
+
+    /* ── Zoom modal ──────────────────────────────────────────────── */
+    #mol-modal { display:none; position:fixed; inset:0; z-index:1000;
+      background:rgba(0,0,0,0.75); backdrop-filter:blur(4px);
+      align-items:center; justify-content:center; cursor:zoom-out; }
+    #mol-modal.open { display:flex; }
+    #mol-modal-inner { background:#fff; border-radius:12px; padding:1rem;
+      display:flex; flex-direction:column; align-items:center; gap:0.75rem;
+      max-width:min(600px, 95vw); cursor:default;
+      box-shadow:0 20px 60px rgba(0,0,0,0.5); position:relative; }
+    #mol-modal-close { position:absolute; top:0.5rem; right:0.75rem;
+      background:none; border:none; color:#888; font-size:1.2rem; cursor:pointer;
+      height:auto; padding:0.2rem 0.4rem; line-height:1; }
+    #mol-modal-close:hover { color:#333; }
+    #mol-modal-img { display:block; max-width:100%; border-radius:4px; }
+    #mol-modal-smiles { font-family:monospace; font-size:0.8rem; color:#555;
+      word-break:break-all; text-align:center; max-width:520px; }
+    #mol-modal-copy { font-size:0.78rem; color:#7c6af7; background:none; border:1px solid #7c6af7;
+      padding:0.3rem 0.9rem; border-radius:5px; cursor:pointer; height:auto; }
+    #mol-modal-copy:hover { background:#7c6af7; color:#fff; }
 
     /* ── Results layout ──────────────────────────────────────────── */
     .target-banner { display:flex; align-items:center; gap:1.5rem; margin-bottom:1.25rem;
@@ -249,6 +271,16 @@
 
   <div id="results"></div>
 </main>
+
+<!-- Zoom modal -->
+<div id="mol-modal" role="dialog" aria-modal="true">
+  <div id="mol-modal-inner" onclick="event.stopPropagation()">
+    <button id="mol-modal-close" aria-label="Close">✕</button>
+    <img id="mol-modal-img" alt="">
+    <div id="mol-modal-smiles"></div>
+    <button id="mol-modal-copy">Copy SMILES</button>
+  </div>
+</div>
 
 <footer>
   RENKIN · Pure Rust + WebAssembly ·
@@ -508,38 +540,74 @@
   // ── CDK Depict molecule card ───────────────────────────────────────────────
   const DEPICT = 'https://www.simolecule.com/cdkdepict/depict/cow/svg';
 
+  // Zoom modal
+  const modal      = document.getElementById('mol-modal');
+  const modalImg   = document.getElementById('mol-modal-img');
+  const modalSmi   = document.getElementById('mol-modal-smiles');
+  const modalCopy  = document.getElementById('mol-modal-copy');
+  const modalClose = document.getElementById('mol-modal-close');
+
+  let _zoomSmiles = '';
+  function openZoom(smiles) {
+    _zoomSmiles = smiles;
+    const mw = Math.min(560, window.innerWidth - 40);
+    const mh = Math.round(mw * 0.7);
+    modalImg.src = `${DEPICT}?smi=${encodeURIComponent(smiles)}&w=${mw}&h=${mh}&zoom=3`;
+    modalImg.width = mw; modalImg.height = mh;
+    modalSmi.textContent = smiles;
+    modalCopy.textContent = t('copied').replace('!','') + ' SMILES';
+    modal.classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeZoom() {
+    modal.classList.remove('open');
+    document.body.style.overflow = '';
+  }
+  modal.addEventListener('click', closeZoom);
+  modalClose.addEventListener('click', closeZoom);
+  modalCopy.addEventListener('click', () => {
+    navigator.clipboard.writeText(_zoomSmiles).then(() => {
+      const orig = modalCopy.textContent;
+      modalCopy.textContent = t('copied');
+      setTimeout(() => { modalCopy.textContent = orig; }, 1500);
+    });
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeZoom(); });
+
   function makeMolCard(smiles, large) {
     const card = document.createElement('div');
     card.className = 'mol-card';
     const wrap = document.createElement('div');
     wrap.className = large ? 'mol-img-wrap large' : 'mol-img-wrap';
 
-    const w = large ? 220 : 180;
-    const h = large ? 150 : 120;
+    const w = large ? 300 : 220;
+    const h = large ? 220 : 160;
     const img = document.createElement('img');
     img.width = w; img.height = h; img.style.display = 'block';
     img.alt = smiles;
-    img.src = `${DEPICT}?smi=${encodeURIComponent(smiles)}&w=${w}&h=${h}&zoom=1.8`;
+    img.src = `${DEPICT}?smi=${encodeURIComponent(smiles)}&w=${w}&h=${h}&zoom=3`;
     img.onerror = () => {
       const fb = document.createElement('div');
       fb.style.cssText = 'font:8px monospace;color:#666;padding:6px;word-break:break-all;text-align:center;display:flex;align-items:center;justify-content:center;height:100%';
       fb.textContent = smiles;
       img.replaceWith(fb);
     };
+    // Click image → zoom modal
+    wrap.addEventListener('click', () => openZoom(smiles));
     wrap.appendChild(img);
     card.appendChild(wrap);
 
     const label = document.createElement('div');
     label.className = large ? 'mol-smiles large' : 'mol-smiles';
     label.textContent = smiles;
-    card.appendChild(label);
-
     const tip = document.createElement('div');
     tip.className = 'mol-copy-tip';
     tip.textContent = t('copied');
+    card.appendChild(label);
     card.appendChild(tip);
 
-    card.addEventListener('click', () => {
+    // Click SMILES label → copy to clipboard
+    label.addEventListener('click', () => {
       navigator.clipboard.writeText(smiles).then(() => {
         tip.textContent = t('copied');
         card.classList.add('copied');

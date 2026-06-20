@@ -1,0 +1,21 @@
+# ---- Rust ----
+/target/
+Cargo.lock
+
+# ---- WASM build output ----
+/pkg/
+
+# ---- Python ----
+.venv/
+*.whl
+*.egg-info/
+__pycache__/
+*.so
+
+# ---- OS ----
+.DS_Store
+
+# ---- Project-specific (not version-controlled) ----
+.env
+AGENTS.md
+tasks/

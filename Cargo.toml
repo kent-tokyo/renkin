@@ -2,9 +2,14 @@
 name = "renkin"
 version = "0.1.0"
 edition = "2024"
-repository = "https://github.com/kent-tokyo/renkin"
-description = "Ultra-fast retrosynthesis engine — pure Rust, WASM-ready"
-license = "MIT"
+description = "Ultra-fast retrosynthesis engine for computer-aided synthesis planning (CASP) — pure Rust, WASM-ready, Python bindings via PyO3"
+repository    = "https://github.com/kent-tokyo/renkin"
+homepage      = "https://github.com/kent-tokyo/renkin"
+documentation = "https://docs.rs/renkin"
+readme        = "README.md"
+license       = "MIT"
+keywords      = ["retrosynthesis", "cheminformatics", "chemistry", "wasm", "drug-discovery"]
+categories    = ["science", "wasm", "command-line-utilities", "algorithms"]
 
 [[bin]]
 name = "renkin"

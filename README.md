@@ -1,9 +1,12 @@
-# RENKIN
+# RENKIN — Retrosynthesis Engine
 
-RENKIN = **R**etrosynthetic **E**xploration **N**etwork for **K**nowledge-**I**nformed **N**avigation
-
-> Ultra-comfortable, lightweight, and blazingly fast retrosynthesis engine.  
+> **Computer-Aided Synthesis Planning (CASP) · Pure Rust · WebAssembly · Python**  
 > Named after 錬金 (れんきん, *renkin*) — Japanese for alchemy: just as alchemists transformed base metals into gold, RENKIN transforms target molecules back into cheap starting materials.
+
+[![Crates.io](https://img.shields.io/crates/v/renkin)](https://crates.io/crates/renkin)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![WASM](https://img.shields.io/badge/WASM-ready-brightgreen)](https://github.com/kent-tokyo/renkin/tree/master/demo)
+[![Pure Rust](https://img.shields.io/badge/Pure-Rust-orange?logo=rust)](https://www.rust-lang.org)
 
 [日本語版 README](./README_ja.md)
 
@@ -11,9 +14,15 @@ RENKIN = **R**etrosynthetic **E**xploration **N**etwork for **K**nowledge-**I**n
 
 ## What is RENKIN?
 
-RENKIN is a **retrosynthesis engine** that automatically discovers optimal chemical reaction routes from a target molecule back to cheap, commercially available starting materials.
+RENKIN is an open-source **retrosynthesis engine** for **computer-aided synthesis planning (CASP)** that automatically discovers optimal chemical reaction routes from a target molecule back to cheap, commercially available starting materials — a core problem in **drug discovery** and **medicinal chemistry**.
 
-Built entirely in Rust with the [`chematic`](https://docs.rs/chematic/) crate, RENKIN addresses the fundamental speed and dependency problems of existing Python-based CASP tools (AiZynthFinder, ASKCOS, etc.). It ships as a CLI, a Python package, and a WASM module — all from the same Rust codebase.
+Built entirely in Rust with the [`chematic`](https://docs.rs/chematic/) cheminformatics crate, RENKIN solves the fundamental speed and dependency problems of existing Python-based CASP tools (AiZynthFinder, ASKCOS, Retro\*, etc.). It ships as:
+
+- **CLI** — single binary, `cargo build --release`
+- **Python package** — `import renkin` via PyO3 + maturin
+- **WASM module** — 493 KB bundle, runs in the browser with no server
+
+All from a single pure-Rust codebase with zero C/C++ dependencies.
 
 ---
 
@@ -22,12 +31,14 @@ Built entirely in Rust with the [`chematic`](https://docs.rs/chematic/) crate, R
 | Feature | Detail |
 |---|---|
 | **Pure Rust** | Zero C/C++ dependencies. Cross-platform with `cargo build` alone |
-| **A\* / AND-OR Tree Search** | Retro\*-equivalent algorithm proven more efficient than MCTS |
+| **A\* / AND-OR Tree Search** | Retro\*-equivalent algorithm proven more efficient than MCTS for retrosynthesis |
 | **SA Score heuristic** | `chematic::chem::sa_score` guides search toward synthetically accessible precursors |
 | **Beam search** | `--beam-width N` limits heap size for memory-bounded exploration |
-| **Parallel rule application** | `rayon` parallelises SMIRKS rule evaluation; falls back to sequential on WASM |
+| **Graph-based Ar–Ar cleavage** | Bridge-bond detection via DFS — correctly handles biaryl (Suzuki) disconnections |
+| **Parallel rule application** | `rayon` parallelises SMIRKS rule evaluation; sequential fallback on WASM |
 | **Python bindings** | `maturin` extension — `import renkin; renkin.find_routes(...)` |
-| **WASM-ready** | 493 KB bundle via `wasm-pack`; runs in the browser with no server |
+| **WASM-ready** | 493 KB bundle via `wasm-pack`; browser demo with 2D structure rendering |
+| **~400 building blocks** | Curated commercial starting materials covering esters, amines, halides, heterocycles, amino acids, sulfonyl chlorides, boronic acids and more |
 | **Benchmark CLI** | `renkin-bench --input targets.smi` produces a JSON success/timing report |
 
 ---
@@ -42,7 +53,7 @@ Target SMILES
 │     chem_env.rs         │  ← chematic wrapper
 │  - SMILES parse         │     SMARTS VF2 building-block check
 │  - SMIRKS retro rules   │     fragment sanitization
-│  - Building block check │
+│  - Building block check │     HashMap O(1) pre-filter
 └────────────┬────────────┘
              │  par_iter (rayon / sequential on WASM)
              ▼
@@ -71,7 +82,7 @@ Target SMILES
 - **Language**: Rust (Edition 2024)
 - **Cheminformatics**: [`chematic`](https://crates.io/crates/chematic) v0.4.9+
   - `chematic-smiles` — SMILES parsing & canonical SMILES
-  - `chematic-smarts` — VF2 substructure matching (building block identity check)
+  - `chematic-smarts` — VF2 substructure matching (building block identity)
   - `chematic-rxn` — SMIRKS reaction application (`run_reactants`)
   - `chematic-chem` — SA Score, molecular weight, aromaticity descriptors
 - **Search**: A\* + AND/OR Tree (Retro\* equivalent)
@@ -81,22 +92,45 @@ Target SMILES
 
 ---
 
+## Installation
+
+### As a library
+
+```toml
+# Cargo.toml
+[dependencies]
+renkin = "0.1"
+```
+
+### CLI (from source)
+
+```bash
+git clone https://github.com/kent-tokyo/renkin
+cd renkin
+cargo build --release
+```
+
+### Python
+
+```bash
+pip install maturin
+git clone https://github.com/kent-tokyo/renkin && cd renkin
+python -m venv .venv && source .venv/bin/activate
+maturin develop --features python
+```
+
+---
+
 ## Getting Started
 
 ### CLI
 
 ```bash
-# Build
-cargo build --release
-
 # Retrosynthesis (Aspirin, depth 3)
 ./target/release/renkin --target "CC(=O)Oc1ccccc1C(=O)O" --depth 3
 
 # With beam search (top-50 nodes)
 ./target/release/renkin --target "CC(=O)Oc1ccccc1C(=O)O" --depth 5 --beam-width 50
-
-# Options
-./target/release/renkin --help
 ```
 
 ```
@@ -109,12 +143,6 @@ cargo build --release
 
 ### Python
 
-```bash
-# Install (requires Python ≥ 3.8 and maturin)
-python -m venv .venv && source .venv/bin/activate
-maturin develop --features python
-```
-
 ```python
 import renkin, json
 
@@ -123,7 +151,7 @@ routes = json.loads(renkin.find_routes(
     depth=3,
     max_routes=5,
 ))
-print(routes["routes_found"])   # 2
+print(routes["routes_found"])   # number of routes found
 for r in routes["routes"]:
     print(r["depth"], [s["rule"] for s in r["steps"]])
 ```
@@ -133,6 +161,7 @@ for r in routes["routes"]:
 ```bash
 wasm-pack build --target web --no-default-features
 # Output: pkg/  (npm-ready package)
+# Browser demo: python3 -m http.server 8080 → http://localhost:8080/demo/
 ```
 
 ```javascript
@@ -143,7 +172,7 @@ const result = JSON.parse(find_routes(
   "CC(=O)Oc1ccccc1C(=O)O",  // target SMILES
   3,   // depth
   5,   // max_routes
-  0,   // beam_width (0 = unlimited)
+  0,   // beam_width (0 = unlimited A*)
 ));
 console.log(result.routes_found);
 ```
@@ -152,13 +181,13 @@ console.log(result.routes_found);
 
 ```bash
 # Input: one SMILES per line, optional name after whitespace
-cargo run --bin renkin-bench -- --input targets.smi --depth 3
+./scripts/run_benchmark.sh --input data/benchmark_targets.smi --depth 5
 ```
 
 ```json
 {
-  "total": 7, "solved": 7, "success_rate": 1.0,
-  "avg_depth": 0.57, "avg_time_ms": 2.9,
+  "total": 42, "solved": 37, "success_rate": 0.88,
+  "avg_depth": 1.05, "avg_time_ms": 2.5,
   "results": [...]
 }
 ```
@@ -176,8 +205,8 @@ cargo run --bin renkin-bench -- --input targets.smi --depth 3
       "steps": [
         {
           "rule": "ester_cleavage",
-          "target": "c1cccc(c1OC(=O)C)C(=O)O",
-          "precursors": ["c1c(C(=O)O)cccc1", "OC(C)=O", "C", "Oc1c(cccc1)C(O)=O"]
+          "target": "CC(=O)Oc1ccccc1C(=O)O",
+          "precursors": ["CC(=O)O", "Oc1ccccc1C(=O)O"]
         }
       ],
       "depth": 1
@@ -186,19 +215,30 @@ cargo run --bin renkin-bench -- --input targets.smi --depth 3
 }
 ```
 
-**depth: 0** means the target itself is a commercially available starting material.
+**depth: 0** means the target itself is a commercially available starting material (buy directly).
 
 ---
 
-## Retro-Rules
+## Retro-Rules (14 total)
 
-| Rule | Reaction type | SMIRKS |
+| Rule | Reaction type | Strategy |
 |---|---|---|
-| `ester_cleavage` | Ester → acid + alcohol | `[C:1](=[O:2])[O:3]>>[C:1](=[O:2])O.[O:3]` |
-| `amide_cleavage` | Amide → acid + amine | `[C:1](=[O:2])[N:3]>>[C:1](=[O:2])O.[N:3]` |
-| `aryl_carboxylation_retro` | Ar-COOH → Ar + CO₂ | `[c:1][C:2](=O)O>>[c:1].[C:2](=O)O` |
-| `aryl_amine_retro` | Ar-NH₂ → Ar + NH₃ | `[c:1][N:2]>>[c:1].[N:2]` |
-| `cc_single_cleavage` | C–C cleavage | `[C:1][C:2]>>[C:1].[C:2]` |
+| `ester_cleavage` | Ester → acid + alcohol | SMIRKS |
+| `amide_cleavage` | Amide → acid + amine | SMIRKS |
+| `friedel_crafts_acylation_retro` | Ar-C(=O)R → Ar-H + acyl chloride | SMIRKS |
+| `aryl_carboxylation_retro` | Ar-COOH → Ar-H + CO₂ surrogate | SMIRKS |
+| `aryl_amine_retro` | Ar-N → Ar-H + amine | SMIRKS |
+| `buchwald_hartwig_retro` | Ar-N → Ar-Br + amine | SMIRKS |
+| `aryl_ether_retro` | Ar-O → Ar-OH + fragment | SMIRKS |
+| `suzuki_retro` | Ar-Ar → Ar-Br + Ar-H | Graph (bridge-bond DFS) |
+| `cc_single_cleavage` | C–C → two fragments | SMIRKS |
+| `wittig_retro` | C=C → C=O + C=O | SMIRKS |
+| `reductive_amination_retro` | C–N → C=O + amine | SMIRKS |
+| `cn_aliphatic_cleavage` | C–N → two fragments | SMIRKS |
+| `co_aliphatic_cleavage` | C–O → two fragments | SMIRKS |
+| `alcohol_oxidation_retro` | C–OH → C=O | SMIRKS |
+
+`suzuki_retro` uses a graph-based bridge-bond algorithm instead of SMIRKS to correctly handle symmetric biaryls (biphenyl, 4-fluorobiphenyl, etc.) without the BFS leakage artifacts that affect SMIRKS-based approaches.
 
 ---
 
@@ -218,8 +258,12 @@ renkin/
 │   ├── python.rs        # PyO3 bindings (--features python)
 │   └── wasm.rs          # wasm-bindgen bindings (cfg = wasm32)
 ├── data/
-│   └── building_blocks.smi  # Commercial starting materials (~30 entries)
-└── pkg/                 # WASM npm package (generated by wasm-pack)
+│   ├── building_blocks.smi      # Commercial starting materials (~400 entries)
+│   └── benchmark_targets.smi   # 42-molecule benchmark set
+├── demo/
+│   └── index.html       # Browser WASM demo with 2D structure rendering
+└── scripts/
+    └── run_benchmark.sh # Benchmark runner with human-readable summary
 ```
 
 ---
@@ -233,7 +277,11 @@ renkin/
 - [x] **Phase 5** — Python bindings (PyO3 + maturin)
 - [x] **Phase 6** — WASM build (493 KB, `pkg/` npm-ready)
 - [x] **Phase 7** — Benchmark CLI (`renkin-bench`)
-- [ ] **Phase 7+** — Formal benchmark vs. AiZynthFinder / Retro\* on USPTO-50k
+- [x] **Phase 8** — 21 unit tests, SMIRKS rules 5→14, building blocks ~30→~400
+- [x] **Phase 9** — Browser WASM demo (SmilesDrawer 2D rendering), benchmark target set
+- [x] **Phase 10** — Graph-based biaryl cleavage (suzuki_retro), O(1) BB HashMap index
+- [ ] **Phase 11** — Formal benchmark vs. AiZynthFinder / Retro\* on USPTO-50k
+- [ ] **Phase 12** — PyPI / npm publish
 
 ---
 
@@ -255,3 +303,7 @@ All existing open CASP tools are Python-based. RENKIN fills the vacant niche: Ru
 ## License
 
 MIT
+
+---
+
+*GitHub Topics: `retrosynthesis` `cheminformatics` `wasm` `rust` `drug-discovery` `casp` `synthesis-planning` `computational-chemistry`*

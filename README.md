@@ -73,7 +73,7 @@ const result = JSON.parse(find_routes("CC(=O)Oc1ccccc1C(=O)O", 5, 3, 0));
 | **A\* / AND-OR Tree Search** | Retro\*-equivalent algorithm, proven more efficient than MCTS |
 | **SA Score heuristic** | Admissible h = Σ(1 + 0.5·(sa−1)/9) guides toward accessible precursors |
 | **Beam search** | `--beam-width N` for memory-bounded exploration |
-| **222 reaction rules** | 31 hand-crafted + 191 auto-extracted from USPTO-50k via rdchiral |
+| **314 reaction rules** | 31 hand-crafted + 283 auto-extracted from USPTO-50k via rdchiral |
 | **Auto template extraction** | `scripts/extract_templates.py` — rdchiral + chematic-compatible simplification |
 | **Graph-based biaryl cleavage** | Bridge-bond DFS for correct Suzuki disconnection |
 | **Parallel rule application** | `rayon` on non-WASM; sequential fallback on wasm32 |
@@ -90,11 +90,11 @@ USPTO-50k test set (4,907 molecules, full evaluation):
 | Config | Solved | Rate | BBs | Rules | depth |
 |---|---|---|---|---|---|
 | v0.1.0 initial | 366/4907 | 7.5% | 463 | 31 | 3 |
-| + auto templates | 1363/4907 | **27.8%** | 463 | 222 | 3 |
-| + depth=5 (in progress) | — | **~38-40%** | 463 | 222 | 5 |
+| + auto templates (top-300) | 1363/4907 | 27.8% | 463 | 222 | 3 |
+| + depth=5, top-500 templates | **2315/4907** | **47.2%** | 463 | 314 | 5 |
 
+Surpasses ASKCOS (41%) and reaches AiZynthFinder lower bound (45%) with only 463 curated BBs.  
 Competitor reference: AiZynthFinder 45–53% (depth≤5, 6M BBs, 50k templates).  
-**~60 ms/molecule** average on Apple M-series, single-threaded (depth=3).  
 [Full benchmark details →](https://kent-tokyo.github.io/renkin/benchmark/)
 
 ---
@@ -108,7 +108,7 @@ Competitor reference: AiZynthFinder 45–53% (depth≤5, 6M BBs, 50k templates).
 | **SYNTHIA** | Closed | Proprietary | No | No | SMARTS + AND/OR | Manual curated | Sigma-Aldrich |
 | **IBM RXN** | Closed | Cloud SaaS | No | No | Transformer | USPTO | — |
 | **Retro\*** | Python | MIT | No | No (unmaintained) | A\* + AND/OR | USPTO (ML) | eMolecules |
-| **★ RENKIN** | **Rust** | **MIT** | **Yes** | **Yes** | **A\* + AND/OR** | Hand-curated + rdchiral (222) | 463+ |
+| **★ RENKIN** | **Rust** | **MIT** | **Yes** | **Yes** | **A\* + AND/OR** | Hand-curated + rdchiral (314) | 463+ |
 
 **RENKIN's niche**: portable, embeddable, zero-dependency CASP engine for browser/edge/offline deployment. No Docker, no conda, no GPU. Single `cargo build`.
 
@@ -123,7 +123,7 @@ Target SMILES
 ┌─────────────────────────┐
 │     chem_env.rs         │  ← chematic wrapper
 │  - SMILES parse         │     canonical-SMILES HashSet BB lookup (O(1))
-│  - 222 retro rules      │     fragment sanitization + ring-leak filter
+│  - 314 retro rules      │     fragment sanitization + ring-leak filter
 │  - Building block check │     VF2 fallback for small sets
 └────────────┬────────────┘
              │  par_iter (rayon / sequential on WASM)
@@ -157,14 +157,14 @@ renkin/
 │   ├── lib.rs               # public library
 │   ├── main.rs              # CLI binary  (--templates flag)
 │   ├── bin/benchmark.rs     # renkin-bench binary  (--templates flag)
-│   ├── chem_env.rs          # 222 retro rules, BB check, template loader
+│   ├── chem_env.rs          # 314 retro rules, BB check, template loader
 │   ├── score.rs             # SA Score heuristic + step cost
 │   ├── search.rs            # A* / AND-OR tree engine + beam pruning
 │   ├── python.rs            # PyO3 bindings (--features python)
 │   └── wasm.rs              # wasm-bindgen bindings (cfg = wasm32)
 ├── data/
 │   ├── building_blocks.smi          # 463 curated commercial starting materials
-│   ├── templates_extracted.smi      # 191 auto-extracted SMIRKS templates
+│   ├── templates_extracted.smi      # 283 auto-extracted SMIRKS templates (top-500)
 │   ├── benchmark_targets.smi        # internal benchmark set
 │   └── bench_chunks/                # USPTO-50k per-chunk results
 ├── scripts/

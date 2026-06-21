@@ -9,41 +9,48 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- **6 new SMIRKS retro-rules** (total: 20 rules, was 14)
-  - `aryl_chloride_retro` — Ar-Cl → Ar-H (retro-SNAr / Pd C-Cl activation)
-  - `aryl_iodide_retro` — Ar-I → Ar-H (retro-Pd/Cu C-I)
-  - `aryl_fluoride_snAr_retro` — Ar-F → Ar-H (retro-SNAr; F is best leaving group)
-  - `aryl_chloride_to_bromide` — Ar-Cl → Ar-Br (halogen exchange retro)
-  - `heck_retro` — Ar-CH=CH-R → Ar-Br + vinyl (retro-Heck)
-  - `negishi_retro` — Ar-CH₂ → Ar-Br + alkyl (retro-Negishi)
-- **200+ new building blocks** (total: 480+, was 277)
-  - Aryl/heteroaryl bromides and chlorides (Suzuki / Buchwald donors)
-  - Boronic acids and pinacol boronates (Suzuki acceptors)
-  - Pyridines, pyrimidines with substituents
-  - Pyrazoles, imidazoles, oxazoles, thiazoles (covers 37% of unsolved USPTO-50k)
-  - Furans, thiophenes, bromofurans, bromothiophenes
-  - Pharmaceutical amines: piperidine, morpholine, piperazine (N-Boc protected)
-  - Aldehydes (for reductive amination / condensation)
-  - Nitriles, iodoarenes, fluorinated aromatics
-- **MkDocs Material documentation site** (`docs/`)
-  - Getting Started: installation, quick start
-  - API Reference: Rust, Python, WASM/JavaScript
-  - Examples: Aspirin, drug-like molecules
-  - Benchmark page with USPTO-50k results
-- **WASM interactive playground** (`docs/playground/index.html`)
-  - Accessible at `https://kent-tokyo.github.io/renkin/playground/`
-  - Preset examples: pharmaceuticals, Suzuki products, aryl C-N/C-O, Wittig
-- **GitHub Actions `docs.yml`** — automatic WASM build + MkDocs → GitHub Pages on every push to master
-- **Diagnostic trace tests** (`src/trace_test.rs`) — pipeline debug utilities for issue investigation
+- **Auto template extraction pipeline** (`scripts/extract_templates.py`)
+  - rdchiral extraction from USPTO-50k training set (40,008 reactions)
+  - Constraint stripping for chematic compatibility (D/H0/+0/`;` removed)
+  - top-500 → 283 chematic-compatible templates (`data/templates_extracted.smi`)
+- **`--templates` flag** for CLI (`renkin`) and benchmark (`renkin-bench`)
+  - `load_rules_from_file()` validates each template via `run_reactants` probe
+- **Chunked benchmark runner** (`scripts/run_benchmark_chunks.sh`)
+  - Resumable 100-mol-per-chunk evaluation with per-chunk JSON output
+  - Fixed Python code injection vulnerability (file path via `sys.argv`, not string interpolation)
+- **6 additional hand-crafted rules** (total: 31, was 21)
+  - `boc_deprotection_retro`, `cbz_deprotection_retro` (graph-based)
+  - `sonogashira_retro`, `sulfonamide_retro`, `n_benzylation_retro`
+  - `grignard_addition_retro`, `claisen_retro`, `michael_retro`
+  - `acyl_chloride_from_acid`, `heck_retro_terminal`, `cc_single_cleavage`
+- **Playground presets** — Acetamide + Haber-Bosch annotation, i18n (EN/JA/ZH)
+- **Regression tests** for chematic Bug #13 and Bug #14 (both fixed in 0.4.12)
 
 ### Changed
-- **USPTO-50k benchmark: 2.6% → 5.0%** (500-molecule sample, depth=2, beam=20)
-  - +12 newly solved molecules from new rules and expanded building block stock
-- chematic dependency updated to 0.4.10 (minor upstream fixes)
-- `docs/playground/index.html` uses DOM-safe textContent everywhere (no innerHTML with user data)
+- **USPTO-50k benchmark: 7.5% → 47.2%** (full 4,907 molecules)
+  - 7.5%  — 31 rules, depth=3
+  - 27.8% — 222 rules (31+191 auto), depth=3
+  - 38.9% — 222 rules, depth=5
+  - **47.2% — 314 rules (31+283 auto), depth=5** ← current best
+  - Surpasses ASKCOS (41%) and AiZynthFinder lower bound (45%)
+- **`ChemEnv` BB lookup**: VF2-only → canonical-SMILES `HashSet` (O(1), scales to millions)
+  - Removed double-pass normalization workaround (chematic Bug #14 fixed in 0.4.12)
+- **`RetroRule`**: `&'static str` → `String` (supports runtime-loaded templates)
+- chematic dependency updated to **0.4.12** (Bug #13 BFS leakage + Bug #14 canonical SMILES fixed)
+- RENKIN acronym restored in README and playground title
+- SMILES label font size increased (0.72 → 0.80 rem) for readability
 
 ### Fixed
-- `cargo fmt` formatting in `src/bin/benchmark.rs` (caused CI failures)
+- Shell code injection in `run_benchmark_chunks.sh` (file path interpolated into `python3 -c` string)
+- Stale `chematic Bug #14` reference in `ChemEnv` struct docstring
+- `cargo fmt` / clippy warnings throughout
+
+### Security
+- `run_benchmark_chunks.sh`: file paths now passed via `sys.argv` / `jq` argument, never interpolated into Python code strings
+
+### Known Limitations
+- WASM playground uses 31 hand-crafted rules only (auto-extracted templates not bundled — size/bindgen constraints)
+- Stereochemistry (`@`/`@@`) not yet supported in `run_reactants` (chematic issue #20 filed)
 
 ---
 

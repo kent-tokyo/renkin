@@ -73,7 +73,7 @@ const result = JSON.parse(find_routes("CC(=O)Oc1ccccc1C(=O)O", 5, 3, 0));
 | **A\* / AND-OR木探索** | MCTSより探索効率が高いRetro\*相当アルゴリズム |
 | **SA Scoreヒューリスティック** | h = Σ(1 + 0.5·(sa−1)/9)、アドミッシブル性を維持 |
 | **ビームサーチ** | `--beam-width N` でメモリ制約付き探索 |
-| **222件の逆合成ルール** | 手書き 31件 + rdchiral 自動抽出 191件 |
+| **314件の逆合成ルール** | 手書き 31件 + rdchiral 自動抽出 283件 |
 | **自動テンプレート抽出** | `scripts/extract_templates.py` — rdchiral + chematic互換フィルタ |
 | **グラフベースAr-Ar切断** | ブリッジボンドDFS — 対称ビアリールを正確に処理 |
 | **並列ルール適用** | `rayon` で並列評価（WASM では逐次フォールバック） |
@@ -90,11 +90,11 @@ USPTO-50kテストセット（全4,907分子評価）:
 | 設定 | 解決数 | 解決率 | BB数 | ルール数 | depth |
 |---|---|---|---|---|---|
 | v0.1.0 初期 | 366/4907 | 7.5% | 463 | 31 | 3 |
-| 自動テンプレート追加 | 1363/4907 | **27.8%** | 463 | 222 | 3 |
-| depth=5（実行中） | — | **~38-40%** | 463 | 222 | 5 |
+| 自動テンプレート追加（top-300） | 1363/4907 | 27.8% | 463 | 222 | 3 |
+| depth=5 + top-500 テンプレート | **2315/4907** | **47.2%** | 463 | 314 | 5 |
 
+ASKCOS（41%）を超え、AiZynthFinder 下限（45%）に到達。463件のキュレーション済み BB のみで達成。  
 競合参考値：AiZynthFinder 45–53%（depth≤5、6M BB、50kテンプレート）  
-**平均約60 ms/分子**（Apple Mシリーズ、depth=3）  
 [ベンチマーク詳細 →](https://kent-tokyo.github.io/renkin/benchmark/)
 
 ---
@@ -108,7 +108,7 @@ USPTO-50kテストセット（全4,907分子評価）:
 | **SYNTHIA** | クローズド | 独自 | No | No | SMARTS+AND/OR | 手動作成 | Sigma-Aldrich |
 | **IBM RXN** | クローズド | SaaS | No | No | Transformer | USPTO | — |
 | **Retro\*** | Python | MIT | No | No（未メンテ） | A\*+AND/OR | USPTO（ML） | eMolecules |
-| **★ RENKIN** | **Rust** | **MIT** | **Yes** | **Yes** | **A\*+AND/OR** | 手動+rdchiral（222件） | 463+（拡張可） |
+| **★ RENKIN** | **Rust** | **MIT** | **Yes** | **Yes** | **A\*+AND/OR** | 手動+rdchiral（314件） | 463+（拡張可） |
 
 **RENKINのポジション**: Docker/condaが使えない環境、ブラウザ/エッジ/オフラインデプロイが必要な場面に最適なCASPエンジン。`cargo build` 一発で動く。
 
@@ -123,7 +123,7 @@ USPTO-50kテストセット（全4,907分子評価）:
 ┌─────────────────────────┐
 │     chem_env.rs         │  ← chematic ラッパー
 │  - SMILES パース        │     canonical-SMILES HashSet BB照合（O(1)）
-│  - 222 逆反応ルール     │     フラグメント正規化・リークフィルタ
+│  - 314 逆反応ルール     │     フラグメント正規化・リークフィルタ
 │  - 市販品チェック       │     小規模セット向け VF2 フォールバック
 └────────────┬────────────┘
              │  par_iter (rayon / WASM では逐次)
@@ -157,14 +157,14 @@ renkin/
 │   ├── lib.rs               # ライブラリクレート
 │   ├── main.rs              # CLI バイナリ（--templates フラグ対応）
 │   ├── bin/benchmark.rs     # renkin-bench バイナリ（--templates フラグ対応）
-│   ├── chem_env.rs          # 222逆合成ルール・市販品判定・テンプレートローダー
+│   ├── chem_env.rs          # 314逆合成ルール・市販品判定・テンプレートローダー
 │   ├── score.rs             # SA Score ヒューリスティック
 │   ├── search.rs            # A* / AND-OR 木探索エンジン
 │   ├── python.rs            # PyO3 バインディング
 │   └── wasm.rs              # wasm-bindgen バインディング
 ├── data/
 │   ├── building_blocks.smi          # 463件の市販原料（キュレーション済み）
-│   ├── templates_extracted.smi      # 191件の自動抽出SMIRKSテンプレート
+│   ├── templates_extracted.smi      # 283件の自動抽出SMIRKSテンプレート（top-500）
 │   ├── benchmark_targets.smi        # 内部ベンチマークセット
 │   └── bench_chunks/                # USPTO-50k チャンク別結果
 ├── scripts/

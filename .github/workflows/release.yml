@@ -20,8 +20,6 @@ jobs:
           - os: ubuntu-latest
             target: aarch64
             manylinux: auto
-          - os: macos-13          # Intel
-            target: x86_64
           - os: macos-latest      # Apple Silicon
             target: aarch64
           - os: windows-latest

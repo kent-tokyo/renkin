@@ -1517,3 +1517,109 @@ mod chematic_regression {
         );
     }
 }
+
+// ── Phase 15: tetrahedral @/@@ full integration ──────────────────────────────
+
+#[cfg(test)]
+mod phase15_stereo {
+    use super::*;
+
+    /// Phase 15.1 — @/@@ templates load from file and apply correctly.
+    /// The top-500 extracted templates contain 2 stereo-specific rules.
+    /// Both must load via load_rules_from_file and respect chirality.
+    #[test]
+    fn stereo_templates_load_from_file_and_filter() {
+        let rules = load_rules_from_file("data/templates_extracted.smi");
+        let stereo_rules: Vec<_> = rules.iter().filter(|r| r.smirks.contains('@')).collect();
+        assert!(
+            stereo_rules.len() >= 2,
+            "top-500 must contain ≥2 @/@@ templates; got {}",
+            stereo_rules.len()
+        );
+        // Apply the R-selective template ([C@H]) to R and S secondary alcohols
+        let r_rule = stereo_rules
+            .iter()
+            .find(|r| r.smirks.contains("[C@H"))
+            .expect("R-selective template not found");
+        let r_alcohol = parse("C[C@H](O)c1ccccc1").unwrap(); // (R)-1-phenylethanol
+        let s_alcohol = parse("C[C@@H](O)c1ccccc1").unwrap(); // (S)-1-phenylethanol
+        assert!(
+            !apply_retro(&r_alcohol, r_rule).is_empty(),
+            "R-template must produce routes for R-alcohol"
+        );
+        assert!(
+            apply_retro(&s_alcohol, r_rule).is_empty(),
+            "R-template must reject S-alcohol"
+        );
+    }
+
+    /// Phase 15.2 — SMIRKS without @/@@ must match both enantiomers (permissive).
+    #[test]
+    fn non_stereo_smirks_matches_both_enantiomers() {
+        // No stereo annotation in reactant → both R and S must match
+        let smirks = "[C:1][CH:2]([OH:3])[c:4]>>[C:1][C:2](=[O:3])[c:4]";
+        let r_mol = parse("C[C@H](O)c1ccccc1").unwrap();
+        let s_mol = parse("C[C@@H](O)c1ccccc1").unwrap();
+        assert!(
+            !run_reactants(smirks, &[&r_mol])
+                .unwrap_or_default()
+                .is_empty(),
+            "non-stereo SMIRKS must match R-alcohol"
+        );
+        assert!(
+            !run_reactants(smirks, &[&s_mol])
+                .unwrap_or_default()
+                .is_empty(),
+            "non-stereo SMIRKS must match S-alcohol"
+        );
+    }
+
+    /// Phase 15.3 — Stereo transfer to product (chematic #20 point 2).
+    /// SMIRKS product template with @/@@ must produce a stereodefined product,
+    /// and the filter rejects the wrong enantiomer (L-alanine example from chematic #20).
+    #[test]
+    fn stereo_transferred_to_product() {
+        // Retro-reduction of L-alanine: [N:1][C@@H:2](C)C(=O)O → [N:1][C@@H:2](C)C=O
+        // L-alanine (N[C@@H](C)C(=O)O) must match; D-alanine must not.
+        // Product retains @@ stereo — verifies TRANSFER (chematic #20 point 2).
+        let smirks = "[N:1][C@@H:2](C)C(=O)O>>[N:1][C@@H:2](C)C=O";
+        let l_ala = parse("N[C@@H](C)C(=O)O").unwrap(); // L-alanine — should match
+        let d_ala = parse("N[C@H](C)C(=O)O").unwrap(); // D-alanine — must NOT match
+
+        let l_results = run_reactants(smirks, &[&l_ala]).unwrap_or_default();
+        let d_results = run_reactants(smirks, &[&d_ala]).unwrap_or_default();
+
+        assert!(!l_results.is_empty(), "L-alanine must match @@-SMIRKS");
+        assert!(
+            d_results.is_empty(),
+            "D-alanine must NOT match @@-SMIRKS; got {} result(s)",
+            d_results.len()
+        );
+
+        // Product must carry @@ stereo (transfer confirmed)
+        let product_smiles: Vec<String> =
+            l_results[0].iter().map(|m| canonical_smiles(m)).collect();
+        assert!(
+            product_smiles.iter().any(|s| s.contains('@')),
+            "product must carry @/@@ stereo annotation; got {:?}",
+            product_smiles
+        );
+    }
+
+    /// Phase 15.3 — Both @-specific and @@-specific templates resolve correctly
+    /// from the USPTO-50k extracted template set (end-to-end pipeline).
+    #[test]
+    fn both_stereo_templates_are_enantiomer_selective() {
+        let rules = load_rules_from_file("data/templates_extracted.smi");
+        let r_rule = rules.iter().find(|r| r.smirks.contains("[C@H")).unwrap();
+        let s_rule = rules.iter().find(|r| r.smirks.contains("[C@@H")).unwrap();
+        let r_mol = parse("C[C@H](O)c1ccccc1").unwrap();
+        let s_mol = parse("C[C@@H](O)c1ccccc1").unwrap();
+        // R-template: R matches, S rejected
+        assert!(!apply_retro(&r_mol, r_rule).is_empty());
+        assert!(apply_retro(&s_mol, r_rule).is_empty());
+        // S-template: S matches, R rejected
+        assert!(!apply_retro(&s_mol, s_rule).is_empty());
+        assert!(apply_retro(&r_mol, s_rule).is_empty());
+    }
+}

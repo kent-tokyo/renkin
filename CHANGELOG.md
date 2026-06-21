@@ -18,6 +18,13 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   
 
 ### Added
+- **Phase 15 — tetrahedral `@`/`@@` stereo fully integrated** (chematic #20, fixed in v0.4.13):
+  - 15.1 `stereo_templates_load_from_file_and_filter`: @/@@ templates from top-500 file load
+    and correctly reject the wrong enantiomer via `apply_retro`
+  - 15.2 `non_stereo_smirks_matches_both_enantiomers`: stereo-unspecified SMIRKS is permissive
+  - 15.3 `stereo_transferred_to_product`: L-alanine retro confirms product retains @@ (point 2)
+  - 15.3 `both_stereo_templates_are_enantiomer_selective`: R- and S-templates cross-validated
+- `parse_smarts_accepts_atom_maps` extended with `[C@:1]`, `[C@@H:2]` cases
 - Regression test `ez_stereo_filter_rejects_wrong_geometry` — verifies that
   a Z-selective SMIRKS `[C:1]/[C:2]=[C:3]\\[C:4]` rejects (E)-3-hexene
   reactants (chematic issue #21 regression)

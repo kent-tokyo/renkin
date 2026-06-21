@@ -1438,6 +1438,40 @@ mod chematic_regression {
         assert!(parse_smarts("[C:1](=[O:2])[N:3]").is_ok());
         assert!(parse_smarts("[NH2:1]-[c:2]").is_ok());
         assert!(parse_smarts("[O:1]=[C:2]").is_ok());
+        // Phase 15: @/@@ stereo + atom-map (chematic #20 fixed in 0.4.13)
+        assert!(parse_smarts("[C@:1]").is_ok(), "@ + atom-map must parse");
+        assert!(
+            parse_smarts("[C@@H:2]").is_ok(),
+            "@@ + H + atom-map must parse"
+        );
+        assert!(
+            parse_smarts("[C@H:1]-[c:2]").is_ok(),
+            "stereo SMIRKS reactant must parse"
+        );
+    }
+
+    /// Phase 15 regression: tetrahedral @/@@ in run_reactants (chematic #20, fixed in v0.4.13).
+    /// A stereo-specific SMIRKS must only match the correct enantiomer.
+    #[test]
+    fn tetrahedral_stereo_filter_rejects_wrong_enantiomer() {
+        // Retro-oxidation: chiral alcohol → ketone.
+        // [C:1]-[C@H:2](-[OH:3])-[c:4] should match only the R-enantiomer.
+        let smirks = "[C:1]-[C@H:2](-[OH:3])-[c:4]>>[C:1]-[C:2](=[O:3])-[c:4]";
+        let r_alcohol = parse("C[C@H](O)c1ccccc1").unwrap(); // (R) — should match
+        let s_alcohol = parse("C[C@@H](O)c1ccccc1").unwrap(); // (S) — must NOT match
+
+        let r_results = run_reactants(smirks, &[&r_alcohol]).unwrap_or_default();
+        let s_results = run_reactants(smirks, &[&s_alcohol]).unwrap_or_default();
+
+        assert!(
+            !r_results.is_empty(),
+            "R-alcohol must match @-SMIRKS (chematic #20 regression)"
+        );
+        assert!(
+            s_results.is_empty(),
+            "S-alcohol must NOT match @-SMIRKS (chematic #20 regression); got {} result(s)",
+            s_results.len()
+        );
     }
 
     /// Regression test for chematic issue #18 (fixed in 0.4.14):

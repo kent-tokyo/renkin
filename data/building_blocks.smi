@@ -518,3 +518,21 @@ Fc1ccccc1               fluorobenzene
 Fc1ccccn1               2-fluoropyridine
 FC(F)(F)c1ccccc1        trifluoromethylbenzene
 FC(F)(F)c1ccccn1        2-trifluoromethylpyridine
+FC(F)(F)c1cccnc1        3-trifluoromethylpyridine
+FC(F)(F)c1ccncc1        4-trifluoromethylpyridine
+FC(F)(F)c1cccc(F)c1     3-fluorobenzotrifluoride
+OC(F)(F)F               trifluoromethanol
+COC(F)(F)F              methyl_trifluoromethyl_ether
+OC(F)F                  difluoromethanol
+# ── Nitrile BBs (aryl nitriles for Sandmeyer / C-N disconnections) ──
+N#Cc1ccc(Br)cc1         4-bromobenzonitrile
+N#Cc1ccccn1             2-cyanopyridine
+N#Cc1cccnc1             3-cyanopyridine
+N#Cc1ccncc1             4-cyanopyridine
+N#Cc1ccc([NH2])cc1      4-aminobenzonitrile
+# ── Methylsulfonyl / sulfonamide BBs ──
+CS(=O)(=O)Cl            methanesulfonyl_chloride
+CS(=O)(=O)O             methanesulfonic_acid
+# ── Activated alkyl BBs ──
+BrCc1ccccn1             2-pyridylmethyl_bromide
+BrCc1cccnc1             3-pyridylmethyl_bromide

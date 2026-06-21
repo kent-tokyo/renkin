@@ -10,13 +10,17 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 - chematic dependency updated to **0.4.15** / chematic-rxn **0.4.15**
-  - Issue #21 (E/Z double-bond stereo in `run_reactants`) now active:
-    SMIRKS with `/`/`\` on both sides of a double bond correctly filters
-    reactants whose geometry does not match (filter/point 1)
+  - Issue #21 (E/Z double-bond stereo filtering in `run_reactants`) now active:
+    SMIRKS templates with `/`/`\` on both sides of a double bond correctly
+    filter reactants whose geometry does not match (filter/point 1).
+    Transfer (point 2) and create (point 3) remain as chematic follow-up.
+- Phase A full-run benchmark (beam=100, depth=5, top-500, Phase A): **72.1%** (3,540/4,907 — all 50 chunks complete ✅)
+  
 
 ### Added
 - Regression test `ez_stereo_filter_rejects_wrong_geometry` — verifies that
-  a Z-selective SMIRKS rejects E-alkene reactants (chematic #21)
+  a Z-selective SMIRKS `[C:1]/[C:2]=[C:3]\\[C:4]` rejects (E)-3-hexene
+  reactants (chematic issue #21 regression)
 
 ---
 
@@ -55,9 +59,9 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Known Limitations
 - WASM playground uses 31 hand-crafted rules only (size/bindgen constraints)
 - Tetrahedral stereochemistry (`@`/`@@`) fixed in chematic v0.4.13; RENKIN Phase 15 integration pending
-- E/Z double-bond stereochemistry (`/`/`\`) in SMIRKS: filter fixed upstream (chematic #21);
-  pending release + RENKIN Phase 15 integration (transfer/create remain)
-- All benchmark numbers (47.2%, 71%) measured on USPTO-50k standard train/test split (same corpus).
+- E/Z double-bond stereochemistry (`/`/`\`) in SMIRKS: filter active via chematic-rxn 0.4.15
+  (issue #21); transfer and create (points 2/3) remain as chematic follow-up
+- All benchmark numbers (47.2%, 72.1%) measured on USPTO-50k standard train/test split (same corpus).
   Out-of-distribution generalization not yet evaluated.
 
 ---

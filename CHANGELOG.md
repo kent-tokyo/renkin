@@ -14,6 +14,9 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     SMIRKS templates with `/`/`\` on both sides of a double bond correctly
     filter reactants whose geometry does not match (filter/point 1).
     Transfer (point 2) and create (point 3) remain as chematic follow-up.
+- Phase A full-run benchmark **top-5000 templates**: **78.1%** (3,830/4,907 — all 50 chunks ✅)
+  - top-500 → top-5000: +6.0 pp improvement
+  - All ~4,900 chematic-compatible templates from 5,000 extracted candidates applied
 - Phase A full-run benchmark (beam=100, depth=5, top-500, Phase A): **72.1%** (3,540/4,907 — all 50 chunks complete ✅)
   
 

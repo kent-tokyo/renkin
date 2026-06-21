@@ -6,7 +6,7 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [Unreleased]
+## [0.1.3] — 2026-06-22
 
 ### Changed
 - chematic dependency updated to **0.4.15** / chematic-rxn **0.4.15**

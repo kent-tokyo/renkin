@@ -10,6 +10,18 @@ readme        = "README.md"
 license       = "MIT"
 keywords      = ["retrosynthesis", "cheminformatics", "chemistry", "wasm", "drug-discovery"]
 categories    = ["science::computational-chemistry::cheminformatics", "wasm", "command-line-utilities", "algorithms"]
+exclude       = [
+    "data/building_blocks_500k.smi",
+    "data/building_blocks_emolecules*.smi",
+    "data/bench_chunks*/**",
+    "data/uspto50k_test.smi",
+    "data/uspto50k_benchmark_result*.json",
+    "data/templates_extracted_500.smi",
+    "docs/playground/**",
+    "tasks/**",
+    "scripts/**",
+    ".claude/**",
+]
 
 [[bin]]
 name = "renkin"

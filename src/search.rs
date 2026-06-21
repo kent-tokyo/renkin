@@ -8,7 +8,7 @@ use serde::Serialize;
 use crate::chem_env::{
     ChemEnv, PrecursorMol, RetroRule, apply_retro, mol_from_smiles, to_canonical,
 };
-use crate::score::{heuristic, step_cost};
+use crate::score::{heuristic, step_cost, template_bonus};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ReactionStep {
@@ -64,6 +64,47 @@ impl Ord for Node {
     }
 }
 
+/// Build a bitmask of atomic numbers present in a canonical SMILES string.
+/// Conservative: may over-report (false positives) but never under-reports (no false negatives).
+/// Used to skip rules whose required elements are absent from the target molecule.
+fn elem_mask_from_smiles(smiles: &str) -> u64 {
+    const TWO_CHAR: &[(&str, u64)] = &[
+        ("Cl", 17),
+        ("Br", 35),
+        ("Si", 14),
+        ("Se", 34),
+        ("Te", 52),
+        ("Sn", 50),
+        ("Zn", 30),
+        ("Pd", 46),
+        ("Cu", 29),
+        ("Fe", 26),
+    ];
+    const ONE_CHAR: &[(char, u64)] = &[
+        ('B', 5),
+        ('C', 6),
+        ('N', 7),
+        ('O', 8),
+        ('F', 9),
+        ('P', 15),
+        ('S', 16),
+        ('I', 53),
+    ];
+    let mut mask: u64 = 0;
+    for (sym, an) in TWO_CHAR {
+        if smiles.contains(*sym) {
+            mask |= 1u64 << an;
+        }
+    }
+    for (ch, an) in ONE_CHAR {
+        let lo = ch.to_ascii_lowercase();
+        if smiles.chars().any(|c| c == *ch || c == lo) {
+            mask |= 1u64 << an;
+        }
+    }
+    mask
+}
+
 fn state_key(frontier: &[FEntry]) -> String {
     let mut keys: Vec<&str> = frontier.iter().map(|e| e.smiles.as_str()).collect();
     keys.sort();
@@ -71,6 +112,12 @@ fn state_key(frontier: &[FEntry]) -> String {
 }
 
 fn is_bb(smiles: &str, env: &ChemEnv) -> bool {
+    // Fast path: direct HashSet lookup (FEntry.smiles is always canonical SMILES).
+    if env.is_building_block_smiles(smiles) {
+        return true;
+    }
+    // VF2 fallback: handles edge cases where run_reactants produces
+    // explicit-H forms whose canonical SMILES doesn't match the stored form.
     mol_from_smiles(smiles)
         .map(|mol| env.is_building_block(&mol))
         .unwrap_or(false)
@@ -136,6 +183,8 @@ pub fn find_routes(
     let target_mol = mol_from_smiles(target_smiles)?;
     let target_canonical = to_canonical(&target_mol);
 
+    let max_rule_weight = rules.iter().map(|r| r.weight).fold(1.0_f64, f64::max);
+
     let mut routes: Vec<Route> = Vec::new();
     let mut closed: HashSet<String> = HashSet::new();
     let mut heap: BinaryHeap<Node> = BinaryHeap::new();
@@ -188,29 +237,40 @@ pub fn find_routes(
             continue;
         };
 
+        let target_elem_mask: u64 = elem_mask_from_smiles(&target_smi);
+
         // Parallel rule application via rayon (native); sequential on WASM.
+        // Rules whose required_elements are absent from the target are skipped early.
         #[cfg(not(target_arch = "wasm32"))]
-        let expanded: Vec<(String, Vec<PrecursorMol>)> = rules
+        let expanded: Vec<(String, f64, Vec<PrecursorMol>)> = rules
             .par_iter()
+            .filter(|rule| {
+                rule.required_elements == 0
+                    || (target_elem_mask & rule.required_elements == rule.required_elements)
+            })
             .flat_map(|rule| {
                 apply_retro(&target_mol, rule)
                     .into_iter()
-                    .map(|precs| (rule.name.to_string(), precs))
+                    .map(|precs| (rule.name.to_string(), rule.weight, precs))
                     .collect::<Vec<_>>()
             })
             .collect();
         #[cfg(target_arch = "wasm32")]
-        let expanded: Vec<(String, Vec<PrecursorMol>)> = rules
+        let expanded: Vec<(String, f64, Vec<PrecursorMol>)> = rules
             .iter()
+            .filter(|rule| {
+                rule.required_elements == 0
+                    || (target_elem_mask & rule.required_elements == rule.required_elements)
+            })
             .flat_map(|rule| {
                 apply_retro(&target_mol, rule)
                     .into_iter()
-                    .map(|precs| (rule.name.to_string(), precs))
+                    .map(|precs| (rule.name.to_string(), rule.weight, precs))
                     .collect::<Vec<_>>()
             })
             .collect();
 
-        for (rule_name, precursors) in expanded {
+        for (rule_name, rule_weight, precursors) in expanded {
             if precursors.is_empty() {
                 continue;
             }
@@ -231,7 +291,8 @@ pub fn find_routes(
                 }))
                 .collect();
 
-            let step_c = step_cost(&precursors.iter().map(|p| &p.mol).collect::<Vec<_>>());
+            let step_c = step_cost(&precursors.iter().map(|p| &p.mol).collect::<Vec<_>>())
+                - template_bonus(rule_weight, max_rule_weight);
             let new_h = compute_h(&new_frontier, env);
 
             let mut new_path = node.path.clone();

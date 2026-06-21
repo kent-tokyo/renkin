@@ -15,6 +15,23 @@ pub struct RetroRule {
     pub name: String,
     /// SMIRKS in "reactant>>product1.product2" form (retro direction).
     pub smirks: String,
+    /// Log-frequency weight from USPTO training data. Hand-crafted rules use 1.0 (neutral).
+    /// Extracted templates use ln(count + 1) — higher = more frequent in training set.
+    pub weight: f64,
+    /// Bitmask of required atomic numbers (bit N set ⟺ element N must appear in the target).
+    /// Zero means no pre-screening (always attempt). Set at load time from SMIRKS or rule name.
+    pub required_elements: u64,
+}
+
+impl Default for RetroRule {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            smirks: String::new(),
+            weight: 1.0,
+            required_elements: 0,
+        }
+    }
 }
 
 /// Building-block library.
@@ -91,6 +108,13 @@ impl ChemEnv {
     /// Number of building blocks in the library.
     pub fn bb_count(&self) -> usize {
         self.bb_count
+    }
+
+    /// Fast O(1) BB check for an already-canonical SMILES string.
+    /// Skips molecule parsing and re-canonicalization. Use this when the
+    /// input is guaranteed to be canonical (e.g. `FEntry.smiles` in search).
+    pub fn is_building_block_smiles(&self, canonical_smi: &str) -> bool {
+        self.canon_set.contains(canonical_smi)
     }
 
     /// Check if `mol` is in the building-block library.
@@ -445,194 +469,190 @@ fn split_fragments(mol: &Molecule) -> Vec<PrecursorMol> {
             // than aromatic_ring_count(), because chematic's aromatic_ring_count does
             // not count heteroaromatic rings (e.g. pyridine → 0), which incorrectly
             // filtered valid fragments like 4-bromopyridine in biaryl cleavage.
-            let smi_check = canonical_smiles(&std_mol);
-            let has_aromatic = smi_check
+            let smi = canonical_smiles(&std_mol);
+            let has_aromatic = smi
                 .chars()
                 .any(|c| matches!(c, 'c' | 'n' | 'o' | 's' | 'p'));
-            let has_ring = smi_check.chars().any(|c| c.is_ascii_digit());
+            let has_ring = smi.chars().any(|c| c.is_ascii_digit());
             if has_aromatic && !has_ring {
                 return None;
             }
-            let smi = to_canonical(&std_mol);
-            let final_mol = parse(&smi).ok()?;
             Some(PrecursorMol {
                 smiles: smi,
-                mol: final_mol,
+                mol: std_mol,
             })
         })
         .collect()
 }
 
+/// Compute a bitmask of atomic numbers that MUST appear in the target molecule
+/// for `smirks` to have any chance of matching. Reads the reactant side of the
+/// SMIRKS and extracts explicit element symbols from bracket atoms and bare atoms.
+/// Returns 0 if the SMIRKS is empty (graph-based rule) or cannot be parsed.
+fn required_elements_from_smirks(smirks: &str) -> u64 {
+    let reactant = match smirks.split(">>").next() {
+        Some(r) if !r.is_empty() => r,
+        _ => return 0,
+    };
+    // Map element symbol → atomic number for elements common in organic chemistry.
+    // Only symbols that unambiguously appear as bare uppercase tokens in SMIRKS.
+    const ELEMENTS: &[(&str, u64)] = &[
+        ("Cl", 17),
+        ("Br", 35),
+        ("Si", 14),
+        ("Se", 34),
+        ("Te", 52),
+        ("Sn", 50),
+        ("Zn", 30),
+        ("Pd", 46),
+        ("Cu", 29),
+        ("Fe", 26),
+        ("B", 5),
+        ("C", 6),
+        ("N", 7),
+        ("O", 8),
+        ("F", 9),
+        ("P", 15),
+        ("S", 16),
+        ("I", 53),
+    ];
+    let mut mask: u64 = 0;
+    // Scan bracket atoms like [N:1], [c:2], [Cl], [NH2:3]
+    let bytes = reactant.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'[' {
+            i += 1;
+            // Skip stereo / charge prefix chars
+            while i < bytes.len() && matches!(bytes[i], b'@' | b'+' | b'-' | b'#') {
+                i += 1;
+            }
+            // Read element (1-2 uppercase letters, possibly followed by lowercase)
+            for (sym, an) in ELEMENTS {
+                let end = i + sym.len();
+                if end <= bytes.len() && bytes[i..end].eq_ignore_ascii_case(sym.as_bytes()) {
+                    mask |= 1u64 << an;
+                    break;
+                }
+            }
+        }
+        i += 1;
+    }
+    mask
+}
+
+fn rr(name: &str, smirks: &str) -> RetroRule {
+    let required_elements = required_elements_from_smirks(smirks);
+    RetroRule {
+        name: name.into(),
+        smirks: smirks.into(),
+        required_elements,
+        ..Default::default()
+    }
+}
+
 pub fn default_rules() -> Vec<RetroRule> {
     vec![
         // ── Acyl disconnections ──────────────────────────────────────────
-        RetroRule {
-            name: "ester_cleavage".into(),
-            // Ester C(=O)-O → carboxylic acid + alcohol/phenol
-            smirks: "[C:1](=[O:2])[O:3]>>[C:1](=[O:2])O.[O:3]".into(),
-        },
-        RetroRule {
-            name: "amide_cleavage".into(),
-            // Graph-based: dispatched in apply_retro, not run_reactants
-            // (SMIRKS-based version had BFS-leakage producing spurious fragments)
-            smirks: "".into(),
-        },
-        RetroRule {
-            name: "friedel_crafts_acylation_retro".into(),
-            // Ar-C(=O)R → Ar-H + R-C(=O)Cl (Friedel-Crafts retro)
-            smirks: "[c:1][C:2](=[O:3])>>[c:1].[C:2](=[O:3])Cl".into(),
-        },
+        // Ester C(=O)-O → carboxylic acid + alcohol/phenol
+        rr("ester_cleavage", "[C:1](=[O:2])[O:3]>>[C:1](=[O:2])O.[O:3]"),
+        // Graph-based: dispatched in apply_retro (SMIRKS-based had BFS-leakage)
+        rr("amide_cleavage", ""),
+        // Ar-C(=O)R → Ar-H + R-C(=O)Cl (Friedel-Crafts retro)
+        rr(
+            "friedel_crafts_acylation_retro",
+            "[c:1][C:2](=[O:3])>>[c:1].[C:2](=[O:3])Cl",
+        ),
         // ── Aryl C-heteroatom disconnections ────────────────────────────
-        RetroRule {
-            name: "aryl_carboxylation_retro".into(),
-            // Ar-COOH → Ar-H + HCOOH (retro-Kolbe-Schmitt / decarboxylation)
-            smirks: "[c:1][C:2](=O)O>>[c:1].[C:2](=O)O".into(),
-        },
-        RetroRule {
-            name: "aryl_amine_retro".into(),
-            // Ar-N → Ar-H + amine (retro-SNAr / retro-Chan-Lam)
-            smirks: "[c:1][N:2]>>[c:1].[N:2]".into(),
-        },
-        RetroRule {
-            name: "buchwald_hartwig_retro".into(),
-            // Ar-N → Ar-Br + amine (retro-Buchwald-Hartwig; gives halide BB)
-            smirks: "[c:1][N:2]>>[c:1]Br.[N:2]".into(),
-        },
-        RetroRule {
-            name: "aryl_ether_retro".into(),
-            // Ar-O → Ar-OH + leaving fragment (retro-Ullmann ether synthesis)
-            smirks: "[c:1][O:2]>>[c:1]O.[O:2]".into(),
-        },
+        // Ar-COOH → Ar-H + HCOOH (retro-Kolbe-Schmitt / decarboxylation)
+        rr(
+            "aryl_carboxylation_retro",
+            "[c:1][C:2](=O)O>>[c:1].[C:2](=O)O",
+        ),
+        // Ar-N → Ar-H + amine (retro-SNAr / retro-Chan-Lam)
+        rr("aryl_amine_retro", "[c:1][N:2]>>[c:1].[N:2]"),
+        // Ar-N → Ar-Br + amine (retro-Buchwald-Hartwig; gives halide BB)
+        rr("buchwald_hartwig_retro", "[c:1][N:2]>>[c:1]Br.[N:2]"),
+        // Ar-O → Ar-OH + leaving fragment (retro-Ullmann ether synthesis)
+        rr("aryl_ether_retro", "[c:1][O:2]>>[c:1]O.[O:2]"),
         // ── Aryl C-halide disconnections ────────────────────────────────
-        RetroRule {
-            name: "aryl_chloride_retro".into(),
-            // Ar-Cl → Ar-H + HCl (retro-SNAr or retro-Pd C-Cl activation)
-            smirks: "[c:1][Cl]>>[c:1]".into(),
-        },
-        RetroRule {
-            name: "aryl_iodide_retro".into(),
-            // Ar-I → Ar-H (retro-Pd/Cu C-I; iodides are activated leaving groups)
-            smirks: "[c:1][I]>>[c:1]".into(),
-        },
-        RetroRule {
-            name: "aryl_fluoride_snAr_retro".into(),
-            // Ar-F → Ar-H (retro-SNAr; fluorine is best SNAr leaving group)
-            smirks: "[c:1][F]>>[c:1]".into(),
-        },
-        RetroRule {
-            name: "aryl_chloride_to_bromide".into(),
-            // Ar-Cl → Ar-Br (halogen exchange retro; Ar-Br is often a cheaper BB)
-            smirks: "[c:1][Cl]>>[c:1][Br]".into(),
-        },
+        // Ar-Cl → Ar-H + HCl (retro-SNAr or retro-Pd C-Cl activation)
+        rr("aryl_chloride_retro", "[c:1][Cl]>>[c:1]"),
+        // Ar-I → Ar-H (retro-Pd/Cu C-I; iodides are activated leaving groups)
+        rr("aryl_iodide_retro", "[c:1][I]>>[c:1]"),
+        // Ar-F → Ar-H (retro-SNAr; fluorine is best SNAr leaving group)
+        rr("aryl_fluoride_snAr_retro", "[c:1][F]>>[c:1]"),
+        // Ar-Cl → Ar-Br (halogen exchange retro; Ar-Br is often a cheaper BB)
+        rr("aryl_chloride_to_bromide", "[c:1][Cl]>>[c:1][Br]"),
         // ── Aryl C-C disconnections ──────────────────────────────────────
-        RetroRule {
-            name: "suzuki_retro".into(),
-            // Graph-based: find Ar-Ar bridge bonds and split into Ar-Br + Ar.
-            // smirks is empty; apply_retro dispatches to biaryl_cleavage().
-            smirks: "".into(),
-        },
-        RetroRule {
-            name: "heck_retro".into(),
-            // Ar-CH=CH-R → Ar-Br + CH2=CH-R (retro-Heck, internal alkene)
-            smirks: "[c:1][CH:2]=[CH:3]>>[c:1][Br].[CH2:2]=[CH:3]".into(),
-        },
-        RetroRule {
-            name: "heck_retro_terminal".into(),
-            // Ar-CH=CH2 → Ar-Br + CH2=CH2 (retro-Heck, terminal alkene / styrene)
-            smirks: "[c:1][CH:2]=[CH2:3]>>[c:1][Br].[CH2:2]=[CH2:3]".into(),
-        },
-        RetroRule {
-            name: "negishi_retro".into(),
-            // Ar-alkyl → Ar-Br + alkyl (retro-Negishi; Pd-catalyzed C-C)
-            smirks: "[c:1][CH2:2]>>[c:1][Br].[CH3:2]".into(),
-        },
+        // Graph-based: find Ar-Ar bridge bonds and split into Ar-Br + Ar.
+        rr("suzuki_retro", ""),
+        // Ar-CH=CH-R → Ar-Br + CH2=CH-R (retro-Heck, internal alkene)
+        rr("heck_retro", "[c:1][CH:2]=[CH:3]>>[c:1][Br].[CH2:2]=[CH:3]"),
+        // Ar-CH=CH2 → Ar-Br + CH2=CH2 (retro-Heck, terminal alkene / styrene)
+        rr(
+            "heck_retro_terminal",
+            "[c:1][CH:2]=[CH2:3]>>[c:1][Br].[CH2:2]=[CH2:3]",
+        ),
+        // Ar-alkyl → Ar-Br + alkyl (retro-Negishi; Pd-catalyzed C-C)
+        rr("negishi_retro", "[c:1][CH2:2]>>[c:1][Br].[CH3:2]"),
         // ── Aliphatic C-C disconnections ─────────────────────────────────
-        RetroRule {
-            name: "cc_single_cleavage".into(),
-            // Generic aliphatic C-C bond cleavage
-            smirks: "[C:1][C:2]>>[C:1].[C:2]".into(),
-        },
-        RetroRule {
-            name: "wittig_retro".into(),
-            // Alkene → two carbonyls (retro-Wittig / retro-HWE)
-            smirks: "[C:1]=[C:2]>>[C:1]=O.[C:2]=O".into(),
-        },
+        // Generic aliphatic C-C bond cleavage
+        rr("cc_single_cleavage", "[C:1][C:2]>>[C:1].[C:2]"),
+        // Alkene → two carbonyls (retro-Wittig / retro-HWE)
+        rr("wittig_retro", "[C:1]=[C:2]>>[C:1]=O.[C:2]=O"),
         // ── C-N disconnections ───────────────────────────────────────────
-        RetroRule {
-            name: "reductive_amination_retro".into(),
-            // C-N → C=O + amine (retro-reductive amination; aliphatic C only)
-            smirks: "[C:1][N:2]>>[C:1]=O.[N:2]".into(),
-        },
-        RetroRule {
-            name: "cn_aliphatic_cleavage".into(),
-            // Generic aliphatic C-N bond cleavage (N-alkylation retro)
-            smirks: "[C:1][N:2]>>[C:1].[N:2]".into(),
-        },
+        // C-N → C=O + amine (retro-reductive amination; aliphatic C only)
+        rr("reductive_amination_retro", "[C:1][N:2]>>[C:1]=O.[N:2]"),
+        // Generic aliphatic C-N bond cleavage (N-alkylation retro)
+        rr("cn_aliphatic_cleavage", "[C:1][N:2]>>[C:1].[N:2]"),
         // ── C-O disconnections ───────────────────────────────────────────
-        RetroRule {
-            name: "co_aliphatic_cleavage".into(),
-            // Generic aliphatic C-O bond cleavage (ether / O-alkylation retro)
-            smirks: "[C:1][O:2]>>[C:1].[O:2]".into(),
-        },
-        RetroRule {
-            name: "alcohol_oxidation_retro".into(),
-            // Alcohol → ketone/aldehyde (retro-reduction; converts C-OH to C=O)
-            smirks: "[C:1][OH:2]>>[C:1]=O".into(),
-        },
+        // Generic aliphatic C-O bond cleavage (ether / O-alkylation retro)
+        rr("co_aliphatic_cleavage", "[C:1][O:2]>>[C:1].[O:2]"),
+        // Alcohol → ketone/aldehyde (retro-reduction; converts C-OH to C=O)
+        rr("alcohol_oxidation_retro", "[C:1][OH:2]>>[C:1]=O"),
         // ── Sonogashira coupling ─────────────────────────────────────────────
-        RetroRule {
-            name: "sonogashira_retro".into(),
-            // Ar-C≡C-R → Ar-Br + HC≡C-R (retro-Sonogashira, Pd/Cu catalysis)
-            smirks: "[c:1][C:2]#[C:3]>>[c:1]Br.[C:2]#[C:3]".into(),
-        },
+        // Ar-C≡C-R → Ar-Br + HC≡C-R (retro-Sonogashira, Pd/Cu catalysis)
+        rr("sonogashira_retro", "[c:1][C:2]#[C:3]>>[c:1]Br.[C:2]#[C:3]"),
         // ── Sulfonamide disconnection ────────────────────────────────────────
-        RetroRule {
-            name: "sulfonamide_retro".into(),
-            // Ar-SO2-NHR → Ar-SO2Cl + HNR (sulfonyl chloride + amine)
-            smirks: "[S:1](=O)(=O)[N:2]>>[S:1](=O)(=O)Cl.[N:2]".into(),
-        },
+        // Ar-SO2-NHR → Ar-SO2Cl + HNR (sulfonyl chloride + amine)
+        rr(
+            "sulfonamide_retro",
+            "[S:1](=O)(=O)[N:2]>>[S:1](=O)(=O)Cl.[N:2]",
+        ),
         // ── N-protection / deprotection ──────────────────────────────────────
-        RetroRule {
-            name: "boc_deprotection_retro".into(),
-            // N-Boc → N-H (deprotect: TFA removes Boc). Graph-based to avoid leakage.
-            smirks: "".into(),
-        },
+        // N-Boc → N-H (deprotect: TFA removes Boc). Graph-based to avoid leakage.
+        rr("boc_deprotection_retro", ""),
         // ── N-alkylation (more specific than cn_aliphatic_cleavage) ──────────
-        RetroRule {
-            name: "n_benzylation_retro".into(),
-            // N-CH2Ar → N-H + BrCH2Ar (N-benzyl retro)
-            smirks: "[N:1][CH2:2][c:3]>>[N:1].[Br][CH2:2][c:3]".into(),
-        },
+        // N-CH2Ar → N-H + BrCH2Ar (N-benzyl retro)
+        rr(
+            "n_benzylation_retro",
+            "[N:1][CH2:2][c:3]>>[N:1].[Br][CH2:2][c:3]",
+        ),
         // ── Grignard / organolithium retro ───────────────────────────────────
-        RetroRule {
-            name: "grignard_addition_retro".into(),
-            // Tertiary alcohol → ketone + R-MgBr (retro-Grignard)
-            smirks: "[C:1]([OH:2])([C:3])[C:4]>>[C:1](=O)[C:3].[C:4]".into(),
-        },
+        // Tertiary alcohol → ketone + R-MgBr (retro-Grignard)
+        rr(
+            "grignard_addition_retro",
+            "[C:1]([OH:2])([C:3])[C:4]>>[C:1](=O)[C:3].[C:4]",
+        ),
         // ── Claisen / Dieckmann condensation ────────────────────────────────
-        RetroRule {
-            name: "claisen_retro".into(),
-            // β-ketoester → ester + ester (retro-Claisen condensation)
-            smirks: "[C:1](=O)[CH2:2][C:3](=O)[O:4]>>[C:1](=O)O.[C:2]=[C:3][O:4]".into(),
-        },
+        // β-ketoester → ester + ester (retro-Claisen condensation)
+        rr(
+            "claisen_retro",
+            "[C:1](=O)[CH2:2][C:3](=O)[O:4]>>[C:1](=O)O.[C:2]=[C:3][O:4]",
+        ),
         // ── Michael addition retro ───────────────────────────────────────────
-        RetroRule {
-            name: "michael_retro".into(),
-            // R-CH2-C(=O)R' ← CH2=C(=O)R' + H (retro-1,4-addition at α)
-            smirks: "[C:1][CH2:2][C:3]=[O:4]>>[C:1].[CH2:2]=[C:3][OH:4]".into(),
-        },
+        // R-CH2-C(=O)R' ← CH2=C(=O)R' + H (retro-1,4-addition at α)
+        rr(
+            "michael_retro",
+            "[C:1][CH2:2][C:3]=[O:4]>>[C:1].[CH2:2]=[C:3][OH:4]",
+        ),
         // ── Acyl chloride as electrophile source ─────────────────────────────
-        RetroRule {
-            name: "acyl_chloride_from_acid".into(),
-            // Acid chloride → carboxylic acid (SOCl2 activation retro)
-            smirks: "[C:1](=[O:2])Cl>>[C:1](=[O:2])O".into(),
-        },
+        // Acid chloride → carboxylic acid (SOCl2 activation retro)
+        rr("acyl_chloride_from_acid", "[C:1](=[O:2])Cl>>[C:1](=[O:2])O"),
         // ── N-formylation / N-acylation (Cbz retro) ─────────────────────────
-        RetroRule {
-            name: "cbz_deprotection_retro".into(),
-            // N-Cbz → N-H (hydrogenolysis retro, graph-based)
-            smirks: "".into(),
-        },
+        // N-Cbz → N-H (hydrogenolysis retro, graph-based)
+        rr("cbz_deprotection_retro", ""),
     ]
 }
 
@@ -658,13 +678,22 @@ pub fn load_rules_from_file(path: &str) -> Vec<RetroRule> {
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
         .enumerate()
         .filter_map(|(i, line)| {
-            let smirks = line.split('\t').next()?.trim();
+            let mut cols = line.splitn(2, '\t');
+            let smirks = cols.next()?.trim();
+            let count: f64 = cols
+                .next()
+                .and_then(|c| c.trim().parse().ok())
+                .unwrap_or(1.0);
+            let weight = (count + 1.0).ln();
             let reactant = smirks.split(">>").next()?;
             // Validate that chematic can parse the reactant SMARTS pattern.
             parse_smarts(reactant).ok()?;
+            let required_elements = required_elements_from_smirks(smirks);
             Some(RetroRule {
                 name: format!("extracted_{i}"),
                 smirks: smirks.to_string(),
+                weight,
+                required_elements,
             })
         })
         .collect()
@@ -830,10 +859,7 @@ mod tests {
     #[test]
     fn ester_cleavage_fires_on_aspirin() {
         let mol = mol_from_smiles("CC(=O)Oc1ccccc1C(=O)O").unwrap();
-        let rule = RetroRule {
-            name: "ester_cleavage".into(),
-            smirks: "[C:1](=[O:2])[O:3]>>[C:1](=[O:2])O.[O:3]".into(),
-        };
+        let rule = rr("ester_cleavage", "[C:1](=[O:2])[O:3]>>[C:1](=[O:2])O.[O:3]");
         let results = apply_retro(&mol, &rule);
         assert!(!results.is_empty(), "ester_cleavage must match aspirin");
     }
@@ -843,10 +869,10 @@ mod tests {
         use chematic::chem::aromatic_ring_count;
         // Open-chain aromatic fragments (BFS leakage, L4) must be discarded.
         let mol = mol_from_smiles("c1ccc(N)cc1C(=O)O").unwrap();
-        let rule = RetroRule {
-            name: "aryl_carboxylation_retro".into(),
-            smirks: "[c:1][C:2](=O)O>>[c:1].[C:2](=O)O".into(),
-        };
+        let rule = rr(
+            "aryl_carboxylation_retro",
+            "[c:1][C:2](=O)O>>[c:1].[C:2](=O)O",
+        );
         let results = apply_retro(&mol, &rule);
         // All returned fragments must have rings if they contain aromatic atoms.
         for precursor_set in &results {
@@ -901,10 +927,10 @@ mod tests {
         // This test just verifies that for anthranilic acid the aryl_carboxylation
         // rule returns aniline-like and acid-like fragments without crashing.
         let mol = mol_from_smiles("c1ccc(N)cc1C(=O)O").unwrap();
-        let rule = RetroRule {
-            name: "aryl_carboxylation_retro".into(),
-            smirks: "[c:1][C:2](=O)O>>[c:1].[C:2](=O)O".into(),
-        };
+        let rule = rr(
+            "aryl_carboxylation_retro",
+            "[c:1][C:2](=O)O>>[c:1].[C:2](=O)O",
+        );
         let results = apply_retro(&mol, &rule);
         assert!(!results.is_empty());
     }
@@ -912,10 +938,7 @@ mod tests {
     #[test]
     fn suzuki_retro_biphenyl_gives_bromobenzene_and_benzene() {
         let mol = mol_from_smiles("c1ccc(-c2ccccc2)cc1").unwrap();
-        let rule = RetroRule {
-            name: "suzuki_retro".into(),
-            smirks: "".into(),
-        };
+        let rule = rr("suzuki_retro", "");
         let results = apply_retro(&mol, &rule);
         assert!(
             !results.is_empty(),
@@ -1012,10 +1035,7 @@ mod tests {
     fn amide_cleavage_paracetamol() {
         // Verify amide_cleavage rule fires on paracetamol.
         let mol = mol_from_smiles("CC(=O)Nc1ccc(O)cc1").unwrap();
-        let rule = RetroRule {
-            name: "amide_cleavage".into(),
-            smirks: "[C:1](=[O:2])[N:3]>>[C:1](=[O:2])O.[N:3]".into(),
-        };
+        let rule = rr("amide_cleavage", "[C:1](=[O:2])[N:3]>>[C:1](=[O:2])O.[N:3]");
         let results = apply_retro(&mol, &rule);
         assert!(
             !results.is_empty(),
@@ -1060,10 +1080,7 @@ mod tests {
     #[test]
     fn wittig_retro_cleaves_alkene() {
         let mol = mol_from_smiles("C=C").unwrap(); // ethylene
-        let rule = RetroRule {
-            name: "wittig_retro".into(),
-            smirks: "[C:1]=[C:2]>>[C:1]=O.[C:2]=O".into(),
-        };
+        let rule = rr("wittig_retro", "[C:1]=[C:2]>>[C:1]=O.[C:2]=O");
         let results = apply_retro(&mol, &rule);
         assert!(!results.is_empty(), "wittig_retro must match ethylene");
         // Products must contain oxygen atoms (carbonyls — canonical form may be C=O or O=C).
@@ -1182,10 +1199,10 @@ mod tests {
     #[test]
     fn friedel_crafts_retro_on_acetophenone() {
         let mol = mol_from_smiles("CC(=O)c1ccccc1").unwrap();
-        let rule = RetroRule {
-            name: "friedel_crafts_acylation_retro".into(),
-            smirks: "[c:1][C:2](=[O:3])>>[c:1].[C:2](=[O:3])Cl".into(),
-        };
+        let rule = rr(
+            "friedel_crafts_acylation_retro",
+            "[c:1][C:2](=[O:3])>>[c:1].[C:2](=[O:3])Cl",
+        );
         let results = apply_retro(&mol, &rule);
         assert!(
             !results.is_empty(),
@@ -1204,10 +1221,10 @@ mod tests {
     #[test]
     fn heck_retro_terminal_on_styrene() {
         let mol = mol_from_smiles("C=Cc1ccccc1").unwrap();
-        let rule = RetroRule {
-            name: "heck_retro_terminal".into(),
-            smirks: "[c:1][CH:2]=[CH2:3]>>[c:1][Br].[CH2:2]=[CH2:3]".into(),
-        };
+        let rule = rr(
+            "heck_retro_terminal",
+            "[c:1][CH:2]=[CH2:3]>>[c:1][Br].[CH2:2]=[CH2:3]",
+        );
         let results = apply_retro(&mol, &rule);
         assert!(
             !results.is_empty(),
@@ -1233,10 +1250,7 @@ mod tests {
     fn heck_retro_internal_on_stilbene() {
         // (E)-stilbene: c1ccccc1/C=C/c1ccccc1
         let mol = mol_from_smiles("C(=Cc1ccccc1)c1ccccc1").unwrap();
-        let rule = RetroRule {
-            name: "heck_retro".into(),
-            smirks: "[c:1][CH:2]=[CH:3]>>[c:1][Br].[CH2:2]=[CH:3]".into(),
-        };
+        let rule = rr("heck_retro", "[c:1][CH:2]=[CH:3]>>[c:1][Br].[CH2:2]=[CH:3]");
         let results = apply_retro(&mol, &rule);
         assert!(!results.is_empty(), "heck_retro must fire on stilbene");
         let flat: Vec<_> = results
@@ -1254,10 +1268,7 @@ mod tests {
         // negishi_retro SMIRKS [c:1][CH2:2] matches the benzylic CH2 in ethylbenzene,
         // not the methyl (CH3) in toluene (toluene has 3H on that carbon, not 2H).
         let mol = mol_from_smiles("CCc1ccccc1").unwrap();
-        let rule = RetroRule {
-            name: "negishi_retro".into(),
-            smirks: "[c:1][CH2:2]>>[c:1][Br].[CH3:2]".into(),
-        };
+        let rule = rr("negishi_retro", "[c:1][CH2:2]>>[c:1][Br].[CH3:2]");
         let results = apply_retro(&mol, &rule);
         assert!(
             !results.is_empty(),
@@ -1276,10 +1287,7 @@ mod tests {
     #[test]
     fn alcohol_oxidation_retro_on_ethanol() {
         let mol = mol_from_smiles("CCO").unwrap();
-        let rule = RetroRule {
-            name: "alcohol_oxidation_retro".into(),
-            smirks: "[C:1][OH:2]>>[C:1]=O".into(),
-        };
+        let rule = rr("alcohol_oxidation_retro", "[C:1][OH:2]>>[C:1]=O");
         let results = apply_retro(&mol, &rule);
         assert!(
             !results.is_empty(),
@@ -1298,10 +1306,7 @@ mod tests {
     #[test]
     fn aryl_chloride_retro_on_chlorobenzene() {
         let mol = mol_from_smiles("Clc1ccccc1").unwrap();
-        let rule = RetroRule {
-            name: "aryl_chloride_retro".into(),
-            smirks: "[c:1][Cl]>>[c:1]".into(),
-        };
+        let rule = rr("aryl_chloride_retro", "[c:1][Cl]>>[c:1]");
         let results = apply_retro(&mol, &rule);
         assert!(
             !results.is_empty(),
@@ -1323,10 +1328,7 @@ mod tests {
         // Graph-based amide_cleavage must not produce BFS-leaked extra fragments.
         // Acetanilide: CC(=O)Nc1ccccc1 → acetic acid + aniline (exactly 2 fragments).
         let mol = mol_from_smiles("CC(=O)Nc1ccccc1").unwrap();
-        let rule = RetroRule {
-            name: "amide_cleavage".into(),
-            smirks: "".into(),
-        };
+        let rule = rr("amide_cleavage", "");
         let results = apply_retro(&mol, &rule);
         assert!(
             !results.is_empty(),
@@ -1360,10 +1362,7 @@ mod tests {
     #[test]
     fn reductive_amination_retro_on_benzylamine() {
         let mol = mol_from_smiles("NCc1ccccc1").unwrap();
-        let rule = RetroRule {
-            name: "reductive_amination_retro".into(),
-            smirks: "[C:1][N:2]>>[C:1]=O.[N:2]".into(),
-        };
+        let rule = rr("reductive_amination_retro", "[C:1][N:2]>>[C:1]=O.[N:2]");
         let results = apply_retro(&mol, &rule);
         assert!(
             !results.is_empty(),

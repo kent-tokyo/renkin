@@ -28,10 +28,38 @@ pub fn step_cost(precursors: &[&Molecule]) -> f64 {
     1.0 + (total_mw / 2000.0).min(1.0)
 }
 
+/// Template frequency bonus: reduces effective step cost for high-frequency extracted templates.
+/// weight=1.0 (hand-crafted rules) gives no bonus. Normalized to [0, 0.2] so step_cost ≥ 0.8.
+pub fn template_bonus(weight: f64, max_weight: f64) -> f64 {
+    if max_weight <= 1.0 {
+        return 0.0;
+    }
+    0.2 * (weight - 1.0) / (max_weight - 1.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use chematic::smiles::parse;
+
+    #[test]
+    fn template_bonus_zero_when_all_weight_one() {
+        // hand-crafted rules all weight=1.0; max_weight=1.0 → bonus=0 for all
+        assert_eq!(template_bonus(1.0, 1.0), 0.0);
+    }
+
+    #[test]
+    fn template_bonus_range() {
+        // max_weight = e.g. ln(1294) ≈ 7.16 for top-1293 template
+        let max_w = (1294_f64).ln();
+        let bonus_min = template_bonus(1.0, max_w); // weight of hand-crafted or count=0
+        let bonus_max = template_bonus(max_w, max_w);
+        assert!(bonus_min >= 0.0);
+        assert!(
+            (bonus_max - 0.2).abs() < 1e-10,
+            "max bonus must be 0.2, got {bonus_max}"
+        );
+    }
 
     fn mol(smi: &str) -> Molecule {
         parse(smi).expect("valid SMILES")

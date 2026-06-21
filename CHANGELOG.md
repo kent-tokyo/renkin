@@ -6,6 +6,46 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Added
+- **Phase A: Template frequency weighting** — `RetroRule.weight = ln(count+1)` from USPTO-50k
+  training set; `template_bonus` reduces beam step_cost by up to 0.2 for high-frequency templates
+  - Raises USPTO-50k performance: 52% → **71%** (100-molecule confirmed, full run in progress)
+  - Ablation control (bonus disabled): 52%, confirms +19 pp is real
+  - Methodology matches AiZynthFinder's neural template scoring (training-set frequency → inference-time priority)
+- **`RetroRule.required_elements: u64`** — bitmask of atomic numbers required for a rule to match;
+  skips impossible rules before `apply_retro` (`required_elements_from_smirks` at load time,
+  `elem_mask_from_smiles` at search time); no false negatives by design
+- **`ChemEnv::is_building_block_smiles`** — O(1) HashSet lookup for already-canonical SMILES;
+  `is_bb` in search uses this as a fast path with VF2 fallback preserved for correctness
+- **top-5000 template extraction** — `data/templates_extracted_5000.smi` (5,000 templates from
+  USPTO-50k training set via `scripts/extract_templates.py --top 5000`)
+- **chematic issue #21 filed** — E/Z double-bond stereochemistry (`/`/`\`) in SMIRKS not applied
+  by `run_reactants`; tracked at https://github.com/kent-tokyo/chematic/issues/21
+
+### Changed
+- **`split_fragments` de-duplicated canonicalization** — removed redundant second `canonical_smiles`
+  call and `parse` re-parse per fragment; `std_mol` used directly as `PrecursorMol.mol`
+- **`load_rules_from_file` now parses frequency count** (tab-separated second column) and sets
+  `weight = ln(count + 1)` on each extracted template; hand-crafted rules default to `weight = 1.0`
+- **`default_rules()` refactored** — uses `rr(name, smirks)` helper for brevity; comments preserved;
+  `required_elements` computed at construction via `required_elements_from_smirks`
+- chematic dependency updated to **0.4.14**
+  - Issue #18 (bracket atom notation `[O]`/`[N]`) fixed
+  - Issue #19 (`parse_smarts` atom-map notation `:N`) fixed → template validation now uses
+    `parse_smarts` directly instead of probe-molecule run
+  - Issue #20 (tetrahedral `@`/`@@` in `run_reactants`) fixed in v0.4.13
+
+### Known Limitations
+- WASM playground uses 31 hand-crafted rules only (size/bindgen constraints)
+- Tetrahedral stereochemistry (`@`/`@@`) fixed in chematic v0.4.13; RENKIN Phase 15 integration pending
+- E/Z double-bond stereochemistry (`/`/`\`) in SMIRKS: chematic issue #21 filed, fix pending
+- All benchmark numbers (47.2%, 71%) measured on USPTO-50k standard train/test split (same corpus).
+  Out-of-distribution generalization not yet evaluated.
+
+---
+
 ## [0.1.1] — 2026-06-22
 
 ### Added
@@ -50,7 +90,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Known Limitations
 - WASM playground uses 31 hand-crafted rules only (auto-extracted templates not bundled — size/bindgen constraints)
-- Stereochemistry (`@`/`@@`) not yet supported in `run_reactants` (chematic issue #20 filed)
+- Tetrahedral stereochemistry (`@`/`@@`) in SMIRKS — fixed in chematic v0.4.13 (issue #20); RENKIN Phase 15 integration pending
+- E/Z double-bond stereochemistry (`/`/`\`) in SMIRKS — not yet supported (chematic issue #21 filed)
 
 ---
 

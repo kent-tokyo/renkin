@@ -50,15 +50,20 @@ def main():
         print("ERROR: RDKit not found. Install with: pip install rdkit", file=sys.stderr)
         sys.exit(1)
 
+    import gzip as _gzip
+
     input_path = Path(args.input)
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Support gzip-compressed input directly
+    open_fn = _gzip.open if input_path.suffix == ".gz" else open
 
     total = 0
     accepted = 0
     seen = set()
 
-    with open(input_path) as fin, open(output_path, "w") as fout:
+    with open_fn(input_path, "rt") as fin, open(output_path, "w") as fout:
         fout.write("# RENKIN building blocks from eMolecules\n")
         fout.write(f"# Source: {input_path.name}\n")
         fout.write(f"# Filters: MW<={args.max_mw}, atoms<={args.max_atoms}, rings<={args.max_rings}\n")
@@ -70,6 +75,9 @@ def main():
 
             parts = line.split()
             smiles = parts[0]
+            # eMolecules format: isosmiles version_id parent_id — skip header row
+            if smiles == "isosmiles":
+                continue
             name = parts[1] if len(parts) > 1 else ""
             total += 1
 

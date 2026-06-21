@@ -19,3 +19,12 @@ __pycache__/
 .env
 AGENTS.md
 tasks/
+memo.txt
+
+# ---- Large data files (not published) ----
+data/building_blocks_500k.smi
+data/building_blocks_emolecules*.smi
+data/uspto50k_benchmark_result_v2.json
+
+# ---- Claude Code internal files ----
+.claude/

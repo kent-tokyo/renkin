@@ -97,10 +97,10 @@ USPTO-50k test set (4,907 molecules, full evaluation):
 | + auto templates (top-300) | 1363/4907 | 27.8% | 463 | 222 | 3 | 50 |
 | + depth=5, top-500 templates | 2315/4907 | 47.2% | 463 | 314 | 5 | 50 |
 | + beam=100 | 2688/4907 | 54.8%* | 463 | 314 | 5 | 100 |
-| + Phase A (template freq. weighting) | **~3484/4907** | **~71%†** | 463 | 314 | 5 | 100 |
+| + Phase A (template freq. weighting) | **~3581/4907** | **~73%†** | 463 | 314 | 5 | 100 |
 
 \* 29/50 chunks, previous binary  
-† 100-molecule confirmation (71/100); full 4,907-molecule run in progress
+† 32/50 chunks confirmed (2,263/3,100 solved); full 4,907-molecule run in progress
 
 On the standard USPTO-50k benchmark, RENKIN surpasses AiZynthFinder (45–53%), Retro\* (44.3%), ASKCOS (41%), LocalRetro (53.4%), and GLG (58.0%) — all evaluated under the same train/test split conditions.  
 [Full benchmark details →](https://kent-tokyo.github.io/renkin/benchmark/)
@@ -118,7 +118,7 @@ On the standard USPTO-50k benchmark, RENKIN surpasses AiZynthFinder (45–53%), 
 | **Retro\*** | Python | MIT | No | No (unmaintained) | A\* + AND/OR | USPTO (ML) | eMolecules |
 | **★ RENKIN** | **Rust** | **MIT** | **Yes** | **Yes** | **A\* + AND/OR** | Hand-curated + rdchiral (314) | 463+ |
 
-**RENKIN's goal**: match or exceed neural-network-based tools using only curated rules and auto-extracted SMIRKS templates — no GPU, no training data, no black boxes. On the standard USPTO-50k benchmark (same train/test split used by all published tools), RENKIN reaches **~71%** (100-molecule confirmation), surpassing AiZynthFinder (45–53%), LocalRetro (53.4%), and GLG (58.0%). Template frequency weighting (Phase A) — the same principle as AiZynthFinder's neural template scoring — delivers +19 pp over uniform weighting. RENKIN runs anywhere: browser, CLI, Python — single `cargo build`.
+**RENKIN's goal**: match or exceed neural-network-based tools using only curated rules and auto-extracted SMIRKS templates — no GPU, no training data, no black boxes. On the standard USPTO-50k benchmark (same train/test split used by all published tools), RENKIN reaches **~73%** (32/50 chunks, 2,263/3,100 solved), surpassing AiZynthFinder (45–53%), LocalRetro (53.4%), and GLG (58.0%). Template frequency weighting (Phase A) — the same principle as AiZynthFinder's neural template scoring — delivers +19 pp over uniform weighting. RENKIN runs anywhere: browser, CLI, Python — single `cargo build`.
 
 ---
 
@@ -201,7 +201,7 @@ renkin/
 - [x] **Phase 13** — Formal USPTO-50k benchmark: **7.5%** (depth=3, 31 rules)
 - [x] **Phase 14** — Auto template extraction (rdchiral): **27.8%** (depth=3, 222 rules)
 - [x] **Phase 17** — chematic 0.4.12: Bug #13 (BFS leakage) + Bug #14 (canonical SMILES) fixed
-- [x] **Phase 18** — Template frequency weighting (Phase A): **~71%** USPTO-50k (100-mol confirmed)
+- [x] **Phase 18** — Template frequency weighting (Phase A): **~73%** USPTO-50k (32/50 chunks confirmed)
 - [x] **Phase 19** — Rust engine micro-optimizations (split_fragments, is_bb fast path, element pre-screening)
 - [ ] **Phase 15** — Stereochemistry support (CIP SMIRKS)
 - [ ] **Phase 16** — Large-scale building block DB integration

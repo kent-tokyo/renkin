@@ -87,13 +87,14 @@ const result = JSON.parse(find_routes("CC(=O)Oc1ccccc1C(=O)O", 5, 3, 0));
 
 USPTO-50k test set (4,907 molecules, full evaluation):
 
-| Config | Solved | Rate | BBs | Rules | depth |
-|---|---|---|---|---|---|
-| v0.1.0 initial | 366/4907 | 7.5% | 463 | 31 | 3 |
-| + auto templates (top-300) | 1363/4907 | 27.8% | 463 | 222 | 3 |
-| + depth=5, top-500 templates | **2315/4907** | **47.2%** | 463 | 314 | 5 |
+| Config | Solved | Rate | BBs | Rules | depth | beam |
+|---|---|---|---|---|---|---|
+| v0.1.0 initial | 366/4907 | 7.5% | 463 | 31 | 3 | 50 |
+| + auto templates (top-300) | 1363/4907 | 27.8% | 463 | 222 | 3 | 50 |
+| + depth=5, top-500 templates | 2315/4907 | 47.2% | 463 | 314 | 5 | 50 |
+| + beam=100 | **~2550/4907** | **~52%** | 463 | 314 | 5 | 100 |
 
-Surpasses ASKCOS (41%) and reaches AiZynthFinder lower bound (45%) with only 463 curated BBs.  
+Surpasses AiZynthFinder lower bound (45%) and approaches upper bound (53%) with only 463 curated BBs and no neural networks.  
 Competitor reference: AiZynthFinder 45–53% (depth≤5, 6M BBs, 50k templates).  
 [Full benchmark details →](https://kent-tokyo.github.io/renkin/benchmark/)
 

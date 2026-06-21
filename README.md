@@ -59,7 +59,8 @@ const result = JSON.parse(find_routes("CC(=O)Oc1ccccc1C(=O)O", 5, 3, 0));
 ```
 
 ```bash
-./target/release/renkin --target "CC(=O)Oc1ccccc1C(=O)O" --depth 5
+./target/release/renkin --target "CC(=O)Oc1ccccc1C(=O)O" --depth 5 \
+    --templates data/templates_extracted.smi
 ```
 
 ---
@@ -72,52 +73,29 @@ const result = JSON.parse(find_routes("CC(=O)Oc1ccccc1C(=O)O", 5, 3, 0));
 | **A\* / AND-OR Tree Search** | Retro\*-equivalent algorithm, proven more efficient than MCTS |
 | **SA Score heuristic** | Admissible h = Σ(1 + 0.5·(sa−1)/9) guides toward accessible precursors |
 | **Beam search** | `--beam-width N` for memory-bounded exploration |
-| **Graph-based biaryl cleavage** | Bridge-bond DFS for correct Suzuki disconnection (no SMIRKS BFS artifacts) |
+| **222 reaction rules** | 31 hand-crafted + 191 auto-extracted from USPTO-50k via rdchiral |
+| **Auto template extraction** | `scripts/extract_templates.py` — rdchiral + chematic-compatible simplification |
+| **Graph-based biaryl cleavage** | Bridge-bond DFS for correct Suzuki disconnection |
 | **Parallel rule application** | `rayon` on non-WASM; sequential fallback on wasm32 |
 | **Python** | `pip install renkin` — pre-built wheels for Linux/macOS/Windows |
-| **WASM** | 493 KB bundle — runs in the browser at near-native speed |
-| **480+ building blocks** | Aryl halides, boronic acids, heterocycles, pharmaceutical amines, amino acids |
-| **20 reaction rules** | See table below |
-
----
-
-## Retro-Rules (20 total)
-
-| Rule | Reaction type | Strategy |
-|---|---|---|
-| `ester_cleavage` | Ester → acid + alcohol | SMIRKS |
-| `amide_cleavage` | Amide → acid + amine | SMIRKS |
-| `friedel_crafts_acylation_retro` | Ar-C(=O)R → Ar-H + acyl chloride | SMIRKS |
-| `aryl_carboxylation_retro` | Ar-COOH → Ar-H + CO₂ surrogate | SMIRKS |
-| `aryl_amine_retro` | Ar-N → Ar-H + amine | SMIRKS |
-| `buchwald_hartwig_retro` | Ar-N → Ar-Br + amine | SMIRKS |
-| `aryl_ether_retro` | Ar-O → Ar-OH + fragment | SMIRKS |
-| `aryl_chloride_retro` | Ar-Cl → Ar-H (retro-SNAr / Pd C-Cl) | SMIRKS |
-| `aryl_iodide_retro` | Ar-I → Ar-H (retro-Pd/Cu C-I) | SMIRKS |
-| `aryl_fluoride_snAr_retro` | Ar-F → Ar-H (retro-SNAr) | SMIRKS |
-| `aryl_chloride_to_bromide` | Ar-Cl → Ar-Br (halogen exchange) | SMIRKS |
-| `suzuki_retro` | Ar-Ar → Ar-Br + Ar-H | **Graph** (bridge-bond DFS) |
-| `heck_retro` | Ar-CH=CH-R → Ar-Br + vinyl | SMIRKS |
-| `negishi_retro` | Ar-CH₂ → Ar-Br + alkyl | SMIRKS |
-| `cc_single_cleavage` | C–C → two fragments | SMIRKS |
-| `wittig_retro` | C=C → C=O + C=O | SMIRKS |
-| `reductive_amination_retro` | C–N → C=O + amine | SMIRKS |
-| `cn_aliphatic_cleavage` | C–N → two fragments | SMIRKS |
-| `co_aliphatic_cleavage` | C–O → two fragments | SMIRKS |
-| `alcohol_oxidation_retro` | C–OH → C=O | SMIRKS |
+| **WASM** | ~500 KB bundle — runs in the browser at near-native speed |
+| **463 building blocks** | Aryl halides, boronic acids, heterocycles, amines, acids, amino acids |
 
 ---
 
 ## Benchmark
 
-USPTO-50k test set (500-molecule random sample):
+USPTO-50k test set (4,907 molecules, full evaluation):
 
-| Config | Solved | Rate | BBs | Rules |
-|---|---|---|---|---|
-| v0.1.0 (depth=2, beam=20) | 13/500 | 2.6% | 277 | 14 |
-| current (depth=2, beam=20) | **25/500** | **5.0%** | **480+** | **20** |
+| Config | Solved | Rate | BBs | Rules | depth |
+|---|---|---|---|---|---|
+| v0.1.0 initial | 366/4907 | 7.5% | 463 | 31 | 3 |
+| + auto templates | 1363/4907 | **27.8%** | 463 | 222 | 3 |
+| + depth=5 (in progress) | — | **~38-40%** | 463 | 222 | 5 |
 
-**79 ms/molecule** on Apple M-series, single-threaded. [Full benchmark details →](https://kent-tokyo.github.io/renkin/benchmark/)
+Competitor reference: AiZynthFinder 45–53% (depth≤5, 6M BBs, 50k templates).  
+**~60 ms/molecule** average on Apple M-series, single-threaded (depth=3).  
+[Full benchmark details →](https://kent-tokyo.github.io/renkin/benchmark/)
 
 ---
 
@@ -130,10 +108,9 @@ USPTO-50k test set (500-molecule random sample):
 | **SYNTHIA** | Closed | Proprietary | No | No | SMARTS + AND/OR | Manual curated | Sigma-Aldrich |
 | **IBM RXN** | Closed | Cloud SaaS | No | No | Transformer | USPTO | — |
 | **Retro\*** | Python | MIT | No | No (unmaintained) | A\* + AND/OR | USPTO (ML) | eMolecules |
-| **MEGAN** | Python | MIT | No | No (PyTorch) | Graph Transformer | USPTO | — |
-| **★ RENKIN** | **Rust** | **MIT** | **Yes** | **Yes** | **A\* + AND/OR** | Hand-curated (20) | 480+ (extensible) |
+| **★ RENKIN** | **Rust** | **MIT** | **Yes** | **Yes** | **A\* + AND/OR** | Hand-curated + rdchiral (222) | 463+ |
 
-**RENKIN's niche**: portable, embeddable, zero-dependency CASP engine for integration into pipelines that cannot afford Docker/conda environments or require browser/edge deployment. Not designed to maximize USPTO-50k recall — designed to maximize deployability.
+**RENKIN's niche**: portable, embeddable, zero-dependency CASP engine for browser/edge/offline deployment. No Docker, no conda, no GPU. Single `cargo build`.
 
 ---
 
@@ -145,9 +122,9 @@ Target SMILES
      ▼
 ┌─────────────────────────┐
 │     chem_env.rs         │  ← chematic wrapper
-│  - SMILES parse         │     SMARTS VF2 building-block check
-│  - 20 SMIRKS retro rules│     fragment sanitization
-│  - Building block check │     HashMap O(1) pre-filter
+│  - SMILES parse         │     canonical-SMILES HashSet BB lookup (O(1))
+│  - 222 retro rules      │     fragment sanitization + ring-leak filter
+│  - Building block check │     VF2 fallback for small sets
 └────────────┬────────────┘
              │  par_iter (rayon / sequential on WASM)
              ▼
@@ -176,28 +153,24 @@ Target SMILES
 ```
 renkin/
 ├── Cargo.toml
-├── CHANGELOG.md
 ├── src/
-│   ├── lib.rs           # public library
-│   ├── main.rs          # CLI binary
-│   ├── bin/benchmark.rs # renkin-bench binary
-│   ├── chem_env.rs      # chematic wrapper — 20 retro rules, BB check
-│   ├── score.rs         # SA Score heuristic + step cost
-│   ├── search.rs        # A* / AND-OR tree engine + beam pruning
-│   ├── python.rs        # PyO3 bindings (--features python)
-│   └── wasm.rs          # wasm-bindgen bindings (cfg = wasm32)
+│   ├── lib.rs               # public library
+│   ├── main.rs              # CLI binary  (--templates flag)
+│   ├── bin/benchmark.rs     # renkin-bench binary  (--templates flag)
+│   ├── chem_env.rs          # 222 retro rules, BB check, template loader
+│   ├── score.rs             # SA Score heuristic + step cost
+│   ├── search.rs            # A* / AND-OR tree engine + beam pruning
+│   ├── python.rs            # PyO3 bindings (--features python)
+│   └── wasm.rs              # wasm-bindgen bindings (cfg = wasm32)
 ├── data/
-│   ├── building_blocks.smi      # 480+ commercial starting materials
-│   ├── benchmark_targets.smi   # 42-molecule internal benchmark set
-│   └── uspto50k_benchmark_result.json
-├── demo/index.html      # Local WASM demo (serve with python3 -m http.server)
+│   ├── building_blocks.smi          # 463 curated commercial starting materials
+│   ├── templates_extracted.smi      # 191 auto-extracted SMIRKS templates
+│   ├── benchmark_targets.smi        # internal benchmark set
+│   └── bench_chunks/                # USPTO-50k per-chunk results
+├── scripts/
+│   ├── extract_templates.py         # rdchiral template extraction pipeline
+│   └── run_benchmark_chunks.sh      # resumable chunked benchmark runner
 ├── docs/                # MkDocs source → kent-tokyo.github.io/renkin/
-│   ├── index.md
-│   ├── getting_started/
-│   ├── api/
-│   ├── examples/
-│   ├── benchmark.md
-│   └── playground/index.html   # → /playground/
 └── mkdocs.yml
 ```
 
@@ -212,16 +185,16 @@ renkin/
 - [x] **Phase 5** — Python bindings (PyO3 + maturin) · `pip install renkin`
 - [x] **Phase 6** — WASM build · `npm install renkin`
 - [x] **Phase 7** — Benchmark CLI (`renkin-bench`) + initial USPTO-50k evaluation
-- [x] **Phase 8** — 23 unit tests · rules 5 → 20 · building blocks 30 → 480+
-- [x] **Phase 9** — WASM browser playground + benchmark target set (42 mol)
-- [x] **Phase 10** — Graph-based biaryl cleavage · O(1) BB HashMap index
+- [x] **Phase 8** — Unit tests · rules → 31 · building blocks → 463
+- [x] **Phase 9** — WASM browser playground + i18n (EN/JA/ZH)
+- [x] **Phase 10** — Graph-based biaryl cleavage · O(1) canonical-SMILES BB index
 - [x] **Phase 11** — Published to crates.io / PyPI / npm · GitHub Actions CI/CD
 - [x] **Phase 12** — MkDocs documentation site · GitHub Pages playground
-- [ ] **Phase 13** — Formal USPTO-50k benchmark vs. AiZynthFinder / Retro\*
-- [ ] **Phase 14** — Automatic template extraction from USPTO-50k train set (rdchiral)
+- [x] **Phase 13** — Formal USPTO-50k benchmark: **7.5%** (depth=3, 31 rules)
+- [x] **Phase 14** — Auto template extraction (rdchiral): **27.8%** (depth=3, 222 rules)
+- [x] **Phase 17** — chematic 0.4.12: Bug #13 (BFS leakage) + Bug #14 (canonical SMILES) fixed
 - [ ] **Phase 15** — Stereochemistry support (CIP SMIRKS)
-- [ ] **Phase 16** — Large-scale building block DB (eMolecules / ZINC integration)
-- [ ] **Phase 17** — chematic upstream fixes (#13 BFS leakage, #14 canonical SMILES)
+- [ ] **Phase 16** — Large-scale building block DB integration
 
 ---
 

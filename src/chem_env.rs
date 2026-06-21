@@ -1409,74 +1409,26 @@ fn canonical_smiles_is_deterministic() {
 }
 
 #[cfg(test)]
-mod template_load_tests {
-    #[test]
-    fn debug_template_parse() {
-        use chematic::smarts::parse_smarts;
-        let samples = [
-            "[O;D1;H0:3]=[C:2]-[OH;D1;+0:1]",
-            "[NH2;D1;+0:1]-[c:2]",
-            "[C:2]-[NH;D2;+0:1]-[C:3]",
-            "[c:1][C:2](=[O:3])",
-        ];
-        for s in &samples {
-            match parse_smarts(s) {
-                Ok(_) => println!("OK: {s}"),
-                Err(e) => println!("ERR({e:?}): {s}"),
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-mod template_simplified_tests {
-    #[test]
-    fn debug_simplified_parse() {
-        use chematic::smarts::parse_smarts;
-        let samples = [
-            "[O:3]=[C:2]-[OH:1]",
-            "[NH2:1]-[c:2]",
-            "[C:2]-[NH:1]-[C:3]",
-            "[OH:1]-[c:2]",
-            "[C:2]-[NH2:1]",
-        ];
-        for s in &samples {
-            match parse_smarts(s) {
-                Ok(_) => println!("OK: {s}"),
-                Err(e) => println!("ERR({e:?}): {s}"),
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-mod emolecules_canon_debug {
+mod bug13_regression {
     use super::*;
 
+    /// Regression test for chematic Bug #13 (fixed in 0.4.12):
+    /// run_reactants must not leak BFS across product templates.
+    /// Amide cleavage of acetanilide must give exactly 2 clean products.
     #[test]
-    fn debug_build_sub_vs_parse_canonical() {
-        // アセトアニリド → アミド切断 → 酢酸 + アニリン の後、
-        // build_sub_molecule で得た分子の canonical SMILES を確認
-        let acetanilide = parse("CC(=O)Nc1ccccc1").unwrap();
-        let results = amide_cleavage(&acetanilide);
-        println!("amide_cleavage results: {}", results.len());
-        for (i, group) in results.iter().enumerate() {
-            for (j, precursor) in group.iter().enumerate() {
-                let mol = &precursor.mol;
-                let c = canonical_smiles(mol);
-                let re = parse(&c).map(|m| canonical_smiles(&m)).unwrap_or_default();
-                println!("  [{i}][{j}] canonical='{c}', re-parse='{re}'");
-                // eMolecules ファイルに存在するか
-                // CC(=O)O は acetic acid, Nc1ccccc1 は aniline
-                println!(
-                    "    vs CC(=O)O canon: '{}'",
-                    canonical_smiles(&parse("CC(=O)O").unwrap())
-                );
-                println!(
-                    "    vs Nc1ccccc1 canon: '{}'",
-                    canonical_smiles(&parse("Nc1ccccc1").unwrap())
-                );
-            }
+    fn smirks_amide_cleavage_no_bfs_leakage() {
+        let mol = parse("CC(=O)Nc1ccccc1").unwrap();
+        let smirks = "[C:1](=[O:2])[N:3]>>[C:1](=[O:2])O.[N:3]";
+        let results = run_reactants(smirks, &[&mol]).unwrap_or_default();
+        assert!(!results.is_empty(), "expected at least one result set");
+        for group in &results {
+            assert_eq!(
+                group.len(),
+                2,
+                "expected exactly 2 products, got {}: {:?}",
+                group.len(),
+                group.iter().map(canonical_smiles).collect::<Vec<_>>()
+            );
         }
     }
 }

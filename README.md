@@ -110,7 +110,7 @@ Competitor reference: AiZynthFinder 45–53% (depth≤5, 6M BBs, 50k templates).
 | **Retro\*** | Python | MIT | No | No (unmaintained) | A\* + AND/OR | USPTO (ML) | eMolecules |
 | **★ RENKIN** | **Rust** | **MIT** | **Yes** | **Yes** | **A\* + AND/OR** | Hand-curated + rdchiral (314) | 463+ |
 
-**RENKIN's niche**: portable, embeddable, zero-dependency CASP engine for browser/edge/offline deployment. No Docker, no conda, no GPU. Single `cargo build`.
+**RENKIN's goal**: match or exceed neural-network-based tools using only curated rules and auto-extracted SMIRKS templates — no GPU, no training data, no black boxes. At 47.2% USPTO-50k (surpassing ASKCOS and reaching AiZynthFinder's lower bound), RENKIN demonstrates that a transparent, rule-based engine in pure Rust can compete with deep-learning approaches. And it runs anywhere: browser, CLI, Python — single `cargo build`.
 
 ---
 

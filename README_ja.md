@@ -110,7 +110,7 @@ ASKCOS（41%）を超え、AiZynthFinder 下限（45%）に到達。463件のキ
 | **Retro\*** | Python | MIT | No | No（未メンテ） | A\*+AND/OR | USPTO（ML） | eMolecules |
 | **★ RENKIN** | **Rust** | **MIT** | **Yes** | **Yes** | **A\*+AND/OR** | 手動+rdchiral（314件） | 463+（拡張可） |
 
-**RENKINのポジション**: Docker/condaが使えない環境、ブラウザ/エッジ/オフラインデプロイが必要な場面に最適なCASPエンジン。`cargo build` 一発で動く。
+**RENKINの目標**: GPU なし・学習データなし・ブラックボックスなし——キュレーション済みルールと自動抽出テンプレートだけで、ニューラルネットベースのツールに匹敵する精度を目指す。現時点で **47.2% USPTO-50k**（ASKCOS を超え、AiZynthFinder 下限に到達）を達成。透明なルールベース Rust 製エンジンが深層学習に肉薄できることを証明しつつある。そしてブラウザ・CLI・Python、どこでも動く。
 
 ---
 

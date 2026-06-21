@@ -641,12 +641,10 @@ pub fn default_rules() -> Vec<RetroRule> {
 /// Validates each template by running it against a probe molecule; only templates
 /// that chematic's run_reactants can handle (even if they produce no matches) are kept.
 pub fn load_rules_from_file(path: &str) -> Vec<RetroRule> {
-    // Use a simple probe molecule (benzene) to test whether run_reactants can parse the SMIRKS.
-    // A parse error returns Err; empty Ok([]) just means no match on this probe — that's fine.
-    let probe = match parse("c1ccccc1") {
-        Ok(m) => m,
-        Err(_) => return vec![],
-    };
+    // Validate each template by parsing the reactant side with parse_smarts.
+    // chematic 0.4.14 fixed issue #19: parse_smarts now accepts atom-map notation (:N),
+    // so we can validate SMIRKS reactant patterns directly instead of running them
+    // against a probe molecule.
     let content = match std::fs::read_to_string(path) {
         Ok(c) => c,
         Err(e) => {
@@ -661,12 +659,9 @@ pub fn load_rules_from_file(path: &str) -> Vec<RetroRule> {
         .enumerate()
         .filter_map(|(i, line)| {
             let smirks = line.split('\t').next()?.trim();
-            if !smirks.contains(">>") {
-                return None;
-            }
-            // Validate: run_reactants must not return Err (parse failure).
-            // An empty Ok([]) means the template simply didn't match the probe — still valid.
-            run_reactants(smirks, &[&probe]).ok()?;
+            let reactant = smirks.split(">>").next()?;
+            // Validate that chematic can parse the reactant SMARTS pattern.
+            parse_smarts(reactant).ok()?;
             Some(RetroRule {
                 name: format!("extracted_{i}"),
                 smirks: smirks.to_string(),
@@ -1226,8 +1221,8 @@ mod tests {
             flat.iter().any(|s| s.contains("Br")),
             "products must include aryl bromide; got {flat:?}"
         );
-        // chematic may serialise ethylene as "C=C" or "[CH2]=[CH2]" depending on
-        // whether the Molecule was constructed with implicit or explicit H counts.
+        // Note: chematic may serialise ethylene as "C=C" or "[CH2]=[CH2]" depending on
+        // internal H-count representation; both are correct for this test.
         assert!(
             flat.iter().any(|s| s == "C=C" || s == "[CH2]=[CH2]"),
             "products must include ethylene; got {flat:?}"
@@ -1429,6 +1424,39 @@ mod bug13_regression {
                 group.len(),
                 group.iter().map(canonical_smiles).collect::<Vec<_>>()
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod chematic_regression {
+    use super::*;
+
+    /// Regression test for chematic issue #19 (fixed in 0.4.14):
+    /// parse_smarts must accept atom-map notation (:N).
+    #[test]
+    fn parse_smarts_accepts_atom_maps() {
+        assert!(parse_smarts("[C:1](=[O:2])[N:3]").is_ok());
+        assert!(parse_smarts("[NH2:1]-[c:2]").is_ok());
+        assert!(parse_smarts("[O:1]=[C:2]").is_ok());
+    }
+
+    /// Regression test for chematic issue #18 (fixed in 0.4.14):
+    /// run_reactants products must not have unnecessary bracket atoms.
+    #[test]
+    fn run_reactants_products_no_bracket_atoms() {
+        let mol = parse("CC(=O)Nc1ccccc1").unwrap();
+        let smirks = "[C:1](=[O:2])[N:3]>>[C:1](=[O:2])O.[N:3]";
+        let results = run_reactants(smirks, &[&mol]).unwrap_or_default();
+        assert!(!results.is_empty());
+        for group in &results {
+            for product in group {
+                let canon = canonical_smiles(product);
+                assert!(
+                    !canon.starts_with('['),
+                    "product has unexpected bracket atom: {canon}"
+                );
+            }
         }
     }
 }

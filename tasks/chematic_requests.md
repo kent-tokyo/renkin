@@ -11,8 +11,8 @@
 | [#14](https://github.com/kent-tokyo/chematic/issues/14) | ✅ CLOSED (0.4.12 修正) | Non-deterministic canonical SMILES |
 | [#15](https://github.com/kent-tokyo/chematic/issues/15) | ✅ CLOSED | run_reactants clean molecule guarantee |
 | [#16](https://github.com/kent-tokyo/chematic/issues/16) | ✅ CLOSED | is_same_molecule() convenience function |
-| [#18](https://github.com/kent-tokyo/chematic/issues/18) | 🔴 OPEN | run_reactants products contain bracket atoms ([O], [N]) |
-| [#19](https://github.com/kent-tokyo/chematic/issues/19) | 🔴 OPEN | parse_smarts rejects atom-map notation (:N) |
+| [#18](https://github.com/kent-tokyo/chematic/issues/18) | ✅ CLOSED (0.4.14 修正) | run_reactants products contain bracket atoms ([O], [N]) |
+| [#19](https://github.com/kent-tokyo/chematic/issues/19) | ✅ CLOSED (0.4.14 修正) | parse_smarts rejects atom-map notation (:N) |
 | [#20](https://github.com/kent-tokyo/chematic/issues/20) | 🔴 OPEN | Feature: tetrahedral stereochemistry (@/@@) in run_reactants |
 
 ---

@@ -16,7 +16,7 @@ exclude       = [
     "data/bench_chunks*/**",
     "data/uspto50k_test.smi",
     "data/uspto50k_benchmark_result*.json",
-    "data/templates_extracted_500.smi",
+    "data/templates_extracted*.smi",
     "docs/playground/**",
     "tasks/**",
     "scripts/**",

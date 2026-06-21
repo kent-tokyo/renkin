@@ -6,7 +6,7 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [Unreleased]
+## [0.1.1] — 2026-06-22
 
 ### Added
 - **Auto template extraction pipeline** (`scripts/extract_templates.py`)
@@ -96,5 +96,6 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
 
 ---
 
-[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/kent-tokyo/renkin/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/kent-tokyo/renkin/releases/tag/v0.1.0

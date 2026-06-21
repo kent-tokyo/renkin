@@ -95,26 +95,14 @@ impl ChemEnv {
 
     /// Check if `mol` is in the building-block library.
     ///
-    /// Primary: O(1) canonical-SMILES HashSet lookup with double-pass normalisation.
-    /// Double-pass (mol → SMILES string → re-parse → canonical) ensures consistent
-    /// canonical form regardless of how the Molecule was constructed (from string vs
-    /// from graph manipulation), working around chematic Bug #14.
-    ///
+    /// Primary: O(1) canonical-SMILES HashSet lookup.
     /// Fallback: VF2 subgraph isomorphism (small sets only, bb_count ≤ VF2_THRESHOLD).
     pub fn is_building_block(&self, mol: &Molecule) -> bool {
-        // Double-pass: mol → SMILES → re-parse → canonical
-        // Molecules from build_sub_molecule() and from parse() can differ in internal
-        // representation and produce different canonical SMILES on the first pass.
-        // Re-parsing normalises both to the same canonical form.
-        let smiles_str = canonical_smiles(mol);
-        let canon = match parse(&smiles_str) {
-            Ok(reparsed) => canonical_smiles(&reparsed),
-            Err(_) => smiles_str,
-        };
+        let canon = canonical_smiles(mol);
         if self.canon_set.contains(&canon) {
             return true;
         }
-        // VF2 fallback for small sets (catches edge cases Bug #14 still misses)
+        // VF2 fallback for small sets
         if !self.vf2_index.is_empty() {
             let key = (mol.atom_count(), mol.bonds().count());
             if let Some(candidates) = self.vf2_index.get(&key) {
@@ -1398,32 +1386,24 @@ mod tests {
 }
 
 #[test]
-#[ignore]
-fn debug_canonical_smiles_consistency() {
-    // Check if chematic gives consistent canonical SMILES
-    // for the same molecule represented in different input forms.
+fn canonical_smiles_is_deterministic() {
+    // Regression test for chematic Bug #14 (fixed in 0.4.12):
+    // canonical_smiles() must return the same string for the same molecule
+    // regardless of how the SMILES was written.
+    // Note: aromatic vs Kekulé (c1ccccc1 vs C1=CC=CC=C1) are treated as
+    // different representations by chematic and intentionally excluded here.
     let pairs = [
         ("Nc1ccccc1", "c1ccc(N)cc1", "aniline"),
         ("Oc1ccccc1", "c1ccc(O)cc1", "phenol"),
-        ("c1ccccc1", "C1=CC=CC=C1", "benzene"),
         ("Brc1ccccc1", "c1ccc(Br)cc1", "bromobenzene"),
         ("CC(=O)O", "OC(C)=O", "acetic acid"),
     ];
     for (s1, s2, name) in pairs {
         let c1 = canonical_smiles(&parse(s1).unwrap());
         let c2 = canonical_smiles(&parse(s2).unwrap());
-        let dp1 = canonical_smiles(&parse(&c1).unwrap());
-        let dp2 = canonical_smiles(&parse(&c2).unwrap());
-        eprintln!(
-            "{}: '{}' → '{}' (2-pass '{}'), '{}' → '{}' (2-pass '{}'), match={}",
-            name,
-            s1,
-            c1,
-            dp1,
-            s2,
-            c2,
-            dp2,
-            dp1 == dp2
+        assert_eq!(
+            c1, c2,
+            "{name}: '{s1}' and '{s2}' should have the same canonical SMILES"
         );
     }
 }
@@ -1464,6 +1444,38 @@ mod template_simplified_tests {
             match parse_smarts(s) {
                 Ok(_) => println!("OK: {s}"),
                 Err(e) => println!("ERR({e:?}): {s}"),
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod emolecules_canon_debug {
+    use super::*;
+
+    #[test]
+    fn debug_build_sub_vs_parse_canonical() {
+        // アセトアニリド → アミド切断 → 酢酸 + アニリン の後、
+        // build_sub_molecule で得た分子の canonical SMILES を確認
+        let acetanilide = parse("CC(=O)Nc1ccccc1").unwrap();
+        let results = amide_cleavage(&acetanilide);
+        println!("amide_cleavage results: {}", results.len());
+        for (i, group) in results.iter().enumerate() {
+            for (j, precursor) in group.iter().enumerate() {
+                let mol = &precursor.mol;
+                let c = canonical_smiles(mol);
+                let re = parse(&c).map(|m| canonical_smiles(&m)).unwrap_or_default();
+                println!("  [{i}][{j}] canonical='{c}', re-parse='{re}'");
+                // eMolecules ファイルに存在するか
+                // CC(=O)O は acetic acid, Nc1ccccc1 は aniline
+                println!(
+                    "    vs CC(=O)O canon: '{}'",
+                    canonical_smiles(&parse("CC(=O)O").unwrap())
+                );
+                println!(
+                    "    vs Nc1ccccc1 canon: '{}'",
+                    canonical_smiles(&parse("Nc1ccccc1").unwrap())
+                );
             }
         }
     }

@@ -77,8 +77,9 @@ USPTO-50k は逆合成研究の標準ベンチマーク（約 4,907 件のテス
 | **RENKIN v0.1.0（最新）** | **7.5%** | 全 4,907 件、depth=3、beam=50、463 BB、31 ルール | 社内計測 2026-06-20 |
 | **RENKIN（深さ別）** | depth=1: 1.3% / depth=2: 4.0% / depth=3: 7.5% | 全件、beam=50、463 BB | 社内計測 |
 | **RENKIN + 191 抽出テンプレート** | **27.8%** | 全 4,907 件、depth=3、beam=50、463 BB、222 ルール（31+191）| 社内計測 2026-06-21 |
-| **RENKIN + eMolecules 4.4M BB** | **≈0%** | 全件、depth=3、beam=50。chematic Bug #14 により canonical SMILES 一致失敗 | 社内計測 2026-06-20 |
-| **RENKIN（目標）** | **35-45%** | Bug #14 修正 + 4.4M BB + 抽出テンプレート + depth=5 | 予測値 |
+| **RENKIN + eMolecules 4.4M BB（Bug #14修正前）** | **≈0%** | 全件、depth=3、beam=50。canonical SMILES 不一致 | 社内計測 2026-06-20 |
+| **RENKIN + 463BB + eMolecules 4.4M（chematic 0.4.12）** | **≈26%** | 100 mol サンプル、depth=3。eMolecules は基本試薬欠如のため単独では非効果 | 社内計測 2026-06-21 |
+| **RENKIN（目標）** | **35-45%** | depth=5 + テンプレート増強（現在 depth=5 実行中） | 予測値 |
 | AiZynthFinder | 45-53% | depth≤5、6M BB、50k テンプレート | Genheden et al., J. Cheminform. 2020 |
 | Retro\* | 44.3% | depth≤5、20k BB、17k テンプレート | Chen et al., NeurIPS 2019 |
 | ASKCOS | 41% | depth≤5、195k テンプレート | Coley et al., Science 2019 |

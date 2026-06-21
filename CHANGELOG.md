@@ -6,6 +6,20 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Changed
+- chematic dependency updated to **0.4.15** / chematic-rxn **0.4.15**
+  - Issue #21 (E/Z double-bond stereo in `run_reactants`) now active:
+    SMIRKS with `/`/`\` on both sides of a double bond correctly filters
+    reactants whose geometry does not match (filter/point 1)
+
+### Added
+- Regression test `ez_stereo_filter_rejects_wrong_geometry` — verifies that
+  a Z-selective SMIRKS rejects E-alkene reactants (chematic #21)
+
+---
+
 ## [0.1.2] — 2026-06-22
 
 ### Added

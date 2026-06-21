@@ -1458,4 +1458,28 @@ mod chematic_regression {
             }
         }
     }
+
+    /// Regression test for chematic issue #21 (fixed in 0.4.15):
+    /// run_reactants must filter reactants by E/Z geometry when SMIRKS specifies /\.
+    /// Using the retro-Wittig example from the issue: Z-specific SMIRKS must not match E-alkene.
+    #[test]
+    fn ez_stereo_filter_rejects_wrong_geometry() {
+        // Z-selective SMIRKS: [C:1]/[C:2]=[C:3]\[C:4] matches only Z-alkenes
+        let smirks = "[C:1]/[C:2]=[C:3]\\[C:4]>>[C:1][C:2]=O.[O:3]=[C:4]";
+        let z_hexene = parse("CC/C=C\\CC").unwrap(); // (Z)-3-hexene — should match
+        let e_hexene = parse("CC/C=C/CC").unwrap(); // (E)-3-hexene — must NOT match
+
+        let z_results = run_reactants(smirks, &[&z_hexene]).unwrap_or_default();
+        let e_results = run_reactants(smirks, &[&e_hexene]).unwrap_or_default();
+
+        assert!(
+            !z_results.is_empty(),
+            "Z-alkene must match Z-SMIRKS (chematic #21 regression)"
+        );
+        assert!(
+            e_results.is_empty(),
+            "E-alkene must NOT match Z-SMIRKS (chematic #21 regression); got {} result set(s)",
+            e_results.len()
+        );
+    }
 }

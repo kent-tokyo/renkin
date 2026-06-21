@@ -22,9 +22,9 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
 name = "chematic"
-version = "0.4.14"
+version = "0.4.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc855fa012720818d6ada8cf4f33c5276b63435dc83cbafe88b1fa473c106679"
+checksum = "1724a31a234a702912b919a7860244f901dcb95b9d60359178cf1d086ce6beb2"
 dependencies = [
  "chematic-chem",
  "chematic-core",
@@ -88,9 +88,9 @@ dependencies = [
 
 [[package]]
 name = "chematic-rxn"
-version = "0.4.14"
+version = "0.4.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f25dfd0d7ca3c30e2d6a897a3245a48f546ac960b9b3cf8d8d1b14046c74efb"
+checksum = "900edb0d0a10feb7ab561d1763d181148fd16ac323ee81a8454ae9f74ff644a6"
 dependencies = [
  "chematic-core",
  "chematic-smarts",

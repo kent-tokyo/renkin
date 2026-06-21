@@ -21,8 +21,9 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `is_bb` in search uses this as a fast path with VF2 fallback preserved for correctness
 - **top-5000 template extraction** — `data/templates_extracted_5000.smi` (5,000 templates from
   USPTO-50k training set via `scripts/extract_templates.py --top 5000`)
-- **chematic issue #21 filed** — E/Z double-bond stereochemistry (`/`/`\`) in SMIRKS not applied
-  by `run_reactants`; tracked at https://github.com/kent-tokyo/chematic/issues/21
+- **chematic issue #21 resolved** — E/Z double-bond stereochemistry (`/`/`\`) in SMIRKS:
+  filter (point 1) implemented upstream; reactants with mismatched E/Z geometry are now rejected.
+  Pending chematic release and RENKIN Phase 15 integration (transfer/create remain as follow-up).
 
 ### Changed
 - **`split_fragments` de-duplicated canonicalization** — removed redundant second `canonical_smiles`
@@ -40,7 +41,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Known Limitations
 - WASM playground uses 31 hand-crafted rules only (size/bindgen constraints)
 - Tetrahedral stereochemistry (`@`/`@@`) fixed in chematic v0.4.13; RENKIN Phase 15 integration pending
-- E/Z double-bond stereochemistry (`/`/`\`) in SMIRKS: chematic issue #21 filed, fix pending
+- E/Z double-bond stereochemistry (`/`/`\`) in SMIRKS: filter fixed upstream (chematic #21);
+  pending release + RENKIN Phase 15 integration (transfer/create remain)
 - All benchmark numbers (47.2%, 71%) measured on USPTO-50k standard train/test split (same corpus).
   Out-of-distribution generalization not yet evaluated.
 
@@ -91,7 +93,7 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Known Limitations
 - WASM playground uses 31 hand-crafted rules only (auto-extracted templates not bundled — size/bindgen constraints)
 - Tetrahedral stereochemistry (`@`/`@@`) in SMIRKS — fixed in chematic v0.4.13 (issue #20); RENKIN Phase 15 integration pending
-- E/Z double-bond stereochemistry (`/`/`\`) in SMIRKS — not yet supported (chematic issue #21 filed)
+- E/Z double-bond stereochemistry (`/`/`\`) in SMIRKS — filter fixed in chematic (#21); pending release + RENKIN Phase 15 integration
 
 ---
 

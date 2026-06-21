@@ -61,7 +61,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
-      id-token: write   # required for OIDC trusted publisher
+      id-token: write
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -72,9 +72,8 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
-          # To migrate to OIDC trusted publisher (no token needed):
-          # pypi.org → Project → Settings → Publishing → add GitHub publisher
           password: ${{ secrets.PYPI_TOKEN }}
+          skip-existing: true
 
   # ── Publish to npm (WASM) ─────────────────────────────────────────────────
   publish-npm:
@@ -86,17 +85,22 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-      - uses: jetli/wasm-pack-action@v0.4.0
-        with:
-          version: latest
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
       - run: wasm-pack build --target web --no-default-features
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           registry-url: 'https://registry.npmjs.org'
-      - name: Publish
+      - name: Publish (skip if already published)
         working-directory: pkg
-        run: npm publish --access public
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view "renkin@${VERSION}" version 2>/dev/null; then
+            echo "renkin@${VERSION} already published, skipping"
+          else
+            npm publish --access public
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 

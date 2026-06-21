@@ -23,12 +23,12 @@ pub struct RetroRule {
 /// - `canon_set`: canonical-SMILES HashSet used for all lookups (O(1), low memory).
 ///   Scales to millions of BBs (500k BBs ≈ 12 MB vs 2.8 GB for VF2 QueryMolecules).
 /// - `vf2_index`: (atom_count, bond_count) → VF2 QueryMolecule fallback for small
-///   sets (DEFAULT_BUILDING_BLOCKS). Kept for correctness when canonical SMILES
-///   might diverge due to chematic Bug #14.
+///   sets (DEFAULT_BUILDING_BLOCKS). Provides a secondary confirmation when the
+///   canonical-SMILES check fails, e.g. for molecules with explicit-H notation
+///   produced by `run_reactants`.
 ///
-/// In practice the canonical-SMILES path is used for all lookups; the VF2 index
-/// provides a secondary confirmation only when the canon check fails and the VF2
-/// index is populated (small in-memory sets).
+/// In practice the canonical-SMILES path handles all lookups; the VF2 index
+/// only activates when `bb_count ≤ VF2_THRESHOLD` (small in-memory sets).
 pub struct ChemEnv {
     /// Canonical SMILES of every BB — primary fast lookup.
     canon_set: HashSet<String>,

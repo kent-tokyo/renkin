@@ -7,9 +7,9 @@ set -e
 
 INPUT="${1:-data/uspto50k_test.smi}"
 TEMPLATES="${2:-data/templates_extracted.smi}"
-CHUNK_DIR="data/bench_chunks"
-DEPTH=3
-BEAM=50
+CHUNK_DIR="${3:-data/bench_chunks}"
+DEPTH="${4:-3}"
+BEAM="${5:-50}"
 
 mkdir -p "$CHUNK_DIR"
 
@@ -31,6 +31,17 @@ TOTAL_SOLVED=0
 TOTAL_MOLS=0
 CHUNK_NUM=0
 
+# json_field <file> <field>: safely extract a numeric JSON field using jq or python3.
+# Uses file path as a positional arg — never interpolated into code strings.
+json_field() {
+    local file="$1" field="$2"
+    if command -v jq >/dev/null 2>&1; then
+        jq ".$field" "$file" 2>/dev/null || echo 0
+    else
+        python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d['$field'])" "$file" 2>/dev/null || echo 0
+    fi
+}
+
 for CHUNK in $CHUNKS; do
     CHUNK_NUM=$((CHUNK_NUM + 1))
     CHUNK_NAME=$(basename "$CHUNK")
@@ -38,8 +49,8 @@ for CHUNK in $CHUNKS; do
 
     # Skip already-completed chunks
     if [ -s "$OUT" ]; then
-        SOLVED=$(python3 -c "import json; d=json.load(open('$OUT')); print(d['solved'])" 2>/dev/null || echo 0)
-        MOLS=$(python3 -c "import json; d=json.load(open('$OUT')); print(d['total'])" 2>/dev/null || echo 0)
+        SOLVED=$(json_field "$OUT" solved)
+        MOLS=$(json_field "$OUT" total)
         TOTAL_SOLVED=$((TOTAL_SOLVED + SOLVED))
         TOTAL_MOLS=$((TOTAL_MOLS + MOLS))
         echo "[${CHUNK_NUM}/${TOTAL_CHUNKS}] $CHUNK_NAME — already done ($SOLVED/$MOLS), skipping"
@@ -60,8 +71,8 @@ for CHUNK in $CHUNKS; do
     END=$(date +%s)
     ELAPSED=$((END - START))
 
-    SOLVED=$(python3 -c "import json; d=json.load(open('$OUT')); print(d['solved'])" 2>/dev/null || echo 0)
-    MOLS=$(python3 -c "import json; d=json.load(open('$OUT')); print(d['total'])" 2>/dev/null || echo 0)
+    SOLVED=$(json_field "$OUT" solved)
+    MOLS=$(json_field "$OUT" total)
     TOTAL_SOLVED=$((TOTAL_SOLVED + SOLVED))
     TOTAL_MOLS=$((TOTAL_MOLS + MOLS))
 

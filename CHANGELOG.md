@@ -6,7 +6,7 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [Unreleased]
+## [0.1.2] — 2026-06-22
 
 ### Added
 - **Phase A: Template frequency weighting** — `RetroRule.weight = ln(count+1)` from USPTO-50k

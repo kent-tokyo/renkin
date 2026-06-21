@@ -9,7 +9,7 @@ documentation = "https://docs.rs/renkin"
 readme        = "README.md"
 license       = "MIT"
 keywords      = ["retrosynthesis", "cheminformatics", "chemistry", "wasm", "drug-discovery"]
-categories    = ["science", "wasm", "command-line-utilities", "algorithms"]
+categories    = ["science::computational-chemistry::cheminformatics", "wasm", "command-line-utilities", "algorithms"]
 
 [[bin]]
 name = "renkin"

@@ -153,15 +153,17 @@ fn main() -> Result<()> {
         rules.extend(extra);
     }
     #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
-    let nn_scorer: Option<std::sync::Arc<renkin::scorer::nn::TemplateScorer>> = scorer_path
-        .as_deref()
-        .map(|p| {
+    let nn_scorer: Option<std::sync::Arc<renkin::scorer::nn::TemplateScorer>> =
+        scorer_path.as_deref().map(|p| {
             // Default: all rules (reranker mode). Pass --scorer-top-k N to filter.
             let top_k = scorer_top_k.unwrap_or(rules.len());
             let rules_offset = default_rules().len();
             renkin::scorer::nn::TemplateScorer::from_path(p, top_k, rules_offset)
                 .map(std::sync::Arc::new)
-                .unwrap_or_else(|e| { eprintln!("scorer load error: {e}"); std::process::exit(1) })
+                .unwrap_or_else(|e| {
+                    eprintln!("scorer load error: {e}");
+                    std::process::exit(1)
+                })
         });
 
     let config = SearchConfig {

@@ -12,9 +12,9 @@
 /// Output format: "4 17 42 ..." (set bit indices, space-separated) or "ERR"
 #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
 fn main() {
-    use std::io::{self, BufRead, Write};
     use chematic::fp::{EcfpConfig, ecfp};
     use renkin::chem_env::mol_from_smiles;
+    use std::io::{self, BufRead, Write};
 
     const ECFP_CONFIG: EcfpConfig = EcfpConfig {
         radius: 2,
@@ -30,7 +30,10 @@ fn main() {
     for line in stdin.lock().lines() {
         let smiles = match line {
             Ok(s) => s,
-            Err(_) => { writeln!(out, "ERR").ok(); continue; }
+            Err(_) => {
+                writeln!(out, "ERR").ok();
+                continue;
+            }
         };
         let smiles = smiles.trim();
         if smiles.is_empty() || smiles.starts_with('#') {
@@ -46,7 +49,9 @@ fn main() {
                     .collect();
                 writeln!(out, "{}", bits.join(" ")).ok();
             }
-            Err(_) => { writeln!(out, "ERR").ok(); }
+            Err(_) => {
+                writeln!(out, "ERR").ok();
+            }
         }
     }
 }

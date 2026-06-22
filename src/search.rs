@@ -304,62 +304,58 @@ pub fn find_routes(
         // On cache miss: run apply_retro in parallel (native) / sequential (WASM),
         // filter invalid results, precompute net step cost, and store.
         // On cache hit: O(1) Arc::clone — no Vec data is copied.
-        let expansions: Arc<Vec<(String, f64, Vec<String>)>> =
-            if let Some(cached) = retro_cache.get(&target_smi) {
-                Arc::clone(cached)  // O(1): pointer copy only, no Vec clone
-            } else {
-                #[cfg(not(target_arch = "wasm32"))]
-                let raw: Vec<(String, f64, Vec<PrecursorMol>)> = ranked_rules
-                    .par_iter()
-                    .copied()
-                    .filter(|rule| {
-                        rule.required_elements == 0
-                            || (target_elem_mask & rule.required_elements
-                                == rule.required_elements)
-                    })
-                    .flat_map(|rule| {
-                        apply_retro(&target_mol, rule)
-                            .into_iter()
-                            .map(|precs| (rule.name.to_string(), rule.weight, precs))
-                            .collect::<Vec<_>>()
-                    })
-                    .collect();
-                #[cfg(target_arch = "wasm32")]
-                let raw: Vec<(String, f64, Vec<PrecursorMol>)> = ranked_rules
-                    .iter()
-                    .copied()
-                    .filter(|rule| {
-                        rule.required_elements == 0
-                            || (target_elem_mask & rule.required_elements
-                                == rule.required_elements)
-                    })
-                    .flat_map(|rule| {
-                        apply_retro(&target_mol, rule)
-                            .into_iter()
-                            .map(|precs| (rule.name.to_string(), rule.weight, precs))
-                            .collect::<Vec<_>>()
-                    })
-                    .collect();
+        let expansions: Arc<Vec<(String, f64, Vec<String>)>> = if let Some(cached) =
+            retro_cache.get(&target_smi)
+        {
+            Arc::clone(cached) // O(1): pointer copy only, no Vec clone
+        } else {
+            #[cfg(not(target_arch = "wasm32"))]
+            let raw: Vec<(String, f64, Vec<PrecursorMol>)> = ranked_rules
+                .par_iter()
+                .copied()
+                .filter(|rule| {
+                    rule.required_elements == 0
+                        || (target_elem_mask & rule.required_elements == rule.required_elements)
+                })
+                .flat_map(|rule| {
+                    apply_retro(&target_mol, rule)
+                        .into_iter()
+                        .map(|precs| (rule.name.to_string(), rule.weight, precs))
+                        .collect::<Vec<_>>()
+                })
+                .collect();
+            #[cfg(target_arch = "wasm32")]
+            let raw: Vec<(String, f64, Vec<PrecursorMol>)> = ranked_rules
+                .iter()
+                .copied()
+                .filter(|rule| {
+                    rule.required_elements == 0
+                        || (target_elem_mask & rule.required_elements == rule.required_elements)
+                })
+                .flat_map(|rule| {
+                    apply_retro(&target_mol, rule)
+                        .into_iter()
+                        .map(|precs| (rule.name.to_string(), rule.weight, precs))
+                        .collect::<Vec<_>>()
+                })
+                .collect();
 
-                let entries: Vec<(String, f64, Vec<String>)> = raw
-                    .into_iter()
-                    .filter(|(_, _, precs)| {
-                        !precs.is_empty()
-                            && !precs.iter().any(|p| p.smiles == target_smi)
-                    })
-                    .map(|(rule_name, rule_weight, precs)| {
-                        let step_c =
-                            step_cost(&precs.iter().map(|p| &p.mol).collect::<Vec<_>>())
-                                - template_bonus(rule_weight, max_rule_weight);
-                        let smiles_list: Vec<String> =
-                            precs.iter().map(|p| p.smiles.clone()).collect();
-                        (rule_name, step_c, smiles_list)
-                    })
-                    .collect();
-                let arc = Arc::new(entries);
-                retro_cache.insert(target_smi.clone(), Arc::clone(&arc));
-                arc  // no extra clone: Arc move
-            };
+            let entries: Vec<(String, f64, Vec<String>)> = raw
+                .into_iter()
+                .filter(|(_, _, precs)| {
+                    !precs.is_empty() && !precs.iter().any(|p| p.smiles == target_smi)
+                })
+                .map(|(rule_name, rule_weight, precs)| {
+                    let step_c = step_cost(&precs.iter().map(|p| &p.mol).collect::<Vec<_>>())
+                        - template_bonus(rule_weight, max_rule_weight);
+                    let smiles_list: Vec<String> = precs.iter().map(|p| p.smiles.clone()).collect();
+                    (rule_name, step_c, smiles_list)
+                })
+                .collect();
+            let arc = Arc::new(entries);
+            retro_cache.insert(target_smi.clone(), Arc::clone(&arc));
+            arc // no extra clone: Arc move
+        };
 
         for (rule_name, step_c, precursor_smiles) in expansions.iter() {
             let new_frontier: SmallVec<[FEntry; 6]> = node
@@ -367,7 +363,11 @@ pub fn find_routes(
                 .iter()
                 .filter(|e| e.smiles != target_smi)
                 .cloned()
-                .chain(precursor_smiles.iter().map(|s| FEntry { smiles: s.clone() }))
+                .chain(
+                    precursor_smiles
+                        .iter()
+                        .map(|s| FEntry { smiles: s.clone() }),
+                )
                 .collect();
 
             let new_h = compute_h(&new_frontier, env, &mut sa_cache);

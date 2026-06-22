@@ -62,13 +62,19 @@ pub mod nn {
                 .context("failed to optimize ONNX model")?
                 .into_runnable()
                 .context("failed to create runnable ONNX plan")?;
-            Ok(Self { model, top_k, rules_offset })
+            Ok(Self {
+                model,
+                top_k,
+                rules_offset,
+            })
         }
 
         /// Compute Morgan ECFP4 fingerprint as a flat Vec<f32> of length 2048.
         fn fingerprint(mol: &Molecule) -> Vec<f32> {
             let bv = ecfp(mol, &ECFP_CONFIG);
-            (0..2048).map(|i| if bv.get(i) { 1.0_f32 } else { 0.0_f32 }).collect()
+            (0..2048)
+                .map(|i| if bv.get(i) { 1.0_f32 } else { 0.0_f32 })
+                .collect()
         }
 
         /// Return indices into `rules` (length `n_rules`) of the rules to try.
@@ -114,7 +120,9 @@ pub mod nn {
             let k = self.top_k.min(n_file).min(scores.len());
             let mut file_indices: Vec<usize> = (0..scores.len().min(n_file)).collect();
             file_indices.sort_by(|&a, &b| {
-                scores[b].partial_cmp(&scores[a]).unwrap_or(std::cmp::Ordering::Equal)
+                scores[b]
+                    .partial_cmp(&scores[a])
+                    .unwrap_or(std::cmp::Ordering::Equal)
             });
             file_indices.truncate(k);
 

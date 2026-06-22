@@ -10,6 +10,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![WASM](https://img.shields.io/badge/WASM-ready-brightgreen)](https://kent-tokyo.github.io/renkin/playground/)
 [![Pure Rust](https://img.shields.io/badge/Pure-Rust-orange?logo=rust)](https://www.rust-lang.org)
+[![unsafe forbidden](https://img.shields.io/badge/unsafe-forbidden-success.svg)](https://github.com/rust-secure-code/safety-dance/)
 
 [日本語版 README](./README_ja.md) · [**Documentation**](https://kent-tokyo.github.io/renkin/) · [**Live Demo →**](https://kent-tokyo.github.io/renkin/playground/)
 
@@ -19,7 +20,7 @@
 
 RENKIN is an open-source **retrosynthesis engine** for **computer-aided synthesis planning (CASP)** that automatically discovers optimal chemical reaction routes from a target molecule back to cheap, commercially available starting materials.
 
-Built entirely in Rust with the [`chematic`](https://docs.rs/chematic/) cheminformatics crate. Zero C/C++ dependencies.
+Built entirely in Rust with the [`chematic`](https://docs.rs/chematic/) cheminformatics crate. Zero C/C++ dependencies. All crates enforce `#![forbid(unsafe_code)]` — compiler-verified Pure Safe Rust throughout.
 
 **[→ Try the Live Playground](https://kent-tokyo.github.io/renkin/playground/)** — runs entirely in WebAssembly, no installation needed.  
 **[→ Full Documentation](https://kent-tokyo.github.io/renkin/)** — API reference, examples, benchmark.
@@ -60,7 +61,7 @@ const result = JSON.parse(find_routes("CC(=O)Oc1ccccc1C(=O)O", 5, 3, 0));
 
 ```bash
 ./target/release/renkin --target "CC(=O)Oc1ccccc1C(=O)O" --depth 5 \
-    --templates data/templates_extracted.smi
+    --templates data/templates_extracted_5000.smi
 ```
 
 ---
@@ -69,19 +70,25 @@ const result = JSON.parse(find_routes("CC(=O)Oc1ccccc1C(=O)O", 5, 3, 0));
 
 | Feature | Detail |
 |---|---|
-| **Pure Rust** | Zero C/C++ dependencies — cross-platform with `cargo build` alone |
+| **Pure Safe Rust** | `#![forbid(unsafe_code)]` on all crates — compiler-enforced, zero C/C++ dependencies |
 | **A\* / AND-OR Tree Search** | Retro\*-equivalent algorithm, proven more efficient than MCTS |
 | **SA Score heuristic** | Admissible h = Σ(1 + 0.5·(sa−1)/9) guides toward accessible precursors |
-| **Beam search** | `--beam-width N` for memory-bounded exploration |
-| **314 reaction rules** | 31 hand-crafted + 283 auto-extracted from USPTO-50k via rdchiral |
+| **SA Score memoization** | Per-search cache avoids redundant SA Score computation on repeated intermediates |
+| **Beam search** | `--beam-width N` for memory-bounded exploration; `SmallVec<[FEntry; 6]>` stack-allocated frontier |
+| **5,000 reaction templates** | Auto-extracted from USPTO-50k training set via rdchiral; frequency-weighted beam priority |
 | **Template frequency weighting** | Phase A: `weight = ln(count+1)` from USPTO training set; high-frequency templates preferred in beam search (+19 pp) |
 | **Element pre-screening** | `required_elements` bitset skips impossible rules before SMARTS matching |
+| **apply_retro memoization** | SMARTS VF2 skip on repeated intermediates — per-search cache |
+| **Arc<PathNode> path sharing** | Persistent linked-list; O(1) per child instead of O(depth) clone |
+| **FxHashMap / FxHashSet** | rustc-hash replacing std collections throughout for faster hashing |
 | **Auto template extraction** | `scripts/extract_templates.py` — rdchiral + chematic-compatible simplification |
 | **Graph-based biaryl cleavage** | Bridge-bond DFS for correct Suzuki disconnection |
 | **Parallel rule application** | `rayon` on non-WASM; sequential fallback on wasm32 |
+| **tract-onnx NN scorer** | Pure Rust ONNX inference (no C++ dep) — optional `--scorer` flag for Phase B template relevance scoring |
+| **Tetrahedral stereo @/@@** | Full stereochemistry support via chematic 0.4.16 |
 | **Python** | `pip install renkin` — pre-built wheels for Linux/macOS/Windows |
 | **WASM** | ~500 KB bundle — runs in the browser at near-native speed |
-| **463 building blocks** | Aryl halides, boronic acids, heterocycles, amines, acids, amino acids |
+| **480 building blocks** | Aryl halides, boronic acids, heterocycles, amines, acids, amino acids |
 
 ---
 
@@ -91,18 +98,21 @@ USPTO-50k test set (4,907 molecules, full evaluation):
 
 > **Evaluation note**: All numbers use the standard USPTO-50k train/test split (same corpus). Templates are extracted from the training set and evaluated on the test set — the same methodology as AiZynthFinder and other published tools. Numbers reflect performance within the USPTO-50k domain; out-of-distribution generalization has not been separately evaluated.
 
-| Config | Solved | Rate | BBs | Rules | depth | beam |
-|---|---|---|---|---|---|---|
-| v0.1.0 initial | 366/4907 | 7.5% | 463 | 31 | 3 | 50 |
-| + auto templates (top-300) | 1363/4907 | 27.8% | 463 | 222 | 3 | 50 |
-| + depth=5, top-500 templates | 2315/4907 | 47.2% | 463 | 314 | 5 | 50 |
-| + beam=100 | 2688/4907 | 54.8%* | 463 | 314 | 5 | 100 |
-| + Phase A (template freq. weighting) | **~3540/4907** | **72.1%†** | 463 | 314 | 5 | 100 |
+| Config | Solved | Rate | BBs | Templates | depth | beam | ms/mol |
+|---|---|---|---|---|---|---|---|
+| v0.1.0 initial | 366/4907 | 7.5% | 463 | 31 | 3 | 50 | — |
+| + auto templates (top-300) | 1363/4907 | 27.8% | 463 | 222 | 3 | 50 | — |
+| + depth=5, top-500 templates | 2315/4907 | 47.2% | 463 | 314 | 5 | 50 | — |
+| + beam=100 | 2688/4907 | 54.8%* | 463 | 314 | 5 | 100 | — |
+| + Phase A (template freq. weighting) | 3540/4907 | 72.1%† | 463 | 314 | 5 | 100 | — |
+| **+ 5,000 templates, 480 BBs** | **3826/4907** | **78.0%** | **480** | **5,000** | **5** | **100** | **2,775** |
+| Phase A unlimited (beam=0) | 3832/4907 | 78.1% | 480 | 5,000 | 5 | 0 | — |
+| Phase B (NN scorer, tract-onnx) | 3826/4907 | 78.0% | 480 | 5,000 | 5 | 100 | 3,394 |
 
 \* 29/50 chunks, previous binary  
-† 50/50 chunks — **72.1%** (3,540/4,907) ✅ confirmed
+† 50/50 chunks — **72.1%** (3,540/4,907) confirmed
 
-On the standard USPTO-50k benchmark (multi-step route-finding, same train/test split), RENKIN (**72.1%**) exceeds the published numbers for AiZynthFinder (45–53%), Retro\* (44.3%), and ASKCOS (41%) — though those are from 2019–2020 papers with different BB/template counts, so no matched-condition experiment exists yet.  
+On the standard USPTO-50k benchmark (multi-step route-finding, same train/test split), RENKIN (**78.0%**) exceeds the published numbers for AiZynthFinder (45–53%), Retro\* (44.3%), and ASKCOS (41%) — though those are from 2019–2020 papers with different BB/template counts, so no matched-condition experiment exists yet.  
 *Note: LocalRetro (53.4%) and GLG (58.0%) report single-step top-1 prediction accuracy — a different metric, not directly comparable.*  
 [Full benchmark details →](https://kent-tokyo.github.io/renkin/benchmark/)
 
@@ -117,9 +127,9 @@ On the standard USPTO-50k benchmark (multi-step route-finding, same train/test s
 | **SYNTHIA** | Closed | Proprietary | No | No | SMARTS + AND/OR | Manual curated | Sigma-Aldrich |
 | **IBM RXN** | Closed | Cloud SaaS | No | No | Transformer | USPTO | — |
 | **Retro\*** | Python | MIT | No | No (unmaintained) | A\* + AND/OR | USPTO (ML) | eMolecules |
-| **★ RENKIN** | **Rust** | **MIT** | **Yes** | **Yes** | **A\* + AND/OR** | Hand-curated + rdchiral (314) | 463+ |
+| **★ RENKIN** | **Rust** | **MIT** | **Yes** | **Yes** | **A\* + AND/OR** | Hand-curated + rdchiral (5,000) | 480+ |
 
-**RENKIN's goal**: match or exceed neural-network-based tools using only curated rules and auto-extracted SMIRKS templates — no GPU, no training data, no black boxes. On the standard USPTO-50k benchmark (same train/test split used by all published tools), RENKIN reaches **72.1%** (3,540/4,907 — full 4,907-molecule run confirmed). Template frequency weighting (Phase A) — the same principle as AiZynthFinder's neural template scoring — delivers +19 pp over uniform weighting. RENKIN runs anywhere: browser, CLI, Python — single `cargo build`.
+**RENKIN's goal**: match or exceed neural-network-based tools using only curated rules and auto-extracted SMIRKS templates — no GPU, no training data, no black boxes. On the standard USPTO-50k benchmark (same train/test split used by all published tools), RENKIN reaches **78.0%** (3,826/4,907 — full 4,907-molecule run confirmed). Template frequency weighting (Phase A) — the same principle as AiZynthFinder's neural template scoring — combined with 5,000 auto-extracted templates and 480 building blocks delivers this result. RENKIN runs anywhere: browser, CLI, Python — single `cargo build`.
 
 ---
 
@@ -131,17 +141,17 @@ Target SMILES
      ▼
 ┌─────────────────────────┐
 │     chem_env.rs         │  ← chematic wrapper
-│  - SMILES parse         │     canonical-SMILES HashSet BB lookup (O(1))
-│  - 314 retro rules      │     fragment sanitization + ring-leak filter
-│  - Building block check │     VF2 fallback for small sets
+│  - SMILES parse         │     canonical-SMILES FxHashSet BB lookup (O(1))
+│  - 5,000 retro rules    │     fragment sanitization + ring-leak filter
+│  - Building block check │     apply_retro memoization cache
 └────────────┬────────────┘
              │  par_iter (rayon / sequential on WASM)
              ▼
 ┌─────────────────────────┐
 │      search.rs          │  ← A* / AND-OR Tree Search
-│  - Priority queue       │     SA Score heuristic
-│  - Closed list          │     beam search pruning
-│  - Degenerate filter    │
+│  - Priority queue       │     SA Score heuristic + memoization
+│  - Closed list          │     beam search (SmallVec frontier)
+│  - Arc<PathNode> paths  │     O(1) path sharing per child
 └────────────┬────────────┘
              │
              ▼
@@ -149,6 +159,13 @@ Target SMILES
 │      score.rs           │  ← Heuristic / Cost Function
 │  - SA Score (chematic)  │     h = Σ(1 + 0.5·(sa−1)/9)
 │  - MW step cost         │     g = Σ(1 + total_mw/2000)
+└────────────┬────────────┘
+             │
+             ▼
+┌─────────────────────────┐   (optional)
+│      scorer.rs          │  ← Phase B: NN Template Scorer
+│  - tract-onnx           │     Pure Rust ONNX inference
+│  - --scorer flag        │     molecule-specific template ranking
 └────────────┬────────────┘
              │
              ▼
@@ -164,18 +181,19 @@ renkin/
 ├── Cargo.toml
 ├── src/
 │   ├── lib.rs               # public library
-│   ├── main.rs              # CLI binary  (--templates flag)
+│   ├── main.rs              # CLI binary  (--templates, --scorer flags)
 │   ├── bin/benchmark.rs     # renkin-bench binary  (--templates flag)
-│   ├── chem_env.rs          # 314 retro rules, BB check, template loader
+│   ├── chem_env.rs          # 5,000 retro rules, BB check, template loader
 │   ├── score.rs             # SA Score heuristic + step cost
 │   ├── search.rs            # A* / AND-OR tree engine + beam pruning
+│   ├── scorer.rs            # Phase B: tract-onnx NN template scorer
 │   ├── python.rs            # PyO3 bindings (--features python)
 │   └── wasm.rs              # wasm-bindgen bindings (cfg = wasm32)
 ├── data/
-│   ├── building_blocks.smi          # 463 curated commercial starting materials
-│   ├── templates_extracted.smi      # 283 auto-extracted SMIRKS templates (top-500)
-│   ├── benchmark_targets.smi        # internal benchmark set
-│   └── bench_chunks/                # USPTO-50k per-chunk results
+│   ├── building_blocks.smi              # 480 curated commercial starting materials
+│   ├── templates_extracted_5000.smi     # 5,000 auto-extracted SMIRKS templates
+│   ├── benchmark_targets.smi            # internal benchmark set
+│   └── bench_chunks/                    # USPTO-50k per-chunk results
 ├── scripts/
 │   ├── extract_templates.py         # rdchiral template extraction pipeline
 │   └── run_benchmark_chunks.sh      # resumable chunked benchmark runner
@@ -201,13 +219,20 @@ renkin/
 - [x] **Phase 12** — MkDocs documentation site · GitHub Pages playground
 - [x] **Phase 13** — Formal USPTO-50k benchmark: **7.5%** (depth=3, 31 rules)
 - [x] **Phase 14** — Auto template extraction (rdchiral): **27.8%** (depth=3, 222 rules)
+- [x] **Phase 15** — Tetrahedral stereo @/@@ support via chematic 0.4.16 ✅
+- [x] **Phase 15a** — E/Z double-bond stereo filtering active via chematic-rxn 0.4.15 (issue #21)
 - [x] **Phase 17** — chematic 0.4.12: Bug #13 (BFS leakage) + Bug #14 (canonical SMILES) fixed
 - [x] **Phase 18** — Template frequency weighting (Phase A): **72.1%** USPTO-50k (3,540/4,907 — full run ✅)
 - [x] **Phase 19** — Rust engine micro-optimizations (split_fragments, is_bb fast path, element pre-screening)
-- [x] **Phase 15a** — E/Z double-bond stereo filtering active via chematic-rxn 0.4.15 (issue #21)
-- [ ] **Phase 15** — Stereochemistry support (CIP SMIRKS)
-- [ ] **Phase 16** — Large-scale building block DB integration
-- [ ] **Phase B** — ONNX template relevance model (molecule-specific template scoring)
+- [x] **Phase 20** — FxHashMap/FxHashSet (rustc-hash) replacing std collections throughout
+- [x] **Phase 21** — SmallVec<[FEntry; 6]> beam frontier (stack allocation)
+- [x] **Phase 22** — SA Score memoization cache per search
+- [x] **Phase 23** — Arc<PathNode> persistent linked-list for path sharing (O(1) per child)
+- [x] **Phase 24** — apply_retro memoization cache (SMARTS VF2 skip on repeated intermediates)
+- [x] **Phase 25** — 5,000 extracted templates + 480 BBs: **78.0%** USPTO-50k (3,826/4,907 ✅, 2,775 ms/mol)
+- [x] **Phase B** — NN template scorer via `--scorer` flag (tract-onnx, Pure Rust ONNX, no C++ dep) ✅
+- [x] **`#![forbid(unsafe_code)]`** — compiler-enforced Pure Safe Rust on all crates
+- [ ] **Phase 16** — Large-scale building block DB integration (500k BBs — in progress)
 
 ---
 

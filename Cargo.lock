@@ -112,9 +112,9 @@ dependencies = [
 
 [[package]]
 name = "chematic"
-version = "0.4.15"
+version = "0.4.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1724a31a234a702912b919a7860244f901dcb95b9d60359178cf1d086ce6beb2"
+checksum = "dc0c5e8c555ea72dcb5d1d0f0592453a09aff02a941e2c066dc842d654d07708"
 dependencies = [
  "chematic-chem",
  "chematic-core",

@@ -14,6 +14,11 @@ use crate::chem_env::{
 };
 use crate::score::{step_cost, template_bonus};
 
+/// Cached expansion for one (target_smiles, rule) combination.
+/// Tuple: (rule_name, net_step_cost, precursor_smiles_list).
+type RetroEntry = (String, f64, Vec<String>);
+type RetroCache = FxHashMap<String, Arc<Vec<RetroEntry>>>;
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ReactionStep {
     pub rule: String,
@@ -240,8 +245,7 @@ pub fn find_routes(
     // Opt-D: per-search memoization of apply_retro results.
     // Key: canonical target SMILES. Value: Arc-wrapped filtered expansions.
     // Arc avoids full-Vec cloning on both hit (O(1) Arc::clone) and miss (no extra clone).
-    let mut retro_cache: FxHashMap<String, Arc<Vec<(String, f64, Vec<String>)>>> =
-        FxHashMap::default();
+    let mut retro_cache: RetroCache = FxHashMap::default();
 
     let initial: SmallVec<[FEntry; 6]> = smallvec![FEntry {
         smiles: target_canonical,
@@ -304,9 +308,7 @@ pub fn find_routes(
         // On cache miss: run apply_retro in parallel (native) / sequential (WASM),
         // filter invalid results, precompute net step cost, and store.
         // On cache hit: O(1) Arc::clone — no Vec data is copied.
-        let expansions: Arc<Vec<(String, f64, Vec<String>)>> = if let Some(cached) =
-            retro_cache.get(&target_smi)
-        {
+        let expansions: Arc<Vec<RetroEntry>> = if let Some(cached) = retro_cache.get(&target_smi) {
             Arc::clone(cached) // O(1): pointer copy only, no Vec clone
         } else {
             #[cfg(not(target_arch = "wasm32"))]

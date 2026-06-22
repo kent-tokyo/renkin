@@ -14,6 +14,9 @@ struct Output {
     routes: Vec<search::Route>,
 }
 
+// ..Default::default() is needed when nn-scoring feature is enabled (adds nn_scorer field).
+// When the feature is off, all fields are explicit, making the spread redundant — suppress lint.
+#[allow(clippy::needless_update)]
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
 

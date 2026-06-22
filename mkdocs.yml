@@ -61,7 +61,9 @@ nav:
     - Aspirin Retrosynthesis: examples/aspirin.md
     - Drug-like Molecules: examples/druglike.md
   - Playground: playground/index.html
-  - Benchmark: benchmark.md
+  - Benchmark:
+    - Results (EN): benchmark.md
+    - 結果 (JA): benchmark_ja.md
 
 extra:
   social:

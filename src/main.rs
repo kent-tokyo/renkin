@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use renkin::DEFAULT_BUILDING_BLOCKS;
 use renkin::chem_env;
 use renkin::search::{self, SearchConfig};
@@ -21,6 +23,8 @@ fn main() -> Result<()> {
     let mut templates_path: Option<String> = None;
     let mut max_routes: usize = 5;
     let mut beam_width: usize = 0;
+    #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
+    let mut scorer_path: Option<String> = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -61,6 +65,13 @@ fn main() -> Result<()> {
                     beam_width = args[i].parse().unwrap_or(0);
                 }
             }
+            #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
+            "--scorer" => {
+                i += 1;
+                if i < args.len() {
+                    scorer_path = Some(args[i].clone());
+                }
+            }
             _ => {}
         }
         i += 1;
@@ -93,10 +104,24 @@ fn main() -> Result<()> {
         eprintln!("Loaded {} templates from {path}", extra.len());
         rules.extend(extra);
     }
+    #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
+    let nn_scorer: Option<std::sync::Arc<renkin::scorer::nn::TemplateScorer>> = scorer_path
+        .as_deref()
+        .map(|p| {
+            let top_k = rules.len();
+            let rules_offset = renkin::chem_env::default_rules().len();
+            renkin::scorer::nn::TemplateScorer::from_path(p, top_k, rules_offset)
+                .map(std::sync::Arc::new)
+                .unwrap_or_else(|e| { eprintln!("scorer load error: {e}"); std::process::exit(1) })
+        });
+
     let config = SearchConfig {
         max_depth,
         max_routes,
         beam_width,
+        #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
+        nn_scorer,
+        ..Default::default()
     };
     let routes = search::find_routes(&target_smiles, &env, &rules, &config)?;
 

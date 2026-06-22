@@ -45,6 +45,7 @@ pub fn find_routes_py(
         max_depth: depth,
         max_routes,
         beam_width,
+        ..Default::default()
     };
     let routes = find_routes(target, &env, &rules, &config)
         .map_err(|e| PyValueError::new_err(e.to_string()))?;

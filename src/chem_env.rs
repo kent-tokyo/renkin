@@ -1,5 +1,6 @@
-use std::collections::{HashMap, HashSet};
 use std::fs;
+
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use anyhow::{Context, Result};
 use chematic::chem::standardize::{StandardizeOptions, ZwitterionHandling, standardize};
@@ -37,7 +38,7 @@ impl Default for RetroRule {
 /// Building-block library.
 ///
 /// Two-tier storage for scalability:
-/// - `canon_set`: canonical-SMILES HashSet used for all lookups (O(1), low memory).
+/// - `canon_set`: canonical-SMILES FxHashSet used for all lookups (O(1), low memory).
 ///   Scales to millions of BBs (500k BBs ≈ 12 MB vs 2.8 GB for VF2 QueryMolecules).
 /// - `vf2_index`: (atom_count, bond_count) → VF2 QueryMolecule fallback for small
 ///   sets (DEFAULT_BUILDING_BLOCKS). Provides a secondary confirmation when the
@@ -48,9 +49,9 @@ impl Default for RetroRule {
 /// only activates when `bb_count ≤ VF2_THRESHOLD` (small in-memory sets).
 pub struct ChemEnv {
     /// Canonical SMILES of every BB — primary fast lookup.
-    canon_set: HashSet<String>,
+    canon_set: FxHashSet<String>,
     /// VF2 fallback for small sets (populated only when bb_count ≤ VF2_THRESHOLD).
-    vf2_index: HashMap<(usize, usize), Vec<QueryMolecule>>,
+    vf2_index: FxHashMap<(usize, usize), Vec<QueryMolecule>>,
     bb_count: usize,
 }
 
@@ -74,7 +75,7 @@ impl ChemEnv {
     }
 
     fn from_smiles_iter(iter: impl Iterator<Item = String>) -> Self {
-        let mut canon_set: HashSet<String> = HashSet::new();
+        let mut canon_set: FxHashSet<String> = FxHashSet::default();
         let mut vf2_raw: Vec<(usize, usize, QueryMolecule)> = Vec::new();
         let mut bb_count = 0usize;
 
@@ -93,7 +94,7 @@ impl ChemEnv {
             }
         }
 
-        let mut vf2_index: HashMap<(usize, usize), Vec<QueryMolecule>> = HashMap::new();
+        let mut vf2_index: FxHashMap<(usize, usize), Vec<QueryMolecule>> = FxHashMap::default();
         for (n_atoms, n_bonds, query) in vf2_raw {
             vf2_index.entry((n_atoms, n_bonds)).or_default().push(query);
         }
@@ -119,7 +120,7 @@ impl ChemEnv {
 
     /// Check if `mol` is in the building-block library.
     ///
-    /// Primary: O(1) canonical-SMILES HashSet lookup.
+    /// Primary: O(1) canonical-SMILES FxHashSet lookup.
     /// Fallback: VF2 subgraph isomorphism (small sets only, bb_count ≤ VF2_THRESHOLD).
     pub fn is_building_block(&self, mol: &Molecule) -> bool {
         let canon = canonical_smiles(mol);
@@ -167,7 +168,7 @@ static STANDARDIZE_OPTS: StandardizeOptions = StandardizeOptions {
 /// Test whether removing the bond (a, b) disconnects the graph (i.e., it is a bridge bond).
 fn is_bridge_bond(mol: &Molecule, a: AtomIdx, b: AtomIdx) -> bool {
     // BFS from `a`, skipping the direct a→b edge. If b is not reachable → bridge.
-    let mut visited = HashSet::new();
+    let mut visited = FxHashSet::default();
     let mut stack = vec![a];
     visited.insert(a);
     while let Some(cur) = stack.pop() {
@@ -189,8 +190,8 @@ fn get_component(
     start: AtomIdx,
     bridge_a: AtomIdx,
     bridge_b: AtomIdx,
-) -> HashSet<AtomIdx> {
-    let mut visited = HashSet::new();
+) -> FxHashSet<AtomIdx> {
+    let mut visited = FxHashSet::default();
     let mut stack = vec![start];
     visited.insert(start);
     while let Some(cur) = stack.pop() {
@@ -209,9 +210,9 @@ fn get_component(
 }
 
 /// Build a sub-molecule from a set of atom indices, preserving all intra-set bonds.
-fn build_sub_molecule(mol: &Molecule, atoms: &HashSet<AtomIdx>) -> Option<Molecule> {
+fn build_sub_molecule(mol: &Molecule, atoms: &FxHashSet<AtomIdx>) -> Option<Molecule> {
     let mut builder = MoleculeBuilder::new();
-    let mut idx_map: HashMap<AtomIdx, AtomIdx> = HashMap::new();
+    let mut idx_map: FxHashMap<AtomIdx, AtomIdx> = FxHashMap::default();
 
     for &old_idx in atoms {
         let new_idx = builder.add_atom(mol.atom(old_idx).clone());
@@ -230,11 +231,11 @@ fn build_sub_molecule(mol: &Molecule, atoms: &HashSet<AtomIdx>) -> Option<Molecu
 /// Build a sub-molecule and append a Br atom bonded to `cut_atom`.
 fn build_sub_molecule_with_br(
     mol: &Molecule,
-    atoms: &HashSet<AtomIdx>,
+    atoms: &FxHashSet<AtomIdx>,
     cut_atom: AtomIdx,
 ) -> Option<Molecule> {
     let mut builder = MoleculeBuilder::new();
-    let mut idx_map: HashMap<AtomIdx, AtomIdx> = HashMap::new();
+    let mut idx_map: FxHashMap<AtomIdx, AtomIdx> = FxHashMap::default();
 
     for &old_idx in atoms {
         let new_idx = builder.add_atom(mol.atom(old_idx).clone());
@@ -258,7 +259,7 @@ fn build_sub_molecule_with_br(
 /// [Ar-Br, Ar'] and [Ar, Ar'-Br] precursor sets.
 fn biaryl_cleavage(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
     let mut results: Vec<Vec<PrecursorMol>> = Vec::new();
-    let mut seen: HashSet<String> = HashSet::new();
+    let mut seen: FxHashSet<String> = FxHashSet::default();
 
     for (_, bond) in mol.bonds() {
         let (a, b) = (bond.atom1, bond.atom2);
@@ -322,7 +323,7 @@ fn biaryl_cleavage(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
 /// which duplicates unmapped atoms into both product templates.
 fn amide_cleavage(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
     let mut results: Vec<Vec<PrecursorMol>> = Vec::new();
-    let mut seen: HashSet<String> = HashSet::new();
+    let mut seen: FxHashSet<String> = FxHashSet::default();
 
     for (_, bond) in mol.bonds() {
         let (a, b) = (bond.atom1, bond.atom2);
@@ -396,11 +397,11 @@ fn amide_cleavage(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
 /// Build a sub-molecule and append an OH group bonded to `cut_atom`.
 fn build_sub_molecule_with_oh(
     mol: &Molecule,
-    atoms: &HashSet<AtomIdx>,
+    atoms: &FxHashSet<AtomIdx>,
     cut_atom: AtomIdx,
 ) -> Option<Molecule> {
     let mut builder = MoleculeBuilder::new();
-    let mut idx_map: HashMap<AtomIdx, AtomIdx> = HashMap::new();
+    let mut idx_map: FxHashMap<AtomIdx, AtomIdx> = FxHashMap::default();
 
     for &old_idx in atoms {
         let new_idx = builder.add_atom(mol.atom(old_idx).clone());
@@ -714,7 +715,7 @@ fn boc_deprotection(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
     }
 
     let mut results = Vec::new();
-    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut seen: FxHashSet<String> = FxHashSet::default();
 
     for m in matches {
         // m[0] = N, m[1] = carbonyl C
@@ -764,7 +765,7 @@ fn cbz_deprotection(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
     }
 
     let mut results = Vec::new();
-    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut seen: FxHashSet<String> = FxHashSet::default();
 
     for m in matches {
         if m.len() < 2 {
@@ -912,6 +913,7 @@ mod tests {
             max_depth: 3,
             max_routes: 5,
             beam_width: 0,
+            ..Default::default()
         };
         let routes = find_routes("c1ccc(-c2ccncc2)cc1", &env, &rules, &config)
             .expect("find_routes must not error");
@@ -972,6 +974,7 @@ mod tests {
             max_depth: 2,
             max_routes: 3,
             beam_width: 0,
+            ..Default::default()
         };
         let routes = find_routes("c1ccc(-c2ccccc2)cc1", &env, &rules, &cfg).unwrap();
         assert!(
@@ -994,6 +997,7 @@ mod tests {
             max_depth: 2,
             max_routes: 3,
             beam_width: 0,
+            ..Default::default()
         };
         let routes = find_routes("Fc1ccc(-c2ccccc2)cc1", &env, &rules, &cfg).unwrap();
         assert!(!routes.is_empty(), "4-fluorobiphenyl must be solvable");
@@ -1023,6 +1027,7 @@ mod tests {
             max_depth: 3,
             max_routes: 5,
             beam_width: 0,
+            ..Default::default()
         };
         let routes = find_routes("c1ccc(-c2ccccc2)cc1", &env, &rules, &cfg).unwrap();
         assert!(
@@ -1054,6 +1059,7 @@ mod tests {
             max_depth: 3,
             max_routes: 3,
             beam_width: 0,
+            ..Default::default()
         };
 
         let presets = [

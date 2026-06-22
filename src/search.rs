@@ -1,14 +1,18 @@
-use std::collections::{BinaryHeap, HashSet};
+use std::collections::BinaryHeap;
+use std::sync::Arc;
 
 use anyhow::Result;
+use chematic::chem::sa_score;
 #[cfg(not(target_arch = "wasm32"))]
 use rayon::prelude::*;
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Serialize;
+use smallvec::{SmallVec, smallvec};
 
 use crate::chem_env::{
     ChemEnv, PrecursorMol, RetroRule, apply_retro, mol_from_smiles, to_canonical,
 };
-use crate::score::{heuristic, step_cost, template_bonus};
+use crate::score::{step_cost, template_bonus};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ReactionStep {
@@ -28,10 +32,28 @@ struct FEntry {
     smiles: String,
 }
 
+/// Persistent linked-list node for synthesis path sharing.
+/// Children share the parent's prefix via Arc::clone (pointer copy only).
+#[derive(Debug, Clone)]
+struct PathNode {
+    step: ReactionStep,
+    prev: Option<Arc<PathNode>>,
+}
+
+fn collect_path(mut cur: Option<&Arc<PathNode>>) -> Vec<ReactionStep> {
+    let mut steps = Vec::new();
+    while let Some(node) = cur {
+        steps.push(node.step.clone());
+        cur = node.prev.as_ref();
+    }
+    steps.reverse();
+    steps
+}
+
 #[derive(Debug, Clone)]
 struct Node {
-    frontier: Vec<FEntry>,
-    path: Vec<ReactionStep>,
+    frontier: SmallVec<[FEntry; 6]>,
+    path: Option<Arc<PathNode>>,
     depth: u32,
     g: f64,
     h: f64,
@@ -123,21 +145,23 @@ fn is_bb(smiles: &str, env: &ChemEnv) -> bool {
         .unwrap_or(false)
 }
 
-fn unsolved_mols(frontier: &[FEntry], env: &ChemEnv) -> Vec<crate::chem_env::Molecule> {
+fn compute_h(frontier: &[FEntry], env: &ChemEnv, sa_cache: &mut FxHashMap<String, f64>) -> f64 {
     frontier
         .iter()
         .filter(|e| !is_bb(&e.smiles, env))
-        .filter_map(|e| mol_from_smiles(&e.smiles).ok())
-        .collect()
-}
-
-fn count_unsolved(frontier: &[FEntry], env: &ChemEnv) -> usize {
-    frontier.iter().filter(|e| !is_bb(&e.smiles, env)).count()
-}
-
-fn compute_h(frontier: &[FEntry], env: &ChemEnv) -> f64 {
-    let mols = unsolved_mols(frontier, env);
-    heuristic(&mols.iter().collect::<Vec<_>>())
+        .map(|e| {
+            let sa = if let Some(&v) = sa_cache.get(&e.smiles) {
+                v
+            } else {
+                let v = mol_from_smiles(&e.smiles)
+                    .map(|m| sa_score(&m).clamp(1.0, 10.0))
+                    .unwrap_or(5.5);
+                sa_cache.insert(e.smiles.clone(), v);
+                v
+            };
+            1.0 + 0.5 * (sa - 1.0) / 9.0
+        })
+        .sum()
 }
 
 /// Prune the heap to at most `beam_width` nodes (keep the best).
@@ -162,6 +186,10 @@ pub struct SearchConfig {
     pub max_routes: usize,
     /// 0 = unlimited (pure A*). N > 0 = beam search, keep top-N nodes.
     pub beam_width: usize,
+    /// Phase B: ONNX template relevance scorer (CLI/Python only, not WASM).
+    /// When Some, pre-filters rules to top-K most relevant before SMARTS matching.
+    #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
+    pub nn_scorer: Option<std::sync::Arc<crate::scorer::nn::TemplateScorer>>,
 }
 
 impl Default for SearchConfig {
@@ -170,6 +198,8 @@ impl Default for SearchConfig {
             max_depth: 5,
             max_routes: 5,
             beam_width: 0,
+            #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
+            nn_scorer: None,
         }
     }
 }
@@ -183,19 +213,43 @@ pub fn find_routes(
     let target_mol = mol_from_smiles(target_smiles)?;
     let target_canonical = to_canonical(&target_mol);
 
+    // Phase B: pre-rank rules ONCE for the initial target molecule.
+    // The scorer is called here (before the A* loop) — not per-node — to avoid
+    // hundreds of ONNX inference calls per search. The ranking is reused across
+    // all A* expansions; deeper intermediates use the same ordering.
+    #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
+    let ranked_rules: Vec<&RetroRule> = {
+        if let Some(sc) = &config.nn_scorer {
+            sc.top_k_indices(target_smiles, rules.len())
+                .into_iter()
+                .filter_map(|i| rules.get(i))
+                .collect()
+        } else {
+            rules.iter().collect()
+        }
+    };
+    #[cfg(not(all(not(target_arch = "wasm32"), feature = "nn-scoring")))]
+    let ranked_rules: Vec<&RetroRule> = rules.iter().collect();
+
     let max_rule_weight = rules.iter().map(|r| r.weight).fold(1.0_f64, f64::max);
 
     let mut routes: Vec<Route> = Vec::new();
-    let mut closed: HashSet<String> = HashSet::new();
+    let mut closed: FxHashSet<String> = FxHashSet::default();
     let mut heap: BinaryHeap<Node> = BinaryHeap::new();
+    let mut sa_cache: FxHashMap<String, f64> = FxHashMap::default();
+    // Opt-D: per-search memoization of apply_retro results.
+    // Key: canonical target SMILES. Value: Arc-wrapped filtered expansions.
+    // Arc avoids full-Vec cloning on both hit (O(1) Arc::clone) and miss (no extra clone).
+    let mut retro_cache: FxHashMap<String, Arc<Vec<(String, f64, Vec<String>)>>> =
+        FxHashMap::default();
 
-    let initial = vec![FEntry {
+    let initial: SmallVec<[FEntry; 6]> = smallvec![FEntry {
         smiles: target_canonical,
     }];
-    let h0 = compute_h(&initial, env);
+    let h0 = compute_h(&initial, env, &mut sa_cache);
     heap.push(Node {
         frontier: initial,
-        path: vec![],
+        path: None,
         depth: 0,
         g: 0.0,
         h: h0,
@@ -206,9 +260,21 @@ pub fn find_routes(
             break;
         }
 
-        if count_unsolved(&node.frontier, env) == 0 {
+        // Single pass: count unsolved + find first unsolved entry simultaneously.
+        let mut n_unsolved = 0usize;
+        let mut first_unsolved: Option<&FEntry> = None;
+        for e in node.frontier.iter() {
+            if !is_bb(&e.smiles, env) {
+                n_unsolved += 1;
+                if first_unsolved.is_none() {
+                    first_unsolved = Some(e);
+                }
+            }
+        }
+
+        if n_unsolved == 0 {
             routes.push(Route {
-                steps: node.path.clone(),
+                steps: collect_path(node.path.as_ref()),
                 depth: node.depth,
             });
         }
@@ -223,12 +289,7 @@ pub fn find_routes(
         }
         closed.insert(key);
 
-        let Some(target_entry) = node
-            .frontier
-            .iter()
-            .find(|e| !is_bb(&e.smiles, env))
-            .or_else(|| node.frontier.first())
-        else {
+        let Some(target_entry) = first_unsolved.or_else(|| node.frontier.first()) else {
             continue;
         };
         let target_smi = target_entry.smiles.clone();
@@ -239,68 +300,87 @@ pub fn find_routes(
 
         let target_elem_mask: u64 = elem_mask_from_smiles(&target_smi);
 
-        // Parallel rule application via rayon (native); sequential on WASM.
-        // Rules whose required_elements are absent from the target are skipped early.
-        #[cfg(not(target_arch = "wasm32"))]
-        let expanded: Vec<(String, f64, Vec<PrecursorMol>)> = rules
-            .par_iter()
-            .filter(|rule| {
-                rule.required_elements == 0
-                    || (target_elem_mask & rule.required_elements == rule.required_elements)
-            })
-            .flat_map(|rule| {
-                apply_retro(&target_mol, rule)
+        // Opt-D: look up the memoized expansion for this target molecule.
+        // On cache miss: run apply_retro in parallel (native) / sequential (WASM),
+        // filter invalid results, precompute net step cost, and store.
+        // On cache hit: O(1) Arc::clone — no Vec data is copied.
+        let expansions: Arc<Vec<(String, f64, Vec<String>)>> =
+            if let Some(cached) = retro_cache.get(&target_smi) {
+                Arc::clone(cached)  // O(1): pointer copy only, no Vec clone
+            } else {
+                #[cfg(not(target_arch = "wasm32"))]
+                let raw: Vec<(String, f64, Vec<PrecursorMol>)> = ranked_rules
+                    .par_iter()
+                    .copied()
+                    .filter(|rule| {
+                        rule.required_elements == 0
+                            || (target_elem_mask & rule.required_elements
+                                == rule.required_elements)
+                    })
+                    .flat_map(|rule| {
+                        apply_retro(&target_mol, rule)
+                            .into_iter()
+                            .map(|precs| (rule.name.to_string(), rule.weight, precs))
+                            .collect::<Vec<_>>()
+                    })
+                    .collect();
+                #[cfg(target_arch = "wasm32")]
+                let raw: Vec<(String, f64, Vec<PrecursorMol>)> = ranked_rules
+                    .iter()
+                    .copied()
+                    .filter(|rule| {
+                        rule.required_elements == 0
+                            || (target_elem_mask & rule.required_elements
+                                == rule.required_elements)
+                    })
+                    .flat_map(|rule| {
+                        apply_retro(&target_mol, rule)
+                            .into_iter()
+                            .map(|precs| (rule.name.to_string(), rule.weight, precs))
+                            .collect::<Vec<_>>()
+                    })
+                    .collect();
+
+                let entries: Vec<(String, f64, Vec<String>)> = raw
                     .into_iter()
-                    .map(|precs| (rule.name.to_string(), rule.weight, precs))
-                    .collect::<Vec<_>>()
-            })
-            .collect();
-        #[cfg(target_arch = "wasm32")]
-        let expanded: Vec<(String, f64, Vec<PrecursorMol>)> = rules
-            .iter()
-            .filter(|rule| {
-                rule.required_elements == 0
-                    || (target_elem_mask & rule.required_elements == rule.required_elements)
-            })
-            .flat_map(|rule| {
-                apply_retro(&target_mol, rule)
-                    .into_iter()
-                    .map(|precs| (rule.name.to_string(), rule.weight, precs))
-                    .collect::<Vec<_>>()
-            })
-            .collect();
+                    .filter(|(_, _, precs)| {
+                        !precs.is_empty()
+                            && !precs.iter().any(|p| p.smiles == target_smi)
+                    })
+                    .map(|(rule_name, rule_weight, precs)| {
+                        let step_c =
+                            step_cost(&precs.iter().map(|p| &p.mol).collect::<Vec<_>>())
+                                - template_bonus(rule_weight, max_rule_weight);
+                        let smiles_list: Vec<String> =
+                            precs.iter().map(|p| p.smiles.clone()).collect();
+                        (rule_name, step_c, smiles_list)
+                    })
+                    .collect();
+                let arc = Arc::new(entries);
+                retro_cache.insert(target_smi.clone(), Arc::clone(&arc));
+                arc  // no extra clone: Arc move
+            };
 
-        for (rule_name, rule_weight, precursors) in expanded {
-            if precursors.is_empty() {
-                continue;
-            }
-            if precursors.iter().any(|p| p.smiles == target_smi) {
-                continue;
-            }
-
-            let precursor_smiles: Vec<String> =
-                precursors.iter().map(|p| p.smiles.clone()).collect();
-
-            let new_frontier: Vec<FEntry> = node
+        for (rule_name, step_c, precursor_smiles) in expansions.iter() {
+            let new_frontier: SmallVec<[FEntry; 6]> = node
                 .frontier
                 .iter()
                 .filter(|e| e.smiles != target_smi)
                 .cloned()
-                .chain(precursors.iter().map(|p| FEntry {
-                    smiles: p.smiles.clone(),
-                }))
+                .chain(precursor_smiles.iter().map(|s| FEntry { smiles: s.clone() }))
                 .collect();
 
-            let step_c = step_cost(&precursors.iter().map(|p| &p.mol).collect::<Vec<_>>())
-                - template_bonus(rule_weight, max_rule_weight);
-            let new_h = compute_h(&new_frontier, env);
+            let new_h = compute_h(&new_frontier, env, &mut sa_cache);
 
-            let mut new_path = node.path.clone();
-            new_path.push(ReactionStep {
-                rule: rule_name,
-                target: target_smi.clone(),
-                precursors: precursor_smiles,
-            });
+            // O(1) Arc::clone — shares the parent prefix without copying.
+            let new_path = Some(Arc::new(PathNode {
+                step: ReactionStep {
+                    rule: rule_name.clone(),
+                    target: target_smi.clone(),
+                    precursors: precursor_smiles.clone(),
+                },
+                prev: node.path.clone(),
+            }));
 
             heap.push(Node {
                 frontier: new_frontier,
@@ -334,6 +414,7 @@ mod tests {
             max_depth: depth,
             max_routes: 5,
             beam_width: 0,
+            ..Default::default()
         }
     }
 
@@ -383,6 +464,7 @@ mod tests {
             max_depth: 3,
             max_routes: 3,
             beam_width: 10,
+            ..Default::default()
         };
         // With a very tight beam, search may find fewer routes but must not panic.
         let routes = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg_beam);
@@ -434,11 +516,13 @@ mod tests {
             max_depth: 3,
             max_routes: 10,
             beam_width: 1,
+            ..Default::default()
         };
         let cfg_full = SearchConfig {
             max_depth: 3,
             max_routes: 10,
             beam_width: 0,
+            ..Default::default()
         };
         let routes_beam = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg_beam).unwrap();
         let routes_full = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg_full).unwrap();
@@ -487,6 +571,7 @@ mod tests {
             max_depth: 2,
             max_routes: 10,
             beam_width: 0,
+            ..Default::default()
         };
         let routes = find_routes("c1ccc(-c2ccccc2)cc1", &env, &rules, &cfg).unwrap();
         // Both orientations resolve to identical BB sets — expect exactly 1 unique route.

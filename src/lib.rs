@@ -1,5 +1,8 @@
+#![forbid(unsafe_code)]
+
 pub mod chem_env;
 pub mod score;
+pub mod scorer;
 pub mod search;
 
 #[cfg(feature = "python")]

@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 /// RENKIN Benchmark Runner
 ///
 /// Usage:
@@ -50,6 +52,10 @@ fn main() -> Result<()> {
     let mut max_depth: u32 = 5;
     let mut beam_width: usize = 0;
     let mut max_routes: usize = 1;
+    #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
+    let mut scorer_path: Option<String> = None;
+    #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
+    let mut scorer_top_k: Option<usize> = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -90,6 +96,20 @@ fn main() -> Result<()> {
                     templates_path = Some(args[i].clone());
                 }
             }
+            #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
+            "--scorer" => {
+                i += 1;
+                if i < args.len() {
+                    scorer_path = Some(args[i].clone());
+                }
+            }
+            #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
+            "--scorer-top-k" => {
+                i += 1;
+                if i < args.len() {
+                    scorer_top_k = args[i].parse().ok();
+                }
+            }
             _ => {}
         }
         i += 1;
@@ -98,7 +118,8 @@ fn main() -> Result<()> {
     let Some(input) = input_path else {
         bail!(
             "Usage: renkin-bench --input <smiles_file> [--depth <N>] \
-             [--beam-width <N>] [--building-blocks <path>] [--templates <path>]"
+             [--beam-width <N>] [--building-blocks <path>] [--templates <path>] \
+             [--scorer <onnx_path>]"
         );
     };
 
@@ -131,10 +152,25 @@ fn main() -> Result<()> {
         eprintln!("Loaded {} templates from {path}", extra.len());
         rules.extend(extra);
     }
+    #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
+    let nn_scorer: Option<std::sync::Arc<renkin::scorer::nn::TemplateScorer>> = scorer_path
+        .as_deref()
+        .map(|p| {
+            // Default: all rules (reranker mode). Pass --scorer-top-k N to filter.
+            let top_k = scorer_top_k.unwrap_or(rules.len());
+            let rules_offset = default_rules().len();
+            renkin::scorer::nn::TemplateScorer::from_path(p, top_k, rules_offset)
+                .map(std::sync::Arc::new)
+                .unwrap_or_else(|e| { eprintln!("scorer load error: {e}"); std::process::exit(1) })
+        });
+
     let config = SearchConfig {
         max_depth,
         max_routes,
         beam_width,
+        #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
+        nn_scorer,
+        ..Default::default()
     };
 
     eprintln!(

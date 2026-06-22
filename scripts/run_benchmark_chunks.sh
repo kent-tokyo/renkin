@@ -10,6 +10,7 @@ TEMPLATES="${2:-data/templates_extracted.smi}"
 CHUNK_DIR="${3:-data/bench_chunks}"
 DEPTH="${4:-3}"
 BEAM="${5:-50}"
+SCORER="${6:-}"  # optional: path to ONNX scorer (requires nn-scoring feature build)
 
 mkdir -p "$CHUNK_DIR"
 
@@ -24,6 +25,7 @@ TOTAL_CHUNKS=$(echo "$CHUNKS" | wc -l | tr -d ' ')
 echo "=== RENKIN benchmark: $TOTAL_CHUNKS chunks × 100 mol ==="
 echo "    templates: $TEMPLATES"
 echo "    depth=$DEPTH  beam=$BEAM"
+[ -n "$SCORER" ] && echo "    scorer: $SCORER"
 echo "    results dir: $CHUNK_DIR"
 echo ""
 
@@ -60,12 +62,15 @@ for CHUNK in $CHUNKS; do
     echo -n "[${CHUNK_NUM}/${TOTAL_CHUNKS}] $CHUNK_NAME ... "
     START=$(date +%s)
 
+    SCORER_ARG=""
+    [ -n "$SCORER" ] && SCORER_ARG="--scorer $SCORER"
     ./target/release/renkin-bench \
         --input "$CHUNK" \
         --depth $DEPTH \
         --beam-width $BEAM \
         --max-routes 1 \
         --templates "$TEMPLATES" \
+        $SCORER_ARG \
         2>/dev/null > "$OUT"
 
     END=$(date +%s)

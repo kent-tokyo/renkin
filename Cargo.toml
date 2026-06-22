@@ -21,6 +21,8 @@ exclude       = [
     "tasks/**",
     "scripts/**",
     ".claude/**",
+    "data/template_scorer*.onnx",
+    "data/template_scorer*.onnx.data",
 ]
 
 [[bin]]

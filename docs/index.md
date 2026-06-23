@@ -13,13 +13,26 @@
 
 RENKIN is a **retrosynthesis engine** that automatically plans multi-step chemical syntheses by working backwards from a target molecule to commercially available starting materials. Given a target SMILES, it searches for synthetic routes using a library of retrosynthetic reaction rules.
 
-## Live Demo
+## Try It Now
 
-Try RENKIN directly in your browser — no installation needed:
+=== "Browser (no install)"
+    [**→ Open Playground**](playground/){ .md-button .md-button--primary }
 
-[**→ Open Playground**](playground/){ .md-button .md-button--primary }
+    Runs entirely in WebAssembly — no server, no installation.
 
-The playground runs entirely in WebAssembly compiled from Rust. No server calls are made.
+=== "Google Colab (Python)"
+    [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kent-tokyo/renkin/blob/master/examples/renkin_quickstart.ipynb)
+
+    One-click Python notebook — `pip install renkin` + aspirin example + RDKit visualization.
+
+=== "Python"
+    ```bash
+    pip install renkin
+    ```
+    ```python
+    import renkin
+    result = renkin.find_routes("CC(=O)Oc1ccccc1C(=O)O", depth=5)
+    ```
 
 ## Key Features
 

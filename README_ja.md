@@ -11,6 +11,7 @@
 [![WASM](https://img.shields.io/badge/WASM-ready-brightgreen)](https://kent-tokyo.github.io/renkin/playground/)
 [![Pure Rust](https://img.shields.io/badge/Pure-Rust-orange?logo=rust)](https://www.rust-lang.org)
 [![unsafe forbidden](https://img.shields.io/badge/unsafe-forbidden-success.svg)](https://github.com/rust-secure-code/safety-dance/)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kent-tokyo/renkin/blob/master/examples/renkin_quickstart.ipynb)
 
 [English README](./README.md) · [**ドキュメント**](https://kent-tokyo.github.io/renkin/) · [**ライブデモ →**](https://kent-tokyo.github.io/renkin/playground/)
 
@@ -233,6 +234,23 @@ renkin/
 - [x] **Phase B** — NNテンプレートスコアラー `--scorer` フラグ（tract-onnx、Pure Rust ONNX、C++依存なし）✅
 - [x] **`#![forbid(unsafe_code)]`** — 全クレートでコンパイラ保証の Pure Safe Rust
 - [ ] **Phase 16** — 大規模市販原料DB連携（500k BB — 進行中）
+
+---
+
+## 引用
+
+学術論文で RENKIN を使用した場合は以下を引用してください：
+
+```bibtex
+@software{renkin2026,
+  author    = {kent-tokyo},
+  title     = {{RENKIN}: Retrosynthetic Exploration Network for Knowledge-Informed Navigation},
+  year      = {2026},
+  url       = {https://github.com/kent-tokyo/renkin},
+  version   = {0.1.4},
+  license   = {MIT}
+}
+```
 
 ---
 

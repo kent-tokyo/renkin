@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <!-- Background -->
+  <rect width="1200" height="630" fill="#1a1a2e"/>
+  <!-- Decorative hex grid (background) -->
+  <g opacity="0.08" stroke="#7c4dff" stroke-width="1.5" fill="none">
+    <polygon points="150,80 188,102 188,146 150,168 112,146 112,102"/>
+    <polygon points="226,36 264,58 264,102 226,124 188,102 188,58"/>
+    <polygon points="302,80 340,102 340,146 302,168 264,146 264,102"/>
+    <polygon points="150,168 188,190 188,234 150,256 112,234 112,190"/>
+    <polygon points="226,124 264,146 264,190 226,212 188,190 188,146"/>
+    <polygon points="1050,462 1088,484 1088,528 1050,550 1012,528 1012,484"/>
+    <polygon points="1126,418 1164,440 1164,484 1126,506 1088,484 1088,440"/>
+    <polygon points="1050,374 1088,396 1088,440 1050,462 1012,440 1012,396"/>
+  </g>
+  <!-- Large center hexagon -->
+  <polygon points="600,110 720,179 720,317 600,386 480,317 480,179"
+           fill="none" stroke="#7c4dff" stroke-width="4" opacity="0.6"/>
+  <polygon points="600,145 685,193 685,289 600,337 515,289 515,193"
+           fill="none" stroke="#7c4dff" stroke-width="1.5" opacity="0.25"/>
+  <!-- Retrosynthesis arrow -->
+  <line x1="740" y1="248" x2="820" y2="248" stroke="#40c4ff" stroke-width="6" stroke-linecap="round" opacity="0.8"/>
+  <polyline points="800,234 820,248 800,262" fill="none" stroke="#40c4ff" stroke-width="6"
+            stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
+  <!-- RENKIN title -->
+  <text x="600" y="460" text-anchor="middle"
+        font-family="'Segoe UI', system-ui, sans-serif"
+        font-size="96" font-weight="800" letter-spacing="16" fill="#7c4dff">RENKIN</text>
+  <!-- Subtitle -->
+  <text x="600" y="520" text-anchor="middle"
+        font-family="'Segoe UI', system-ui, sans-serif"
+        font-size="28" fill="#b0bec5" letter-spacing="2">
+    Retrosynthesis Engine · Pure Rust · 78.0% USPTO-50k
+  </text>
+  <!-- Badges row -->
+  <text x="600" y="575" text-anchor="middle"
+        font-family="'Segoe UI', system-ui, sans-serif"
+        font-size="22" fill="#40c4ff" letter-spacing="1">
+    Python · WebAssembly · CLI  ·  github.com/kent-tokyo/renkin
+  </text>
+</svg>

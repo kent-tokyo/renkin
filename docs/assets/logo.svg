@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <!-- Hexagon (benzene ring) -->
+  <polygon points="100,20 148,47.5 148,102.5 100,130 52,102.5 52,47.5"
+           fill="none" stroke="#7c4dff" stroke-width="6" stroke-linejoin="round"/>
+  <!-- Inner double-bond lines (aromatic) -->
+  <polygon points="100,35 137,56.5 137,95.5 100,115 63,95.5 63,56.5"
+           fill="none" stroke="#7c4dff" stroke-width="2.5" stroke-linejoin="round" opacity="0.5"/>
+  <!-- Retrosynthesis arrow (⟹) pointing left (retro direction) -->
+  <line x1="170" y1="75" x2="120" y2="75" stroke="#40c4ff" stroke-width="5" stroke-linecap="round"/>
+  <polyline points="134,62 120,75 134,88" fill="none" stroke="#40c4ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- RENKIN text -->
+  <text x="100" y="165" text-anchor="middle" font-family="'Segoe UI', system-ui, sans-serif"
+        font-size="28" font-weight="700" letter-spacing="4" fill="#7c4dff">RENKIN</text>
+</svg>

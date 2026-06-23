@@ -5,7 +5,7 @@ use anyhow::Result;
 use chematic::chem::sa_score;
 #[cfg(not(target_arch = "wasm32"))]
 use rayon::prelude::*;
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
 use serde::Serialize;
 use smallvec::{SmallVec, smallvec};
 
@@ -132,10 +132,18 @@ fn elem_mask_from_smiles(smiles: &str) -> u64 {
     mask
 }
 
-fn state_key(frontier: &[FEntry]) -> String {
+/// Hash the sorted frontier SMILES into a u64 for closed-set deduplication.
+/// Avoids String allocation per node vs. the former join-based state_key.
+/// Collision probability is 2^-64 per node pair — negligible in practice.
+fn state_hash(frontier: &[FEntry]) -> u64 {
+    use std::hash::{Hash, Hasher};
     let mut keys: Vec<&str> = frontier.iter().map(|e| e.smiles.as_str()).collect();
-    keys.sort();
-    keys.join("|")
+    keys.sort_unstable();
+    let mut h = FxHasher::default();
+    for k in &keys {
+        k.hash(&mut h);
+    }
+    h.finish()
 }
 
 fn is_bb(smiles: &str, env: &ChemEnv) -> bool {
@@ -170,14 +178,16 @@ fn compute_h(frontier: &[FEntry], env: &ChemEnv, sa_cache: &mut FxHashMap<String
 }
 
 /// Prune the heap to at most `beam_width` nodes (keep the best).
+/// Uses select_nth_unstable_by (O(n) average) instead of a full sort (O(n log n))
+/// to partition the top-K nodes without sorting the entire collection.
 fn beam_prune(heap: &mut BinaryHeap<Node>, beam_width: usize) {
     if beam_width == 0 || heap.len() <= beam_width {
         return;
     }
     let mut nodes: Vec<Node> = heap.drain().collect();
-    // Sort best (lowest f) first; BinaryHeap is max-heap but our Ord reverses it,
-    // so after drain+sort we need ascending f order.
-    nodes.sort_by(|a, b| {
+    // Partition so nodes[0..beam_width] are the beam_width lowest-f nodes (unordered).
+    // The BinaryHeap rebuild will impose ordering, so intra-partition order doesn't matter.
+    nodes.select_nth_unstable_by(beam_width - 1, |a, b| {
         a.f()
             .partial_cmp(&b.f())
             .unwrap_or(std::cmp::Ordering::Equal)
@@ -239,7 +249,7 @@ pub fn find_routes(
     let max_rule_weight = rules.iter().map(|r| r.weight).fold(1.0_f64, f64::max);
 
     let mut routes: Vec<Route> = Vec::new();
-    let mut closed: FxHashSet<String> = FxHashSet::default();
+    let mut closed: FxHashSet<u64> = FxHashSet::default();
     let mut heap: BinaryHeap<Node> = BinaryHeap::new();
     let mut sa_cache: FxHashMap<String, f64> = FxHashMap::default();
     // Opt-D: per-search memoization of apply_retro results.
@@ -287,7 +297,7 @@ pub fn find_routes(
             continue;
         }
 
-        let key = state_key(&node.frontier);
+        let key = state_hash(&node.frontier);
         if closed.contains(&key) {
             continue;
         }

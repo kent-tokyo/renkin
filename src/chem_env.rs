@@ -1522,6 +1522,72 @@ mod chematic_regression {
             e_results.len()
         );
     }
+
+    /// Symmetric counterpart: E-selective SMIRKS must match E-alkene and reject Z-alkene.
+    #[test]
+    fn ez_stereo_e_selective_smirks() {
+        // E-selective SMIRKS: [C:1]/[C:2]=[C:3]/[C:4] matches only E-alkenes
+        let smirks = "[C:1]/[C:2]=[C:3]/[C:4]>>[C:1][C:2]=O.[O:3]=[C:4]";
+        let e_hexene = parse("CC/C=C/CC").unwrap(); // (E)-3-hexene — should match
+        let z_hexene = parse("CC/C=C\\CC").unwrap(); // (Z)-3-hexene — must NOT match
+
+        let e_results = run_reactants(smirks, &[&e_hexene]).unwrap_or_default();
+        let z_results = run_reactants(smirks, &[&z_hexene]).unwrap_or_default();
+
+        assert!(
+            !e_results.is_empty(),
+            "E-alkene must match E-SMIRKS"
+        );
+        assert!(
+            z_results.is_empty(),
+            "Z-alkene must NOT match E-SMIRKS; got {} result set(s)",
+            z_results.len()
+        );
+    }
+
+    /// Stereo-unspecified SMIRKS must match both E- and Z-alkenes.
+    #[test]
+    fn ez_stereo_unspecified_smirks_matches_both_geometries() {
+        // No /\ in SMIRKS → geometry-agnostic
+        let smirks = "[C:1][C:2]=[C:3][C:4]>>[C:1][C:2]=O.[O:3]=[C:4]";
+        let e_hexene = parse("CC/C=C/CC").unwrap();
+        let z_hexene = parse("CC/C=C\\CC").unwrap();
+
+        let e_results = run_reactants(smirks, &[&e_hexene]).unwrap_or_default();
+        let z_results = run_reactants(smirks, &[&z_hexene]).unwrap_or_default();
+
+        assert!(
+            !e_results.is_empty(),
+            "non-stereo SMIRKS must match E-alkene"
+        );
+        assert!(
+            !z_results.is_empty(),
+            "non-stereo SMIRKS must match Z-alkene"
+        );
+    }
+
+    /// Real-world example: retro-Wittig on (E)-stilbene vs (Z)-stilbene.
+    /// E-selective SMIRKS (Ph/C=C/Ph pattern) must discriminate between isomers.
+    #[test]
+    fn ez_stereo_stilbene_wittig_discrimination() {
+        // E-selective retro-Wittig: splits E-stilbene into two benzaldehyde equivalents
+        let smirks = "[c:1]/[C:2]=[C:3]/[c:4]>>[c:1][C:2]=O.[O:3]=[C:4][c:4]";
+        let e_stilbene = parse("c1ccccc1/C=C/c1ccccc1").unwrap(); // (E)-stilbene
+        let z_stilbene = parse("c1ccccc1/C=C\\c1ccccc1").unwrap(); // (Z)-stilbene
+
+        let e_results = run_reactants(smirks, &[&e_stilbene]).unwrap_or_default();
+        let z_results = run_reactants(smirks, &[&z_stilbene]).unwrap_or_default();
+
+        assert!(
+            !e_results.is_empty(),
+            "E-selective SMIRKS must fire on (E)-stilbene"
+        );
+        assert!(
+            z_results.is_empty(),
+            "E-selective SMIRKS must NOT fire on (Z)-stilbene; got {} result set(s)",
+            z_results.len()
+        );
+    }
 }
 
 // ── Phase 15: tetrahedral @/@@ full integration ──────────────────────────────

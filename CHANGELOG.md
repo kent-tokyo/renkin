@@ -6,6 +6,20 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.1.4] — 2026-06-23
+
+### Changed
+- chematic updated **0.4.15 → 0.4.16**
+  - Patch release; E/Z stereo filter (issue #21) remains active as of 0.4.15
+
+### Added
+- **E/Z stereo coverage expanded** — 3 new regression tests in `chematic_regression`:
+  - `ez_stereo_e_selective_smirks`: E-SMIRKS matches E-alkene and rejects Z-alkene (symmetric counterpart to existing Z test)
+  - `ez_stereo_unspecified_smirks_matches_both_geometries`: stereo-unspecified SMIRKS is permissive to both geometries
+  - `ez_stereo_stilbene_wittig_discrimination`: real-molecule validation — E-selective retro-Wittig fires on (E)-stilbene, rejects (Z)-stilbene
+
+---
+
 ## [0.1.3] — 2026-06-22
 
 ### Changed

@@ -178,16 +178,13 @@ fn compute_h(frontier: &[FEntry], env: &ChemEnv, sa_cache: &mut FxHashMap<String
 }
 
 /// Prune the heap to at most `beam_width` nodes (keep the best).
-/// Uses select_nth_unstable_by (O(n) average) instead of a full sort (O(n log n))
-/// to partition the top-K nodes without sorting the entire collection.
+/// Uses sort_unstable_by (lower constant than sort_by) for deterministic ordering.
 fn beam_prune(heap: &mut BinaryHeap<Node>, beam_width: usize) {
     if beam_width == 0 || heap.len() <= beam_width {
         return;
     }
     let mut nodes: Vec<Node> = heap.drain().collect();
-    // Partition so nodes[0..beam_width] are the beam_width lowest-f nodes (unordered).
-    // The BinaryHeap rebuild will impose ordering, so intra-partition order doesn't matter.
-    nodes.select_nth_unstable_by(beam_width - 1, |a, b| {
+    nodes.sort_unstable_by(|a, b| {
         a.f()
             .partial_cmp(&b.f())
             .unwrap_or(std::cmp::Ordering::Equal)

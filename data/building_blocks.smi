@@ -524,15 +524,49 @@ FC(F)(F)c1cccc(F)c1     3-fluorobenzotrifluoride
 OC(F)(F)F               trifluoromethanol
 COC(F)(F)F              methyl_trifluoromethyl_ether
 OC(F)F                  difluoromethanol
+# ── Trifluoromethoxy (OCF3) arenes ──────────────────────────────────────────
+FC(F)(F)Oc1ccccc1        trifluoromethoxybenzene
+FC(F)(F)Oc1ccc(Br)cc1   4-bromo-trifluoromethoxybenzene
+FC(F)(F)Oc1ccc(Cl)cc1   4-chloro-trifluoromethoxybenzene
+FC(F)(F)Oc1ccc(N)cc1    4-amino-trifluoromethoxybenzene
+OB(O)c1ccc(OC(F)(F)F)cc1   4-trifluoromethoxyphenylboronic_acid
+FC(F)(F)Oc1ccc(F)cc1    4-fluoro-trifluoromethoxybenzene
+FC(F)(F)Oc1cccc(Br)c1   3-bromo-trifluoromethoxybenzene
+FC(F)(F)Oc1ccccn1        2-trifluoromethoxypyridine
+FC(F)(F)Oc1cccnc1        3-trifluoromethoxypyridine
+FC(F)(F)Oc1ccncc1        4-trifluoromethoxypyridine
+# ── ArCF3 amines / halides (missing isomers) ─────────────────────────────────
+Nc1ccc(C(F)(F)F)cc1     4-aminobenzotrifluoride
+Nc1cccc(C(F)(F)F)c1     3-aminobenzotrifluoride
+Nc1ccccc1C(F)(F)F       2-aminobenzotrifluoride
+Clc1ccc(C(F)(F)F)cc1    4-chlorobenzotrifluoride
+Clc1cccc(C(F)(F)F)c1    3-chlorobenzotrifluoride
+Brc1cccc(C(F)(F)F)c1    3-bromotrifluoromethylbenzene
+OB(O)c1cccc(C(F)(F)F)c1 3-trifluoromethylphenylboronic_acid
+OB(O)c1cc(C(F)(F)F)ccc1 2-trifluoromethylphenylboronic_acid
+# ── CF3CH2 (2,2,2-trifluoroethyl) ───────────────────────────────────────────
+OCC(F)(F)F              2,2,2-trifluoroethanol
+NCC(F)(F)F              2,2,2-trifluoroethylamine
+BrCC(F)(F)F             2,2,2-trifluoroethyl_bromide
 # ── Nitrile BBs (aryl nitriles for Sandmeyer / C-N disconnections) ──
 N#Cc1ccc(Br)cc1         4-bromobenzonitrile
 N#Cc1ccccn1             2-cyanopyridine
 N#Cc1cccnc1             3-cyanopyridine
 N#Cc1ccncc1             4-cyanopyridine
 N#Cc1ccc([NH2])cc1      4-aminobenzonitrile
-# ── Methylsulfonyl / sulfonamide BBs ──
+# ── Sulfonyl chlorides (for sulfonamide_retro + diaryl_sulfone_retro) ────────
 CS(=O)(=O)Cl            methanesulfonyl_chloride
 CS(=O)(=O)O             methanesulfonic_acid
+CCS(=O)(=O)Cl           ethanesulfonyl_chloride
+CCCS(=O)(=O)Cl          propane-1-sulfonyl_chloride
+CC(C)S(=O)(=O)Cl        isopropylsulfonyl_chloride
+O=S(=O)(Cl)c1ccccc1     benzenesulfonyl_chloride
+Cc1ccc(S(=O)(=O)Cl)cc1  4-methylbenzenesulfonyl_chloride_(TsCl)
+Clc1ccc(S(=O)(=O)Cl)cc1 4-chlorobenzenesulfonyl_chloride
+Fc1ccc(S(=O)(=O)Cl)cc1  4-fluorobenzenesulfonyl_chloride
+O=S(=O)(Cl)c1cccc(F)c1  3-fluorobenzenesulfonyl_chloride
+Cc1ccc(S(=O)(=O)Cl)nc1  5-methylpyridine-2-sulfonyl_chloride
+O=S(=O)(Cl)c1ccc(OC)cc1 4-methoxybenzenesulfonyl_chloride
 # ── Activated alkyl BBs ──
 BrCc1ccccn1             2-pyridylmethyl_bromide
 BrCc1cccnc1             3-pyridylmethyl_bromide

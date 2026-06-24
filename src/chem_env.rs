@@ -4,7 +4,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use anyhow::{Context, Result};
 use chematic::chem::standardize::{StandardizeOptions, ZwitterionHandling, standardize};
-use chematic::core::{Atom, AtomIdx, BondOrder, Element, MoleculeBuilder};
+use chematic::core::{Atom, AtomIdx, BondIdx, BondOrder, Element, MoleculeBuilder};
 use chematic::rxn::run_reactants;
 use chematic::smarts::{QueryMolecule, find_matches, parse_smarts};
 use chematic::smiles::{canonical_smiles, parse};
@@ -255,6 +255,101 @@ fn build_sub_molecule_with_br(
     Some(builder.build())
 }
 
+/// Build a sub-molecule and append a Cl atom bonded to `cut_atom`.
+fn build_sub_molecule_with_cl(
+    mol: &Molecule,
+    atoms: &FxHashSet<AtomIdx>,
+    cut_atom: AtomIdx,
+) -> Option<Molecule> {
+    let mut builder = MoleculeBuilder::new();
+    let mut idx_map: FxHashMap<AtomIdx, AtomIdx> = FxHashMap::default();
+
+    for &old_idx in atoms {
+        let new_idx = builder.add_atom(mol.atom(old_idx).clone());
+        idx_map.insert(old_idx, new_idx);
+    }
+    for (_, bond) in mol.bonds() {
+        let (a, b) = (bond.atom1, bond.atom2);
+        if atoms.contains(&a) && atoms.contains(&b) {
+            let (&new_a, &new_b) = (idx_map.get(&a)?, idx_map.get(&b)?);
+            builder.add_bond(new_a, new_b, bond.order).ok()?;
+        }
+    }
+    let cl_idx = builder.add_atom(Atom::new(Element::CL));
+    let &cut_new = idx_map.get(&cut_atom)?;
+    builder.add_bond(cut_new, cl_idx, BondOrder::Single).ok()?;
+    Some(builder.build())
+}
+
+/// Graph-based retro for Ar-SO2-Ar diaryl sulfones:
+/// cleave each Ar-S bridge bond to give [Ar-SO2-Cl, Ar'-H].
+fn diaryl_sulfone_cleavage(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
+    let mut results: Vec<Vec<PrecursorMol>> = Vec::new();
+    let mut seen: FxHashSet<String> = FxHashSet::default();
+
+    for (_, bond) in mol.bonds() {
+        let (a, b) = (bond.atom1, bond.atom2);
+
+        // One end must be aromatic C, the other must be S
+        let (ar_idx, s_idx) = {
+            let atom_a = mol.atom(a);
+            let atom_b = mol.atom(b);
+            if atom_a.element == Element::S && atom_b.aromatic && atom_b.element == Element::C {
+                (b, a)
+            } else if atom_b.element == Element::S && atom_a.aromatic && atom_a.element == Element::C {
+                (a, b)
+            } else {
+                continue;
+            }
+        };
+
+        // S must be a sulfone: at least two double bonds to O
+        let o_double_count = mol
+            .neighbors(s_idx)
+            .filter(|&(nb, bond_idx): &(AtomIdx, BondIdx)| {
+                mol.atom(nb).element == Element::O
+                    && mol.bond(bond_idx).order == BondOrder::Double
+            })
+            .count();
+        if o_double_count < 2 {
+            continue;
+        }
+
+        // Must be a bridge bond
+        if !is_bridge_bond(mol, ar_idx, s_idx) {
+            continue;
+        }
+
+        let comp_ar = get_component(mol, ar_idx, ar_idx, s_idx); // Ar' side (gets H)
+        let comp_s = get_component(mol, s_idx, ar_idx, s_idx);   // Ar-SO2 side (gets Cl)
+
+        let Some(frag_arh) = build_sub_molecule(mol, &comp_ar) else { continue };
+        let Some(frag_so2cl) = build_sub_molecule_with_cl(mol, &comp_s, s_idx) else { continue };
+
+        let precs_arh = split_fragments(&frag_arh);
+        let precs_so2cl = split_fragments(&frag_so2cl);
+        if precs_arh.is_empty() || precs_so2cl.is_empty() {
+            continue;
+        }
+
+        let mut key_parts: Vec<&str> = precs_arh
+            .iter()
+            .chain(precs_so2cl.iter())
+            .map(|p| p.smiles.as_str())
+            .collect();
+        key_parts.sort_unstable();
+        let key = key_parts.join("|");
+        if !seen.insert(key) {
+            continue;
+        }
+
+        let mut prec_set = precs_arh;
+        prec_set.extend(precs_so2cl);
+        results.push(prec_set);
+    }
+    results
+}
+
 /// Graph-based retro-Suzuki: cleave every Ar–Ar bridge bond and return
 /// [Ar-Br, Ar'] and [Ar, Ar'-Br] precursor sets.
 fn biaryl_cleavage(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
@@ -430,6 +525,7 @@ pub fn apply_retro(mol: &Molecule, rule: &RetroRule) -> Vec<Vec<PrecursorMol>> {
     if rule.smirks.is_empty() {
         return match rule.name.as_str() {
             "suzuki_retro" => biaryl_cleavage(mol),
+            "diaryl_sulfone_retro" => diaryl_sulfone_cleavage(mol),
             "amide_cleavage" => amide_cleavage(mol),
             "boc_deprotection_retro" => boc_deprotection(mol),
             "cbz_deprotection_retro" => cbz_deprotection(mol),
@@ -615,12 +711,14 @@ pub fn default_rules() -> Vec<RetroRule> {
         // ── Sonogashira coupling ─────────────────────────────────────────────
         // Ar-C≡C-R → Ar-Br + HC≡C-R (retro-Sonogashira, Pd/Cu catalysis)
         rr("sonogashira_retro", "[c:1][C:2]#[C:3]>>[c:1]Br.[C:2]#[C:3]"),
-        // ── Sulfonamide disconnection ────────────────────────────────────────
+        // ── Sulfonamide / diaryl sulfone disconnections ──────────────────────
         // Ar-SO2-NHR → Ar-SO2Cl + HNR (sulfonyl chloride + amine)
         rr(
             "sulfonamide_retro",
             "[S:1](=O)(=O)[N:2]>>[S:1](=O)(=O)Cl.[N:2]",
         ),
+        // Ar-SO2-Ar' → Ar-SO2Cl + Ar'H (graph-based; Friedel-Crafts sulfonylation retro)
+        rr("diaryl_sulfone_retro", ""),
         // ── N-protection / deprotection ──────────────────────────────────────
         // N-Boc → N-H (deprotect: TFA removes Boc). Graph-based to avoid leakage.
         rr("boc_deprotection_retro", ""),
@@ -1520,6 +1618,57 @@ mod chematic_regression {
             e_results.is_empty(),
             "E-alkene must NOT match Z-SMIRKS (chematic #21 regression); got {} result set(s)",
             e_results.len()
+        );
+    }
+
+    /// diaryl_sulfone_retro: diphenyl sulfone → benzenesulfonyl chloride + benzene.
+    #[test]
+    fn diaryl_sulfone_retro_diphenyl_sulfone() {
+        let mol = mol_from_smiles("O=S(=O)(c1ccccc1)c1ccccc1").unwrap(); // diphenyl sulfone
+        let rule = rr("diaryl_sulfone_retro", "");
+        let results = apply_retro(&mol, &rule);
+
+        assert!(
+            !results.is_empty(),
+            "diaryl_sulfone_retro must fire on diphenyl sulfone"
+        );
+        // Must produce benzenesulfonyl chloride (PhSO2Cl) and benzene (PhH)
+        let flat: Vec<_> = results
+            .iter()
+            .flat_map(|s| s.iter().map(|p| p.smiles.as_str()))
+            .collect();
+        // canonical SMILES for PhSO2Cl is "O=S(c1ccccc1)(Cl)=O"
+        let has_so2cl = flat.iter().any(|s| s.contains("Cl") && s.contains('S'));
+        assert!(has_so2cl, "must produce ArSO2Cl; got {flat:?}");
+        let has_benzene = flat.iter().any(|s| *s == "c1ccccc1");
+        assert!(has_benzene, "must produce benzene; got {flat:?}");
+    }
+
+    /// diaryl_sulfone_retro: asymmetric sulfone gives two distinct disconnections.
+    #[test]
+    fn diaryl_sulfone_retro_asymmetric() {
+        // 4-methylphenyl phenyl sulfone
+        let mol = mol_from_smiles("O=S(=O)(c1ccc(C)cc1)c1ccccc1").unwrap();
+        let rule = rr("diaryl_sulfone_retro", "");
+        let results = apply_retro(&mol, &rule);
+
+        assert!(
+            results.len() >= 2,
+            "asymmetric diaryl sulfone must give ≥2 disconnections; got {}",
+            results.len()
+        );
+    }
+
+    /// diaryl_sulfone_retro must NOT fire on a simple thioether (no =O on S).
+    #[test]
+    fn diaryl_sulfone_retro_no_fire_on_thioether() {
+        let mol = mol_from_smiles("c1ccccc1Sc1ccccc1").unwrap(); // diphenyl thioether
+        let rule = rr("diaryl_sulfone_retro", "");
+        let results = apply_retro(&mol, &rule);
+        assert!(
+            results.is_empty(),
+            "diaryl_sulfone_retro must NOT fire on thioether; got {} result set(s)",
+            results.len()
         );
     }
 

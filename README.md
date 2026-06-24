@@ -106,14 +106,15 @@ USPTO-50k test set (4,907 molecules, full evaluation):
 | + depth=5, top-500 templates | 2315/4907 | 47.2% | 463 | 314 | 5 | 50 | — |
 | + beam=100 | 2688/4907 | 54.8%* | 463 | 314 | 5 | 100 | — |
 | + Phase A (template freq. weighting) | 3540/4907 | 72.1%† | 463 | 314 | 5 | 100 | — |
-| **+ 5,000 templates, 480 BBs** | **3826/4907** | **78.0%** | **480** | **5,000** | **5** | **100** | **2,775** |
+| + 5,000 templates, 480 BBs | 3826/4907 | 78.0% | 480 | 5,000 | 5 | 100 | 2,775 |
 | Phase A unlimited (beam=0) | 3832/4907 | 78.1% | 480 | 5,000 | 5 | 0 | — |
 | Phase B (NN scorer, tract-onnx) | 3826/4907 | 78.0% | 480 | 5,000 | 5 | 100 | 3,394 |
+| **+ diaryl sulfone rule, 509 BBs** | **3831/4907** | **78.1%** | **509** | **5,000** | **5** | **100** | **≈2,800** |
 
 \* 29/50 chunks, previous binary  
 † 50/50 chunks — **72.1%** (3,540/4,907) confirmed
 
-On the standard USPTO-50k benchmark (multi-step route-finding, same train/test split), RENKIN (**78.0%**) exceeds the published numbers for AiZynthFinder (45–53%), Retro\* (44.3%), and ASKCOS (41%) — though those are from 2019–2020 papers with different BB/template counts, so no matched-condition experiment exists yet.  
+On the standard USPTO-50k benchmark (multi-step route-finding, same train/test split), RENKIN (**78.1%**) exceeds the published numbers for AiZynthFinder (45–53%), Retro\* (44.3%), and ASKCOS (41%) — though those are from 2019–2020 papers with different BB/template counts, so no matched-condition experiment exists yet.  
 *Note: LocalRetro (53.4%) and GLG (58.0%) report single-step top-1 prediction accuracy — a different metric, not directly comparable.*  
 [Full benchmark details →](https://kent-tokyo.github.io/renkin/benchmark/)
 
@@ -128,9 +129,9 @@ On the standard USPTO-50k benchmark (multi-step route-finding, same train/test s
 | **SYNTHIA** | Closed | Proprietary | No | No | SMARTS + AND/OR | Manual curated | Sigma-Aldrich |
 | **IBM RXN** | Closed | Cloud SaaS | No | No | Transformer | USPTO | — |
 | **Retro\*** | Python | MIT | No | No (unmaintained) | A\* + AND/OR | USPTO (ML) | eMolecules |
-| **★ RENKIN** | **Rust** | **MIT** | **Yes** | **Yes** | **A\* + AND/OR** | Hand-curated + rdchiral (5,000) | 480+ |
+| **★ RENKIN** | **Rust** | **MIT** | **Yes** | **Yes** | **A\* + AND/OR** | Hand-curated + rdchiral (5,000) | 509+ |
 
-**RENKIN's goal**: match or exceed neural-network-based tools using only curated rules and auto-extracted SMIRKS templates — no GPU, no training data, no black boxes. On the standard USPTO-50k benchmark (same train/test split used by all published tools), RENKIN reaches **78.0%** (3,826/4,907 — full 4,907-molecule run confirmed). Template frequency weighting (Phase A) — the same principle as AiZynthFinder's neural template scoring — combined with 5,000 auto-extracted templates and 480 building blocks delivers this result. RENKIN runs anywhere: browser, CLI, Python — single `cargo build`.
+**RENKIN's goal**: match or exceed neural-network-based tools using only curated rules and auto-extracted SMIRKS templates — no GPU, no training data, no black boxes. On the standard USPTO-50k benchmark (same train/test split used by all published tools), RENKIN reaches **78.1%** (3,831/4,907 — full 4,907-molecule run confirmed). Template frequency weighting (Phase A) — the same principle as AiZynthFinder's neural template scoring — combined with 5,000 auto-extracted templates and 509 building blocks delivers this result. RENKIN runs anywhere: browser, CLI, Python — single `cargo build`.
 
 ---
 
@@ -231,6 +232,7 @@ renkin/
 - [x] **Phase 23** — Arc<PathNode> persistent linked-list for path sharing (O(1) per child)
 - [x] **Phase 24** — apply_retro memoization cache (SMARTS VF2 skip on repeated intermediates)
 - [x] **Phase 25** — 5,000 extracted templates + 480 BBs: **78.0%** USPTO-50k (3,826/4,907 ✅, 2,775 ms/mol)
+- [x] **Phase 26** — diaryl sulfone retro rule + 509 BBs: **78.1%** USPTO-50k (3,831/4,907 ✅)
 - [x] **Phase B** — NN template scorer via `--scorer` flag (tract-onnx, Pure Rust ONNX, no C++ dep) ✅
 - [x] **`#![forbid(unsafe_code)]`** — compiler-enforced Pure Safe Rust on all crates
 - [ ] **Phase 16** — Large-scale building block DB integration (500k BBs — in progress)

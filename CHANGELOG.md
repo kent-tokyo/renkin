@@ -13,10 +13,19 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Patch release; E/Z stereo filter (issue #21) remains active as of 0.4.15
 
 ### Added
+- **`diaryl_sulfone_retro` rule** (graph-based) — cleaves Ar-SO₂-Ar bridge bonds into Ar-SO₂-Cl + Ar'-H;
+  `build_sub_molecule_with_cl` helper added alongside existing `_with_br`
+- **Building block set expanded 480 → 509** (+29 entries):
+  - Ar-OCF₃ series (10 entries): `FC(F)(F)Oc1ccccc1`, 4-Br/Cl/F/NH₂/F-OCF₃ arenes, OCF₃ pyridines
+  - ArCF₃ amines / halides (8 entries): ortho/meta isomers, 3-/4-aminobenzotrifluoride, etc.
+  - CF₃CH₂ series (3 entries): 2,2,2-trifluoroethanol, -amine, -bromide
+  - Sulfonyl chlorides (11 entries): EtSO₂Cl, PrSO₂Cl, PhSO₂Cl, TsCl, 4-Cl/F/3-F/4-OMe-PhSO₂Cl, iPrSO₂Cl, 5-Me-2-PySO₂Cl
 - **E/Z stereo coverage expanded** — 3 new regression tests in `chematic_regression`:
-  - `ez_stereo_e_selective_smirks`: E-SMIRKS matches E-alkene and rejects Z-alkene (symmetric counterpart to existing Z test)
-  - `ez_stereo_unspecified_smirks_matches_both_geometries`: stereo-unspecified SMIRKS is permissive to both geometries
-  - `ez_stereo_stilbene_wittig_discrimination`: real-molecule validation — E-selective retro-Wittig fires on (E)-stilbene, rejects (Z)-stilbene
+  - `ez_stereo_e_selective_smirks`: E-SMIRKS matches E-alkene and rejects Z-alkene
+  - `ez_stereo_unspecified_smirks_matches_both_geometries`: stereo-unspecified SMIRKS is permissive
+  - `ez_stereo_stilbene_wittig_discrimination`: (E)/(Z)-stilbene discrimination on real molecule
+- **3 regression tests for `diaryl_sulfone_retro`**: diphenyl sulfone, asymmetric sulfone, thioether guard
+- **USPTO-50k benchmark**: **78.1%** (3,831/4,907) — +5 molecules vs v0.1.3 (78.0%)
 
 ---
 

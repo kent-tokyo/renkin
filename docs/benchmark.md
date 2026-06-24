@@ -58,6 +58,19 @@ RENKIN achieves high accuracy on standard bond disconnections:
 - Diaryl sulfones → arylsulfonyl chloride + arene (graph-based, v0.1.4)
 - Sulfonamides → sulfonyl chloride + amine
 
+### Out-of-Distribution (OOD) Evaluation
+
+To check whether RENKIN's accuracy is specific to the USPTO-50k domain, we evaluated on **500 FDA-approved drugs** from ChEMBL (Phase 4, MW 150–700, no salts).
+
+| Dataset | Solved | Success Rate | Notes |
+|---------|--------|-------------|-------|
+| USPTO-50k test set | 3,831 / 4,907 | **78.1%** | In-distribution (templates from USPTO train set) |
+| **ChEMBL approved drugs** | **409 / 500** | **81.8%** | Out-of-distribution (real FDA-approved drugs) |
+
+**RENKIN generalizes well beyond the USPTO domain.** The +3.7 pp improvement on approved drugs suggests the rule set covers the common transformations used in drug synthesis, not just reactions seen in USPTO training data.
+
+Unsolved molecules in both datasets share the same profile: nitrogen-rich heterocycles (+17 pp in unsolved) and fluorinated compounds (+11 pp). This is a structural challenge, not a domain-specific artifact.
+
 ### Improving the success rate
 
 To push the success rate higher:

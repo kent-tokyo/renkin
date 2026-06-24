@@ -1,0 +1,4009 @@
+{
+  "total": 500,
+  "solved": 409,
+  "success_rate": 0.818,
+  "avg_depth": 2.7775061124694376,
+  "avg_time_ms": 2864.837075662,
+  "results": [
+    {
+      "smiles": "CC(=O)OCC(=O)[C@@]12OC3(CCCC3)O[C@@H]1C[C@H]1[C@@H]3CCC4=CC(=O)C=C[C@]4(C)[C@@]3(F)[C@@H](O)C[C@@]12C",
+      "name": "AMCINONIDE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1583.759625
+    },
+    {
+      "smiles": "O=C1CN=C(c2ccccn2)c2cc(Br)ccc2N1",
+      "name": "BROMAZEPAM",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 1096.10575
+    },
+    {
+      "smiles": "CCOC(=O)[C@H](CCc1ccccc1)N[C@@H](C)C(=O)N1CC2(C[C@H]1C(=O)O)SCCS2",
+      "name": "SPIRAPRIL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 976.401417
+    },
+    {
+      "smiles": "COc1cc2nccc(Oc3ccc(NC(=O)Nc4cc(C)on4)c(Cl)c3)c2cc1OC",
+      "name": "TIVOZANIB",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 2769.204792
+    },
+    {
+      "smiles": "NS(=O)(=O)c1cc2c(cc1Cl)NC(C1CC3C=CC1C3)NS2(=O)=O",
+      "name": "CYCLOTHIAZIDE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 2668.8605000000002
+    },
+    {
+      "smiles": "NCCCC(O)(P(=O)(O)O)P(=O)(O)O",
+      "name": "ALENDRONIC_ACID",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 73.988458
+    },
+    {
+      "smiles": "Clc1ccccc1CN1CCc2sccc2C1",
+      "name": "TICLOPIDINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 245.0965
+    },
+    {
+      "smiles": "CC(=O)CCCCn1c(=O)c2c(ncn2C)n(C)c1=O",
+      "name": "PENTOXIFYLLINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 328.352042
+    },
+    {
+      "smiles": "Cc1ccc(=O)n(-c2ccccc2)c1",
+      "name": "PIRFENIDONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 147.143834
+    },
+    {
+      "smiles": "CCOC(=O)C(C)(C)Oc1ccc(Cl)cc1",
+      "name": "CLOFIBRATE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 16.269334
+    },
+    {
+      "smiles": "CC(=O)O[C@H]1C[C@@H]2CC[C@@H]3[C@H](CC[C@@]4(C)[C@H]3C[C@H](N3CC[N+](C)(C)CC3)[C@@H]4OC(C)=O)[C@@]2(C)C[C@@H]1N1CC[N+](C)(C)CC1",
+      "name": "PIPECURONIUM",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 20915.366375
+    },
+    {
+      "smiles": "CC#C[C@]1(O)CC[C@H]2[C@@H]3CCC4=CC(=O)CCC4=C3[C@@H](c3ccc(N(C)C)cc3)C[C@@]21C",
+      "name": "MIFEPRISTONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 977.176917
+    },
+    {
+      "smiles": "CC#CC(=O)N1CCC[C@H]1c1nc(-c2ccc(C(=O)Nc3ccccn3)cc2)c2c(N)nccn12",
+      "name": "ACALABRUTINIB",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 3914.965083
+    },
+    {
+      "smiles": "CC(=O)OCC1=C(C(=O)O)N2C(=O)[C@@H](NC(=O)CSc3ccncc3)[C@H]2SC1",
+      "name": "CEPHAPIRIN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 661.047083
+    },
+    {
+      "smiles": "CCCN1C[C@H](CSC)C[C@@H]2c3cccc4[nH]cc(c34)C[C@H]21",
+      "name": "PERGOLIDE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 2336.063375
+    },
+    {
+      "smiles": "CCC[C@@H]1C[C@@H](C(=O)N[C@@H]([C@H]2O[C@H](SC)[C@H](O)[C@@H](O)[C@H]2O)[C@H](C)Cl)N(C)C1",
+      "name": "CLINDAMYCIN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1185.3932499999999
+    },
+    {
+      "smiles": "C[C@H](C(=O)O)c1ccc(-c2ccccc2)c(F)c1",
+      "name": "ESFLURBIPROFEN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 403.33175
+    },
+    {
+      "smiles": "C=CCC1(C(C)C#CCC)C(=O)NC(=O)N(C)C1=O",
+      "name": "METHOHEXITAL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 1294.332708
+    },
+    {
+      "smiles": "CCCC(C)C1(CC)C(=O)NC(=S)NC1=O",
+      "name": "THIOPENTAL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 880.397875
+    },
+    {
+      "smiles": "CCOc1ccccc1OC(c1ccccc1)C1CNCCO1",
+      "name": "REBOXETINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 872.733667
+    },
+    {
+      "smiles": "CC1CS(=O)(=O)CCN1/N=C/c1ccc([N+](=O)[O-])o1",
+      "name": "NIFURTIMOX",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 948.432917
+    },
+    {
+      "smiles": "C[C@@H]1CN(c2c(F)c(N)c3c(=O)c(C(=O)O)cn(C4CC4)c3c2F)C[C@H](C)N1",
+      "name": "SPARFLOXACIN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 499.75566599999996
+    },
+    {
+      "smiles": "CN(C)[C@@H]1C(O)=C(C(N)=O)C(=O)[C@@]2(O)C(O)=C3C(=O)c4c(O)cccc4[C@@](C)(O)[C@H]3[C@H](O)[C@@H]12",
+      "name": "OXYTETRACYCLINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 4441.815165999999
+    },
+    {
+      "smiles": "O=C1/C(=C2\\Nc3ccc(S(=O)(=O)O)cc3C2=O)Nc2ccc(S(=O)(=O)O)cc21",
+      "name": "INDIGOTINDISULFONATE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 2104.193458
+    },
+    {
+      "smiles": "NS(=O)(=O)c1cc(C(=O)O)c(NCc2ccco2)cc1Cl",
+      "name": "FUROSEMIDE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 304.46770899999996
+    },
+    {
+      "smiles": "CCOC(=O)N[C@@H]1CC[C@@H]2[C@@H](C1)C[C@H]1C(=O)O[C@H](C)[C@H]1[C@H]2/C=C/c1ccc(-c2cccc(F)c2)cn1",
+      "name": "VORAPAXAR",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 15437.338125
+    },
+    {
+      "smiles": "CN1CC(=O)N2[C@H](c3ccc4c(c3)OCO4)c3[nH]c4ccccc4c3C[C@@H]2C1=O",
+      "name": "TADALAFIL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 3862.4515
+    },
+    {
+      "smiles": "C#CCC(Cc1cnc2nc(N)nc(N)c2n1)c1ccc(C(=O)N[C@@H](CCC(=O)O)C(=O)O)cc1",
+      "name": "PRALATREXATE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1822.772042
+    },
+    {
+      "smiles": "CC(C)(C)CC(=O)OCC(=O)[C@@]12OC(C)(C)O[C@@H]1C[C@H]1[C@@H]3CCC4=CC(=O)C=C[C@]4(C)[C@@]3(F)[C@@H](O)C[C@@]12C",
+      "name": "TRIAMCINOLONE_HEXACETONIDE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1196.9822080000001
+    },
+    {
+      "smiles": "CNC(=O)c1c(I)c(NC(C)=O)c(I)c(C(=O)O)c1I",
+      "name": "IOTHALAMIC_ACID",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 429.6175
+    },
+    {
+      "smiles": "C=C(F)C(=O)N1CCN(c2nc(OC[C@@H]3CCCN3C)nc3c2CCN(c2cccc4cccc(Cl)c24)C3)C[C@@H]1CC#N",
+      "name": "ADAGRASIB",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 13081.329167
+    },
+    {
+      "smiles": "CCN(CC)CCOc1ccc(C(O)(Cc2ccc(Cl)cc2)c2ccc(C)cc2)cc1",
+      "name": "TRIPARANOL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 656.746833
+    },
+    {
+      "smiles": "COC(=O)[C@H](c1ccccc1)[C@H]1CCCCN1",
+      "name": "DEXMETHYLPHENIDATE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 80.89295800000001
+    },
+    {
+      "smiles": "C[C@@H]1C[C@H]2[C@@H]3CCC4=CC(=O)C=C[C@]4(C)[C@@]3(F)[C@@H](O)C[C@]2(C)[C@@]1(O)C(=O)CO",
+      "name": "DEXAMETHASONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1242.613834
+    },
+    {
+      "smiles": "Nc1nc(Cl)nc2c1ncn2[C@@H]1O[C@H](CO)[C@@H](O)[C@@H]1F",
+      "name": "CLOFARABINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 362.40945800000003
+    },
+    {
+      "smiles": "CC(N)C(O)c1ccccc1",
+      "name": "PHENYLPROPANOLAMINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 1,
+      "time_ms": 55.960375
+    },
+    {
+      "smiles": "CCCNS(=O)(=O)Nc1ncnc(OCCOc2ncc(Br)cn2)c1-c1ccc(Br)cc1",
+      "name": "MACITENTAN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 2357.193416
+    },
+    {
+      "smiles": "CN1CC2c3ccccc3Oc3ccc(Cl)cc3C2C1",
+      "name": "ASENAPINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 2946.454084
+    },
+    {
+      "smiles": "CCOC(=O)c1ncn2c1CN(C)C(=O)c1cc(F)ccc1-2",
+      "name": "FLUMAZENIL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 642.4574170000001
+    },
+    {
+      "smiles": "N=C(N)NCc1cccc([131I])c1",
+      "name": "IOBENGUANE_I_131",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 1437.152167
+    },
+    {
+      "smiles": "N[C@H](C(=O)O)[C@H](O)c1ccc(O)c(O)c1",
+      "name": "DROXIDOPA",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 385.826417
+    },
+    {
+      "smiles": "CNCCCC12CCC(c3ccccc31)c1ccccc12",
+      "name": "MAPROTILINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 3497.262875
+    },
+    {
+      "smiles": "CC[N+](C)(CC)CCOC(=O)C(O)(c1ccccc1)C1CCCCC1",
+      "name": "OXYPHENONIUM",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1061.024
+    },
+    {
+      "smiles": "CC(C)Cc1ccc([C@H](C)C(=O)O)cc1",
+      "name": "DEXIBUPROFEN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 108.261916
+    },
+    {
+      "smiles": "O=C1CCc2ccc(OCCCCN3CCN(c4cccc(Cl)c4Cl)CC3)cc2N1",
+      "name": "ARIPIPRAZOLE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 9325.6815
+    },
+    {
+      "smiles": "NC(=O)OC[C@H](N)Cc1ccccc1",
+      "name": "SOLRIAMFETOL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 796.677333
+    },
+    {
+      "smiles": "CCN1CCC[C@H]1CNC(=O)c1c(OC)ccc(Br)c1OC",
+      "name": "REMOXIPRIDE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 3976.478791
+    },
+    {
+      "smiles": "COCCCC/C(=N\\OCCN)c1ccc(C(F)(F)F)cc1",
+      "name": "FLUVOXAMINE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 5361.978917
+    },
+    {
+      "smiles": "CSc1ccc(OCc2ncc([N+](=O)[O-])n2C)cc1",
+      "name": "FEXINIDAZOLE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 1060.661208
+    },
+    {
+      "smiles": "O=C(CCCN1CC=C(n2c(=O)[nH]c3ccccc32)CC1)c1ccc(F)cc1",
+      "name": "DROPERIDOL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 3899.6575
+    },
+    {
+      "smiles": "C[C@H](Nc1ccc2c(c1)OCCn1cc(N3C(=O)OC[C@H]3C(F)F)nc1-2)C(N)=O",
+      "name": "INAVOLISIB",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 5118.802707999999
+    },
+    {
+      "smiles": "CCCCC[C@H](O)/C=C/[C@H]1[C@H](O)CC(=O)[C@@H]1C/C=C\\CCCC(=O)O",
+      "name": "DINOPROSTONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1026.976167
+    },
+    {
+      "smiles": "NC(=O)NS(=O)(=O)c1ccc(N)cc1",
+      "name": "SULFACARBAMIDE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 410.727791
+    },
+    {
+      "smiles": "NC(=O)N1c2ccccc2C=Cc2ccccc21",
+      "name": "CARBAMAZEPINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 1888.9596669999999
+    },
+    {
+      "smiles": "CNCC[C@H](Oc1cccc2ccccc12)c1cccs1",
+      "name": "DULOXETINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 3063.397
+    },
+    {
+      "smiles": "N[C@@H]1c2cccnc2[C@H](OC(=O)N2CCC(n3c(=O)[nH]c4ncccc43)CC2)CC[C@H]1c1cccc(F)c1F",
+      "name": "RIMEGEPANT",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 8328.121707999999
+    },
+    {
+      "smiles": "O=C(c1cc(O)c(O)c(O)c1)c1ccc(O)c(O)c1O",
+      "name": "EXIFONE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 6578.359916
+    },
+    {
+      "smiles": "CO/N=C(\\C(=O)N[C@@H]1C(=O)N2C(C(=O)OC(C)OC(C)=O)=C(COC(N)=O)CS[C@H]12)c1ccco1",
+      "name": "CEFUROXIME_AXETIL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 9188.378875
+    },
+    {
+      "smiles": "CC(=O)N[C@@H](CC(C)C)C(=O)O",
+      "name": "LEVACETYLLEUCINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 106.38975
+    },
+    {
+      "smiles": "O=C(O)c1ccc2nc(-c3cc(Cl)cc(Cl)c3)oc2c1",
+      "name": "TAFAMIDIS",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 423.378042
+    },
+    {
+      "smiles": "COc1cc(NS(C)(=O)=O)ccc1Nc1c2ccccc2nc2ccccc12",
+      "name": "AMSACRINE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 3345.7042920000004
+    },
+    {
+      "smiles": "C[C@@H]1CCO[C@H]2Cn3cc(C(=O)NCc4ccc(F)cc4F)c(=O)c(O)c3C(=O)N12",
+      "name": "DOLUTEGRAVIR",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 2282.626584
+    },
+    {
+      "smiles": "Oc1c(Br)cc(Br)c2cccnc12",
+      "name": "BROXYQUINOLINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 150.64370799999998
+    },
+    {
+      "smiles": "CCC[C@H](N[C@@H](C)C(=O)N1[C@H](C(=O)O)C[C@@H]2CCCC[C@@H]21)C(=O)OCC",
+      "name": "PERINDOPRIL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1178.2246249999998
+    },
+    {
+      "smiles": "O=C1CC[C@@]2(O)[C@H]3Cc4ccc(O)c5c4[C@@]2(CCN3CC2CC2)[C@H]1O5",
+      "name": "NALTREXONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1022.2602499999999
+    },
+    {
+      "smiles": "CN(C)CCN(Cc1ccccc1)c1ccccn1",
+      "name": "TRIPELENNAMINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 20.028625
+    },
+    {
+      "smiles": "O=NN(CCCl)C(=O)NCCCl",
+      "name": "CARMUSTINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 145.21266699999998
+    },
+    {
+      "smiles": "Cc1nc2n(c(=O)c1CCN1CCC(c3noc4cc(F)ccc34)CC1)CCCC2O",
+      "name": "PALIPERIDONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 386.16833299999996
+    },
+    {
+      "smiles": "CN1C(=O)CC(=O)N(c2ccccc2)c2cc(Cl)ccc21",
+      "name": "CLOBAZAM",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 1908.65575
+    },
+    {
+      "smiles": "NC(=O)N/N=C1\\C=Cc2ccccc2C1=O",
+      "name": "NAFTAZONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 1111.297334
+    },
+    {
+      "smiles": "CC(=O)OCC(=O)[C@H]1CC[C@H]2[C@@H]3CCC4=CC(=O)CC[C@]4(C)[C@H]3CC[C@]12C",
+      "name": "DESOXYCORTICOSTERONE_ACETATE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 9785.692334
+    },
+    {
+      "smiles": "CC(=O)OCC(=O)[C@@]1(O)[C@H](C)C[C@H]2[C@@H]3C[C@H](F)C4=CC(=O)C=C[C@]4(C)[C@H]3[C@@H](O)C[C@@]21C",
+      "name": "PARAMETHASONE_ACETATE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1948.083541
+    },
+    {
+      "smiles": "N[C@@H](Cc1cc(O)c(O)cc1F)C(=O)O",
+      "name": "FLUORODOPA",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 678.75875
+    },
+    {
+      "smiles": "CCOc1ccc(Cc2cc([C@@H]3O[C@H](SC)[C@@H](O)[C@H](O)[C@H]3O)ccc2Cl)cc1",
+      "name": "SOTAGLIFLOZIN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 789.076584
+    },
+    {
+      "smiles": "C[N+](C)(C)CCCCCCCCCC[N+](C)(C)C",
+      "name": "DECAMETHONIUM",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 487.38375
+    },
+    {
+      "smiles": "C[C@@]12CCCCC[C@@H](Cc3ccc(O)cc31)[C@@H]2N",
+      "name": "DEZOCINE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 6707.439625
+    },
+    {
+      "smiles": "Nc1ncnc2c1ncn2[C@@H]1O[C@H](COP(=O)(O)O)[C@@H](O)[C@H]1O",
+      "name": "ADENOSINE_PHOSPHATE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 164.70754200000002
+    },
+    {
+      "smiles": "O=P(O)(O)OCC(Cl)(Cl)Cl",
+      "name": "TRICLOFOS",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 7.2175
+    },
+    {
+      "smiles": "COc1ccc2cccc(CCNC(C)=O)c2c1",
+      "name": "AGOMELATINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 1195.533959
+    },
+    {
+      "smiles": "Cc1nccn1CC1CCc2c(c3ccccc3n2C)C1=O",
+      "name": "ONDANSETRON",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 1391.743
+    },
+    {
+      "smiles": "NCc1ccccc1CC(=O)N[C@@H]1C(=O)N2C(C(=O)O)=C(CSc3nnnn3CC(=O)O)CS[C@H]12",
+      "name": "CEFORANIDE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1784.107375
+    },
+    {
+      "smiles": "COc1cc(Nc2c(C#N)cnc3cc(OCCCN4CCN(C)CC4)c(OC)cc23)c(Cl)cc1Cl",
+      "name": "BOSUTINIB",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 7799.255666999999
+    },
+    {
+      "smiles": "NC(N)=Nc1nc(CSCCN/C=N/S(=O)(=O)c2ccc(Br)cc2)cs1",
+      "name": "EBROTIDINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 2388.569042
+    },
+    {
+      "smiles": "Cc1cn([C@H]2C=C[C@@H](CO)O2)c(=O)[nH]c1=O",
+      "name": "STAVUDINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 130.14862499999998
+    },
+    {
+      "smiles": "O=C(O)CCCc1ccc(N(CCCl)CCCl)cc1",
+      "name": "CHLORAMBUCIL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 614.458625
+    },
+    {
+      "smiles": "CC(C)[C@@H](C)/C=C/[C@@H](C)[C@H]1CC[C@H]2/C(=C/C=C3\\C[C@@H](O)CC[C@@H]3C)CCC[C@]12C",
+      "name": "DIHYDROTACHYSTEROL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1698.087834
+    },
+    {
+      "smiles": "C=CC(=O)Nc1cc(Nc2nccc(-n3cc(CN(C)C)c(-c4ccccc4)n3)n2)c(OC)cc1N1CCOCC1",
+      "name": "LAZERTINIB",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 7925.577833
+    },
+    {
+      "smiles": "[2H]C([2H])([2H])Oc1cc2c(cc1OC([2H])([2H])[2H])C1CC(=O)C(CC(C)C)CN1CC2",
+      "name": "DEUTETRABENAZINE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 4371.604917
+    },
+    {
+      "smiles": "COC1=CC(=O)C[C@@H](C)[C@]12Oc1c(Cl)c(OC)cc(OC)c1C2=O",
+      "name": "GRISEOFULVIN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 3552.8694170000003
+    },
+    {
+      "smiles": "O=C(Nc1ccc(OC(F)(F)Cl)cc1)c1cnc(N2CC[C@@H](O)C2)c(-c2cc[nH]n2)c1",
+      "name": "ASCIMINIB",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 283.138875
+    },
+    {
+      "smiles": "CCNCCc1ccc(CN(CC)c2cc(OC)ccc2[C@@H]2CCc3cc(O)ccc3C2)cc1",
+      "name": "ELACESTRANT",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 9259.520583000001
+    },
+    {
+      "smiles": "C[N+]1(C)[C@@H]2C[C@@H](OC(=O)[C@H](CO)c3ccccc3)C[C@H]1[C@@H]1O[C@@H]12",
+      "name": "METHSCOPOLAMINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1217.8391669999999
+    },
+    {
+      "smiles": "C#C[C@]1(OC(C)=O)CC[C@H]2[C@@H]3CCC4=C[C@@H](OC(C)=O)CC[C@@H]4[C@H]3CC[C@@]21C",
+      "name": "ETHYNODIOL_DIACETATE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 6927.000541
+    },
+    {
+      "smiles": "Fc1ccc(C(c2ccccc2)(c2ccccc2F)n2ccnc2)cc1",
+      "name": "FLUTRIMAZOLE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 2205.975708
+    },
+    {
+      "smiles": "CCCOc1ccc(C(=O)OCCN(CC)CC)cc1N",
+      "name": "PROPARACAINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 928.398167
+    },
+    {
+      "smiles": "N=C(N)c1ccc(OCCCCCCOc2ccc(C(=N)N)cc2)cc1",
+      "name": "HEXAMIDINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 4384.574708
+    },
+    {
+      "smiles": "CNC[C@H](O)c1cccc(O)c1",
+      "name": "PHENYLEPHRINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 148.52354200000002
+    },
+    {
+      "smiles": "CC1CNc2c(cccc2S(=O)(=O)N[C@@H](CCCNC(=N)N)C(=O)N2CC[C@@H](C)C[C@@H]2C(=O)O)C1",
+      "name": "ARGATROBAN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 2235.454292
+    },
+    {
+      "smiles": "OC(c1cc(C(F)(F)F)nc2c(C(F)(F)F)cccc12)C1CCCCN1",
+      "name": "MEFLOQUINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 509.330792
+    },
+    {
+      "smiles": "C#C[C@]1(O)CC[C@H]2[C@@H]3CCc4cc(OC)ccc4[C@H]3CC[C@@]21C",
+      "name": "MESTRANOL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 717.482625
+    },
+    {
+      "smiles": "OCCN(CCO)c1nc(N2CCCCC2)c2nc(N(CCO)CCO)nc(N3CCCCC3)c2n1",
+      "name": "DIPYRIDAMOLE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 654.588917
+    },
+    {
+      "smiles": "C[C@@H]1C[C@H]2[C@@H]3CCC4=CC(=O)C=C[C@]4(C)[C@@]3(F)[C@@H](O)C[C@]2(C)[C@@]1(O)C(=O)COP(=O)(O)O",
+      "name": "DEXAMETHASONE_PHOSPHORIC_ACID",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1005.006125
+    },
+    {
+      "smiles": "CN(CCCCCCCCCCN(C)C(=O)Oc1cccc([N+](C)(C)C)c1)C(=O)Oc1cccc([N+](C)(C)C)c1",
+      "name": "DEMECARIUM",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 6409.523
+    },
+    {
+      "smiles": "FC(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)Br",
+      "name": "PERFLUBRON",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 54.784625000000005
+    },
+    {
+      "smiles": "CC(C)NCC(O)COc1cccc2[nH]ccc12",
+      "name": "PINDOLOL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 743.934584
+    },
+    {
+      "smiles": "CN(C)C/C=C/C(=O)Nc1cc2c(Nc3ccc(F)c(Cl)c3)ncnc2cc1O[C@H]1CCOC1",
+      "name": "AFATINIB",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 8949.309083
+    },
+    {
+      "smiles": "CC[C@]1(O)CC[C@H]2[C@@H]3CCC4=CCCC[C@@H]4[C@H]3CC[C@@]21C",
+      "name": "ETHYLESTRENOL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 315.143083
+    },
+    {
+      "smiles": "CCN1CCN(C(=O)N[C@@H](C(=O)N[C@@H]2C(=O)N3[C@@H]2SC(C)(C)[C@@H]3C(=O)O)c2ccccc2)C(=O)C1=O",
+      "name": "PIPERACILLIN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1503.735958
+    },
+    {
+      "smiles": "Cc1c(N(C)CS(=O)(=O)O)c(=O)n(-c2ccccc2)n1C",
+      "name": "METAMIZOLE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 1795.17025
+    },
+    {
+      "smiles": "OC[C@H]1OC(O)[C@H](O)[C@@H](O)[C@@H]1O",
+      "name": "DEXTROSE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 557.6452079999999
+    },
+    {
+      "smiles": "CC(C)(C)[C@H](NC(=O)C(F)(F)F)C(=O)N1C[C@H]2[C@@H]([C@H]1C(=O)N[C@H](C#N)C[C@@H]1CCNC1=O)C2(C)C",
+      "name": "NIRMATRELVIR",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 12479.762083000001
+    },
+    {
+      "smiles": "C[C@H](N)[C@H](O)c1ccc(O)c(O)c1",
+      "name": "LEVONORDEFRIN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 460.55125000000004
+    },
+    {
+      "smiles": "C[C@]12CCC(=O)C=C1CC[C@@H]1[C@@H]2[C@@H](O)C[C@@]2(C)[C@H]1CC[C@]2(O)C(=O)CO",
+      "name": "HYDROCORTISONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1440.9410409999998
+    },
+    {
+      "smiles": "CC(=O)Oc1ccc(C(=C2CCCCC2)c2ccc(OC(C)=O)cc2)cc1",
+      "name": "CYCLOFENIL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 2031.6415000000002
+    },
+    {
+      "smiles": "COC[C@@H](NC(C)=O)C(=O)NCc1ccccc1",
+      "name": "LACOSAMIDE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 1471.367334
+    },
+    {
+      "smiles": "FC(F)OC(F)C(F)(F)F",
+      "name": "DESFLURANE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 16.927584
+    },
+    {
+      "smiles": "CN(C)/C=N/c1c(I)cc(I)c(CCC(=O)O)c1I",
+      "name": "IPODATE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 372.739416
+    },
+    {
+      "smiles": "CCOC(=O)CN[C@@H](C(=O)N1CC[C@H]1C(=O)NCc1ccc(/C(N)=N\\O)cc1)C1CCCCC1",
+      "name": "XIMELAGATRAN",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 9499.460834000001
+    },
+    {
+      "smiles": "CN(C/C=C/C#CC(C)(C)C)Cc1cccc2ccccc12",
+      "name": "TERBINAFINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 3115.6010410000004
+    },
+    {
+      "smiles": "CCOC(=O)[C@@](C)(N)Cc1ccc(O)c(O)c1",
+      "name": "METHYLDOPATE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 2076.7502090000003
+    },
+    {
+      "smiles": "CCCCCCCCc1ccc(CCC(N)(CO)CO)cc1",
+      "name": "FINGOLIMOD",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 796.39775
+    },
+    {
+      "smiles": "CC(Cc1ccccc1)NCCCCl",
+      "name": "MEFENOREX",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 419.239458
+    },
+    {
+      "smiles": "CCc1cc2c(s1)N(C)C(=O)CN=C2c1ccccc1Cl",
+      "name": "CLOTIAZEPAM",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 2096.3444999999997
+    },
+    {
+      "smiles": "CC(C)=CC1C(C(=O)OCN2C(=O)C3=C(CCCC3)C2=O)C1(C)C",
+      "name": "TETRAMETHRIN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 2264.512583
+    },
+    {
+      "smiles": "CN(C)/N=N/c1[nH]cnc1C(N)=O",
+      "name": "DACARBAZINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 152.38204199999998
+    },
+    {
+      "smiles": "NS(=O)(=O)c1cc2c(cc1Cl)N=CNS2(=O)=O",
+      "name": "CHLOROTHIAZIDE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 887.4443749999999
+    },
+    {
+      "smiles": "CC1(C)CCC(C)(C)c2cc(Cn3cccn3)c(/C=C/c3ccc(C(=O)O)cc3)cc21",
+      "name": "PALOVAROTENE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 529.4117080000001
+    },
+    {
+      "smiles": "CCC(CC)C(=O)OCOC(=O)C1=C(S[C@H]2CC[S+]([O-])C2)S[C@@H]2[C@@H]([C@@H](C)O)C(=O)N12",
+      "name": "SULOPENEM_ETZADROXIL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 211.085
+    },
+    {
+      "smiles": "C#C[C@]1(O)CC[C@H]2[C@@H]3[C@H](C)CC4=C(CCC(=O)C4)[C@H]3CC[C@@]21C",
+      "name": "TIBOLONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 432.651875
+    },
+    {
+      "smiles": "COc1ccc(C(=O)Nc2ccccc2CCC2CCCCN2C)cc1",
+      "name": "ENCAINIDE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 2141.952375
+    },
+    {
+      "smiles": "CC(=O)Oc1cc(C(C)C)c(OCCN(C)C)cc1C",
+      "name": "MOXISYLYTE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 1007.279708
+    },
+    {
+      "smiles": "OC(CCCN1CCCCC1)(c1ccccc1)c1ccccc1",
+      "name": "DIPHENIDOL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 346.22841700000004
+    },
+    {
+      "smiles": "CC[C@@]1(O)C(=O)OCc2c1cc1n(c2=O)Cc2cc3c(CN(C)C)c(O)ccc3nc2-1",
+      "name": "TOPOTECAN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 464.032125
+    },
+    {
+      "smiles": "CC12CC3CC(C)(C1)CC(N)(C3)C2",
+      "name": "MEMANTINE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 1942.503542
+    },
+    {
+      "smiles": "Cc1ncc([N+](=O)[O-])n1CC(C)O",
+      "name": "SECNIDAZOLE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 48.665666
+    },
+    {
+      "smiles": "O=C(O)C[C@H](O)C[C@H](O)/C=C/c1c(C2CC2)nc2ccccc2c1-c1ccc(F)cc1",
+      "name": "PITAVASTATIN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 736.791125
+    },
+    {
+      "smiles": "NC(=O)N1c2ccccc2CC(=O)c2ccccc21",
+      "name": "OXCARBAZEPINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 1359.3790000000001
+    },
+    {
+      "smiles": "Cn1nnc2c(C(N)=O)ncn2c1=O",
+      "name": "TEMOZOLOMIDE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 107.46975
+    },
+    {
+      "smiles": "CCNC(=O)CCC/C=C\\C[C@@H]1[C@@H](/C=C/[C@@H](O)CCc2ccccc2)[C@H](O)C[C@@H]1O",
+      "name": "BIMATOPROST",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 2137.583083
+    },
+    {
+      "smiles": "COc1ccc2[nH]c([S+]([O-])Cc3ncc(C)c(OC)c3C)nc2c1",
+      "name": "OMEPRAZOLE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 683.703833
+    },
+    {
+      "smiles": "CC(C(=O)O)c1cccc(Oc2ccccc2)c1",
+      "name": "FENOPROFEN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 419.93125
+    },
+    {
+      "smiles": "C=CCC1(C(C)CC)C(=O)NC(=O)NC1=O",
+      "name": "TALBUTAL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 1652.501875
+    },
+    {
+      "smiles": "CN(C)c1cc(NC(=O)CNC(C)(C)C)c(O)c2c1C[C@H]1C[C@H]3[C@H](N(C)C)C(O)=C(C(N)=O)C(=O)[C@@]3(O)C(O)=C1C2=O",
+      "name": "TIGECYCLINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 4644.5693329999995
+    },
+    {
+      "smiles": "CCCCc1oc2ccccc2c1C(=O)c1cc(I)c(OCCN(CC)CC)c(I)c1",
+      "name": "AMIODARONE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 2565.677917
+    },
+    {
+      "smiles": "C=CC1=C(C(=O)O)N2C(=O)[C@@H](NC(=O)/C(=N\\O)c3csc(N)n3)[C@H]2SC1",
+      "name": "CEFDINIR",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 553.844333
+    },
+    {
+      "smiles": "COc1ccc(F)cc1C(=O)NCc1ccc(-c2nn([C@@H](C)C(F)(F)F)c(N)c2C(N)=O)cc1",
+      "name": "PIRTOBRUTINIB",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 5277.72625
+    },
+    {
+      "smiles": "COc1cc(C)c2c(Oc3cccc(C(F)(F)F)c3)c(OC)cc(NC(C)CCCN)c2n1",
+      "name": "TAFENOQUINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 3593.85
+    },
+    {
+      "smiles": "CCCCNc1ccc(C(=O)OCCOCCOCCOCCOCCOCCOCCOCCOCCOC)cc1",
+      "name": "BENZONATATE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 61.08325
+    },
+    {
+      "smiles": "CC1(C)CC[C@]2(NC(=O)C(C)(F)F)CC[C@]3(C)[C@H](C(=O)C=C4[C@@]5(C)C=C(C#N)C(=O)C(C)(C)[C@@H]5CC[C@]43C)[C@@H]2C1",
+      "name": "OMAVELOXOLONE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 14352.137084
+    },
+    {
+      "smiles": "O=C(CCBr)N1CCN(C(=O)CCBr)CC1",
+      "name": "PIPOBROMAN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 254.656292
+    },
+    {
+      "smiles": "O=P(O)(O)C(O)(Cn1ccnc1)P(=O)(O)O",
+      "name": "ZOLEDRONIC_ACID_ANHYDROUS",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 34.741125
+    },
+    {
+      "smiles": "C[C@]12C=CC(=O)C=C1CC[C@@H]1[C@@H]2CC[C@@]2(C)[C@H]1CC[C@]2(C)O",
+      "name": "METHANDROSTENOLONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 345.04270799999995
+    },
+    {
+      "smiles": "CC(C)(C)c1cc(NC(=O)Nc2ccc(-c3cn4c(n3)sc3cc(OCCN5CCOCC5)ccc34)cc2)no1",
+      "name": "QUIZARTINIB",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 4563.442666
+    },
+    {
+      "smiles": "C[C@@]1(C(=O)N[C@@H](CCC(=O)O)C(=O)O)CCCN1C(=O)CN",
+      "name": "TROFINETIDE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 891.3244169999999
+    },
+    {
+      "smiles": "O=C(O)c1ccc(-n2nc(-c3ccccc3O)nc2-c2ccccc2O)cc1",
+      "name": "DEFERASIROX",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 653.7077909999999
+    },
+    {
+      "smiles": "c1ccc(CN(CC2=NCCN2)c2ccccc2)cc1",
+      "name": "ANTAZOLINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 949.506834
+    },
+    {
+      "smiles": "COc1cc2c3cc1Oc1cc(ccc1O)C[C@@H]1c4c(cc(OC)c(O)c4Oc4ccc(cc4)C[C@@H]3N(C)CC2)CC[N+]1(C)C",
+      "name": "TUBOCURARINE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 19660.972792
+    },
+    {
+      "smiles": "C[C@@H](NC(=O)c1ncnc(N)c1Cl)c1ncc(C(=O)Nc2cc(C(F)(F)F)c(Cl)cn2)s1",
+      "name": "TOVORAFENIB",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 3479.69175
+    },
+    {
+      "smiles": "CN(C/C=C/c1ccccc1)Cc1cccc2ccccc12",
+      "name": "NAFTIFINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 887.771209
+    },
+    {
+      "smiles": "C[C@]12CC[C@H](O)CC1=CC[C@@H]1[C@@H]2CC[C@]2(C)C(c3cccnc3)=CC[C@@H]12",
+      "name": "ABIRATERONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 525.534125
+    },
+    {
+      "smiles": "CN1CCC(OC(c2ccccc2)c2ccccc2)CC1",
+      "name": "DIPHENYLPYRALINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 426.04375
+    },
+    {
+      "smiles": "OC(Cn1cncn1)(Cn1cncn1)c1ccc(F)cc1F",
+      "name": "FLUCONAZOLE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 83.429208
+    },
+    {
+      "smiles": "Clc1ccc(C(Cn2ccnc2)OCc2c(Cl)cccc2Cl)c(Cl)c1",
+      "name": "ISOCONAZOLE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 446.479375
+    },
+    {
+      "smiles": "C[C@](N)(Cc1ccc(O)c(O)c1)C(=O)O",
+      "name": "METHYLDOPA",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 485.9185
+    },
+    {
+      "smiles": "COc1cccc(OC)c1C(=O)N[C@@H]1C(=O)N2[C@@H]1SC(C)(C)[C@@H]2C(=O)O",
+      "name": "METHICILLIN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 660.900708
+    },
+    {
+      "smiles": "CCC(=O)C(CC(C)N(C)C)(c1ccccc1)c1ccccc1",
+      "name": "METHADONE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 1620.124334
+    },
+    {
+      "smiles": "COc1ccc(C(=O)CC(=O)c2ccc(C(C)(C)C)cc2)cc1",
+      "name": "AVOBENZONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 1488.560375
+    },
+    {
+      "smiles": "Cc1ncc([N+](=O)[O-])n1CCO",
+      "name": "METRONIDAZOLE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 52.770792
+    },
+    {
+      "smiles": "CN(C)[C@@H]1C(O)=C(C(N)=O)C(=O)[C@@]2(O)C(O)=C3C(=O)c4c(O)c(NC(=O)CN5CCCC5)cc(F)c4C[C@H]3C[C@@H]12",
+      "name": "ERAVACYCLINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 3460.2475
+    },
+    {
+      "smiles": "Cn1nnnc1SCC1=C(C(=O)O)N2C(=O)[C@@H](NC(=O)[C@H](OC=O)c3ccccc3)[C@H]2SC1",
+      "name": "CEFAMANDOLE_NAFATE_FREE_BASE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1170.478875
+    },
+    {
+      "smiles": "Cc1ccc(C(=O)OCc2ccc([C@@H](CN)C(=O)Nc3ccc4cnccc4c3)cc2)c(C)c1",
+      "name": "NETARSUDIL",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 3536.4915
+    },
+    {
+      "smiles": "COc1ccc(CC(C)(C)NC[C@H](O)c2cc(O)cc3c2OCC(=O)N3)cc1",
+      "name": "OLODATEROL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 679.5410830000001
+    },
+    {
+      "smiles": "C=CCN1CC[C@]23c4c5ccc(O)c4O[C@H]2C(=O)CC[C@@]3(O)[C@H]1C5",
+      "name": "NALOXONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1333.662875
+    },
+    {
+      "smiles": "OCc1cc(C(O)CNCCCCCCOCCCCc2ccccc2)ccc1O",
+      "name": "SALMETEROL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1700.273709
+    },
+    {
+      "smiles": "COc1ccccc1N1CCN(CC(O)COc2cccc3ccccc23)CC1",
+      "name": "NAFTOPIDIL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1302.2921250000002
+    },
+    {
+      "smiles": "C[C@@H](Oc1cc(-c2cnn(C3CCNCC3)c2)cnc1N)c1c(Cl)ccc(F)c1Cl",
+      "name": "CRIZOTINIB",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 2740.00075
+    },
+    {
+      "smiles": "Cc1ccccc1OCC(O)CO",
+      "name": "MEPHENESIN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 359.038125
+    },
+    {
+      "smiles": "C[C@H](CS)C(=O)N1CCC[C@H]1C(=O)O",
+      "name": "CAPTOPRIL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 214.24533300000002
+    },
+    {
+      "smiles": "Cc1onc(-c2c(Cl)cccc2Cl)c1C(=O)N[C@@H]1C(=O)N2[C@@H]1SC(C)(C)[C@@H]2C(=O)O",
+      "name": "DICLOXACILLIN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 431.224042
+    },
+    {
+      "smiles": "Cc1cccc(CN2CCN(C(c3ccccc3)c3ccc(Cl)cc3)CC2)c1",
+      "name": "MECLIZINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 2892.280917
+    },
+    {
+      "smiles": "NS(=O)(=O)c1cc(Cl)c(Cl)c(S(N)(=O)=O)c1",
+      "name": "DICHLORPHENAMIDE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 455.558666
+    },
+    {
+      "smiles": "NC1(C(=O)N[C@@H](CCO)c2ccc(Cl)cc2)CCN(c2nc[nH]c3nccc2-3)CC1",
+      "name": "CAPIVASERTIB",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 841.790208
+    },
+    {
+      "smiles": "CC(=O)Oc1cc2c(s1)CCN(C(C(=O)C1CC1)c1ccccc1F)C2",
+      "name": "PRASUGREL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 2319.559167
+    },
+    {
+      "smiles": "CC(C)CN(C[C@@H](O)[C@H](Cc1ccccc1)NC(=O)O[C@H]1CCOC1)S(=O)(=O)c1ccc(N)cc1",
+      "name": "AMPRENAVIR",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 823.3607499999999
+    },
+    {
+      "smiles": "C[C@@H](Cc1ccccc1)NC(=O)[C@@H](N)CCCCN",
+      "name": "LISDEXAMFETAMINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 26.156083
+    },
+    {
+      "smiles": "CC(=O)OC[C@H]1O[C@@H](n2ncc(=O)[nH]c2=O)[C@H](OC(C)=O)[C@@H]1OC(C)=O",
+      "name": "AZARIBINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 2784.169959
+    },
+    {
+      "smiles": "CC(=O)O[C@]1(C(C)=O)CC[C@H]2[C@@H]3C=C(C)C4=CC(=O)CC[C@@H]4[C@H]3CC[C@@]21C",
+      "name": "NOMEGESTROL_ACETATE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 4712.677667
+    },
+    {
+      "smiles": "CCC(=O)O[C@]1(C(=O)CO)CC[C@H]2[C@@H]3CCC4=CC(=O)CC[C@]4(C)[C@H]3CC[C@@]21C",
+      "name": "CLASCOTERONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1173.846833
+    },
+    {
+      "smiles": "O=C(O)CSCC(=O)NC1CCSC1=O",
+      "name": "ERDOSTEINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 191.887625
+    },
+    {
+      "smiles": "CC(=O)N(CC(C)C(=O)O)c1c(I)cc(I)c(N)c1I",
+      "name": "IOCETAMIC_ACID",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 252.65008300000002
+    },
+    {
+      "smiles": "CC(C)n1c(=O)cc(N[C@@H](C)c2ccccc2)[nH]c1=O",
+      "name": "MAVACAMTEN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 1232.1686249999998
+    },
+    {
+      "smiles": "CCCCCCCCC(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)F",
+      "name": "PERFLUOROHEXYLOCTANE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 1787.827834
+    },
+    {
+      "smiles": "CC(C)(C)NC[C@H](O)c1ccc(O)c(CO)c1",
+      "name": "LEVOSALBUTAMOL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 256.67425
+    },
+    {
+      "smiles": "CC(C)(C#N)c1cc(Cn2cncn2)cc(C(C)(C)C#N)c1",
+      "name": "ANASTROZOLE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 2831.6389590000003
+    },
+    {
+      "smiles": "COc1ccc2c3c1O[C@H]1C[C@@H](O)C=C[C@@]31CCN(C)C2",
+      "name": "GALANTAMINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 716.3217910000001
+    },
+    {
+      "smiles": "C[C@H]1c2cccc(O)c2C(=O)C2=C(O)[C@]3(O)C(=O)C(C(N)=O)=C(O)[C@@H](N(C)C)[C@@H]3[C@@H](O)[C@@H]21",
+      "name": "DOXYCYCLINE_ANHYDROUS",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 3095.1442079999997
+    },
+    {
+      "smiles": "C[C@]1(Cn2ccnn2)[C@H](C(=O)O)N2C(=O)C[C@H]2S1(=O)=O",
+      "name": "TAZOBACTAM",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 158.410875
+    },
+    {
+      "smiles": "CC[C@@H](c1cccc(O)c1)[C@@H](C)CN(C)C",
+      "name": "TAPENTADOL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 3028.772459
+    },
+    {
+      "smiles": "N[C@@H]1CCCCN(c2c(F)cc3c(=O)c(C(=O)O)cn(C4CC4)c3c2Cl)C1",
+      "name": "BESIFLOXACIN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 783.590292
+    },
+    {
+      "smiles": "N[C@@H](Cc1ccc(O)cc1)C(=O)O",
+      "name": "TYROSINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 0,
+      "time_ms": 20.486625
+    },
+    {
+      "smiles": "CN(C)CCC[C@@]1(c2ccc(F)cc2)OCc2cc(C#N)ccc21",
+      "name": "ESCITALOPRAM",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 1317.209875
+    },
+    {
+      "smiles": "C[C@]12CC[C@@H]3c4ccc(O)cc4CC[C@H]3[C@@H]1C[C@@H](F)[C@@H]2O",
+      "name": "FLUOROESTRADIOL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 489.130292
+    },
+    {
+      "smiles": "COc1ccc(C2C(=O)c3ccccc3C2=O)cc1",
+      "name": "ANISINDIONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 296.939625
+    },
+    {
+      "smiles": "CN1CCN(C(=O)O[C@H]2c3nccnc3C(=O)N2c2ccc(Cl)cn2)CC1",
+      "name": "ESZOPICLONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 1697.66075
+    },
+    {
+      "smiles": "c1ccc2c(CCC3CCNCC3)c[nH]c2c1",
+      "name": "INDALPINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 788.274
+    },
+    {
+      "smiles": "CCCCCCCCCCCCCCCCCCCCCCO",
+      "name": "DOCOSANOL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 9511.910125
+    },
+    {
+      "smiles": "CO[C@@]1(NC(=O)C(C(=O)O)c2ccc(O)cc2)C(=O)N2C(C(=O)O)=C(CSc3nnnn3C)CO[C@@H]21",
+      "name": "MOXALACTAM",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1235.1352920000002
+    },
+    {
+      "smiles": "CN1C(=O)CCS(=O)(=O)C1c1ccc(Cl)cc1",
+      "name": "CHLORMEZANONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 1421.799417
+    },
+    {
+      "smiles": "[O-][n+]1cccc(/C(Cl)=N/OC[C@H](O)CN2CCCCC2)c1",
+      "name": "ARIMOCLOMOL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 180.708709
+    },
+    {
+      "smiles": "Cc1ncc(OC[C@@]2(c3cccc(F)c3)C[C@H]2C(=O)Nc2ccc(F)cn2)c(C)n1",
+      "name": "LEMBOREXANT",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 2716.7651250000004
+    },
+    {
+      "smiles": "CNC(=O)c1c(C)oc2cc(Oc3ncnc4cc(OC)c(OC)cc34)ccc12",
+      "name": "FRUQUINTINIB",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 3744.709667
+    },
+    {
+      "smiles": "C[C@@H]1C[C@H]2[C@@H]3CCC4=CC(=O)C=C[C@]4(C)C3=CC[C@]2(C)[C@@]1(O)C(=O)CO",
+      "name": "VAMOROLONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1157.0866250000001
+    },
+    {
+      "smiles": "Cc1ccccc1C(=O)Nc1ccc(C(=O)N2CCCC(O)c3cc(Cl)ccc32)c(C)c1",
+      "name": "TOLVAPTAN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 154.089083
+    },
+    {
+      "smiles": "CN(C)CCC=C1c2ccccc2COc2ccccc21",
+      "name": "DOXEPIN",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 4444.313958999999
+    },
+    {
+      "smiles": "S=P(N1CC1)(N1CC1)N1CC1",
+      "name": "THIOTEPA",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 37.206500000000005
+    },
+    {
+      "smiles": "Cc1ncc(CSSCc2cnc(C)c(O)c2CO)c(CO)c1O",
+      "name": "PYRITINOL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 168.857166
+    },
+    {
+      "smiles": "O=C(Nc1ccccc1)c1cc(Br)cc(Br)c1O",
+      "name": "METABROMSALAN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 880.4796670000001
+    },
+    {
+      "smiles": "CO[C@@]12CC[C@@]3(C[C@@H]1[C@](C)(O)C(C)(C)C)[C@H]1Cc4ccc(O)c5c4[C@@]3(CCN1CC1CC1)[C@H]2O5",
+      "name": "BUPRENORPHINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1979.096084
+    },
+    {
+      "smiles": "CN1CCC[C@H]1c1cccnc1",
+      "name": "NICOTINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 53.348208
+    },
+    {
+      "smiles": "c1cnc2cc3c(cc2n1)[C@@H]1CNC[C@H]3C1",
+      "name": "VARENICLINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 1046.342292
+    },
+    {
+      "smiles": "C[C@H](Cc1ccc(O)c(O)c1)[C@@H](C)Cc1ccc(O)c(O)c1",
+      "name": "MASOPROCOL",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 6402.113291
+    },
+    {
+      "smiles": "CCCSc1nc(N[C@@H]2C[C@H]2c2ccc(F)c(F)c2)c2nnn([C@@H]3C[C@H](OCCO)[C@@H](O)[C@H]3O)c2n1",
+      "name": "TICAGRELOR",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 2332.087584
+    },
+    {
+      "smiles": "CC(C)NCC(O)COc1ccc(CCOCC2CC2)cc1",
+      "name": "BETAXOLOL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 706.303916
+    },
+    {
+      "smiles": "c1ccc(-c2ccc(C(c3ccccc3)n3ccnc3)cc2)cc1",
+      "name": "BIFONAZOLE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 1785.503625
+    },
+    {
+      "smiles": "Cc1nnc(NS(=O)(=O)c2ccc(N)cc2)s1",
+      "name": "SULFAMETHIZOLE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 1105.979625
+    },
+    {
+      "smiles": "COC(=O)Nc1c(N)nc(-c2nn(Cc3ccccc3F)c3ncc(F)cc23)nc1N",
+      "name": "VERICIGUAT",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 3665.973625
+    },
+    {
+      "smiles": "N=C(N)NCC1COC2(CCCCC2)O1",
+      "name": "GUANADREL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 1014.13525
+    },
+    {
+      "smiles": "CN(C)CCOC(c1ccc(Cl)cc1)c1ccccn1",
+      "name": "CARBINOXAMINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 45.099792
+    },
+    {
+      "smiles": "CCc1c2c(nc3ccc(OC(=O)N4CCC(N5CCCCC5)CC4)cc13)-c1cc3c(c(=O)n1C2)COC(=O)[C@]3(O)CC",
+      "name": "IRINOTECAN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1783.337208
+    },
+    {
+      "smiles": "Cc1onc(-c2ccccc2)c1-c1ccc(S(N)(=O)=O)cc1",
+      "name": "VALDECOXIB",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 1815.53625
+    },
+    {
+      "smiles": "[2H]C([2H])([2H])C(c1cc(C(C)(C)C)c(NC(=O)c2c[nH]c3ccccc3c2=O)cc1O)(C([2H])([2H])[2H])C([2H])([2H])[2H]",
+      "name": "DEUTIVACAFTOR",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 1954.004542
+    },
+    {
+      "smiles": "Cc1ccccc1-c1cc(N2CC[N+](C)(COP(=O)([O-])O)CC2)ncc1N(C)C(=O)C(C)(C)c1cc(C(F)(F)F)cc(C(F)(F)F)c1",
+      "name": "FOSNETUPITANT",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 11182.695459
+    },
+    {
+      "smiles": "CO/N=C(\\C(=O)N[C@@H]1C(=O)N2C(C(=O)O)=CCS[C@H]12)c1csc(N)n1",
+      "name": "CEFTIZOXIME",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 878.28575
+    },
+    {
+      "smiles": "O=S(=O)(O)c1cc(O)ccc1O",
+      "name": "DOBESILIC_ACID",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 261.23025
+    },
+    {
+      "smiles": "COC(=O)C1=C(C)NC(C)=C(C(=O)OCCN(C)Cc2ccccc2)C1c1cccc([N+](=O)[O-])c1",
+      "name": "NICARDIPINE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 9347.650083999999
+    },
+    {
+      "smiles": "C=CCC1(CC(C)O)C(=O)NC(=O)NC1=O",
+      "name": "PROXIBARBAL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 182.985542
+    },
+    {
+      "smiles": "Oc1c(I)cc(Cl)c2cccnc12",
+      "name": "CLIOQUINOL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 758.6232080000001
+    },
+    {
+      "smiles": "CCN1CCCC(OC(=O)C(c2ccccc2)c2ccccc2)C1",
+      "name": "PIPERIDOLATE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 1849.129917
+    },
+    {
+      "smiles": "O=S(O)CNc1ccc(S(=O)(=O)c2ccc(NCS(=O)O)cc2)cc1",
+      "name": "SULFOXONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 2328.641584
+    },
+    {
+      "smiles": "Clc1ccc(C(Cn2ccnc2)OCc2ccc(Sc3ccccc3)cc2)c(Cl)c1",
+      "name": "FENTICONAZOLE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 2599.5825830000003
+    },
+    {
+      "smiles": "C/C=C/C1=C(C(=O)O)N2C(=O)[C@@H](NC(=O)[C@H](N)c3ccc(O)cc3)[C@H]2SC1",
+      "name": "CEFPROZIL_ANHYDROUS,_(E)-",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1751.885917
+    },
+    {
+      "smiles": "CCOC(=O)C1(c2ccccc2)CCN(C)CC1",
+      "name": "MEPERIDINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 519.86575
+    },
+    {
+      "smiles": "CC1(C)O[C@@H]2C[C@H]3[C@@H]4C[C@H](F)C5=CC(=O)CC[C@]5(C)[C@H]4[C@@H](O)C[C@]3(C)[C@]2(C(=O)CO)O1",
+      "name": "FLURANDRENOLIDE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 2399.164667
+    },
+    {
+      "smiles": "CC(=O)CC(c1ccc([N+](=O)[O-])cc1)c1c(O)c2ccccc2oc1=O",
+      "name": "ACENOCOUMAROL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 3009.990625
+    },
+    {
+      "smiles": "O=C([C@@H]1C[C@H](N2CCN(c3ncccn3)CC2)CN1)N1CCC(F)(F)C1",
+      "name": "GOSOGLIPTIN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 1462.268041
+    },
+    {
+      "smiles": "CCN(CC)Cc1cc(Nc2ccnc3cc(Cl)ccc23)ccc1O",
+      "name": "AMODIAQUINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 5243.649083
+    },
+    {
+      "smiles": "NC(=O)c1cnc2[nH]ccc2c1N[C@@H]1[C@@H]2CC3C[C@H]1C[C@@](O)(C3)C2",
+      "name": "PEFICITINIB",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 786.214875
+    },
+    {
+      "smiles": "C[C@H](CCC(=O)O)[C@H]1CC[C@H]2[C@@H]3CC[C@@H]4C[C@H](O)CC[C@]4(C)[C@H]3C[C@H](O)[C@]12C",
+      "name": "DEOXYCHOLIC_ACID",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 3411.1432499999996
+    },
+    {
+      "smiles": "CNC(=O)c1ccc(N2C(=S)N(c3ccc(C#N)c(C(F)(F)F)c3)C(=O)C2(C)C)cc1F",
+      "name": "ENZALUTAMIDE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 1521.415542
+    },
+    {
+      "smiles": "C=C(C)[C@@H]1CCC(C)=C[C@H]1c1c(O)cc(CCCCC)cc1O",
+      "name": "CANNABIDIOL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 5224.575541
+    },
+    {
+      "smiles": "Clc1ccc(COC(Cn2ccnc2)c2ccc(Cl)cc2Cl)cc1",
+      "name": "ECONAZOLE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 49.893458
+    },
+    {
+      "smiles": "CC(=O)[C@@]1(C)CC[C@H]2[C@@H]3C=C(C)C4=CC(=O)CC[C@]4(C)[C@H]3CC[C@@]21C",
+      "name": "MEDROGESTONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 7973.953375
+    },
+    {
+      "smiles": "CC(=O)[C@H]1CC[C@H]2[C@@H]3CC[C@H]4C[C@](C)(O)CC[C@]4(C)[C@H]3CC[C@]12C",
+      "name": "GANAXOLONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1331.113084
+    },
+    {
+      "smiles": "C[C@@H]1[C@H](c2c(F)ccc(F)c2F)C[C@H](NC(=O)c2cnc3c(c2)C[C@@]2(C3)C(=O)Nc3ncccc32)C(=O)N1CC(F)(F)F",
+      "name": "ATOGEPANT",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 13754.437291
+    },
+    {
+      "smiles": "CCN(CC)C(=O)C1CN2CCc3cc(OC)c(OC)cc3C2CC1OC(C)=O",
+      "name": "BENZQUINAMIDE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 4704.177625
+    },
+    {
+      "smiles": "Oc1c(Cl)cc(Cl)cc1Sc1cc(Cl)cc(Cl)c1O",
+      "name": "BITHIONOL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 1204.049375
+    },
+    {
+      "smiles": "Cc1cc(OP(=O)(O)O)c2ccccc2c1OP(=O)(O)O",
+      "name": "MENADIOL_DIPHOSPHORIC_ACID",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 826.96325
+    },
+    {
+      "smiles": "O=C(Cc1cccs1)N[C@@H]1C(=O)N2C(C(=O)[O-])=C(C[n+]3ccccc3)CS[C@H]12",
+      "name": "CEPHALORIDINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 6584.510333
+    },
+    {
+      "smiles": "Cc1cc(C[C@@H](NC(=O)N2CCC(c3cc4ccccc4[nH]c3=O)CC2)C(=O)N2CCN(C3CCN(C)CC3)CC2)cc2cn[nH]c12",
+      "name": "ZAVEGEPANT",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 12939.616250000001
+    },
+    {
+      "smiles": "CC(=O)[C@H]1CC[C@H]2[C@@H]3C[C@H](C)C4=CC(=O)CC[C@]4(C)[C@H]3[C@@H](O)C[C@]12C",
+      "name": "MEDRYSONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1328.664958
+    },
+    {
+      "smiles": "COC(=O)[C@H](c1ccccc1)[C@H]1CCCCN1C(=O)OC[n+]1cccc(C(=O)N[C@@H](CO)C(=O)O)c1",
+      "name": "SERDEXMETHYLPHENIDATE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 2823.992042
+    },
+    {
+      "smiles": "Cc1ccc(/C(=C\\CN2CCCC2)c2cccc(/C=C/C(=O)O)n2)cc1",
+      "name": "ACRIVASTINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1899.024375
+    },
+    {
+      "smiles": "Cc1ccccc1-c1cc(N2CCN(C)CC2)ncc1N(C)C(=O)C(C)(C)c1cc(C(F)(F)F)cc(C(F)(F)F)c1",
+      "name": "NETUPITANT",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 9108.422042
+    },
+    {
+      "smiles": "C=C1CC[C@H](O)C/C1=C/C=C1\\CCC[C@]2(C)[C@@H]([C@H](C)/C=C/[C@H](C)C(C)C)CC[C@@H]12",
+      "name": "ERGOCALCIFEROL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1535.0373749999999
+    },
+    {
+      "smiles": "CCN[C@H]1CN(CCCOC)S(=O)(=O)c2sc(S(N)(=O)=O)cc21",
+      "name": "BRINZOLAMIDE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 2472.851917
+    },
+    {
+      "smiles": "CCC(=O)N(c1ccccc1)C1CCN(CCc2ccccc2)CC1",
+      "name": "FENTANYL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 1926.903167
+    },
+    {
+      "smiles": "Cc1ccccc1N1C(=O)c2cc(S(N)(=O)=O)c(Cl)cc2NC1C",
+      "name": "METOLAZONE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 5245.193166
+    },
+    {
+      "smiles": "C1COC(NC(C2CC2)C2CC2)=N1",
+      "name": "RILMENIDINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 1004.2929169999999
+    },
+    {
+      "smiles": "O=C(c1ccc(OCCN2CCCCC2)cc1)c1c(-c2ccc(O)cc2)sc2cc(O)ccc12",
+      "name": "RALOXIFENE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 7282.100875
+    },
+    {
+      "smiles": "Cc1[nH]cnc1CN1CCc2c(c3ccccc3n2C)C1=O",
+      "name": "ALOSETRON",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 975.570833
+    },
+    {
+      "smiles": "CC1(C)S[C@@H]2[C@H](NC(=O)Cc3ccccc3)C(=O)N2[C@H]1C(=O)O",
+      "name": "PENICILLIN_G",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 768.209167
+    },
+    {
+      "smiles": "CN1[C@@H]2C[C@@H](OC(=O)[C@H](CO)c3ccccc3)C[C@H]1[C@@H]1O[C@@H]12",
+      "name": "SCOPOLAMINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1537.8284170000002
+    },
+    {
+      "smiles": "Oc1cccc(-c2c3nc(c(-c4cccc(O)c4)c4ccc([nH]4)c(-c4cccc(O)c4)c4nc(c(-c5cccc(O)c5)c5ccc2[nH]5)CC4)C=C3)c1",
+      "name": "TEMOPORFIN",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 30046.015042
+    },
+    {
+      "smiles": "Nc1cccc2c1C(=O)N(C1CCC(=O)NC1=O)C2=O",
+      "name": "POMALIDOMIDE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 971.030791
+    },
+    {
+      "smiles": "O=C(Cc1ccc(-c2ccc(OCCN3CCOCC3)cc2)cn1)NCc1ccccc1",
+      "name": "TIRBANIBULIN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 3308.6622500000003
+    },
+    {
+      "smiles": "CC1=C[C@@H]2CN(C(=O)N2OS(=O)(=O)O)[C@@H]1C(N)=O",
+      "name": "DURLOBACTAM",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 667.216542
+    },
+    {
+      "smiles": "Cc1c(C)c2c(c(C)c1O)CCC(C)(COc1ccc(CC3SC(=O)NC3=O)cc1)O2",
+      "name": "TROGLITAZONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 1759.873292
+    },
+    {
+      "smiles": "CC(C)(C)NC[C@H](O)COc1nsnc1N1CCOCC1",
+      "name": "TIMOLOL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 346.160167
+    },
+    {
+      "smiles": "CCC(=O)c1ccc2c(c1)N(CCCN1CCN(CCO)CC1)c1ccccc1S2",
+      "name": "CARPHENAZINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1042.846583
+    },
+    {
+      "smiles": "CC(C)(C)C(=O)OCC(=O)[C@H]1CC[C@H]2[C@@H]3CCC4=CC(=O)CC[C@]4(C)[C@H]3CC[C@]12C",
+      "name": "DESOXYCORTICOSTERONE_PIVALATE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 10835.626417
+    },
+    {
+      "smiles": "COc1ccc2c3c1O[C@H]1[C@@H](O)C=C[C@H]4[C@@H](C2)N(C)CC[C@@]341",
+      "name": "CODEINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 782.244292
+    },
+    {
+      "smiles": "CN(C)C(=O)C(CCN1CCC(O)(c2ccc(Cl)cc2)CC1)(c1ccccc1)c1ccccc1",
+      "name": "LOPERAMIDE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1006.0775
+    },
+    {
+      "smiles": "CCN(CC)CCNC(=O)c1cc(Cl)c(N)cc1OC",
+      "name": "METOCLOPRAMIDE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 2717.294
+    },
+    {
+      "smiles": "CC1=C(/C=C/C(C)=C/C=C/C(C)=C/C(=O)O)C(C)(C)CCC1",
+      "name": "TRETINOIN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 221.95279100000002
+    },
+    {
+      "smiles": "CC(C)c1ccc2oc3nc(N)c(C(=O)O)cc3c(=O)c2c1",
+      "name": "AMLEXANOX",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 253.398458
+    },
+    {
+      "smiles": "CC(C)C(=O)OCC(=O)[C@@]12O[C@H](C3CCCCC3)O[C@@H]1C[C@H]1[C@@H]3CCC4=CC(=O)C=C[C@]4(C)[C@H]3[C@@H](O)C[C@@]12C",
+      "name": "CICLESONIDE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 2827.777916
+    },
+    {
+      "smiles": "C#C[C@]1(O)CC[C@H]2[C@@H]3CCC4=CC(=O)CC[C@@H]4[C@H]3C(=C)C[C@@]21CC",
+      "name": "ETONOGESTREL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 565.306959
+    },
+    {
+      "smiles": "CNC(=O)Oc1cccc2ccccc12",
+      "name": "CARBARIL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 137.59704200000002
+    },
+    {
+      "smiles": "CN1CC[C@]23c4c5ccc(O)c4O[C@H]2C(=O)CC[C@@]3(O)[C@H]1C5",
+      "name": "OXYMORPHONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 901.942042
+    },
+    {
+      "smiles": "CCCCC(CC)COC(=O)C(C#N)=C(c1ccccc1)c1ccccc1",
+      "name": "OCTOCRYLENE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 2729.078167
+    },
+    {
+      "smiles": "CCCSc1ccc2[nH]c(NC(=O)OC)nc2c1",
+      "name": "ALBENDAZOLE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 478.10858299999995
+    },
+    {
+      "smiles": "CCCCc1ncc(/C=C(\\Cc2cccs2)C(=O)O)n1Cc1ccc(C(=O)O)cc1",
+      "name": "EPROSARTAN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1179.013375
+    },
+    {
+      "smiles": "CO/N=C1\\C[C@]2(C[C@@H]3C[C@@H](C/C=C(\\C)C[C@@H](C)/C=C/C=C4\\CO[C@@H]5[C@H](O)C(C)=C[C@@H](C(=O)O3)[C@]45O)O2)O[C@H](/C(C)=C/C(C)C)[C@H]1C",
+      "name": "MOXIDECTIN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 3025.4847919999997
+    },
+    {
+      "smiles": "O=c1[nH]c(=O)n(C2CCCO2)cc1F",
+      "name": "TEGAFUR",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 272.57575
+    },
+    {
+      "smiles": "CCCCCCCCCCCC(=O)OCCNC(=O)C[n+]1ccccc1",
+      "name": "LAPYRIUM",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 6101.169833
+    },
+    {
+      "smiles": "COCC1=C(C(=O)O)N2C(=O)[C@@H](NC(=O)/C(=N\\OC)c3csc(N)n3)[C@H]2SC1",
+      "name": "CEFPODOXIME",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 677.191333
+    },
+    {
+      "smiles": "Cc1cc(NS(=O)(=O)c2ccc(N)cc2)nc(C)n1",
+      "name": "SULFISOMIDINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 1168.225666
+    },
+    {
+      "smiles": "CCN1CCCC1CNC(=O)c1cc(S(=O)(=O)CC)c(N)cc1OC",
+      "name": "AMISULPRIDE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 4830.5199170000005
+    },
+    {
+      "smiles": "CCC(Cc1c(I)cc(I)c(N)c1I)C(=O)O",
+      "name": "IOPANOIC_ACID",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 169.88
+    },
+    {
+      "smiles": "N#Cc1c(N2C[C@@H]3NCCO[C@H]3C2)c(F)cc2c(=O)c(C(=O)O)cn(C3CC3)c12",
+      "name": "FINAFLOXACIN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 760.9428750000001
+    },
+    {
+      "smiles": "COc1cc(Br)c(C[N+]2(CCOCCC3CCC4CC3C4(C)C)CCOCC2)cc1OC",
+      "name": "PINAVERIUM",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 10821.276458
+    },
+    {
+      "smiles": "NC(=O)C(c1ccccc1)(c1ccccc1)[C@@H]1CCN(CCc2ccc3c(c2)CCO3)C1",
+      "name": "DARIFENACIN",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 7192.21575
+    },
+    {
+      "smiles": "CNC1(c2ccccc2Cl)CCCCC1=O",
+      "name": "KETAMINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 1427.874583
+    },
+    {
+      "smiles": "CC[C@@H]1C(=O)OC[C@@H]1Cc1cncn1C",
+      "name": "PILOCARPINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 315.34325
+    },
+    {
+      "smiles": "Cn1cc(-c2cc3c(N4CCN(c5ncc([C@@](C)(N)c6ccc(F)cc6)cn5)CC4)ncnn3c2)cn1",
+      "name": "AVAPRITINIB",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 3366.6811669999997
+    },
+    {
+      "smiles": "CCC(=O)OCC(=O)[C@@]1(OC(=O)CC)[C@H](C)C[C@H]2[C@H]3[C@H]([C@@H](O)C[C@@]21C)[C@@]1(C)C=CC(=O)C=C1C[C@H]3Cl",
+      "name": "ALCLOMETASONE_DIPROPIONATE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 2206.3392080000003
+    },
+    {
+      "smiles": "CC(=O)S[C@@H]1CC2=CC(=O)CC[C@]2(C)[C@H]2CC[C@@]3(C)[C@@H](CC[C@@]34CCC(=O)O4)[C@H]12",
+      "name": "SPIRONOLACTONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 9869.380167
+    },
+    {
+      "smiles": "C#C[C@]1(O)CC[C@H]2[C@@H]3CCC4=CC(=O)CC[C@@H]4[C@H]3CC[C@@]21C",
+      "name": "NORETHINDRONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 639.41925
+    },
+    {
+      "smiles": "CC(=O)c1c(C)c2cnc(Nc3ccc(N4CCNCC4)cn3)nc2n(C2CCCC2)c1=O",
+      "name": "PALBOCICLIB",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 4985.717625
+    },
+    {
+      "smiles": "C[C@H]1CNCCc2ccc(Cl)cc21",
+      "name": "LORCASERIN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 1187.404708
+    },
+    {
+      "smiles": "CC1(C)S[C@@H]2[C@H](NC(=O)[C@H](C(=O)O)c3ccsc3)C(=O)N2[C@H]1C(=O)O",
+      "name": "TICARCILLIN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 997.955666
+    },
+    {
+      "smiles": "O=C(/C=C\\n1cnc(-c2cc(C(F)(F)F)cc(C(F)(F)F)c2)n1)NNc1cnccn1",
+      "name": "SELINEXOR",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 1272.916542
+    },
+    {
+      "smiles": "CC(C)NCC(O)c1ccc(NS(C)(=O)=O)cc1",
+      "name": "SOTALOL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 218.44174999999998
+    },
+    {
+      "smiles": "CO[C@@]1(NC(=O)CSCC#N)C(=O)N2C(C(=O)O)=C(CSc3nnnn3C)CS[C@@H]21",
+      "name": "CEFMETAZOLE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 425.358458
+    },
+    {
+      "smiles": "CCCCCCCCCC(=O)O[C@H]1CC[C@H]2[C@@H]3CCC4=CC(=O)CC[C@@H]4[C@H]3CC[C@]12C",
+      "name": "NANDROLONE_DECANOATE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 15642.808709
+    },
+    {
+      "smiles": "CC(=O)[C@H]1CC[C@H]2[C@@H]3C=CC4=CC(=O)CC[C@@]4(C)[C@@H]3CC[C@]12C",
+      "name": "DYDROGESTERONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 2931.2505419999998
+    },
+    {
+      "smiles": "CC(=O)N(O)CCCCCNC(=O)CCC(=O)N(O)CCCCCNC(=O)CCC(=O)N(O)CCCCCN",
+      "name": "DEFEROXAMINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 4355.953083
+    },
+    {
+      "smiles": "CCN(CC)CCCC(C)Nc1ccnc2cc(Cl)ccc12",
+      "name": "CHLOROQUINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 725.056916
+    },
+    {
+      "smiles": "Cc1ccc(C(=O)c2cc(O)c(O)c([N+](=O)[O-])c2)cc1",
+      "name": "TOLCAPONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 2183.521917
+    },
+    {
+      "smiles": "CCN(CC)Cc1ccc2cc(COC(=O)Nc3ccc(C(=O)NO)cc3)ccc2c1",
+      "name": "GIVINOSTAT",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 2451.9945000000002
+    },
+    {
+      "smiles": "CCCN(CCC)C(=O)C(CCC(=O)O)NC(=O)c1ccccc1",
+      "name": "PROGLUMIDE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 845.0950419999999
+    },
+    {
+      "smiles": "Cl[C@H]1[C@H](Cl)[C@@H](Cl)[C@@H](Cl)[C@H](Cl)[C@H]1Cl",
+      "name": "LINDANE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 197.778541
+    },
+    {
+      "smiles": "Nc1nc(=O)n([C@@H]2CS[C@H](CO)O2)cc1F",
+      "name": "EMTRICITABINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 88.754
+    },
+    {
+      "smiles": "NS(=O)(=O)Cc1noc2ccccc12",
+      "name": "ZONISAMIDE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 1112.1215829999999
+    },
+    {
+      "smiles": "O=C(O)Cc1csc(-c2ccc(Cl)cc2)n1",
+      "name": "FENCLOZIC_ACID",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 266.2875
+    },
+    {
+      "smiles": "N#Cc1ccnc(N2C(=O)CC[C@H]2C(=O)N(c2cncc(F)c2)[C@H](C(=O)NC2CC(F)(F)C2)c2ccccc2Cl)c1",
+      "name": "IVOSIDENIB",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 12829.990041000001
+    },
+    {
+      "smiles": "COCCOC(=O)C1=C(C)NC(C)=C(C(=O)OC(C)C)C1c1cccc([N+](=O)[O-])c1",
+      "name": "NIMODIPINE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 6550.6569580000005
+    },
+    {
+      "smiles": "O=C(Nc1ccc(Br)cc1)c1cc(Br)ccc1O",
+      "name": "DIBROMSALAN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 60.300292
+    },
+    {
+      "smiles": "CCCC(=O)O[C@]1(C(=O)CCl)[C@H](C)C[C@@H]2[C@@H]3CCC4=CC(=O)C=C[C@]4(C)[C@]3(F)C(=O)C[C@@]21C",
+      "name": "CLOBETASONE_BUTYRATE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 9321.559917
+    },
+    {
+      "smiles": "C/C(=C\\C(=O)OCCCCCCCCC(=O)O)C[C@@H]1OC[C@H](C[C@@H]2O[C@H]2[C@@H](C)[C@H](C)O)[C@@H](O)[C@H]1O",
+      "name": "MUPIROCIN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 4069.6597910000005
+    },
+    {
+      "smiles": "CN1CCN(c2ccc(C(=O)Nc3n[nH]c4ccc(Cc5cc(F)cc(F)c5)cc34)c(NC3CCOCC3)c2)CC1",
+      "name": "ENTRECTINIB",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 11661.688542
+    },
+    {
+      "smiles": "CCOc1ccc2ccccc2c1C(=O)N[C@@H]1C(=O)N2[C@@H]1SC(C)(C)[C@@H]2C(=O)O",
+      "name": "NAFCILLIN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1590.438917
+    },
+    {
+      "smiles": "Nc1ccn([C@@H]2O[C@H](CO)[C@@H](O)C2(F)F)c(=O)n1",
+      "name": "GEMCITABINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 296.890292
+    },
+    {
+      "smiles": "O=C(O)/C=C/c1ccc(Cn2ccnc2)cc1",
+      "name": "OZAGREL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 73.830208
+    },
+    {
+      "smiles": "C[C@H]1NCc2cc(-c3ccc4c(=O)c(C(=O)O)cn(C5CC5)c4c3OC(F)F)ccc21",
+      "name": "GARENOXACIN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1142.883792
+    },
+    {
+      "smiles": "C[C@@H](O)[C@H]1C(=O)N2C(C(=O)O)=C(S[C@@H]3CN[C@H](CNS(N)(=O)=O)C3)[C@H](C)[C@H]12",
+      "name": "DORIPENEM",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1228.2074169999999
+    },
+    {
+      "smiles": "O=C(Cn1ccnc1[N+](=O)[O-])NCc1ccccc1",
+      "name": "BENZNIDAZOLE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 648.676875
+    },
+    {
+      "smiles": "Cc1ccnc2c1NC(=O)c1cccnc1N2C1CC1",
+      "name": "NEVIRAPINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 1522.141
+    },
+    {
+      "smiles": "CCC(C)C(C)(COC(N)=O)COC(N)=O",
+      "name": "MEBUTAMATE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 184.889
+    },
+    {
+      "smiles": "CC(=O)c1ccc(S(=O)(=O)NC(=O)NC2CCCCC2)cc1",
+      "name": "ACETOHEXAMIDE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 2251.5492080000004
+    },
+    {
+      "smiles": "N=C(N)N/N=C/c1c(Cl)cccc1Cl",
+      "name": "GUANABENZ",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 738.049
+    },
+    {
+      "smiles": "CO[C@]1(C(=O)N[C@@H](C)c2ccc(-n3cc(F)cn3)nc2)CC[C@H](c2nc(C)cc(Nc3cc(C)[nH]n3)n2)CC1",
+      "name": "PRALSETINIB",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 5881.206416999999
+    },
+    {
+      "smiles": "O=C(O)c1ccccc1C(=O)Nc1ccc(S(=O)(=O)Nc2nccs2)cc1",
+      "name": "PHTHALYLSULFATHIAZOLE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 706.245125
+    },
+    {
+      "smiles": "CCC1(c2ccccc2)C(=O)NCNC1=O",
+      "name": "PRIMIDONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 2868.025333
+    },
+    {
+      "smiles": "COC(=O)Nc1nc2cc(C(=O)c3ccccc3)ccc2[nH]1",
+      "name": "MEBENDAZOLE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 3459.504625
+    },
+    {
+      "smiles": "O=C(NC1CCN(CCCCC2(C(=O)NCC(F)(F)F)c3ccccc3-c3ccccc32)CC1)c1ccccc1-c1ccc(C(F)(F)F)cc1",
+      "name": "LOMITAPIDE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 17775.375541999998
+    },
+    {
+      "smiles": "CC(C)OC(=O)CCC/C=C\\C[C@@H]1[C@@H](/C=C/C(F)(F)COc2ccccc2)[C@H](O)C[C@@H]1O",
+      "name": "TAFLUPROST",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1748.0851670000002
+    },
+    {
+      "smiles": "CCC(=O)O[C@]1(C(=O)SCF)[C@H](C)C[C@H]2[C@@H]3C[C@H](F)C4=CC(=O)C=C[C@]4(C)[C@@]3(F)[C@@H](O)C[C@@]21C",
+      "name": "FLUTICASONE_PROPIONATE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1192.371083
+    },
+    {
+      "smiles": "CN(C)C/C=C(/c1ccc(Br)cc1)c1cccnc1",
+      "name": "ZIMELDINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 1618.403625
+    },
+    {
+      "smiles": "O=C1N[C@H](O)CCN1[C@@H]1O[C@H](CO)[C@@H](O)C1(F)F",
+      "name": "CEDAZURIDINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 505.341083
+    },
+    {
+      "smiles": "CC(C)(C)c1nc(-c2cccc(NS(=O)(=O)c3c(F)cccc3F)c2F)c(-c2ccnc(N)n2)s1",
+      "name": "DABRAFENIB",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 2218.1935
+    },
+    {
+      "smiles": "CCOC(=O)c1cncn1[C@H](C)c1ccccc1",
+      "name": "ETOMIDATE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 172.53929200000002
+    },
+    {
+      "smiles": "Nc1ccc(/N=N/c2ccccc2)c(N)n1",
+      "name": "PHENAZOPYRIDINE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 3574.306541
+    },
+    {
+      "smiles": "COc1ccc2c(c1)c(CC(=O)O)c(C)n2C(=O)c1ccc(Cl)cc1",
+      "name": "INDOMETHACIN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 940.608041
+    },
+    {
+      "smiles": "CC[C@@H](C(N)=O)N1CCCC1=O",
+      "name": "LEVETIRACETAM",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 831.521
+    },
+    {
+      "smiles": "N[C@@H](Cc1c[nH]c2ccccc12)C(=O)O",
+      "name": "TRYPTOPHAN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 590.375083
+    },
+    {
+      "smiles": "Cc1nnc(SCC2=C(C(=O)O)N3C(=O)[C@@H](NC(=O)Cn4cnnn4)[C@H]3SC2)s1",
+      "name": "CEFAZOLIN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 341.852875
+    },
+    {
+      "smiles": "C=C1CC[C@@]2(O)[C@H]3Cc4ccc(O)c5c4[C@@]2(CCN3CC2CC2)[C@H]1O5",
+      "name": "NALMEFENE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1025.8145000000002
+    },
+    {
+      "smiles": "CC(=O)O[C@]1(C(C)=O)CCC2[C@@H]3C[C@H](C)C4=CCCC[C@]4(C)[C@H]3CC[C@@]21C",
+      "name": "ANAGESTONE_ACETATE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 5344.454333
+    },
+    {
+      "smiles": "CCN(CC)c1ccc(C(=C2C=CC(=[N+](CC)CC)C=C2)c2cc(S(=O)(=O)[O-])ccc2S(=O)(=O)O)cc1",
+      "name": "ISOSULFAN_BLUE_INNER_SALT",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 5209.426125
+    },
+    {
+      "smiles": "C[C@]12CC[C@@H]3c4ccc(O)cc4CC[C@H]3[C@@H]1[C@@H](O)[C@@H](O)[C@@H]2O",
+      "name": "ESTETROL_ANHYDROUS",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1584.29875
+    },
+    {
+      "smiles": "N[C@H]1C(O)O[C@H](CO)[C@@H](O)[C@@H]1O",
+      "name": "GLUCOSAMINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 503.05379100000005
+    },
+    {
+      "smiles": "CCC(=O)O[C@H]1CC[C@H]2[C@@H]3CC[C@H]4CC(=O)[C@H](C)C[C@]4(C)[C@H]3CC[C@]12C",
+      "name": "DROMOSTANOLONE_PROPIONATE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 9675.526208000001
+    },
+    {
+      "smiles": "NC(=O)c1cn(Cc2c(F)cccc2F)nn1",
+      "name": "RUFINAMIDE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 1569.161083
+    },
+    {
+      "smiles": "O=C1Nc2ccccc2C1(c1ccc(O)cc1)c1ccc(O)cc1",
+      "name": "OXYPHENISATINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 4787.531708
+    },
+    {
+      "smiles": "Cc1ncc2n1-c1ccc(Cl)cc1C(c1ccccc1F)=NC2",
+      "name": "MIDAZOLAM",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 2421.459
+    },
+    {
+      "smiles": "Nc1nnc(-c2cccc(Cl)c2Cl)c(N)n1",
+      "name": "LAMOTRIGINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 2309.53775
+    },
+    {
+      "smiles": "N[C@@H](Cc1ccc(O)c(O)c1)C(=O)O",
+      "name": "LEVODOPA",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 555.549292
+    },
+    {
+      "smiles": "N=C(N)NCc1cccc(I)c1",
+      "name": "IOBENGUANE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 998.450916
+    },
+    {
+      "smiles": "CN1CC[C@]23c4c5ccc(O)c4O[C@H]2[C@@H](O)C=C[C@H]3[C@H]1C5",
+      "name": "MORPHINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1053.383833
+    },
+    {
+      "smiles": "CC1=C(C(=O)O)N2C(=O)[C@@H](NC(=O)[C@H](N)c3ccccc3)[C@H]2SC1",
+      "name": "CEPHALEXIN_ANHYDROUS",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 408.754375
+    },
+    {
+      "smiles": "COc1cccc(N2CCN(C3=Nc4c(F)cccc4[C@H](CC(=O)O)N3c3cc(C(F)(F)F)ccc3OC)CC2)c1",
+      "name": "LETERMOVIR",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 3730.194
+    },
+    {
+      "smiles": "CCOC(=O)[C@H](CCc1ccccc1)N[C@@H](C)C(=O)N1Cc2ccccc2C[C@H]1C(=O)O",
+      "name": "QUINAPRIL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 2458.067208
+    },
+    {
+      "smiles": "C/C=C(/C)C(=O)O[C@H]1C(C)=C[C@]23C(=O)[C@@H](C=C(CO)[C@@H](O)[C@]12O)[C@H]1[C@@H](C[C@H]3C)C1(C)C",
+      "name": "INGENOL_MEBUTATE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 2818.386958
+    },
+    {
+      "smiles": "Cc1ncc([N+](=O)[O-])n1CC(O)CCl",
+      "name": "ORNIDAZOLE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 58.621459
+    },
+    {
+      "smiles": "CC(NCCc1ccc(O)cc1)C(O)c1ccc(O)cc1",
+      "name": "RITODRINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 852.2921249999999
+    },
+    {
+      "smiles": "Cc1c(OCC(F)(F)F)ccnc1C[S+]([O-])c1nc2ccccc2[nH]1",
+      "name": "LANSOPRAZOLE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 1842.1248750000002
+    },
+    {
+      "smiles": "CCOC(=O)/C=C(C)/C=C/C=C(C)/C=C/c1c(C)cc(OC)c(C)c1C",
+      "name": "ETRETINATE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 2258.021041
+    },
+    {
+      "smiles": "C[C@@H](CN1CC(=O)NC(=O)C1)N1CC(=O)NC(=O)C1",
+      "name": "DEXRAZOXANE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 1742.125166
+    },
+    {
+      "smiles": "CCC[C@H](NC(=O)[C@@H]1[C@H]2CCC[C@H]2CN1C(=O)[C@@H](NC(=O)[C@@H](NC(=O)c1cnccn1)C1CCCCC1)C(C)(C)C)C(=O)C(=O)NC1CC1",
+      "name": "TELAPREVIR",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 38371.815833
+    },
+    {
+      "smiles": "CC1(C)O[C@@H]2C[C@H]3[C@@H]4C[C@H](F)C5=CC(=O)C=C[C@]5(C)[C@H]4[C@@H](O)C[C@]3(C)[C@]2(C(=O)CO)O1",
+      "name": "FLUNISOLIDE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 2405.768375
+    },
+    {
+      "smiles": "COc1cc2c(cc1OC)CC(=O)N(CCCN(C)C[C@H]1Cc3cc(OC)c(OC)cc31)CC2",
+      "name": "IVABRADINE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 9344.403292
+    },
+    {
+      "smiles": "CCC(=O)N(c1ccccc1)C1(COC)CCN(CCc2cccs2)CC1",
+      "name": "SUFENTANIL",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 5060.191583
+    },
+    {
+      "smiles": "CSc1ccc2c(c1)N(CCC1CCCCN1C)c1ccccc1S2",
+      "name": "THIORIDAZINE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 6874.346334
+    },
+    {
+      "smiles": "CCN[C@@H](C)Cc1cccc(C(F)(F)F)c1",
+      "name": "DEXFENFLURAMINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 44.583916
+    },
+    {
+      "smiles": "CN1CCC(=C2c3ccccc3C=Cc3ccccc32)CC1",
+      "name": "CYPROHEPTADINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 3744.0965419999998
+    },
+    {
+      "smiles": "OCCN1CCN(CCCN2c3ccccc3Sc3ccc(C(F)(F)F)cc32)CC1",
+      "name": "FLUPHENAZINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1118.544958
+    },
+    {
+      "smiles": "Oc1c(Cl)cc(Cl)c(Cl)c1Cc1c(O)c(Cl)cc(Cl)c1Cl",
+      "name": "HEXACHLOROPHENE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 1117.64075
+    },
+    {
+      "smiles": "COC(=O)[C@H](c1ccccc1Cl)N1CCc2sccc2C1",
+      "name": "CLOPIDOGREL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 1781.9779580000002
+    },
+    {
+      "smiles": "CCCCC[C@H](O)/C=C/[C@H]1[C@H](O)CC(=O)[C@@H]1CCCCCCC(=O)O",
+      "name": "ALPROSTADIL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1223.7659999999998
+    },
+    {
+      "smiles": "Cc1cccn2c(=O)c(-c3nnn[nH]3)cnc12",
+      "name": "PEMIROLAST",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 1252.38425
+    },
+    {
+      "smiles": "CCC1(c2ccccc2)C(=O)NC(=O)N(C)C1=O",
+      "name": "MEPHOBARBITAL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 2332.879583
+    },
+    {
+      "smiles": "CNC(=O)c1cc(Oc2ccc(NC(=O)Nc3ccc(Cl)c(C(F)(F)F)c3)cc2)ccn1",
+      "name": "SORAFENIB",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 8607.827666000001
+    },
+    {
+      "smiles": "CCOCCn1c(N2CCCN(C)CC2)nc2ccccc21",
+      "name": "EMEDASTINE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 4960.7605
+    },
+    {
+      "smiles": "COC(=O)[C@H]1[C@H]2C[C@@H]3c4[nH]c5cc(OC)ccc5c4CCN3C[C@H]2C[C@@H](OC(=O)/C=C/c2cc(OC)c(OC)c(OC)c2)[C@@H]1OC",
+      "name": "RESCINNAMINE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 24123.215458000002
+    },
+    {
+      "smiles": "CC(=O)N1CCN(c2ccc(OC[C@@H]3CO[C@@](Cn4ccnc4)(c4ccc(Cl)cc4Cl)O3)cc2)CC1",
+      "name": "LEVOKETOCONAZOLE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 5769.286916
+    },
+    {
+      "smiles": "COC(=O)C1=C(C)NC(C)=C(C(=O)OCC(C)C)C1c1ccccc1[N+](=O)[O-]",
+      "name": "NISOLDIPINE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 6339.780417
+    },
+    {
+      "smiles": "C[C@@H]1C[C@H]2[C@@H]3CCC4=CC(=O)C=C[C@]4(C)[C@@]3(F)[C@@H](O)C[C@]2(C)[C@H]1C(=O)CO",
+      "name": "DESOXIMETASONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1760.246375
+    },
+    {
+      "smiles": "CNC1=Nc2ccc(Cl)cc2C(c2ccccc2)=[N+]([O-])C1",
+      "name": "CHLORDIAZEPOXIDE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 2202.867125
+    },
+    {
+      "smiles": "COc1cnc(NS(=O)(=O)c2ccc(N)cc2)nc1",
+      "name": "SULFAMETER",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 24.1975
+    },
+    {
+      "smiles": "O=C(CCCCCCC(=O)Nc1ccccc1)NO",
+      "name": "VORINOSTAT",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 4253.678417
+    },
+    {
+      "smiles": "COc1cc(OC)c(C(=O)CCCN2CCCC2)c(OC)c1",
+      "name": "BUFLOMEDIL",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 3808.681459
+    },
+    {
+      "smiles": "C[C@@H]1C[C@H]2[C@@H]3C[C@H](F)C4=CC(=O)C=C[C@]4(C)[C@@]3(Cl)[C@@H](O)C[C@]2(C)[C@H]1C(=O)COC(=O)C(C)(C)C",
+      "name": "CLOCORTOLONE_PIVALATE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1610.0870419999999
+    },
+    {
+      "smiles": "Cc1cc(Nc2ncc(Cl)c(Nc3ccccc3S(=O)(=O)C(C)C)n2)c(OC(C)C)cc1C1CCNCC1",
+      "name": "CERITINIB",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 8477.39375
+    },
+    {
+      "smiles": "CCOC(=O)c1ccc(C#Cc2ccc3c(c2)C(C)(C)CCS3)nc1",
+      "name": "TAZAROTENE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 991.4200410000001
+    },
+    {
+      "smiles": "CC(N)Cc1ccc(O)cc1",
+      "name": "HYDROXYAMPHETAMINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 1,
+      "time_ms": 12.365582999999999
+    },
+    {
+      "smiles": "O=C(NCCN1CCOCC1)c1ccc(Cl)cc1",
+      "name": "MOCLOBEMIDE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 36.109625
+    },
+    {
+      "smiles": "CCCN(CCC)C(=O)Cc1c(-c2ccc(Cl)cc2)nc2ccc(Cl)cn12",
+      "name": "ALPIDEM",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 2009.1169999999997
+    },
+    {
+      "smiles": "Nc1ccn(C[C@@H](CO)OCP(=O)(O)O)c(=O)n1",
+      "name": "CIDOFOVIR_ANHYDROUS",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 97.905625
+    },
+    {
+      "smiles": "C[C@H]1C[C@H]2[C@@H]3CCC4=CC(=O)C=C[C@]4(C)[C@H]3C(=O)C[C@]2(C)[C@@]1(O)C(=O)CO",
+      "name": "MEPREDNISONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1893.096916
+    },
+    {
+      "smiles": "CCOC(=O)[C@H](Cc1ccc(F)cc1)NC(=O)[C@@H](N)Cc1ccc(N(CCCl)CCCl)cc1",
+      "name": "MELPHALAN_FLUFENAMIDE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 7238.832292
+    },
+    {
+      "smiles": "CC[C@@H](CO)NC(=O)[C@@H]1C=C2c3cccc4c3c(cn4C)C[C@H]2N(C)C1",
+      "name": "METHYSERGIDE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 471.185625
+    },
+    {
+      "smiles": "N=C(N)NC(=O)Cc1c(Cl)cccc1Cl",
+      "name": "GUANFACINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 3315.524
+    },
+    {
+      "smiles": "CN1CCCN=C1/C=C/c1cccs1",
+      "name": "PYRANTEL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 2235.479208
+    },
+    {
+      "smiles": "N[C@@H](Cc1ccc(OP(=O)(O)O)c(O)c1)C(=O)O",
+      "name": "FOSLEVODOPA",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 690.7917500000001
+    },
+    {
+      "smiles": "Cc1cc2c(cc1CC(=O)c1sccc1S(=O)(=O)Nc1onc(C)c1Cl)OCO2",
+      "name": "SITAXENTAN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 1292.7284590000002
+    },
+    {
+      "smiles": "Cc1ccc(NC(=O)C2(c3ccc4c(c3)OC(F)(F)O4)CC2)nc1-c1cccc(C(=O)O)c1",
+      "name": "LUMACAFTOR",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1247.720375
+    },
+    {
+      "smiles": "CC1(C)O[C@@H]2C[C@H]3[C@@H]4CCC5=CC(=O)CC[C@]5(C)[C@@]4(F)[C@@H](O)C[C@]3(C)[C@]2(C(=O)CCl)O1",
+      "name": "HALCINONIDE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1208.426625
+    },
+    {
+      "smiles": "CCCc1nc2c(C)cc(-c3nc4ccccc4n3C)cc2n1Cc1ccc(-c2ccccc2C(=O)O)cc1",
+      "name": "TELMISARTAN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 2999.48725
+    },
+    {
+      "smiles": "NC[C@H](O)c1ccc(O)c(O)c1",
+      "name": "NOREPINEPHRINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 431.636959
+    },
+    {
+      "smiles": "C=CC(=O)Nc1cc(Nc2ncc(C(=O)OC(C)C)c(-c3cn(C)c4ccccc34)n2)c(OC)cc1N(C)CCN(C)C",
+      "name": "MOBOCERTINIB",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 8102.4443329999995
+    },
+    {
+      "smiles": "Clc1ccc(COC(Cn2ccnc2)c2ccc(Cl)cc2Cl)c(Cl)c1",
+      "name": "MICONAZOLE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 701.212291
+    },
+    {
+      "smiles": "CNC1(C)C2CCC(C2)C1(C)C",
+      "name": "MECAMYLAMINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 1344.9309999999998
+    },
+    {
+      "smiles": "CC(=O)N[C@H]1[C@H]([C@H](O)[C@H](O)CO)OC(C(=O)O)=C[C@@H]1NC(=N)N",
+      "name": "ZANAMIVIR",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1725.785541
+    },
+    {
+      "smiles": "C[C@H]1C[C@H]2[C@@H]3CCC4=CC(=O)C=C[C@]4(C)[C@@]3(F)[C@@H](O)C[C@]2(C)[C@@]1(OC(=O)c1ccccc1)C(=O)CO",
+      "name": "BETAMETHASONE_BENZOATE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 1,
+      "time_ms": 81.262583
+    },
+    {
+      "smiles": "Cc1ccc(Nc2nccc(N(C)c3ccc4c(C)n(C)nc4c3)n2)cc1S(N)(=O)=O",
+      "name": "PAZOPANIB",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 3356.389333
+    },
+    {
+      "smiles": "CN1Cc2c(N)cccc2C(c2ccccc2)C1",
+      "name": "NOMIFENSINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 3132.164542
+    },
+    {
+      "smiles": "CNC(=O)Oc1ccc2c(c1)[C@]1(C)CCN(C)[C@@H]1N2C",
+      "name": "PHYSOSTIGMINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 2830.877375
+    },
+    {
+      "smiles": "CCOC(=O)OC(C)OC(=O)[C@@H]1N2C(=O)[C@@H](NC(=O)[C@H](N)c3ccccc3)[C@H]2SC1(C)C",
+      "name": "BACAMPICILLIN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 8007.834457999999
+    },
+    {
+      "smiles": "CN(C)CCC(c1ccc(Br)cc1)c1ccccn1",
+      "name": "BROMPHENIRAMINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 146.73975000000002
+    },
+    {
+      "smiles": "CCOC(=O)[C@H](CCc1ccccc1)N[C@@H](C)C(=O)N1[C@H](C(=O)O)C[C@H]2CCCC[C@@H]21",
+      "name": "TRANDOLAPRIL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 3107.1545
+    },
+    {
+      "smiles": "O=C1[C@@H]2[C@H]3CC[C@H](C3)[C@@H]2C(=O)N1C[C@@H]1CCCC[C@H]1CN1CCN(c2nsc3ccccc23)CC1",
+      "name": "LURASIDONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 13184.132375000001
+    },
+    {
+      "smiles": "CC1(C)S[C@@H]2[C@H](NC(=O)COc3ccccc3)C(=O)N2[C@H]1C(=O)O",
+      "name": "PENICILLIN_V",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 442.041375
+    },
+    {
+      "smiles": "NC1=NCC(c2ccccc2)O1",
+      "name": "AMINOREX",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 635.8625
+    },
+    {
+      "smiles": "CN(C)CCN(Cc1cccs1)c1ccccn1",
+      "name": "METHAPYRILENE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 64.930292
+    },
+    {
+      "smiles": "NC(=O)N/N=C/c1ccc([N+](=O)[O-])o1",
+      "name": "NITROFURAZONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 1116.6665
+    },
+    {
+      "smiles": "CC1(C)S[C@@H]2[C@H](NC(=O)C(C(=O)O)c3ccccc3)C(=O)N2[C@H]1C(=O)O",
+      "name": "CARBENICILLIN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1470.9987500000002
+    },
+    {
+      "smiles": "CC(C)(Oc1ccc(C(=O)c2ccc(Cl)cc2)cc1)C(=O)O",
+      "name": "FENOFIBRIC_ACID",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 74.196125
+    },
+    {
+      "smiles": "CCCC(=O)Nc1c(I)cc(I)c(/C=C(\\CC)C(=O)O)c1I",
+      "name": "BUNAMIODYL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 593.311416
+    },
+    {
+      "smiles": "CC(=O)[C@@]1(O)CC[C@H]2[C@@H]3C=C(C)C4=CC(=O)CC[C@@H]4[C@H]3CC[C@@]21C",
+      "name": "NOMEGESTROL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 818.784042
+    },
+    {
+      "smiles": "CC1(C)[C@@H](OC(=O)CCC(=O)O)CC[C@]2(C)[C@H]3C(=O)C=C4[C@@H]5C[C@@](C)(C(=O)O)CC[C@]5(C)CC[C@@]4(C)[C@]3(C)CC[C@@H]12",
+      "name": "CARBENOXOLONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 3981.113209
+    },
+    {
+      "smiles": "CN(C)CCC(O)(c1ccccc1)c1ccccc1Cl",
+      "name": "CHLOPHEDIANOL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 755.9722909999999
+    },
+    {
+      "smiles": "NC(=O)Cc1cccc(C(=O)c2ccccc2)c1N",
+      "name": "NEPAFENAC",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 1578.527792
+    },
+    {
+      "smiles": "CCN(CC)CCOc1ccc2nc(N(C)C)sc2c1",
+      "name": "DIAMTHAZOLE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 1307.924625
+    },
+    {
+      "smiles": "CCCCCCC(=O)OCCN1CCN(CCCN2c3ccccc3Sc3ccc(C(F)(F)F)cc32)CC1",
+      "name": "FLUPHENAZINE_ENANTHATE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 11137.7085
+    },
+    {
+      "smiles": "Cc1ccc(-c2ccc(C)cn2)nc1",
+      "name": "ABAMETAPIR",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 1537.09125
+    },
+    {
+      "smiles": "CN1C(=O)CN=C(c2ccccc2)c2cc(Cl)ccc21",
+      "name": "DIAZEPAM",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 2103.052875
+    },
+    {
+      "smiles": "CCCCC(F)(F)[C@@]1(O)CC[C@H]2[C@@H](CC(=O)[C@@H]2CCCCCCC(=O)O)O1",
+      "name": "LUBIPROSTONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1155.2507919999998
+    },
+    {
+      "smiles": "COc1ccc(C(=O)c2ccccc2)c(O)c1",
+      "name": "OXYBENZONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 197.288583
+    },
+    {
+      "smiles": "CCOc1nc2cccc(C(=O)OC(C)OC(=O)OC3CCCCC3)c2n1Cc1ccc(-c2ccccc2-c2nn[nH]n2)cc1",
+      "name": "CANDESARTAN_CILEXETIL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 7145.223458
+    },
+    {
+      "smiles": "O=C(O)[C@@H](S)[C@@H](S)C(=O)O",
+      "name": "SUCCIMER",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 359.755583
+    },
+    {
+      "smiles": "CCOc1ccc(NC(C)=O)cc1",
+      "name": "PHENACETIN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 64.107042
+    },
+    {
+      "smiles": "C[N+]12CCC(CC1)C(OC(=O)C(O)(c1ccccc1)c1ccccc1)C2",
+      "name": "CLIDINIUM",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 4799.255666999999
+    },
+    {
+      "smiles": "CC#CC(=O)N1CC[C@@H](n2c(=O)n(-c3ccc(Oc4ccccc4)cc3)c3c(N)ncnc32)C1",
+      "name": "TIRABRUTINIB",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 5736.560542
+    },
+    {
+      "smiles": "CC(C)NCC(O)c1ccc2ccccc2c1",
+      "name": "PRONETALOL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 477.954041
+    },
+    {
+      "smiles": "CN(C)CCCN1c2ccccc2Sc2ccc(C(F)(F)F)cc21",
+      "name": "TRIFLUPROMAZINE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 6352.471125
+    },
+    {
+      "smiles": "C[C@@]1(O)CC[C@H]2[C@H](CC[C@@H]3[C@@H]2CC[C@]2(C)[C@@H](C(=O)Cn4cc(C#N)cn4)CC[C@@H]32)C1",
+      "name": "ZURANOLONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 2483.667083
+    },
+    {
+      "smiles": "COC(=O)OCOc1c2n(ccc1=O)N([C@@H]1c3ccccc3SCc3c1ccc(F)c3F)[C@@H]1COCCN1C2=O",
+      "name": "BALOXAVIR_MARBOXIL",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 8631.889875
+    },
+    {
+      "smiles": "CC(/C=C1\\SC(=S)N(CC(=O)O)C1=O)=C\\c1ccccc1",
+      "name": "EPALRESTAT",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 813.016333
+    },
+    {
+      "smiles": "C/C(O)=C(\\C#N)C(=O)Nc1ccc(C(F)(F)F)cc1",
+      "name": "TERIFLUNOMIDE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 592.165041
+    },
+    {
+      "smiles": "COC(=O)[C@@H]1CC2=CC(=O)CC[C@]2(C)[C@@]23O[C@@H]2C[C@@]2(C)[C@@H](CC[C@@]24CCC(=O)O4)[C@H]13",
+      "name": "EPLERENONE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 12339.91825
+    },
+    {
+      "smiles": "CC(C)C(=O)Nc1ccc([N+](=O)[O-])c(C(F)(F)F)c1",
+      "name": "FLUTAMIDE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 2285.554791
+    },
+    {
+      "smiles": "Oc1ccc2c(c1)CC[C@H](c1ccccc1)[C@@H]2c1ccc(OCCN2CCCC2)cc1",
+      "name": "LASOFOXIFENE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 8490.794666
+    },
+    {
+      "smiles": "O=c1[nH]c(=O)n([C@H]2C[C@H](O)[C@@H](CO)O2)cc1I",
+      "name": "IDOXURIDINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 290.652875
+    },
+    {
+      "smiles": "CC(=O)NCc1c(I)c(NC(C)=O)c(I)c(C(=O)O)c1I",
+      "name": "IODAMIDE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 427.694792
+    },
+    {
+      "smiles": "CCC(=O)[C@@]1(C)[C@H](C)C[C@H]2[C@@H]3CCC4=CC(=O)C=C[C@]4(C)[C@H]3[C@@H](O)C[C@@]21C",
+      "name": "RIMEXOLONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1061.797084
+    },
+    {
+      "smiles": "CC(CCc1ccc(O)cc1)NCCc1ccc(O)c(O)c1",
+      "name": "DOBUTAMINE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 7958.908708
+    },
+    {
+      "smiles": "CCCc1cc(=O)[nH]c(=S)[nH]1",
+      "name": "PROPYLTHIOURACIL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 1015.6556670000001
+    },
+    {
+      "smiles": "CCS(=O)(=O)N1CC(CC#N)(n2cc(-c3ncnc4[nH]ccc34)cn2)C1",
+      "name": "BARICITINIB",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 2252.19725
+    },
+    {
+      "smiles": "CCOc1ncc(C)c2c1[C@H](c1ccc(C#N)cc1OC)C(C(N)=O)=C(C)N2",
+      "name": "FINERENONE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 6085.484375
+    },
+    {
+      "smiles": "CCCCCc1cc(O)c2c(c1)OC(C)(C)[C@@H]1CCC(C)=C[C@@H]21",
+      "name": "DRONABINOL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 2586.815375
+    },
+    {
+      "smiles": "CCn1c(=O)c(-c2cc(NC(=O)Nc3ccccc3)c(F)cc2Br)cc2cnc(NC)cc21",
+      "name": "RIPRETINIB",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 3683.448625
+    },
+    {
+      "smiles": "C[C@H](/C=C/[C@H](C)C(C)(C)O)[C@H]1CC[C@H]2/C(=C/C=C3C[C@@H](O)C[C@H](O)C3)CCC[C@]12C",
+      "name": "PARICALCITOL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 2551.0681250000002
+    },
+    {
+      "smiles": "CC(=O)Oc1ccc(C2(c3ccc(OC(C)=O)cc3)C(=O)N(C(C)=O)c3ccccc32)cc1",
+      "name": "TRIACETYLDIPHENOLISATIN",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 5587.5828329999995
+    },
+    {
+      "smiles": "CC(N)C12CC3CC(CC(C3)C1)C2",
+      "name": "RIMANTADINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 2327.114583
+    },
+    {
+      "smiles": "O=C(O)COc1ccc(C(=O)c2cccs2)c(Cl)c1Cl",
+      "name": "TICRYNAFEN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 302.195042
+    },
+    {
+      "smiles": "O=C(O)c1cn(C2CC2)c2cc(N3CCNCC3)c(F)cc2c1=O",
+      "name": "CIPROFLOXACIN",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 386.58016699999996
+    },
+    {
+      "smiles": "CCC1(c2ccccc2)CCC(=O)NC1=O",
+      "name": "GLUTETHIMIDE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 3715.917458
+    },
+    {
+      "smiles": "COc1cc2nc(N3CCN(C(=O)C4CCCO4)CC3)nc(N)c2cc1OC",
+      "name": "TERAZOSIN",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 7259.82375
+    },
+    {
+      "smiles": "CCCCCCCC(=O)CC[C@@H]1[C@@H](C/C=C\\CCCC(=O)OC(C)C)[C@@H](O)C[C@H]1O",
+      "name": "UNOPROSTONE_ISOPROPYL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1420.551125
+    },
+    {
+      "smiles": "CO/N=C(\\C(=O)N[C@@H]1C(=O)N2C(C(=O)O)=C(CSc3nc(=O)c(O)nn3C)CS[C@H]12)c1csc(N)n1",
+      "name": "CEFTRIAXONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1441.558709
+    },
+    {
+      "smiles": "COc1cc2c(cc1OC)C(CCc1ccc(Cl)cc1)N(C)CC2",
+      "name": "METHOPHOLINE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 5643.2575
+    },
+    {
+      "smiles": "Cc1cc(C2CCCCC2)n(O)c(=O)c1",
+      "name": "CICLOPIROX",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 557.1025
+    },
+    {
+      "smiles": "Nc1nc(Cl)nc2c1ncn2[C@H]1C[C@H](O)[C@@H](CO)O1",
+      "name": "CLADRIBINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 206.986
+    },
+    {
+      "smiles": "NC[C@@H]1O[C@H](O[C@H]2[C@@H](O)[C@H](O[C@@H]3[C@@H](O)[C@H](N)C[C@H](N)[C@H]3O[C@H]3O[C@H](CO)[C@@H](O)[C@H](O)[C@H]3N)O[C@@H]2CO)[C@H](N)[C@@H](O)[C@@H]1O",
+      "name": "PAROMOMYCIN",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 64057.891667
+    },
+    {
+      "smiles": "COC(=O)C1=C(C)NC(C)=C(C(=O)OC(C)C)C1c1cccc2nonc12",
+      "name": "ISRADIPINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 3,
+      "time_ms": 1171.092875
+    },
+    {
+      "smiles": "N#Cc1ccccc1-c1cc(-c2ccccn2)cn(-c2ccccc2)c1=O",
+      "name": "PERAMPANEL",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 3805.624625
+    },
+    {
+      "smiles": "O=C(CCCc1ccccc1)OCC(COC(=O)CCCc1ccccc1)OC(=O)CCCc1ccccc1",
+      "name": "GLYCEROL_PHENYLBUTYRATE",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 8783.175334
+    },
+    {
+      "smiles": "CCOCCn1c(C2CCN(CCc3ccc(C(C)(C)C(=O)O)cc3)CC2)nc2ccccc21",
+      "name": "BILASTINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1050.403
+    },
+    {
+      "smiles": "C/N=C(\\NC)NCc1ccccc1",
+      "name": "BETHANIDINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 181.60995799999998
+    },
+    {
+      "smiles": "C[C@]12C=CC(=O)C=C1CC[C@@H]1[C@@H]2[C@@H](O)C[C@@]2(C)[C@H]1CC[C@]2(O)C(=O)CO",
+      "name": "PREDNISOLONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1062.582709
+    },
+    {
+      "smiles": "O=C(O)C1=C(CSc2nnnn2CS(=O)(=O)O)CS[C@@H]2[C@H](NC(=O)[C@H](O)c3ccccc3)C(=O)N12",
+      "name": "CEFONICID",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1681.371583
+    },
+    {
+      "smiles": "C=CCC1(C(C)CCC)C(=O)NC(=O)NC1=O",
+      "name": "SECOBARBITAL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 5,
+      "time_ms": 4560.181458
+    },
+    {
+      "smiles": "CCCCCCO[C@@H](C)c1cccc(-c2csc(NC(=O)c3cc(Cl)c(/C=C(\\C)C(=O)O)c(Cl)c3)n2)c1OC",
+      "name": "LUSUTROMBOPAG",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1833.9015000000002
+    },
+    {
+      "smiles": "O=C(O[C@H]1CN2CCC1CC2)N1CCc2ccccc2[C@@H]1c1ccccc1",
+      "name": "SOLIFENACIN",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 6293.125416999999
+    },
+    {
+      "smiles": "Nc1nc(=O)c2nc(CNc3ccc(C(=O)N[C@@H](CCC(=O)O)C(=O)O)cc3)cnc2[nH]1",
+      "name": "FOLIC_ACID",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 1371.621834
+    },
+    {
+      "smiles": "CCCC(=O)Nc1ccc(OCC(O)CNC(C)C)c(C(C)=O)c1",
+      "name": "ACEBUTOLOL",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 2,
+      "time_ms": 855.899166
+    },
+    {
+      "smiles": "Oc1ccc(OCc2ccccc2)cc1",
+      "name": "MONOBENZONE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 1,
+      "time_ms": 15.464958
+    },
+    {
+      "smiles": "CC(C)(N)C(=O)N[C@H](Cc1c[nH]c2ccccc12)C(=O)N[C@H](Cc1c[nH]c2ccccc12)NC=O",
+      "name": "MACIMORELIN",
+      "solved": false,
+      "routes_found": 0,
+      "best_depth": null,
+      "time_ms": 15994.753166
+    },
+    {
+      "smiles": "COc1ccc(NS(=O)(=O)c2ccc(N)cc2)nn1",
+      "name": "SULFAMETHOXYPYRIDAZINE",
+      "solved": true,
+      "routes_found": 1,
+      "best_depth": 4,
+      "time_ms": 1336.058334
+    }
+  ]
+}

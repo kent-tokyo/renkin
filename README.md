@@ -351,7 +351,7 @@ If you use RENKIN in academic work, please cite:
   title     = {{RENKIN}: Retrosynthetic Exploration Network for Knowledge-Informed Navigation},
   year      = {2026},
   url       = {https://github.com/kent-tokyo/renkin},
-  version   = {0.1.8},
+  version   = {0.2.0},
   license   = {MIT}
 }
 ```

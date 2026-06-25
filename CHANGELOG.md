@@ -6,6 +6,23 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.0] — 2026-06-26
+
+### Breaking
+- `find_routes()` now returns `Result<(Vec<Route>, SearchStats)>` instead of `Result<Vec<Route>>`
+
+### Added
+- `Route.confidence: f64` — template frequency ratio (0 = rare templates, 1 = maximally common)
+- `SearchStats { nodes_expanded: u64 }` — diagnostic stats returned with every search
+- JSON/Python output includes `diagnostics: { nodes_expanded }` when `routes_found == 0`
+- In-search pruning for `--avoid-elements`: expansions where a BB precursor contains a forbidden element are skipped before being pushed onto the heap
+- 4 new regression tests: confidence range, stats non-zero on failure, pruning correctness, tuple return
+
+### Changed
+- README: constraint description updated to reflect dual-layer enforcement (in-search pruning + post-filter)
+
+---
+
 ## [0.1.8] — 2026-06-26
 
 ### Changed

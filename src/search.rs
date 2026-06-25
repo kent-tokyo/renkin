@@ -736,4 +736,60 @@ mod tests {
             routes.len()
         );
     }
+
+    #[test]
+    fn confidence_is_between_zero_and_one() {
+        let env = aspirin_env();
+        let rules = default_rules();
+        let (routes, _) = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg(3)).unwrap();
+        assert!(!routes.is_empty(), "must find at least one route");
+        for route in &routes {
+            assert!(
+                (0.0..=1.0).contains(&route.confidence),
+                "confidence {} out of [0,1]",
+                route.confidence
+            );
+        }
+    }
+
+    #[test]
+    fn search_stats_nodes_expanded_nonzero() {
+        let env = ChemEnv::in_memory(&["O"]); // only water — aspirin unsolvable
+        let rules = default_rules();
+        let (routes, stats) = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg(2)).unwrap();
+        assert!(
+            routes.is_empty(),
+            "aspirin should be unsolvable with only water as BB"
+        );
+        assert!(
+            stats.nodes_expanded > 0,
+            "nodes_expanded must be > 0 even for failed search"
+        );
+    }
+
+    #[test]
+    fn avoid_elements_removes_forbidden_bbs() {
+        let env = aspirin_env();
+        let rules = default_rules();
+        let config = SearchConfig {
+            forbidden_elements: crate::chem_env::elem_symbols_to_mask("Cl"),
+            ..cfg(3)
+        };
+        let (routes, _) = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &config).unwrap();
+        for route in &routes {
+            for bb in &route.building_blocks {
+                assert!(!bb.contains("Cl"), "BB {bb} contains forbidden element Cl");
+            }
+        }
+    }
+
+    #[test]
+    fn find_routes_returns_stats_tuple() {
+        let env = aspirin_env();
+        let rules = default_rules();
+        // Just verify the return type is a tuple and stats has a reasonable value.
+        let (routes, stats) = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg(3)).unwrap();
+        assert!(!routes.is_empty());
+        assert!(stats.nodes_expanded >= routes.len() as u64);
+    }
 }

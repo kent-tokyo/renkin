@@ -128,7 +128,10 @@ c1ccccc1-c2ccccc2
     └── c1c(B(O)O)cccc1  ✓ BB
 ```
 
-Constraints compose freely. Applied as a post-filter on completed routes — the A\* search itself is unchanged.
+Constraints compose freely and are enforced in two layers:
+- `--avoid-elements` **prunes expansions during search** when a BB precursor contains a forbidden element (no dead-end nodes added to the heap).
+- A final route-level post-filter is still applied for correctness.
+- `--require-elements` is a route-level post-filter only.
 
 Add `--verbose` to print search statistics (nodes expanded, elapsed time) to stderr. Performance counters are available in native builds only; disabled in WASM.
 

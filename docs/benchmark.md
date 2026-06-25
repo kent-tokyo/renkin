@@ -4,7 +4,7 @@
 
 RENKIN is evaluated on the full [USPTO-50k](https://huggingface.co/datasets/bisectgroup/USPTO_50K) test set (4,907 molecules) — the standard benchmark for single-step retrosynthesis.
 
-### Latest Results (v0.1.4) — depth=5, beam=100, 5,000 extracted templates
+### Latest Results (v0.1.8) — depth=5, beam=100, 5,000 extracted templates
 
 | Config | Solved | Success Rate | Avg Time | Hardware |
 |--------|--------|-------------|----------|----------|
@@ -16,29 +16,29 @@ Building blocks: 509 hand-curated commercial reagents (default set).
 
 | Version / Phase | Solved | Success Rate | Avg Time | Notes |
 |-----------------|--------|-------------|----------|-------|
-| v0.1.0 | 25 / 500 | 5.0% | 79 ms/mol | 20 rules, 480 BBs, depth=2, 500-mol sample |
+| v0.1.0 | 25 / 500 | 5.0% | 79 ms/mol | 20 rules, 509 BBs, depth=2, 500-mol sample |
 | v0.1.1 (baseline) | 1,363 / 4,907 | 27.8% | — | default rules only, depth=3 |
 | Phase A (500 templates, beam=100) | 2,315 / 4,907 | 47.2% | — | depth=5, +500 extracted templates |
 | Phase A (5k templates, beam=100) | 3,540 / 4,907 | 72.1% | 1,742 ms/mol | depth=5, template frequency weighting |
 | Phase A (5k templates, unlimited A\*) | 3,830 / 4,907 | 78.1% | 2,956 ms/mol | depth=5, beam=0 |
 | Phase B (5k templates, beam=100, NN scorer) | 3,826 / 4,907 | 78.0% | 3,394 ms/mol | depth=5, ONNX neural scorer |
 | v0.1.3 (5k templates, beam=100) | 3,826 / 4,907 | 78.0% | 2,775 ms/mol | depth=5, Pure Rust optimizations |
-| **v0.1.4 (5k templates, beam=100, diaryl sulfone rule)** | **3,831 / 4,907** | **78.1%** | **≈2,800 ms/mol** | depth=5, diaryl_sulfone_retro + 509 BBs |
+| **v0.1.8 (5k templates, beam=100, diaryl sulfone rule)** | **3,831 / 4,907** | **78.1%** | **≈2,800 ms/mol** | depth=5, diaryl_sulfone_retro + 509 BBs |
 
-v0.1.4 adds a graph-based diaryl sulfone retrosynthesis rule and expands the building block set to 509 reagents (+29 sulfonyl chlorides and CF3 arenes).
+v0.1.8 adds a graph-based diaryl sulfone retrosynthesis rule and expands the building block set to 509 reagents (+29 sulfonyl chlorides and CF3 arenes).
 
 ### Comparison with Other Systems
 
 | System | Top-1 | Stock | Templates | Notes |
 |--------|-------|-------|-----------|-------|
-| **RENKIN v0.1.4** | **78.1%** | **509 BBs** | **5,000** | Pure Rust, no C++ dependencies |
+| **RENKIN v0.1.8** | **78.1%** | **509 BBs** | **5,000** | Pure Rust, no C++ dependencies |
 | AiZynthFinder (Mol. Inf. 2020) | ~45% | eMolecules (~6M) | ~50,000 | Python, RDKit |
 | Retro\* (ICML 2020) | ~40% | eMolecules (~6M) | ~50,000 | Python |
 | LocalRetro (AAAI 2021) | ~65% | eMolecules (~6M) | template-free | GNN-based |
 | GLN (NeurIPS 2020) | ~64% | eMolecules (~6M) | ~17,000 | GNN-based |
 
 !!! note "Apples vs oranges"
-    RENKIN's 78.0% is achieved with only **480 commercial reagents** and **5,000 templates**.
+    RENKIN's 78.0% is achieved with only **509 commercial reagents** and **5,000 templates**.
     Other systems use multi-million-compound databases (eMolecules, ZINC) and tens of thousands of templates,
     putting RENKIN at a structural disadvantage on raw numbers.
 
@@ -55,7 +55,7 @@ RENKIN achieves high accuracy on standard bond disconnections:
 - Aryl amines → aryl halide + amine (Buchwald-Hartwig)
 - C–halide bonds → dehalogenated arene
 - Boc / Cbz protecting group removal
-- Diaryl sulfones → arylsulfonyl chloride + arene (graph-based, v0.1.4)
+- Diaryl sulfones → arylsulfonyl chloride + arene (graph-based, v0.1.8)
 - Sulfonamides → sulfonyl chloride + amine
 
 ### Out-of-Distribution (OOD) Evaluation

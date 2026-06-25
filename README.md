@@ -159,7 +159,7 @@ Add `--verbose` to print search statistics (nodes expanded, elapsed time) to std
 | **Tetrahedral stereo @/@@** | Full stereochemistry support via chematic 0.4.16 |
 | **Python** | `pip install renkin` — pre-built wheels for Linux/macOS/Windows |
 | **WASM** | ~500 KB bundle — runs in the browser at near-native speed |
-| **480 building blocks** | Aryl halides, boronic acids, heterocycles, amines, acids, amino acids |
+| **509 building blocks** | Aryl halides, boronic acids, heterocycles, amines, acids, amino acids |
 
 ---
 
@@ -167,7 +167,9 @@ Add `--verbose` to print search statistics (nodes expanded, elapsed time) to std
 
 USPTO-50k test set (4,907 molecules, full evaluation):
 
-> **Evaluation note**: All numbers use the standard USPTO-50k train/test split (same corpus). Templates are extracted from the training set and evaluated on the test set — the same methodology as AiZynthFinder and other published tools. Numbers reflect performance within the USPTO-50k domain; out-of-distribution generalization has not been separately evaluated.
+> **Evaluation definition**: A molecule is *solved* if `find_routes` returns at least one route whose leaf precursors are all in the 509-reagent building block set, within depth=5 and beam=100. Ground-truth reactants from USPTO-50k are **not** checked — any commercially accessible route counts.
+
+> **Evaluation note**: All numbers use the standard USPTO-50k train/test split (same corpus). Templates are extracted from the training set and evaluated on the test set. Numbers reflect performance within the USPTO-50k domain; out-of-distribution generalization is separately evaluated via ChEMBL approved drugs (**81.8%**, 409/500).
 
 | Config | Solved | Rate | BBs | Templates | depth | beam | ms/mol |
 |---|---|---|---|---|---|---|---|
@@ -184,7 +186,7 @@ USPTO-50k test set (4,907 molecules, full evaluation):
 \* 29/50 chunks, previous binary  
 † 50/50 chunks — **72.1%** (3,540/4,907) confirmed
 
-On the standard USPTO-50k benchmark (multi-step route-finding, same train/test split), RENKIN (**78.1%**) exceeds the published numbers for AiZynthFinder (45–53%), Retro\* (44.3%), and ASKCOS (41%) — though those are from 2019–2020 papers with different BB/template counts, so no matched-condition experiment exists yet.  
+Under RENKIN's evaluation setting (see definition above), RENKIN reaches **78.1%** on USPTO-50k. Published numbers for AiZynthFinder (45–53%), Retro\* (44.3%), and ASKCOS (41%) use different stock databases, template counts, and evaluation years — **this is not a matched-condition comparison**.  
 *Note: LocalRetro (53.4%) and GLG (58.0%) report single-step top-1 prediction accuracy — a different metric, not directly comparable.*  
 [Full benchmark details →](https://kent-tokyo.github.io/renkin/benchmark/)
 
@@ -201,7 +203,9 @@ On the standard USPTO-50k benchmark (multi-step route-finding, same train/test s
 | **Retro\*** | Python | MIT | No | No (unmaintained) | A\* + AND/OR | USPTO (ML) | eMolecules |
 | **★ RENKIN** | **Rust** | **MIT** | **Yes** | **Yes** | **A\* + AND/OR** | Hand-curated + rdchiral (5,000) | 509+ |
 
-**RENKIN's goal**: match or exceed neural-network-based tools using only curated rules and auto-extracted SMIRKS templates — no GPU, no training data, no black boxes. On the standard USPTO-50k benchmark (same train/test split used by all published tools), RENKIN reaches **78.1%** (3,831/4,907 — full 4,907-molecule run confirmed). Template frequency weighting (Phase A) — the same principle as AiZynthFinder's neural template scoring — combined with 5,000 auto-extracted templates and 509 building blocks delivers this result. RENKIN runs anywhere: browser, CLI, Python — single `cargo build`.
+**RENKIN's goal**: match state-of-the-art accuracy using only curated rules and auto-extracted SMIRKS templates — no GPU, no training data, no black boxes. Under RENKIN's benchmark setting, it reaches **78.1%** (3,831/4,907 — full run confirmed). Template frequency weighting (Phase A) combined with 5,000 auto-extracted templates and 509 building blocks delivers this result. RENKIN runs anywhere: browser, CLI, Python — single `cargo build`.
+
+> ⚠️ The table above lists tools under different evaluation conditions. No matched-condition experiment against other tools has been performed.
 
 ---
 
@@ -344,7 +348,7 @@ If you use RENKIN in academic work, please cite:
   title     = {{RENKIN}: Retrosynthetic Exploration Network for Knowledge-Informed Navigation},
   year      = {2026},
   url       = {https://github.com/kent-tokyo/renkin},
-  version   = {0.1.4},
+  version   = {0.1.8},
   license   = {MIT}
 }
 ```

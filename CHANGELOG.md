@@ -6,6 +6,18 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.1.8] — 2026-06-26
+
+### Changed
+- **Benchmark comparison language softened** — replaced "exceeds AiZynthFinder/Retro\*" with explicit "not a matched-condition comparison" note; added evaluation definition (what "solved" means)
+- **Version sync** — README/README\_ja citation, docs/benchmark\*, docs/index.md, docs/api/python.md all updated to v0.1.8 and 509 BBs
+- **`building_blocks` in JSON** — now documented in Key Features table
+
+### Fixed
+- docs/index.md: `20 reaction rules` and `480+ building blocks` updated to reflect actual CLI capability (5,000 templates via `--templates`, 509 BBs)
+
+---
+
 ## [0.1.7] — 2026-06-26
 
 ### Added

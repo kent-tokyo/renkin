@@ -22,7 +22,7 @@ Find retrosynthetic routes for a target molecule.
 | `depth` | `int` | `5` | Maximum number of retrosynthetic steps |
 | `max_routes` | `int` | `5` | Maximum number of routes to return |
 | `beam_width` | `int` | `0` | A\* beam width (0 = unlimited BFS/A\*) |
-| `building_blocks` | `list[str]` | `None` | Custom building block SMILES list. If `None`, uses the built-in library (~480 compounds) |
+| `building_blocks` | `list[str]` | `None` | Custom building block SMILES list. If `None`, uses the built-in library (509 compounds) |
 
 **Returns:**
 
@@ -72,7 +72,7 @@ Returns the RENKIN version string.
 
 ## Building Blocks
 
-The default building block library includes ~480 commercially available compounds:
+The default building block library includes 509 commercially available compounds:
 
 - Simple aliphatics (C1–C6 chains, alcohols, acids)
 - Aryl and heteroaryl halides (Br, Cl, I)

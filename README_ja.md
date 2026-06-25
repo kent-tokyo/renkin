@@ -306,7 +306,7 @@ renkin/
   title     = {{RENKIN}: Retrosynthetic Exploration Network for Knowledge-Informed Navigation},
   year      = {2026},
   url       = {https://github.com/kent-tokyo/renkin},
-  version   = {0.1.5},
+  version   = {0.1.8},
   license   = {MIT}
 }
 ```

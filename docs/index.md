@@ -41,8 +41,8 @@ RENKIN is a **retrosynthesis engine** that automatically plans multi-step chemic
 | **Pure Rust** | Zero C/C++ dependencies — safe, fast, cross-platform |
 | **WebAssembly** | Runs in the browser at near-native speed |
 | **Python bindings** | `pip install renkin` — no RDKit required |
-| **20 reaction rules** | Ester, amide, Suzuki, Buchwald-Hartwig, aryl C-X, Wittig, and more |
-| **480+ building blocks** | Common pharma starting materials pre-loaded |
+| **20 built-in rules + 5,000 via `--templates`** | Ester, amide, Suzuki, Buchwald-Hartwig, aryl C-X, Wittig, and more; extended to 5,000 rdchiral-extracted templates via CLI |
+| **509 building blocks** | Common pharma starting materials pre-loaded (WASM playground uses embedded set) |
 | **A\* search** | Beam-width controlled search with depth limit |
 
 ## Quick Example
@@ -95,11 +95,11 @@ RENKIN is a **retrosynthesis engine** that automatically plans multi-step chemic
 Target molecule (SMILES)
         │
         ▼
-  Retrosynthetic   ←── 20 reaction rule templates (SMIRKS)
+  Retrosynthetic   ←── 20 built-in rules (5,000 via --templates)
   rule application
         │
         ▼
-  Precursor set    ←── Check against 480+ building blocks
+  Precursor set    ←── Check against 509 building blocks
         │
         ▼
   A* / BFS search  ←── Beam width, depth limit

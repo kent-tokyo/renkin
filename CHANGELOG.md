@@ -6,6 +6,23 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.1.5] — 2026-06-25
+
+### Added
+- **`--format tree`** — ASCII tree output for retrosynthesis routes:
+  ```
+  Route 1  [score=1.10, depth=1]
+  OC(=O)c1ccccc1OC(=O)C
+  └── [ester_cleavage]
+      ├── OC(=O)C  ✓ BB
+      └── c1cccc(c1O)C(O)=O  ✓ BB
+  ```
+- **`--format mermaid`** — Mermaid flowchart output (paste into GitHub/Notion for rendered diagrams)
+- **`score` field in JSON output** — each route now includes `score: f64` (cumulative A* step cost; lower = better); routes are already sorted best-first
+- `src/display.rs` — new module with `format_route_tree()` and `format_route_mermaid()`
+
+---
+
 ## [0.1.4] — 2026-06-23
 
 ### Changed

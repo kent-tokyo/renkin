@@ -30,6 +30,8 @@ pub struct ReactionStep {
 pub struct Route {
     pub steps: Vec<ReactionStep>,
     pub depth: u32,
+    /// Cumulative A* step cost (lower = better). Included in JSON output.
+    pub score: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -287,6 +289,7 @@ pub fn find_routes(
             routes.push(Route {
                 steps: collect_path(node.path.as_ref()),
                 depth: node.depth,
+                score: node.g,
             });
         }
 

@@ -2,6 +2,7 @@
 
 use renkin::DEFAULT_BUILDING_BLOCKS;
 use renkin::chem_env;
+use renkin::display;
 use renkin::search::{self, SearchConfig};
 
 use anyhow::{Result, bail};
@@ -26,6 +27,7 @@ fn main() -> Result<()> {
     let mut templates_path: Option<String> = None;
     let mut max_routes: usize = 5;
     let mut beam_width: usize = 0;
+    let mut format: String = "json".to_string();
     #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
     let mut scorer_path: Option<String> = None;
 
@@ -68,6 +70,12 @@ fn main() -> Result<()> {
                     beam_width = args[i].parse().unwrap_or(0);
                 }
             }
+            "--format" | "-f" => {
+                i += 1;
+                if i < args.len() {
+                    format = args[i].clone();
+                }
+            }
             #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
             "--scorer" => {
                 i += 1;
@@ -83,7 +91,8 @@ fn main() -> Result<()> {
     let Some(target_smiles) = target else {
         bail!(
             "Usage: renkin --target <SMILES> [--depth <N>] [--max-routes <N>] \
-             [--beam-width <N>] [--building-blocks <path>] [--templates <path>]\n\
+             [--beam-width <N>] [--building-blocks <path>] [--templates <path>] \
+             [--format json|tree|mermaid]\n\
              \n\
              Options:\n  \
              --target / -t      Target molecule SMILES\n  \
@@ -91,7 +100,8 @@ fn main() -> Result<()> {
              --max-routes / -n  Max routes to return (default: 5)\n  \
              --beam-width / -w  Beam search width, 0 = unlimited A* (default: 0)\n  \
              --building-blocks  Path to .smi file of commercial starting materials\n  \
-             --templates        Path to extracted SMIRKS templates file (tab-separated)"
+             --templates        Path to extracted SMIRKS templates file (tab-separated)\n  \
+             --format / -f      Output format: json (default), tree, mermaid"
         );
     };
 
@@ -130,12 +140,28 @@ fn main() -> Result<()> {
     };
     let routes = search::find_routes(&target_smiles, &env, &rules, &config)?;
 
-    let output = Output {
-        target: target_smiles,
-        routes_found: routes.len(),
-        routes,
-    };
-
-    println!("{}", serde_json::to_string_pretty(&output)?);
+    match format.as_str() {
+        "tree" => {
+            println!("Target: {target_smiles}");
+            println!("Routes found: {}\n", routes.len());
+            for (i, route) in routes.iter().enumerate() {
+                print!("{}", display::format_route_tree(route, &target_smiles, i + 1));
+                println!();
+            }
+        }
+        "mermaid" => {
+            for (i, route) in routes.iter().enumerate() {
+                println!("{}", display::format_route_mermaid(route, &target_smiles, i + 1));
+            }
+        }
+        _ => {
+            let output = Output {
+                target: target_smiles,
+                routes_found: routes.len(),
+                routes,
+            };
+            println!("{}", serde_json::to_string_pretty(&output)?);
+        }
+    }
     Ok(())
 }

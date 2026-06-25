@@ -1,7 +1,7 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-use crate::chem_env::{ChemEnv, default_rules};
+use crate::chem_env::{ChemEnv, default_rules, elem_symbols_to_mask};
 use crate::search::{SearchConfig, find_routes};
 
 /// Find retrosynthetic routes for a target molecule.
@@ -13,6 +13,14 @@ use crate::search::{SearchConfig, find_routes};
 ///     beam_width (int): Beam search width; 0 = unlimited A*. Default: 0.
 ///     building_blocks (list[str] | None): Custom list of commercial starting
 ///         materials as SMILES. If None, uses the built-in default set.
+///     avoid_elements (str): Comma-separated element symbols to ban from building
+///         blocks (e.g. ``"Br,I"``). Routes whose leaf BBs contain any forbidden
+///         element are dropped. Default: ``""`` (no constraint).
+///     require_elements (str): Comma-separated element symbols that must each appear
+///         in at least one leaf BB (e.g. ``"B"`` for Suzuki-type routes).
+///         Default: ``""`` (no constraint).
+///     verbose (bool): Print search statistics (nodes expanded, elapsed time) to
+///         stderr after the search completes. Default: ``False``.
 ///
 /// Returns:
 ///     str: JSON string with retrosynthesis routes.
@@ -23,13 +31,16 @@ use crate::search::{SearchConfig, find_routes};
 ///     routes = json.loads(renkin.find_routes("CC(=O)Oc1ccccc1C(=O)O", depth=3))
 ///     print(routes["routes_found"])
 #[pyfunction]
-#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None))]
+#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false))]
 pub fn find_routes_py(
     target: &str,
     depth: u32,
     max_routes: usize,
     beam_width: usize,
     building_blocks: Option<Vec<String>>,
+    avoid_elements: &str,
+    require_elements: &str,
+    verbose: bool,
 ) -> PyResult<String> {
     let env = match building_blocks {
         Some(ref bbs) => {
@@ -45,6 +56,9 @@ pub fn find_routes_py(
         max_depth: depth,
         max_routes,
         beam_width,
+        forbidden_elements: elem_symbols_to_mask(avoid_elements),
+        required_element_present: elem_symbols_to_mask(require_elements),
+        verbose,
         ..Default::default()
     };
     let routes = find_routes(target, &env, &rules, &config)

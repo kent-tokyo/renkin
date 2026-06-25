@@ -29,6 +29,7 @@ pub fn find_routes(target: &str, depth: u32, max_routes: usize, beam_width: usiz
         max_depth: depth,
         max_routes,
         beam_width,
+        ..Default::default()
     };
 
     match rs_find_routes(target, &env, &rules, &config) {

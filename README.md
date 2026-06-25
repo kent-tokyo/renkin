@@ -62,8 +62,73 @@ const result = JSON.parse(find_routes("CC(=O)Oc1ccccc1C(=O)O", 5, 3, 0));
 
 ```bash
 ./target/release/renkin --target "CC(=O)Oc1ccccc1C(=O)O" --depth 5 \
-    --templates data/templates_extracted_5000.smi
+    --templates data/templates_extracted_5000.smi --format tree
 ```
+
+```text
+Target: CC(=O)Oc1ccccc1C(=O)O
+Routes found: 3
+
+Route 1  [score=1.02, depth=1]
+OC(=O)c1ccccc1OC(=O)C
+└── [extracted_169]
+    ├── OC(=O)C  ✓ BB
+    └── [OH]c1ccccc1C(=O)O  ✓ BB
+
+Route 2  [score=1.02, depth=1]
+OC(=O)c1ccccc1OC(=O)C
+└── [extracted_145]
+    ├── CC(=O)Cl  ✓ BB
+    └── [OH]c1ccccc1C(=O)O  ✓ BB
+
+Route 3  [score=1.03, depth=1]
+OC(=O)c1ccccc1OC(=O)C
+└── [extracted_238]
+    ├── c1cccc(c1O)C(O)=O  ✓ BB
+    └── C([OH])(=O)C  ✓ BB
+```
+
+Use `--format mermaid` for GitHub/Notion-compatible flowcharts.
+
+---
+
+## Constraint-based Search
+
+Restrict routes by the element composition of their building blocks.
+
+**Default search** — all 5 routes for biphenyl:
+
+```bash
+renkin --target "c1ccc(-c2ccccc2)cc1" --templates data/templates_extracted_5000.smi --format tree
+```
+
+```text
+Routes found: 5
+Route 1  [score=1.00, depth=1]  c1ccccc1Br + c1c(B(O)O)cccc1
+Route 2  [score=1.03, depth=1]  c1ccccc1Br + c1c(B(O)O)cccc1
+Route 3  [score=1.06, depth=1]  c1cc(Cl)ccc1 + c1c(B(O)O)cccc1
+Route 4  [score=1.08, depth=1]  c1(I)ccccc1  + c1c(B(O)O)cccc1
+Route 5  [score=1.08, depth=1]  c1ccccc1Br  + c1(B2OC(C(C)(C)O2)(C)C)ccccc1
+```
+
+**Constrained search** — boronic-acid coupling, no Br or I starting materials:
+
+```bash
+renkin --target "c1ccc(-c2ccccc2)cc1" --templates data/templates_extracted_5000.smi \
+    --require-elements "B" --avoid-elements "Br,I" --format tree
+```
+
+```text
+Routes found: 1
+
+Route 1  [score=1.06, depth=1]
+c1ccccc1-c2ccccc2
+└── [extracted_398]
+    ├── c1cc(Cl)ccc1  ✓ BB
+    └── c1c(B(O)O)cccc1  ✓ BB
+```
+
+Constraints compose freely. Applied as a post-filter on completed routes — the A\* search itself is unchanged.
 
 ---
 
@@ -86,6 +151,7 @@ const result = JSON.parse(find_routes("CC(=O)Oc1ccccc1C(=O)O", 5, 3, 0));
 | **Graph-based biaryl cleavage** | Bridge-bond DFS for correct Suzuki disconnection |
 | **Parallel rule application** | `rayon` on non-WASM; sequential fallback on wasm32 |
 | **tract-onnx NN scorer** | Pure Rust ONNX inference (no C++ dep) — optional `--scorer` flag for Phase B template relevance scoring |
+| **Route visualization** | `--format tree` ASCII tree · `--format mermaid` GitHub/Notion flowchart |
 | **Tetrahedral stereo @/@@** | Full stereochemistry support via chematic 0.4.16 |
 | **Python** | `pip install renkin` — pre-built wheels for Linux/macOS/Windows |
 | **WASM** | ~500 KB bundle — runs in the browser at near-native speed |
@@ -207,35 +273,35 @@ renkin/
 
 ## Roadmap
 
-- [x] **Phase 1** — SMIRKS retro-reaction rules + fragment sanitization
-- [x] **Phase 2** — A\* / AND-OR tree search, closed list, degenerate-route filter
-- [x] **Phase 3** — SA Score heuristic + beam search
-- [x] **Phase 4** — Parallel rule application (rayon; sequential fallback on WASM)
-- [x] **Phase 5** — Python bindings (PyO3 + maturin) · `pip install renkin`
-- [x] **Phase 6** — WASM build · `npm install renkin`
-- [x] **Phase 7** — Benchmark CLI (`renkin-bench`) + initial USPTO-50k evaluation
-- [x] **Phase 8** — Unit tests · rules → 31 · building blocks → 463
-- [x] **Phase 9** — WASM browser playground + i18n (EN/JA/ZH)
-- [x] **Phase 10** — Graph-based biaryl cleavage · O(1) canonical-SMILES BB index
-- [x] **Phase 11** — Published to crates.io / PyPI / npm · GitHub Actions CI/CD
-- [x] **Phase 12** — MkDocs documentation site · GitHub Pages playground
-- [x] **Phase 13** — Formal USPTO-50k benchmark: **7.5%** (depth=3, 31 rules)
-- [x] **Phase 14** — Auto template extraction (rdchiral): **27.8%** (depth=3, 222 rules)
-- [x] **Phase 15** — Tetrahedral stereo @/@@ support via chematic 0.4.16 ✅
-- [x] **Phase 15a** — E/Z double-bond stereo filtering active via chematic-rxn 0.4.15 (issue #21)
-- [x] **Phase 17** — chematic 0.4.12: Bug #13 (BFS leakage) + Bug #14 (canonical SMILES) fixed
-- [x] **Phase 18** — Template frequency weighting (Phase A): **72.1%** USPTO-50k (3,540/4,907 — full run ✅)
-- [x] **Phase 19** — Rust engine micro-optimizations (split_fragments, is_bb fast path, element pre-screening)
-- [x] **Phase 20** — FxHashMap/FxHashSet (rustc-hash) replacing std collections throughout
-- [x] **Phase 21** — SmallVec<[FEntry; 6]> beam frontier (stack allocation)
-- [x] **Phase 22** — SA Score memoization cache per search
-- [x] **Phase 23** — Arc<PathNode> persistent linked-list for path sharing (O(1) per child)
-- [x] **Phase 24** — apply_retro memoization cache (SMARTS VF2 skip on repeated intermediates)
-- [x] **Phase 25** — 5,000 extracted templates + 480 BBs: **78.0%** USPTO-50k (3,826/4,907 ✅, 2,775 ms/mol)
-- [x] **Phase 26** — diaryl sulfone retro rule + 509 BBs: **78.1%** USPTO-50k (3,831/4,907 ✅)
-- [x] **Phase B** — NN template scorer via `--scorer` flag (tract-onnx, Pure Rust ONNX, no C++ dep) ✅
-- [x] **`#![forbid(unsafe_code)]`** — compiler-enforced Pure Safe Rust on all crates
-- [ ] **Phase 16** — Large-scale building block DB integration (500k BBs — in progress)
+- [ ] Large-scale building block DB integration (500k BBs)
+- [ ] MCP server — AI agents call retrosynthesis directly
+- [ ] Constraint-based search (exclude reagents, step limits, green chemistry flags)
+- [ ] Route cost scoring (commercial reagent price integration)
+
+<details>
+<summary>Completed milestones</summary>
+
+- [x] SMIRKS retro-reaction rules + fragment sanitization
+- [x] A\* / AND-OR tree search, closed list, degenerate-route filter
+- [x] SA Score heuristic + beam search
+- [x] Parallel rule application (rayon; sequential fallback on WASM)
+- [x] Python bindings (PyO3 + maturin) · `pip install renkin`
+- [x] WASM build · `npm install renkin`
+- [x] Benchmark CLI (`renkin-bench`) + USPTO-50k evaluation
+- [x] WASM browser playground + i18n (EN/JA/ZH)
+- [x] Graph-based biaryl cleavage · O(1) canonical-SMILES BB index
+- [x] Published to crates.io / PyPI / npm · GitHub Actions CI/CD
+- [x] MkDocs documentation site · GitHub Pages playground
+- [x] Auto template extraction (rdchiral): **27.8%** → **78.1%** USPTO-50k
+- [x] Tetrahedral stereo @/@@ + E/Z double-bond stereo
+- [x] Template frequency weighting (Phase A): **72.1%** USPTO-50k
+- [x] FxHashMap · SmallVec beam frontier · SA Score memoization · Arc<PathNode> path sharing
+- [x] 5,000 extracted templates + 509 BBs: **78.1%** USPTO-50k (3,831/4,907 ✅)
+- [x] NN template scorer via `--scorer` flag (tract-onnx, Pure Rust ONNX)
+- [x] `--format tree|mermaid` route visualization
+- [x] `#![forbid(unsafe_code)]` — compiler-enforced Pure Safe Rust
+
+</details>
 
 ---
 

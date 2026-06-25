@@ -200,6 +200,15 @@ pub struct SearchConfig {
     pub max_routes: usize,
     /// 0 = unlimited (pure A*). N > 0 = beam search, keep top-N nodes.
     pub beam_width: usize,
+    /// Element bitmask (same format as `RetroRule::required_elements`).
+    /// Routes whose leaf building blocks contain any forbidden element are dropped.
+    /// 0 = no constraint.
+    pub forbidden_elements: u64,
+    /// Routes are kept only when the union of all leaf BB element masks covers this mask.
+    /// 0 = no constraint.
+    pub required_element_present: u64,
+    /// Print search statistics (nodes expanded, elapsed time) to stderr after search.
+    pub verbose: bool,
     /// Phase B: ONNX template relevance scorer (CLI/Python only, not WASM).
     /// When Some, pre-filters rules to top-K most relevant before SMARTS matching.
     #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
@@ -212,6 +221,9 @@ impl Default for SearchConfig {
             max_depth: 5,
             max_routes: 5,
             beam_width: 0,
+            forbidden_elements: 0,
+            required_element_present: 0,
+            verbose: false,
             #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
             nn_scorer: None,
         }
@@ -247,6 +259,10 @@ pub fn find_routes(
 
     let max_rule_weight = rules.iter().map(|r| r.weight).fold(1.0_f64, f64::max);
 
+    let t0 = std::time::Instant::now();
+    let mut nodes_popped: u64 = 0;
+    let mut nodes_expanded: u64 = 0;
+
     let mut routes: Vec<Route> = Vec::new();
     let mut closed: FxHashSet<u64> = FxHashSet::default();
     let mut heap: BinaryHeap<Node> = BinaryHeap::new();
@@ -269,6 +285,7 @@ pub fn find_routes(
     });
 
     while let Some(node) = heap.pop() {
+        nodes_popped += 1;
         if routes.len() >= config.max_routes {
             break;
         }
@@ -302,6 +319,7 @@ pub fn find_routes(
             continue;
         }
         closed.insert(key);
+        nodes_expanded += 1;
 
         let Some(target_entry) = first_unsolved.or_else(|| node.frontier.first()) else {
             continue;
@@ -405,6 +423,44 @@ pub fn find_routes(
 
         // --- Phase 3.2: Beam search pruning ---
         beam_prune(&mut heap, config.beam_width);
+    }
+
+    if config.forbidden_elements != 0 {
+        let mask = config.forbidden_elements;
+        routes.retain(|route| {
+            let all_targets: std::collections::HashSet<&str> =
+                route.steps.iter().map(|s| s.target.as_str()).collect();
+            route.steps.iter().all(|step| {
+                step.precursors.iter().all(|prec| {
+                    all_targets.contains(prec.as_str()) || (elem_mask_from_smiles(prec) & mask) == 0
+                })
+            })
+        });
+    }
+
+    if config.verbose {
+        eprintln!(
+            "[renkin] search complete\n  nodes popped   : {}\n  nodes expanded : {}\n  routes found   : {}\n  elapsed        : {:.2} s",
+            nodes_popped,
+            nodes_expanded,
+            routes.len(),
+            t0.elapsed().as_secs_f64()
+        );
+    }
+
+    if config.required_element_present != 0 {
+        let need = config.required_element_present;
+        routes.retain(|route| {
+            let all_targets: std::collections::HashSet<&str> =
+                route.steps.iter().map(|s| s.target.as_str()).collect();
+            let leaf_union: u64 = route
+                .steps
+                .iter()
+                .flat_map(|s| s.precursors.iter())
+                .filter(|p| !all_targets.contains(p.as_str()))
+                .fold(0u64, |acc, p| acc | elem_mask_from_smiles(p));
+            (leaf_union & need) == need
+        });
     }
 
     Ok(routes)

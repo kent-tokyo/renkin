@@ -21,6 +21,10 @@ AGENTS.md
 tasks/
 memo.txt
 
+# ---- ONNX model weights (large binaries) ----
+data/*.onnx
+data/*.onnx.data
+
 # ---- Large data files (not published) ----
 data/building_blocks_500k.smi
 data/building_blocks_emolecules*.smi

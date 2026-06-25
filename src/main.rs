@@ -28,6 +28,9 @@ fn main() -> Result<()> {
     let mut max_routes: usize = 5;
     let mut beam_width: usize = 0;
     let mut format: String = "json".to_string();
+    let mut avoid_elements: String = String::new();
+    let mut require_elements: String = String::new();
+    let mut verbose = false;
     #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
     let mut scorer_path: Option<String> = None;
 
@@ -76,6 +79,21 @@ fn main() -> Result<()> {
                     format = args[i].clone();
                 }
             }
+            "--avoid-elements" | "-e" => {
+                i += 1;
+                if i < args.len() {
+                    avoid_elements = args[i].clone();
+                }
+            }
+            "--require-elements" | "-r" => {
+                i += 1;
+                if i < args.len() {
+                    require_elements = args[i].clone();
+                }
+            }
+            "--verbose" | "-v" => {
+                verbose = true;
+            }
             #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
             "--scorer" => {
                 i += 1;
@@ -101,7 +119,10 @@ fn main() -> Result<()> {
              --beam-width / -w  Beam search width, 0 = unlimited A* (default: 0)\n  \
              --building-blocks  Path to .smi file of commercial starting materials\n  \
              --templates        Path to extracted SMIRKS templates file (tab-separated)\n  \
-             --format / -f      Output format: json (default), tree, mermaid"
+             --format / -f      Output format: json (default), tree, mermaid\n  \
+             --avoid-elements / -e  Comma-separated elements to ban from BBs (e.g. \"Br,I\")\n  \
+             --require-elements / -r  Comma-separated elements each route must supply (e.g. \"B\")\n  \
+             --verbose / -v         Print search statistics to stderr"
         );
     };
 
@@ -134,6 +155,9 @@ fn main() -> Result<()> {
         max_depth,
         max_routes,
         beam_width,
+        forbidden_elements: chem_env::elem_symbols_to_mask(&avoid_elements),
+        required_element_present: chem_env::elem_symbols_to_mask(&require_elements),
+        verbose,
         #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
         nn_scorer,
         ..Default::default()
@@ -145,13 +169,19 @@ fn main() -> Result<()> {
             println!("Target: {target_smiles}");
             println!("Routes found: {}\n", routes.len());
             for (i, route) in routes.iter().enumerate() {
-                print!("{}", display::format_route_tree(route, &target_smiles, i + 1));
+                print!(
+                    "{}",
+                    display::format_route_tree(route, &target_smiles, i + 1)
+                );
                 println!();
             }
         }
         "mermaid" => {
             for (i, route) in routes.iter().enumerate() {
-                println!("{}", display::format_route_mermaid(route, &target_smiles, i + 1));
+                println!(
+                    "{}",
+                    display::format_route_mermaid(route, &target_smiles, i + 1)
+                );
             }
         }
         _ => {

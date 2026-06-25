@@ -296,7 +296,10 @@ fn diaryl_sulfone_cleavage(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
             let atom_b = mol.atom(b);
             if atom_a.element == Element::S && atom_b.aromatic && atom_b.element == Element::C {
                 (b, a)
-            } else if atom_b.element == Element::S && atom_a.aromatic && atom_a.element == Element::C {
+            } else if atom_b.element == Element::S
+                && atom_a.aromatic
+                && atom_a.element == Element::C
+            {
                 (a, b)
             } else {
                 continue;
@@ -307,8 +310,7 @@ fn diaryl_sulfone_cleavage(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
         let o_double_count = mol
             .neighbors(s_idx)
             .filter(|&(nb, bond_idx): &(AtomIdx, BondIdx)| {
-                mol.atom(nb).element == Element::O
-                    && mol.bond(bond_idx).order == BondOrder::Double
+                mol.atom(nb).element == Element::O && mol.bond(bond_idx).order == BondOrder::Double
             })
             .count();
         if o_double_count < 2 {
@@ -321,10 +323,14 @@ fn diaryl_sulfone_cleavage(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
         }
 
         let comp_ar = get_component(mol, ar_idx, ar_idx, s_idx); // Ar' side (gets H)
-        let comp_s = get_component(mol, s_idx, ar_idx, s_idx);   // Ar-SO2 side (gets Cl)
+        let comp_s = get_component(mol, s_idx, ar_idx, s_idx); // Ar-SO2 side (gets Cl)
 
-        let Some(frag_arh) = build_sub_molecule(mol, &comp_ar) else { continue };
-        let Some(frag_so2cl) = build_sub_molecule_with_cl(mol, &comp_s, s_idx) else { continue };
+        let Some(frag_arh) = build_sub_molecule(mol, &comp_ar) else {
+            continue;
+        };
+        let Some(frag_so2cl) = build_sub_molecule_with_cl(mol, &comp_s, s_idx) else {
+            continue;
+        };
 
         let precs_arh = split_fragments(&frag_arh);
         let precs_so2cl = split_fragments(&frag_so2cl);
@@ -753,6 +759,33 @@ pub fn default_rules() -> Vec<RetroRule> {
         // N-Cbz → N-H (hydrogenolysis retro, graph-based)
         rr("cbz_deprotection_retro", ""),
     ]
+}
+
+/// Map comma-separated element symbols (e.g. `"Br,I"`) to the same bitmask
+/// format as `RetroRule::required_elements`.  Unknown symbols are silently skipped.
+pub fn elem_symbols_to_mask(csv: &str) -> u64 {
+    let mut mask = 0u64;
+    for sym in csv.split(',') {
+        let n: Option<u32> = match sym.trim() {
+            "H" => Some(1),
+            "B" => Some(5),
+            "C" => Some(6),
+            "N" => Some(7),
+            "O" => Some(8),
+            "F" => Some(9),
+            "Si" => Some(14),
+            "P" => Some(15),
+            "S" => Some(16),
+            "Cl" => Some(17),
+            "Br" => Some(35),
+            "I" => Some(53),
+            _ => None,
+        };
+        if let Some(n) = n {
+            mask |= 1u64 << n;
+        }
+    }
+    mask
 }
 
 /// Load additional SMIRKS templates from a file (tab-separated: SMIRKS\tcount).
@@ -1683,10 +1716,7 @@ mod chematic_regression {
         let e_results = run_reactants(smirks, &[&e_hexene]).unwrap_or_default();
         let z_results = run_reactants(smirks, &[&z_hexene]).unwrap_or_default();
 
-        assert!(
-            !e_results.is_empty(),
-            "E-alkene must match E-SMIRKS"
-        );
+        assert!(!e_results.is_empty(), "E-alkene must match E-SMIRKS");
         assert!(
             z_results.is_empty(),
             "Z-alkene must NOT match E-SMIRKS; got {} result set(s)",

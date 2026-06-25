@@ -18,7 +18,12 @@ fn build_tree(steps: &[ReactionStep], root: &str) -> TreeNode {
     // Map target SMILES → (rule, precursors)
     let step_map: HashMap<&str, (&str, &[String])> = steps
         .iter()
-        .map(|s| (s.target.as_str(), (s.rule.as_str(), s.precursors.as_slice())))
+        .map(|s| {
+            (
+                s.target.as_str(),
+                (s.rule.as_str(), s.precursors.as_slice()),
+            )
+        })
         .collect();
 
     build_node(&step_map, root, None)
@@ -57,8 +62,10 @@ fn find_root<'a>(steps: &'a [ReactionStep], fallback: &'a str) -> &'a str {
     if steps.is_empty() {
         return fallback;
     }
-    let all_precursors: std::collections::HashSet<&str> =
-        steps.iter().flat_map(|s| s.precursors.iter().map(String::as_str)).collect();
+    let all_precursors: std::collections::HashSet<&str> = steps
+        .iter()
+        .flat_map(|s| s.precursors.iter().map(String::as_str))
+        .collect();
     for step in steps {
         if !all_precursors.contains(step.target.as_str()) {
             return step.target.as_str();
@@ -116,15 +123,6 @@ fn render_node(node: &TreeNode, out: &mut String, prefix: &str, is_last: bool) {
             out.push_str(&format!("{}└── [{}]\n", rule_prefix, rule));
         }
 
-        let child_prefix = if prefix.is_empty() {
-            String::new()
-        } else if is_last {
-            format!("{prefix}    ")
-        } else {
-            format!("{prefix}│   ")
-        };
-
-        // Find the reaction step for this node's children
         let rule_child_prefix = if prefix.is_empty() {
             "    ".to_string()
         } else if is_last {
@@ -137,7 +135,6 @@ fn render_node(node: &TreeNode, out: &mut String, prefix: &str, is_last: bool) {
             let last = i == node.children.len() - 1;
             render_node(child, out, &rule_child_prefix, last);
         }
-        let _ = child_prefix; // suppress unused warning
     }
 }
 
@@ -169,10 +166,17 @@ fn collect_mermaid(
     } else {
         node.smiles.clone()
     };
-    nodes.push(MermaidNode { id: my_id, label: label.replace('"', "'") });
+    nodes.push(MermaidNode {
+        id: my_id,
+        label: label.replace('"', "'"),
+    });
 
     if let Some((pid, rule)) = parent_id {
-        edges.push(MermaidEdge { from: pid, to: my_id, label: rule });
+        edges.push(MermaidEdge {
+            from: pid,
+            to: my_id,
+            label: rule,
+        });
     }
 
     let rule = node.rule.clone().unwrap_or_default();

@@ -1,6 +1,6 @@
 [package]
 name = "renkin"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2024"
 description = "Ultra-fast retrosynthesis engine for computer-aided synthesis planning (CASP) — pure Rust, WASM-ready, Python bindings via PyO3"
 repository    = "https://github.com/kent-tokyo/renkin"

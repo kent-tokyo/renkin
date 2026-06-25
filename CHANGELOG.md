@@ -6,6 +6,18 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.1.7] — 2026-06-26
+
+### Added
+- **`renkin-mcp` binary** — MCP server (JSON-RPC 2.0 over stdio) for AI agent integration:
+  - Tool `find_routes` with `smiles`, `depth`, `max_routes`, `avoid_elements`, `require_elements` params
+  - Returns ASCII tree output + `building_blocks` list per route
+  - Auto-loads `data/building_blocks.smi` / `data/templates_extracted_5000.smi` if present
+  - Register in Claude Desktop: `{"mcpServers": {"renkin": {"command": "/path/to/renkin-mcp"}}}`
+  - No new dependencies (serde_json already present)
+
+---
+
 ## [0.1.6] — 2026-06-25
 
 ### Added

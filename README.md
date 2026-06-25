@@ -155,6 +155,7 @@ Add `--verbose` to print search statistics (nodes expanded, elapsed time) to std
 | **tract-onnx NN scorer** | Pure Rust ONNX inference (no C++ dep) — optional `--scorer` flag for Phase B template relevance scoring |
 | **Route visualization** | `--format tree` ASCII tree · `--format mermaid` GitHub/Notion flowchart |
 | **`building_blocks` in JSON** | Each route includes the leaf starting-material SMILES — no manual step parsing needed |
+| **MCP server** | `renkin-mcp` binary — AI agents (Claude, etc.) call retrosynthesis over JSON-RPC stdio |
 | **Tetrahedral stereo @/@@** | Full stereochemistry support via chematic 0.4.16 |
 | **Python** | `pip install renkin` — pre-built wheels for Linux/macOS/Windows |
 | **WASM** | ~500 KB bundle — runs in the browser at near-native speed |
@@ -201,6 +202,31 @@ On the standard USPTO-50k benchmark (multi-step route-finding, same train/test s
 | **★ RENKIN** | **Rust** | **MIT** | **Yes** | **Yes** | **A\* + AND/OR** | Hand-curated + rdchiral (5,000) | 509+ |
 
 **RENKIN's goal**: match or exceed neural-network-based tools using only curated rules and auto-extracted SMIRKS templates — no GPU, no training data, no black boxes. On the standard USPTO-50k benchmark (same train/test split used by all published tools), RENKIN reaches **78.1%** (3,831/4,907 — full 4,907-molecule run confirmed). Template frequency weighting (Phase A) — the same principle as AiZynthFinder's neural template scoring — combined with 5,000 auto-extracted templates and 509 building blocks delivers this result. RENKIN runs anywhere: browser, CLI, Python — single `cargo build`.
+
+---
+
+## MCP Server
+
+`renkin-mcp` exposes retrosynthesis as an MCP tool so AI agents (Claude, etc.) can call it directly.
+
+**Setup** — add to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "renkin": { "command": "/path/to/renkin-mcp" }
+  }
+}
+```
+
+**Tool**: `find_routes(smiles, depth?, max_routes?, avoid_elements?, require_elements?)`
+
+The server auto-detects `data/building_blocks.smi` and `data/templates_extracted_5000.smi` in the working directory. Falls back to the embedded 509-BB / 20-rule defaults if not found.
+
+```bash
+cargo build --release
+# binary: target/release/renkin-mcp
+```
 
 ---
 
@@ -276,7 +302,6 @@ renkin/
 
 ## Roadmap
 
-- [ ] MCP server — AI agents call retrosynthesis directly
 - [ ] Route cost scoring (commercial reagent price integration)
 
 <details>
@@ -302,6 +327,7 @@ renkin/
 - [x] `--format tree|mermaid` route visualization
 - [x] Constraint-based search: `--avoid-elements`, `--require-elements`
 - [x] `--verbose` search statistics to stderr
+- [x] MCP server (`renkin-mcp`) — AI agents call retrosynthesis directly
 - [x] `#![forbid(unsafe_code)]` — compiler-enforced Pure Safe Rust
 
 </details>

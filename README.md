@@ -273,9 +273,7 @@ renkin/
 
 ## Roadmap
 
-- [ ] Large-scale building block DB integration (500k BBs)
 - [ ] MCP server — AI agents call retrosynthesis directly
-- [ ] Constraint-based search (exclude reagents, step limits, green chemistry flags)
 - [ ] Route cost scoring (commercial reagent price integration)
 
 <details>
@@ -299,6 +297,8 @@ renkin/
 - [x] 5,000 extracted templates + 509 BBs: **78.1%** USPTO-50k (3,831/4,907 ✅)
 - [x] NN template scorer via `--scorer` flag (tract-onnx, Pure Rust ONNX)
 - [x] `--format tree|mermaid` route visualization
+- [x] Constraint-based search: `--avoid-elements`, `--require-elements`
+- [x] `--verbose` search statistics to stderr
 - [x] `#![forbid(unsafe_code)]` — compiler-enforced Pure Safe Rust
 
 </details>

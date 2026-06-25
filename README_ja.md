@@ -62,8 +62,61 @@ const result = JSON.parse(find_routes("CC(=O)Oc1ccccc1C(=O)O", 5, 3, 0));
 
 ```bash
 ./target/release/renkin --target "CC(=O)Oc1ccccc1C(=O)O" --depth 5 \
-    --templates data/templates_extracted_5000.smi
+    --templates data/templates_extracted_5000.smi --format tree
 ```
+
+```text
+Target: CC(=O)Oc1ccccc1C(=O)O
+Routes found: 3
+
+Route 1  [score=1.02, depth=1]
+OC(=O)c1ccccc1OC(=O)C
+└── [extracted_169]
+    ├── OC(=O)C  ✓ BB
+    └── [OH]c1ccccc1C(=O)O  ✓ BB
+```
+
+`--format mermaid` で GitHub/Notion 対応フローチャートも出力できます。
+
+---
+
+## 制約付き探索
+
+出発原料の元素組成で探索を制限できます。
+
+**デフォルト探索** — ビフェニルの5ルート:
+
+```bash
+renkin --target "c1ccc(-c2ccccc2)cc1" --templates data/templates_extracted_5000.smi --format tree
+```
+
+```text
+Routes found: 5
+Route 1  [score=1.00, depth=1]  c1ccccc1Br + c1c(B(O)O)cccc1
+Route 2  [score=1.03, depth=1]  c1ccccc1Br + c1c(B(O)O)cccc1
+Route 3  [score=1.06, depth=1]  c1cc(Cl)ccc1 + c1c(B(O)O)cccc1
+Route 4  [score=1.08, depth=1]  c1(I)ccccc1  + c1c(B(O)O)cccc1
+Route 5  [score=1.08, depth=1]  c1ccccc1Br  + c1(B2OC(C(C)(C)O2)(C)C)ccccc1
+```
+
+**制約付き探索** — ボロン酸カップリングのみ（Br・I 出発原料を除外）:
+
+```bash
+renkin --target "c1ccc(-c2ccccc2)cc1" --templates data/templates_extracted_5000.smi \
+    --require-elements "B" --avoid-elements "Br,I" --format tree
+```
+
+```text
+Routes found: 1
+
+Route 1  [score=1.06, depth=1]
+c1ccccc1-c2ccccc2
+└── [extracted_398]
+    ├── c1cc(Cl)ccc1  ✓ BB
+    └── c1c(B(O)O)cccc1  ✓ BB
+```
+
+制約は自由に組み合わせ可能。探索後フィルタとして適用されるため、A\* 探索自体は変化しません。
 
 ---
 
@@ -86,10 +139,13 @@ const result = JSON.parse(find_routes("CC(=O)Oc1ccccc1C(=O)O", 5, 3, 0));
 | **グラフベースAr-Ar切断** | ブリッジボンドDFS — 対称ビアリールを正確に処理 |
 | **並列ルール適用** | `rayon` で並列評価（WASM では逐次フォールバック） |
 | **tract-onnx NNスコアラー** | Pure Rust ONNXインファレンス（C++依存なし） — Phase B テンプレート関連性スコアリングの `--scorer` フラグ |
+| **ルート可視化** | `--format tree` ASCII木 · `--format mermaid` GitHub/Notion対応フローチャート |
+| **制約付き探索** | `--avoid-elements "Br,I"` で禁止元素を除外 · `--require-elements "B"` で必須元素を指定 |
+| **探索トレース** | `--verbose` で展開ノード数・経過時間をstderrに出力（stdout出力は無影響） |
 | **四面体ステレオ @/@@** | chematic 0.4.16 による完全な立体化学サポート |
 | **Python** | `pip install renkin` — Linux/macOS/Windows プリビルドwheels |
 | **WASM** | ~500 KB バンドル — ブラウザでネイティブに近い速度で動作 |
-| **480件の市販原料** | アリールハライド、ボロン酸、ヘテロ環、医薬品アミン、アミノ酸 |
+| **509件の市販原料** | アリールハライド、ボロン酸、ヘテロ環、医薬品アミン、アミノ酸 |
 
 ---
 
@@ -234,8 +290,9 @@ renkin/
 - [x] **Phase 25** — 5,000テンプレート + 480 BB: **78.0%** USPTO-50k（3,826/4,907 ✅、2,775 ms/mol）
 - [x] **Phase 26** — diaryl sulfone retro ルール + 509 BB: **78.1%** USPTO-50k（3,831/4,907 ✅）
 - [x] **Phase B** — NNテンプレートスコアラー `--scorer` フラグ（tract-onnx、Pure Rust ONNX、C++依存なし）✅
+- [x] **Phase 26** — `--format tree|mermaid` ルート可視化 + JSON に `score` フィールド追加
+- [x] **制約付き探索** — `--avoid-elements` / `--require-elements` / `--verbose`
 - [x] **`#![forbid(unsafe_code)]`** — 全クレートでコンパイラ保証の Pure Safe Rust
-- [ ] **Phase 16** — 大規模市販原料DB連携（500k BB — 進行中）
 
 ---
 
@@ -249,7 +306,7 @@ renkin/
   title     = {{RENKIN}: Retrosynthetic Exploration Network for Knowledge-Informed Navigation},
   year      = {2026},
   url       = {https://github.com/kent-tokyo/renkin},
-  version   = {0.1.4},
+  version   = {0.1.5},
   license   = {MIT}
 }
 ```

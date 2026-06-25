@@ -20,6 +20,28 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`--format mermaid`** — Mermaid flowchart output (paste into GitHub/Notion for rendered diagrams)
 - **`score` field in JSON output** — each route now includes `score: f64` (cumulative A* step cost; lower = better); routes are already sorted best-first
 - `src/display.rs` — new module with `format_route_tree()` and `format_route_mermaid()`
+- **Constraint-based search** — two new CLI flags (also available in Python API):
+  - `--avoid-elements / -e "Br,I"` — drop any route whose leaf BBs contain a forbidden element
+  - `--require-elements / -r "B"` — keep only routes whose leaf BB union supplies each required element
+  - `chem_env::elem_symbols_to_mask()` helper maps symbol CSV → u64 bitmask (same format as `RetroRule::required_elements`)
+  - `SearchConfig` gains `forbidden_elements: u64` and `required_element_present: u64` (both default 0 = no constraint)
+  - Constraints compose freely: `--require-elements B --avoid-elements Br,I` narrows biphenyl from 5 routes to 1
+- **`--verbose / -v`** — print search statistics to stderr after each run:
+  ```
+  [renkin] search complete
+    nodes popped   : 7
+    nodes expanded : 6
+    routes found   : 5
+    elapsed        : 0.04 s
+  ```
+  `SearchConfig.verbose: bool` (default false); does not affect stdout (JSON/tree/mermaid unaffected)
+- `scripts/train_template_scorer.py` — MLP template scorer training script added to repo
+- README: Constraint-based Search section with before/after example (5 routes → 1 route)
+
+### Fixed
+- `src/display.rs`: removed dead `child_prefix` variable (same expression as `rule_prefix`; suppressed with `let _ =`)
+- `scripts/train_template_scorer.py`: added `result.returncode` check in `ecfp4_batch()` — subprocess failure previously silently corrupted training fingerprints
+- `data/*.onnx` and `data/*.onnx.data` added to `.gitignore` (large binary weights)
 
 ---
 

@@ -130,6 +130,8 @@ c1ccccc1-c2ccccc2
 
 Constraints compose freely. Applied as a post-filter on completed routes — the A\* search itself is unchanged.
 
+Add `--verbose` to print search statistics (nodes expanded, elapsed time) to stderr. Performance counters are available in native builds only; disabled in WASM.
+
 ---
 
 ## Key Features

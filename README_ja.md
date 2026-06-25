@@ -141,7 +141,7 @@ c1ccccc1-c2ccccc2
 | **tract-onnx NNスコアラー** | Pure Rust ONNXインファレンス（C++依存なし） — Phase B テンプレート関連性スコアリングの `--scorer` フラグ |
 | **ルート可視化** | `--format tree` ASCII木 · `--format mermaid` GitHub/Notion対応フローチャート |
 | **制約付き探索** | `--avoid-elements "Br,I"` で禁止元素を除外 · `--require-elements "B"` で必須元素を指定 |
-| **探索トレース** | `--verbose` で展開ノード数・経過時間をstderrに出力（stdout出力は無影響） |
+| **探索トレース** | `--verbose` で展開ノード数・経過時間をstderrに出力（ネイティブビルドのみ、WASMでは無効） |
 | **四面体ステレオ @/@@** | chematic 0.4.16 による完全な立体化学サポート |
 | **Python** | `pip install renkin` — Linux/macOS/Windows プリビルドwheels |
 | **WASM** | ~500 KB バンドル — ブラウザでネイティブに近い速度で動作 |

@@ -275,8 +275,11 @@ pub fn find_routes(
 
     let max_rule_weight = rules.iter().map(|r| r.weight).fold(1.0_f64, f64::max);
 
+    #[cfg(not(target_arch = "wasm32"))]
     let t0 = std::time::Instant::now();
+    #[cfg(not(target_arch = "wasm32"))]
     let mut nodes_popped: u64 = 0;
+    #[cfg(not(target_arch = "wasm32"))]
     let mut nodes_expanded: u64 = 0;
 
     let mut routes: Vec<Route> = Vec::new();
@@ -301,7 +304,10 @@ pub fn find_routes(
     });
 
     while let Some(node) = heap.pop() {
-        nodes_popped += 1;
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            nodes_popped += 1;
+        }
         if routes.len() >= config.max_routes {
             break;
         }
@@ -338,7 +344,10 @@ pub fn find_routes(
             continue;
         }
         closed.insert(key);
-        nodes_expanded += 1;
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            nodes_expanded += 1;
+        }
 
         let Some(target_entry) = first_unsolved.or_else(|| node.frontier.first()) else {
             continue;
@@ -457,6 +466,7 @@ pub fn find_routes(
         });
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     if config.verbose {
         eprintln!(
             "[renkin] search complete\n  nodes popped   : {}\n  nodes expanded : {}\n  routes found   : {}\n  elapsed        : {:.2} s",

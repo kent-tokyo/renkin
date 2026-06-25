@@ -38,6 +38,10 @@ name = "renkin-fp"
 path = "src/bin/fp.rs"
 required-features = ["nn-scoring"]
 
+[[bin]]
+name = "renkin-mcp"
+path = "src/bin/mcp.rs"
+
 [lib]
 name = "renkin"
 crate-type = ["cdylib", "rlib"]

@@ -19,6 +19,7 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ```
 - **`--format mermaid`** — Mermaid flowchart output (paste into GitHub/Notion for rendered diagrams)
 - **`score` field in JSON output** — each route now includes `score: f64` (cumulative A* step cost; lower = better); routes are already sorted best-first
+- **`building_blocks` field in JSON output** — each route now includes `building_blocks: Vec<String>`, the leaf precursors (starting materials to purchase) without requiring manual step parsing
 - `src/display.rs` — new module with `format_route_tree()` and `format_route_mermaid()`
 - **Constraint-based search** — two new CLI flags (also available in Python API):
   - `--avoid-elements / -e "Br,I"` — drop any route whose leaf BBs contain a forbidden element

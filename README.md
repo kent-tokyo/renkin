@@ -152,6 +152,7 @@ Constraints compose freely. Applied as a post-filter on completed routes — the
 | **Parallel rule application** | `rayon` on non-WASM; sequential fallback on wasm32 |
 | **tract-onnx NN scorer** | Pure Rust ONNX inference (no C++ dep) — optional `--scorer` flag for Phase B template relevance scoring |
 | **Route visualization** | `--format tree` ASCII tree · `--format mermaid` GitHub/Notion flowchart |
+| **`building_blocks` in JSON** | Each route includes the leaf starting-material SMILES — no manual step parsing needed |
 | **Tetrahedral stereo @/@@** | Full stereochemistry support via chematic 0.4.16 |
 | **Python** | `pip install renkin` — pre-built wheels for Linux/macOS/Windows |
 | **WASM** | ~500 KB bundle — runs in the browser at near-native speed |

@@ -6,6 +6,16 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.1.6] — 2026-06-25
+
+### Added
+- **`building_blocks` field in JSON/Python output** — each `Route` now includes `building_blocks: Vec<String>`, the leaf starting-material SMILES (no manual step parsing needed)
+
+### Fixed
+- **WASM playground crash** — `std::time::Instant::now()` panics on `wasm32-unknown-unknown`; timing and node counters are now gated behind `#[cfg(not(target_arch = "wasm32"))]`
+
+---
+
 ## [0.1.5] — 2026-06-25
 
 ### Added

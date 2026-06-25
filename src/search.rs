@@ -32,6 +32,22 @@ pub struct Route {
     pub depth: u32,
     /// Cumulative A* step cost (lower = better). Included in JSON output.
     pub score: f64,
+    /// Leaf building blocks for this route (precursors not expanded further).
+    pub building_blocks: Vec<String>,
+}
+
+fn extract_building_blocks(steps: &[ReactionStep]) -> Vec<String> {
+    let targets: std::collections::HashSet<&str> =
+        steps.iter().map(|s| s.target.as_str()).collect();
+    let mut bbs: Vec<String> = steps
+        .iter()
+        .flat_map(|s| s.precursors.iter())
+        .filter(|p| !targets.contains(p.as_str()))
+        .cloned()
+        .collect();
+    bbs.sort_unstable();
+    bbs.dedup();
+    bbs
 }
 
 #[derive(Debug, Clone)]
@@ -303,10 +319,13 @@ pub fn find_routes(
         }
 
         if n_unsolved == 0 {
+            let steps = collect_path(node.path.as_ref());
+            let building_blocks = extract_building_blocks(&steps);
             routes.push(Route {
-                steps: collect_path(node.path.as_ref()),
+                steps,
                 depth: node.depth,
                 score: node.g,
+                building_blocks,
             });
         }
 

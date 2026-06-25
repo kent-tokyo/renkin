@@ -1046,7 +1046,7 @@ mod tests {
             beam_width: 0,
             ..Default::default()
         };
-        let routes = find_routes("c1ccc(-c2ccncc2)cc1", &env, &rules, &config)
+        let (routes, _) = find_routes("c1ccc(-c2ccncc2)cc1", &env, &rules, &config)
             .expect("find_routes must not error");
         assert!(
             !routes.is_empty(),
@@ -1107,7 +1107,9 @@ mod tests {
             beam_width: 0,
             ..Default::default()
         };
-        let routes = find_routes("c1ccc(-c2ccccc2)cc1", &env, &rules, &cfg).unwrap();
+        let routes = find_routes("c1ccc(-c2ccccc2)cc1", &env, &rules, &cfg)
+            .unwrap()
+            .0;
         assert!(
             !routes.is_empty(),
             "biphenyl must be solvable with Br-PhH + PhH BBs"
@@ -1130,7 +1132,9 @@ mod tests {
             beam_width: 0,
             ..Default::default()
         };
-        let routes = find_routes("Fc1ccc(-c2ccccc2)cc1", &env, &rules, &cfg).unwrap();
+        let routes = find_routes("Fc1ccc(-c2ccccc2)cc1", &env, &rules, &cfg)
+            .unwrap()
+            .0;
         assert!(!routes.is_empty(), "4-fluorobiphenyl must be solvable");
     }
 
@@ -1160,7 +1164,9 @@ mod tests {
             beam_width: 0,
             ..Default::default()
         };
-        let routes = find_routes("c1ccc(-c2ccccc2)cc1", &env, &rules, &cfg).unwrap();
+        let routes = find_routes("c1ccc(-c2ccccc2)cc1", &env, &rules, &cfg)
+            .unwrap()
+            .0;
         assert!(
             !routes.is_empty(),
             "biphenyl must be solvable with DEFAULT_BUILDING_BLOCKS"
@@ -1206,7 +1212,7 @@ mod tests {
         ];
 
         for (smiles, name) in presets {
-            let routes = find_routes(smiles, &env, &rules, &cfg).unwrap();
+            let routes = find_routes(smiles, &env, &rules, &cfg).unwrap().0;
             assert!(
                 !routes.is_empty(),
                 "{name} ({smiles}) must be solvable with DEFAULT_BUILDING_BLOCKS"

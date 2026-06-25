@@ -34,6 +34,16 @@ pub struct Route {
     pub score: f64,
     /// Leaf building blocks for this route (precursors not expanded further).
     pub building_blocks: Vec<String>,
+    /// Template confidence: min(step template frequency) / max frequency in rule set.
+    /// 0 = route uses very rare templates; 1 = all templates are maximally common.
+    pub confidence: f64,
+}
+
+/// Statistics returned alongside routes from [`find_routes`].
+#[derive(Debug, Default, Serialize)]
+pub struct SearchStats {
+    /// Number of unique states expanded (inserted into the closed set).
+    pub nodes_expanded: u64,
 }
 
 fn extract_building_blocks(steps: &[ReactionStep]) -> Vec<String> {
@@ -251,7 +261,7 @@ pub fn find_routes(
     env: &ChemEnv,
     rules: &[RetroRule],
     config: &SearchConfig,
-) -> Result<Vec<Route>> {
+) -> Result<(Vec<Route>, SearchStats)> {
     let target_mol = mol_from_smiles(target_smiles)?;
     let target_canonical = to_canonical(&target_mol);
 
@@ -279,7 +289,6 @@ pub fn find_routes(
     let t0 = std::time::Instant::now();
     #[cfg(not(target_arch = "wasm32"))]
     let mut nodes_popped: u64 = 0;
-    #[cfg(not(target_arch = "wasm32"))]
     let mut nodes_expanded: u64 = 0;
 
     let mut routes: Vec<Route> = Vec::new();
@@ -332,6 +341,7 @@ pub fn find_routes(
                 depth: node.depth,
                 score: node.g,
                 building_blocks,
+                confidence: 0.0, // computed below after all routes collected
             });
         }
 
@@ -440,6 +450,19 @@ pub fn find_routes(
                 prev: node.path.clone(),
             }));
 
+            // In-search pruning: skip expansions where a BB-precursor contains a
+            // forbidden element. Avoids pushing dead-end nodes onto the heap.
+            if config.forbidden_elements != 0 {
+                let mask = config.forbidden_elements;
+                if precursor_smiles
+                    .iter()
+                    .filter(|p| is_bb(p, env))
+                    .any(|p| (elem_mask_from_smiles(p) & mask) != 0)
+                {
+                    continue;
+                }
+            }
+
             heap.push(Node {
                 frontier: new_frontier,
                 path: new_path,
@@ -451,6 +474,24 @@ pub fn find_routes(
 
         // --- Phase 3.2: Beam search pruning ---
         beam_prune(&mut heap, config.beam_width);
+    }
+
+    // Compute confidence for each route: min template weight / max weight in rule set.
+    {
+        let rule_weights: FxHashMap<&str, f64> =
+            rules.iter().map(|r| (r.name.as_str(), r.weight)).collect();
+        for route in &mut routes {
+            let min_w = route
+                .steps
+                .iter()
+                .map(|s| rule_weights.get(s.rule.as_str()).copied().unwrap_or(1.0))
+                .fold(f64::INFINITY, f64::min);
+            route.confidence = if min_w.is_infinite() {
+                1.0
+            } else {
+                (min_w / max_rule_weight).clamp(0.0, 1.0)
+            };
+        }
     }
 
     if config.forbidden_elements != 0 {
@@ -492,7 +533,7 @@ pub fn find_routes(
         });
     }
 
-    Ok(routes)
+    Ok((routes, SearchStats { nodes_expanded }))
 }
 
 #[cfg(test)]
@@ -519,7 +560,9 @@ mod tests {
     fn aspirin_finds_route_depth1() {
         let env = aspirin_env();
         let rules = default_rules();
-        let routes = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg(3)).unwrap();
+        let routes = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg(3))
+            .unwrap()
+            .0;
         assert!(
             !routes.is_empty(),
             "must find at least one route for aspirin"
@@ -535,7 +578,7 @@ mod tests {
         let env = aspirin_env();
         let rules = default_rules();
         // Acetic acid is a building block → expect a depth-0 route (empty steps).
-        let routes = find_routes("CC(=O)O", &env, &rules, &cfg(2)).unwrap();
+        let routes = find_routes("CC(=O)O", &env, &rules, &cfg(2)).unwrap().0;
         assert!(
             routes.iter().any(|r| r.depth == 0),
             "building block must return depth-0 route"
@@ -546,7 +589,9 @@ mod tests {
     fn anthranilic_acid_recognized_as_bb() {
         let env = aspirin_env();
         let rules = default_rules();
-        let routes = find_routes("c1ccc(N)cc1C(=O)O", &env, &rules, &cfg(3)).unwrap();
+        let routes = find_routes("c1ccc(N)cc1C(=O)O", &env, &rules, &cfg(3))
+            .unwrap()
+            .0;
         assert!(
             routes.iter().any(|r| r.depth == 0),
             "anthranilic acid is in building blocks"
@@ -574,7 +619,9 @@ mod tests {
         let rules = default_rules();
         // Aspirin with depth=1 and only water as BB: unlikely to fully solve.
         // At minimum should return the trivially solved (depth=0) only if aspirin IS water (it isn't).
-        let routes = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg(1)).unwrap();
+        let routes = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg(1))
+            .unwrap()
+            .0;
         // depth=0 not possible (aspirin ≠ water); we just check it doesn't panic.
         let _ = routes;
     }
@@ -594,7 +641,9 @@ mod tests {
     fn max_depth_one_caps_all_routes() {
         let env = aspirin_env();
         let rules = default_rules();
-        let routes = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg(1)).unwrap();
+        let routes = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg(1))
+            .unwrap()
+            .0;
         // No route should exceed depth=1 when max_depth=1.
         for r in &routes {
             assert!(
@@ -621,8 +670,12 @@ mod tests {
             beam_width: 0,
             ..Default::default()
         };
-        let routes_beam = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg_beam).unwrap();
-        let routes_full = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg_full).unwrap();
+        let routes_beam = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg_beam)
+            .unwrap()
+            .0;
+        let routes_full = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg_full)
+            .unwrap()
+            .0;
         assert!(
             routes_beam.len() <= routes_full.len(),
             "beam=1 ({}) should find ≤ routes than beam=0 ({})",
@@ -636,7 +689,9 @@ mod tests {
         // Non-BB target must produce routes whose steps are non-empty.
         let env = aspirin_env();
         let rules = default_rules();
-        let routes = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg(3)).unwrap();
+        let routes = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg(3))
+            .unwrap()
+            .0;
         let non_zero: Vec<_> = routes.iter().filter(|r| r.depth > 0).collect();
         assert!(
             !non_zero.is_empty(),
@@ -670,7 +725,9 @@ mod tests {
             beam_width: 0,
             ..Default::default()
         };
-        let routes = find_routes("c1ccc(-c2ccccc2)cc1", &env, &rules, &cfg).unwrap();
+        let routes = find_routes("c1ccc(-c2ccccc2)cc1", &env, &rules, &cfg)
+            .unwrap()
+            .0;
         // Both orientations resolve to identical BB sets — expect exactly 1 unique route.
         assert_eq!(
             routes.len(),

@@ -191,7 +191,7 @@ fn main() -> Result<()> {
 
     for (smiles, name) in &targets {
         let t0 = Instant::now();
-        let routes = find_routes(smiles, &env, &rules, &config).unwrap_or_default();
+        let (routes, _) = find_routes(smiles, &env, &rules, &config).unwrap_or_default();
         let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
         let solved = !routes.is_empty();

@@ -61,14 +61,23 @@ pub fn find_routes_py(
         verbose,
         ..Default::default()
     };
-    let routes = find_routes(target, &env, &rules, &config)
+    let (routes, stats) = find_routes(target, &env, &rules, &config)
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
-    let output = serde_json::json!({
-        "target": target,
-        "routes_found": routes.len(),
-        "routes": routes,
-    });
+    let output = if routes.is_empty() {
+        serde_json::json!({
+            "target": target,
+            "routes_found": 0,
+            "routes": [],
+            "diagnostics": {"nodes_expanded": stats.nodes_expanded}
+        })
+    } else {
+        serde_json::json!({
+            "target": target,
+            "routes_found": routes.len(),
+            "routes": routes,
+        })
+    };
 
     serde_json::to_string(&output).map_err(|e| PyValueError::new_err(e.to_string()))
 }

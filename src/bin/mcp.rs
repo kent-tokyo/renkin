@@ -145,16 +145,17 @@ fn handle_tools_call(msg: &Value) -> Value {
         ..Default::default()
     };
 
-    let routes = match search::find_routes(smiles, &env, &rules, &config) {
+    let (routes, stats) = match search::find_routes(smiles, &env, &rules, &config) {
         Ok(r) => r,
         Err(e) => return tool_error(&format!("search error: {e}")),
     };
 
     let mut text = format!("Target: {smiles}\nRoutes found: {}\n\n", routes.len());
     if routes.is_empty() {
-        text.push_str(
-            "No routes found. Try increasing depth, or remove element constraints if set.",
-        );
+        text.push_str(&format!(
+            "No routes found (nodes expanded: {}). Try increasing depth, or remove element constraints if set.",
+            stats.nodes_expanded
+        ));
     } else {
         for (i, route) in routes.iter().enumerate() {
             text.push_str(&format_route_tree(route, smiles, i + 1));

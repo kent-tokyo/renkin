@@ -162,7 +162,7 @@ fn main() -> Result<()> {
         nn_scorer,
         ..Default::default()
     };
-    let routes = search::find_routes(&target_smiles, &env, &rules, &config)?;
+    let (routes, stats) = search::find_routes(&target_smiles, &env, &rules, &config)?;
 
     match format.as_str() {
         "tree" => {
@@ -185,12 +185,22 @@ fn main() -> Result<()> {
             }
         }
         _ => {
-            let output = Output {
-                target: target_smiles,
-                routes_found: routes.len(),
-                routes,
-            };
-            println!("{}", serde_json::to_string_pretty(&output)?);
+            if routes.is_empty() {
+                let out = serde_json::json!({
+                    "target": target_smiles,
+                    "routes_found": 0,
+                    "routes": [],
+                    "diagnostics": {"nodes_expanded": stats.nodes_expanded}
+                });
+                println!("{}", serde_json::to_string_pretty(&out)?);
+            } else {
+                let output = Output {
+                    target: target_smiles,
+                    routes_found: routes.len(),
+                    routes,
+                };
+                println!("{}", serde_json::to_string_pretty(&output)?);
+            }
         }
     }
     Ok(())

@@ -33,12 +33,21 @@ pub fn find_routes(target: &str, depth: u32, max_routes: usize, beam_width: usiz
     };
 
     match rs_find_routes(target, &env, &rules, &config) {
-        Ok(routes) => {
-            let output = serde_json::json!({
-                "target": target,
-                "routes_found": routes.len(),
-                "routes": routes,
-            });
+        Ok((routes, stats)) => {
+            let output = if routes.is_empty() {
+                serde_json::json!({
+                    "target": target,
+                    "routes_found": 0,
+                    "routes": [],
+                    "diagnostics": {"nodes_expanded": stats.nodes_expanded}
+                })
+            } else {
+                serde_json::json!({
+                    "target": target,
+                    "routes_found": routes.len(),
+                    "routes": routes,
+                })
+            };
             serde_json::to_string(&output)
                 .unwrap_or_else(|e| format!(r#"{{"error":"serialization: {e}"}}"#))
         }

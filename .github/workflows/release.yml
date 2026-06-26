@@ -5,11 +5,15 @@ on:
     tags:
       - 'v*'
 
+permissions: {}
+
 jobs:
   # ── Python wheels (5 targets) ─────────────────────────────────────────────
   build-wheels:
     name: Wheel · ${{ matrix.target }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -41,6 +45,8 @@ jobs:
   build-sdist:
     name: Source distribution
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
       - uses: PyO3/maturin-action@v1
@@ -77,6 +83,8 @@ jobs:
   publish-npm:
     name: Publish → npm
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -106,6 +114,8 @@ jobs:
   publish-crates:
     name: Publish → crates.io
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -117,6 +127,7 @@ jobs:
     name: Smoke test → PyPI
     needs: [publish-pypi]
     runs-on: ubuntu-latest
+    permissions: {}
     env:
       PKG_TAG: ${{ github.ref_name }}
     steps:

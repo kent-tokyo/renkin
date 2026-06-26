@@ -4,7 +4,7 @@
 
 RENKIN is evaluated on the full [USPTO-50k](https://huggingface.co/datasets/bisectgroup/USPTO_50K) test set (4,907 molecules) — the standard benchmark for single-step retrosynthesis.
 
-### Latest Results (v0.1.8) — depth=5, beam=100, 5,000 extracted templates
+### Latest Results (v0.2.1) — depth=5, beam=100, 5,000 extracted templates
 
 | Config | Solved | Success Rate | Avg Time | Hardware |
 |--------|--------|-------------|----------|----------|
@@ -23,15 +23,15 @@ Building blocks: 509 hand-curated commercial reagents (default set).
 | Phase A (5k templates, unlimited A\*) | 3,830 / 4,907 | 78.1% | 2,956 ms/mol | depth=5, beam=0 |
 | Phase B (5k templates, beam=100, NN scorer) | 3,826 / 4,907 | 78.0% | 3,394 ms/mol | depth=5, ONNX neural scorer |
 | v0.1.3 (5k templates, beam=100) | 3,826 / 4,907 | 78.0% | 2,775 ms/mol | depth=5, Pure Rust optimizations |
-| **v0.1.8 (5k templates, beam=100, diaryl sulfone rule)** | **3,831 / 4,907** | **78.1%** | **≈2,800 ms/mol** | depth=5, diaryl_sulfone_retro + 509 BBs |
+| **v0.2.1 (5k templates, beam=100, diaryl sulfone rule)** | **3,831 / 4,907** | **78.1%** | **≈2,800 ms/mol** | depth=5, diaryl_sulfone_retro + 509 BBs |
 
-v0.1.8 adds a graph-based diaryl sulfone retrosynthesis rule and expands the building block set to 509 reagents (+29 sulfonyl chlorides and CF3 arenes).
+v0.1.8 added the graph-based diaryl sulfone retrosynthesis rule and expanded the building block set to 509 reagents. v0.2.0+ adds `Route.confidence` and `SearchStats` without changing the rule set; benchmark numbers are unchanged.
 
 ### Comparison with Other Systems
 
 | System | Top-1 | Stock | Templates | Notes |
 |--------|-------|-------|-----------|-------|
-| **RENKIN v0.1.8** | **78.1%** | **509 BBs** | **5,000** | Pure Rust, no C++ dependencies |
+| **RENKIN v0.2.1** | **78.1%** | **509 BBs** | **5,000** | Pure Rust, no C++ dependencies |
 | AiZynthFinder (Mol. Inf. 2020) | ~45% | eMolecules (~6M) | ~50,000 | Python, RDKit |
 | Retro\* (ICML 2020) | ~40% | eMolecules (~6M) | ~50,000 | Python |
 | LocalRetro (AAAI 2021) | ~65% | eMolecules (~6M) | template-free | GNN-based |

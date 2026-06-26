@@ -6,6 +6,28 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.0] — 2026-06-26
+
+### Added
+- **Reaction conditions** (`conditions` field on each route step) — rule-based catalyst / solvent / temperature suggestions for all 29 hand-crafted retro rules. Extracted templates return `null` (conditions unknown without ML). No new dependencies; pure Rust lookup.
+- **Atom economy** (`atom_economy: f64` on each route step) — `MW(target) / Σ MW(precursors) × 100`. Measures what fraction of precursor atoms end up in the desired product (green chemistry metric; OSS competitors do not expose this).
+- **Convergency score** (`convergency: f64` on each route) — `1.0` = all branches same depth (parallel synthesis possible); `0.0` = purely linear route. Computed from leaf-depth variance in the synthesis tree.
+
+### Changed
+- `ReactionStep` gains `conditions` and `atom_economy` fields (additive; JSON consumers unaffected, Rust struct literals must add fields)
+- `Route` gains `convergency` field (additive)
+
+---
+
+## [0.2.1] — 2026-06-26
+
+### Fixed
+- Sync `pyproject.toml` version to `0.2.1` (was stuck at `0.1.0`, causing maturin to publish `0.1.0` wheels and PyPI to skip them as already-existing — Python users never received v0.2.0)
+- `docs/benchmark.md`: version header updated from v0.1.8 → v0.2.1; comparison table updated
+- `docs/api/python.md`: `renkin.version()` example updated from `'0.1.0'` → `'0.2.1'`
+
+---
+
 ## [0.2.0] — 2026-06-26
 
 ### Breaking

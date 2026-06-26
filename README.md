@@ -239,6 +239,27 @@ cargo build --release
 
 ## Architecture
 
+### Workspace scope
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ renkin workspace (this repository)                               │
+│                                                                  │
+│  renkin  (retrosynthesis)         renkin-forward  (planned)      │
+│  ──────────────────────           ─────────────────────────────  │
+│  target → precursors              reactants → products           │
+│  A* / AND-OR search               template-based forward         │
+│  route scoring & constraints      (validates retro routes)       │
+│        │                                    │                    │
+│        └──────────────────┬─────────────────┘                    │
+│                           ▼                                      │
+│               chematic  (molecular representation,               │
+│               SMILES, substructure matching, reaction SMARTS)    │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### Internal data flow (renkin crate)
+
 ```
 Target SMILES
      │
@@ -281,20 +302,22 @@ Target SMILES
 ## Project Structure
 
 ```
-renkin/
+renkin/                          ← Cargo workspace root (planned)
 ├── Cargo.toml
-├── src/
-│   ├── lib.rs               # public library
-│   ├── main.rs              # CLI binary  (--templates, --scorer flags)
-│   ├── bin/benchmark.rs     # renkin-bench binary  (--templates flag)
-│   ├── chem_env.rs          # 5,000 retro rules, BB check, template loader
-│   ├── score.rs             # SA Score heuristic + step cost
-│   ├── search.rs            # A* / AND-OR tree engine + beam pruning
-│   ├── scorer.rs            # Phase B: tract-onnx NN template scorer
-│   ├── python.rs            # PyO3 bindings (--features python)
-│   └── wasm.rs              # wasm-bindgen bindings (cfg = wasm32)
+├── src/                         ← renkin crate (retrosynthesis)
+│   ├── lib.rs                   # public library
+│   ├── main.rs                  # CLI binary  (--templates, --scorer flags)
+│   ├── bin/benchmark.rs         # renkin-bench binary  (--templates flag)
+│   ├── chem_env.rs              # 5,000 retro rules, BB check, template loader
+│   ├── score.rs                 # SA Score heuristic + step cost
+│   ├── search.rs                # A* / AND-OR tree engine + beam pruning
+│   ├── scorer.rs                # Phase B: tract-onnx NN template scorer
+│   ├── python.rs                # PyO3 bindings (--features python)
+│   └── wasm.rs                  # wasm-bindgen bindings (cfg = wasm32)
+├── crates/                      ← sibling crates (in development)
+│   └── renkin-forward/          # forward reaction prediction (reactants → products)
 ├── data/
-│   ├── building_blocks.smi              # 480 curated commercial starting materials
+│   ├── building_blocks.smi              # 509 curated commercial starting materials
 │   ├── templates_extracted_5000.smi     # 5,000 auto-extracted SMIRKS templates
 │   ├── benchmark_targets.smi            # internal benchmark set
 │   └── bench_chunks/                    # USPTO-50k per-chunk results
@@ -310,6 +333,9 @@ renkin/
 ## Roadmap
 
 - [ ] Route cost scoring (commercial reagent price integration)
+- [ ] Cargo workspace restructure — `crates/renkin-forward/` sibling crate
+- [ ] `renkin-forward`: template-based forward reaction prediction (reactants → products)
+- [ ] Optional forward validation of retrosynthetic routes via `renkin-forward`
 
 <details>
 <summary>Completed milestones</summary>

@@ -2,7 +2,7 @@ use std::collections::BinaryHeap;
 use std::sync::Arc;
 
 use anyhow::Result;
-use chematic::chem::sa_score;
+use chematic::chem::{molecular_weight, sa_score};
 #[cfg(not(target_arch = "wasm32"))]
 use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
@@ -19,11 +19,30 @@ use crate::score::{step_cost, template_bonus};
 type RetroEntry = (String, f64, Vec<String>);
 type RetroCache = FxHashMap<String, Arc<Vec<RetroEntry>>>;
 
+/// Suggested reaction conditions for a synthesis step (rule-based, hand-crafted rules only).
+#[derive(Debug, Clone, Serialize)]
+pub struct ReactionConditions {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub catalyst: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub solvent: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ReactionStep {
     pub rule: String,
     pub target: String,
     pub precursors: Vec<String>,
+    /// Suggested conditions for the forward reaction (None for extracted templates).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conditions: Option<ReactionConditions>,
+    /// Atom economy: MW(target) / Σ MW(precursors) × 100 — fraction of atoms retained.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub atom_economy: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -37,6 +56,9 @@ pub struct Route {
     /// Template confidence: min(step template frequency) / max frequency in rule set.
     /// 0 = route uses very rare templates; 1 = all templates are maximally common.
     pub confidence: f64,
+    /// Convergency score: 1.0 = all branches same depth (parallel synthesis possible);
+    /// 0.0 = purely linear route.
+    pub convergency: f64,
 }
 
 /// Statistics returned alongside routes from [`find_routes`].
@@ -205,6 +227,95 @@ fn compute_h(frontier: &[FEntry], env: &ChemEnv, sa_cache: &mut FxHashMap<String
         .sum()
 }
 
+/// Rule-based reaction conditions for hand-crafted retro rules.
+/// Returns None for extracted templates (conditions unknown without ML).
+fn conditions_for_rule(rule: &str) -> Option<ReactionConditions> {
+    macro_rules! cond {
+        ($cat:expr, $sol:expr, $tmp:expr) => {
+            Some(ReactionConditions {
+                catalyst: Some($cat.into()),
+                solvent: Some($sol.into()),
+                temperature: Some($tmp.into()),
+                notes: None,
+            })
+        };
+        ($cat:expr, $sol:expr, $tmp:expr, $note:expr) => {
+            Some(ReactionConditions {
+                catalyst: Some($cat.into()),
+                solvent: Some($sol.into()),
+                temperature: Some($tmp.into()),
+                notes: Some($note.into()),
+            })
+        };
+    }
+    match rule {
+        "ester_cleavage"              => cond!("NaOH or LiOH (2 eq)", "THF/H₂O (2:1)", "rt → 60 °C"),
+        "amide_cleavage"              => cond!("LiOH (3 eq)", "THF/H₂O (3:1)", "60 °C"),
+        "friedel_crafts_acylation_retro" => cond!("AlCl₃ (1.2 eq)", "DCM", "0 °C → rt"),
+        "aryl_carboxylation_retro"    => cond!("none", "water", "150 °C", "Kolbe-Schmitt / decarboxylation"),
+        "buchwald_hartwig_retro"      => cond!("Pd₂(dba)₃ / XPhos (5 mol%)", "toluene", "100 °C"),
+        "aryl_amine_retro"            => cond!("Cu(OAc)₂ / pyridine", "DCM", "rt", "Chan-Lam retro"),
+        "aryl_ether_retro"            => cond!("Cs₂CO₃ (2 eq)", "DMF", "110 °C", "Ullmann ether retro"),
+        "aryl_chloride_retro"         => cond!("none", "DMF", "80 °C", "SNAr or Pd activation"),
+        "aryl_iodide_retro"           => cond!("Pd(OAc)₂ / CuI", "DMF", "60 °C"),
+        "aryl_fluoride_snAr_retro"    => cond!("K₂CO₃ (2 eq)", "DMSO", "rt → 60 °C", "SNAr; F best leaving group"),
+        "aryl_chloride_to_bromide"    => cond!("NaBr (excess)", "DMF", "120 °C", "halogen exchange"),
+        "suzuki_retro"                => cond!("Pd(PPh₃)₄ (5 mol%)", "EtOH/H₂O (3:1)", "80 °C"),
+        "heck_retro"                  => cond!("Pd(OAc)₂ / PPh₃ (5 mol%)", "DMF", "100 °C"),
+        "heck_retro_terminal"         => cond!("Pd(OAc)₂ / PPh₃ (5 mol%)", "DMF", "100 °C"),
+        "negishi_retro"               => cond!("Pd(PPh₃)₄ / ZnCl₂", "THF", "65 °C"),
+        "cc_single_cleavage"          => None, // retrosynthetic disconnection only
+        "wittig_retro"                => cond!("Ph₃P (1.2 eq)", "toluene", "0 °C → rt"),
+        "reductive_amination_retro"   => cond!("NaBH₃CN (1.5 eq)", "MeOH", "rt"),
+        "cn_aliphatic_cleavage"       => None,
+        "co_aliphatic_cleavage"       => None,
+        "alcohol_oxidation_retro"     => cond!("NaBH₄ (1.2 eq)", "EtOH", "0 °C → rt", "retro = reduction"),
+        "sonogashira_retro"           => cond!("Pd(PPh₃)₂Cl₂ / CuI (5 mol%)", "Et₃N", "60 °C"),
+        "sulfonamide_retro"           => cond!("Et₃N (2 eq)", "DCM", "0 °C → rt"),
+        "diaryl_sulfone_retro"        => cond!("AlCl₃ (1.2 eq)", "DCM", "0 °C → rt", "Friedel-Crafts sulfonylation"),
+        "boc_deprotection_retro"      => cond!("TFA (20 % in DCM)", "DCM", "rt"),
+        "n_benzylation_retro"         => cond!("K₂CO₃ (2 eq)", "DMF", "60 °C"),
+        "grignard_addition_retro"     => cond!("Mg (1.1 eq)", "THF (dry)", "0 °C → rt"),
+        "claisen_retro"               => cond!("LDA (2.0 eq)", "THF (dry)", "−78 °C"),
+        "michael_retro"               => cond!("DBU or K₂CO₃ (1.2 eq)", "THF", "rt"),
+        "acyl_chloride_from_acid"     => cond!("(COCl)₂ (1.2 eq) + cat. DMF", "DCM", "0 °C → rt"),
+        "cbz_deprotection_retro"      => cond!("H₂ (1 atm), Pd/C (10 %)", "EtOH", "rt"),
+        _                             => None,
+    }
+}
+
+/// Convergency score for a route: 1.0 = all leaf branches same depth (ideal parallel
+/// synthesis); 0.0 = purely linear. Computed from depth of each leaf in the step tree.
+fn convergency_score(steps: &[ReactionStep]) -> f64 {
+    if steps.is_empty() {
+        return 1.0;
+    }
+    // BFS: assign depth to every molecule in the tree.
+    let mut depth_map: rustc_hash::FxHashMap<&str, u32> = rustc_hash::FxHashMap::default();
+    if let Some(first) = steps.first() {
+        depth_map.insert(first.target.as_str(), 0);
+    }
+    for step in steps {
+        let d = depth_map.get(step.target.as_str()).copied().unwrap_or(0);
+        for prec in &step.precursors {
+            depth_map.entry(prec.as_str()).or_insert(d + 1);
+        }
+    }
+    let targets: rustc_hash::FxHashSet<&str> =
+        steps.iter().map(|s| s.target.as_str()).collect();
+    let leaf_depths: Vec<u32> = depth_map
+        .iter()
+        .filter(|(k, _)| !targets.contains(*k))
+        .map(|(_, &v)| v)
+        .collect();
+    if leaf_depths.len() <= 1 {
+        return 1.0;
+    }
+    let max = leaf_depths.iter().copied().max().unwrap_or(0) as f64;
+    let min = leaf_depths.iter().copied().min().unwrap_or(0) as f64;
+    if max == 0.0 { 1.0 } else { 1.0 - (max - min) / max }
+}
+
 /// Prune the heap to at most `beam_width` nodes (keep the best).
 /// Uses sort_unstable_by (lower constant than sort_by) for deterministic ordering.
 fn beam_prune(heap: &mut BinaryHeap<Node>, beam_width: usize) {
@@ -341,7 +452,8 @@ pub fn find_routes(
                 depth: node.depth,
                 score: node.g,
                 building_blocks,
-                confidence: 0.0, // computed below after all routes collected
+                confidence: 0.0,  // computed below
+                convergency: 0.0, // computed below
             });
         }
 
@@ -446,6 +558,8 @@ pub fn find_routes(
                     rule: rule_name.clone(),
                     target: target_smi.clone(),
                     precursors: precursor_smiles.clone(),
+                    conditions: conditions_for_rule(rule_name),
+                    atom_economy: None, // populated in post-processing
                 },
                 prev: node.path.clone(),
             }));
@@ -476,7 +590,7 @@ pub fn find_routes(
         beam_prune(&mut heap, config.beam_width);
     }
 
-    // Compute confidence for each route: min template weight / max weight in rule set.
+    // Post-processing: confidence, atom economy, convergency.
     {
         let rule_weights: FxHashMap<&str, f64> =
             rules.iter().map(|r| (r.name.as_str(), r.weight)).collect();
@@ -491,6 +605,21 @@ pub fn find_routes(
             } else {
                 (min_w / max_rule_weight).clamp(0.0, 1.0)
             };
+
+            for step in &mut route.steps {
+                let tmw = mol_from_smiles(&step.target)
+                    .ok()
+                    .map(|m| molecular_weight(&m));
+                let pmw: f64 = step.precursors.iter()
+                    .filter_map(|s| mol_from_smiles(s).ok())
+                    .map(|m| molecular_weight(&m))
+                    .sum();
+                step.atom_economy = tmw.and_then(|tw| {
+                    if pmw > 0.0 { Some((tw / pmw * 100.0).min(100.0)) } else { None }
+                });
+            }
+
+            route.convergency = convergency_score(&route.steps);
         }
     }
 

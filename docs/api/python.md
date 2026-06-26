@@ -67,7 +67,7 @@ Returns the RENKIN version string.
 ```python
 >>> import renkin
 >>> renkin.version()
-'0.1.0'
+'0.2.1'
 ```
 
 ## Building Blocks

@@ -47,7 +47,9 @@ fn filter_valid_smiles(smiles_list: Vec<String>) -> Vec<String> {
     smiles_list
         .into_iter()
         .filter(|s| {
-            let has_aromatic = s.bytes().any(|b| matches!(b, b'c' | b'n' | b'o' | b's' | b'p'));
+            let has_aromatic = s
+                .bytes()
+                .any(|b| matches!(b, b'c' | b'n' | b'o' | b's' | b'p'));
             if !has_aromatic {
                 return true;
             }
@@ -89,11 +91,7 @@ pub fn predict_products(
             }
             let products: Vec<String> = outcomes
                 .into_iter()
-                .flat_map(|mols| {
-                    mols.iter()
-                        .map(|m| canonical_smiles(m))
-                        .collect::<Vec<_>>()
-                })
+                .flat_map(|mols| mols.iter().map(|m| canonical_smiles(m)).collect::<Vec<_>>())
                 .collect();
             let products = filter_valid_smiles(products);
             if products.is_empty() {
@@ -107,7 +105,11 @@ pub fn predict_products(
         })
         .collect();
 
-    predictions.sort_unstable_by(|a, b| b.weight.partial_cmp(&a.weight).unwrap_or(std::cmp::Ordering::Equal));
+    predictions.sort_unstable_by(|a, b| {
+        b.weight
+            .partial_cmp(&a.weight)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     predictions.truncate(max_results);
     Ok(predictions)
 }
@@ -129,7 +131,9 @@ pub fn validate_route(route: &Route, rules: &[RetroRule]) -> Result<Vec<StepVali
             .map(|m| canonical_smiles(&m))
             .unwrap_or_else(|| step.target.clone());
 
-        let verified = top_predictions.iter().any(|p| p.products.contains(&target_canon));
+        let verified = top_predictions
+            .iter()
+            .any(|p| p.products.contains(&target_canon));
 
         validations.push(StepValidation {
             step_index: i,
@@ -176,7 +180,11 @@ mod tests {
 
         let env = ChemEnv::in_memory(&["CC(=O)O", "Oc1ccccc1C(=O)O"]);
         let rules = renkin::chem_env::default_rules();
-        let cfg = SearchConfig { max_depth: 2, max_routes: 1, ..Default::default() };
+        let cfg = SearchConfig {
+            max_depth: 2,
+            max_routes: 1,
+            ..Default::default()
+        };
         let (routes, _) = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg).unwrap();
         if let Some(route) = routes.first() {
             let v = validate_route(route, &rules).unwrap();

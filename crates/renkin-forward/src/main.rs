@@ -7,7 +7,6 @@
 ///   renkin-forward validate --route-json '{"steps":[...]}' [--templates file.smi]
 ///
 /// Output: JSON to stdout.
-
 use anyhow::{Result, bail};
 use renkin::chem_env::{default_rules, load_rules_from_file};
 use renkin_forward::{ForwardPrediction, predict_products};
@@ -66,7 +65,10 @@ fn main() -> Result<()> {
     let mut rules = default_rules();
     if let Some(ref path) = templates_path {
         rules.extend(load_rules_from_file(path));
-        eprintln!("Loaded {} templates from {path}", rules.len() - default_rules().len());
+        eprintln!(
+            "Loaded {} templates from {path}",
+            rules.len() - default_rules().len()
+        );
     }
 
     match subcommand {
@@ -88,21 +90,24 @@ fn main() -> Result<()> {
                 bail!("validate requires --route-json <JSON>");
             }
             // Parse route JSON as a Value to extract steps
-            let v: serde_json::Value = serde_json::from_str(json_str)
-                .map_err(|e| anyhow::anyhow!("invalid JSON: {e}"))?;
+            let v: serde_json::Value =
+                serde_json::from_str(json_str).map_err(|e| anyhow::anyhow!("invalid JSON: {e}"))?;
 
-            let steps = v["steps"].as_array()
+            let steps = v["steps"]
+                .as_array()
                 .ok_or_else(|| anyhow::anyhow!("route JSON must have a 'steps' array"))?;
 
             let mut results: Vec<serde_json::Value> = Vec::new();
             for (idx, step) in steps.iter().enumerate() {
                 let target = step["target"].as_str().unwrap_or("");
-                let prec_refs: Vec<&str> = step["precursors"].as_array()
+                let prec_refs: Vec<&str> = step["precursors"]
+                    .as_array()
                     .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
                     .unwrap_or_default();
 
-                let preds: Vec<ForwardPrediction> = predict_products(&prec_refs, &rules, max_results)
-                    .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+                let preds: Vec<ForwardPrediction> =
+                    predict_products(&prec_refs, &rules, max_results)
+                        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
                 let target_canon = renkin::chem_env::mol_from_smiles(target)
                     .ok()

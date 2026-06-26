@@ -164,6 +164,21 @@ Add `--verbose` to print search statistics (nodes expanded, elapsed time) to std
 
 ---
 
+## Pipeline Examples
+
+```bash
+# Route cost scoring with commercial prices
+renkin -t "Cc1ccc(-c2ccccc2)cc1" --bb-prices data/prices.csv --format json
+
+# Forward validation — pipe find_routes output directly
+renkin -t "CC(=O)Oc1ccccc1C(=O)O" --format json | renkin-forward validate
+
+# Faster template retrieval with bond-center index (~24% speedup)
+renkin -t "c1ccc(NC(=O)c2ccccc2)cc1" --templates data/templates_extracted_5000.smi --bond-index
+```
+
+---
+
 ## Benchmark
 
 USPTO-50k test set (4,907 molecules, full evaluation):
@@ -218,7 +233,7 @@ The JSON output includes `avg_nodes_expanded`, `avg_confidence`, `avg_convergenc
 | **SYNTHIA** | Closed | Proprietary | No | No | SMARTS + AND/OR | Manual curated | Sigma-Aldrich |
 | **IBM RXN** | Closed | Cloud SaaS | No | No | Transformer | USPTO | — |
 | **Retro\*** | Python | MIT | No | No (unmaintained) | A\* + AND/OR | USPTO (ML) | eMolecules |
-| **★ RENKIN** | **Rust** | **MIT** | **Yes** | **Yes** | **A\* + AND/OR** | Hand-curated + rdchiral (5,000) | 509+ |
+| **★ RENKIN** | **Rust** | **MIT** | **Yes** | **Yes** | **A\* + AND/OR** | Hand-curated + rdchiral (5k default; 50k via `--templates`) | 509+ |
 
 **RENKIN's goal**: match state-of-the-art accuracy using only curated rules and auto-extracted SMIRKS templates — no GPU, no training data, no black boxes. Under RENKIN's benchmark setting, it reaches **78.1%** (3,831/4,907 — full run confirmed). Template frequency weighting (Phase A) combined with 5,000 auto-extracted templates and 509 building blocks delivers this result. RENKIN runs anywhere: browser, CLI, Python — single `cargo build`.
 
@@ -347,9 +362,9 @@ renkin/                          ← Cargo workspace root (planned)
 ## Roadmap
 
 - [x] Route cost scoring — `route_cost` field + `--bb-prices path.csv` flag (SA Score proxy or real prices)
-- [ ] Cargo workspace restructure — `crates/renkin-forward/` sibling crate
-- [ ] `renkin-forward`: template-based forward reaction prediction (reactants → products)
-- [ ] Optional forward validation of retrosynthetic routes via `renkin-forward`
+- [x] Cargo workspace — `crates/renkin-forward/` sibling crate
+- [x] `renkin-forward predict` — template-based forward prediction (reactants → products)
+- [x] `renkin-forward validate` — forward-validate retrosynthetic routes; stdin-pipe friendly
 
 <details>
 <summary>Completed milestones</summary>
@@ -390,8 +405,8 @@ If you use RENKIN in academic work, please cite:
   author    = {kent-tokyo},
   title     = {{RENKIN}: Retrosynthetic Exploration Network for Knowledge-Informed Navigation},
   year      = {2026},
-  url       = {https://github.com/kent-tokyo/renkin/releases/tag/v0.15.0},
-  version   = {0.15.0},
+  url       = {https://github.com/kent-tokyo/renkin/releases/tag/v0.15.2},
+  version   = {0.15.2},
   license   = {MIT}
 }
 ```

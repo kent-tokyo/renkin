@@ -6,6 +6,16 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.15.2] — 2026-06-26
+
+### Changed
+- **README Roadmap** — moved 3 completed items from `[ ]` to `[x]`: Cargo workspace, `renkin-forward predict`, `renkin-forward validate`.
+- **README / README_ja Competitive Landscape** — updated RENKIN's template entry from `rdchiral (5,000)` to `rdchiral (5k default; 50k via --templates)`.
+- **README Pipeline Examples** — added 3 concrete CLI pipeline examples: route cost scoring, forward validation pipe, bond-center index.
+- **Citation** — updated `version` and `url` to reference v0.15.2 release.
+
+---
+
 ## [0.15.1] — 2026-06-26
 
 ### Fixed

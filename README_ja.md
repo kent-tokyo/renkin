@@ -3,14 +3,14 @@
 > **コンピュータ支援合成計画（CASP）· Pure Rust · WebAssembly · Python**  
 > 錬金（れんきん）― 錬金術のように、目標分子を安価な原料へと逆変換する。
 
-<p align="center">
+<p>
   <a href="https://github.com/kent-tokyo/renkin/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/kent-tokyo/renkin/actions/workflows/ci.yml/badge.svg?branch=master"></a>
   <a href="https://github.com/kent-tokyo/renkin/actions/workflows/docs.yml"><img alt="Docs" src="https://github.com/kent-tokyo/renkin/actions/workflows/docs.yml/badge.svg?branch=master"></a>
   <a href="https://github.com/kent-tokyo/renkin/actions/workflows/release.yml"><img alt="Release" src="https://github.com/kent-tokyo/renkin/actions/workflows/release.yml/badge.svg"></a>
   <a href="https://github.com/kent-tokyo/renkin/actions/workflows/security-audit.yml"><img alt="Security Audit" src="https://github.com/kent-tokyo/renkin/actions/workflows/security-audit.yml/badge.svg?branch=master"></a>
 </p>
 
-<p align="center">
+<p>
   <a href="https://crates.io/crates/renkin"><img alt="Crates.io" src="https://img.shields.io/crates/v/renkin.svg"></a>
   <a href="https://docs.rs/renkin"><img alt="docs.rs" src="https://docs.rs/renkin/badge.svg"></a>
   <a href="https://pypi.org/project/renkin/"><img alt="PyPI" src="https://img.shields.io/pypi/v/renkin.svg"></a>
@@ -19,7 +19,7 @@
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
 </p>
 
-<p align="center">
+<p>
   <img alt="Pure Rust" src="https://img.shields.io/badge/Pure%20Rust-100%25-orange?logo=rust">
   <img alt="unsafe forbidden" src="https://img.shields.io/badge/unsafe-forbidden-success.svg">
   <img alt="WASM" src="https://img.shields.io/badge/WASM-ready-brightgreen">

@@ -761,6 +761,142 @@ pub fn default_rules() -> Vec<RetroRule> {
     ]
 }
 
+/// Extract (elem1, elem2) bond-pair signatures from a SMIRKS reactant pattern.
+///
+/// Parses bracket atoms and the bond topology of the SMIRKS left-hand side to
+/// determine which element-pair bonds the template can break.  Returns sorted,
+/// deduplicated `(min_atomic_num, max_atomic_num)` pairs.
+pub fn bond_pairs_from_smirks(smirks: &str) -> Vec<(u8, u8)> {
+    let reactant = match smirks.split_once(">>") {
+        Some((lhs, _)) => lhs,
+        None => return vec![],
+    };
+    // Same element table used in required_elements_from_smirks.
+    const ELEMENTS: &[(&str, u8)] = &[
+        ("Cl", 17), ("Br", 35), ("Si", 14), ("Se", 34), ("Te", 52),
+        ("Sn", 50), ("Zn", 30), ("Pd", 46), ("Cu", 29), ("Fe", 26),
+        ("B", 5), ("C", 6), ("N", 7), ("O", 8), ("F", 9),
+        ("P", 15), ("S", 16), ("I", 53),
+    ];
+    fn elem_at(bytes: &[u8], mut j: usize) -> Option<u8> {
+        while j < bytes.len() && matches!(bytes[j], b'@' | b'+' | b'-' | b'#') {
+            j += 1;
+        }
+        for (sym, an) in ELEMENTS {
+            let end = j + sym.len();
+            if end <= bytes.len() && bytes[j..end].eq_ignore_ascii_case(sym.as_bytes()) {
+                return Some(*an);
+            }
+        }
+        None
+    }
+    let bytes = reactant.as_bytes();
+    let mut pairs: Vec<(u8, u8)> = Vec::new();
+    let mut stack: Vec<Option<u8>> = Vec::new(); // branch context atom
+    let mut prev: Option<u8> = None;
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'[' => {
+                if let Some(elem) = elem_at(bytes, i + 1) {
+                    if let Some(p) = prev {
+                        let pair = if p <= elem { (p, elem) } else { (elem, p) };
+                        pairs.push(pair);
+                    }
+                    prev = Some(elem);
+                }
+                while i < bytes.len() && bytes[i] != b']' { i += 1; }
+            }
+            b'(' => stack.push(prev),
+            b')' => prev = stack.pop().flatten(),
+            _ => {}
+        }
+        i += 1;
+    }
+    pairs.sort_unstable();
+    pairs.dedup();
+    pairs
+}
+
+/// Bond-center template index (RetroKNN-inspired).
+///
+/// Indexes templates by the element-pair bonds their SMIRKS patterns can break.
+/// At search time, only templates relevant to bonds present in the target molecule
+/// are retrieved, avoiding unnecessary SMARTS matching for incompatible templates.
+pub struct TemplateBondIndex {
+    index: FxHashMap<(u8, u8), Vec<usize>>,
+    /// Graph-based rules (empty SMIRKS) — always included.
+    graph_indices: Vec<usize>,
+    /// Rules with unparseable / empty bond pairs — included as fallback.
+    fallback_indices: Vec<usize>,
+}
+
+impl TemplateBondIndex {
+    pub fn build(rules: &[RetroRule]) -> Self {
+        let mut index: FxHashMap<(u8, u8), Vec<usize>> = FxHashMap::default();
+        let mut graph_indices = Vec::new();
+        let mut fallback_indices = Vec::new();
+        for (i, rule) in rules.iter().enumerate() {
+            if rule.smirks.is_empty() {
+                graph_indices.push(i);
+                continue;
+            }
+            let pairs = bond_pairs_from_smirks(&rule.smirks);
+            if pairs.is_empty() {
+                fallback_indices.push(i);
+            } else {
+                for pair in pairs {
+                    index.entry(pair).or_default().push(i);
+                }
+            }
+        }
+        Self { index, graph_indices, fallback_indices }
+    }
+
+    /// Return indices (into the original `rules` slice) of templates relevant to `mol`.
+    /// Includes graph-based rules and fallback rules unconditionally.
+    /// If `top_k > 0`, the SMIRKS-matched candidates are trimmed to the top-K by weight.
+    pub fn retrieve(&self, mol: &Molecule, top_k: usize, rules: &[RetroRule]) -> Vec<usize> {
+        let mut seen: FxHashSet<usize> = FxHashSet::default();
+        let mut candidates: Vec<usize> = Vec::new();
+
+        // Always include graph-based and fallback rules.
+        for &idx in &self.graph_indices {
+            if seen.insert(idx) { candidates.push(idx); }
+        }
+        for &idx in &self.fallback_indices {
+            if seen.insert(idx) { candidates.push(idx); }
+        }
+
+        // Retrieve SMIRKS rules matching bonds present in the target.
+        for (atom_idx, _) in mol.atoms() {
+            let e1 = mol.atom(atom_idx).element.atomic_number();
+            for (nb_idx, _bond_idx) in mol.neighbors(atom_idx) {
+                // Only process each bond once (lower-index atom first).
+                if nb_idx <= atom_idx { continue; }
+                let e2 = mol.atom(nb_idx).element.atomic_number();
+                let pair = if e1 <= e2 { (e1, e2) } else { (e2, e1) };
+                if let Some(indices) = self.index.get(&pair) {
+                    for &idx in indices {
+                        if seen.insert(idx) { candidates.push(idx); }
+                    }
+                }
+            }
+        }
+
+        if top_k > 0 && candidates.len() > top_k {
+            // Sort SMIRKS portion by weight desc, keep top_k total.
+            let fixed = self.graph_indices.len() + self.fallback_indices.len();
+            candidates[fixed..].sort_unstable_by(|&a, &b| {
+                rules[b].weight.partial_cmp(&rules[a].weight)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            candidates.truncate(fixed + top_k);
+        }
+        candidates
+    }
+}
+
 /// Map comma-separated element symbols (e.g. `"Br,I"`) to the same bitmask
 /// format as `RetroRule::required_elements`.  Unknown symbols are silently skipped.
 pub fn elem_symbols_to_mask(csv: &str) -> u64 {

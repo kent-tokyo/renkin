@@ -193,6 +193,20 @@ Under RENKIN's evaluation setting (see definition above), RENKIN reaches **78.1%
 *Note: LocalRetro (53.4%) and GLG (58.0%) report single-step top-1 prediction accuracy — a different metric, not directly comparable.*  
 [Full benchmark details →](https://kent-tokyo.github.io/renkin/benchmark/)
 
+### PaRoutes compatibility
+
+RENKIN is compatible with the [PaRoutes](https://github.com/AstraZeneca/PaRoutes) multi-step benchmark. Download their stock compounds and target molecules, then pass them directly:
+
+```bash
+renkin-bench \
+  --input paroutes_n1_targets.smi \
+  --building-blocks paroutes_stock.smi \
+  --templates data/templates_extracted_5000.smi \
+  --depth 5 --beam-width 100
+```
+
+The JSON output includes `avg_nodes_expanded`, `avg_confidence`, `avg_convergency`, and `avg_success_prob` (Retro-prob style) alongside the standard solved/success_rate metrics.
+
 ---
 
 ## Competitive Landscape
@@ -332,7 +346,7 @@ renkin/                          ← Cargo workspace root (planned)
 
 ## Roadmap
 
-- [ ] Route cost scoring (commercial reagent price integration)
+- [x] Route cost scoring — `route_cost` field + `--bb-prices path.csv` flag (SA Score proxy or real prices)
 - [ ] Cargo workspace restructure — `crates/renkin-forward/` sibling crate
 - [ ] `renkin-forward`: template-based forward reaction prediction (reactants → products)
 - [ ] Optional forward validation of retrosynthetic routes via `renkin-forward`

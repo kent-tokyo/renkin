@@ -6,6 +6,61 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.7.0] — 2026-06-26
+
+### Added
+- **`Route.route_cost: f64`** — estimated synthesis cost: `Σ(BB complexity or price) + step_count × 0.5`. Lower = cheaper / simpler route.
+  - Default (no price file): uses SA Score as BB complexity proxy (`chematic::chem::sa_score`).
+  - With `--bb-prices path.csv`: uses actual prices from CSV (`SMILES,price_per_gram`); unmatched BBs fall back to SA Score.
+- **`--bb-prices <path>` CLI flag** in `renkin` and `renkin-bench`.
+- **`bb_prices_path` parameter** in `renkin.find_routes()` Python API.
+- **`best_route_cost` / `avg_route_cost`** in benchmark JSON output.
+
+### Changed
+- Roadmap item "Route cost scoring" is now complete ✓.
+
+---
+
+## [0.6.0] — 2026-06-26
+
+### Added
+- **`renkin-forward` CLI binary** — standalone tool in `crates/renkin-forward/`:
+  - `renkin-forward predict --reactants "A" "B" [--templates file.smi] [--max-results N]` — predict products from reactants
+  - `renkin-forward validate --route-json '...' [--templates file.smi]` — validate a retrosynthetic route step-by-step; `verified=true` when forward prediction reproduces the target
+- **`renkin.predict_forward()`** Python API — predict products inline (no circular dep; logic inlined in python.rs)
+- **`renkin.validate_forward()`** Python API — validate a route JSON object returned by `find_routes()`
+
+### Reference
+ReactionT5 / Chemformer / Molecular Transformer — forward validation pattern adapted as rule-based (no ML).
+
+---
+
+## [0.5.0] — 2026-06-26
+
+### Added
+- **Bond-center template index** (`TemplateBondIndex`) — RetroKNN-inspired, ML-free template retrieval. Indexes templates by the element-pair bonds their SMIRKS patterns can break. At search time, only templates relevant to bonds present in the target molecule are tried, skipping irrelevant SMARTS matching.
+- **`--retrieval-top-k N` flag** (CLI and benchmark) — enables bond-center retrieval, capping SMIRKS-matched candidates at N per expansion step (sorted by frequency weight). Graph-based and fallback rules are always included. Default 0 = disabled (all templates tried).
+- **`bond_pairs_from_smirks()`** in `chem_env` — extracts `(min_elem, max_elem)` pair signatures from a SMIRKS reactant pattern. Reuses the existing element lookup table from `required_elements_from_smirks`.
+- **`SearchConfig.retrieval_top_k`** field (default 0).
+
+### Reference
+RetroKNN (arXiv 2022) — local reaction template retrieval via atom/bond-environment stores.
+
+---
+
+## [0.4.0] — 2026-06-26
+
+### Added
+- **`ReactionStep.step_confidence`** — per-step template confidence (`rule_weight / max_rule_weight`). Hand-crafted rules yield equal values; extracted templates are differentiated by training frequency.
+- **`Route.success_probability`** — product of step_confidence values across all steps (Retro-prob style). Estimates the probability that every step in the route succeeds. Single-step routes equal their step_confidence; multi-step routes decay multiplicatively.
+- **`joint_success_probability`** in top-level JSON output — `1 − Π(1 − p_i)` over all returned routes: probability at least one route succeeds.
+- **Benchmark enrichment** (`renkin-bench`): `nodes_expanded`, `best_confidence`, `best_success_prob`, `best_convergency` per target; `avg_nodes_expanded`, `avg_confidence`, `avg_convergency`, `avg_success_prob` in summary.
+
+### Reference
+Retro-prob (arXiv 2022), Syntheseus (arXiv 2023), PaRoutes (arXiv 2022) — probabilistic route scoring and Syntheseus-style benchmark metrics.
+
+---
+
 ## [0.3.0] — 2026-06-26
 
 ### Added

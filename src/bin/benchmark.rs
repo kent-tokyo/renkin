@@ -31,6 +31,11 @@ struct BenchResult {
     routes_found: usize,
     best_depth: Option<u32>,
     time_ms: f64,
+    nodes_expanded: u64,
+    best_confidence: Option<f64>,
+    best_success_prob: Option<f64>,
+    best_convergency: Option<f64>,
+    best_route_cost: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -40,6 +45,15 @@ struct BenchReport {
     success_rate: f64,
     avg_depth: f64,
     avg_time_ms: f64,
+    avg_nodes_expanded: f64,
+    /// Average best_confidence over solved targets (None-safe).
+    avg_confidence: f64,
+    /// Average best_convergency over solved targets.
+    avg_convergency: f64,
+    /// Average best_success_prob over solved targets (Retro-prob style).
+    avg_success_prob: f64,
+    /// Average best_route_cost over solved targets.
+    avg_route_cost: f64,
     results: Vec<BenchResult>,
 }
 
@@ -55,6 +69,7 @@ fn main() -> Result<()> {
     let mut max_depth: u32 = 5;
     let mut beam_width: usize = 0;
     let mut max_routes: usize = 1;
+    let mut bond_index = false;
     #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
     let mut scorer_path: Option<String> = None;
     #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
@@ -98,6 +113,9 @@ fn main() -> Result<()> {
                 if i < args.len() {
                     templates_path = Some(args[i].clone());
                 }
+            }
+            "--bond-index" => {
+                bond_index = true;
             }
             #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
             "--scorer" => {
@@ -173,6 +191,7 @@ fn main() -> Result<()> {
         max_depth,
         max_routes,
         beam_width,
+        bond_index,
         #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
         nn_scorer,
         ..Default::default()
@@ -191,11 +210,15 @@ fn main() -> Result<()> {
 
     for (smiles, name) in &targets {
         let t0 = Instant::now();
-        let (routes, _) = find_routes(smiles, &env, &rules, &config).unwrap_or_default();
+        let (routes, stats) = find_routes(smiles, &env, &rules, &config).unwrap_or_default();
         let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
         let solved = !routes.is_empty();
         let best_depth = routes.iter().map(|r| r.depth).min();
+        let best_confidence = routes.first().map(|r| r.confidence);
+        let best_success_prob = routes.first().map(|r| r.success_probability);
+        let best_convergency = routes.first().map(|r| r.convergency);
+        let best_route_cost = routes.first().map(|r| r.route_cost);
 
         if solved {
             solved_count += 1;
@@ -205,12 +228,13 @@ fn main() -> Result<()> {
         }
 
         eprintln!(
-            "  [{}/{}] {} → {} route(s) in {:.1}ms",
+            "  [{}/{}] {} → {} route(s) in {:.1}ms (nodes={})",
             results.len() + 1,
             targets.len(),
             smiles,
             routes.len(),
-            elapsed_ms
+            elapsed_ms,
+            stats.nodes_expanded,
         );
 
         results.push(BenchResult {
@@ -220,6 +244,11 @@ fn main() -> Result<()> {
             routes_found: routes.len(),
             best_depth,
             time_ms: elapsed_ms,
+            nodes_expanded: stats.nodes_expanded,
+            best_confidence,
+            best_success_prob,
+            best_convergency,
+            best_route_cost,
         });
     }
 
@@ -231,6 +260,34 @@ fn main() -> Result<()> {
         0.0
     };
     let avg_time_ms = results.iter().map(|r| r.time_ms).sum::<f64>() / total as f64;
+    let avg_nodes_expanded =
+        results.iter().map(|r| r.nodes_expanded as f64).sum::<f64>() / total as f64;
+
+    let solved_results: Vec<&BenchResult> = results.iter().filter(|r| r.solved).collect();
+    let avg_confidence = if solved_results.is_empty() {
+        0.0
+    } else {
+        solved_results.iter().filter_map(|r| r.best_confidence).sum::<f64>()
+            / solved_results.len() as f64
+    };
+    let avg_convergency = if solved_results.is_empty() {
+        0.0
+    } else {
+        solved_results.iter().filter_map(|r| r.best_convergency).sum::<f64>()
+            / solved_results.len() as f64
+    };
+    let avg_success_prob = if solved_results.is_empty() {
+        0.0
+    } else {
+        solved_results.iter().filter_map(|r| r.best_success_prob).sum::<f64>()
+            / solved_results.len() as f64
+    };
+    let avg_route_cost = if solved_results.is_empty() {
+        0.0
+    } else {
+        solved_results.iter().filter_map(|r| r.best_route_cost).sum::<f64>()
+            / solved_results.len() as f64
+    };
 
     let report = BenchReport {
         total,
@@ -238,6 +295,11 @@ fn main() -> Result<()> {
         success_rate,
         avg_depth,
         avg_time_ms,
+        avg_nodes_expanded,
+        avg_confidence,
+        avg_convergency,
+        avg_success_prob,
+        avg_route_cost,
         results,
     };
 

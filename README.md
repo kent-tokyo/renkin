@@ -3,15 +3,33 @@
 > **Computer-Aided Synthesis Planning (CASP) · Pure Rust · WebAssembly · Python**  
 > Named after 錬金 (れんきん, *renkin*) — Japanese for alchemy: just as alchemists transformed base metals into gold, RENKIN transforms target molecules back into cheap starting materials.
 
-[![CI](https://github.com/kent-tokyo/renkin/actions/workflows/ci.yml/badge.svg)](https://github.com/kent-tokyo/renkin/actions/workflows/ci.yml)
-[![Crates.io](https://img.shields.io/crates/v/renkin)](https://crates.io/crates/renkin)
-[![PyPI](https://img.shields.io/pypi/v/renkin)](https://pypi.org/project/renkin/)
-[![npm](https://img.shields.io/npm/v/renkin)](https://www.npmjs.com/package/renkin)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![WASM](https://img.shields.io/badge/WASM-ready-brightgreen)](https://kent-tokyo.github.io/renkin/playground/)
-[![Pure Rust](https://img.shields.io/badge/Pure-Rust-orange?logo=rust)](https://www.rust-lang.org)
-[![unsafe forbidden](https://img.shields.io/badge/unsafe-forbidden-success.svg)](https://github.com/rust-secure-code/safety-dance/)
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kent-tokyo/renkin/blob/master/examples/renkin_quickstart.ipynb)
+<p align="center">
+  <a href="https://github.com/kent-tokyo/renkin/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/kent-tokyo/renkin/actions/workflows/ci.yml/badge.svg?branch=master"></a>
+  <a href="https://github.com/kent-tokyo/renkin/actions/workflows/docs.yml"><img alt="Docs" src="https://github.com/kent-tokyo/renkin/actions/workflows/docs.yml/badge.svg?branch=master"></a>
+  <a href="https://github.com/kent-tokyo/renkin/actions/workflows/release.yml"><img alt="Release" src="https://github.com/kent-tokyo/renkin/actions/workflows/release.yml/badge.svg"></a>
+  <a href="https://github.com/kent-tokyo/renkin/actions/workflows/security-audit.yml"><img alt="Security Audit" src="https://github.com/kent-tokyo/renkin/actions/workflows/security-audit.yml/badge.svg?branch=master"></a>
+</p>
+
+<p align="center">
+  <a href="https://crates.io/crates/renkin"><img alt="Crates.io" src="https://img.shields.io/crates/v/renkin.svg"></a>
+  <a href="https://docs.rs/renkin"><img alt="docs.rs" src="https://docs.rs/renkin/badge.svg"></a>
+  <a href="https://pypi.org/project/renkin/"><img alt="PyPI" src="https://img.shields.io/pypi/v/renkin.svg"></a>
+  <a href="https://pypi.org/project/renkin/"><img alt="Python" src="https://img.shields.io/pypi/pyversions/renkin.svg"></a>
+  <a href="https://www.npmjs.com/package/renkin"><img alt="npm" src="https://img.shields.io/npm/v/renkin.svg"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+</p>
+
+<p align="center">
+  <img alt="Pure Rust" src="https://img.shields.io/badge/Pure%20Rust-100%25-orange?logo=rust">
+  <img alt="unsafe forbidden" src="https://img.shields.io/badge/unsafe-forbidden-success.svg">
+  <img alt="WASM" src="https://img.shields.io/badge/WASM-ready-brightgreen">
+  <img alt="PyO3" src="https://img.shields.io/badge/PyO3-Python%20bindings-blue">
+  <img alt="MCP" src="https://img.shields.io/badge/MCP-ready-7f52ff">
+  <img alt="templates" src="https://img.shields.io/badge/templates-up%20to%2050k-purple">
+  <img alt="building blocks" src="https://img.shields.io/badge/building%20blocks-509-lightgrey">
+  <img alt="USPTO-50k" src="https://img.shields.io/badge/USPTO--50k-78.1%25%20solved-brightgreen">
+  <img alt="ChEMBL" src="https://img.shields.io/badge/ChEMBL-81.8%25%20solved-brightgreen">
+</p>
 
 [日本語版 README](./README_ja.md) · [**Documentation**](https://kent-tokyo.github.io/renkin/) · [**Live Demo →**](https://kent-tokyo.github.io/renkin/playground/)
 
@@ -25,6 +43,21 @@ Built entirely in Rust with the [`chematic`](https://docs.rs/chematic/) cheminfo
 
 **[→ Try the Live Playground](https://kent-tokyo.github.io/renkin/playground/)** — runs entirely in WebAssembly, no installation needed.  
 **[→ Full Documentation](https://kent-tokyo.github.io/renkin/)** — API reference, examples, benchmark.
+
+---
+
+## Why RENKIN?
+
+RENKIN is designed as a Rust-native synthesis planning stack:
+
+| | |
+|---|---|
+| **Fast** | A\* / AND-OR tree search with beam search and template frequency weighting |
+| **Portable** | Native CLI · Python wheels · npm/WASM · browser playground — one codebase |
+| **Explainable** | Per-step `confidence`, `atom_economy`, `route_cost`, and `procedure_hint` |
+| **Verifiable** | `renkin-forward` validates each retrosynthetic step by forward-applying templates |
+| **Benchmarkable** | USPTO-50k, PaRoutes-style evaluation, route diversity, and atom balance checks |
+| **Agent-ready** | MCP server exposes routes and validation to Claude Desktop and AI agents |
 
 ---
 
@@ -89,6 +122,8 @@ OC(=O)c1ccccc1OC(=O)C
 ```
 
 Use `--format mermaid` for GitHub/Notion-compatible flowcharts.
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kent-tokyo/renkin/blob/master/examples/renkin_quickstart.ipynb)
 
 ---
 

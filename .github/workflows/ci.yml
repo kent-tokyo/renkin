@@ -30,3 +30,27 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --check
       - run: cargo clippy -- -D warnings
+
+  python-smoke:
+    name: Python smoke
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --features python --out dist
+      - run: |
+          pip install dist/*.whl --force-reinstall
+          python -c "
+          import renkin
+          assert hasattr(renkin, '__version__'), '__version__ missing'
+          assert callable(renkin.find_routes), 'find_routes missing'
+          assert callable(renkin.predict_forward), 'predict_forward missing'
+          assert callable(renkin.validate_forward), 'validate_forward missing'
+          result = renkin.find_routes('c1ccccc1', 3, 1, 0)
+          assert result, 'find_routes returned empty'
+          print('ok:', renkin.__version__)
+          "

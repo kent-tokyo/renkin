@@ -420,3 +420,7 @@ MIT
 ---
 
 *GitHub Topics: `retrosynthesis` `cheminformatics` `wasm` `rust` `drug-discovery` `casp` `synthesis-planning` `computational-chemistry`*
+
+---
+
+If RENKIN saves you time, a GitHub star helps others discover it.

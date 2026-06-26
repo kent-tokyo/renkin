@@ -136,7 +136,7 @@ jobs:
           VERSION="${PKG_TAG#v}"
           sleep 60
           pip install "renkin==${VERSION}" --no-cache-dir
-          python -c "import renkin; v=renkin.version(); print(v); assert v=='${VERSION}', f'expected ${VERSION}, got {v}'"
+          python -c "import renkin; v=renkin.__version__; print(v); assert v=='${VERSION}', f'expected {VERSION!r}, got {v!r}'"
 
   # ── GitHub Release ────────────────────────────────────────────────────────
   github-release:

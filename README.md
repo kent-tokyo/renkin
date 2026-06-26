@@ -296,7 +296,7 @@ Target SMILES
 ┌─────────────────────────┐
 │     chem_env.rs         │  ← chematic wrapper
 │  - SMILES parse         │     canonical-SMILES FxHashSet BB lookup (O(1))
-│  - 5,000 retro rules    │     fragment sanitization + ring-leak filter
+│  - 20 built-in + up to 50k via --templates  │     fragment sanitization + ring-leak filter
 │  - Building block check │     apply_retro memoization cache
 └────────────┬────────────┘
              │  par_iter (rayon / sequential on WASM)
@@ -337,7 +337,7 @@ renkin/                          ← Cargo workspace root (planned)
 │   ├── lib.rs                   # public library
 │   ├── main.rs                  # CLI binary  (--templates, --scorer flags)
 │   ├── bin/benchmark.rs         # renkin-bench binary  (--templates flag)
-│   ├── chem_env.rs              # 5,000 retro rules, BB check, template loader
+│   ├── chem_env.rs              # retro rules + BB lookup + template loader
 │   ├── score.rs                 # SA Score heuristic + step cost
 │   ├── search.rs                # A* / AND-OR tree engine + beam pruning
 │   ├── scorer.rs                # Phase B: tract-onnx NN template scorer

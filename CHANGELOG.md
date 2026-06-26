@@ -6,6 +6,14 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.15.3] — 2026-06-26
+
+### Changed
+- **README.md** — replaced `5,000 retro rules` with `20 built-in + up to 50k via --templates` in the architecture diagram; updated `chem_env.rs` comment in file listing.
+- **docs/index.md** — updated `(5,000 via --templates)` to `(5k–50k via --templates)`.
+
+---
+
 ## [0.15.2] — 2026-06-26
 
 ### Changed

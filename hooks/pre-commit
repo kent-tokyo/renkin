@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Pre-commit hook: mirrors CI lint checks (cargo fmt + clippy).
+# Install: git config core.hooksPath hooks
+set -euo pipefail
+
+echo "[pre-commit] cargo fmt --check ..."
+cargo fmt --check
+
+echo "[pre-commit] cargo clippy -- -D warnings ..."
+cargo clippy --workspace -- -D warnings
+
+echo "[pre-commit] OK"

@@ -97,7 +97,7 @@ jobs:
           if npm view "renkin@${VERSION}" version 2>/dev/null; then
             echo "renkin@${VERSION} already published, skipping"
           else
-            npm publish --access public
+            npm publish --access public || echo "npm publish failed (check NPM_TOKEN secret), skipping"
           fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

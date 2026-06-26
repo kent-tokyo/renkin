@@ -1,4 +1,4 @@
-# RENKIN — **R**etrosynthetic **E**xploration **N**etwork for **K**nowledge-**I**nformed **N**avigation
+# RENKIN — Retrosynthesis Engine for Knowledge-Informed Navigation
 
 > **コンピュータ支援合成計画（CASP）· Pure Rust · WebAssembly · Python**  
 > 錬金（れんきん）― 錬金術のように、目標分子を安価な原料へと逆変換する。
@@ -331,7 +331,7 @@ renkin/                          ← Cargo workspace ルート（整備予定）
 ```bibtex
 @software{renkin2026,
   author    = {kent-tokyo},
-  title     = {{RENKIN}: Retrosynthetic Exploration Network for Knowledge-Informed Navigation},
+  title     = {{RENKIN}: Retrosynthesis Engine for Knowledge-Informed Navigation},
   year      = {2026},
   url       = {https://github.com/kent-tokyo/renkin/releases/tag/v0.15.2},
   version   = {0.15.2},

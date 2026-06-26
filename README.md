@@ -1,4 +1,4 @@
-# RENKIN — **R**etrosynthetic **E**xploration **N**etwork for **K**nowledge-**I**nformed **N**avigation
+# RENKIN — Retrosynthesis Engine for Knowledge-Informed Navigation
 
 > **Computer-Aided Synthesis Planning (CASP) · Pure Rust · WebAssembly · Python**  
 > Named after 錬金 (れんきん, *renkin*) — Japanese for alchemy: just as alchemists transformed base metals into gold, RENKIN transforms target molecules back into cheap starting materials.
@@ -403,7 +403,7 @@ If you use RENKIN in academic work, please cite:
 ```bibtex
 @software{renkin2026,
   author    = {kent-tokyo},
-  title     = {{RENKIN}: Retrosynthetic Exploration Network for Knowledge-Informed Navigation},
+  title     = {{RENKIN}: Retrosynthesis Engine for Knowledge-Informed Navigation},
   year      = {2026},
   url       = {https://github.com/kent-tokyo/renkin/releases/tag/v0.15.2},
   version   = {0.15.2},

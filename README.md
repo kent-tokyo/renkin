@@ -142,18 +142,16 @@ Add `--verbose` to print search statistics (nodes expanded, elapsed time) to std
 | Feature | Detail |
 |---|---|
 | **Pure Safe Rust** | `#![forbid(unsafe_code)]` on all crates — compiler-enforced, zero C/C++ dependencies |
-| **A\* / AND-OR Tree Search** | Retro\*-equivalent algorithm, proven more efficient than MCTS |
-| **SA Score heuristic** | Admissible h = Σ(1 + 0.5·(sa−1)/9) guides toward accessible precursors |
-| **SA Score memoization** | Per-search cache avoids redundant SA Score computation on repeated intermediates |
+| **A\* / AND-OR Tree Search** | Retro\*-equivalent algorithm with pluggable heuristics (`MoleculeValueEstimator`, `ReactionPrior`) |
+| **Up to 50k reaction templates** | Auto-extracted from USPTO-50k/MIT via rdchiral; frequency-weighted priority; `--templates` for custom sets |
+| **Route scoring** | `confidence`, `step_confidence`, `success_probability` (Retro-prob style), `convergency`, `atom_economy` per step |
+| **Route cost scoring** | `route_cost = Σ(BB cost) + steps×0.5`; actual prices via `--bb-prices CSV` |
+| **Forward validation** | `renkin-forward validate` verifies each step by applying templates forward; accepts `--route-json` or stdin |
+| **PaRoutes benchmark** | `renkin-bench --input-format paroutes` for multi-step ground-truth evaluation with `depth_delta` and `route_diversity` |
+| **Atom balance check** | `renkin-bench` flags steps where `target_MW > Σ precursor_MW` (CompleteRXN reference) |
+| **Procedure hints** | 19 hand-crafted rules carry `procedure_hint` — placeholder for QFANG-style procedure generation |
+| **MCP server** | `renkin-mcp` exposes `find_routes`, `validate_route`, `estimate_diversity` to Claude Desktop |
 | **Beam search** | `--beam-width N` for memory-bounded exploration; `SmallVec<[FEntry; 6]>` stack-allocated frontier |
-| **5,000 reaction templates** | Auto-extracted from USPTO-50k training set via rdchiral; frequency-weighted beam priority |
-| **Template frequency weighting** | Phase A: `weight = ln(count+1)` from USPTO training set; high-frequency templates preferred in beam search (+19 pp) |
-| **Element pre-screening** | `required_elements` bitset skips impossible rules before SMARTS matching |
-| **apply_retro memoization** | SMARTS VF2 skip on repeated intermediates — per-search cache |
-| **Arc<PathNode> path sharing** | Persistent linked-list; O(1) per child instead of O(depth) clone |
-| **FxHashMap / FxHashSet** | rustc-hash replacing std collections throughout for faster hashing |
-| **Auto template extraction** | `scripts/extract_templates.py` — rdchiral + chematic-compatible simplification |
-| **Graph-based biaryl cleavage** | Bridge-bond DFS for correct Suzuki disconnection |
 | **Parallel rule application** | `rayon` on non-WASM; sequential fallback on wasm32 |
 | **tract-onnx NN scorer** | Pure Rust ONNX inference (no C++ dep) — optional `--scorer` flag for Phase B template relevance scoring |
 | **Route visualization** | `--format tree` ASCII tree · `--format mermaid` GitHub/Notion flowchart |

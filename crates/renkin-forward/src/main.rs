@@ -82,20 +82,33 @@ fn main() -> Result<()> {
             println!("{}", serde_json::to_string_pretty(&predictions)?);
         }
         "validate" => {
-            let json_str = route_json.as_deref().unwrap_or_else(|| {
-                // try reading from stdin
-                ""
-            });
+            let json_str: String = match route_json {
+                Some(s) => s,
+                None => {
+                    use std::io::Read;
+                    let mut buf = String::new();
+                    std::io::stdin().read_to_string(&mut buf)?;
+                    buf.trim().to_string()
+                }
+            };
             if json_str.is_empty() {
-                bail!("validate requires --route-json <JSON>");
+                bail!("validate requires --route-json <JSON> or JSON piped via stdin");
             }
-            // Parse route JSON as a Value to extract steps
+            // Parse route JSON as a Value to extract steps.
+            // Accepts both a route object {"steps":[...]} and the full find_routes output
+            // {"routes":[{"steps":[...]}]} so that piping renkin output works directly.
             let v: serde_json::Value =
-                serde_json::from_str(json_str).map_err(|e| anyhow::anyhow!("invalid JSON: {e}"))?;
+                serde_json::from_str(&json_str).map_err(|e| anyhow::anyhow!("invalid JSON: {e}"))?;
 
-            let steps = v["steps"]
-                .as_array()
-                .ok_or_else(|| anyhow::anyhow!("route JSON must have a 'steps' array"))?;
+            let steps = if let Some(arr) = v["steps"].as_array() {
+                arr
+            } else if let Some(route) = v["routes"].as_array().and_then(|r| r.first()) {
+                route["steps"]
+                    .as_array()
+                    .ok_or_else(|| anyhow::anyhow!("first route has no 'steps' array"))?
+            } else {
+                bail!("JSON must contain a 'steps' array or a 'routes[0].steps' array");
+            };
 
             let mut results: Vec<serde_json::Value> = Vec::new();
             for (idx, step) in steps.iter().enumerate() {

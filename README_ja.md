@@ -125,18 +125,17 @@ c1ccccc1-c2ccccc2
 | 特徴 | 詳細 |
 |---|---|
 | **Pure Safe Rust** | 全クレートに `#![forbid(unsafe_code)]` — コンパイラ保証、C/C++依存ゼロ |
-| **A\* / AND-OR木探索** | MCTSより探索効率が高いRetro\*相当アルゴリズム |
-| **SA Scoreヒューリスティック** | h = Σ(1 + 0.5·(sa−1)/9)、アドミッシブル性を維持 |
-| **SA Scoreメモ化キャッシュ** | 探索ごとにキャッシュ — 重複中間体での再計算を省略 |
-| **ビームサーチ** | `--beam-width N` でメモリ制約付き探索；フロンティアに `SmallVec<[FEntry; 6]>` スタック割り当て |
-| **5,000件の逆合成テンプレート** | USPTO-50k訓練セットからrdchiralで自動抽出；頻度重み付けビーム優先 |
-| **テンプレート頻度重み付け** | Phase A: 訓練セット頻度 `weight = ln(count+1)` → ビームサーチで高頻度テンプレート優先（+19pp） |
-| **元素プリスクリーニング** | `required_elements` bitset でSMARTSマッチング前に不適合ルールを除外 |
-| **apply_retroメモ化** | 重複中間体のSMARTS VF2をスキップ — 探索ごとのキャッシュ |
-| **Arc<PathNode> パス共有** | 永続連結リスト；子ノードあたりO(1)（O(depth)クローン不要） |
-| **FxHashMap / FxHashSet** | rustc-hash で標準コレクション全体を置き換え、高速ハッシュ |
-| **自動テンプレート抽出** | `scripts/extract_templates.py` — rdchiral + chematic互換フィルタ |
-| **グラフベースAr-Ar切断** | ブリッジボンドDFS — 対称ビアリールを正確に処理 |
+| **A\* / AND-OR木探索** | プラガブルフック付きRetro\*相当アルゴリズム（`MoleculeValueEstimator`, `ReactionPrior`） |
+| **最大50k逆合成テンプレート** | USPTO-50k/MIT からrdchiralで自動抽出；頻度重み付け優先；`--templates` でカスタムセット対応 |
+| **ルートスコアリング** | `confidence`, `step_confidence`, `success_probability`（Retro-prob方式）, `convergency`, `atom_economy` |
+| **ルートコストスコアリング** | `route_cost = Σ(BB価格) + ステップ数×0.5`；`--bb-prices CSV` で実価格対応 |
+| **順方向検証** | `renkin-forward validate` で各ステップを順方向適用して検証；stdin パイプ対応 |
+| **PaRoutesベンチマーク** | `renkin-bench --input-format paroutes` でmulti-step ground-truth評価（`depth_delta`, `route_diversity`） |
+| **原子収支チェック** | `renkin-bench` で `target_MW > Σ precursor_MW` のステップを検出（CompleteRXN参照） |
+| **手順ヒント** | 19件の手工芸ルールに `procedure_hint` — QFANG方式手順生成の受け口 |
+| **MCPサーバー** | `renkin-mcp` が `find_routes`, `validate_route`, `estimate_diversity` を Claude Desktop に提供 |
+| **ビームサーチ** | `--beam-width N` でメモリ制約付き探索；`SmallVec<[FEntry; 6]>` スタック割り当て |
+| **並列ルール適用** | 非WASM環境で `rayon`；wasm32 はシーケンシャルフォールバック |
 | **並列ルール適用** | `rayon` で並列評価（WASM では逐次フォールバック） |
 | **tract-onnx NNスコアラー** | Pure Rust ONNXインファレンス（C++依存なし） — Phase B テンプレート関連性スコアリングの `--scorer` フラグ |
 | **ルート可視化** | `--format tree` ASCII木 · `--format mermaid` GitHub/Notion対応フローチャート |

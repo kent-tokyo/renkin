@@ -41,9 +41,14 @@ RENKIN is a **retrosynthesis engine** that automatically plans multi-step chemic
 | **Pure Rust** | Zero C/C++ dependencies — safe, fast, cross-platform |
 | **WebAssembly** | Runs in the browser at near-native speed |
 | **Python bindings** | `pip install renkin` — no RDKit required |
-| **20 built-in rules + 5,000 via `--templates`** | Ester, amide, Suzuki, Buchwald-Hartwig, aryl C-X, Wittig, and more; extended to 5,000 rdchiral-extracted templates via CLI |
-| **509 building blocks** | Common pharma starting materials pre-loaded (WASM playground uses embedded set) |
-| **A\* search** | Beam-width controlled search with depth limit |
+| **20 built-in rules + up to 50k via `--templates`** | Ester, amide, Suzuki, Buchwald-Hartwig, Wittig, and more; extended via rdchiral-extracted templates |
+| **509 building blocks** | Common pharma starting materials pre-loaded |
+| **A\* / AND-OR tree search** | Retro\*-equivalent algorithm with beam-width control and pluggable heuristics (`MoleculeValueEstimator`, `ReactionPrior`) |
+| **Route scoring** | Per-step `confidence`, `success_probability` (Retro-prob), `route_cost` with optional `--bb-prices CSV` |
+| **Forward validation** | `renkin-forward validate` verifies each retrosynthetic step by forward prediction; pipe-friendly (stdin support) |
+| **PaRoutes benchmark** | `renkin-bench --input-format paroutes` for multi-step ground-truth evaluation with depth delta and route diversity metrics |
+| **Atom balance check** | `renkin-bench` flags steps where `target_MW > Σ precursor_MW` (CompleteRXN-style) |
+| **MCP server** | `renkin-mcp` exposes `find_routes`, `validate_route`, `estimate_diversity` to Claude Desktop |
 
 ## Quick Example
 

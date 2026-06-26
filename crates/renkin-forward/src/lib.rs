@@ -91,7 +91,7 @@ pub fn predict_products(
             }
             let products: Vec<String> = outcomes
                 .into_iter()
-                .flat_map(|mols| mols.iter().map(|m| canonical_smiles(m)).collect::<Vec<_>>())
+                .flat_map(|mols| mols.iter().map(canonical_smiles).collect::<Vec<_>>())
                 .collect();
             let products = filter_valid_smiles(products);
             if products.is_empty() {

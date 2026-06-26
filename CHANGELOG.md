@@ -6,6 +6,19 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.15.1] — 2026-06-26
+
+### Fixed
+- **`renkin-forward validate` stdin support** — `--route-json` is now optional; omit it to read JSON from stdin, enabling `renkin ... --format json | renkin-forward validate` pipelines.
+- **`renkin-forward validate` JSON format** — now accepts both a route object `{"steps":[...]}` and the full `find_routes` output `{"routes":[{"steps":[...]}]}`; the first route is used automatically.
+- **`docs/benchmark.md`** — "Latest Results (v0.2.1)" updated to "v0.15.0".
+
+### Changed
+- **README.md / README_ja.md Key Features** — updated to reflect v0.15.x capabilities: 50k templates, route cost scoring, forward validation, PaRoutes benchmark, Retro\* hooks, atom balance checker, procedure hints, MCP tools.
+- **docs/index.md Key Features** — same update.
+
+---
+
 ## [0.15.0] — 2026-06-26
 
 ### Added

@@ -31,6 +31,23 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy -- -D warnings
 
+  version-check:
+    name: Version sync
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - run: |
+          VER=$(grep '^version' Cargo.toml | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          echo "Checking version: $VER"
+          if grep -rE 'renkin = "0\.[0-9]\."' docs/; then
+            echo "ERROR: stale renkin version in docs/" && exit 1
+          fi
+          grep -q "version.*{${VER}}" README.md || \
+            { echo "ERROR: README citation not updated to $VER"; exit 1; }
+          echo "OK: all version references match $VER"
+
   python-smoke:
     name: Python smoke
     runs-on: ubuntu-latest

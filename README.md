@@ -441,8 +441,8 @@ If you use RENKIN in academic work, please cite:
   author    = {kent-tokyo},
   title     = {{RENKIN}: Retrosynthesis Engine for Knowledge-Informed Navigation},
   year      = {2026},
-  url       = {https://github.com/kent-tokyo/renkin/releases/tag/v0.15.2},
-  version   = {0.15.2},
+  url       = {https://github.com/kent-tokyo/renkin/releases/tag/v0.15.4},
+  version   = {0.15.4},
   license   = {MIT}
 }
 ```

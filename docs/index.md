@@ -136,7 +136,7 @@ RENKIN includes 20 retrosynthetic reaction templates covering the most common bo
 
     ```toml
     [dependencies]
-    renkin = "0.1"
+    renkin = "0.15"
     ```
 
 === "npm"

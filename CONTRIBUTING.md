@@ -2,6 +2,18 @@
 
 Thank you for your interest in contributing! RENKIN is a Pure Rust retrosynthesis engine and welcomes contributions of all kinds.
 
+## Branch Naming
+
+| Prefix | Use |
+|---|---|
+| `feat/*` | New features |
+| `fix/*` | Bug fixes |
+| `docs/*` | Documentation only |
+| `release/*` | Version bump + CHANGELOG + tag |
+| `security/*` | Security fixes |
+
+Open a PR against `master`. Direct pushes to `master` are reserved for Dependabot merges and release tags.
+
 ## Ways to Contribute
 
 | Type | Examples |

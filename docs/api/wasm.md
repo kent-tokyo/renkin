@@ -77,7 +77,7 @@ interface Step {
 function version(): string
 ```
 
-Returns the RENKIN version string (e.g., `"0.1.0"`).
+Returns the RENKIN version string (e.g., `"0.15.4"`).
 
 ## Live Playground
 

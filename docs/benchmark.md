@@ -4,7 +4,7 @@
 
 RENKIN is evaluated on the full [USPTO-50k](https://huggingface.co/datasets/bisectgroup/USPTO_50K) test set (4,907 molecules) — the standard benchmark for single-step retrosynthesis.
 
-### Latest Results (v0.15.0) — depth=5, beam=100, 5,000 extracted templates
+### Latest Results (v0.15.4) — depth=5, beam=100, 5,000 extracted templates
 
 | Config | Solved | Success Rate | Avg Time | Hardware |
 |--------|--------|-------------|----------|----------|

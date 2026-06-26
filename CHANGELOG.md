@@ -6,6 +6,21 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.15.4] — 2026-06-27
+
+### Fixed
+- **release.yml** — smoke test used `renkin.version()` (non-existent); corrected to `renkin.__version__`
+- **release.yml** — PyPI propagation wait: replaced single `sleep 60` with retry loop (5 × 60 s)
+
+### Added
+- **ci.yml** — `python-smoke` job builds wheel and validates Python API on every push to master (pre-release gate)
+- **SECURITY.md** — vulnerability reporting policy; GitHub Security policy now Enabled
+- **.github/dependabot.yml** — weekly Dependabot updates for Cargo, npm, pip, GitHub Actions
+- **security-audit.yml** — `rustsec/audit-check` on push/PR/weekly schedule
+- **README / README_ja** — 3-row badge layout, `Why RENKIN?` section, Security section
+
+---
+
 ## [0.15.3] — 2026-06-26
 
 ### Changed

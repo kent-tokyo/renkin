@@ -214,7 +214,10 @@ fn main() -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&out)?);
             } else {
                 let joint_success_probability = 1.0
-                    - routes.iter().map(|r| 1.0 - r.success_probability).product::<f64>();
+                    - routes
+                        .iter()
+                        .map(|r| 1.0 - r.success_probability)
+                        .product::<f64>();
                 let output = Output {
                     target: target_smiles,
                     routes_found: routes.len(),

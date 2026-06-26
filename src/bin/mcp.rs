@@ -198,11 +198,15 @@ fn handle_find_routes(smiles: &str, args: &Value) -> Value {
 }
 
 fn step_balanced(target: &str, precursors: &[String]) -> bool {
-    let target_mw = mol_from_smiles(target).ok()
+    let target_mw = mol_from_smiles(target)
+        .ok()
         .map(|m| molecular_weight(&m))
         .unwrap_or(0.0);
-    if target_mw == 0.0 { return true; }
-    let precursor_mw: f64 = precursors.iter()
+    if target_mw == 0.0 {
+        return true;
+    }
+    let precursor_mw: f64 = precursors
+        .iter()
         .filter_map(|s| mol_from_smiles(s).ok())
         .map(|m| molecular_weight(&m))
         .sum();
@@ -212,7 +216,11 @@ fn step_balanced(target: &str, precursors: &[String]) -> bool {
 fn handle_validate_route(smiles: &str, args: &Value) -> Value {
     let depth = args["depth"].as_u64().unwrap_or(5) as u32;
     let (env, rules) = load_env_and_rules();
-    let config = SearchConfig { max_depth: depth, max_routes: 1, ..Default::default() };
+    let config = SearchConfig {
+        max_depth: depth,
+        max_routes: 1,
+        ..Default::default()
+    };
 
     let (routes, _) = match search::find_routes(smiles, &env, &rules, &config) {
         Ok(r) => r,
@@ -224,11 +232,16 @@ fn handle_validate_route(smiles: &str, args: &Value) -> Value {
             format!("No routes found for {smiles}.")}]});
     }
     let route = &routes[0];
-    let mut text = format!("Target: {smiles}\nValidating best route ({} step(s)):\n\n", route.steps.len());
+    let mut text = format!(
+        "Target: {smiles}\nValidating best route ({} step(s)):\n\n",
+        route.steps.len()
+    );
     let mut all_ok = true;
     for (i, step) in route.steps.iter().enumerate() {
         let ok = step_balanced(&step.target, &step.precursors);
-        if !ok { all_ok = false; }
+        if !ok {
+            all_ok = false;
+        }
         text.push_str(&format!(
             "Step {}: {} → [{}]  atom_balance={}\n",
             i + 1,
@@ -239,7 +252,11 @@ fn handle_validate_route(smiles: &str, args: &Value) -> Value {
     }
     text.push_str(&format!(
         "\nOverall: {}  confidence={:.2}  success_probability={:.2}",
-        if all_ok { "PASS ✓" } else { "FAIL ✗ (atom imbalance detected)" },
+        if all_ok {
+            "PASS ✓"
+        } else {
+            "FAIL ✗ (atom imbalance detected)"
+        },
         route.confidence,
         route.success_probability,
     ));
@@ -247,18 +264,30 @@ fn handle_validate_route(smiles: &str, args: &Value) -> Value {
 }
 
 fn route_diversity(routes: &[Route]) -> f64 {
-    if routes.len() < 2 { return 0.0; }
+    if routes.len() < 2 {
+        return 0.0;
+    }
     let mut total_sim = 0.0;
     let mut count = 0usize;
     for i in 0..routes.len() {
         for j in (i + 1)..routes.len() {
-            let a: std::collections::HashSet<&str> =
-                routes[i].building_blocks.iter().map(|s| s.as_str()).collect();
-            let b: std::collections::HashSet<&str> =
-                routes[j].building_blocks.iter().map(|s| s.as_str()).collect();
+            let a: std::collections::HashSet<&str> = routes[i]
+                .building_blocks
+                .iter()
+                .map(|s| s.as_str())
+                .collect();
+            let b: std::collections::HashSet<&str> = routes[j]
+                .building_blocks
+                .iter()
+                .map(|s| s.as_str())
+                .collect();
             let inter = a.intersection(&b).count();
             let union = a.len() + b.len() - inter;
-            total_sim += if union == 0 { 1.0 } else { inter as f64 / union as f64 };
+            total_sim += if union == 0 {
+                1.0
+            } else {
+                inter as f64 / union as f64
+            };
             count += 1;
         }
     }
@@ -269,7 +298,11 @@ fn handle_estimate_diversity(smiles: &str, args: &Value) -> Value {
     let depth = args["depth"].as_u64().unwrap_or(5) as u32;
     let max_routes = args["max_routes"].as_u64().unwrap_or(5) as usize;
     let (env, rules) = load_env_and_rules();
-    let config = SearchConfig { max_depth: depth, max_routes, ..Default::default() };
+    let config = SearchConfig {
+        max_depth: depth,
+        max_routes,
+        ..Default::default()
+    };
 
     let (routes, _) = match search::find_routes(smiles, &env, &rules, &config) {
         Ok(r) => r,
@@ -283,14 +316,23 @@ fn handle_estimate_diversity(smiles: &str, args: &Value) -> Value {
     let diversity = route_diversity(&routes);
     let mut text = format!(
         "Target: {smiles}\nRoutes found: {}  Route diversity: {:.3}\n\n",
-        routes.len(), diversity
+        routes.len(),
+        diversity
     );
-    text.push_str(if diversity > 0.5 { "High diversity — multiple distinct synthetic strategies available.\n" }
-                  else if diversity > 0.0 { "Moderate diversity — routes share some building blocks.\n" }
-                  else { "Low diversity — all routes use the same building blocks.\n" });
+    text.push_str(if diversity > 0.5 {
+        "High diversity — multiple distinct synthetic strategies available.\n"
+    } else if diversity > 0.0 {
+        "Moderate diversity — routes share some building blocks.\n"
+    } else {
+        "Low diversity — all routes use the same building blocks.\n"
+    });
     text.push_str("\nBuilding block sets per route:\n");
     for (i, route) in routes.iter().enumerate() {
-        text.push_str(&format!("  Route {}: [{}]\n", i + 1, route.building_blocks.join(", ")));
+        text.push_str(&format!(
+            "  Route {}: [{}]\n",
+            i + 1,
+            route.building_blocks.join(", ")
+        ));
     }
     json!({"content": [{"type": "text", "text": text}]})
 }

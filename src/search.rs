@@ -10,8 +10,7 @@ use serde::Serialize;
 use smallvec::{SmallVec, smallvec};
 
 use crate::chem_env::{
-    ChemEnv, PrecursorMol, RetroRule, TemplateBondIndex, apply_retro, mol_from_smiles,
-    to_canonical,
+    ChemEnv, PrecursorMol, RetroRule, TemplateBondIndex, apply_retro, mol_from_smiles, to_canonical,
 };
 use crate::score::{step_cost, template_bonus};
 
@@ -274,7 +273,10 @@ impl FrequencyPrior {
     pub fn from_rules(rules: &[RetroRule]) -> Self {
         let max_weight = rules.iter().map(|r| r.weight).fold(1.0_f64, f64::max);
         let rule_weights = rules.iter().map(|r| (r.name.clone(), r.weight)).collect();
-        Self { rule_weights, max_weight }
+        Self {
+            rule_weights,
+            max_weight,
+        }
     }
 }
 
@@ -315,35 +317,34 @@ fn compute_h(
 /// Hand-crafted rules only; extracted templates return None.
 fn reaction_family_for_rule(rule: &str) -> Option<&'static str> {
     match rule {
-        "ester_cleavage"                => Some("esterification"),
-        "amide_cleavage"                => Some("amide_coupling"),
-        "friedel_crafts_acylation_retro"=> Some("friedel_crafts_acylation"),
-        "aryl_carboxylation_retro"      => Some("decarboxylation"),
-        "buchwald_hartwig_retro"        => Some("buchwald_hartwig"),
-        "aryl_amine_retro"              => Some("chan_lam_coupling"),
-        "aryl_ether_retro"              => Some("ullmann_ether"),
-        "aryl_chloride_retro"
-        | "aryl_iodide_retro"
-        | "aryl_fluoride_snAr_retro"    => Some("c_halide_activation"),
-        "aryl_chloride_to_bromide"      => Some("halogen_exchange"),
-        "suzuki_retro"                  => Some("suzuki_coupling"),
-        "heck_retro"
-        | "heck_retro_terminal"         => Some("heck_reaction"),
-        "negishi_retro"                 => Some("negishi_coupling"),
-        "wittig_retro"                  => Some("wittig_reaction"),
-        "reductive_amination_retro"     => Some("reductive_amination"),
-        "sonogashira_retro"             => Some("sonogashira_coupling"),
-        "sulfonamide_retro"             => Some("sulfonamide_formation"),
-        "diaryl_sulfone_retro"          => Some("friedel_crafts_sulfonylation"),
-        "boc_deprotection_retro"        => Some("boc_deprotection"),
-        "cbz_deprotection_retro"        => Some("cbz_deprotection"),
-        "n_benzylation_retro"           => Some("n_benzylation"),
-        "grignard_addition_retro"       => Some("grignard_addition"),
-        "claisen_retro"                 => Some("claisen_condensation"),
-        "michael_retro"                 => Some("michael_addition"),
-        "acyl_chloride_from_acid"       => Some("acyl_chloride_formation"),
-        "alcohol_oxidation_retro"       => Some("carbonyl_reduction"),
-        _                               => None,
+        "ester_cleavage" => Some("esterification"),
+        "amide_cleavage" => Some("amide_coupling"),
+        "friedel_crafts_acylation_retro" => Some("friedel_crafts_acylation"),
+        "aryl_carboxylation_retro" => Some("decarboxylation"),
+        "buchwald_hartwig_retro" => Some("buchwald_hartwig"),
+        "aryl_amine_retro" => Some("chan_lam_coupling"),
+        "aryl_ether_retro" => Some("ullmann_ether"),
+        "aryl_chloride_retro" | "aryl_iodide_retro" | "aryl_fluoride_snAr_retro" => {
+            Some("c_halide_activation")
+        }
+        "aryl_chloride_to_bromide" => Some("halogen_exchange"),
+        "suzuki_retro" => Some("suzuki_coupling"),
+        "heck_retro" | "heck_retro_terminal" => Some("heck_reaction"),
+        "negishi_retro" => Some("negishi_coupling"),
+        "wittig_retro" => Some("wittig_reaction"),
+        "reductive_amination_retro" => Some("reductive_amination"),
+        "sonogashira_retro" => Some("sonogashira_coupling"),
+        "sulfonamide_retro" => Some("sulfonamide_formation"),
+        "diaryl_sulfone_retro" => Some("friedel_crafts_sulfonylation"),
+        "boc_deprotection_retro" => Some("boc_deprotection"),
+        "cbz_deprotection_retro" => Some("cbz_deprotection"),
+        "n_benzylation_retro" => Some("n_benzylation"),
+        "grignard_addition_retro" => Some("grignard_addition"),
+        "claisen_retro" => Some("claisen_condensation"),
+        "michael_retro" => Some("michael_addition"),
+        "acyl_chloride_from_acid" => Some("acyl_chloride_formation"),
+        "alcohol_oxidation_retro" => Some("carbonyl_reduction"),
+        _ => None,
     }
 }
 
@@ -369,38 +370,52 @@ fn conditions_for_rule(rule: &str) -> Option<ReactionConditions> {
         };
     }
     match rule {
-        "ester_cleavage"              => cond!("NaOH or LiOH (2 eq)", "THF/H₂O (2:1)", "rt → 60 °C"),
-        "amide_cleavage"              => cond!("LiOH (3 eq)", "THF/H₂O (3:1)", "60 °C"),
+        "ester_cleavage" => cond!("NaOH or LiOH (2 eq)", "THF/H₂O (2:1)", "rt → 60 °C"),
+        "amide_cleavage" => cond!("LiOH (3 eq)", "THF/H₂O (3:1)", "60 °C"),
         "friedel_crafts_acylation_retro" => cond!("AlCl₃ (1.2 eq)", "DCM", "0 °C → rt"),
-        "aryl_carboxylation_retro"    => cond!("none", "water", "150 °C", "Kolbe-Schmitt / decarboxylation"),
-        "buchwald_hartwig_retro"      => cond!("Pd₂(dba)₃ / XPhos (5 mol%)", "toluene", "100 °C"),
-        "aryl_amine_retro"            => cond!("Cu(OAc)₂ / pyridine", "DCM", "rt", "Chan-Lam retro"),
-        "aryl_ether_retro"            => cond!("Cs₂CO₃ (2 eq)", "DMF", "110 °C", "Ullmann ether retro"),
-        "aryl_chloride_retro"         => cond!("none", "DMF", "80 °C", "SNAr or Pd activation"),
-        "aryl_iodide_retro"           => cond!("Pd(OAc)₂ / CuI", "DMF", "60 °C"),
-        "aryl_fluoride_snAr_retro"    => cond!("K₂CO₃ (2 eq)", "DMSO", "rt → 60 °C", "SNAr; F best leaving group"),
-        "aryl_chloride_to_bromide"    => cond!("NaBr (excess)", "DMF", "120 °C", "halogen exchange"),
-        "suzuki_retro"                => cond!("Pd(PPh₃)₄ (5 mol%)", "EtOH/H₂O (3:1)", "80 °C"),
-        "heck_retro"                  => cond!("Pd(OAc)₂ / PPh₃ (5 mol%)", "DMF", "100 °C"),
-        "heck_retro_terminal"         => cond!("Pd(OAc)₂ / PPh₃ (5 mol%)", "DMF", "100 °C"),
-        "negishi_retro"               => cond!("Pd(PPh₃)₄ / ZnCl₂", "THF", "65 °C"),
-        "cc_single_cleavage"          => None, // retrosynthetic disconnection only
-        "wittig_retro"                => cond!("Ph₃P (1.2 eq)", "toluene", "0 °C → rt"),
-        "reductive_amination_retro"   => cond!("NaBH₃CN (1.5 eq)", "MeOH", "rt"),
-        "cn_aliphatic_cleavage"       => None,
-        "co_aliphatic_cleavage"       => None,
-        "alcohol_oxidation_retro"     => cond!("NaBH₄ (1.2 eq)", "EtOH", "0 °C → rt", "retro = reduction"),
-        "sonogashira_retro"           => cond!("Pd(PPh₃)₂Cl₂ / CuI (5 mol%)", "Et₃N", "60 °C"),
-        "sulfonamide_retro"           => cond!("Et₃N (2 eq)", "DCM", "0 °C → rt"),
-        "diaryl_sulfone_retro"        => cond!("AlCl₃ (1.2 eq)", "DCM", "0 °C → rt", "Friedel-Crafts sulfonylation"),
-        "boc_deprotection_retro"      => cond!("TFA (20 % in DCM)", "DCM", "rt"),
-        "n_benzylation_retro"         => cond!("K₂CO₃ (2 eq)", "DMF", "60 °C"),
-        "grignard_addition_retro"     => cond!("Mg (1.1 eq)", "THF (dry)", "0 °C → rt"),
-        "claisen_retro"               => cond!("LDA (2.0 eq)", "THF (dry)", "−78 °C"),
-        "michael_retro"               => cond!("DBU or K₂CO₃ (1.2 eq)", "THF", "rt"),
-        "acyl_chloride_from_acid"     => cond!("(COCl)₂ (1.2 eq) + cat. DMF", "DCM", "0 °C → rt"),
-        "cbz_deprotection_retro"      => cond!("H₂ (1 atm), Pd/C (10 %)", "EtOH", "rt"),
-        _                             => None,
+        "aryl_carboxylation_retro" => {
+            cond!("none", "water", "150 °C", "Kolbe-Schmitt / decarboxylation")
+        }
+        "buchwald_hartwig_retro" => cond!("Pd₂(dba)₃ / XPhos (5 mol%)", "toluene", "100 °C"),
+        "aryl_amine_retro" => cond!("Cu(OAc)₂ / pyridine", "DCM", "rt", "Chan-Lam retro"),
+        "aryl_ether_retro" => cond!("Cs₂CO₃ (2 eq)", "DMF", "110 °C", "Ullmann ether retro"),
+        "aryl_chloride_retro" => cond!("none", "DMF", "80 °C", "SNAr or Pd activation"),
+        "aryl_iodide_retro" => cond!("Pd(OAc)₂ / CuI", "DMF", "60 °C"),
+        "aryl_fluoride_snAr_retro" => cond!(
+            "K₂CO₃ (2 eq)",
+            "DMSO",
+            "rt → 60 °C",
+            "SNAr; F best leaving group"
+        ),
+        "aryl_chloride_to_bromide" => cond!("NaBr (excess)", "DMF", "120 °C", "halogen exchange"),
+        "suzuki_retro" => cond!("Pd(PPh₃)₄ (5 mol%)", "EtOH/H₂O (3:1)", "80 °C"),
+        "heck_retro" => cond!("Pd(OAc)₂ / PPh₃ (5 mol%)", "DMF", "100 °C"),
+        "heck_retro_terminal" => cond!("Pd(OAc)₂ / PPh₃ (5 mol%)", "DMF", "100 °C"),
+        "negishi_retro" => cond!("Pd(PPh₃)₄ / ZnCl₂", "THF", "65 °C"),
+        "cc_single_cleavage" => None, // retrosynthetic disconnection only
+        "wittig_retro" => cond!("Ph₃P (1.2 eq)", "toluene", "0 °C → rt"),
+        "reductive_amination_retro" => cond!("NaBH₃CN (1.5 eq)", "MeOH", "rt"),
+        "cn_aliphatic_cleavage" => None,
+        "co_aliphatic_cleavage" => None,
+        "alcohol_oxidation_retro" => {
+            cond!("NaBH₄ (1.2 eq)", "EtOH", "0 °C → rt", "retro = reduction")
+        }
+        "sonogashira_retro" => cond!("Pd(PPh₃)₂Cl₂ / CuI (5 mol%)", "Et₃N", "60 °C"),
+        "sulfonamide_retro" => cond!("Et₃N (2 eq)", "DCM", "0 °C → rt"),
+        "diaryl_sulfone_retro" => cond!(
+            "AlCl₃ (1.2 eq)",
+            "DCM",
+            "0 °C → rt",
+            "Friedel-Crafts sulfonylation"
+        ),
+        "boc_deprotection_retro" => cond!("TFA (20 % in DCM)", "DCM", "rt"),
+        "n_benzylation_retro" => cond!("K₂CO₃ (2 eq)", "DMF", "60 °C"),
+        "grignard_addition_retro" => cond!("Mg (1.1 eq)", "THF (dry)", "0 °C → rt"),
+        "claisen_retro" => cond!("LDA (2.0 eq)", "THF (dry)", "−78 °C"),
+        "michael_retro" => cond!("DBU or K₂CO₃ (1.2 eq)", "THF", "rt"),
+        "acyl_chloride_from_acid" => cond!("(COCl)₂ (1.2 eq) + cat. DMF", "DCM", "0 °C → rt"),
+        "cbz_deprotection_retro" => cond!("H₂ (1 atm), Pd/C (10 %)", "EtOH", "rt"),
+        _ => None,
     }
 }
 
@@ -408,27 +423,58 @@ fn conditions_for_rule(rule: &str) -> Option<ReactionConditions> {
 /// Placeholder infrastructure for QFANG-style structured procedure generation.
 fn procedure_hint_for_rule(rule: &str) -> Option<&'static str> {
     match rule {
-        "ester_cleavage"                => Some("Dissolve in THF/H₂O, add NaOH (2 eq), stir at 60 °C, acidify to pH 2."),
-        "amide_cleavage"                => Some("Reflux in 6M HCl or add LiOH (3 eq) in THF/H₂O at 60 °C."),
-        "friedel_crafts_acylation_retro"=> Some("Add acid chloride to arene + AlCl₃ (1.2 eq) in DCM at 0 °C, warm to rt."),
-        "buchwald_hartwig_retro"        => Some("Combine aryl halide + amine + Pd₂(dba)₃/XPhos in toluene, heat at 100 °C."),
-        "aryl_ether_retro"              => Some("Mix aryl halide + phenol + Cs₂CO₃ (2 eq) in DMF, heat at 110 °C."),
-        "suzuki_retro"                  => Some("Combine aryl boronate + aryl halide + Pd(PPh₃)₄ in EtOH/H₂O, reflux at 80 °C."),
-        "heck_retro" | "heck_retro_terminal"
-                                        => Some("Add alkene + aryl halide + Pd(OAc)₂/PPh₃ in DMF with Et₃N at 100 °C."),
-        "wittig_retro"                  => Some("Add aldehyde to Ph₃P=CHR (Wittig ylide) in toluene at 0 °C, warm to rt."),
-        "reductive_amination_retro"     => Some("Mix aldehyde + amine in MeOH, add NaBH₃CN (1.5 eq), stir at rt."),
-        "sonogashira_retro"             => Some("Combine terminal alkyne + aryl halide + Pd/CuI in Et₃N at 60 °C."),
-        "sulfonamide_retro"             => Some("Add sulfonyl chloride to amine + Et₃N (2 eq) in DCM at 0 °C."),
-        "boc_deprotection_retro"        => Some("Treat with TFA (20% in DCM) at rt for 1 h, then evaporate."),
-        "cbz_deprotection_retro"        => Some("Hydrogenate (H₂, 1 atm) over Pd/C (10%) in EtOH at rt."),
-        "grignard_addition_retro"       => Some("Add carbonyl to Grignard reagent in dry THF at 0 °C, then rt; quench with NH₄Cl."),
-        "acyl_chloride_from_acid"       => Some("Add oxalyl chloride (1.2 eq) + cat. DMF to carboxylic acid in DCM at 0 °C."),
-        "alcohol_oxidation_retro"       => Some("Reduce ketone/aldehyde with NaBH₄ (1.2 eq) in EtOH at 0 °C → rt."),
-        "claisen_retro"                 => Some("Deprotonate ester α-position with LDA (2 eq) in dry THF at −78 °C, add electrophile."),
-        "michael_retro"                 => Some("Combine Michael donor + acceptor + K₂CO₃ or DBU (1.2 eq) in THF at rt."),
-        "n_benzylation_retro"           => Some("React amine + benzyl halide + K₂CO₃ (2 eq) in DMF at 60 °C."),
-        _                               => None,
+        "ester_cleavage" => {
+            Some("Dissolve in THF/H₂O, add NaOH (2 eq), stir at 60 °C, acidify to pH 2.")
+        }
+        "amide_cleavage" => Some("Reflux in 6M HCl or add LiOH (3 eq) in THF/H₂O at 60 °C."),
+        "friedel_crafts_acylation_retro" => {
+            Some("Add acid chloride to arene + AlCl₃ (1.2 eq) in DCM at 0 °C, warm to rt.")
+        }
+        "buchwald_hartwig_retro" => {
+            Some("Combine aryl halide + amine + Pd₂(dba)₃/XPhos in toluene, heat at 100 °C.")
+        }
+        "aryl_ether_retro" => {
+            Some("Mix aryl halide + phenol + Cs₂CO₃ (2 eq) in DMF, heat at 110 °C.")
+        }
+        "suzuki_retro" => {
+            Some("Combine aryl boronate + aryl halide + Pd(PPh₃)₄ in EtOH/H₂O, reflux at 80 °C.")
+        }
+        "heck_retro" | "heck_retro_terminal" => {
+            Some("Add alkene + aryl halide + Pd(OAc)₂/PPh₃ in DMF with Et₃N at 100 °C.")
+        }
+        "wittig_retro" => {
+            Some("Add aldehyde to Ph₃P=CHR (Wittig ylide) in toluene at 0 °C, warm to rt.")
+        }
+        "reductive_amination_retro" => {
+            Some("Mix aldehyde + amine in MeOH, add NaBH₃CN (1.5 eq), stir at rt.")
+        }
+        "sonogashira_retro" => {
+            Some("Combine terminal alkyne + aryl halide + Pd/CuI in Et₃N at 60 °C.")
+        }
+        "sulfonamide_retro" => Some("Add sulfonyl chloride to amine + Et₃N (2 eq) in DCM at 0 °C."),
+        "boc_deprotection_retro" => {
+            Some("Treat with TFA (20% in DCM) at rt for 1 h, then evaporate.")
+        }
+        "cbz_deprotection_retro" => Some("Hydrogenate (H₂, 1 atm) over Pd/C (10%) in EtOH at rt."),
+        "grignard_addition_retro" => {
+            Some("Add carbonyl to Grignard reagent in dry THF at 0 °C, then rt; quench with NH₄Cl.")
+        }
+        "acyl_chloride_from_acid" => {
+            Some("Add oxalyl chloride (1.2 eq) + cat. DMF to carboxylic acid in DCM at 0 °C.")
+        }
+        "alcohol_oxidation_retro" => {
+            Some("Reduce ketone/aldehyde with NaBH₄ (1.2 eq) in EtOH at 0 °C → rt.")
+        }
+        "claisen_retro" => Some(
+            "Deprotonate ester α-position with LDA (2 eq) in dry THF at −78 °C, add electrophile.",
+        ),
+        "michael_retro" => {
+            Some("Combine Michael donor + acceptor + K₂CO₃ or DBU (1.2 eq) in THF at rt.")
+        }
+        "n_benzylation_retro" => {
+            Some("React amine + benzyl halide + K₂CO₃ (2 eq) in DMF at 60 °C.")
+        }
+        _ => None,
     }
 }
 
@@ -449,8 +495,7 @@ fn convergency_score(steps: &[ReactionStep]) -> f64 {
             depth_map.entry(prec.as_str()).or_insert(d + 1);
         }
     }
-    let targets: rustc_hash::FxHashSet<&str> =
-        steps.iter().map(|s| s.target.as_str()).collect();
+    let targets: rustc_hash::FxHashSet<&str> = steps.iter().map(|s| s.target.as_str()).collect();
     let leaf_depths: Vec<u32> = depth_map
         .iter()
         .filter(|(k, _)| !targets.contains(*k))
@@ -461,7 +506,11 @@ fn convergency_score(steps: &[ReactionStep]) -> f64 {
     }
     let max = leaf_depths.iter().copied().max().unwrap_or(0) as f64;
     let min = leaf_depths.iter().copied().min().unwrap_or(0) as f64;
-    if max == 0.0 { 1.0 } else { 1.0 - (max - min) / max }
+    if max == 0.0 {
+        1.0
+    } else {
+        1.0 - (max - min) / max
+    }
 }
 
 /// Estimate synthesis cost for a route.
@@ -618,7 +667,12 @@ pub fn find_routes(
     let initial: SmallVec<[FEntry; 6]> = smallvec![FEntry {
         smiles: target_canonical,
     }];
-    let h0 = compute_h(&initial, env, &mut sa_cache, config.value_estimator.as_ref());
+    let h0 = compute_h(
+        &initial,
+        env,
+        &mut sa_cache,
+        config.value_estimator.as_ref(),
+    );
     heap.push(Node {
         frontier: initial,
         path: None,
@@ -656,10 +710,10 @@ pub fn find_routes(
                 depth: node.depth,
                 score: node.g,
                 building_blocks,
-                confidence: 0.0,           // computed below
-                convergency: 0.0,          // computed below
-                success_probability: 0.0,  // computed below
-                route_cost: 0.0,           // computed below
+                confidence: 0.0,          // computed below
+                convergency: 0.0,         // computed below
+                success_probability: 0.0, // computed below
+                route_cost: 0.0,          // computed below
             });
         }
 
@@ -751,7 +805,8 @@ pub fn find_routes(
                     } else {
                         template_bonus(rule_weight, max_rule_weight)
                     };
-                    let step_c = step_cost(&precs.iter().map(|p| &p.mol).collect::<Vec<_>>()) - bonus;
+                    let step_c =
+                        step_cost(&precs.iter().map(|p| &p.mol).collect::<Vec<_>>()) - bonus;
                     let smiles_list: Vec<String> = precs.iter().map(|p| p.smiles.clone()).collect();
                     (rule_name, step_c, smiles_list)
                 })
@@ -774,7 +829,12 @@ pub fn find_routes(
                 )
                 .collect();
 
-            let new_h = compute_h(&new_frontier, env, &mut sa_cache, config.value_estimator.as_ref());
+            let new_h = compute_h(
+                &new_frontier,
+                env,
+                &mut sa_cache,
+                config.value_estimator.as_ref(),
+            );
 
             // O(1) Arc::clone — shares the parent prefix without copying.
             let new_path = Some(Arc::new(PathNode {
@@ -783,8 +843,8 @@ pub fn find_routes(
                     target: target_smi.clone(),
                     precursors: precursor_smiles.clone(),
                     conditions: conditions_for_rule(rule_name),
-                    atom_economy: None,    // populated in post-processing
-                    step_confidence: 0.0,  // populated in post-processing
+                    atom_economy: None,   // populated in post-processing
+                    step_confidence: 0.0, // populated in post-processing
                     reaction_family: reaction_family_for_rule(rule_name).map(str::to_string),
                     procedure_hint: procedure_hint_for_rule(rule_name).map(str::to_string),
                 },
@@ -840,16 +900,23 @@ pub fn find_routes(
                 let tmw = mol_from_smiles(&step.target)
                     .ok()
                     .map(|m| molecular_weight(&m));
-                let pmw: f64 = step.precursors.iter()
+                let pmw: f64 = step
+                    .precursors
+                    .iter()
                     .filter_map(|s| mol_from_smiles(s).ok())
                     .map(|m| molecular_weight(&m))
                     .sum();
                 step.atom_economy = tmw.and_then(|tw| {
-                    if pmw > 0.0 { Some((tw / pmw * 100.0).min(100.0)) } else { None }
+                    if pmw > 0.0 {
+                        Some((tw / pmw * 100.0).min(100.0))
+                    } else {
+                        None
+                    }
                 });
             }
 
-            route.success_probability = route.steps
+            route.success_probability = route
+                .steps
                 .iter()
                 .map(|s| s.step_confidence)
                 .product::<f64>()

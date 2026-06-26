@@ -21,10 +21,10 @@ use std::time::Instant;
 
 use anyhow::{Result, bail};
 use chematic::chem::molecular_weight;
-use rustc_hash::FxHashSet;
 use renkin::DEFAULT_BUILDING_BLOCKS;
 use renkin::chem_env::{ChemEnv, default_rules, load_rules_from_file, mol_from_smiles};
 use renkin::search::{Route, SearchConfig, find_routes};
+use rustc_hash::FxHashSet;
 use serde::Serialize;
 
 // ── PaRoutes JSON helpers ────────────────────────────────────────────────────
@@ -33,12 +33,18 @@ use serde::Serialize;
 /// Each entry is a route tree rooted at the target molecule.
 fn parse_paroutes(path: &str) -> Result<Vec<(String, String, Option<u32>)>> {
     let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path)?)?;
-    let arr = json.as_array().ok_or_else(|| anyhow::anyhow!("PaRoutes JSON: expected top-level array"))?;
-    Ok(arr.iter().enumerate().map(|(i, node)| {
-        let smiles = node["smiles"].as_str().unwrap_or("").to_string();
-        let gt_depth = count_reactions(node);
-        (smiles, format!("paroutes_{i}"), Some(gt_depth))
-    }).collect())
+    let arr = json
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("PaRoutes JSON: expected top-level array"))?;
+    Ok(arr
+        .iter()
+        .enumerate()
+        .map(|(i, node)| {
+            let smiles = node["smiles"].as_str().unwrap_or("").to_string();
+            let gt_depth = count_reactions(node);
+            (smiles, format!("paroutes_{i}"), Some(gt_depth))
+        })
+        .collect())
 }
 
 /// Count the maximum reaction-node depth in a PaRoutes route tree.
@@ -49,8 +55,7 @@ fn count_reactions(node: &serde_json::Value) -> u32 {
         .map(|kids| {
             kids.iter()
                 .map(|k| {
-                    let is_rxn =
-                        k.get("type").and_then(|t| t.as_str()) == Some("reaction");
+                    let is_rxn = k.get("type").and_then(|t| t.as_str()) == Some("reaction");
                     is_rxn as u32 + count_reactions(k)
                 })
                 .max()
@@ -71,13 +76,23 @@ fn route_diversity(routes: &[Route]) -> f64 {
     let mut count = 0usize;
     for i in 0..routes.len() {
         for j in (i + 1)..routes.len() {
-            let a: FxHashSet<&str> =
-                routes[i].building_blocks.iter().map(|s| s.as_str()).collect();
-            let b: FxHashSet<&str> =
-                routes[j].building_blocks.iter().map(|s| s.as_str()).collect();
+            let a: FxHashSet<&str> = routes[i]
+                .building_blocks
+                .iter()
+                .map(|s| s.as_str())
+                .collect();
+            let b: FxHashSet<&str> = routes[j]
+                .building_blocks
+                .iter()
+                .map(|s| s.as_str())
+                .collect();
             let inter = a.intersection(&b).count();
             let union = a.len() + b.len() - inter;
-            total_sim += if union == 0 { 1.0 } else { inter as f64 / union as f64 };
+            total_sim += if union == 0 {
+                1.0
+            } else {
+                inter as f64 / union as f64
+            };
             count += 1;
         }
     }
@@ -107,7 +122,10 @@ fn step_balanced(target: &str, precursors: &[String]) -> bool {
 }
 
 fn route_balanced(route: &Route) -> bool {
-    route.steps.iter().all(|s| step_balanced(&s.target, &s.precursors))
+    route
+        .steps
+        .iter()
+        .all(|s| step_balanced(&s.target, &s.precursors))
 }
 
 // ── Output structs ───────────────────────────────────────────────────────────
@@ -400,16 +418,25 @@ fn main() -> Result<()> {
     let avg_success_prob = avg_opt(&solved_results, |r| r.best_success_prob);
     let avg_route_cost = avg_opt(&solved_results, |r| r.best_route_cost);
 
-    let diversity_results: Vec<&BenchResult> =
-        results.iter().filter(|r| r.route_diversity.is_some()).collect();
+    let diversity_results: Vec<&BenchResult> = results
+        .iter()
+        .filter(|r| r.route_diversity.is_some())
+        .collect();
     let avg_route_diversity = avg_opt(&diversity_results, |r| r.route_diversity);
 
-    let delta_results: Vec<&BenchResult> =
-        solved_results.iter().filter(|r| r.depth_delta.is_some()).copied().collect();
+    let delta_results: Vec<&BenchResult> = solved_results
+        .iter()
+        .filter(|r| r.depth_delta.is_some())
+        .copied()
+        .collect();
     let avg_depth_delta = if delta_results.is_empty() {
         0.0
     } else {
-        delta_results.iter().filter_map(|r| r.depth_delta).map(|d| d as f64).sum::<f64>()
+        delta_results
+            .iter()
+            .filter_map(|r| r.depth_delta)
+            .map(|d| d as f64)
+            .sum::<f64>()
             / delta_results.len() as f64
     };
 
@@ -449,5 +476,9 @@ fn avg_opt(rows: &[&BenchResult], f: impl Fn(&BenchResult) -> Option<f64>) -> f6
         return 0.0;
     }
     let vals: Vec<f64> = rows.iter().filter_map(|r| f(r)).collect();
-    if vals.is_empty() { 0.0 } else { vals.iter().sum::<f64>() / vals.len() as f64 }
+    if vals.is_empty() {
+        0.0
+    } else {
+        vals.iter().sum::<f64>() / vals.len() as f64
+    }
 }

@@ -773,10 +773,24 @@ pub fn bond_pairs_from_smirks(smirks: &str) -> Vec<(u8, u8)> {
     };
     // Same element table used in required_elements_from_smirks.
     const ELEMENTS: &[(&str, u8)] = &[
-        ("Cl", 17), ("Br", 35), ("Si", 14), ("Se", 34), ("Te", 52),
-        ("Sn", 50), ("Zn", 30), ("Pd", 46), ("Cu", 29), ("Fe", 26),
-        ("B", 5), ("C", 6), ("N", 7), ("O", 8), ("F", 9),
-        ("P", 15), ("S", 16), ("I", 53),
+        ("Cl", 17),
+        ("Br", 35),
+        ("Si", 14),
+        ("Se", 34),
+        ("Te", 52),
+        ("Sn", 50),
+        ("Zn", 30),
+        ("Pd", 46),
+        ("Cu", 29),
+        ("Fe", 26),
+        ("B", 5),
+        ("C", 6),
+        ("N", 7),
+        ("O", 8),
+        ("F", 9),
+        ("P", 15),
+        ("S", 16),
+        ("I", 53),
     ];
     fn elem_at(bytes: &[u8], mut j: usize) -> Option<u8> {
         while j < bytes.len() && matches!(bytes[j], b'@' | b'+' | b'-' | b'#') {
@@ -805,7 +819,9 @@ pub fn bond_pairs_from_smirks(smirks: &str) -> Vec<(u8, u8)> {
                     }
                     prev = Some(elem);
                 }
-                while i < bytes.len() && bytes[i] != b']' { i += 1; }
+                while i < bytes.len() && bytes[i] != b']' {
+                    i += 1;
+                }
             }
             b'(' => stack.push(prev),
             b')' => prev = stack.pop().flatten(),
@@ -850,7 +866,11 @@ impl TemplateBondIndex {
                 }
             }
         }
-        Self { index, graph_indices, fallback_indices }
+        Self {
+            index,
+            graph_indices,
+            fallback_indices,
+        }
     }
 
     /// Return indices (into the original `rules` slice) of templates relevant to `mol`.
@@ -862,10 +882,14 @@ impl TemplateBondIndex {
 
         // Always include graph-based and fallback rules.
         for &idx in &self.graph_indices {
-            if seen.insert(idx) { candidates.push(idx); }
+            if seen.insert(idx) {
+                candidates.push(idx);
+            }
         }
         for &idx in &self.fallback_indices {
-            if seen.insert(idx) { candidates.push(idx); }
+            if seen.insert(idx) {
+                candidates.push(idx);
+            }
         }
 
         // Retrieve SMIRKS rules matching bonds present in the target.
@@ -873,12 +897,16 @@ impl TemplateBondIndex {
             let e1 = mol.atom(atom_idx).element.atomic_number();
             for (nb_idx, _bond_idx) in mol.neighbors(atom_idx) {
                 // Only process each bond once (lower-index atom first).
-                if nb_idx <= atom_idx { continue; }
+                if nb_idx <= atom_idx {
+                    continue;
+                }
                 let e2 = mol.atom(nb_idx).element.atomic_number();
                 let pair = if e1 <= e2 { (e1, e2) } else { (e2, e1) };
                 if let Some(indices) = self.index.get(&pair) {
                     for &idx in indices {
-                        if seen.insert(idx) { candidates.push(idx); }
+                        if seen.insert(idx) {
+                            candidates.push(idx);
+                        }
                     }
                 }
             }
@@ -888,7 +916,9 @@ impl TemplateBondIndex {
             // Sort SMIRKS portion by weight desc, keep top_k total.
             let fixed = self.graph_indices.len() + self.fallback_indices.len();
             candidates[fixed..].sort_unstable_by(|&a, &b| {
-                rules[b].weight.partial_cmp(&rules[a].weight)
+                rules[b]
+                    .weight
+                    .partial_cmp(&rules[a].weight)
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
             candidates.truncate(fixed + top_k);

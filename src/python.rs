@@ -1,7 +1,9 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-use crate::chem_env::{ChemEnv, default_rules, elem_symbols_to_mask, load_rules_from_file, mol_from_smiles};
+use crate::chem_env::{
+    ChemEnv, default_rules, elem_symbols_to_mask, load_rules_from_file, mol_from_smiles,
+};
 use crate::search::{SearchConfig, find_routes};
 
 /// Find retrosynthetic routes for a target molecule.
@@ -57,7 +59,8 @@ pub fn find_routes_py(
         std::fs::read_to_string(path)
             .ok()
             .map(|content| {
-                content.lines()
+                content
+                    .lines()
                     .filter(|l| !l.is_empty() && !l.starts_with('#'))
                     .filter_map(|l| {
                         let (smiles, price) = l.split_once(',')?;
@@ -107,7 +110,9 @@ fn py_reverse_smirks(s: &str) -> Option<String> {
 }
 
 fn py_is_valid_smiles(s: &str) -> bool {
-    let has_aromatic = s.bytes().any(|b| matches!(b, b'c' | b'n' | b'o' | b's' | b'p'));
+    let has_aromatic = s
+        .bytes()
+        .any(|b| matches!(b, b'c' | b'n' | b'o' | b's' | b'p'));
     !has_aromatic || s.bytes().any(|b| b.is_ascii_digit())
 }
 
@@ -119,7 +124,10 @@ fn py_predict_forward_core(
     use chematic::rxn::run_reactants;
     use chematic::smiles::canonical_smiles as canon;
 
-    let mols: Vec<_> = reactants.iter().filter_map(|s| mol_from_smiles(s).ok()).collect();
+    let mols: Vec<_> = reactants
+        .iter()
+        .filter_map(|s| mol_from_smiles(s).ok())
+        .collect();
     if mols.len() != reactants.len() {
         return Err("one or more reactant SMILES failed to parse".into());
     }
@@ -143,7 +151,10 @@ fn py_predict_forward_core(
         .collect();
 
     preds.sort_unstable_by(|a, b| {
-        b["weight"].as_f64().unwrap_or(0.0).partial_cmp(&a["weight"].as_f64().unwrap_or(0.0))
+        b["weight"]
+            .as_f64()
+            .unwrap_or(0.0)
+            .partial_cmp(&a["weight"].as_f64().unwrap_or(0.0))
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     preds.truncate(max_results);
@@ -199,7 +210,8 @@ pub fn validate_forward_py(
 
     let v: serde_json::Value = serde_json::from_str(route_json)
         .map_err(|e| PyValueError::new_err(format!("invalid JSON: {e}")))?;
-    let steps = v["steps"].as_array()
+    let steps = v["steps"]
+        .as_array()
         .ok_or_else(|| PyValueError::new_err("route JSON must have a 'steps' array"))?;
 
     let mut rules = default_rules();
@@ -210,16 +222,19 @@ pub fn validate_forward_py(
     let mut results: Vec<serde_json::Value> = Vec::new();
     for (idx, step) in steps.iter().enumerate() {
         let target = step["target"].as_str().unwrap_or("");
-        let prec_refs: Vec<&str> = step["precursors"].as_array()
+        let prec_refs: Vec<&str> = step["precursors"]
+            .as_array()
             .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
             .unwrap_or_default();
         let preds = py_predict_forward_core(&prec_refs, &rules, max_results)
             .map_err(|e| PyValueError::new_err(e))?;
-        let target_canon = mol_from_smiles(target).ok()
+        let target_canon = mol_from_smiles(target)
+            .ok()
             .map(|m| canon(&m))
             .unwrap_or_else(|| target.to_string());
         let verified = preds.iter().any(|p| {
-            p["products"].as_array()
+            p["products"]
+                .as_array()
                 .map(|a| a.iter().any(|v| v.as_str() == Some(&target_canon)))
                 .unwrap_or(false)
         });

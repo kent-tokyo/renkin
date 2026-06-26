@@ -363,7 +363,7 @@ fn main() -> Result<()> {
             (Some(bd), Some(gd)) => Some(bd as i32 - *gd as i32),
             _ => None,
         };
-        let atom_balance_ok = routes.first().map(|r| route_balanced(r));
+        let atom_balance_ok = routes.first().map(route_balanced);
 
         if solved {
             solved_count += 1;

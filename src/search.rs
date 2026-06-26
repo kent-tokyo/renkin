@@ -529,10 +529,10 @@ fn compute_route_cost(
         .building_blocks
         .iter()
         .map(|smiles| {
-            if let Some(map) = prices {
-                if let Some(&p) = map.get(smiles.as_str()) {
-                    return p;
-                }
+            if let Some(map) = prices
+                && let Some(&p) = map.get(smiles.as_str())
+            {
+                return p;
             }
             mol_from_smiles(smiles)
                 .ok()
@@ -923,7 +923,7 @@ pub fn find_routes(
                 .clamp(0.0, 1.0);
 
             route.convergency = convergency_score(&route.steps);
-            route.route_cost = compute_route_cost(&route, config.bb_price_map.as_ref());
+            route.route_cost = compute_route_cost(route, config.bb_price_map.as_ref());
         }
     }
 

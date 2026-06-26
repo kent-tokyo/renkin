@@ -134,8 +134,12 @@ jobs:
       - name: Install and verify
         run: |
           VERSION="${PKG_TAG#v}"
-          sleep 60
-          pip install "renkin==${VERSION}" --no-cache-dir
+          for i in 1 2 3 4 5; do
+            sleep 60
+            pip install "renkin==${VERSION}" --no-cache-dir 2>/dev/null && break
+            echo "Attempt $i/5 failed, retrying..."
+            [ "$i" -eq 5 ] && exit 1
+          done
           python -c "import renkin; v=renkin.__version__; print(v); assert v=='${VERSION}', f'expected {VERSION!r}, got {v!r}'"
 
   # ── GitHub Release ────────────────────────────────────────────────────────

@@ -97,8 +97,8 @@ fn main() -> Result<()> {
             // Parse route JSON as a Value to extract steps.
             // Accepts both a route object {"steps":[...]} and the full find_routes output
             // {"routes":[{"steps":[...]}]} so that piping renkin output works directly.
-            let v: serde_json::Value =
-                serde_json::from_str(&json_str).map_err(|e| anyhow::anyhow!("invalid JSON: {e}"))?;
+            let v: serde_json::Value = serde_json::from_str(&json_str)
+                .map_err(|e| anyhow::anyhow!("invalid JSON: {e}"))?;
 
             let steps = if let Some(arr) = v["steps"].as_array() {
                 arr

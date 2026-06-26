@@ -46,6 +46,10 @@ required-features = ["nn-scoring"]
 name = "renkin-mcp"
 path = "src/bin/mcp.rs"
 
+[[bin]]
+name = "renkin-doctor"
+path = "src/bin/doctor.rs"
+
 [lib]
 name = "renkin"
 crate-type = ["cdylib", "rlib"]

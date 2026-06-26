@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """
-Extract retrosynthetic SMIRKS templates from USPTO-50k training set,
+Extract retrosynthetic SMIRKS templates from a reaction dataset,
 then simplify them to chematic-compatible basic SMARTS.
 
 Usage:
+    # HuggingFace dataset (default: USPTO-50k)
     python3 scripts/extract_templates.py [--top N] [--output data/templates_extracted.smi]
+
+    # Local reactions file (one reaction SMILES per line: reactants>>products)
+    python3 scripts/extract_templates.py --reactions reactions.smiles --top 50000 \
+        --output data/templates_extracted_50000.smi
 
 Output format (one template per line, tab-separated):
     <simplified_SMIRKS>  <count>
@@ -95,22 +100,53 @@ def is_valid_for_chematic(smirks: str) -> bool:
         return False
 
 
-def extract_templates(top_n: int, output_path: str) -> None:
-    print("Loading USPTO-50k training set...", flush=True)
-    ds = load_dataset("bisectgroup/USPTO_50K", split="train")
-    print(f"  {len(ds)} reactions loaded", flush=True)
+def load_reactions_from_file(path: str) -> list:
+    """Load reactions from a plain text file (one reaction SMILES per line)."""
+    rows = []
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            # Accept tab-separated (first column is reaction SMILES) or bare SMILES
+            rxn = line.split('\t')[0]
+            if '>>' not in rxn:
+                continue
+            reactants, _, products = rxn.partition('>>')
+            rows.append({
+                "reactants": reactants,
+                "products": products,
+                "_id": str(len(rows)),
+            })
+    return rows
+
+
+def extract_templates(top_n: int, output_path: str,
+                      reactions_path: str | None = None,
+                      dataset_id: str = "bisectgroup/USPTO_50K",
+                      split: str = "train") -> None:
+    if reactions_path:
+        print(f"Loading reactions from {reactions_path}...", flush=True)
+        rows = load_reactions_from_file(reactions_path)
+        source_desc = reactions_path
+    else:
+        print(f"Loading {dataset_id} ({split} split)...", flush=True)
+        ds = load_dataset(dataset_id, split=split)
+        rows = ds
+        source_desc = f"{dataset_id} ({split} split, {len(ds)} reactions)"
+    print(f"  {len(rows)} reactions loaded", flush=True)
 
     counts: Counter = Counter()
     errors = 0
 
-    for i, row in enumerate(ds):
+    for i, row in enumerate(rows):
         if i % 5000 == 0:
-            print(f"  Processing {i}/{len(ds)}...", flush=True)
+            print(f"  Processing {i}/{len(rows)}...", flush=True)
         try:
             reaction = {
                 "reactants": row["reactants"],
-                "products": row["product"],
-                "_id": row["id"],
+                "products": row["products"] if "products" in row else row.get("product", ""),
+                "_id": row["_id"] if "_id" in row else row.get("id", str(i)),
             }
             result = extract_from_reaction(reaction)
             template = result.get("reaction_smarts")
@@ -135,8 +171,8 @@ def extract_templates(top_n: int, output_path: str) -> None:
     print(f"Writing top {len(top)} templates to {output_path}", flush=True)
 
     with open(output_path, "w") as f:
-        f.write("# RENKIN extracted SMIRKS templates from USPTO-50k training set\n")
-        f.write(f"# Source: bisectgroup/USPTO_50K (train split, {len(ds)} reactions)\n")
+        f.write("# RENKIN extracted SMIRKS templates\n")
+        f.write(f"# Source: {source_desc}\n")
         f.write("# Tool: rdchiral + simplification for chematic compatibility\n")
         f.write("# Format: SMIRKS<TAB>count\n")
         for smirks, count in top:
@@ -154,9 +190,19 @@ def main() -> None:
                         help="Number of most frequent templates to keep (default: 300)")
     parser.add_argument("--output", default="data/templates_extracted.smi",
                         help="Output file path")
+    parser.add_argument("--reactions", default=None,
+                        help="Local reaction SMILES file (one per line: reactants>>products). "
+                             "Takes precedence over --dataset when specified.")
+    parser.add_argument("--dataset", default="bisectgroup/USPTO_50K",
+                        help="HuggingFace dataset ID (default: bisectgroup/USPTO_50K)")
+    parser.add_argument("--split", default="train",
+                        help="HuggingFace dataset split (default: train)")
     args = parser.parse_args()
 
-    extract_templates(args.top, args.output)
+    extract_templates(args.top, args.output,
+                      reactions_path=args.reactions,
+                      dataset_id=args.dataset,
+                      split=args.split)
 
 
 if __name__ == "__main__":

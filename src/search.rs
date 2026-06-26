@@ -48,6 +48,15 @@ pub struct ReactionStep {
     /// Hand-crafted rules (weight=1.0) yield lower values when high-frequency extracted
     /// templates are present; all weights equal → all step_confidence = 1.0.
     pub step_confidence: f64,
+    /// Suggested experimental procedure hint for the forward reaction.
+    /// Populated for hand-crafted rules; None for extracted templates.
+    /// Placeholder for QFANG-style structured procedure generation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub procedure_hint: Option<String>,
+    /// Reaction family for this step (e.g. "suzuki_coupling", "esterification").
+    /// None for extracted templates that have no manual assignment.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reaction_family: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -221,23 +230,121 @@ fn is_bb(smiles: &str, env: &ChemEnv) -> bool {
         .unwrap_or(false)
 }
 
-fn compute_h(frontier: &[FEntry], env: &ChemEnv, sa_cache: &mut FxHashMap<String, f64>) -> f64 {
+/// Pluggable molecule value estimator for the A* heuristic (Retro*-style).
+///
+/// Returns the estimated synthesis cost for a SMILES string (≥ 0.0; higher = harder).
+/// The default implementation uses SA Score. Implement this trait to plug in a neural
+/// value function without changing the search algorithm.
+pub trait MoleculeValueEstimator: Send + Sync {
+    fn estimate_cost(&self, smiles: &str) -> f64;
+}
+
+/// Default estimator: SA Score-based heuristic (h ∈ [1.0, 1.5] per unsolved molecule).
+/// Admissible because step_cost ≥ 1.0 per step, so h ≤ 1.5 < true cost.
+pub struct SaScoreEstimator;
+
+impl MoleculeValueEstimator for SaScoreEstimator {
+    fn estimate_cost(&self, smiles: &str) -> f64 {
+        let v = mol_from_smiles(smiles)
+            .map(|m| sa_score(&m).clamp(1.0, 10.0))
+            .unwrap_or(5.5);
+        1.0 + 0.5 * (v - 1.0) / 9.0
+    }
+}
+
+/// Pluggable template prior for A* expansion scoring (Retro*-style).
+///
+/// Returns a bonus ≥ 0.0: how relevant `template_name` is for expanding `target_smiles`.
+/// Higher bonus → smaller effective step cost → template is tried earlier in A\* search.
+/// The default implementation (`FrequencyPrior`) uses log-frequency from training data.
+pub trait ReactionPrior: Send + Sync {
+    fn prior(&self, template_name: &str, target_smiles: &str) -> f64;
+}
+
+/// Default prior: log-frequency weight from USPTO training data (same as pre-v0.9 behavior).
+///
+/// `weight = ln(count + 1)` for extracted templates; hand-crafted rules use `weight = 1.0`.
+/// The bonus is `template_bonus(weight, max_weight)` ∈ [0.0, 0.2].
+pub struct FrequencyPrior {
+    pub rule_weights: std::collections::HashMap<String, f64>,
+    pub max_weight: f64,
+}
+
+impl FrequencyPrior {
+    pub fn from_rules(rules: &[RetroRule]) -> Self {
+        let max_weight = rules.iter().map(|r| r.weight).fold(1.0_f64, f64::max);
+        let rule_weights = rules.iter().map(|r| (r.name.clone(), r.weight)).collect();
+        Self { rule_weights, max_weight }
+    }
+}
+
+impl ReactionPrior for FrequencyPrior {
+    fn prior(&self, template_name: &str, _target_smiles: &str) -> f64 {
+        let w = self.rule_weights.get(template_name).copied().unwrap_or(1.0);
+        template_bonus(w, self.max_weight)
+    }
+}
+
+fn compute_h(
+    frontier: &[FEntry],
+    env: &ChemEnv,
+    sa_cache: &mut FxHashMap<String, f64>,
+    estimator: Option<&std::sync::Arc<dyn MoleculeValueEstimator>>,
+) -> f64 {
     frontier
         .iter()
         .filter(|e| !is_bb(&e.smiles, env))
         .map(|e| {
-            let sa = if let Some(&v) = sa_cache.get(&e.smiles) {
-                v
-            } else {
-                let v = mol_from_smiles(&e.smiles)
-                    .map(|m| sa_score(&m).clamp(1.0, 10.0))
-                    .unwrap_or(5.5);
-                sa_cache.insert(e.smiles.clone(), v);
-                v
-            };
-            1.0 + 0.5 * (sa - 1.0) / 9.0
+            if let Some(est) = estimator {
+                return est.estimate_cost(&e.smiles);
+            }
+            // Default: SA Score (cached)
+            if let Some(&v) = sa_cache.get(&e.smiles) {
+                return 1.0 + 0.5 * (v - 1.0) / 9.0;
+            }
+            let v = mol_from_smiles(&e.smiles)
+                .map(|m| sa_score(&m).clamp(1.0, 10.0))
+                .unwrap_or(5.5);
+            sa_cache.insert(e.smiles.clone(), v);
+            1.0 + 0.5 * (v - 1.0) / 9.0
         })
         .sum()
+}
+
+/// Classify a rule name into a human-readable reaction family.
+/// Hand-crafted rules only; extracted templates return None.
+fn reaction_family_for_rule(rule: &str) -> Option<&'static str> {
+    match rule {
+        "ester_cleavage"                => Some("esterification"),
+        "amide_cleavage"                => Some("amide_coupling"),
+        "friedel_crafts_acylation_retro"=> Some("friedel_crafts_acylation"),
+        "aryl_carboxylation_retro"      => Some("decarboxylation"),
+        "buchwald_hartwig_retro"        => Some("buchwald_hartwig"),
+        "aryl_amine_retro"              => Some("chan_lam_coupling"),
+        "aryl_ether_retro"              => Some("ullmann_ether"),
+        "aryl_chloride_retro"
+        | "aryl_iodide_retro"
+        | "aryl_fluoride_snAr_retro"    => Some("c_halide_activation"),
+        "aryl_chloride_to_bromide"      => Some("halogen_exchange"),
+        "suzuki_retro"                  => Some("suzuki_coupling"),
+        "heck_retro"
+        | "heck_retro_terminal"         => Some("heck_reaction"),
+        "negishi_retro"                 => Some("negishi_coupling"),
+        "wittig_retro"                  => Some("wittig_reaction"),
+        "reductive_amination_retro"     => Some("reductive_amination"),
+        "sonogashira_retro"             => Some("sonogashira_coupling"),
+        "sulfonamide_retro"             => Some("sulfonamide_formation"),
+        "diaryl_sulfone_retro"          => Some("friedel_crafts_sulfonylation"),
+        "boc_deprotection_retro"        => Some("boc_deprotection"),
+        "cbz_deprotection_retro"        => Some("cbz_deprotection"),
+        "n_benzylation_retro"           => Some("n_benzylation"),
+        "grignard_addition_retro"       => Some("grignard_addition"),
+        "claisen_retro"                 => Some("claisen_condensation"),
+        "michael_retro"                 => Some("michael_addition"),
+        "acyl_chloride_from_acid"       => Some("acyl_chloride_formation"),
+        "alcohol_oxidation_retro"       => Some("carbonyl_reduction"),
+        _                               => None,
+    }
 }
 
 /// Rule-based reaction conditions for hand-crafted retro rules.
@@ -294,6 +401,34 @@ fn conditions_for_rule(rule: &str) -> Option<ReactionConditions> {
         "acyl_chloride_from_acid"     => cond!("(COCl)₂ (1.2 eq) + cat. DMF", "DCM", "0 °C → rt"),
         "cbz_deprotection_retro"      => cond!("H₂ (1 atm), Pd/C (10 %)", "EtOH", "rt"),
         _                             => None,
+    }
+}
+
+/// One-line experimental procedure hint for hand-crafted retro rules (forward direction).
+/// Placeholder infrastructure for QFANG-style structured procedure generation.
+fn procedure_hint_for_rule(rule: &str) -> Option<&'static str> {
+    match rule {
+        "ester_cleavage"                => Some("Dissolve in THF/H₂O, add NaOH (2 eq), stir at 60 °C, acidify to pH 2."),
+        "amide_cleavage"                => Some("Reflux in 6M HCl or add LiOH (3 eq) in THF/H₂O at 60 °C."),
+        "friedel_crafts_acylation_retro"=> Some("Add acid chloride to arene + AlCl₃ (1.2 eq) in DCM at 0 °C, warm to rt."),
+        "buchwald_hartwig_retro"        => Some("Combine aryl halide + amine + Pd₂(dba)₃/XPhos in toluene, heat at 100 °C."),
+        "aryl_ether_retro"              => Some("Mix aryl halide + phenol + Cs₂CO₃ (2 eq) in DMF, heat at 110 °C."),
+        "suzuki_retro"                  => Some("Combine aryl boronate + aryl halide + Pd(PPh₃)₄ in EtOH/H₂O, reflux at 80 °C."),
+        "heck_retro" | "heck_retro_terminal"
+                                        => Some("Add alkene + aryl halide + Pd(OAc)₂/PPh₃ in DMF with Et₃N at 100 °C."),
+        "wittig_retro"                  => Some("Add aldehyde to Ph₃P=CHR (Wittig ylide) in toluene at 0 °C, warm to rt."),
+        "reductive_amination_retro"     => Some("Mix aldehyde + amine in MeOH, add NaBH₃CN (1.5 eq), stir at rt."),
+        "sonogashira_retro"             => Some("Combine terminal alkyne + aryl halide + Pd/CuI in Et₃N at 60 °C."),
+        "sulfonamide_retro"             => Some("Add sulfonyl chloride to amine + Et₃N (2 eq) in DCM at 0 °C."),
+        "boc_deprotection_retro"        => Some("Treat with TFA (20% in DCM) at rt for 1 h, then evaporate."),
+        "cbz_deprotection_retro"        => Some("Hydrogenate (H₂, 1 atm) over Pd/C (10%) in EtOH at rt."),
+        "grignard_addition_retro"       => Some("Add carbonyl to Grignard reagent in dry THF at 0 °C, then rt; quench with NH₄Cl."),
+        "acyl_chloride_from_acid"       => Some("Add oxalyl chloride (1.2 eq) + cat. DMF to carboxylic acid in DCM at 0 °C."),
+        "alcohol_oxidation_retro"       => Some("Reduce ketone/aldehyde with NaBH₄ (1.2 eq) in EtOH at 0 °C → rt."),
+        "claisen_retro"                 => Some("Deprotonate ester α-position with LDA (2 eq) in dry THF at −78 °C, add electrophile."),
+        "michael_retro"                 => Some("Combine Michael donor + acceptor + K₂CO₃ or DBU (1.2 eq) in THF at rt."),
+        "n_benzylation_retro"           => Some("React amine + benzyl halide + K₂CO₃ (2 eq) in DMF at 60 °C."),
+        _                               => None,
     }
 }
 
@@ -398,6 +533,12 @@ pub struct SearchConfig {
     /// When Some, route_cost uses these prices; unmatched BBs fall back to SA Score.
     /// When None, route_cost uses SA Score for all BBs.
     pub bb_price_map: Option<std::collections::HashMap<String, f64>>,
+    /// Custom molecule value estimator for the A* heuristic.
+    /// None = use `SaScoreEstimator` (default SA Score-based behaviour).
+    pub value_estimator: Option<std::sync::Arc<dyn MoleculeValueEstimator>>,
+    /// Custom reaction prior for template scoring.
+    /// None = use `FrequencyPrior` (log-frequency weighting, same as pre-v0.9 behaviour).
+    pub reaction_prior: Option<std::sync::Arc<dyn ReactionPrior>>,
     /// Phase B: ONNX template relevance scorer (CLI/Python only, not WASM).
     /// When Some, pre-filters rules to top-K most relevant before SMARTS matching.
     #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
@@ -415,6 +556,8 @@ impl Default for SearchConfig {
             verbose: false,
             bond_index: false,
             bb_price_map: None,
+            value_estimator: None,
+            reaction_prior: None,
             #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
             nn_scorer: None,
         }
@@ -475,7 +618,7 @@ pub fn find_routes(
     let initial: SmallVec<[FEntry; 6]> = smallvec![FEntry {
         smiles: target_canonical,
     }];
-    let h0 = compute_h(&initial, env, &mut sa_cache);
+    let h0 = compute_h(&initial, env, &mut sa_cache, config.value_estimator.as_ref());
     heap.push(Node {
         frontier: initial,
         path: None,
@@ -603,8 +746,12 @@ pub fn find_routes(
                     !precs.is_empty() && !precs.iter().any(|p| p.smiles == target_smi)
                 })
                 .map(|(rule_name, rule_weight, precs)| {
-                    let step_c = step_cost(&precs.iter().map(|p| &p.mol).collect::<Vec<_>>())
-                        - template_bonus(rule_weight, max_rule_weight);
+                    let bonus = if let Some(ref prior) = config.reaction_prior {
+                        prior.prior(&rule_name, &target_smi)
+                    } else {
+                        template_bonus(rule_weight, max_rule_weight)
+                    };
+                    let step_c = step_cost(&precs.iter().map(|p| &p.mol).collect::<Vec<_>>()) - bonus;
                     let smiles_list: Vec<String> = precs.iter().map(|p| p.smiles.clone()).collect();
                     (rule_name, step_c, smiles_list)
                 })
@@ -627,7 +774,7 @@ pub fn find_routes(
                 )
                 .collect();
 
-            let new_h = compute_h(&new_frontier, env, &mut sa_cache);
+            let new_h = compute_h(&new_frontier, env, &mut sa_cache, config.value_estimator.as_ref());
 
             // O(1) Arc::clone — shares the parent prefix without copying.
             let new_path = Some(Arc::new(PathNode {
@@ -638,6 +785,8 @@ pub fn find_routes(
                     conditions: conditions_for_rule(rule_name),
                     atom_economy: None,    // populated in post-processing
                     step_confidence: 0.0,  // populated in post-processing
+                    reaction_family: reaction_family_for_rule(rule_name).map(str::to_string),
+                    procedure_hint: procedure_hint_for_rule(rule_name).map(str::to_string),
                 },
                 prev: node.path.clone(),
             }));

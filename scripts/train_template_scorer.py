@@ -4,17 +4,27 @@ Train an MLP template relevance scorer and export it as ONNX.
 
 Pipeline:
   1. Load templates from file -> {smirks: idx} index
-  2. Load USPTO-50k training set (HuggingFace: bisectgroup/USPTO_50K)
+  2. Load reactions (local file or HuggingFace dataset)
   3. For each reaction: extract SMIRKS -> simplify -> look up index,
      compute ECFP4 (radius=2, 2048 bits) of product SMILES
   4. Train MLP: 2048 -> 1024 -> 512 -> N_templates (cross-entropy)
   5. Export as ONNX with input="input" [1,2048] and output="output" [1,N]
 
 Usage:
+    # HuggingFace dataset (default: USPTO-50k)
     python3 scripts/train_template_scorer.py \
         --templates data/templates_extracted_5000.smi \
         --output data/template_scorer.onnx \
         [--epochs 50] [--batch-size 512] [--lr 1e-3]
+
+    # Local reactions file (use same file as extract_templates.py --reactions)
+    python3 scripts/train_template_scorer.py \
+        --templates data/templates_extracted_50000.smi \
+        --reactions /tmp/uspto_mit.smiles \
+        --output data/template_scorer_50k.onnx \
+        --device mps \
+        --epochs 50 \
+        --checkpoint-every 10
 """
 
 import argparse
@@ -125,24 +135,51 @@ def load_template_index(path: str) -> dict:
     return idx
 
 
-def build_dataset(template_index: dict, verbose: bool = True):
-    print("Loading USPTO-50k train split...", flush=True)
-    ds = load_dataset("bisectgroup/USPTO_50K", split="train")
-    print(f"  {len(ds)} reactions", flush=True)
+def _load_rows(reactions_path=None, dataset_id="bisectgroup/USPTO_50K", split="train"):
+    """Load reaction rows from a local file or HuggingFace dataset."""
+    if reactions_path:
+        print(f"Loading reactions from {reactions_path}...", flush=True)
+        rows = []
+        with open(reactions_path) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                rxn = line.split('\t')[0]
+                if '>>' not in rxn:
+                    continue
+                reactants, _, products = rxn.partition('>>')
+                rows.append({"reactants": reactants, "products": products, "_id": str(len(rows))})
+        print(f"  {len(rows)} reactions loaded", flush=True)
+        return rows
+    else:
+        print(f"Loading {dataset_id} ({split} split)...", flush=True)
+        ds = load_dataset(dataset_id, split=split)
+        print(f"  {len(ds)} reactions", flush=True)
+        return ds
+
+
+def build_dataset(template_index: dict, verbose: bool = True,
+                  reactions_path=None, dataset_id="bisectgroup/USPTO_50K", split="train"):
+    rows = _load_rows(reactions_path, dataset_id, split)
 
     # Pass 1: extract (product_smiles, template_label) pairs
     pairs = []  # list of (smiles, label)
     skipped = {"no_template": 0, "not_in_index": 0}
 
-    for i, row in enumerate(ds):
+    for i, row in enumerate(rows):
         if verbose and i % 5000 == 0:
-            print(f"  pass1 {i}/{len(ds)} | pairs so far: {len(pairs)}", flush=True)
+            print(f"  pass1 {i}/{len(rows)} | pairs so far: {len(pairs)}", flush=True)
 
         try:
+            # Support both HuggingFace schema and local file schema
+            reactants = row.get("reactants", "")
+            products = row.get("products") or row.get("product", "")
+            row_id = row.get("_id") or row.get("id", str(i))
             result = extract_from_reaction({
-                "reactants": row["reactants"],
-                "products": row["product"],
-                "_id": row["id"],
+                "reactants": reactants,
+                "products": products,
+                "_id": row_id,
             })
             tmpl = result.get("reaction_smarts")
         except Exception:
@@ -159,7 +196,7 @@ def build_dataset(template_index: dict, verbose: bool = True):
             skipped["not_in_index"] += 1
             continue
 
-        pairs.append((row["product"], label))
+        pairs.append((products, label))
 
     print(f"  pass1 done: {len(pairs)} candidate pairs", flush=True)
 
@@ -188,11 +225,21 @@ def build_dataset(template_index: dict, verbose: bool = True):
 
 # ── Training ───────────────────────────────────────────────────────────────────
 
-def train_model(X, y, n_templates: int, epochs: int, batch_size: int, lr: float):
-    device = torch.device("cpu")
+def train_model(X, y, n_templates: int, epochs: int, batch_size: int, lr: float,
+                device_str: str = "cpu", checkpoint_every: int = 0,
+                checkpoint_stem: str = ""):
+    device = torch.device(device_str)
     model = TemplateScorer(n_templates).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
     criterion = nn.CrossEntropyLoss()
+
+    n_params = sum(p.numel() for p in model.parameters())
+    print(
+        f"Training MLP: 2048->1024->512->{n_templates} | "
+        f"{n_params/1e6:.1f}M params | {len(X)} samples | device={device_str}",
+        flush=True,
+    )
 
     X_t = torch.from_numpy(X)
     y_t = torch.from_numpy(y)
@@ -222,9 +269,20 @@ def train_model(X, y, n_templates: int, epochs: int, batch_size: int, lr: float)
             correct += (logits.argmax(dim=1) == yb).sum().item()
             batches += 1
 
+        scheduler.step()
         acc = correct / n * 100
         avg_loss = total_loss / batches
-        print(f"Epoch {epoch:3d}/{epochs}  loss={avg_loss:.4f}  acc={acc:.1f}%", flush=True)
+        current_lr = scheduler.get_last_lr()[0]
+        print(
+            f"Epoch {epoch:3d}/{epochs}  loss={avg_loss:.4f}  acc={acc:.1f}%  lr={current_lr:.2e}",
+            flush=True,
+        )
+
+        if checkpoint_every > 0 and epoch % checkpoint_every == 0 and checkpoint_stem:
+            ckpt_path = f"{checkpoint_stem}_ep{epoch}.pt"
+            torch.save({"state_dict": model.state_dict(), "n_templates": n_templates,
+                        "epoch": epoch}, ckpt_path)
+            print(f"  Checkpoint saved: {ckpt_path}", flush=True)
 
     return model
 
@@ -258,31 +316,52 @@ def main() -> None:
         "--output", default="data/template_scorer.onnx",
         help="Path for the output ONNX model",
     )
+    parser.add_argument(
+        "--reactions", default=None,
+        help="Local reactions file (one reactants>>products per line). "
+             "Takes precedence over --dataset when specified.",
+    )
+    parser.add_argument("--dataset", default="bisectgroup/USPTO_50K",
+                        help="HuggingFace dataset ID (default: bisectgroup/USPTO_50K)")
+    parser.add_argument("--split", default="train",
+                        help="HuggingFace dataset split (default: train)")
+    parser.add_argument("--device", default="cpu",
+                        help="Torch device: cpu | cuda | mps (default: cpu)")
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--batch-size", type=int, default=512)
     parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--checkpoint-every", type=int, default=0,
+                        help="Save checkpoint every N epochs (0 = disabled)")
     parser.add_argument(
         "--save-pt", default="",
-        help="Also save trained weights as a .pt file (for re-export without retraining)",
+        help="Also save final weights as a .pt file (for re-export without retraining)",
     )
     args = parser.parse_args()
 
     template_index = load_template_index(args.templates)
     n_templates = len(template_index)
 
-    X, y = build_dataset(template_index)
+    X, y = build_dataset(template_index,
+                         reactions_path=args.reactions,
+                         dataset_id=args.dataset,
+                         split=args.split)
 
     if len(X) == 0:
         print("ERROR: no training pairs found.", file=sys.stderr)
         sys.exit(1)
 
-    print(f"\nTraining MLP: 2048->1024->512->{n_templates} | {len(X)} samples", flush=True)
-    model = train_model(X, y, n_templates, args.epochs, args.batch_size, args.lr)
+    checkpoint_stem = Path(args.output).stem if args.checkpoint_every > 0 else ""
+    model = train_model(X, y, n_templates,
+                        epochs=args.epochs,
+                        batch_size=args.batch_size,
+                        lr=args.lr,
+                        device_str=args.device,
+                        checkpoint_every=args.checkpoint_every,
+                        checkpoint_stem=checkpoint_stem)
 
     if args.save_pt:
-        pt_path = args.save_pt
-        torch.save({"state_dict": model.state_dict(), "n_templates": n_templates}, pt_path)
-        print(f"Saved model weights to {pt_path}", flush=True)
+        torch.save({"state_dict": model.state_dict(), "n_templates": n_templates}, args.save_pt)
+        print(f"Saved model weights to {args.save_pt}", flush=True)
 
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     export_onnx(model, args.output)

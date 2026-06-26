@@ -193,6 +193,8 @@ Under RENKIN's evaluation setting (see definition above), RENKIN reaches **78.1%
 *Note: LocalRetro (53.4%) and GLG (58.0%) report single-step top-1 prediction accuracy — a different metric, not directly comparable.*  
 [Full benchmark details →](https://kent-tokyo.github.io/renkin/benchmark/)
 
+> **Benchmark scope note**: USPTO-50k is used here as a *standardized sanity benchmark*, not as proof of broad real-world synthesis performance. The corpus covers a narrow slice of reaction space (primarily C–C and C–N bond formations common in pharmaceutical synthesis), and reaction types with sparse USPTO representation are systematically underserved. Out-of-distribution performance on ChEMBL approved drugs (**81.8%**, 409/500) suggests the rule set generalizes beyond the test corpus, but neither number should be interpreted as a guarantee of route quality on arbitrary targets.
+
 ### PaRoutes compatibility
 
 RENKIN is compatible with the [PaRoutes](https://github.com/AstraZeneca/PaRoutes) multi-step benchmark. Download their stock compounds and target molecules, then pass them directly:

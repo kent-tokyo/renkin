@@ -3,25 +3,114 @@
 /// RENKIN Benchmark Runner
 ///
 /// Usage:
-///   renkin-bench --input <smiles_file> [--depth <N>] [--beam-width <N>]
+///   renkin-bench --input <smiles_file|paroutes.json> [--input-format smi|paroutes]
+///                [--depth <N>] [--beam-width <N>]
 ///
-/// Input file format (one SMILES per line, optional name after whitespace):
-///   CC(=O)Oc1ccccc1C(=O)O  aspirin
-///   c1ccc(N)cc1C(=O)O       anthranilic_acid
+/// Input formats:
+///   smi (default): one SMILES per line, optional name after whitespace
+///   paroutes: PaRoutes JSON — list of route trees (Genheden et al., 2022)
 ///
 /// Output (JSON):
 ///   {
 ///     "total": 10, "solved": 8, "success_rate": 0.8,
 ///     "avg_depth": 1.5, "avg_time_ms": 12.3,
+///     "avg_route_diversity": 0.62,
 ///     "results": [...]
 ///   }
 use std::time::Instant;
 
 use anyhow::{Result, bail};
+use chematic::chem::molecular_weight;
+use rustc_hash::FxHashSet;
 use renkin::DEFAULT_BUILDING_BLOCKS;
-use renkin::chem_env::{ChemEnv, default_rules, load_rules_from_file};
-use renkin::search::{SearchConfig, find_routes};
+use renkin::chem_env::{ChemEnv, default_rules, load_rules_from_file, mol_from_smiles};
+use renkin::search::{Route, SearchConfig, find_routes};
 use serde::Serialize;
+
+// ── PaRoutes JSON helpers ────────────────────────────────────────────────────
+
+/// Parse a PaRoutes-format JSON file into (smiles, name, gt_depth) tuples.
+/// Each entry is a route tree rooted at the target molecule.
+fn parse_paroutes(path: &str) -> Result<Vec<(String, String, Option<u32>)>> {
+    let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path)?)?;
+    let arr = json.as_array().ok_or_else(|| anyhow::anyhow!("PaRoutes JSON: expected top-level array"))?;
+    Ok(arr.iter().enumerate().map(|(i, node)| {
+        let smiles = node["smiles"].as_str().unwrap_or("").to_string();
+        let gt_depth = count_reactions(node);
+        (smiles, format!("paroutes_{i}"), Some(gt_depth))
+    }).collect())
+}
+
+/// Count the maximum reaction-node depth in a PaRoutes route tree.
+/// mol/reaction nodes alternate, so reaction count == synthesis step count.
+fn count_reactions(node: &serde_json::Value) -> u32 {
+    node.get("children")
+        .and_then(|c| c.as_array())
+        .map(|kids| {
+            kids.iter()
+                .map(|k| {
+                    let is_rxn =
+                        k.get("type").and_then(|t| t.as_str()) == Some("reaction");
+                    is_rxn as u32 + count_reactions(k)
+                })
+                .max()
+                .unwrap_or(0)
+        })
+        .unwrap_or(0)
+}
+
+// ── Route diversity ──────────────────────────────────────────────────────────
+
+/// 1 - avg pairwise Jaccard similarity of building-block sets across routes.
+/// Returns 0.0 when fewer than 2 routes are available.
+fn route_diversity(routes: &[Route]) -> f64 {
+    if routes.len() < 2 {
+        return 0.0;
+    }
+    let mut total_sim = 0.0;
+    let mut count = 0usize;
+    for i in 0..routes.len() {
+        for j in (i + 1)..routes.len() {
+            let a: FxHashSet<&str> =
+                routes[i].building_blocks.iter().map(|s| s.as_str()).collect();
+            let b: FxHashSet<&str> =
+                routes[j].building_blocks.iter().map(|s| s.as_str()).collect();
+            let inter = a.intersection(&b).count();
+            let union = a.len() + b.len() - inter;
+            total_sim += if union == 0 { 1.0 } else { inter as f64 / union as f64 };
+            count += 1;
+        }
+    }
+    1.0 - (total_sim / count as f64)
+}
+
+// ── Atom balance ─────────────────────────────────────────────────────────────
+
+/// True if target_MW ≤ Σ precursor_MW (within 1% float tolerance).
+/// In retrosynthesis the target is split from precursors; precursors must
+/// carry at least as many atoms (by weight) as the target. Violation means
+/// a template caused atoms to appear from nowhere — a CompleteRXN-style defect.
+fn step_balanced(target: &str, precursors: &[String]) -> bool {
+    let target_mw = mol_from_smiles(target)
+        .ok()
+        .map(|m| molecular_weight(&m))
+        .unwrap_or(0.0);
+    if target_mw == 0.0 {
+        return true;
+    }
+    let precursor_mw: f64 = precursors
+        .iter()
+        .filter_map(|s| mol_from_smiles(s).ok())
+        .map(|m| molecular_weight(&m))
+        .sum();
+    target_mw <= precursor_mw * 1.01
+}
+
+fn route_balanced(route: &Route) -> bool {
+    route.steps.iter().all(|s| step_balanced(&s.target, &s.precursors))
+}
+
+// ── Output structs ───────────────────────────────────────────────────────────
 
 #[derive(Serialize)]
 struct BenchResult {
@@ -36,6 +125,19 @@ struct BenchResult {
     best_success_prob: Option<f64>,
     best_convergency: Option<f64>,
     best_route_cost: Option<f64>,
+    /// Route diversity ∈ [0, 1] across returned routes (None when routes_found < 2).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    route_diversity: Option<f64>,
+    /// Ground-truth synthesis depth from PaRoutes (None in smi mode).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    gt_depth: Option<u32>,
+    /// best_depth - gt_depth (None unless both are present).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    depth_delta: Option<i32>,
+    /// True if every step of the best route satisfies target_MW ≤ Σ precursor_MW.
+    /// None when no routes found. Flags templates that cause atoms to appear from nowhere.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    atom_balance_ok: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -46,14 +148,16 @@ struct BenchReport {
     avg_depth: f64,
     avg_time_ms: f64,
     avg_nodes_expanded: f64,
-    /// Average best_confidence over solved targets (None-safe).
     avg_confidence: f64,
-    /// Average best_convergency over solved targets.
     avg_convergency: f64,
-    /// Average best_success_prob over solved targets (Retro-prob style).
     avg_success_prob: f64,
-    /// Average best_route_cost over solved targets.
     avg_route_cost: f64,
+    /// Average route diversity over targets with ≥2 routes.
+    avg_route_diversity: f64,
+    /// Average (renkin_depth - gt_depth) over solved targets; 0.0 in smi mode.
+    avg_depth_delta: f64,
+    /// Percentage of solved targets where the best route passes atom balance check.
+    pct_atom_balanced: f64,
     results: Vec<BenchResult>,
 }
 
@@ -64,6 +168,7 @@ fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
 
     let mut input_path: Option<String> = None;
+    let mut input_format = "smi".to_string();
     let mut bb_path: Option<String> = None;
     let mut templates_path: Option<String> = None;
     let mut max_depth: u32 = 5;
@@ -82,6 +187,12 @@ fn main() -> Result<()> {
                 i += 1;
                 if i < args.len() {
                     input_path = Some(args[i].clone());
+                }
+            }
+            "--input-format" => {
+                i += 1;
+                if i < args.len() {
+                    input_format = args[i].clone();
                 }
             }
             "--depth" | "-d" => {
@@ -138,24 +249,29 @@ fn main() -> Result<()> {
 
     let Some(input) = input_path else {
         bail!(
-            "Usage: renkin-bench --input <smiles_file> [--depth <N>] \
+            "Usage: renkin-bench --input <smiles_file|paroutes.json> \
+             [--input-format smi|paroutes] [--depth <N>] \
              [--beam-width <N>] [--building-blocks <path>] [--templates <path>] \
              [--scorer <onnx_path>]"
         );
     };
 
-    let content = std::fs::read_to_string(&input)?;
-    let targets: Vec<(String, String)> = content
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty() && !l.starts_with('#'))
-        .map(|line| {
-            let mut parts = line.splitn(2, char::is_whitespace);
-            let smiles = parts.next().unwrap_or("").to_string();
-            let name = parts.next().unwrap_or("").trim().to_string();
-            (smiles, name)
-        })
-        .collect();
+    // Parse targets depending on format
+    let targets: Vec<(String, String, Option<u32>)> = if input_format == "paroutes" {
+        parse_paroutes(&input)?
+    } else {
+        std::fs::read_to_string(&input)?
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            .map(|line| {
+                let mut parts = line.splitn(2, char::is_whitespace);
+                let smiles = parts.next().unwrap_or("").to_string();
+                let name = parts.next().unwrap_or("").trim().to_string();
+                (smiles, name, None)
+            })
+            .collect()
+    };
 
     if targets.is_empty() {
         bail!("No targets found in {input}");
@@ -198,8 +314,9 @@ fn main() -> Result<()> {
     };
 
     eprintln!(
-        "Benchmarking {} targets (depth={}, beam_width={}) ...",
+        "Benchmarking {} targets (format={}, depth={}, beam_width={}) ...",
         targets.len(),
+        input_format,
         max_depth,
         beam_width
     );
@@ -208,7 +325,7 @@ fn main() -> Result<()> {
     let mut total_depth_sum = 0u32;
     let mut solved_count = 0usize;
 
-    for (smiles, name) in &targets {
+    for (smiles, name, gt_depth) in &targets {
         let t0 = Instant::now();
         let (routes, stats) = find_routes(smiles, &env, &rules, &config).unwrap_or_default();
         let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
@@ -219,6 +336,16 @@ fn main() -> Result<()> {
         let best_success_prob = routes.first().map(|r| r.success_probability);
         let best_convergency = routes.first().map(|r| r.convergency);
         let best_route_cost = routes.first().map(|r| r.route_cost);
+        let diversity = if routes.len() >= 2 {
+            Some(route_diversity(&routes))
+        } else {
+            None
+        };
+        let depth_delta = match (best_depth, gt_depth) {
+            (Some(bd), Some(gd)) => Some(bd as i32 - *gd as i32),
+            _ => None,
+        };
+        let atom_balance_ok = routes.first().map(|r| route_balanced(r));
 
         if solved {
             solved_count += 1;
@@ -249,6 +376,10 @@ fn main() -> Result<()> {
             best_success_prob,
             best_convergency,
             best_route_cost,
+            route_diversity: diversity,
+            gt_depth: *gt_depth,
+            depth_delta,
+            atom_balance_ok,
         });
     }
 
@@ -264,29 +395,32 @@ fn main() -> Result<()> {
         results.iter().map(|r| r.nodes_expanded as f64).sum::<f64>() / total as f64;
 
     let solved_results: Vec<&BenchResult> = results.iter().filter(|r| r.solved).collect();
-    let avg_confidence = if solved_results.is_empty() {
+    let avg_confidence = avg_opt(&solved_results, |r| r.best_confidence);
+    let avg_convergency = avg_opt(&solved_results, |r| r.best_convergency);
+    let avg_success_prob = avg_opt(&solved_results, |r| r.best_success_prob);
+    let avg_route_cost = avg_opt(&solved_results, |r| r.best_route_cost);
+
+    let diversity_results: Vec<&BenchResult> =
+        results.iter().filter(|r| r.route_diversity.is_some()).collect();
+    let avg_route_diversity = avg_opt(&diversity_results, |r| r.route_diversity);
+
+    let delta_results: Vec<&BenchResult> =
+        solved_results.iter().filter(|r| r.depth_delta.is_some()).copied().collect();
+    let avg_depth_delta = if delta_results.is_empty() {
         0.0
     } else {
-        solved_results.iter().filter_map(|r| r.best_confidence).sum::<f64>()
-            / solved_results.len() as f64
+        delta_results.iter().filter_map(|r| r.depth_delta).map(|d| d as f64).sum::<f64>()
+            / delta_results.len() as f64
     };
-    let avg_convergency = if solved_results.is_empty() {
-        0.0
+
+    let n_balanced = solved_results
+        .iter()
+        .filter(|r| r.atom_balance_ok == Some(true))
+        .count();
+    let pct_atom_balanced = if solved_count > 0 {
+        n_balanced as f64 / solved_count as f64 * 100.0
     } else {
-        solved_results.iter().filter_map(|r| r.best_convergency).sum::<f64>()
-            / solved_results.len() as f64
-    };
-    let avg_success_prob = if solved_results.is_empty() {
         0.0
-    } else {
-        solved_results.iter().filter_map(|r| r.best_success_prob).sum::<f64>()
-            / solved_results.len() as f64
-    };
-    let avg_route_cost = if solved_results.is_empty() {
-        0.0
-    } else {
-        solved_results.iter().filter_map(|r| r.best_route_cost).sum::<f64>()
-            / solved_results.len() as f64
     };
 
     let report = BenchReport {
@@ -300,9 +434,20 @@ fn main() -> Result<()> {
         avg_convergency,
         avg_success_prob,
         avg_route_cost,
+        avg_route_diversity,
+        avg_depth_delta,
+        pct_atom_balanced,
         results,
     };
 
     println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())
+}
+
+fn avg_opt(rows: &[&BenchResult], f: impl Fn(&BenchResult) -> Option<f64>) -> f64 {
+    if rows.is_empty() {
+        return 0.0;
+    }
+    let vals: Vec<f64> = rows.iter().filter_map(|r| f(r)).collect();
+    if vals.is_empty() { 0.0 } else { vals.iter().sum::<f64>() / vals.len() as f64 }
 }

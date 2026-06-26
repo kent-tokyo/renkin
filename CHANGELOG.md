@@ -6,6 +6,146 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.15.0] — 2026-06-26
+
+### Added
+- **`validate_route` MCP tool** — find the best retrosynthetic route for a SMILES and validate it: per-step atom balance check (target_MW ≤ Σ precursor_MW) + confidence/probability summary. Usable from Claude Desktop.
+- **`estimate_diversity` MCP tool** — find N routes for a SMILES and report route diversity score (1 - avg pairwise Jaccard of building-block sets) plus building block breakdown per route.
+- **Tool dispatch fix in `renkin-mcp`** — `tools/call` now correctly dispatches by `params.name`; previously all tool calls routed to `find_routes` regardless of tool name.
+- **Template auto-detection in `renkin-mcp`** — prefers `data/templates_extracted_50000.smi` over `_5000.smi` when both are present.
+
+### Docs
+- **README.md / README_ja.md** — added benchmark scope note: USPTO-50k is a standardized sanity benchmark, not proof of broad real-world performance. Reaction space coverage is narrow (pharmaceutical C–C / C–N bias); OOD ChEMBL results (81.8%) contextualize generalization. Motivated by "A Critical Look at the USPTO Benchmark" literature thread.
+
+---
+
+## [0.14.0] — 2026-06-26
+
+### Added
+- **`ReactionStep.procedure_hint: Option<String>`** — one-line experimental procedure suggestion for the forward reaction. Populated for 19 hand-crafted rules; `None` (omitted from JSON) for extracted templates and fallback rules.
+- **`procedure_hint_for_rule()`** in `search.rs` — maps rule names to brief procedural summaries (e.g. `"Combine aryl boronate + aryl halide + Pd(PPh₃)₄ in EtOH/H₂O, reflux at 80 °C."`).
+
+### Architecture note
+This is placeholder infrastructure for QFANG-style structured procedure generation. Once an ML backend (QFANG, ORD-trained model) is available, it can be plugged in via a `ReactionPrior`-style hook to populate `procedure_hint` with predicted action sequences instead of the static strings.
+
+### Reference
+QFANG (arXiv) — generates structured experimental procedures from reaction equations trained on 905k patent-derived action sequences. The `procedure_hint` field is the renkin-side receiver for that pipeline.
+
+---
+
+## [0.13.0] — 2026-06-26
+
+### Added
+- **Atom balance checker** — `renkin-bench` now verifies that each step of the best route satisfies `target_MW ≤ Σ precursor_MW` (within 1% tolerance). Violation signals a template that causes atoms to appear from nowhere — a defect highlighted by the CompleteRXN line of work.
+- **`BenchResult.atom_balance_ok: bool`** — per-target flag (omitted when no routes found).
+- **`BenchReport.pct_atom_balanced: f64`** — percentage of solved targets where the best route passes the atom balance check.
+
+### Reference
+CompleteRXN (arXiv) — reaction completion and balance validation; motivates per-step MW consistency checks in template-based planning.
+
+---
+
+## [0.12.0] — 2026-06-26
+
+### Added
+- **`scripts/train_template_scorer.py --reactions <file>`** — same API as `extract_templates.py --reactions`; train the scorer on the same local reactions file used for template extraction. Enables consistent 50k-template training pipeline.
+- **`--dataset <hf_id>` / `--split <split>`** flags — explicit control over HuggingFace dataset (default unchanged: `bisectgroup/USPTO_50K` / `train`).
+- **`--device <cpu|cuda|mps>`** — PyTorch device selection (default: `cpu`). Apple Silicon MPS or CUDA recommended for 50k-class training.
+- **`--checkpoint-every <N>`** — save intermediate `.pt` checkpoints every N epochs. Checkpoint path: `{output_stem}_ep{N}.pt`. Useful for long training runs (~20-40 min on 480k reactions).
+- **CosineAnnealingLR scheduler** — replaces constant LR; improves convergence stability for large output class counts (50k).
+- **Model size logging** — prints total parameter count before training: `Training MLP: 2048->1024->512->N | X.XM params`.
+
+### Usage (50k template pipeline end-to-end)
+```bash
+python3 scripts/extract_templates.py \
+  --reactions /tmp/uspto_mit.smiles --top 50000 \
+  --output data/templates_extracted_50000.smi
+
+python3 scripts/train_template_scorer.py \
+  --templates data/templates_extracted_50000.smi \
+  --reactions /tmp/uspto_mit.smiles \
+  --output data/template_scorer_50k.onnx \
+  --device mps --checkpoint-every 10
+
+renkin -t "Cc1ccc(-c2ccccc2)cc1" \
+  --templates data/templates_extracted_50000.smi \
+  --scorer data/template_scorer_50k.onnx --format json
+```
+
+---
+
+## [0.11.0] — 2026-06-26
+
+### Added
+- **`scripts/extract_templates.py --reactions <file>`** — dataset-agnostic template extraction from a local reaction SMILES file (one `reactants>>products` per line). Enables use of USPTO-MIT or any proprietary reaction database without HuggingFace dependency at extraction time.
+- **`--dataset <hf_id>` / `--split <split>`** flags — explicit control over the HuggingFace dataset to load (default unchanged: `bisectgroup/USPTO_50K` / `train`).
+
+### Usage
+```bash
+# Export USPTO-MIT from HuggingFace, then extract 50k templates
+python3 -c "
+from datasets import load_dataset
+ds = load_dataset('firechem/USPTO_MIT', split='train')
+with open('/tmp/uspto_mit.smiles', 'w') as f:
+    for row in ds: f.write(row['rxn'] + '\n')
+"
+python3 scripts/extract_templates.py \
+  --reactions /tmp/uspto_mit.smiles \
+  --top 50000 \
+  --output data/templates_extracted_50000.smi
+```
+
+### Reference
+- USPTO-MIT (~480k reactions) is the standard large-scale benchmark for retrosynthesis template extraction. Using it as source is expected to yield 20k–50k unique simplified templates vs. 3k–8k from USPTO-50k.
+
+---
+
+## [0.10.0] — 2026-06-26
+
+### Added
+- **PaRoutes benchmark adapter** — `renkin-bench --input-format paroutes` reads the PaRoutes JSON format (Genheden et al., 2022). Each entry is a mol/reaction route tree; targets and ground-truth synthesis depths are extracted automatically.
+- **`--input-format smi|paroutes`** CLI flag for `renkin-bench` (default: `smi`, existing behaviour unchanged).
+- **`BenchResult.gt_depth`** — ground-truth synthesis depth from PaRoutes (omitted in smi mode).
+- **`BenchResult.depth_delta`** — `renkin_depth - gt_depth` per solved target (omitted in smi mode).
+- **`BenchResult.route_diversity`** — route diversity score ∈ [0, 1]: `1 - avg_pairwise_Jaccard` of building-block sets across returned routes (omitted when fewer than 2 routes found).
+- **`BenchReport.avg_route_diversity`** — mean diversity over targets with ≥ 2 routes.
+- **`BenchReport.avg_depth_delta`** — mean depth delta over solved PaRoutes targets (0.0 in smi mode).
+
+### Reference
+- PaRoutes (Genheden et al., 2022) — multi-step retrosynthesis benchmark with 10 k ground-truth routes.
+- Syntheseus (Maziarz et al., 2023) — standardised retrosynthesis evaluation framework (solved rate, route length, diversity).
+
+---
+
+## [0.9.0] — 2026-06-26
+
+### Added
+- **`ReactionPrior` trait** — pluggable template scoring for A\* expansion (Retro\*-style). `fn prior(&self, template_name: &str, target_smiles: &str) -> f64`. Implement to substitute frequency weighting with a neural reaction scorer.
+- **`FrequencyPrior`** — default implementation using log-frequency weights (same behavior as pre-v0.9). Constructed via `FrequencyPrior::from_rules(rules)`.
+- **`SearchConfig.reaction_prior: Option<Arc<dyn ReactionPrior>>`** — `None` = `FrequencyPrior` behavior (default).
+
+### Architecture
+With v0.8.0 `MoleculeValueEstimator` + v0.9.0 `ReactionPrior`, the Retro\* dual-hook architecture is complete:
+- **Value hook**: how hard is this molecule to synthesize? (`MoleculeValueEstimator`)
+- **Prior hook**: how likely is this template to work here? (`ReactionPrior`)
+
+### Reference
+Retro\* (ICML 2020) — neural-guided AND-OR tree search with molecule value + reaction prior.
+
+---
+
+## [0.8.0] — 2026-06-26
+
+### Added
+- **`MoleculeValueEstimator` trait** — pluggable A\* heuristic (Retro\*-style). Implement to substitute SA Score with a neural value function without changing the search algorithm. `SaScoreEstimator` is the default implementation (same behavior as before).
+- **`SearchConfig.value_estimator: Option<Arc<dyn MoleculeValueEstimator>>`** — `None` = default SA Score behavior.
+- **`ReactionStep.reaction_family: Option<String>`** — human-readable reaction family for each synthesis step (e.g. `"suzuki_coupling"`, `"esterification"`, `"buchwald_hartwig"`). `None` for extracted templates without manual assignment.
+
+### Reference
+Retro\* (ICML 2020) — pluggable value estimator architecture for AND-OR tree search.
+
+---
+
 ## [0.7.0] — 2026-06-26
 
 ### Added

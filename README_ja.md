@@ -341,6 +341,12 @@ renkin/                          ← Cargo workspace ルート（整備予定）
 
 ---
 
+## セキュリティ
+
+脆弱性は [GitHub プライベート脆弱性報告](https://github.com/kent-tokyo/renkin/security/advisories/new) からご報告ください。詳細は [SECURITY.md](SECURITY.md) を参照してください。
+
+---
+
 ## ライセンス
 
 MIT

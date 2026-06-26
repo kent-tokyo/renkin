@@ -413,6 +413,12 @@ If you use RENKIN in academic work, please cite:
 
 ---
 
+## Security
+
+Report vulnerabilities via [GitHub Private vulnerability reporting](https://github.com/kent-tokyo/renkin/security/advisories/new). See [SECURITY.md](SECURITY.md).
+
+---
+
 ## License
 
 MIT

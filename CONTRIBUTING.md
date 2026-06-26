@@ -78,6 +78,12 @@ bash scripts/run_benchmark_chunks.sh \
 3. Update `CHANGELOG.md` under `[Unreleased]`
 4. Keep PRs focused — one feature/fix per PR
 
+## Security
+
+Security vulnerabilities should **not** be reported via GitHub Issues.
+Use [GitHub Private vulnerability reporting](https://github.com/kent-tokyo/renkin/security/advisories/new).
+See [SECURITY.md](SECURITY.md) for the full policy.
+
 ## Reporting Bugs
 
 Use [GitHub Issues](https://github.com/kent-tokyo/renkin/issues) and include:

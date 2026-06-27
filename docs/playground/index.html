@@ -181,6 +181,26 @@
       opacity:0.7; }
     .help-icon:hover { opacity:1; }
 
+    /* ── Route metrics bar ───────────────────────────────────────── */
+    .route-metrics { display:flex; gap:1.25rem; padding:0.55rem 1rem;
+      background:rgba(0,0,0,0.18); border-bottom:1px solid var(--border); flex-wrap:wrap; }
+    .metric { display:flex; flex-direction:column; gap:0.1rem; }
+    .metric-label { font-size:0.63rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--muted); }
+    .metric-val { font-size:0.82rem; font-weight:600; font-family:var(--mono); color:var(--text); }
+    .metric-val.good { color:var(--success); }
+    .metric-val.warn { color:var(--warn); }
+    .metric-val.bad  { color:var(--error); }
+
+    /* ── Copy / action buttons ───────────────────────────────────── */
+    .route-actions { display:flex; gap:0.4rem; padding:0.55rem 1rem;
+      border-top:1px solid var(--border); flex-wrap:wrap; align-items:center; }
+    .route-actions-label { font-size:0.7rem; color:var(--muted); margin-right:0.25rem; }
+    .copy-btn { background:transparent; border:1px solid var(--border); color:var(--muted);
+      padding:0.18rem 0.6rem; border-radius:4px; font-size:0.72rem; font-weight:500; height:auto;
+      cursor:pointer; transition:all 0.15s; }
+    .copy-btn:hover { border-color:var(--accent); color:var(--text); background:rgba(124,106,247,0.08); }
+    .copy-btn.copied { border-color:var(--success); color:var(--success); }
+
     footer { text-align:center; padding:1rem; font-size:0.75rem;
       color:var(--muted); border-top:1px solid var(--border); }
     footer a { color:var(--accent); text-decoration:none; }
@@ -268,6 +288,22 @@
           <span class="help-icon" data-tip="Beam width limits parallel search paths. 0 = unlimited A*. Smaller = faster but may miss routes." style="margin-left:3px">?</span>
         </label>
         <input id="beam-input" type="number" value="0" min="0" max="500">
+      </div>
+      <div class="field" style="min-width:110px">
+        <label for="avoid-input">
+          Avoid elements
+          <span class="help-icon" data-tip="Comma-separated elements to ban from building blocks (e.g. Br,I)" style="margin-left:3px">?</span>
+        </label>
+        <input id="avoid-input" type="text" placeholder="e.g. Br,I" spellcheck="false"
+          style="font-family:var(--mono);font-size:0.82rem">
+      </div>
+      <div class="field" style="min-width:110px">
+        <label for="require-input">
+          Require element
+          <span class="help-icon" data-tip="Element that must appear in ≥1 building block (e.g. B for boronic acids)" style="margin-left:3px">?</span>
+        </label>
+        <input id="require-input" type="text" placeholder="e.g. B" spellcheck="false"
+          style="font-family:var(--mono);font-size:0.82rem">
       </div>
       <button id="search-btn" disabled data-i18n="search_btn">Search</button>
     </div>
@@ -695,10 +731,12 @@
 
   function runSearch() {
     if (!findRoutesFn) return;
-    const target    = smilesEl.value.trim();
-    const depth     = parseInt(document.getElementById('depth-input').value) || 5;
-    const maxRoutes = parseInt(document.getElementById('routes-input').value) || 5;
-    const beamWidth = parseInt(document.getElementById('beam-input').value) || 0;
+    const target     = smilesEl.value.trim();
+    const depth      = parseInt(document.getElementById('depth-input').value) || 5;
+    const maxRoutes  = parseInt(document.getElementById('routes-input').value) || 5;
+    const beamWidth  = parseInt(document.getElementById('beam-input').value) || 0;
+    const avoidEls   = (document.getElementById('avoid-input').value || '').trim();
+    const requireEls = (document.getElementById('require-input').value || '').trim();
     if (!target) return;
 
     searchBtn.disabled = true;
@@ -710,12 +748,20 @@
     setTimeout(() => {
       const t0 = performance.now();
       let raw;
-      try { raw = findRoutesFn(target, depth, maxRoutes, beamWidth); }
-      catch (err) { showError(`SMILES: ${err.message}`); done(); return; }
+      try { raw = findRoutesFn(target, depth, maxRoutes, beamWidth, avoidEls, requireEls); }
+      catch (_) {
+        // WASM may not accept extra args — fall back to 4-arg call
+        try { raw = findRoutesFn(target, depth, maxRoutes, beamWidth); }
+        catch (err) { showError(`SMILES: ${err.message}`); done(); return; }
+      }
       const elapsed = (performance.now() - t0).toFixed(1);
       let data;
       try { data = JSON.parse(raw); }
       catch (err) { showError(`Internal: ${err.message}`); done(); return; }
+      // stash search params for copy buttons
+      data._searchTarget = target;
+      data._searchDepth  = depth;
+      data._searchRoutes = maxRoutes;
       renderResults(data, elapsed, target);
       done();
     }, 10);
@@ -763,11 +809,13 @@
       stat.appendChild(v); stat.appendChild(l); statsRow.appendChild(stat);
     });
     resultsEl.appendChild(statsRow);
-    data.routes.forEach((route, i) => resultsEl.appendChild(buildRouteCard(route, i + 1)));
+    data.routes.forEach((route, i) => resultsEl.appendChild(buildRouteCard(route, i + 1, data._searchTarget || targetSmiles, data._searchDepth || 5, data._searchRoutes || 5)));
   }
 
-  function buildRouteCard(route, num) {
+  function buildRouteCard(route, num, smiles, depth, maxRoutes) {
     const card = document.createElement('div'); card.className = 'route-card';
+
+    // ── Header ──────────────────────────────────────────────────────
     const header = document.createElement('div'); header.className = 'route-header';
     const nb = document.createElement('div'); nb.className = 'route-num'; nb.textContent = num;
     const title = document.createElement('strong');
@@ -776,6 +824,26 @@
     db.textContent = `${route.depth} ${route.depth === 1 ? t('step_s') : t('steps_s')}`;
     header.appendChild(nb); header.appendChild(title); header.appendChild(db);
     card.appendChild(header);
+
+    // ── Metrics bar ─────────────────────────────────────────────────
+    const metrics = [
+      { label: 'score',      val: route.score.toFixed(2),              cls: '' },
+      { label: 'confidence', val: route.confidence.toFixed(2),         cls: route.confidence >= 0.8 ? 'good' : route.confidence < 0.4 ? 'bad' : 'warn' },
+      { label: 'success P',  val: route.success_probability.toFixed(2),cls: route.success_probability >= 0.7 ? 'good' : route.success_probability < 0.5 ? 'bad' : 'warn' },
+      { label: 'cost',       val: route.route_cost.toFixed(2),         cls: '' },
+      { label: 'conv.',      val: route.convergency.toFixed(2),        cls: route.convergency >= 0.8 && route.depth > 1 ? 'good' : '' },
+    ];
+    const metricsRow = document.createElement('div'); metricsRow.className = 'route-metrics';
+    metrics.forEach(m => {
+      const wrap = document.createElement('div'); wrap.className = 'metric';
+      const lbl = document.createElement('div'); lbl.className = 'metric-label'; lbl.textContent = m.label;
+      const val = document.createElement('div'); val.className = `metric-val${m.cls ? ' ' + m.cls : ''}`; val.textContent = m.val;
+      wrap.appendChild(lbl); wrap.appendChild(val);
+      metricsRow.appendChild(wrap);
+    });
+    card.appendChild(metricsRow);
+
+    // ── Steps ────────────────────────────────────────────────────────
     if (route.steps.length === 0) {
       const empty = document.createElement('div'); empty.className = 'empty-route';
       empty.textContent = t('bb_msg');
@@ -785,6 +853,30 @@
       route.steps.forEach((step, idx) => sl.appendChild(buildStep(step, idx, route.steps.length)));
       card.appendChild(sl);
     }
+
+    // ── Copy actions ─────────────────────────────────────────────────
+    const actions = document.createElement('div'); actions.className = 'route-actions';
+    const lbl = document.createElement('span'); lbl.className = 'route-actions-label'; lbl.textContent = 'Copy:';
+    actions.appendChild(lbl);
+
+    const btnJSON = document.createElement('button'); btnJSON.className = 'copy-btn'; btnJSON.textContent = 'JSON';
+    btnJSON.addEventListener('click', () => copyToClipboard(JSON.stringify(route, null, 2), btnJSON));
+
+    const btnCLI = document.createElement('button'); btnCLI.className = 'copy-btn'; btnCLI.textContent = 'CLI';
+    btnCLI.addEventListener('click', () => copyToClipboard(
+      `renkin --target "${smiles}" --depth ${depth || 5} --max-routes ${maxRoutes || 5}`, btnCLI));
+
+    const btnMermaid = document.createElement('button'); btnMermaid.className = 'copy-btn'; btnMermaid.textContent = 'Mermaid';
+    btnMermaid.addEventListener('click', () => copyToClipboard(routeToMermaid(route, smiles, num), btnMermaid));
+
+    const btnPython = document.createElement('button'); btnPython.className = 'copy-btn'; btnPython.textContent = 'Python';
+    btnPython.addEventListener('click', () => copyToClipboard(
+      `import renkin\nresults = renkin.find_routes("${smiles}", depth=${depth || 5}, max_routes=${maxRoutes || 5})\nprint(results)`, btnPython));
+
+    actions.appendChild(btnJSON); actions.appendChild(btnCLI);
+    actions.appendChild(btnMermaid); actions.appendChild(btnPython);
+    card.appendChild(actions);
+
     return card;
   }
 
@@ -826,6 +918,45 @@
     body.appendChild(precRow);
     stepEl.appendChild(conn); stepEl.appendChild(body);
     return stepEl;
+  }
+
+  // ── Copy helper ────────────────────────────────────────────────────────────
+  function copyToClipboard(text, btn) {
+    navigator.clipboard.writeText(text).then(() => {
+      const orig = btn.textContent;
+      btn.textContent = '✓';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 1500);
+    });
+  }
+
+  // ── Mermaid generator (mirrors format_route_mermaid in display.rs) ──────────
+  function routeToMermaid(route, smiles, routeNum) {
+    const nodeMap = new Map();
+    const nodeLabels = [];
+    const edges = [];
+    let counter = 0;
+
+    function getNode(s) {
+      if (!nodeMap.has(s)) { nodeMap.set(s, counter++); nodeLabels.push(s); }
+      return nodeMap.get(s);
+    }
+    function visit(smi, parentId, rule) {
+      const id = getNode(smi);
+      if (parentId !== null) edges.push({ from: parentId, to: id, label: rule });
+      const step = stepMap.get(smi);
+      if (step) step.precursors.forEach(p => visit(p, id, step.rule));
+    }
+
+    const stepMap = new Map(route.steps.map(s => [s.target, s]));
+    const allPrecs = new Set(route.steps.flatMap(s => s.precursors));
+    const root = route.steps.find(s => !allPrecs.has(s.target))?.target ?? smiles;
+    visit(root, null, '');
+
+    let out = `graph LR\n  %% Route ${routeNum}  score=${route.score.toFixed(2)}  depth=${route.depth}\n`;
+    nodeLabels.forEach((lbl, i) => { out += `  n${i}["${lbl.replace(/"/g, "'")}"]\n`; });
+    edges.forEach(e => { out += `  n${e.from} -->|${e.label}| n${e.to}\n`; });
+    return out;
   }
 
   // Apply initial language

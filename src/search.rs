@@ -85,8 +85,13 @@ pub struct Route {
 /// Statistics returned alongside routes from [`find_routes`].
 #[derive(Debug, Default, Serialize)]
 pub struct SearchStats {
-    /// Number of unique states expanded (inserted into the closed set).
     pub nodes_expanded: u64,
+    pub max_depth_reached: bool,
+    pub beam_limit_hit: bool,
+    /// Total template-molecule matches across all expansions.
+    pub matched_templates: u64,
+    /// Total building-block hits seen in node frontiers.
+    pub stock_hits: u64,
 }
 
 fn extract_building_blocks(steps: &[ReactionStep]) -> Vec<String> {
@@ -654,6 +659,10 @@ pub fn find_routes(
     #[cfg(not(target_arch = "wasm32"))]
     let mut nodes_popped: u64 = 0;
     let mut nodes_expanded: u64 = 0;
+    let mut max_depth_reached = false;
+    let mut beam_limit_hit = false;
+    let mut matched_templates: u64 = 0;
+    let mut stock_hits: u64 = 0;
 
     let mut routes: Vec<Route> = Vec::new();
     let mut closed: FxHashSet<u64> = FxHashSet::default();
@@ -699,6 +708,8 @@ pub fn find_routes(
                 if first_unsolved.is_none() {
                     first_unsolved = Some(e);
                 }
+            } else {
+                stock_hits += 1;
             }
         }
 
@@ -718,6 +729,7 @@ pub fn find_routes(
         }
 
         if node.depth >= config.max_depth {
+            max_depth_reached = true;
             continue;
         }
 
@@ -816,6 +828,8 @@ pub fn find_routes(
             arc // no extra clone: Arc move
         };
 
+        matched_templates += expansions.len() as u64;
+
         for (rule_name, step_c, precursor_smiles) in expansions.iter() {
             let new_frontier: SmallVec<[FEntry; 6]> = node
                 .frontier
@@ -874,6 +888,9 @@ pub fn find_routes(
         }
 
         // --- Phase 3.2: Beam search pruning ---
+        if config.beam_width > 0 && heap.len() > config.beam_width {
+            beam_limit_hit = true;
+        }
         beam_prune(&mut heap, config.beam_width);
     }
 
@@ -966,7 +983,16 @@ pub fn find_routes(
         });
     }
 
-    Ok((routes, SearchStats { nodes_expanded }))
+    Ok((
+        routes,
+        SearchStats {
+            nodes_expanded,
+            max_depth_reached,
+            beam_limit_hit,
+            matched_templates,
+            stock_hits,
+        },
+    ))
 }
 
 #[cfg(test)]

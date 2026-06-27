@@ -23,9 +23,12 @@ struct Output {
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
 
-    // Subcommand dispatch: `renkin stock <cmd> ...`
+    // Subcommand dispatch
     if args.get(1).map(|s| s.as_str()) == Some("stock") {
         return run_stock(&args[2..]);
+    }
+    if args.get(1).map(|s| s.as_str()) == Some("template") {
+        return run_template(&args[2..]);
     }
 
     let mut target: Option<String> = None;
@@ -452,6 +455,302 @@ fn apply_constraints(routes: &mut Vec<search::Route>, c: &ConstraintSpec) {
             u8::from(!has) // preferred first (0), others after (1)
         });
     }
+}
+
+// ── Template quality tools ────────────────────────────────────────────────
+
+fn run_template(args: &[String]) -> Result<()> {
+    let cmd = args.first().map(|s| s.as_str()).unwrap_or("help");
+    let rest = if args.len() > 1 {
+        &args[1..]
+    } else {
+        &[] as &[String]
+    };
+    match cmd {
+        "stats" => template_stats(rest),
+        "validate" => template_validate(rest),
+        "dedup" => template_dedup(rest),
+        "explain" => template_explain(rest),
+        "coverage" => template_coverage(rest),
+        _ => {
+            println!("Usage: renkin template <cmd> [args]");
+            println!("  stats    <file.smi>                   — count, frequency distribution");
+            println!("  validate <file.smi>                   — check SMIRKS validity");
+            println!("  dedup    <file.smi>                   — find duplicate SMIRKS");
+            println!("  explain  <name> [--templates <path>]  — show one template by name");
+            println!("  coverage <targets.smi> [--templates <path>] [--depth N]");
+            Ok(())
+        }
+    }
+}
+
+/// Read raw template file → Vec<(smirks, count)>, skipping comments and blank lines.
+fn read_template_lines(path: &str) -> Result<Vec<(String, f64)>> {
+    let content = std::fs::read_to_string(path)?;
+    Ok(content
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .filter_map(|line| {
+            let mut cols = line.splitn(2, '\t');
+            let smirks = cols.next()?.trim().to_string();
+            let count: f64 = cols
+                .next()
+                .and_then(|c| c.trim().parse().ok())
+                .unwrap_or(1.0);
+            Some((smirks, count))
+        })
+        .collect())
+}
+
+fn template_stats(args: &[String]) -> Result<()> {
+    let path = args
+        .first()
+        .map(|s| s.as_str())
+        .unwrap_or("data/templates_extracted_5000.smi");
+    let raw = read_template_lines(path)?;
+    let total = raw.len();
+
+    let valid_count = raw
+        .iter()
+        .filter(|(smirks, _)| {
+            smirks
+                .split(">>")
+                .next()
+                .and_then(|r| chematic::smarts::parse_smarts(r).ok())
+                .is_some()
+        })
+        .count();
+
+    let mut counts: Vec<f64> = raw.iter().map(|(_, c)| *c).collect();
+    counts.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let mut lens: Vec<usize> = raw.iter().map(|(s, _)| s.len()).collect();
+    lens.sort_unstable();
+
+    fn pctf(v: &[f64], p: f64) -> f64 {
+        if v.is_empty() {
+            return 0.0;
+        }
+        v[((v.len() - 1) as f64 * p) as usize]
+    }
+    fn pctu(v: &[usize], p: f64) -> usize {
+        if v.is_empty() {
+            return 0;
+        }
+        v[((v.len() - 1) as f64 * p) as usize]
+    }
+
+    println!("Template file: {path}");
+    println!("  Total:    {total}");
+    println!("  Valid:    {valid_count}");
+    println!("  Invalid:  {}", total - valid_count);
+    println!();
+    println!("  Frequency (count):");
+    println!("    min:    {:.0}", pctf(&counts, 0.0));
+    println!("    p25:    {:.0}", pctf(&counts, 0.25));
+    println!("    median: {:.0}", pctf(&counts, 0.5));
+    println!("    p75:    {:.0}", pctf(&counts, 0.75));
+    println!("    p95:    {:.0}", pctf(&counts, 0.95));
+    println!("    max:    {:.0}", pctf(&counts, 1.0));
+    println!(
+        "    mean:   {:.1}",
+        if counts.is_empty() {
+            0.0
+        } else {
+            counts.iter().sum::<f64>() / counts.len() as f64
+        }
+    );
+    println!();
+    println!("  SMIRKS length:");
+    println!("    min:    {}", pctu(&lens, 0.0));
+    println!("    median: {}", pctu(&lens, 0.5));
+    println!("    p95:    {}", pctu(&lens, 0.95));
+    println!("    max:    {}", pctu(&lens, 1.0));
+    Ok(())
+}
+
+fn template_validate(args: &[String]) -> Result<()> {
+    let path = args
+        .first()
+        .map(|s| s.as_str())
+        .unwrap_or("data/templates_extracted_5000.smi");
+    let raw = read_template_lines(path)?;
+    let mut valid = 0usize;
+    let mut invalid: Vec<(usize, String)> = Vec::new();
+    for (i, (smirks, _)) in raw.iter().enumerate() {
+        if smirks
+            .split(">>")
+            .next()
+            .and_then(|r| chematic::smarts::parse_smarts(r).ok())
+            .is_some()
+        {
+            valid += 1;
+        } else {
+            invalid.push((i + 1, smirks.clone()));
+        }
+    }
+    println!("Valid: {valid}  Invalid: {}", invalid.len());
+    for (line, smirks) in &invalid {
+        let short = if smirks.len() > 70 {
+            &smirks[..70]
+        } else {
+            smirks.as_str()
+        };
+        println!("  line {line:5}: {short}");
+    }
+    Ok(())
+}
+
+fn template_dedup(args: &[String]) -> Result<()> {
+    let path = args
+        .first()
+        .map(|s| s.as_str())
+        .unwrap_or("data/templates_extracted_5000.smi");
+    let raw = read_template_lines(path)?;
+    let total = raw.len();
+    let mut seen: std::collections::HashMap<&str, Vec<usize>> = std::collections::HashMap::new();
+    for (i, (smirks, _)) in raw.iter().enumerate() {
+        seen.entry(smirks.as_str()).or_default().push(i + 1);
+    }
+    let unique = seen.len();
+    let dup_entries = total - unique;
+    println!("Total: {total}  Unique: {unique}  Duplicate entries: {dup_entries}");
+    if dup_entries > 0 {
+        println!();
+        let mut groups: Vec<(&str, &Vec<usize>)> = seen
+            .iter()
+            .filter(|(_, v)| v.len() > 1)
+            .map(|(k, v)| (*k, v))
+            .collect();
+        groups.sort_by_key(|(_, v)| std::cmp::Reverse(v.len()));
+        println!("Duplicate groups (up to 20):");
+        for (smirks, lines) in groups.iter().take(20) {
+            let short = if smirks.len() > 60 {
+                &smirks[..60]
+            } else {
+                smirks
+            };
+            let line_list: Vec<String> = lines.iter().map(|n| n.to_string()).collect();
+            println!(
+                "  {}x  {}  (lines: {})",
+                lines.len(),
+                short,
+                line_list.join(", ")
+            );
+        }
+    }
+    Ok(())
+}
+
+fn template_explain(args: &[String]) -> Result<()> {
+    let name = args.first().map(|s| s.as_str()).unwrap_or("");
+    let templates_path = args
+        .windows(2)
+        .find(|w| w[0] == "--templates")
+        .map(|w| w[1].as_str());
+
+    let mut all_rules = chem_env::default_rules();
+    if let Some(path) = templates_path {
+        all_rules.extend(chem_env::load_rules_from_file(path));
+    }
+
+    let rule = all_rules
+        .iter()
+        .find(|r| r.name == name)
+        .or_else(|| name.parse::<usize>().ok().and_then(|i| all_rules.get(i)));
+
+    match rule {
+        Some(r) => {
+            let approx_count = (r.weight.exp() - 1.0).round() as u64;
+            println!("Template: {}", r.name);
+            println!("  SMIRKS:  {}", r.smirks);
+            println!("  Weight:  {:.4}", r.weight);
+            println!("  ~Count:  {approx_count}");
+            if r.required_elements != 0 {
+                println!("  Elem mask: 0x{:016x}", r.required_elements);
+            }
+        }
+        None => {
+            eprintln!("Template '{name}' not found.");
+            eprintln!("Tip: use --templates <path> to include extracted templates.");
+        }
+    }
+    Ok(())
+}
+
+fn template_coverage(args: &[String]) -> Result<()> {
+    let targets_path = args
+        .first()
+        .map(|s| s.as_str())
+        .unwrap_or("data/benchmark_targets.smi");
+    let templates_path = args
+        .windows(2)
+        .find(|w| w[0] == "--templates")
+        .map(|w| w[1].as_str());
+    let depth: u32 = args
+        .windows(2)
+        .find(|w| w[0] == "--depth")
+        .and_then(|w| w[1].parse().ok())
+        .unwrap_or(1);
+
+    let targets: Vec<String> = std::fs::read_to_string(targets_path)?
+        .lines()
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(|l| l.split_whitespace().next().unwrap_or(l).to_string())
+        .collect();
+
+    let env = chem_env::ChemEnv::load("data/building_blocks.smi")
+        .unwrap_or_else(|_| chem_env::ChemEnv::in_memory(DEFAULT_BUILDING_BLOCKS));
+
+    let mut rules = chem_env::default_rules();
+    if let Some(path) = templates_path {
+        let extra = chem_env::load_rules_from_file(path);
+        eprintln!("Loaded {} extra templates from {path}", extra.len());
+        rules.extend(extra);
+    }
+
+    let config = SearchConfig {
+        max_depth: depth,
+        max_routes: 1,
+        ..Default::default()
+    };
+
+    let mut covered = 0usize;
+    let mut uncovered: Vec<String> = Vec::new();
+    for target in &targets {
+        let solved = search::find_routes(target, &env, &rules, &config)
+            .map(|(routes, _)| !routes.is_empty())
+            .unwrap_or(false);
+        if solved {
+            covered += 1;
+        } else {
+            uncovered.push(target.clone());
+        }
+    }
+
+    let total = targets.len();
+    println!("Templates: {}  Depth: {depth}", rules.len());
+    println!("Targets:   {total}");
+    println!(
+        "Covered:   {covered}/{total} ({:.1}%)",
+        covered as f64 / total as f64 * 100.0
+    );
+    if !uncovered.is_empty() {
+        let show = uncovered.len().min(20);
+        println!(
+            "\nUncovered ({}){}:",
+            uncovered.len(),
+            if uncovered.len() > 20 {
+                " — first 20"
+            } else {
+                ""
+            }
+        );
+        for t in uncovered.iter().take(show) {
+            println!("  {t}");
+        }
+    }
+    Ok(())
 }
 
 // ── Pareto / multi-objective support ──────────────────────────────────────

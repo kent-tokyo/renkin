@@ -42,6 +42,7 @@ fn main() -> Result<()> {
     let mut bb_prices_path: Option<String> = None;
     let mut stock_path: Option<String> = None;
     let mut objectives_spec: String = "cost:min,success_probability:max,steps:min".to_string();
+    let mut constraints_path: Option<String> = None;
     #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
     let mut scorer_path: Option<String> = None;
 
@@ -126,6 +127,12 @@ fn main() -> Result<()> {
                     objectives_spec = args[i].clone();
                 }
             }
+            "--constraints" => {
+                i += 1;
+                if i < args.len() {
+                    constraints_path = Some(args[i].clone());
+                }
+            }
             #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
             "--scorer" => {
                 i += 1;
@@ -200,12 +207,40 @@ fn main() -> Result<()> {
                 })
         });
 
+    let constraints: ConstraintSpec = constraints_path
+        .as_deref()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+
+    // constraints override CLI flags when present
+    let eff_depth = constraints.max_depth.unwrap_or(max_depth);
+    let avoid_mask = chem_env::elem_symbols_to_mask(&avoid_elements)
+        | chem_env::elem_symbols_to_mask(
+            &constraints
+                .avoid_elements
+                .as_deref()
+                .unwrap_or(&[])
+                .join(","),
+        );
+    let require_mask = chem_env::elem_symbols_to_mask(&require_elements)
+        | chem_env::elem_symbols_to_mask(
+            &constraints
+                .require_elements
+                .as_deref()
+                .unwrap_or(&[])
+                .join(","),
+        );
+    if let Some(ref obj) = constraints.objectives {
+        objectives_spec = obj.clone();
+    }
+
     let config = SearchConfig {
-        max_depth,
+        max_depth: eff_depth,
         max_routes,
         beam_width,
-        forbidden_elements: chem_env::elem_symbols_to_mask(&avoid_elements),
-        required_element_present: chem_env::elem_symbols_to_mask(&require_elements),
+        forbidden_elements: avoid_mask,
+        required_element_present: require_mask,
         verbose,
         bond_index,
         bb_price_map,
@@ -213,7 +248,8 @@ fn main() -> Result<()> {
         nn_scorer,
         ..Default::default()
     };
-    let (routes, stats) = search::find_routes(&target_smiles, &env, &rules, &config)?;
+    let (mut routes, stats) = search::find_routes(&target_smiles, &env, &rules, &config)?;
+    apply_constraints(&mut routes, &constraints);
 
     match format.as_str() {
         "tree" => {
@@ -380,6 +416,42 @@ fn diagnose(stats: &search::SearchStats, max_depth: u32) -> (Vec<&'static str>, 
         suggestions.push("try --templates data/templates_extracted_50000.smi".to_string());
     }
     (causes, suggestions)
+}
+
+// ── Constraint DSL ────────────────────────────────────────────────────────
+
+#[derive(serde::Deserialize, Default)]
+struct ConstraintSpec {
+    avoid_elements: Option<Vec<String>>,
+    require_elements: Option<Vec<String>>,
+    max_steps: Option<usize>,
+    max_depth: Option<u32>,
+    min_confidence: Option<f64>,
+    min_success_probability: Option<f64>,
+    prefer_reaction_families: Option<Vec<String>>,
+    objectives: Option<String>,
+}
+
+fn apply_constraints(routes: &mut Vec<search::Route>, c: &ConstraintSpec) {
+    if let Some(n) = c.max_steps {
+        routes.retain(|r| r.steps.len() <= n);
+    }
+    if let Some(v) = c.min_confidence {
+        routes.retain(|r| r.confidence >= v);
+    }
+    if let Some(v) = c.min_success_probability {
+        routes.retain(|r| r.success_probability >= v);
+    }
+    if let Some(ref fams) = c.prefer_reaction_families {
+        routes.sort_by_key(|r| {
+            let has = r.steps.iter().any(|s| {
+                s.reaction_family
+                    .as_deref()
+                    .is_some_and(|f| fams.iter().any(|p| p == f))
+            });
+            u8::from(!has) // preferred first (0), others after (1)
+        });
+    }
 }
 
 // ── Pareto / multi-objective support ──────────────────────────────────────

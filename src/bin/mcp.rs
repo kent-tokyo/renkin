@@ -139,6 +139,25 @@ fn handle_tools_list() -> Value {
                 }
             },
             {
+                "name": "plan_with_constraints",
+                "description": "Find retrosynthetic routes applying explicit constraints: avoid elements, require elements, max steps, min confidence, min success probability, preferred reaction families. Designed for LLM-driven synthesis planning (Project Ariadne style).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "smiles": {"type": "string", "description": "Target molecule SMILES"},
+                        "depth": {"type": "integer", "description": "Max search depth (default: 5)"},
+                        "max_routes": {"type": "integer", "description": "Max routes to return (default: 5)"},
+                        "avoid_elements": {"type": "string", "description": "Comma-separated elements to ban from BBs (e.g. \"Br,I\")"},
+                        "require_elements": {"type": "string", "description": "Elements that must appear in ≥1 BB (e.g. \"B\")"},
+                        "max_steps": {"type": "integer", "description": "Maximum number of synthesis steps per route"},
+                        "min_confidence": {"type": "number", "description": "Minimum template confidence [0,1]"},
+                        "min_success_probability": {"type": "number", "description": "Minimum route success probability [0,1]"},
+                        "prefer_reaction_families": {"type": "string", "description": "Comma-separated reaction families to rank first (e.g. \"amide_coupling,suzuki_retro\")"}
+                    },
+                    "required": ["smiles"]
+                }
+            },
+            {
                 "name": "estimate_diversity",
                 "description": "Find multiple retrosynthetic routes for a target molecule and report the route diversity score (1 - avg pairwise Jaccard similarity of building-block sets). Higher = more diverse options available.",
                 "inputSchema": {
@@ -184,6 +203,7 @@ fn handle_tools_call(msg: &Value) -> Value {
         "estimate_diversity" => handle_estimate_diversity(smiles, args),
         "explain_route" => handle_explain_route(smiles, args),
         "find_pareto_routes" => handle_find_pareto_routes(smiles, args),
+        "plan_with_constraints" => handle_plan_with_constraints(smiles, args),
         _ => handle_find_routes(smiles, args),
     }
 }
@@ -248,6 +268,73 @@ fn handle_explain_route(smiles: &str, args: &Value) -> Value {
         .enumerate()
         .map(|(i, r)| explain_route(r, smiles, i + 1))
         .collect();
+    json!({"content": [{"type": "text", "text": text}]})
+}
+
+fn handle_plan_with_constraints(smiles: &str, args: &Value) -> Value {
+    let depth = args["depth"].as_u64().unwrap_or(5) as u32;
+    let max_routes = args["max_routes"].as_u64().unwrap_or(5) as usize;
+    let avoid = args["avoid_elements"].as_str().unwrap_or("");
+    let require = args["require_elements"].as_str().unwrap_or("");
+    let max_steps = args["max_steps"].as_u64().map(|n| n as usize);
+    let min_confidence = args["min_confidence"].as_f64();
+    let min_success_prob = args["min_success_probability"].as_f64();
+    let prefer_fams: Option<Vec<String>> = args["prefer_reaction_families"]
+        .as_str()
+        .map(|s| s.split(',').map(|f| f.trim().to_string()).collect());
+
+    let (env, rules) = load_env_and_rules();
+    let config = SearchConfig {
+        max_depth: depth,
+        max_routes,
+        forbidden_elements: elem_symbols_to_mask(avoid),
+        required_element_present: elem_symbols_to_mask(require),
+        ..Default::default()
+    };
+    let (mut routes, _) = match search::find_routes(smiles, &env, &rules, &config) {
+        Ok(r) => r,
+        Err(e) => return tool_error(&format!("search error: {e}")),
+    };
+
+    // Apply post-filters
+    if let Some(n) = max_steps {
+        routes.retain(|r| r.steps.len() <= n);
+    }
+    if let Some(v) = min_confidence {
+        routes.retain(|r| r.confidence >= v);
+    }
+    if let Some(v) = min_success_prob {
+        routes.retain(|r| r.success_probability >= v);
+    }
+    if let Some(ref fams) = prefer_fams {
+        routes.sort_by_key(|r| {
+            let has = r.steps.iter().any(|s| {
+                s.reaction_family
+                    .as_deref()
+                    .is_some_and(|f| fams.iter().any(|p| p == f))
+            });
+            u8::from(!has)
+        });
+    }
+
+    if routes.is_empty() {
+        return json!({"content": [{"type": "text", "text":
+            format!("No routes found for {smiles} matching the given constraints.")}]});
+    }
+    let mut text = format!(
+        "Target: {smiles}\nRoutes after constraints: {}\n\n",
+        routes.len()
+    );
+    for (i, route) in routes.iter().enumerate() {
+        text.push_str(&format_route_tree(route, smiles, i + 1));
+        text.push_str(&format!(
+            "  confidence={:.2}  success_P={:.2}  cost={:.2}  BBs: {}\n\n",
+            route.confidence,
+            route.success_probability,
+            route.route_cost,
+            route.building_blocks.join(", ")
+        ));
+    }
     json!({"content": [{"type": "text", "text": text}]})
 }
 

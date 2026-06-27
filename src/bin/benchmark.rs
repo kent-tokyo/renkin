@@ -21,8 +21,10 @@ use std::time::Instant;
 
 use anyhow::{Result, bail};
 use chematic::chem::molecular_weight;
+use chematic::rxn::run_reactants;
+use chematic::smiles::canonical_smiles;
 use renkin::DEFAULT_BUILDING_BLOCKS;
-use renkin::chem_env::{ChemEnv, default_rules, load_rules_from_file, mol_from_smiles};
+use renkin::chem_env::{ChemEnv, RetroRule, default_rules, load_rules_from_file, mol_from_smiles};
 use renkin::search::{Route, SearchConfig, find_routes};
 use rustc_hash::FxHashSet;
 use serde::Serialize;
@@ -156,6 +158,13 @@ struct BenchResult {
     /// None when no routes found. Flags templates that cause atoms to appear from nowhere.
     #[serde(skip_serializing_if = "Option::is_none")]
     atom_balance_ok: Option<bool>,
+    /// True if every step passes forward validation (precursors → target confirmed).
+    /// None when --plausibility not set or no routes found.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    forward_validated: Option<bool>,
+    /// True if any step uses a low-frequency template (step_confidence < 0.1).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    low_template_confidence: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -176,6 +185,16 @@ struct BenchReport {
     avg_depth_delta: f64,
     /// Percentage of solved targets where the best route passes atom balance check.
     pct_atom_balanced: f64,
+    /// Percentage of solved targets where every step passes forward validation.
+    /// None when --plausibility not set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pct_forward_validated: Option<f64>,
+    /// Percentage of solved targets where ≥1 step uses a low-frequency template (confidence < 0.1).
+    pct_low_template_confidence: f64,
+    /// Composite plausibility score ∈ [0, 1]: mean of (atom_balance + fwd_validated + high_confidence).
+    /// None when --plausibility not set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    plausibility_score: Option<f64>,
     results: Vec<BenchResult>,
 }
 
@@ -193,6 +212,7 @@ fn main() -> Result<()> {
     let mut beam_width: usize = 0;
     let mut max_routes: usize = 1;
     let mut bond_index = false;
+    let mut plausibility = false;
     #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
     let mut scorer_path: Option<String> = None;
     #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
@@ -245,6 +265,9 @@ fn main() -> Result<()> {
             }
             "--bond-index" => {
                 bond_index = true;
+            }
+            "--plausibility" => {
+                plausibility = true;
             }
             #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
             "--scorer" => {
@@ -364,6 +387,12 @@ fn main() -> Result<()> {
             _ => None,
         };
         let atom_balance_ok = routes.first().map(route_balanced);
+        let forward_validated = if plausibility {
+            routes.first().map(|r| route_forward_validated(r, &rules))
+        } else {
+            None
+        };
+        let low_template_confidence = routes.first().map(route_low_confidence);
 
         if solved {
             solved_count += 1;
@@ -398,6 +427,8 @@ fn main() -> Result<()> {
             gt_depth: *gt_depth,
             depth_delta,
             atom_balance_ok,
+            forward_validated,
+            low_template_confidence,
         });
     }
 
@@ -450,6 +481,29 @@ fn main() -> Result<()> {
         0.0
     };
 
+    let n_fwd_validated = solved_results
+        .iter()
+        .filter(|r| r.forward_validated == Some(true))
+        .count();
+    let pct_forward_validated = if plausibility && solved_count > 0 {
+        Some(n_fwd_validated as f64 / solved_count as f64 * 100.0)
+    } else {
+        None
+    };
+    let n_low_conf = solved_results
+        .iter()
+        .filter(|r| r.low_template_confidence == Some(true))
+        .count();
+    let pct_low_template_confidence = if solved_count > 0 {
+        n_low_conf as f64 / solved_count as f64 * 100.0
+    } else {
+        0.0
+    };
+    let plausibility_score = pct_forward_validated.map(|fv| {
+        (pct_atom_balanced / 100.0 + fv / 100.0 + (100.0 - pct_low_template_confidence) / 100.0)
+            / 3.0
+    });
+
     let report = BenchReport {
         total,
         solved: solved_count,
@@ -464,11 +518,49 @@ fn main() -> Result<()> {
         avg_route_diversity,
         avg_depth_delta,
         pct_atom_balanced,
+        pct_forward_validated,
+        pct_low_template_confidence,
+        plausibility_score,
         results,
     };
 
     println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())
+}
+
+// ── Plausibility checks ──────────────────────────────────────────────────────
+
+/// True if every step of the route passes forward validation:
+/// applying each step's precursors forward reproduces the step's target.
+fn route_forward_validated(route: &Route, rules: &[RetroRule]) -> bool {
+    route.steps.iter().all(|step| {
+        let Ok(reactant_mols): Result<Vec<_>, _> =
+            step.precursors.iter().map(|s| mol_from_smiles(s)).collect()
+        else {
+            return false;
+        };
+        let Ok(target_mol) = mol_from_smiles(&step.target) else {
+            return false;
+        };
+        let target_canon = canonical_smiles(&target_mol);
+        let mol_refs: Vec<_> = reactant_mols.iter().collect();
+        rules.iter().filter(|r| !r.smirks.is_empty()).any(|rule| {
+            let Some((lhs, rhs)) = rule.smirks.split_once(">>") else {
+                return false;
+            };
+            let fwd = format!("{rhs}>>{lhs}");
+            run_reactants(&fwd, &mol_refs)
+                .into_iter()
+                .flatten()
+                .flatten()
+                .any(|m| canonical_smiles(&m) == target_canon)
+        })
+    })
+}
+
+/// True if any step uses a template with step_confidence < 0.1 (rare template).
+fn route_low_confidence(route: &Route) -> bool {
+    route.steps.iter().any(|s| s.step_confidence < 0.1)
 }
 
 fn avg_opt(rows: &[&BenchResult], f: impl Fn(&BenchResult) -> Option<f64>) -> f64 {

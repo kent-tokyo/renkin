@@ -929,6 +929,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "renkin-kg"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "renkin",
+]
+
+[[package]]
 name = "rustc-hash"
 version = "2.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

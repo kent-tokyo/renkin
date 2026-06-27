@@ -1,0 +1,11 @@
+[package]
+name = "renkin-kg"
+version = "0.1.0"
+edition = "2024"
+description = "Reaction knowledge graph — bipartite molecule/reaction DAG with GraphML and Cypher export"
+repository = "https://github.com/kent-tokyo/renkin"
+license = "MIT"
+
+[dependencies]
+renkin   = { path = "../.." }
+anyhow   = "1"

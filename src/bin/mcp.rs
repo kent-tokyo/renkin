@@ -17,7 +17,7 @@ use std::io::{self, BufRead, Write};
 use chematic::chem::molecular_weight;
 use renkin::DEFAULT_BUILDING_BLOCKS;
 use renkin::chem_env::{self, elem_symbols_to_mask, mol_from_smiles};
-use renkin::display::format_route_tree;
+use renkin::display::{explain_route, format_route_tree};
 use renkin::search::{self, Route, SearchConfig};
 use serde_json::{Value, json};
 
@@ -112,6 +112,19 @@ fn handle_tools_list() -> Value {
                 }
             },
             {
+                "name": "explain_route",
+                "description": "Find retrosynthetic routes for a target and return a human-readable explanation of the top route(s): strengths, weaknesses, and per-step details derived from confidence, success_probability, atom_economy, and reaction_family.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "smiles": {"type": "string", "description": "Target molecule SMILES"},
+                        "depth": {"type": "integer", "description": "Max search depth (default: 5)"},
+                        "max_routes": {"type": "integer", "description": "Routes to explain (default: 1)"}
+                    },
+                    "required": ["smiles"]
+                }
+            },
+            {
                 "name": "estimate_diversity",
                 "description": "Find multiple retrosynthetic routes for a target molecule and report the route diversity score (1 - avg pairwise Jaccard similarity of building-block sets). Higher = more diverse options available.",
                 "inputSchema": {
@@ -155,6 +168,7 @@ fn handle_tools_call(msg: &Value) -> Value {
     match tool_name {
         "validate_route" => handle_validate_route(smiles, args),
         "estimate_diversity" => handle_estimate_diversity(smiles, args),
+        "explain_route" => handle_explain_route(smiles, args),
         _ => handle_find_routes(smiles, args),
     }
 }
@@ -194,6 +208,31 @@ fn handle_find_routes(smiles: &str, args: &Value) -> Value {
             ));
         }
     }
+    json!({"content": [{"type": "text", "text": text}]})
+}
+
+fn handle_explain_route(smiles: &str, args: &Value) -> Value {
+    let depth = args["depth"].as_u64().unwrap_or(5) as u32;
+    let max_routes = args["max_routes"].as_u64().unwrap_or(1) as usize;
+    let (env, rules) = load_env_and_rules();
+    let config = SearchConfig {
+        max_depth: depth,
+        max_routes,
+        ..Default::default()
+    };
+    let (routes, _) = match search::find_routes(smiles, &env, &rules, &config) {
+        Ok(r) => r,
+        Err(e) => return tool_error(&format!("search error: {e}")),
+    };
+    if routes.is_empty() {
+        return json!({"content": [{"type": "text", "text":
+            format!("No routes found for {smiles}.")}]});
+    }
+    let text: String = routes
+        .iter()
+        .enumerate()
+        .map(|(i, r)| explain_route(r, smiles, i + 1))
+        .collect();
     json!({"content": [{"type": "text", "text": text}]})
 }
 

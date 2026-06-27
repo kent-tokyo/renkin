@@ -23,6 +23,11 @@ struct Output {
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
 
+    // Subcommand dispatch: `renkin stock <cmd> ...`
+    if args.get(1).map(|s| s.as_str()) == Some("stock") {
+        return run_stock(&args[2..]);
+    }
+
     let mut target: Option<String> = None;
     let mut max_depth: u32 = 5;
     let mut bb_path: Option<String> = None;
@@ -35,6 +40,7 @@ fn main() -> Result<()> {
     let mut verbose = false;
     let mut bond_index = false;
     let mut bb_prices_path: Option<String> = None;
+    let mut stock_path: Option<String> = None;
     #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
     let mut scorer_path: Option<String> = None;
 
@@ -107,6 +113,12 @@ fn main() -> Result<()> {
                     bb_prices_path = Some(args[i].clone());
                 }
             }
+            "--stock" => {
+                i += 1;
+                if i < args.len() {
+                    stock_path = Some(args[i].clone());
+                }
+            }
             #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
             "--scorer" => {
                 i += 1;
@@ -141,10 +153,25 @@ fn main() -> Result<()> {
         );
     };
 
-    let env = match bb_path {
-        Some(ref path) => chem_env::ChemEnv::load(path)?,
-        None => chem_env::ChemEnv::load("data/building_blocks.smi")
-            .unwrap_or_else(|_| chem_env::ChemEnv::in_memory(DEFAULT_BUILDING_BLOCKS)),
+    // --stock overrides --building-blocks and --bb-prices
+    let (env, bb_price_map) = if let Some(ref path) = stock_path {
+        let entries = load_stock_csv(path);
+        let smiles_owned: Vec<String> = entries.iter().map(|e| e.smiles.clone()).collect();
+        let smiles_refs: Vec<&str> = smiles_owned.iter().map(|s| s.as_str()).collect();
+        let stock_env = chem_env::ChemEnv::in_memory(&smiles_refs);
+        let prices: std::collections::HashMap<String, f64> = entries
+            .into_iter()
+            .filter_map(|e| e.price_jpy.map(|p| (e.smiles, p)))
+            .collect();
+        (stock_env, Some(prices))
+    } else {
+        let env = match bb_path {
+            Some(ref path) => chem_env::ChemEnv::load(path)?,
+            None => chem_env::ChemEnv::load("data/building_blocks.smi")
+                .unwrap_or_else(|_| chem_env::ChemEnv::in_memory(DEFAULT_BUILDING_BLOCKS)),
+        };
+        let prices = bb_prices_path.as_deref().map(load_prices);
+        (env, prices)
     };
 
     let mut rules = chem_env::default_rules();
@@ -165,8 +192,6 @@ fn main() -> Result<()> {
                     std::process::exit(1)
                 })
         });
-
-    let bb_price_map = bb_prices_path.as_deref().map(load_prices);
 
     let config = SearchConfig {
         max_depth,
@@ -202,6 +227,52 @@ fn main() -> Result<()> {
                     display::format_route_mermaid(route, &target_smiles, i + 1)
                 );
             }
+        }
+        "explain" => {
+            for (i, route) in routes.iter().enumerate() {
+                print!("{}", display::explain_route(route, &target_smiles, i + 1));
+            }
+        }
+        "compare" | "table" => {
+            println!("{}", display::format_route_table(&routes));
+        }
+        "compare-json" => {
+            #[derive(serde::Serialize)]
+            struct RouteCompare {
+                route_num: usize,
+                steps: usize,
+                depth: u32,
+                confidence: f64,
+                success_probability: f64,
+                route_cost: f64,
+                convergency: f64,
+                families: Vec<String>,
+            }
+            let rows: Vec<RouteCompare> = routes
+                .iter()
+                .enumerate()
+                .map(|(i, r)| {
+                    let mut families: Vec<String> = Vec::new();
+                    for step in &r.steps {
+                        if let Some(f) = step.reaction_family.as_deref()
+                            && !families.iter().any(|x| x == f)
+                        {
+                            families.push(f.to_string());
+                        }
+                    }
+                    RouteCompare {
+                        route_num: i + 1,
+                        steps: r.steps.len(),
+                        depth: r.depth,
+                        confidence: r.confidence,
+                        success_probability: r.success_probability,
+                        route_cost: r.route_cost,
+                        convergency: r.convergency,
+                        families,
+                    }
+                })
+                .collect();
+            println!("{}", serde_json::to_string_pretty(&rows)?);
         }
         _ => {
             if routes.is_empty() {
@@ -260,6 +331,162 @@ fn diagnose(stats: &search::SearchStats, max_depth: u32) -> (Vec<&'static str>, 
         suggestions.push("try --templates data/templates_extracted_50000.smi".to_string());
     }
     (causes, suggestions)
+}
+
+// ── Stock CSV support ──────────────────────────────────────────────────────
+
+struct StockEntry {
+    smiles: String,
+    name: Option<String>,
+    vendor: Option<String>,
+    price_jpy: Option<f64>,
+    hazard: Option<String>,
+    available: bool,
+}
+
+/// Parse a stock CSV file.
+/// Header (first non-comment line) and comment lines starting with `#` are skipped.
+/// Columns: smiles, name, vendor, price_jpy, amount, hazard, available
+fn load_stock_csv(path: &str) -> Vec<StockEntry> {
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    let mut first = true;
+    content
+        .lines()
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .filter_map(|l| {
+            // skip header row
+            if first {
+                let is_header = l.to_ascii_lowercase().starts_with("smiles");
+                first = false; // won't trigger again; closure captures mut ref
+                if is_header {
+                    return None;
+                }
+            }
+            let cols: Vec<&str> = l.splitn(8, ',').collect();
+            let smiles = cols.first()?.trim().to_string();
+            if smiles.is_empty() {
+                return None;
+            }
+            Some(StockEntry {
+                smiles,
+                name: cols
+                    .get(1)
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty()),
+                vendor: cols
+                    .get(2)
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty()),
+                price_jpy: cols.get(3).and_then(|s| s.trim().parse::<f64>().ok()),
+                hazard: cols
+                    .get(5)
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty()),
+                available: cols
+                    .get(6)
+                    .map(|s| s.trim().eq_ignore_ascii_case("true"))
+                    .unwrap_or(true),
+            })
+        })
+        .collect()
+}
+
+fn run_stock(args: &[String]) -> Result<()> {
+    let cmd = args.first().map(|s| s.as_str()).unwrap_or("help");
+    match cmd {
+        "stats" => {
+            let path = args.get(1).map(|s| s.as_str()).unwrap_or("data/stock.csv");
+            let entries = load_stock_csv(path);
+            if entries.is_empty() {
+                println!("No entries found in {path}");
+                return Ok(());
+            }
+            let available = entries.iter().filter(|e| e.available).count();
+            let priced: Vec<f64> = entries.iter().filter_map(|e| e.price_jpy).collect();
+            let (pmin, pmax) = if priced.is_empty() {
+                ("—".to_string(), "—".to_string())
+            } else {
+                let mn = priced.iter().cloned().fold(f64::INFINITY, f64::min);
+                let mx = priced.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+                (format!("{mn:.0}"), format!("{mx:.0}"))
+            };
+            let mut hazards: Vec<&str> =
+                entries.iter().filter_map(|e| e.hazard.as_deref()).collect();
+            hazards.sort_unstable();
+            hazards.dedup();
+            println!("Stock: {path}");
+            println!("  Entries   : {}", entries.len());
+            println!("  Available : {available}");
+            println!("  Priced    : {} / {}", priced.len(), entries.len());
+            println!("  Price JPY : {pmin} – {pmax}");
+            println!(
+                "  Hazards   : {}",
+                if hazards.is_empty() {
+                    "none".to_string()
+                } else {
+                    hazards.join(", ")
+                }
+            );
+            let mut vendors: Vec<&str> =
+                entries.iter().filter_map(|e| e.vendor.as_deref()).collect();
+            vendors.sort_unstable();
+            vendors.dedup();
+            if !vendors.is_empty() {
+                println!("  Vendors   : {}", vendors.join(", "));
+            }
+        }
+        "validate" => {
+            let path = args.get(1).map(|s| s.as_str()).unwrap_or("data/stock.csv");
+            let entries = load_stock_csv(path);
+            let mut valid = 0usize;
+            let mut invalid: Vec<String> = Vec::new();
+            for e in &entries {
+                if chem_env::mol_from_smiles(&e.smiles).is_ok() {
+                    valid += 1;
+                } else {
+                    let label = e.name.as_deref().unwrap_or("?");
+                    invalid.push(format!("{} ({})", e.smiles, label));
+                }
+            }
+            println!("Valid: {valid}  Invalid: {}", invalid.len());
+            for s in &invalid {
+                println!("  INVALID SMILES: {s}");
+            }
+        }
+        "coverage" => {
+            let targets_path = args.get(1).map(|s| s.as_str()).unwrap_or("targets.smi");
+            let stock_path = args.get(2).map(|s| s.as_str()).unwrap_or("data/stock.csv");
+            let entries = load_stock_csv(stock_path);
+            let stock_set: std::collections::HashSet<&str> =
+                entries.iter().map(|e| e.smiles.as_str()).collect();
+            let targets: Vec<String> = std::fs::read_to_string(targets_path)
+                .unwrap_or_default()
+                .lines()
+                .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                .map(|l| l.split_whitespace().next().unwrap_or(l).to_string())
+                .collect();
+            let in_stock: Vec<&str> = targets
+                .iter()
+                .filter(|t| stock_set.contains(t.as_str()))
+                .map(|t| t.as_str())
+                .collect();
+            println!(
+                "Targets: {}  In stock: {}  Not in stock: {}",
+                targets.len(),
+                in_stock.len(),
+                targets.len() - in_stock.len()
+            );
+        }
+        _ => {
+            println!("Usage: renkin stock <stats|validate|coverage> [args...]");
+            println!("  stats <file.csv>                  — summary statistics");
+            println!("  validate <file.csv>               — check SMILES validity");
+            println!("  coverage <targets.smi> <file.csv> — check which targets are in stock");
+        }
+    }
+    Ok(())
 }
 
 fn load_prices(path: &str) -> std::collections::HashMap<String, f64> {

@@ -185,6 +185,159 @@ fn collect_mermaid(
     }
 }
 
+// ── Explain renderer ──────────────────────────────────────────────────────
+
+/// Format a human-readable explanation of why a route was ranked as it is.
+/// Derives strengths and weaknesses purely from existing Route fields — no
+/// new computation.
+pub fn explain_route(route: &Route, target: &str, num: usize) -> String {
+    let mut out = format!(
+        "Route {}  [score={:.2}, depth={}]\nTarget: {target}\n\n",
+        num, route.score, route.depth
+    );
+
+    let mut strengths: Vec<String> = Vec::new();
+    let mut weaknesses: Vec<String> = Vec::new();
+
+    if route.depth == 1 {
+        strengths.push("single-step synthesis".into());
+    } else if route.depth >= 4 {
+        weaknesses.push(format!(
+            "long route ({} steps) — more steps increase failure risk",
+            route.depth
+        ));
+    }
+    if route.confidence >= 0.8 {
+        strengths.push(format!(
+            "high template frequency (confidence {:.2})",
+            route.confidence
+        ));
+    } else if route.confidence < 0.4 {
+        weaknesses.push(format!(
+            "rare template used (confidence {:.2})",
+            route.confidence
+        ));
+    }
+    if route.success_probability >= 0.7 {
+        strengths.push(format!(
+            "high step-success probability ({:.2})",
+            route.success_probability
+        ));
+    } else if route.success_probability < 0.5 {
+        weaknesses.push(format!(
+            "success_probability {:.2} — cascaded template uncertainty",
+            route.success_probability
+        ));
+    }
+    if route.convergency >= 0.8 && route.depth > 1 {
+        strengths.push("parallel synthesis possible".into());
+    }
+    if route.steps.iter().any(|s| s.procedure_hint.is_some()) {
+        strengths.push("procedure hints available".into());
+    }
+    let bad_ae: Vec<(usize, f64)> = route
+        .steps
+        .iter()
+        .enumerate()
+        .filter_map(|(i, s)| s.atom_economy.filter(|&ae| ae < 50.0).map(|ae| (i + 1, ae)))
+        .collect();
+    if bad_ae.is_empty()
+        && route
+            .steps
+            .iter()
+            .all(|s| s.atom_economy.is_some_and(|ae| ae >= 70.0))
+    {
+        strengths.push("good atom economy across all steps".into());
+    }
+    for (i, ae) in &bad_ae {
+        weaknesses.push(format!("low atom economy in step {i} ({ae:.0}%)"));
+    }
+    let mut families: Vec<&str> = Vec::new();
+    for step in &route.steps {
+        if let Some(f) = step.reaction_family.as_deref()
+            && !families.contains(&f)
+        {
+            families.push(f);
+        }
+    }
+    if !families.is_empty() {
+        strengths.push(format!("named reaction: {}", families.join(", ")));
+    }
+
+    if !strengths.is_empty() {
+        out.push_str("Strengths:\n");
+        for s in &strengths {
+            out.push_str(&format!("  - {s}\n"));
+        }
+    }
+    if !weaknesses.is_empty() {
+        out.push_str("Weaknesses:\n");
+        for w in &weaknesses {
+            out.push_str(&format!("  - {w}\n"));
+        }
+    }
+
+    out.push_str("\nSteps:\n");
+    for (i, step) in route.steps.iter().enumerate() {
+        let label = step.reaction_family.as_deref().unwrap_or(&step.rule);
+        let ae = step
+            .atom_economy
+            .map(|a| format!(", atom_economy {a:.0}%"))
+            .unwrap_or_default();
+        out.push_str(&format!(
+            "  Step {}: {} (confidence {:.2}{})\n",
+            i + 1,
+            label,
+            step.step_confidence,
+            ae
+        ));
+        if let Some(hint) = &step.procedure_hint {
+            out.push_str(&format!("    Procedure: {hint}\n"));
+        }
+    }
+    out.push('\n');
+    out
+}
+
+// ── Comparison table renderer ──────────────────────────────────────────────
+
+/// Format a comparison table of multiple routes (one row per route).
+pub fn format_route_table(routes: &[Route]) -> String {
+    let mut out = format!(
+        "{:<6} {:<6} {:<6} {:<7} {:<7} {:<7} {:<6} {}\n",
+        "Route", "Steps", "Depth", "Conf", "SuccP", "Cost", "Conv", "Family"
+    );
+    out.push_str(&"-".repeat(62));
+    out.push('\n');
+    for (i, route) in routes.iter().enumerate() {
+        let mut families: Vec<&str> = Vec::new();
+        for step in &route.steps {
+            if let Some(f) = step.reaction_family.as_deref()
+                && !families.contains(&f)
+            {
+                families.push(f);
+            }
+        }
+        let family = if families.is_empty() {
+            "—".to_string()
+        } else {
+            families.join(", ")
+        };
+        out.push_str(&format!(
+            "{:<6} {:<6} {:<6} {:<7.2} {:<7.2} {:<7.2} {:<6.2} {}\n",
+            i + 1,
+            route.steps.len(),
+            route.depth,
+            route.confidence,
+            route.success_probability,
+            route.route_cost,
+            route.convergency,
+            family,
+        ));
+    }
+    out
+}
+
 /// Format a route as a Mermaid flowchart (LR direction).
 ///
 /// Example:

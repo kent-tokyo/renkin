@@ -6,13 +6,10 @@
 <p>
   <a href="https://github.com/kent-tokyo/renkin/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/kent-tokyo/renkin/actions/workflows/ci.yml/badge.svg?branch=master"></a>
   <a href="https://github.com/kent-tokyo/renkin/actions/workflows/docs.yml"><img alt="Docs" src="https://github.com/kent-tokyo/renkin/actions/workflows/docs.yml/badge.svg?branch=master"></a>
-  <a href="https://github.com/kent-tokyo/renkin/actions/workflows/release.yml"><img alt="Release" src="https://github.com/kent-tokyo/renkin/actions/workflows/release.yml/badge.svg"></a>
-  <a href="https://github.com/kent-tokyo/renkin/actions/workflows/security-audit.yml"><img alt="Security Audit" src="https://github.com/kent-tokyo/renkin/actions/workflows/security-audit.yml/badge.svg?branch=master"></a>
 </p>
 
 <p>
   <a href="https://crates.io/crates/renkin"><img alt="Crates.io" src="https://img.shields.io/crates/v/renkin.svg"></a>
-  <a href="https://crates.io/crates/renkin"><img alt="Downloads" src="https://img.shields.io/crates/d/renkin.svg"></a>
   <a href="https://docs.rs/renkin"><img alt="docs.rs" src="https://docs.rs/renkin/badge.svg"></a>
   <a href="https://pypi.org/project/renkin/"><img alt="PyPI" src="https://img.shields.io/pypi/v/renkin.svg"></a>
   <a href="https://pypi.org/project/renkin/"><img alt="Python" src="https://img.shields.io/pypi/pyversions/renkin.svg"></a>
@@ -369,8 +366,8 @@ renkin/                          ← Cargo workspace ルート（整備予定）
   author    = {kent-tokyo},
   title     = {{RENKIN}: Retrosynthesis Engine for Knowledge-Informed Navigation},
   year      = {2026},
-  url       = {https://github.com/kent-tokyo/renkin/releases/tag/v0.15.2},
-  version   = {0.15.2},
+  url       = {https://github.com/kent-tokyo/renkin/releases/tag/v0.15.4},
+  version   = {0.15.4},
   license   = {MIT}
 }
 ```

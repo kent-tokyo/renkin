@@ -178,18 +178,24 @@ Add `--verbose` to print search statistics (nodes expanded, elapsed time) to std
 | **A\* / AND-OR Tree Search** | Retro\*-equivalent algorithm with pluggable heuristics (`MoleculeValueEstimator`, `ReactionPrior`) |
 | **Up to 50k reaction templates** | Auto-extracted from USPTO-50k/MIT via rdchiral; frequency-weighted priority; `--templates` for custom sets |
 | **Route scoring** | `confidence`, `step_confidence`, `success_probability` (Retro-prob style), `convergency`, `atom_economy` per step |
-| **Route cost scoring** | `route_cost = Σ(BB cost) + steps×0.5`; actual prices via `--bb-prices CSV` |
+| **Route cost scoring** | `route_cost = Σ(BB cost) + steps×0.5`; actual prices via `--bb-prices CSV` or `--stock stock.csv` |
+| **Pareto multi-objective search** | `--format pareto` returns a Pareto front across `route_cost`, `success_probability`, `steps`, etc.; objectives configurable via `--objectives cost:min,success_probability:max,steps:min` |
+| **Constraint DSL** | `--constraints constraints.json` — JSON-driven synthesis planning: element filters, step limits, confidence thresholds, preferred reaction families; enables LLM → RENKIN pipeline |
+| **Output formats** | `--format json` · `tree` · `mermaid` · `explain` (human-readable per-route analysis) · `compare` (side-by-side table) · `compare-json` · `pareto` |
+| **Failure diagnostics** | Zero-route JSON output includes `diagnostics` block with `likely_causes` and `suggestions` |
 | **Forward validation** | `renkin-forward validate` verifies each step by applying templates forward; accepts `--route-json` or stdin |
+| **Plausibility report** | `renkin-bench --plausibility` — forward-validates best routes and reports composite plausibility score |
 | **PaRoutes benchmark** | `renkin-bench --input-format paroutes` for multi-step ground-truth evaluation with `depth_delta` and `route_diversity` |
 | **Atom balance check** | `renkin-bench` flags steps where `target_MW > Σ precursor_MW` (CompleteRXN reference) |
-| **Procedure hints** | 19 hand-crafted rules carry `procedure_hint` — placeholder for QFANG-style procedure generation |
-| **MCP server** | `renkin-mcp` exposes `find_routes`, `validate_route`, `estimate_diversity` to Claude Desktop |
+| **Stock CSV management** | `renkin stock stats\|validate\|coverage` — inspect and validate stock CSV files with SMILES, name, vendor, price, hazard fields |
+| **Template quality tools** | `renkin template stats\|validate\|dedup\|explain\|coverage` — inspect SMIRKS template sets: frequency distribution, validity, duplicates, per-template lookup, coverage rate |
+| **MCP server** | `renkin-mcp` exposes 6 tools: `find_routes`, `validate_route`, `explain_route`, `find_pareto_routes`, `plan_with_constraints`, `estimate_diversity` |
+| **`renkin-doctor`** | Environment diagnostic binary — checks templates, building blocks, Python import, tool versions, and data integrity |
+| **`renkin-kg`** | Reaction knowledge graph builder — constructs bipartite mol↔reaction graphs from routes; exports to GraphML or Cypher |
 | **Beam search** | `--beam-width N` for memory-bounded exploration; `SmallVec<[FEntry; 6]>` stack-allocated frontier |
 | **Parallel rule application** | `rayon` on non-WASM; sequential fallback on wasm32 |
 | **tract-onnx NN scorer** | Pure Rust ONNX inference (no C++ dep) — optional `--scorer` flag for Phase B template relevance scoring |
-| **Route visualization** | `--format tree` ASCII tree · `--format mermaid` GitHub/Notion flowchart |
 | **`building_blocks` in JSON** | Each route includes the leaf starting-material SMILES — no manual step parsing needed |
-| **MCP server** | `renkin-mcp` binary — AI agents (Claude, etc.) call retrosynthesis over JSON-RPC stdio |
 | **Tetrahedral stereo @/@@** | Full stereochemistry support via chematic 0.4.16 |
 | **Python** | `pip install renkin` — pre-built wheels for Linux/macOS/Windows |
 | **WASM** | ~500 KB bundle — runs in the browser at near-native speed |
@@ -288,7 +294,16 @@ The JSON output includes `avg_nodes_expanded`, `avg_confidence`, `avg_convergenc
 }
 ```
 
-**Tool**: `find_routes(smiles, depth?, max_routes?, avoid_elements?, require_elements?)`
+**Tools** (6):
+
+| Tool | Description |
+|---|---|
+| `find_routes` | Retrosynthesis: SMILES → routes with scoring |
+| `validate_route` | Forward-validate a retrosynthetic route |
+| `explain_route` | Human-readable strengths/weaknesses per route |
+| `find_pareto_routes` | Pareto-front multi-objective route search |
+| `plan_with_constraints` | Constraint-DSL planning (element filters, step limits, confidence thresholds) |
+| `estimate_diversity` | Route diversity and coverage metrics |
 
 The server auto-detects `data/building_blocks.smi` and `data/templates_extracted_5000.smi` in the working directory. Falls back to the embedded 509-BB / 20-rule defaults if not found.
 
@@ -364,20 +379,24 @@ Target SMILES
 ## Project Structure
 
 ```
-renkin/                          ← Cargo workspace root (planned)
+renkin/                          ← Cargo workspace root
 ├── Cargo.toml
 ├── src/                         ← renkin crate (retrosynthesis)
 │   ├── lib.rs                   # public library
-│   ├── main.rs                  # CLI binary  (--templates, --scorer flags)
-│   ├── bin/benchmark.rs         # renkin-bench binary  (--templates flag)
+│   ├── main.rs                  # CLI binary (--templates, --scorer, --constraints, --objectives flags)
+│   ├── bin/benchmark.rs         # renkin-bench binary (--plausibility flag)
+│   ├── bin/doctor.rs            # renkin-doctor diagnostic binary
+│   ├── bin/fp.rs                # renkin-fp ECFP4 fingerprint (nn-scoring feature)
+│   ├── bin/mcp.rs               # renkin-mcp MCP server (6 tools)
 │   ├── chem_env.rs              # retro rules + BB lookup + template loader
 │   ├── score.rs                 # SA Score heuristic + step cost
 │   ├── search.rs                # A* / AND-OR tree engine + beam pruning
 │   ├── scorer.rs                # Phase B: tract-onnx NN template scorer
 │   ├── python.rs                # PyO3 bindings (--features python)
 │   └── wasm.rs                  # wasm-bindgen bindings (cfg = wasm32)
-├── crates/                      ← sibling crates (in development)
-│   └── renkin-forward/          # forward reaction prediction (reactants → products)
+├── crates/                      ← sibling crates
+│   ├── renkin-forward/          # forward reaction prediction (reactants → products)
+│   └── renkin-kg/               # reaction knowledge graph builder (GraphML / Cypher export)
 ├── data/
 │   ├── building_blocks.smi              # 509 curated commercial starting materials
 │   ├── templates_extracted_5000.smi     # 5,000 auto-extracted SMIRKS templates
@@ -394,10 +413,20 @@ renkin/                          ← Cargo workspace root (planned)
 
 ## Roadmap
 
-- [x] Route cost scoring — `route_cost` field + `--bb-prices path.csv` flag (SA Score proxy or real prices)
-- [x] Cargo workspace — `crates/renkin-forward/` sibling crate
+- [x] Route cost scoring — `route_cost` field + `--bb-prices path.csv` / `--stock stock.csv`
+- [x] Cargo workspace — `crates/renkin-forward/` + `crates/renkin-kg/`
 - [x] `renkin-forward predict` — template-based forward prediction (reactants → products)
 - [x] `renkin-forward validate` — forward-validate retrosynthetic routes; stdin-pipe friendly
+- [x] `renkin-doctor` — environment diagnostic binary (templates, BBs, Python, binaries)
+- [x] Failure diagnostics — zero-route output includes `likely_causes` + `suggestions` JSON block
+- [x] `--format explain|compare|compare-json` — human-readable and tabular route output
+- [x] `renkin stock stats|validate|coverage` — stock CSV management subcommand
+- [x] Pareto multi-objective search — `--format pareto`, `--objectives`, `find_pareto_routes` MCP
+- [x] Constraint DSL — `--constraints JSON`, `plan_with_constraints` MCP tool
+- [x] `renkin-bench --plausibility` — forward-validation plausibility report
+- [x] `renkin template stats|validate|dedup|explain|coverage` — template quality tools
+- [x] `renkin-kg` — reaction knowledge graph (bipartite mol↔reaction, GraphML/Cypher export)
+- [x] MCP server expanded to 6 tools (`explain_route`, `find_pareto_routes`, `plan_with_constraints`)
 
 <details>
 <summary>Completed milestones</summary>

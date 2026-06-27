@@ -125,6 +125,20 @@ fn handle_tools_list() -> Value {
                 }
             },
             {
+                "name": "find_pareto_routes",
+                "description": "Find retrosynthetic routes for a target and return the Pareto-optimal subset across multiple objectives (route_cost, success_probability, steps, etc.). Each Pareto route is non-dominated — no other route is better on all objectives simultaneously.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "smiles": {"type": "string", "description": "Target molecule SMILES"},
+                        "depth": {"type": "integer", "description": "Max search depth (default: 5)"},
+                        "max_routes": {"type": "integer", "description": "Routes to search before computing Pareto front (default: 10)"},
+                        "objectives": {"type": "string", "description": "Comma-separated objectives, e.g. \"cost:min,success_probability:max,steps:min\" (default)"}
+                    },
+                    "required": ["smiles"]
+                }
+            },
+            {
                 "name": "estimate_diversity",
                 "description": "Find multiple retrosynthetic routes for a target molecule and report the route diversity score (1 - avg pairwise Jaccard similarity of building-block sets). Higher = more diverse options available.",
                 "inputSchema": {
@@ -169,6 +183,7 @@ fn handle_tools_call(msg: &Value) -> Value {
         "validate_route" => handle_validate_route(smiles, args),
         "estimate_diversity" => handle_estimate_diversity(smiles, args),
         "explain_route" => handle_explain_route(smiles, args),
+        "find_pareto_routes" => handle_find_pareto_routes(smiles, args),
         _ => handle_find_routes(smiles, args),
     }
 }
@@ -234,6 +249,157 @@ fn handle_explain_route(smiles: &str, args: &Value) -> Value {
         .map(|(i, r)| explain_route(r, smiles, i + 1))
         .collect();
     json!({"content": [{"type": "text", "text": text}]})
+}
+
+fn handle_find_pareto_routes(smiles: &str, args: &Value) -> Value {
+    let depth = args["depth"].as_u64().unwrap_or(5) as u32;
+    let max_routes = args["max_routes"].as_u64().unwrap_or(10) as usize;
+    let obj_spec = args["objectives"]
+        .as_str()
+        .unwrap_or("cost:min,success_probability:max,steps:min");
+
+    let (env, rules) = load_env_and_rules();
+    let config = SearchConfig {
+        max_depth: depth,
+        max_routes,
+        ..Default::default()
+    };
+    let (routes, _) = match search::find_routes(smiles, &env, &rules, &config) {
+        Ok(r) => r,
+        Err(e) => return tool_error(&format!("search error: {e}")),
+    };
+    if routes.is_empty() {
+        return json!({"content": [{"type": "text", "text":
+            format!("No routes found for {smiles}.")}]});
+    }
+
+    // ponytail: duplicated from main.rs — lift to lib if a 3rd caller appears.
+    let objs = mcp_parse_objectives(obj_spec);
+    let front = mcp_pareto_front(&routes, &objs);
+
+    let mut text = format!(
+        "Target: {smiles}\nSearched: {} routes  Pareto front: {} routes\nObjectives: {}\n\n",
+        routes.len(),
+        front.len(),
+        obj_spec
+    );
+    for (rank, &idx) in front.iter().enumerate() {
+        let r = &routes[idx];
+        let label = mcp_tradeoff_label(idx, &front, &routes, &objs);
+        text.push_str(&format!(
+            "Route {} (#{} overall){}\n  cost={:.2}  success_P={:.2}  steps={}  confidence={:.2}\n  BBs: {}\n\n",
+            rank + 1, idx + 1,
+            label.map(|l| format!("  [{l}]")).unwrap_or_default(),
+            r.route_cost, r.success_probability, r.steps.len(), r.confidence,
+            r.building_blocks.join(", ")
+        ));
+    }
+    json!({"content": [{"type": "text", "text": text}]})
+}
+
+// Pareto helpers (duplicated from main.rs — see ponytail comment above)
+fn mcp_parse_objectives(spec: &str) -> Vec<(u8, bool)> {
+    // Encoding: field as u8 index, direction as bool (true=min)
+    // 0=cost 1=success_prob 2=steps 3=depth 4=confidence 5=convergency 6=atom_economy
+    spec.split(',')
+        .filter_map(|part| {
+            let (f, d) = part.trim().split_once(':')?;
+            let field = match f.trim() {
+                "cost" => 0u8,
+                "success_probability" | "success" => 1,
+                "steps" => 2,
+                "depth" => 3,
+                "confidence" => 4,
+                "convergency" => 5,
+                "atom_economy" => 6,
+                _ => return None,
+            };
+            let minimize = d.trim() == "min";
+            Some((field, minimize))
+        })
+        .collect()
+}
+
+fn mcp_obj_val(r: &search::Route, field: u8) -> f64 {
+    match field {
+        0 => r.route_cost,
+        1 => r.success_probability,
+        2 => r.steps.len() as f64,
+        3 => r.depth as f64,
+        4 => r.confidence,
+        5 => r.convergency,
+        _ => {
+            let v: Vec<f64> = r.steps.iter().filter_map(|s| s.atom_economy).collect();
+            if v.is_empty() {
+                0.0
+            } else {
+                v.iter().sum::<f64>() / v.len() as f64
+            }
+        }
+    }
+}
+
+fn mcp_pareto_front(routes: &[search::Route], objs: &[(u8, bool)]) -> Vec<usize> {
+    (0..routes.len())
+        .filter(|&i| {
+            !(0..routes.len()).any(|j| {
+                if j == i {
+                    return false;
+                }
+                let mut all_no_worse = true;
+                let mut any_better = false;
+                for &(f, minimize) in objs {
+                    let va = mcp_obj_val(&routes[i], f);
+                    let vb = mcp_obj_val(&routes[j], f);
+                    let (b_better, b_worse) = if minimize {
+                        (vb < va, vb > va)
+                    } else {
+                        (vb > va, vb < va)
+                    };
+                    if b_worse {
+                        all_no_worse = false;
+                    }
+                    if b_better {
+                        any_better = true;
+                    }
+                }
+                all_no_worse && any_better
+            })
+        })
+        .collect()
+}
+
+fn mcp_tradeoff_label(
+    idx: usize,
+    front: &[usize],
+    routes: &[search::Route],
+    objs: &[(u8, bool)],
+) -> Option<String> {
+    let names = [
+        "cheapest",
+        "most_reliable",
+        "shortest",
+        "shallowest",
+        "highest_confidence",
+        "most_convergent",
+        "best_atom_economy",
+    ];
+    let mut labels = Vec::new();
+    for &(f, minimize) in objs {
+        let my = mcp_obj_val(&routes[idx], f);
+        if front.iter().filter(|&&j| j != idx).all(|&j| {
+            let o = mcp_obj_val(&routes[j], f);
+            if minimize { my < o } else { my > o }
+        }) && let Some(name) = names.get(f as usize)
+        {
+            labels.push(*name);
+        }
+    }
+    if labels.is_empty() {
+        None
+    } else {
+        Some(labels.join("_and_"))
+    }
 }
 
 fn step_balanced(target: &str, precursors: &[String]) -> bool {

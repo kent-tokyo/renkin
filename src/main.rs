@@ -41,6 +41,7 @@ fn main() -> Result<()> {
     let mut bond_index = false;
     let mut bb_prices_path: Option<String> = None;
     let mut stock_path: Option<String> = None;
+    let mut objectives_spec: String = "cost:min,success_probability:max,steps:min".to_string();
     #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
     let mut scorer_path: Option<String> = None;
 
@@ -117,6 +118,12 @@ fn main() -> Result<()> {
                 i += 1;
                 if i < args.len() {
                     stock_path = Some(args[i].clone());
+                }
+            }
+            "--objectives" => {
+                i += 1;
+                if i < args.len() {
+                    objectives_spec = args[i].clone();
                 }
             }
             #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
@@ -274,6 +281,48 @@ fn main() -> Result<()> {
                 .collect();
             println!("{}", serde_json::to_string_pretty(&rows)?);
         }
+        "pareto" => {
+            let objs = parse_objectives(&objectives_spec);
+            let front = pareto_front_indices(&routes, &objs);
+            let obj_labels: Vec<String> = objs
+                .iter()
+                .map(|(f, d)| format!("{}:{}", f.as_str(), d.as_str()))
+                .collect();
+            #[derive(serde::Serialize)]
+            struct ParetoRoute {
+                route_num: usize,
+                route_cost: f64,
+                success_probability: f64,
+                steps: usize,
+                depth: u32,
+                confidence: f64,
+                convergency: f64,
+                #[serde(skip_serializing_if = "Option::is_none")]
+                tradeoff: Option<String>,
+            }
+            let front_routes: Vec<ParetoRoute> = front
+                .iter()
+                .map(|&idx| ParetoRoute {
+                    route_num: idx + 1,
+                    route_cost: routes[idx].route_cost,
+                    success_probability: routes[idx].success_probability,
+                    steps: routes[idx].steps.len(),
+                    depth: routes[idx].depth,
+                    confidence: routes[idx].confidence,
+                    convergency: routes[idx].convergency,
+                    tradeoff: tradeoff_label(idx, &front, &routes, &objs),
+                })
+                .collect();
+            let out = serde_json::json!({
+                "target": target_smiles,
+                "routes_searched": routes.len(),
+                "objectives": obj_labels,
+                "pareto_front_size": front.len(),
+                "pareto_front": front_routes,
+                "dominated_count": routes.len() - front.len(),
+            });
+            println!("{}", serde_json::to_string_pretty(&out)?);
+        }
         _ => {
             if routes.is_empty() {
                 let (causes, suggestions) = diagnose(&stats, max_depth);
@@ -331,6 +380,154 @@ fn diagnose(stats: &search::SearchStats, max_depth: u32) -> (Vec<&'static str>, 
         suggestions.push("try --templates data/templates_extracted_50000.smi".to_string());
     }
     (causes, suggestions)
+}
+
+// ── Pareto / multi-objective support ──────────────────────────────────────
+
+#[derive(Clone, Copy)]
+enum ObjField {
+    Cost,
+    SuccessProb,
+    Steps,
+    Depth,
+    Confidence,
+    Convergency,
+    AtomEconomy,
+}
+
+#[derive(Clone, Copy)]
+enum ObjDir {
+    Min,
+    Max,
+}
+
+impl ObjField {
+    fn as_str(self) -> &'static str {
+        match self {
+            ObjField::Cost => "cost",
+            ObjField::SuccessProb => "success_probability",
+            ObjField::Steps => "steps",
+            ObjField::Depth => "depth",
+            ObjField::Confidence => "confidence",
+            ObjField::Convergency => "convergency",
+            ObjField::AtomEconomy => "atom_economy",
+        }
+    }
+}
+
+impl ObjDir {
+    fn as_str(self) -> &'static str {
+        match self {
+            ObjDir::Min => "min",
+            ObjDir::Max => "max",
+        }
+    }
+}
+
+fn parse_objectives(spec: &str) -> Vec<(ObjField, ObjDir)> {
+    spec.split(',')
+        .filter_map(|part| {
+            let (field, dir) = part.trim().split_once(':')?;
+            let f = match field.trim() {
+                "cost" => ObjField::Cost,
+                "success_probability" | "success" => ObjField::SuccessProb,
+                "steps" => ObjField::Steps,
+                "depth" => ObjField::Depth,
+                "confidence" => ObjField::Confidence,
+                "convergency" => ObjField::Convergency,
+                "atom_economy" | "atom_economy_avg" => ObjField::AtomEconomy,
+                _ => return None,
+            };
+            let d = match dir.trim() {
+                "min" => ObjDir::Min,
+                "max" => ObjDir::Max,
+                _ => return None,
+            };
+            Some((f, d))
+        })
+        .collect()
+}
+
+fn obj_value(route: &search::Route, field: ObjField) -> f64 {
+    match field {
+        ObjField::Cost => route.route_cost,
+        ObjField::SuccessProb => route.success_probability,
+        ObjField::Steps => route.steps.len() as f64,
+        ObjField::Depth => route.depth as f64,
+        ObjField::Confidence => route.confidence,
+        ObjField::Convergency => route.convergency,
+        ObjField::AtomEconomy => {
+            let vals: Vec<f64> = route.steps.iter().filter_map(|s| s.atom_economy).collect();
+            if vals.is_empty() {
+                0.0
+            } else {
+                vals.iter().sum::<f64>() / vals.len() as f64
+            }
+        }
+    }
+}
+
+/// Returns true if route `b` dominates route `a`
+/// (b is no worse on all objectives, strictly better on at least one).
+fn dominates(a: &search::Route, b: &search::Route, objs: &[(ObjField, ObjDir)]) -> bool {
+    let mut all_no_worse = true;
+    let mut any_better = false;
+    for &(field, dir) in objs {
+        let va = obj_value(a, field);
+        let vb = obj_value(b, field);
+        let (b_better, b_worse) = match dir {
+            ObjDir::Min => (vb < va, vb > va),
+            ObjDir::Max => (vb > va, vb < va),
+        };
+        if b_worse {
+            all_no_worse = false;
+        }
+        if b_better {
+            any_better = true;
+        }
+    }
+    all_no_worse && any_better
+}
+
+fn pareto_front_indices(routes: &[search::Route], objs: &[(ObjField, ObjDir)]) -> Vec<usize> {
+    (0..routes.len())
+        .filter(|&i| !(0..routes.len()).any(|j| j != i && dominates(&routes[i], &routes[j], objs)))
+        .collect()
+}
+
+fn tradeoff_label(
+    idx: usize,
+    front: &[usize],
+    routes: &[search::Route],
+    objs: &[(ObjField, ObjDir)],
+) -> Option<String> {
+    let mut labels: Vec<&'static str> = Vec::new();
+    for &(field, dir) in objs {
+        let my_val = obj_value(&routes[idx], field);
+        let is_unique_best = front.iter().filter(|&&j| j != idx).all(|&j| {
+            let other = obj_value(&routes[j], field);
+            match dir {
+                ObjDir::Min => my_val < other,
+                ObjDir::Max => my_val > other,
+            }
+        });
+        if is_unique_best {
+            labels.push(match (field, dir) {
+                (ObjField::Cost, ObjDir::Min) => "cheapest",
+                (ObjField::SuccessProb, ObjDir::Max) => "most_reliable",
+                (ObjField::Steps, ObjDir::Min) | (ObjField::Depth, ObjDir::Min) => "shortest",
+                (ObjField::Confidence, ObjDir::Max) => "highest_confidence",
+                (ObjField::Convergency, ObjDir::Max) => "most_convergent",
+                (ObjField::AtomEconomy, ObjDir::Max) => "best_atom_economy",
+                _ => continue,
+            });
+        }
+    }
+    if labels.is_empty() {
+        None
+    } else {
+        Some(labels.join("_and_"))
+    }
 }
 
 // ── Stock CSV support ──────────────────────────────────────────────────────

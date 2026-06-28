@@ -6,6 +6,10 @@
 ///   renkin-bench --input <smiles_file|paroutes.json> [--input-format smi|paroutes]
 ///                [--depth <N>] [--beam-width <N>]
 ///
+///   renkin-bench compare <baseline.json> <current.json>
+///       Compare two renkin-bench JSON outputs and show solved-rate delta,
+///       newly solved targets, and regressions.
+///
 /// Input formats:
 ///   smi (default): one SMILES per line, optional name after whitespace
 ///   paroutes: PaRoutes JSON — list of route trees (Genheden et al., 2022)
@@ -17,6 +21,7 @@
 ///     "avg_route_diversity": 0.62,
 ///     "results": [...]
 ///   }
+use std::io::Write as _;
 use std::time::Instant;
 
 use anyhow::{Result, bail};
@@ -198,11 +203,112 @@ struct BenchReport {
     results: Vec<BenchResult>,
 }
 
+// ── quietset export ──────────────────────────────────────────────────────────
+
+#[derive(Serialize)]
+struct QuietsetObs {
+    sample_id: String,
+    label: &'static str,
+    score: f64,
+    evaluator_id: String,
+    budget: usize,
+    seed: u32,
+}
+
+// ── compare subcommand ───────────────────────────────────────────────────────
+
+fn cmd_compare(paths: &[String]) -> Result<()> {
+    if paths.len() < 2 {
+        bail!("Usage: renkin-bench compare <baseline.json> <current.json>");
+    }
+    let base: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&paths[0])?)?;
+    let curr: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&paths[1])?)?;
+
+    let base_rate = base["success_rate"].as_f64().unwrap_or(0.0) * 100.0;
+    let curr_rate = curr["success_rate"].as_f64().unwrap_or(0.0) * 100.0;
+    let delta = curr_rate - base_rate;
+    let sign = if delta >= 0.0 { "+" } else { "" };
+
+    let base_time = base["avg_time_ms"].as_f64().unwrap_or(0.0);
+    let curr_time = curr["avg_time_ms"].as_f64().unwrap_or(0.0);
+    let time_delta = curr_time - base_time;
+    let time_sign = if time_delta >= 0.0 { "+" } else { "" };
+
+    // Build solved-state maps keyed by name (fall back to smiles)
+    let solved_map = |report: &serde_json::Value| -> std::collections::HashMap<String, bool> {
+        report["results"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .map(|r| {
+                        let key = r["name"]
+                            .as_str()
+                            .filter(|s| !s.is_empty())
+                            .unwrap_or_else(|| r["smiles"].as_str().unwrap_or(""))
+                            .to_string();
+                        let solved = r["solved"].as_bool().unwrap_or(false);
+                        (key, solved)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+
+    let base_map = solved_map(&base);
+    let curr_map = solved_map(&curr);
+
+    let mut gained: Vec<&str> = Vec::new();
+    let mut lost: Vec<&str> = Vec::new();
+    for (name, &now) in &curr_map {
+        match base_map.get(name) {
+            Some(&before) if !before && now => gained.push(name),
+            Some(&before) if before && !now => lost.push(name),
+            _ => {}
+        }
+    }
+    gained.sort_unstable();
+    lost.sort_unstable();
+
+    println!("=== renkin-bench compare ===");
+    println!("Baseline : {}  ({:.1}%)", paths[0], base_rate);
+    println!("Current  : {}  ({:.1}%)", paths[1], curr_rate);
+    println!("Delta    : {}{:.1} pp", sign, delta);
+    println!();
+    println!(
+        "Timing   : {:.1} ms → {:.1} ms  ({}{:.1} ms)",
+        base_time, curr_time, time_sign, time_delta
+    );
+    println!();
+
+    if gained.is_empty() {
+        println!("Newly solved (0): (none)");
+    } else {
+        println!("Newly solved ({}):", gained.len());
+        for name in &gained {
+            println!("  + {name}");
+        }
+    }
+    println!();
+    if lost.is_empty() {
+        println!("Regressions (0): (none)");
+    } else {
+        println!("Regressions ({}):", lost.len());
+        for name in &lost {
+            println!("  - {name}");
+        }
+    }
+    Ok(())
+}
+
 // ..Default::default() is needed when nn-scoring feature is enabled (adds nn_scorer field).
 // When the feature is off, all fields are explicit, making the spread redundant — suppress lint.
 #[allow(clippy::needless_update)]
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
+
+    if args.get(1).map(|s| s.as_str()) == Some("compare") {
+        return cmd_compare(&args[2..]);
+    }
 
     let mut input_path: Option<String> = None;
     let mut input_format = "smi".to_string();
@@ -213,6 +319,8 @@ fn main() -> Result<()> {
     let mut max_routes: usize = 1;
     let mut bond_index = false;
     let mut plausibility = false;
+    let mut quietset_out: Option<String> = None;
+    let mut evaluator_id: Option<String> = None;
     #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
     let mut scorer_path: Option<String> = None;
     #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
@@ -268,6 +376,14 @@ fn main() -> Result<()> {
             }
             "--plausibility" => {
                 plausibility = true;
+            }
+            "--quietset-out" => {
+                i += 1;
+                quietset_out = args.get(i).cloned();
+            }
+            "--evaluator-id" => {
+                i += 1;
+                evaluator_id = args.get(i).cloned();
             }
             #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
             "--scorer" => {
@@ -525,6 +641,27 @@ fn main() -> Result<()> {
     };
 
     println!("{}", serde_json::to_string_pretty(&report)?);
+
+    if let Some(path) = quietset_out {
+        let eid = evaluator_id.unwrap_or_else(|| format!("renkin-d{max_depth}-b{beam_width}"));
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)?;
+        let mut w = std::io::BufWriter::new(file);
+        for r in &report.results {
+            let obs = QuietsetObs {
+                sample_id: r.name.clone(),
+                label: if r.solved { "solved" } else { "unsolved" },
+                score: r.best_success_prob.unwrap_or(0.0),
+                evaluator_id: eid.clone(),
+                budget: beam_width,
+                seed: 1,
+            };
+            writeln!(w, "{}", serde_json::to_string(&obs)?)?;
+        }
+    }
+
     Ok(())
 }
 

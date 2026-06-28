@@ -169,6 +169,18 @@ fn handle_tools_list() -> Value {
                     },
                     "required": ["smiles"]
                 }
+            },
+            {
+                "name": "diagnose_failure",
+                "description": "Diagnose why no retrosynthetic route was found for a target molecule. Runs the search and analyses SearchStats to identify likely causes (depth exhausted, no matching templates, beam too narrow, no building block matches) and returns actionable suggestions.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "smiles": {"type": "string", "description": "Target molecule SMILES"},
+                        "depth": {"type": "integer", "description": "Max search depth (default: 5)"}
+                    },
+                    "required": ["smiles"]
+                }
             }
         ]
     })
@@ -204,6 +216,7 @@ fn handle_tools_call(msg: &Value) -> Value {
         "explain_route" => handle_explain_route(smiles, args),
         "find_pareto_routes" => handle_find_pareto_routes(smiles, args),
         "plan_with_constraints" => handle_plan_with_constraints(smiles, args),
+        "diagnose_failure" => handle_diagnose_failure(smiles, args),
         _ => handle_find_routes(smiles, args),
     }
 }
@@ -626,6 +639,72 @@ fn handle_estimate_diversity(smiles: &str, args: &Value) -> Value {
             route.building_blocks.join(", ")
         ));
     }
+    json!({"content": [{"type": "text", "text": text}]})
+}
+
+fn handle_diagnose_failure(smiles: &str, args: &Value) -> Value {
+    let depth = args["depth"].as_u64().unwrap_or(5) as u32;
+    let (env, rules) = load_env_and_rules();
+    let config = SearchConfig {
+        max_depth: depth,
+        max_routes: 1,
+        ..Default::default()
+    };
+    let (routes, stats) = match search::find_routes(smiles, &env, &rules, &config) {
+        Ok(r) => r,
+        Err(e) => return tool_error(&format!("search error: {e}")),
+    };
+
+    if !routes.is_empty() {
+        return json!({"content": [{"type": "text", "text":
+            format!("Routes found for {smiles} — no failure to diagnose. Use find_routes to see them.")}]});
+    }
+
+    let mut causes: Vec<&str> = Vec::new();
+    let mut suggestions: Vec<String> = Vec::new();
+
+    if stats.stock_hits == 0 {
+        causes.push("no building block in the default stock matched any search node");
+        suggestions
+            .push("provide a larger stock file via the building_blocks server config".to_string());
+    }
+    if stats.max_depth_reached {
+        causes.push("search depth exhausted before reaching building blocks");
+        suggestions.push(format!("retry with depth={}", depth + 2));
+    }
+    if stats.beam_limit_hit {
+        causes.push("beam width was too narrow — promising nodes were pruned");
+        suggestions.push("retry find_routes with a larger beam_width (e.g. 200)".to_string());
+    }
+    if stats.matched_templates < 5 {
+        causes.push("very few templates matched the target structure");
+        suggestions.push(
+            "the target may contain unusual functional groups not covered by current templates"
+                .to_string(),
+        );
+    }
+    if causes.is_empty() {
+        causes.push("unknown — search exhausted without finding a route");
+        suggestions.push("try increasing depth, or check whether the SMILES is valid".to_string());
+    }
+
+    let text = format!(
+        "Diagnosis for: {smiles}\nSearch stats: nodes_expanded={}, matched_templates={}, stock_hits={}\n\nLikely causes:\n{}\n\nSuggestions:\n{}",
+        stats.nodes_expanded,
+        stats.matched_templates,
+        stats.stock_hits,
+        causes
+            .iter()
+            .map(|c| format!("  • {c}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        suggestions
+            .iter()
+            .enumerate()
+            .map(|(i, s)| format!("  {}. {s}", i + 1))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    );
     json!({"content": [{"type": "text", "text": text}]})
 }
 

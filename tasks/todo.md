@@ -1,23 +1,43 @@
 # RENKIN - Todo
 
+## Phase 30: quietset × RENKIN 統合
+
+quietset（`cargo install quietset-cli`）を使い、複数設定を跨いで安定したルート・ベンチターゲットだけを残す。
+「RENKIN が候補を出す、quietset が安定した確信だけ残す」役割分担。
+
+- [x] **30.1** Phase 1: `renkin-bench --quietset-out <file>` フラグ実装（2026-06-28）
+  - `--quietset-out <path>` — 追記モードで quietset 互換 JSONL を書き出し
+  - `--evaluator-id <id>` — evaluator 名指定（省略時 `renkin-d{depth}-b{beam}` を自動生成）
+  - フィールド: `sample_id=name, label=solved/unsolved, score=best_success_prob, budget=beam_width, seed=1`
+  - 変更: `src/bin/benchmark.rs` のみ、新規依存ゼロ
+- [x] **30.2** Phase 2: multi-config 安定性ワークフロー（shell script）（2026-06-28）
+  - `scripts/bench_stability.sh` — 複数 beam でベンチ → observations.jsonl 蓄積 → `quietset score/filter` まで自動実行
+  - オプション: `--beams 50,100,200` / `--depth` / `--templates` / `--building-blocks` / `--out-dir` / `--min-observations`
+  - quietset 未インストール時はインストール方法と手動コマンドを表示して graceful exit
+- [ ] **30.3** Phase 3: MCP tool 化（Phase 2 で価値確認後）
+  - `find_stable_routes` — 複数条件でルートを生成し安定ルートだけ返す
+  - `explain_route_stability` — ルートの安定性スコアの内訳を説明
+
+---
+
 ## Phase 29: 機能ロードマップ（次フェーズ候補）
 
 優先順位は「使える体験に変換」を軸に設定。
 
-- [ ] **29.1** `renkin-doctor` — 環境診断コマンド（PR #8 進行中 `feat/renkin-doctor`）
-  - version / templates / building blocks / renkin-forward / renkin-mcp / WASM / Python bindings
+- [x] **29.1** `renkin-doctor` — 環境診断コマンド（PR #8 マージ済み）
 - [ ] **29.2** `docs/site-sync` — docs サイトの残り古い記述を整理（api/rust.md 等）
 - [ ] **29.3** `feat/playground-route-cards` — confidence/cost/atom_economy カード表示
   - Copy CLI / Copy Python / Copy JSON / Copy Mermaid ボタン
   - Constraint UI（avoid/require/depth/beam）、プリセット分子
-- [ ] **29.4** `feat/bench-report` — `renkin-bench report --format markdown` で成果物化
-  - `renkin-bench compare baseline.json current.json`
-  - `benchmark.lock`（再現性固定ファイル）
+- [x] **29.4** `renkin-bench compare` 実装（2026-06-28）
+  - `renkin-bench compare <baseline.json> <current.json>` — 成功率 delta・新規解決・退行を表示
+  - 残: `--format markdown` / `benchmark.lock`（YAGNI、必要になったら追加）
 - [ ] **29.5** `feat/stock-import` — stock DB 管理 CLI
   - `renkin stock import building_blocks.smi`、`renkin stock import-prices prices.csv`
   - `renkin stock stats / validate / coverage data/uspto50k_test.smi`
-- [ ] **29.6** `feat/mcp-tools` — MCP ツール拡充
-  - `diagnose_failure`、`compare_routes`、`explain_route`、`estimate_route_cost`
+- [x] **29.6** `feat/mcp-tools` — MCP `diagnose_failure` ツール追加（2026-06-28）
+  - `diagnose_failure` — ルートが見つからなかった理由を SearchStats から診断し具体的な提案を返す
+  - 残: `compare_routes`、`estimate_route_cost`（必要になったら追加）
 
 ---
 

@@ -6,6 +6,17 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.15.5] — 2026-06-28
+
+### Added
+- **renkin-bench** — `--quietset-out <file>` exports quietset-compatible JSONL observations (sample_id, label, score, evaluator_id, budget, seed) for stability filtering across multiple configs
+- **renkin-bench** — `--evaluator-id <id>` overrides auto-generated evaluator name (`renkin-d{depth}-b{beam}`)
+- **renkin-bench compare** — new subcommand: diff two bench JSON outputs showing solved-rate delta, newly solved targets, and regressions
+- **scripts/bench_stability.sh** — run bench across multiple beam widths and pipe through `quietset score/filter` automatically
+- **MCP `diagnose_failure`** — new tool: analyse SearchStats to explain why no route was found and return actionable suggestions (depth, beam, templates, stock)
+
+---
+
 ## [0.15.4] — 2026-06-27
 
 ### Fixed

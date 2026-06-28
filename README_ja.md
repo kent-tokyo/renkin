@@ -416,8 +416,8 @@ renkin/                          ← Cargo workspace ルート
   author    = {kent-tokyo},
   title     = {{RENKIN}: Retrosynthesis Engine for Knowledge-Informed Navigation},
   year      = {2026},
-  url       = {https://github.com/kent-tokyo/renkin/releases/tag/v0.15.4},
-  version   = {0.15.4},
+  url       = {https://github.com/kent-tokyo/renkin/releases/tag/v0.15.5},
+  version   = {0.15.5},
   license   = {MIT}
 }
 ```

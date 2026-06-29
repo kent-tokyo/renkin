@@ -25,6 +25,7 @@ Building blocks: 509 hand-curated commercial reagents (default set).
 | + beam=100 | 2,688 / 4,907 | 54.8% | beam search |
 | + Phase A frequency weighting | 3,540 / 4,907 | 72.1% | step_cost bonus for high-freq templates |
 | **+ ~5,000 templates (v0.15.5)** | **3,826 / 4,907** | **78.0%** | current default ✅ |
+| **Cascade: Stage 2 (depth=7, beam=300, unsolved only)** | **4,705 / 4,907** | **95.9%** | 2026-06-29 ✅ |
 
 ### Comparison: Multi-Step Planners (Table B)
 
@@ -84,7 +85,7 @@ The +3.8 pp difference on approved drugs is consistent with the hypothesis that 
 | stock_near_miss | 111 / 112 | 99.1% | BB found in frontier but no complete route |
 | no_template_match | 1 / 112 | 0.9% | fewer than 3 templates matched |
 
-**Key finding:** Template and building block coverage is not the bottleneck. Nearly all unsolved targets hit the search budget limit (beam/depth). Cascade search (Stage 2: depth=7, beam=300 on unsolved only) is the primary lever for further improvement.
+**Key finding:** Template and building block coverage is not the bottleneck. Nearly all unsolved targets hit the search budget limit (beam/depth). Cascade search (Stage 2: depth=7, beam=300 on unsolved only) resolved 879/1,081 (81.3%) of previously unsolved targets, lifting the overall rate from 78.0% to **95.9%**.
 
 ### Improving the success rate
 

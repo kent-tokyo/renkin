@@ -1,0 +1,7 @@
+{
+  "name": "stage2_deep",
+  "depth": 7,
+  "beam_width": 300,
+  "templates": "data/templates_extracted_5000.smi",
+  "only_unsolved_from_previous": true
+}

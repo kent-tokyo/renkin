@@ -495,6 +495,90 @@ fn amide_cleavage(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
     results
 }
 
+/// Graph-based ester cleavage: R-C(=O)-O-R' → carboxylic acid + alcohol/phenol.
+///
+/// Mirrors amide_cleavage but cuts C-O instead of C-N.
+/// Avoids BFS-leakage that affects the SMIRKS version of this rule.
+/// Skips terminal -OH (free carboxylic acids) by checking the O-side component size.
+fn ester_cleavage_graph(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
+    let mut results: Vec<Vec<PrecursorMol>> = Vec::new();
+    let mut seen: FxHashSet<String> = FxHashSet::default();
+
+    for (_, bond) in mol.bonds() {
+        let (a, b) = (bond.atom1, bond.atom2);
+        if bond.order != BondOrder::Single {
+            continue;
+        }
+
+        // Identify which end is the carbonyl C and which is the ester O.
+        let (c_idx, o_idx) = {
+            let aa = mol.atom(a);
+            let ab = mol.atom(b);
+            if aa.element == Element::C && ab.element == Element::O {
+                (a, b)
+            } else if aa.element == Element::O && ab.element == Element::C {
+                (b, a)
+            } else {
+                continue;
+            }
+        };
+
+        // The carbon must be a carbonyl C (has adjacent C=O, not the O we're cutting).
+        let has_keto_o = mol.neighbors(c_idx).any(|(nb, bond_idx)| {
+            nb != o_idx
+                && mol.atom(nb).element == Element::O
+                && mol.bond(bond_idx).order == BondOrder::Double
+        });
+        if !has_keto_o {
+            continue;
+        }
+
+        // Only bridge bonds produce two clean fragments.
+        if !is_bridge_bond(mol, c_idx, o_idx) {
+            continue;
+        }
+
+        let comp_c = get_component(mol, c_idx, c_idx, o_idx);
+        let comp_o = get_component(mol, o_idx, c_idx, o_idx);
+
+        // Skip free carboxylic acids: the O side has only the O atom itself (terminal -OH).
+        if comp_o.len() <= 1 {
+            continue;
+        }
+
+        // C side: add OH → carboxylic acid fragment.
+        let Some(frag_acid) = build_sub_molecule_with_oh(mol, &comp_c, c_idx) else {
+            continue;
+        };
+        // O side: the O keeps its bond to R'; implicit H fills valence → R'-OH.
+        let Some(frag_alcohol) = build_sub_molecule(mol, &comp_o) else {
+            continue;
+        };
+
+        let precs_acid = split_fragments(&frag_acid);
+        let precs_alcohol = split_fragments(&frag_alcohol);
+        if precs_acid.is_empty() || precs_alcohol.is_empty() {
+            continue;
+        }
+
+        let mut key_parts: Vec<&str> = precs_acid
+            .iter()
+            .chain(precs_alcohol.iter())
+            .map(|p| p.smiles.as_str())
+            .collect();
+        key_parts.sort_unstable();
+        let key = key_parts.join("|");
+        if !seen.insert(key) {
+            continue;
+        }
+
+        let mut prec_set = precs_acid;
+        prec_set.extend(precs_alcohol);
+        results.push(prec_set);
+    }
+    results
+}
+
 /// Build a sub-molecule and append an OH group bonded to `cut_atom`.
 fn build_sub_molecule_with_oh(
     mol: &Molecule,
@@ -533,6 +617,7 @@ pub fn apply_retro(mol: &Molecule, rule: &RetroRule) -> Vec<Vec<PrecursorMol>> {
             "suzuki_retro" => biaryl_cleavage(mol),
             "diaryl_sulfone_retro" => diaryl_sulfone_cleavage(mol),
             "amide_cleavage" => amide_cleavage(mol),
+            "ester_cleavage" => ester_cleavage_graph(mol),
             "boc_deprotection_retro" => boc_deprotection(mol),
             "cbz_deprotection_retro" => cbz_deprotection(mol),
             _ => vec![],
@@ -658,7 +743,7 @@ pub fn default_rules() -> Vec<RetroRule> {
     vec![
         // ── Acyl disconnections ──────────────────────────────────────────
         // Ester C(=O)-O → carboxylic acid + alcohol/phenol
-        rr("ester_cleavage", "[C:1](=[O:2])[O:3]>>[C:1](=[O:2])O.[O:3]"),
+        rr("ester_cleavage", ""), // graph-based: dispatched in apply_retro (avoids BFS-leakage)
         // Graph-based: dispatched in apply_retro (SMIRKS-based had BFS-leakage)
         rr("amide_cleavage", ""),
         // Ar-C(=O)R → Ar-H + R-C(=O)Cl (Friedel-Crafts retro)
@@ -1156,10 +1241,46 @@ mod tests {
 
     #[test]
     fn ester_cleavage_fires_on_aspirin() {
+        // Graph-based ester cleavage: aspirin → acetic acid + salicylic acid
         let mol = mol_from_smiles("CC(=O)Oc1ccccc1C(=O)O").unwrap();
-        let rule = rr("ester_cleavage", "[C:1](=[O:2])[O:3]>>[C:1](=[O:2])O.[O:3]");
+        let rule = rr("ester_cleavage", ""); // graph-based (empty smirks)
         let results = apply_retro(&mol, &rule);
         assert!(!results.is_empty(), "ester_cleavage must match aspirin");
+        // All precursor SMILES must parse cleanly.
+        for prec_set in &results {
+            for p in prec_set {
+                assert!(
+                    mol_from_smiles(&p.smiles).is_ok(),
+                    "invalid precursor: {}",
+                    p.smiles
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn ester_cleavage_skips_free_acid() {
+        // Free carboxylic acids should not be split at their terminal OH.
+        let mol = mol_from_smiles("CC(=O)O").unwrap(); // acetic acid
+        let rule = rr("ester_cleavage", "");
+        let results = apply_retro(&mol, &rule);
+        // No meaningful split: the only C-O single bond is the terminal OH
+        assert!(
+            results.is_empty(),
+            "free carboxylic acid should not be cleaved"
+        );
+    }
+
+    #[test]
+    fn ester_cleavage_ethyl_benzoate() {
+        // Ethyl benzoate → benzoic acid + ethanol
+        let mol = mol_from_smiles("CCOC(=O)c1ccccc1").unwrap();
+        let rule = rr("ester_cleavage", "");
+        let results = apply_retro(&mol, &rule);
+        assert!(
+            !results.is_empty(),
+            "ethyl benzoate ester cleavage must fire"
+        );
     }
 
     #[test]

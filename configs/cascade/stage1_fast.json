@@ -1,0 +1,7 @@
+{
+  "name": "stage1_fast",
+  "depth": 5,
+  "beam_width": 100,
+  "templates": "data/templates_extracted_5000.smi",
+  "only_unsolved_from_previous": false
+}

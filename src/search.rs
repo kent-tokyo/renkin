@@ -92,6 +92,10 @@ pub struct SearchStats {
     pub matched_templates: u64,
     /// Total building-block hits seen in node frontiers.
     pub stock_hits: u64,
+    /// retro_cache hits (same intermediate seen before → O(1) reuse).
+    pub retro_cache_hits: u64,
+    /// retro_cache misses (new intermediate → full apply_retro run).
+    pub retro_cache_misses: u64,
 }
 
 fn extract_building_blocks(steps: &[ReactionStep]) -> Vec<String> {
@@ -664,6 +668,8 @@ pub fn find_routes(
     let mut beam_limit_hit = false;
     let mut matched_templates: u64 = 0;
     let mut stock_hits: u64 = 0;
+    let mut retro_cache_hits: u64 = 0;
+    let mut retro_cache_misses: u64 = 0;
 
     let mut routes: Vec<Route> = Vec::new();
     let mut closed: FxHashSet<u64> = FxHashSet::default();
@@ -760,8 +766,10 @@ pub fn find_routes(
         // filter invalid results, precompute net step cost, and store.
         // On cache hit: O(1) Arc::clone — no Vec data is copied.
         let expansions: Arc<Vec<RetroEntry>> = if let Some(cached) = retro_cache.get(&target_smi) {
+            retro_cache_hits += 1;
             Arc::clone(cached) // O(1): pointer copy only, no Vec clone
         } else {
+            retro_cache_misses += 1;
             // Bond-center retrieval: filter ranked_rules to those relevant to this molecule's bonds.
             // Falls back to ranked_rules unchanged when bond_idx is None (--bond-index not set).
             let retrieved: Vec<&RetroRule>;
@@ -961,10 +969,17 @@ pub fn find_routes(
     #[cfg(not(target_arch = "wasm32"))]
     if config.verbose {
         eprintln!(
-            "[renkin] search complete\n  nodes popped   : {}\n  nodes expanded : {}\n  routes found   : {}\n  elapsed        : {:.2} s",
+            "[renkin] search complete\n  nodes popped   : {}\n  nodes expanded : {}\n  routes found   : {}\n  retro cache    : {}/{} hits ({:.0}%)\n  elapsed        : {:.2} s",
             nodes_popped,
             nodes_expanded,
             routes.len(),
+            retro_cache_hits,
+            retro_cache_hits + retro_cache_misses,
+            if retro_cache_hits + retro_cache_misses > 0 {
+                retro_cache_hits as f64 / (retro_cache_hits + retro_cache_misses) as f64 * 100.0
+            } else {
+                0.0
+            },
             t0.elapsed().as_secs_f64()
         );
     }
@@ -992,6 +1007,8 @@ pub fn find_routes(
             beam_limit_hit,
             matched_templates,
             stock_hits,
+            retro_cache_hits,
+            retro_cache_misses,
         },
     ))
 }

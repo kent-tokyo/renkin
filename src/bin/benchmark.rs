@@ -305,6 +305,173 @@ fn cmd_compare(paths: &[String]) -> Result<()> {
     Ok(())
 }
 
+// ── cascade subcommand ───────────────────────────────────────────────────────
+
+#[derive(serde::Deserialize)]
+struct StageConfig {
+    name: String,
+    depth: u32,
+    beam_width: usize,
+    #[serde(default)]
+    templates: Option<String>,
+    #[serde(default)]
+    building_blocks: Option<String>,
+    #[serde(default)]
+    only_unsolved_from_previous: bool,
+}
+
+#[derive(Serialize)]
+struct StageResult {
+    name: String,
+    attempted: usize,
+    newly_solved: usize,
+    cumulative_solved: usize,
+}
+
+#[derive(Serialize)]
+struct CascadeReport {
+    total: usize,
+    stages: Vec<StageResult>,
+    total_solved: usize,
+    raw_solved_rate: f64,
+}
+
+fn cmd_cascade(args: &[String]) -> Result<()> {
+    let mut input_path: Option<String> = None;
+    let mut stage_paths: Vec<String> = Vec::new();
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--input" | "-i" => {
+                i += 1;
+                input_path = args.get(i).cloned();
+            }
+            "--stage" => {
+                i += 1;
+                if let Some(p) = args.get(i) {
+                    stage_paths.push(p.clone());
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+
+    let input = input_path.ok_or_else(|| {
+        anyhow::anyhow!(
+            "Usage: renkin-bench cascade --input <smi> --stage <cfg.json> [--stage ...]"
+        )
+    })?;
+
+    // Parse all targets once.
+    let all_targets: Vec<(String, String)> = std::fs::read_to_string(&input)?
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(|line| {
+            let mut parts = line.splitn(2, char::is_whitespace);
+            let smiles = parts.next().unwrap_or("").to_string();
+            let name = parts.next().unwrap_or("").trim().to_string();
+            (smiles, name)
+        })
+        .collect();
+
+    let total = all_targets.len();
+    if total == 0 {
+        bail!("No targets found in {input}");
+    }
+
+    if stage_paths.is_empty() {
+        bail!("At least one --stage <config.json> required");
+    }
+
+    // solved_set: SMILES that have been solved in any prior stage.
+    let mut solved_set: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut stage_results: Vec<StageResult> = Vec::new();
+
+    for stage_path in &stage_paths {
+        let cfg: StageConfig = serde_json::from_str(
+            &std::fs::read_to_string(stage_path)
+                .map_err(|e| anyhow::anyhow!("failed to read stage config {stage_path}: {e}"))?,
+        )?;
+
+        // Decide which targets to attempt.
+        let candidates: Vec<&(String, String)> = if cfg.only_unsolved_from_previous {
+            all_targets
+                .iter()
+                .filter(|(s, _)| !solved_set.contains(s))
+                .collect()
+        } else {
+            all_targets.iter().collect()
+        };
+
+        let env = match &cfg.building_blocks {
+            Some(p) => ChemEnv::load(p)?,
+            None => ChemEnv::load("data/building_blocks.smi")
+                .unwrap_or_else(|_| ChemEnv::in_memory(DEFAULT_BUILDING_BLOCKS)),
+        };
+
+        let mut rules = default_rules();
+        if let Some(ref p) = cfg.templates {
+            let extra = load_rules_from_file(p);
+            eprintln!("[{}] Loaded {} templates from {p}", cfg.name, extra.len());
+            rules.extend(extra);
+        }
+
+        let config = SearchConfig {
+            max_depth: cfg.depth,
+            beam_width: cfg.beam_width,
+            max_routes: 1,
+            ..Default::default()
+        };
+
+        eprintln!(
+            "[{}] Attempting {}/{} targets (depth={}, beam={}) ...",
+            cfg.name,
+            candidates.len(),
+            total,
+            cfg.depth,
+            cfg.beam_width
+        );
+
+        let mut newly_solved = 0usize;
+        for (smiles, _name) in &candidates {
+            let (routes, _) = find_routes(smiles, &env, &rules, &config).unwrap_or_default();
+            if !routes.is_empty() && solved_set.insert(smiles.clone()) {
+                newly_solved += 1;
+            }
+        }
+
+        let cumulative = solved_set.len();
+        eprintln!(
+            "[{}] +{} newly solved → {}/{} ({:.1}%) cumulative",
+            cfg.name,
+            newly_solved,
+            cumulative,
+            total,
+            cumulative as f64 / total as f64 * 100.0
+        );
+
+        stage_results.push(StageResult {
+            name: cfg.name,
+            attempted: candidates.len(),
+            newly_solved,
+            cumulative_solved: cumulative,
+        });
+    }
+
+    let total_solved = solved_set.len();
+    let report = CascadeReport {
+        total,
+        stages: stage_results,
+        total_solved,
+        raw_solved_rate: total_solved as f64 / total as f64,
+    };
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    Ok(())
+}
+
 // ..Default::default() is needed when nn-scoring feature is enabled (adds nn_scorer field).
 // When the feature is off, all fields are explicit, making the spread redundant — suppress lint.
 #[allow(clippy::needless_update)]
@@ -313,6 +480,9 @@ fn main() -> Result<()> {
 
     if args.get(1).map(|s| s.as_str()) == Some("compare") {
         return cmd_compare(&args[2..]);
+    }
+    if args.get(1).map(|s| s.as_str()) == Some("cascade") {
+        return cmd_cascade(&args[2..]);
     }
 
     let mut input_path: Option<String> = None;

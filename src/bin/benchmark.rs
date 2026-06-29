@@ -346,11 +346,18 @@ struct CascadeReport {
     stages: Vec<StageResult>,
     total_solved: usize,
     raw_solved_rate: f64,
+    /// Fraction of solved targets whose best route passes atom balance (cheap, always computed).
+    atom_balance_pass_rate: f64,
+    /// Fraction of solved targets whose best route passes forward validation.
+    /// None unless --quality is set (forward validation is O(steps × templates), slow).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    forward_validation_pass_rate: Option<f64>,
 }
 
 fn cmd_cascade(args: &[String]) -> Result<()> {
     let mut input_path: Option<String> = None;
     let mut stage_paths: Vec<String> = Vec::new();
+    let mut quality = false;
 
     let mut i = 0;
     while i < args.len() {
@@ -364,6 +371,9 @@ fn cmd_cascade(args: &[String]) -> Result<()> {
                 if let Some(p) = args.get(i) {
                     stage_paths.push(p.clone());
                 }
+            }
+            "--quality" => {
+                quality = true;
             }
             _ => {}
         }
@@ -401,6 +411,9 @@ fn cmd_cascade(args: &[String]) -> Result<()> {
     // solved_set: SMILES that have been solved in any prior stage.
     let mut solved_set: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut stage_results: Vec<StageResult> = Vec::new();
+    // Per solved-target quality (computed in the stage that first solves it).
+    let mut n_balanced = 0usize;
+    let mut n_fwd_validated = 0usize;
 
     for stage_path in &stage_paths {
         let cfg: StageConfig = serde_json::from_str(
@@ -453,8 +466,17 @@ fn cmd_cascade(args: &[String]) -> Result<()> {
         let mut newly_solved = 0usize;
         for (smiles, _name) in &candidates {
             let (routes, _) = find_routes(smiles, &env, &rules, &config).unwrap_or_default();
-            if !routes.is_empty() && solved_set.insert(smiles.clone()) {
+            if let Some(best) = routes.first()
+                && solved_set.insert(smiles.clone())
+            {
                 newly_solved += 1;
+                // Compute quality in the stage that first solved it (has the right `rules`).
+                if route_balanced(best) {
+                    n_balanced += 1;
+                }
+                if quality && route_forward_validated(best, &rules) {
+                    n_fwd_validated += 1;
+                }
             }
         }
 
@@ -477,11 +499,23 @@ fn cmd_cascade(args: &[String]) -> Result<()> {
     }
 
     let total_solved = solved_set.len();
+    let atom_balance_pass_rate = if total_solved > 0 {
+        n_balanced as f64 / total_solved as f64
+    } else {
+        0.0
+    };
+    let forward_validation_pass_rate = if quality && total_solved > 0 {
+        Some(n_fwd_validated as f64 / total_solved as f64)
+    } else {
+        None
+    };
     let report = CascadeReport {
         total,
         stages: stage_results,
         total_solved,
         raw_solved_rate: total_solved as f64 / total as f64,
+        atom_balance_pass_rate,
+        forward_validation_pass_rate,
     };
     println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())

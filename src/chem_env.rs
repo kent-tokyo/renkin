@@ -579,6 +579,84 @@ fn ester_cleavage_graph(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
     results
 }
 
+/// Graph-based sulfonamide cleavage: Ar-SO2-NHR → Ar-SO2Cl + H2NR.
+///
+/// Cuts the S-N bond of a sulfonamide where S is a sulfonyl (S(=O)(=O)).
+/// Mirrors diaryl_sulfone_cleavage (sulfonyl check) and amide_cleavage (bridge split).
+/// Avoids BFS-leakage present in the SMIRKS version.
+fn sulfonamide_cleavage_graph(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
+    let mut results: Vec<Vec<PrecursorMol>> = Vec::new();
+    let mut seen: FxHashSet<String> = FxHashSet::default();
+
+    for (_, bond) in mol.bonds() {
+        let (a, b) = (bond.atom1, bond.atom2);
+        if bond.order != BondOrder::Single {
+            continue;
+        }
+
+        // Identify which end is S (sulfonyl) and which is N.
+        let (s_idx, n_idx) = {
+            let aa = mol.atom(a);
+            let ab = mol.atom(b);
+            if aa.element == Element::S && ab.element == Element::N {
+                (a, b)
+            } else if aa.element == Element::N && ab.element == Element::S {
+                (b, a)
+            } else {
+                continue;
+            }
+        };
+
+        // S must be a sulfone: at least two double-bond O neighbours.
+        let o_double_count = mol
+            .neighbors(s_idx)
+            .filter(|&(nb, bond_idx): &(AtomIdx, BondIdx)| {
+                mol.atom(nb).element == Element::O && mol.bond(bond_idx).order == BondOrder::Double
+            })
+            .count();
+        if o_double_count < 2 {
+            continue;
+        }
+
+        // Only bridge bonds produce two clean fragments.
+        if !is_bridge_bond(mol, s_idx, n_idx) {
+            continue;
+        }
+
+        let comp_s = get_component(mol, s_idx, s_idx, n_idx); // Ar-SO2 side (gets Cl)
+        let comp_n = get_component(mol, n_idx, s_idx, n_idx); // amine side (gets H)
+
+        let Some(frag_so2cl) = build_sub_molecule_with_cl(mol, &comp_s, s_idx) else {
+            continue;
+        };
+        let Some(frag_amine) = build_sub_molecule(mol, &comp_n) else {
+            continue;
+        };
+
+        let precs_so2cl = split_fragments(&frag_so2cl);
+        let precs_amine = split_fragments(&frag_amine);
+        if precs_so2cl.is_empty() || precs_amine.is_empty() {
+            continue;
+        }
+
+        let mut key_parts: Vec<&str> = precs_so2cl
+            .iter()
+            .chain(precs_amine.iter())
+            .map(|p| p.smiles.as_str())
+            .collect();
+        key_parts.sort_unstable();
+        let key = key_parts.join("|");
+        if !seen.insert(key) {
+            continue;
+        }
+
+        let mut prec_set = precs_so2cl;
+        prec_set.extend(precs_amine);
+        results.push(prec_set);
+    }
+    results
+}
+
 /// Build a sub-molecule and append an OH group bonded to `cut_atom`.
 fn build_sub_molecule_with_oh(
     mol: &Molecule,
@@ -618,6 +696,7 @@ pub fn apply_retro(mol: &Molecule, rule: &RetroRule) -> Vec<Vec<PrecursorMol>> {
             "diaryl_sulfone_retro" => diaryl_sulfone_cleavage(mol),
             "amide_cleavage" => amide_cleavage(mol),
             "ester_cleavage" => ester_cleavage_graph(mol),
+            "sulfonamide_retro" => sulfonamide_cleavage_graph(mol),
             "boc_deprotection_retro" => boc_deprotection(mol),
             "cbz_deprotection_retro" => cbz_deprotection(mol),
             _ => vec![],
@@ -803,11 +882,8 @@ pub fn default_rules() -> Vec<RetroRule> {
         // Ar-C≡C-R → Ar-Br + HC≡C-R (retro-Sonogashira, Pd/Cu catalysis)
         rr("sonogashira_retro", "[c:1][C:2]#[C:3]>>[c:1]Br.[C:2]#[C:3]"),
         // ── Sulfonamide / diaryl sulfone disconnections ──────────────────────
-        // Ar-SO2-NHR → Ar-SO2Cl + HNR (sulfonyl chloride + amine)
-        rr(
-            "sulfonamide_retro",
-            "[S:1](=O)(=O)[N:2]>>[S:1](=O)(=O)Cl.[N:2]",
-        ),
+        // Ar-SO2-NHR → Ar-SO2Cl + HNR. Graph-based (avoids BFS-leakage).
+        rr("sulfonamide_retro", ""),
         // Ar-SO2-Ar' → Ar-SO2Cl + Ar'H (graph-based; Friedel-Crafts sulfonylation retro)
         rr("diaryl_sulfone_retro", ""),
         // ── N-protection / deprotection ──────────────────────────────────────
@@ -1296,6 +1372,38 @@ mod tests {
         assert!(
             !results.is_empty(),
             "ethyl benzoate ester cleavage must fire"
+        );
+    }
+
+    #[test]
+    fn sulfonamide_cleavage_fires_on_aryl_sulfonamide() {
+        // N-phenyl benzenesulfonamide → benzenesulfonyl chloride + aniline
+        let mol = mol_from_smiles("O=S(=O)(c1ccccc1)Nc1ccccc1").unwrap();
+        let rule = rr("sulfonamide_retro", ""); // graph-based
+        let results = apply_retro(&mol, &rule);
+        assert!(!results.is_empty(), "aryl sulfonamide cleavage must fire");
+        // All precursors must parse cleanly (no invalid fragments).
+        for prec_set in &results {
+            for p in prec_set {
+                assert!(
+                    mol_from_smiles(&p.smiles).is_ok(),
+                    "invalid precursor: {}",
+                    p.smiles
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn sulfonamide_cleavage_skips_non_sulfonyl() {
+        // A sulfoxide (one =O) or amine without sulfonyl must not be cleaved as sulfonamide.
+        // Sulfanilamide's N-S? Use a plain sulfenamide-like S-N without two =O.
+        let mol = mol_from_smiles("CSNc1ccccc1").unwrap(); // S has no =O → not a sulfonyl
+        let rule = rr("sulfonamide_retro", "");
+        let results = apply_retro(&mol, &rule);
+        assert!(
+            results.is_empty(),
+            "non-sulfonyl S-N must not be cleaved as sulfonamide"
         );
     }
 

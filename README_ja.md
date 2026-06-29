@@ -270,7 +270,7 @@ cargo build --release
 ┌──────────────────────────────────────────────────────────────────┐
 │ renkin workspace（本リポジトリ）                                  │
 │                                                                  │
-│  renkin（逆合成）                 renkin-forward（開発予定）       │
+│  renkin（逆合成）                 renkin-forward                   │
 │  ──────────────────────           ─────────────────────────────  │
 │  target → precursors              reactants → products           │
 │  A* / AND-OR 木探索               テンプレートベース順反応予測    │

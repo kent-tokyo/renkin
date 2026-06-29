@@ -54,7 +54,7 @@ println!("Found {} routes", routes.len());
 ```rust
 use renkin::chem_env::{default_rules, RetroRule};
 
-// Get the default rule set (20 rules)
+// Get the default rule set (31 handcrafted rules)
 let rules = default_rules();
 
 // Each rule has a name and SMIRKS pattern

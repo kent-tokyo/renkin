@@ -322,7 +322,7 @@ cargo build --release
 ┌──────────────────────────────────────────────────────────────────┐
 │ renkin workspace (this repository)                               │
 │                                                                  │
-│  renkin  (retrosynthesis)         renkin-forward  (planned)      │
+│  renkin  (retrosynthesis)         renkin-forward                  │
 │  ──────────────────────           ─────────────────────────────  │
 │  target → precursors              reactants → products           │
 │  A* / AND-OR search               template-based forward         │

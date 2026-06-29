@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "renkin"
-version = "0.15.4"
+version = "0.15.5"
 description = "Ultra-fast retrosynthesis engine for computer-aided synthesis planning (CASP) — pure Rust, Python bindings via PyO3"
 readme = "README.md"
 license = { text = "MIT" }

@@ -170,6 +170,11 @@ struct BenchResult {
     /// True if any step uses a low-frequency template (step_confidence < 0.1).
     #[serde(skip_serializing_if = "Option::is_none")]
     low_template_confidence: Option<bool>,
+    // ── Failure diagnostics (always present; useful for taxonomy) ──
+    beam_limit_hit: bool,
+    max_depth_reached: bool,
+    matched_templates: u64,
+    stock_hits: u64,
 }
 
 #[derive(Serialize)]
@@ -319,6 +324,7 @@ fn main() -> Result<()> {
     let mut max_routes: usize = 1;
     let mut bond_index = false;
     let mut plausibility = false;
+    let mut failure_taxonomy = false;
     let mut quietset_out: Option<String> = None;
     let mut evaluator_id: Option<String> = None;
     #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
@@ -376,6 +382,9 @@ fn main() -> Result<()> {
             }
             "--plausibility" => {
                 plausibility = true;
+            }
+            "--failure-taxonomy" => {
+                failure_taxonomy = true;
             }
             "--quietset-out" => {
                 i += 1;
@@ -545,6 +554,10 @@ fn main() -> Result<()> {
             atom_balance_ok,
             forward_validated,
             low_template_confidence,
+            beam_limit_hit: stats.beam_limit_hit,
+            max_depth_reached: stats.max_depth_reached,
+            matched_templates: stats.matched_templates,
+            stock_hits: stats.stock_hits,
         });
     }
 
@@ -639,6 +652,43 @@ fn main() -> Result<()> {
         plausibility_score,
         results,
     };
+
+    if failure_taxonomy {
+        let unsolved: Vec<&BenchResult> = report.results.iter().filter(|r| !r.solved).collect();
+        let n = unsolved.len();
+        if n > 0 {
+            let beam_hit = unsolved.iter().filter(|r| r.beam_limit_hit).count();
+            let depth_hit = unsolved.iter().filter(|r| r.max_depth_reached).count();
+            let no_tmpl = unsolved.iter().filter(|r| r.matched_templates < 3).count();
+            // stock_near_miss: stock was reached (hits > 0) but no route found
+            let stock_near = unsolved.iter().filter(|r| r.stock_hits > 0).count();
+            eprintln!();
+            eprintln!("=== Failure Taxonomy ({n} unsolved) ===");
+            eprintln!(
+                "  beam_limit_hit    : {:4} ({:.1}%)",
+                beam_hit,
+                beam_hit as f64 / n as f64 * 100.0
+            );
+            eprintln!(
+                "  max_depth_reached : {:4} ({:.1}%)",
+                depth_hit,
+                depth_hit as f64 / n as f64 * 100.0
+            );
+            eprintln!(
+                "  no_template_match : {:4} ({:.1}%)",
+                no_tmpl,
+                no_tmpl as f64 / n as f64 * 100.0
+            );
+            eprintln!(
+                "  stock_near_miss   : {:4} ({:.1}%)",
+                stock_near,
+                stock_near as f64 / n as f64 * 100.0
+            );
+            eprintln!("(categories overlap; one target may have multiple causes)");
+        } else {
+            eprintln!("=== Failure Taxonomy: all targets solved ===");
+        }
+    }
 
     println!("{}", serde_json::to_string_pretty(&report)?);
 

@@ -41,14 +41,16 @@ RENKIN is a **retrosynthesis engine** that automatically plans multi-step chemic
 | **Pure Rust** | Zero C/C++ dependencies — safe, fast, cross-platform |
 | **WebAssembly** | Runs in the browser at near-native speed |
 | **Python bindings** | `pip install renkin` — no RDKit required |
-| **20 built-in rules + up to 50k via `--templates`** | Ester, amide, Suzuki, Buchwald-Hartwig, Wittig, and more; extended via rdchiral-extracted templates |
+| **31 handcrafted rules + ~5,000 extracted via `--templates`** | Ester, amide, Suzuki, Buchwald-Hartwig, Wittig, sulfonamide, and more; extended via rdchiral-extracted templates (up to 50k) |
 | **509 building blocks** | Common pharma starting materials pre-loaded |
-| **A\* / AND-OR tree search** | Retro\*-equivalent algorithm with beam-width control and pluggable heuristics (`MoleculeValueEstimator`, `ReactionPrior`) |
+| **A\* / beam search** | Frequency-weighted A* with beam-width control; `step_cost` reduced for high-frequency templates (Phase A) |
 | **Route scoring** | Per-step `confidence`, `success_probability` (Retro-prob), `route_cost` with optional `--bb-prices CSV` |
+| **Constraint DSL** | `--avoid-elements Br,I --require-elements B` filters routes by element profile |
 | **Forward validation** | `renkin-forward validate` verifies each retrosynthetic step by forward prediction; pipe-friendly (stdin support) |
-| **PaRoutes benchmark** | `renkin-bench --input-format paroutes` for multi-step ground-truth evaluation with depth delta and route diversity metrics |
-| **Atom balance check** | `renkin-bench` flags steps where `target_MW > Σ precursor_MW` (CompleteRXN-style) |
-| **MCP server** | `renkin-mcp` exposes `find_routes`, `validate_route`, `estimate_diversity` to Claude Desktop |
+| **Failure diagnostics** | `renkin-bench --failure-taxonomy` classifies unsolved targets by cause (beam limit, depth limit, template gap, stock near-miss) |
+| **Cascade search** | Two-stage search: fast defaults → hard cases re-run at higher beam/depth |
+| **Stability testing** | `--quietset-out` exports observations for [quietset](https://crates.io/crates/quietset-cli) cross-config stability analysis |
+| **MCP server** | `renkin-mcp` exposes `find_routes`, `diagnose_failure`, `validate_route` to Claude Desktop |
 
 ## Quick Example
 
@@ -100,7 +102,7 @@ RENKIN is a **retrosynthesis engine** that automatically plans multi-step chemic
 Target molecule (SMILES)
         │
         ▼
-  Retrosynthetic   ←── 20 built-in rules (5k–50k via --templates)
+  Retrosynthetic   ←── 31 built-in + ~5k extracted (--templates)
   rule application
         │
         ▼
@@ -115,14 +117,18 @@ Target molecule (SMILES)
 
 ## Reaction Rules
 
-RENKIN includes 20 retrosynthetic reaction templates covering the most common bond-forming reactions in pharmaceutical synthesis:
+RENKIN ships **31 handcrafted graph-based rules** covering common pharmaceutical bond disconnections, plus supports up to 50k rdchiral-extracted templates via `--templates`:
 
-- **Acyl disconnections**: ester hydrolysis, amide cleavage, Friedel-Crafts acylation
-- **Aryl C-heteroatom**: Buchwald-Hartwig (C-N), Ullmann ether (C-O), SNAr
+- **Acyl disconnections**: ester hydrolysis, amide cleavage (graph-based), Friedel-Crafts acylation
+- **Aryl C-heteroatom**: Buchwald-Hartwig (C-N), Ullmann ether (C-O), SNAr, sulfonamide cleavage
 - **Aryl C-halide**: C-Cl, C-I, C-F disconnections (Pd-activation / SNAr retro)
-- **Aryl C-C coupling**: Suzuki (graph-based), Heck, Negishi
-- **Aliphatic**: reductive amination, N-alkylation, O-alkylation, Wittig
+- **Aryl C-C coupling**: Suzuki (graph-based), Heck, Negishi, Sonogashira
+- **Sulfone disconnections**: diaryl sulfone cleavage (graph-based)
+- **Protecting groups**: Boc, Cbz deprotection (graph-based)
+- **Aliphatic**: reductive amination, N-/O-alkylation, Wittig, Grignard, Michael
 - **Oxidation**: alcohol → carbonyl
+
+With `--templates data/templates_extracted_5000.smi`, RENKIN uses ~5,000 additional rdchiral-extracted templates weighted by USPTO training frequency (Phase A), achieving **78.0% on USPTO-50k** (depth=5, beam=100).
 
 ## Installation
 

@@ -40,7 +40,7 @@ CHUNK_NUM=0
 json_field() {
     local file="$1" field="$2"
     if command -v jq >/dev/null 2>&1; then
-        jq ".$field" "$file" 2>/dev/null || echo 0
+        jq ".$field" "$file" 2>/dev/null | head -1 || echo 0
     else
         python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d['$field'])" "$file" 2>/dev/null || echo 0
     fi
@@ -76,7 +76,13 @@ for CHUNK in $CHUNKS; do
         --templates "$TEMPLATES" \
         $SCORER_ARG \
         $BB_ARG \
-        2>/dev/null > "$OUT"
+        2>/dev/null > "$OUT" || true
+    # If the binary crashed and left an empty file, remove and skip.
+    if [ ! -s "$OUT" ]; then
+        rm -f "$OUT"
+        echo "WARN: renkin-bench failed on $CHUNK_NAME, skipping"
+        continue
+    fi
 
     END=$(date +%s)
     ELAPSED=$((END - START))

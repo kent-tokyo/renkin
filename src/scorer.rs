@@ -54,10 +54,6 @@ pub mod nn {
             let model = tract_onnx::onnx()
                 .model_for_path(path)
                 .with_context(|| format!("failed to load ONNX model from {path}"))?
-                .with_input_fact(
-                    0,
-                    InferenceFact::dt_shape(f32::datum_type(), [1usize, 2048usize]),
-                )?
                 .into_optimized()
                 .context("failed to optimize ONNX model")?
                 .into_runnable()

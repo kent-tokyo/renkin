@@ -631,6 +631,7 @@ pub fn find_routes(
     // The scorer is called here (before the A* loop) — not per-node — to avoid
     // hundreds of ONNX inference calls per search. The ranking is reused across
     // all A* expansions; deeper intermediates use the same ordering.
+    //
     #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
     let ranked_rules: Vec<&RetroRule> = {
         if let Some(sc) = &config.nn_scorer {

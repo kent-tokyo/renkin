@@ -205,6 +205,16 @@ struct BenchReport {
     /// None when --plausibility not set.
     #[serde(skip_serializing_if = "Option::is_none")]
     plausibility_score: Option<f64>,
+    /// Fraction of ALL targets solved (= success_rate). Mirror with explicit name for the metric trio.
+    raw_solved_rate: f64,
+    /// Fraction of ALL targets that are solved AND pass forward validation.
+    /// None when --plausibility not set. Always ≤ raw_solved_rate.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    validated_solved_rate: Option<f64>,
+    /// Fraction of ALL targets that are solved AND have best_depth ≤ --practical-max-steps.
+    /// None when --practical-max-steps not set. Always ≤ raw_solved_rate.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    practical_solved_rate: Option<f64>,
     results: Vec<BenchResult>,
 }
 
@@ -315,6 +325,8 @@ struct StageConfig {
     #[serde(default)]
     templates: Option<String>,
     #[serde(default)]
+    top_templates: Option<usize>,
+    #[serde(default)]
     building_blocks: Option<String>,
     #[serde(default)]
     only_unsolved_from_previous: bool,
@@ -414,7 +426,10 @@ fn cmd_cascade(args: &[String]) -> Result<()> {
 
         let mut rules = default_rules();
         if let Some(ref p) = cfg.templates {
-            let extra = load_rules_from_file(p);
+            let mut extra = load_rules_from_file(p);
+            if let Some(k) = cfg.top_templates {
+                extra = renkin::chem_env::top_templates_by_weight(extra, k);
+            }
             eprintln!("[{}] Loaded {} templates from {p}", cfg.name, extra.len());
             rules.extend(extra);
         }
@@ -489,12 +504,14 @@ fn main() -> Result<()> {
     let mut input_format = "smi".to_string();
     let mut bb_path: Option<String> = None;
     let mut templates_path: Option<String> = None;
+    let mut top_templates: Option<usize> = None;
     let mut max_depth: u32 = 5;
     let mut beam_width: usize = 0;
     let mut max_routes: usize = 1;
     let mut bond_index = false;
     let mut plausibility = false;
     let mut failure_taxonomy = false;
+    let mut practical_max_steps: Option<u32> = None;
     let mut quietset_out: Option<String> = None;
     let mut evaluator_id: Option<String> = None;
     #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
@@ -547,6 +564,10 @@ fn main() -> Result<()> {
                     templates_path = Some(args[i].clone());
                 }
             }
+            "--top-templates" => {
+                i += 1;
+                top_templates = args.get(i).and_then(|s| s.parse().ok());
+            }
             "--bond-index" => {
                 bond_index = true;
             }
@@ -555,6 +576,10 @@ fn main() -> Result<()> {
             }
             "--failure-taxonomy" => {
                 failure_taxonomy = true;
+            }
+            "--practical-max-steps" => {
+                i += 1;
+                practical_max_steps = args.get(i).and_then(|s| s.parse().ok());
             }
             "--quietset-out" => {
                 i += 1;
@@ -621,7 +646,10 @@ fn main() -> Result<()> {
 
     let mut rules = default_rules();
     if let Some(ref path) = templates_path {
-        let extra = load_rules_from_file(path);
+        let mut extra = load_rules_from_file(path);
+        if let Some(k) = top_templates {
+            extra = renkin::chem_env::top_templates_by_weight(extra, k);
+        }
         eprintln!("Loaded {} templates from {path}", extra.len());
         rules.extend(extra);
     }
@@ -803,6 +831,23 @@ fn main() -> Result<()> {
             / 3.0
     });
 
+    // ── Metric trio: raw ≥ validated ≥ practical (all as fraction of ALL targets) ──
+    let raw_solved_rate = success_rate;
+    // validated: solved AND every step passes forward validation (needs --plausibility).
+    let validated_solved_rate = if plausibility {
+        Some(n_fwd_validated as f64 / total as f64)
+    } else {
+        None
+    };
+    // practical: solved AND route depth within the practical step budget.
+    let practical_solved_rate = practical_max_steps.map(|max_steps| {
+        let n_practical = solved_results
+            .iter()
+            .filter(|r| r.best_depth.is_some_and(|d| d <= max_steps))
+            .count();
+        n_practical as f64 / total as f64
+    });
+
     let report = BenchReport {
         total,
         solved: solved_count,
@@ -820,6 +865,9 @@ fn main() -> Result<()> {
         pct_forward_validated,
         pct_low_template_confidence,
         plausibility_score,
+        raw_solved_rate,
+        validated_solved_rate,
+        practical_solved_rate,
         results,
     };
 

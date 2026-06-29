@@ -35,6 +35,7 @@ fn main() -> Result<()> {
     let mut max_depth: u32 = 5;
     let mut bb_path: Option<String> = None;
     let mut templates_path: Option<String> = None;
+    let mut top_templates: Option<usize> = None;
     let mut max_routes: usize = 5;
     let mut beam_width: usize = 0;
     let mut format: String = "json".to_string();
@@ -74,6 +75,12 @@ fn main() -> Result<()> {
                 i += 1;
                 if i < args.len() {
                     templates_path = Some(args[i].clone());
+                }
+            }
+            "--top-templates" => {
+                i += 1;
+                if i < args.len() {
+                    top_templates = args[i].parse().ok();
                 }
             }
             "--max-routes" | "-n" => {
@@ -193,7 +200,10 @@ fn main() -> Result<()> {
 
     let mut rules = chem_env::default_rules();
     if let Some(ref path) = templates_path {
-        let extra = chem_env::load_rules_from_file(path);
+        let mut extra = chem_env::load_rules_from_file(path);
+        if let Some(k) = top_templates {
+            extra = chem_env::top_templates_by_weight(extra, k);
+        }
         eprintln!("Loaded {} templates from {path}", extra.len());
         rules.extend(extra);
     }

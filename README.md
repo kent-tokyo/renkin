@@ -25,7 +25,7 @@
   <img alt="MCP" src="https://img.shields.io/badge/MCP-ready-7f52ff">
   <img alt="templates" src="https://img.shields.io/badge/templates-up%20to%2050k-purple">
   <img alt="building blocks" src="https://img.shields.io/badge/building%20blocks-509-lightgrey">
-  <img alt="USPTO-50k" src="https://img.shields.io/badge/USPTO--50k-78.1%25%20solved-brightgreen">
+  <img alt="USPTO-50k" src="https://img.shields.io/badge/USPTO--50k-78.0%25%20solved-brightgreen">
   <img alt="ChEMBL" src="https://img.shields.io/badge/ChEMBL-81.8%25%20solved-brightgreen">
 </p>
 
@@ -236,12 +236,13 @@ USPTO-50k test set (4,907 molecules, full evaluation):
 | + 5,000 templates, 480 BBs | 3826/4907 | 78.0% | 480 | 5,000 | 5 | 100 | 2,775 |
 | Phase A unlimited (beam=0) | 3832/4907 | 78.1% | 480 | 5,000 | 5 | 0 | — |
 | Phase B (NN scorer, tract-onnx) | 3826/4907 | 78.0% | 480 | 5,000 | 5 | 100 | 3,394 |
-| **+ diaryl sulfone rule, 509 BBs** | **3831/4907** | **78.1%** | **509** | **5,000** | **5** | **100** | **≈2,800** |
+| **+ diaryl sulfone rule, 509 BBs** | **3826/4907** | **78.0%** | **509** | **5,000** | **5** | **100** | **≈2,800** |
+| Cascade (stage2: depth=7, beam=300 on unsolved) | 4705/4907 | **95.9%** | 509 | 5,000 | 7 | 300 | — |
 
 \* 29/50 chunks, previous binary  
 † 50/50 chunks — **72.1%** (3,540/4,907) confirmed
 
-Under RENKIN's evaluation setting (see definition above), RENKIN reaches **78.1%** on USPTO-50k. Published numbers for AiZynthFinder (45–53%), Retro\* (44.3%), and ASKCOS (41%) use different stock databases, template counts, and evaluation years — **this is not a matched-condition comparison**.  
+Under RENKIN's evaluation setting (see definition above), RENKIN reaches **78.0%** single-pass on USPTO-50k, and **95.9%** with cascade search (re-running unsolved targets at depth=7, beam=300). Published numbers for AiZynthFinder (45–53%), Retro\* (44.3%), and ASKCOS (41%) use different stock databases, template counts, and evaluation years — **this is not a matched-condition comparison**.  
 *Note: LocalRetro (53.4%) and GLG (58.0%) report single-step top-1 prediction accuracy — a different metric, not directly comparable.*  
 [Full benchmark details →](https://kent-tokyo.github.io/renkin/benchmark/)
 
@@ -274,7 +275,7 @@ The JSON output includes `avg_nodes_expanded`, `avg_confidence`, `avg_convergenc
 | **Retro\*** | Python | MIT | No | No (unmaintained) | A\* + AND/OR | USPTO (ML) | eMolecules |
 | **★ RENKIN** | **Rust** | **MIT** | **Yes** | **Yes** | **A\* + AND/OR** | Hand-curated + rdchiral (5k default; 50k via `--templates`) | 509+ |
 
-**RENKIN's goal**: match state-of-the-art accuracy using only curated rules and auto-extracted SMIRKS templates — no GPU, no training data, no black boxes. Under RENKIN's benchmark setting, it reaches **78.1%** (3,831/4,907 — full run confirmed). Template frequency weighting (Phase A) combined with 5,000 auto-extracted templates and 509 building blocks delivers this result. RENKIN runs anywhere: browser, CLI, Python — single `cargo build`.
+**RENKIN's goal**: match state-of-the-art accuracy using only curated rules and auto-extracted SMIRKS templates — no GPU, no training data, no black boxes. Under RENKIN's benchmark setting, it reaches **78.0%** (3,826/4,907 — full run confirmed) single-pass, and **95.9%** (4,705/4,907) with cascade search. Template frequency weighting (Phase A) combined with 5,000 auto-extracted templates and 509 building blocks delivers this result. RENKIN runs anywhere: browser, CLI, Python — single `cargo build`.
 
 > ⚠️ The table above lists tools under different evaluation conditions. No matched-condition experiment against other tools has been performed.
 
@@ -413,24 +414,40 @@ renkin/                          ← Cargo workspace root
 
 ## Roadmap
 
+### Recently shipped
+
+- [x] `renkin-bench cascade` — multi-stage search (fast defaults → hard cases re-run deeper); only unsolved targets propagate to later stages. **78.0% → 95.9%** on USPTO-50k
+- [x] `renkin-bench --failure-taxonomy` — classify unsolved targets by cause (beam limit / depth limit / template gap / stock near-miss)
+- [x] Graph-based ester cleavage — BFS-leakage-free `R-C(=O)-O-R' → RCOOH + R'OH`
+- [x] `--top-templates N` — frequency-rank filter: use the top-N most frequent templates for speed / less noise
+- [x] `raw / validated / practical` solved-rate metrics (`--plausibility --practical-max-steps N`)
+- [x] Retro cache hit-rate in `SearchStats` + `--verbose`
+
+### In progress
+
+- [ ] Template retrieval index (element bitmask + bond-center prefilter) for the 50k template set
+- [ ] Calibrated route confidence (map `success_probability` to empirical solve rate)
+
+### Next
+
+- [ ] Graph rule expansion — sulfonamide / carbamate / urea cleavage (one PR per family, each with benchmark delta)
+- [ ] Stock-aware planning (price / hazard / availability re-ranking)
+
+<details>
+<summary>Earlier milestones</summary>
+
 - [x] Route cost scoring — `route_cost` field + `--bb-prices path.csv` / `--stock stock.csv`
 - [x] Cargo workspace — `crates/renkin-forward/` + `crates/renkin-kg/`
-- [x] `renkin-forward predict` — template-based forward prediction (reactants → products)
-- [x] `renkin-forward validate` — forward-validate retrosynthetic routes; stdin-pipe friendly
+- [x] `renkin-forward predict` / `validate` — forward prediction + route validation (stdin-pipe friendly)
 - [x] `renkin-doctor` — environment diagnostic binary (templates, BBs, Python, binaries)
 - [x] Failure diagnostics — zero-route output includes `likely_causes` + `suggestions` JSON block
 - [x] `--format explain|compare|compare-json` — human-readable and tabular route output
 - [x] `renkin stock stats|validate|coverage` — stock CSV management subcommand
 - [x] Pareto multi-objective search — `--format pareto`, `--objectives`, `find_pareto_routes` MCP
 - [x] Constraint DSL — `--constraints JSON`, `plan_with_constraints` MCP tool
-- [x] `renkin-bench --plausibility` — forward-validation plausibility report
 - [x] `renkin template stats|validate|dedup|explain|coverage` — template quality tools
 - [x] `renkin-kg` — reaction knowledge graph (bipartite mol↔reaction, GraphML/Cypher export)
 - [x] MCP server expanded to 6 tools (`explain_route`, `find_pareto_routes`, `plan_with_constraints`)
-
-<details>
-<summary>Completed milestones</summary>
-
 - [x] SMIRKS retro-reaction rules + fragment sanitization
 - [x] A\* / AND-OR tree search, closed list, degenerate-route filter
 - [x] SA Score heuristic + beam search
@@ -442,11 +459,11 @@ renkin/                          ← Cargo workspace root
 - [x] Graph-based biaryl cleavage · O(1) canonical-SMILES BB index
 - [x] Published to crates.io / PyPI / npm · GitHub Actions CI/CD
 - [x] MkDocs documentation site · GitHub Pages playground
-- [x] Auto template extraction (rdchiral): **27.8%** → **78.1%** USPTO-50k
+- [x] Auto template extraction (rdchiral): **27.8%** → **78.0%** USPTO-50k
 - [x] Tetrahedral stereo @/@@ + E/Z double-bond stereo
 - [x] Template frequency weighting (Phase A): **72.1%** USPTO-50k
 - [x] FxHashMap · SmallVec beam frontier · SA Score memoization · Arc<PathNode> path sharing
-- [x] 5,000 extracted templates + 509 BBs: **78.1%** USPTO-50k (3,831/4,907 ✅)
+- [x] 5,000 extracted templates + 509 BBs: **78.0%** USPTO-50k (3,826/4,907 ✅)
 - [x] NN template scorer via `--scorer` flag (tract-onnx, Pure Rust ONNX)
 - [x] `--format tree|mermaid` route visualization
 - [x] Constraint-based search: `--avoid-elements`, `--require-elements`

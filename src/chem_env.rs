@@ -1039,6 +1039,22 @@ pub fn elem_symbols_to_mask(csv: &str) -> u64 {
     mask
 }
 
+/// Keep only the `k` highest-weight (most frequent) templates.
+/// Used by `--top-templates N` to trade a little recall for speed and less noise.
+/// Hand-crafted rules are loaded separately and are never passed here.
+pub fn top_templates_by_weight(mut rules: Vec<RetroRule>, k: usize) -> Vec<RetroRule> {
+    if rules.len() <= k {
+        return rules;
+    }
+    rules.sort_by(|a, b| {
+        b.weight
+            .partial_cmp(&a.weight)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    rules.truncate(k);
+    rules
+}
+
 /// Load additional SMIRKS templates from a file (tab-separated: SMIRKS\tcount).
 /// Lines starting with '#' are treated as comments and skipped.
 /// Validates each template by running it against a probe molecule; only templates

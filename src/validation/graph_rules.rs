@@ -115,3 +115,173 @@ pub fn validate_graph_step(
         _ => StepValidationStatus::NotEvaluable,
     }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn precs(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    // ── ester_cleavage ──────────────────────────────────────────────────────
+    #[test]
+    fn ester_cleavage_valid() {
+        // phenyl acetate → acetic acid + phenol
+        let status = validate_graph_step(
+            "ester_cleavage",
+            "CC(=O)Oc1ccccc1",
+            &precs(&["CC(=O)O", "Oc1ccccc1"]),
+        );
+        assert_eq!(status, StepValidationStatus::Valid);
+    }
+
+    #[test]
+    fn ester_cleavage_invalid_wrong_precursors() {
+        // precursors don't correspond to the target at all
+        let status = validate_graph_step("ester_cleavage", "CC(=O)Oc1ccccc1", &precs(&["CCO"]));
+        assert_eq!(status, StepValidationStatus::Invalid);
+    }
+
+    // ── amide_cleavage ──────────────────────────────────────────────────────
+    #[test]
+    fn amide_cleavage_valid() {
+        // acetanilide → acetic acid + aniline
+        let status = validate_graph_step(
+            "amide_cleavage",
+            "CC(=O)Nc1ccccc1",
+            &precs(&["CC(=O)O", "Nc1ccccc1"]),
+        );
+        assert_eq!(status, StepValidationStatus::Valid);
+    }
+
+    #[test]
+    fn amide_cleavage_invalid_missing_precursor() {
+        let status = validate_graph_step("amide_cleavage", "CC(=O)Nc1ccccc1", &precs(&["CC(=O)O"]));
+        assert_eq!(status, StepValidationStatus::Invalid);
+    }
+
+    // ── suzuki_retro ─────────────────────────────────────────────────────────
+    #[test]
+    fn suzuki_retro_valid() {
+        // biphenyl → bromobenzene + benzene
+        let status = validate_graph_step(
+            "suzuki_retro",
+            "c1ccc(-c2ccccc2)cc1",
+            &precs(&["Brc1ccccc1", "c1ccccc1"]),
+        );
+        assert_eq!(status, StepValidationStatus::Valid);
+    }
+
+    #[test]
+    fn suzuki_retro_invalid_wrong_halide() {
+        // chlorobenzene instead of bromobenzene — wrong leaving-group element
+        let status = validate_graph_step(
+            "suzuki_retro",
+            "c1ccc(-c2ccccc2)cc1",
+            &precs(&["Clc1ccccc1", "c1ccccc1"]),
+        );
+        assert_eq!(status, StepValidationStatus::Invalid);
+    }
+
+    // ── sulfonamide_retro ────────────────────────────────────────────────────
+    #[test]
+    fn sulfonamide_retro_valid() {
+        // PhSO2NHPh → PhSO2Cl + aniline
+        let status = validate_graph_step(
+            "sulfonamide_retro",
+            "O=S(=O)(Nc1ccccc1)c1ccccc1",
+            &precs(&["O=S(=O)(Cl)c1ccccc1", "Nc1ccccc1"]),
+        );
+        assert_eq!(status, StepValidationStatus::Valid);
+    }
+
+    #[test]
+    fn sulfonamide_retro_invalid() {
+        let status = validate_graph_step(
+            "sulfonamide_retro",
+            "O=S(=O)(Nc1ccccc1)c1ccccc1",
+            &precs(&["Nc1ccccc1"]),
+        );
+        assert_eq!(status, StepValidationStatus::Invalid);
+    }
+
+    // ── diaryl_sulfone_retro ─────────────────────────────────────────────────
+    #[test]
+    fn diaryl_sulfone_retro_valid() {
+        // PhSO2Ph → benzene + PhSO2Cl
+        let status = validate_graph_step(
+            "diaryl_sulfone_retro",
+            "O=S(=O)(c1ccccc1)c1ccccc1",
+            &precs(&["c1ccccc1", "O=S(=O)(Cl)c1ccccc1"]),
+        );
+        assert_eq!(status, StepValidationStatus::Valid);
+    }
+
+    #[test]
+    fn diaryl_sulfone_retro_invalid() {
+        let status = validate_graph_step(
+            "diaryl_sulfone_retro",
+            "O=S(=O)(c1ccccc1)c1ccccc1",
+            &precs(&["c1ccccc1"]),
+        );
+        assert_eq!(status, StepValidationStatus::Invalid);
+    }
+
+    // ── boc_deprotection_retro ───────────────────────────────────────────────
+    #[test]
+    fn boc_deprotection_valid() {
+        // N-Boc-piperidine → piperidine
+        let status = validate_graph_step(
+            "boc_deprotection_retro",
+            "CC(C)(C)OC(=O)N1CCCCC1",
+            &precs(&["C1CCNCC1"]),
+        );
+        assert_eq!(status, StepValidationStatus::Valid);
+    }
+
+    #[test]
+    fn boc_deprotection_invalid_wrong_amine() {
+        // precursor amine doesn't match the target's ring size
+        let status = validate_graph_step(
+            "boc_deprotection_retro",
+            "CC(C)(C)OC(=O)N1CCCCC1",
+            &precs(&["C1CCNC1"]),
+        );
+        assert_eq!(status, StepValidationStatus::Invalid);
+    }
+
+    // ── cbz_deprotection_retro ───────────────────────────────────────────────
+    #[test]
+    fn cbz_deprotection_valid() {
+        // N-Cbz-piperidine → piperidine
+        let status = validate_graph_step(
+            "cbz_deprotection_retro",
+            "O=C(OCc1ccccc1)N1CCCCC1",
+            &precs(&["C1CCNCC1"]),
+        );
+        assert_eq!(status, StepValidationStatus::Valid);
+    }
+
+    #[test]
+    fn cbz_deprotection_invalid_wrong_amine() {
+        let status = validate_graph_step(
+            "cbz_deprotection_retro",
+            "O=C(OCc1ccccc1)N1CCCCC1",
+            &precs(&["C1CCNC1"]),
+        );
+        assert_eq!(status, StepValidationStatus::Invalid);
+    }
+
+    // ── uncovered rule name ──────────────────────────────────────────────────
+    #[test]
+    fn unknown_graph_rule_not_evaluable() {
+        let status = validate_graph_step("some_future_graph_rule", "C", &precs(&["C"]));
+        assert_eq!(status, StepValidationStatus::NotEvaluable);
+    }
+
+    #[test]
+    fn unparseable_smiles_not_evaluable() {
+        let status = validate_graph_step("ester_cleavage", "", &precs(&["CCO"]));
+        assert_eq!(status, StepValidationStatus::NotEvaluable);
+    }
+}

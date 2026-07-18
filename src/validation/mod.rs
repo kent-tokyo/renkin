@@ -97,3 +97,103 @@ pub fn validate_route_steps(
     let route_status = aggregate_route(&statuses);
     (statuses, route_status)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use StepValidationStatus::{Invalid, NotEvaluable, Valid};
+
+    // ── aggregate_route rollup rules ─────────────────────────────────────────
+    #[test]
+    fn aggregate_all_valid_is_validated() {
+        assert_eq!(
+            aggregate_route(&[Valid, Valid]),
+            RouteValidationStatus::Validated
+        );
+    }
+
+    #[test]
+    fn aggregate_one_invalid_dominates() {
+        // Invalid wins even with Valid steps present — one confirmed-wrong step
+        // sinks the whole route.
+        assert_eq!(
+            aggregate_route(&[Valid, Invalid, Valid]),
+            RouteValidationStatus::Invalid
+        );
+    }
+
+    #[test]
+    fn aggregate_all_not_evaluable() {
+        assert_eq!(
+            aggregate_route(&[NotEvaluable, NotEvaluable]),
+            RouteValidationStatus::NotEvaluable
+        );
+    }
+
+    #[test]
+    fn aggregate_valid_and_not_evaluable_mix_is_partial() {
+        assert_eq!(
+            aggregate_route(&[Valid, NotEvaluable]),
+            RouteValidationStatus::PartiallyValidated
+        );
+    }
+
+    #[test]
+    fn aggregate_empty_is_validated() {
+        // Vacuously true: no steps, nothing failed to validate.
+        assert_eq!(aggregate_route(&[]), RouteValidationStatus::Validated);
+    }
+
+    // ── SMIRKS-based rule path is unchanged by this refactor ────────────────
+    fn step(rule: &str, target: &str, precursors: &[&str]) -> ReactionStep {
+        ReactionStep {
+            rule: rule.to_string(),
+            target: target.to_string(),
+            precursors: precursors.iter().map(|s| s.to_string()).collect(),
+            conditions: None,
+            atom_economy: None,
+            step_confidence: 1.0,
+            procedure_hint: None,
+            reaction_family: None,
+        }
+    }
+
+    #[test]
+    fn smirks_rule_step_valid_on_forward_match() {
+        // Friedel-Crafts acylation retro (SMIRKS-based, not one of the 7 graph
+        // rules): acetophenone → benzene + acetyl chloride.
+        let rules = crate::chem_env::default_rules();
+        let s = step(
+            "friedel_crafts_acylation_retro",
+            "CC(=O)c1ccccc1",
+            &["c1ccccc1", "CC(=O)Cl"],
+        );
+        assert_eq!(validate_step(&s, &rules), Valid);
+    }
+
+    #[test]
+    fn smirks_rule_step_invalid_on_forward_mismatch() {
+        let rules = crate::chem_env::default_rules();
+        let s = step("friedel_crafts_acylation_retro", "CC(=O)c1ccccc1", &["CCO"]);
+        assert_eq!(validate_step(&s, &rules), Invalid);
+    }
+
+    // ── graph-rule step routes through graph_rules::validate_graph_step ─────
+    #[test]
+    fn graph_rule_step_valid() {
+        let rules = crate::chem_env::default_rules();
+        let s = step(
+            "ester_cleavage",
+            "CC(=O)Oc1ccccc1",
+            &["CC(=O)O", "Oc1ccccc1"],
+        );
+        assert_eq!(validate_step(&s, &rules), Valid);
+    }
+
+    #[test]
+    fn graph_rule_step_invalid() {
+        let rules = crate::chem_env::default_rules();
+        let s = step("ester_cleavage", "CC(=O)Oc1ccccc1", &["CCO"]);
+        assert_eq!(validate_step(&s, &rules), Invalid);
+    }
+}

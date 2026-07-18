@@ -25,12 +25,10 @@ use std::io::Write as _;
 use std::time::Instant;
 
 use anyhow::{Result, bail};
-use chematic::chem::molecular_weight;
-use chematic::rxn::run_reactants;
-use chematic::smiles::canonical_smiles;
 use renkin::DEFAULT_BUILDING_BLOCKS;
-use renkin::chem_env::{ChemEnv, RetroRule, default_rules, load_rules_from_file, mol_from_smiles};
+use renkin::chem_env::{ChemEnv, default_rules, load_rules_from_file};
 use renkin::search::{Route, SearchConfig, find_routes};
+use renkin::validation::{route_balanced, route_forward_validated};
 use rustc_hash::FxHashSet;
 use serde::Serialize;
 
@@ -104,35 +102,6 @@ fn route_diversity(routes: &[Route]) -> f64 {
         }
     }
     1.0 - (total_sim / count as f64)
-}
-
-// ── Atom balance ─────────────────────────────────────────────────────────────
-
-/// True if target_MW ≤ Σ precursor_MW (within 1% float tolerance).
-/// In retrosynthesis the target is split from precursors; precursors must
-/// carry at least as many atoms (by weight) as the target. Violation means
-/// a template caused atoms to appear from nowhere — a CompleteRXN-style defect.
-fn step_balanced(target: &str, precursors: &[String]) -> bool {
-    let target_mw = mol_from_smiles(target)
-        .ok()
-        .map(|m| molecular_weight(&m))
-        .unwrap_or(0.0);
-    if target_mw == 0.0 {
-        return true;
-    }
-    let precursor_mw: f64 = precursors
-        .iter()
-        .filter_map(|s| mol_from_smiles(s).ok())
-        .map(|m| molecular_weight(&m))
-        .sum();
-    target_mw <= precursor_mw * 1.01
-}
-
-fn route_balanced(route: &Route) -> bool {
-    route
-        .steps
-        .iter()
-        .all(|s| step_balanced(&s.target, &s.precursors))
 }
 
 // ── Output structs ───────────────────────────────────────────────────────────
@@ -968,34 +937,6 @@ fn main() -> Result<()> {
 }
 
 // ── Plausibility checks ──────────────────────────────────────────────────────
-
-/// True if every step of the route passes forward validation:
-/// applying each step's precursors forward reproduces the step's target.
-fn route_forward_validated(route: &Route, rules: &[RetroRule]) -> bool {
-    route.steps.iter().all(|step| {
-        let Ok(reactant_mols): Result<Vec<_>, _> =
-            step.precursors.iter().map(|s| mol_from_smiles(s)).collect()
-        else {
-            return false;
-        };
-        let Ok(target_mol) = mol_from_smiles(&step.target) else {
-            return false;
-        };
-        let target_canon = canonical_smiles(&target_mol);
-        let mol_refs: Vec<_> = reactant_mols.iter().collect();
-        rules.iter().filter(|r| !r.smirks.is_empty()).any(|rule| {
-            let Some((lhs, rhs)) = rule.smirks.split_once(">>") else {
-                return false;
-            };
-            let fwd = format!("{rhs}>>{lhs}");
-            run_reactants(&fwd, &mol_refs)
-                .into_iter()
-                .flatten()
-                .flatten()
-                .any(|m| canonical_smiles(&m) == target_canon)
-        })
-    })
-}
 
 /// True if any step uses a template with step_confidence < 0.1 (rare template).
 fn route_low_confidence(route: &Route) -> bool {

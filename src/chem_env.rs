@@ -1607,6 +1607,142 @@ mod tests {
         );
     }
 
+    // ── Substituent-preservation regression suite ────────────────────────────
+    //
+    // The aryl_carboxylation_retro bug happened because an UNMAPPED atom
+    // matched a real target atom but was "recreated fresh" (implicit-H-filled)
+    // in the precursor fragment, discarding whatever that real atom was really
+    // bonded to. The audit that found and fixed that bug also empirically
+    // checked every other rule with a mapped "leaving" atom whose H-count gets
+    // re-declared between the target and precursor SMIRKS templates (the
+    // mechanism that could, in principle, hit the same failure mode). All
+    // checked clean: chematic's reaction engine correctly carries a MAPPED
+    // atom's real substituents across the reaction. These cases pin that
+    // finding down as regression coverage — if a future chematic upgrade or
+    // rule edit breaks substituent preservation, this table catches it without
+    // requiring the same manual audit to be repeated by hand.
+    struct SubstituentPreservationCase {
+        rule_name: &'static str,
+        target: &'static str,
+        /// A precursor fragment that must appear (by canonical SMILES) in the
+        /// result, proving the target's real substituent beyond the rule's
+        /// textbook pattern survived instead of being silently dropped.
+        expected_preserved_fragment: &'static str,
+    }
+
+    const SUBSTITUENT_PRESERVATION_CASES: &[SubstituentPreservationCase] = &[
+        SubstituentPreservationCase {
+            // Ester oxygen (OMe) must survive as part of the acyl fragment,
+            // not be replaced outright by the rule's hardcoded Cl.
+            rule_name: "friedel_crafts_acylation_retro",
+            target: "COC(=O)c1ccccc1",                // methyl benzoate
+            expected_preserved_fragment: "COC(=O)Cl", // methyl chloroformate
+        },
+        SubstituentPreservationCase {
+            // The CH2's real -OH substituent must survive, not be discarded
+            // when the rule re-declares CH2 (2H) -> CH3 (3H).
+            rule_name: "negishi_retro",
+            target: "OCc1ccccc1",              // benzyl alcohol
+            expected_preserved_fragment: "CO", // methanol
+        },
+        SubstituentPreservationCase {
+            // C:1's extra branch (isopropyl) must survive into the acid fragment.
+            rule_name: "claisen_retro",
+            target: "CC(C)C(=O)CC(=O)OCC", // ethyl 4-methyl-3-oxopentanoate
+            expected_preserved_fragment: "CC(C)C(=O)O", // isobutyric acid
+        },
+        SubstituentPreservationCase {
+            // C:1's aryl substituent must survive into the enol fragment.
+            rule_name: "michael_retro",
+            target: "c1ccccc1CC(=O)CC", // 1-phenylpentan-2-one-ish chain
+            expected_preserved_fragment: "C=C(O)Cc1ccccc1",
+        },
+        SubstituentPreservationCase {
+            // C:1's bulky tert-butyl substituent must survive, not vanish
+            // when C:1 becomes a carbonyl.
+            rule_name: "reductive_amination_retro",
+            target: "CC(C)(C)NCC",                    // N-ethyl-tert-butylamine
+            expected_preserved_fragment: "CC(C)(C)N", // tert-butylamine
+        },
+        SubstituentPreservationCase {
+            // Both alkene substituents (extra methyls) must survive as two
+            // distinct, fully-substituted carbonyl fragments.
+            rule_name: "wittig_retro",
+            target: "CC(C)=CC",                     // 2-methyl-2-butene
+            expected_preserved_fragment: "CC(C)=O", // acetone
+        },
+        SubstituentPreservationCase {
+            // The ethyl ketone fragment (not just a bare carbonyl) must survive.
+            rule_name: "grignard_addition_retro",
+            target: "CCC(O)(C)CC",                   // 3-methylpentan-3-ol
+            expected_preserved_fragment: "CCC(C)=O", // butan-2-one
+        },
+        SubstituentPreservationCase {
+            // The ethylamine substituent must survive as a standalone amine,
+            // not be discarded when the aryl ring is cut away.
+            rule_name: "aryl_amine_retro",
+            target: "c1ccccc1NCC",              // N-phenylethylamine
+            expected_preserved_fragment: "CCN", // ethylamine
+        },
+    ];
+
+    /// Molecular formula fingerprint (element -> count, including implicit H).
+    /// Used instead of canonical-SMILES string equality: chematic's canonical_smiles
+    /// preserves whether an atom was written with explicit brackets (e.g. `[CH3]`,
+    /// as the reaction engine emits) vs organic-subset notation (`C`, as a plain
+    /// reference SMILES parses to) — chemically identical molecules can render as
+    /// different canonical strings purely from that notational difference.
+    fn formula_fingerprint(mol: &Molecule) -> std::collections::BTreeMap<Element, i64> {
+        let mut counts = std::collections::BTreeMap::new();
+        for (_, atom) in mol.atoms() {
+            *counts.entry(atom.element).or_insert(0) += 1;
+        }
+        for h in chematic::chem::implicit_hcount_per_atom(mol) {
+            if h > 0 {
+                *counts.entry(Element::H).or_insert(0) += h as i64;
+            }
+        }
+        counts
+    }
+
+    #[test]
+    fn substituent_preservation_regression_suite() {
+        let rules = default_rules();
+        for case in SUBSTITUENT_PRESERVATION_CASES {
+            let rule = rules
+                .iter()
+                .find(|r| r.name == case.rule_name)
+                .unwrap_or_else(|| panic!("{} must be in default_rules()", case.rule_name));
+            let mol = mol_from_smiles(case.target)
+                .unwrap_or_else(|_| panic!("target must parse: {}", case.target));
+            let results = apply_retro(&mol, rule);
+            let expected_formula = formula_fingerprint(
+                &mol_from_smiles(case.expected_preserved_fragment).unwrap_or_else(|_| {
+                    panic!(
+                        "expected_preserved_fragment must parse: {}",
+                        case.expected_preserved_fragment
+                    )
+                }),
+            );
+            let found = results.iter().any(|set| {
+                set.iter()
+                    .any(|p| formula_fingerprint(&p.mol) == expected_formula)
+            });
+            assert!(
+                found,
+                "{}: expected precursor fragment '{}' (preserving the target's real \
+                 substituent) not found for target '{}'. Got: {:?}",
+                case.rule_name,
+                case.expected_preserved_fragment,
+                case.target,
+                results
+                    .iter()
+                    .map(|set| set.iter().map(|p| p.smiles.clone()).collect::<Vec<_>>())
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+
     #[test]
     fn suzuki_retro_biphenyl_gives_bromobenzene_and_benzene() {
         let mol = mol_from_smiles("c1ccc(-c2ccccc2)cc1").unwrap();

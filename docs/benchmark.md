@@ -1,6 +1,8 @@
 # Benchmark
 
 > ⚠️ **Notice (2026-07-19): USPTO-50k figures below are under re-evaluation.** The 78.0% (single-pass) and 95.9% (cascade) solved-rate figures were measured before fixing an over-broad retrosynthesis rule (`aryl_carboxylation_retro`) that matched ester substructures and silently discarded atoms, generating chemically invalid routes that were counted as "solved." An unbiased re-sample after the fix showed raw solved rate dropping from 199/200 to 61/200 (atom-balance pass rate rose from 12.1% to 55.7% over the same sample — consistent with removing false positives, not a real capability loss). These figures — and the related ChEMBL OOD 81.8% figure, measured with the same rule set — are **invalidated historical measurements** pending a full corrected re-benchmark. Do not cite these numbers as current RENKIN performance.
+>
+> **Status:** the fix is landed as two PRs (`fix/forward-validation-graph-rule-blindspot`, `fix/aryl-carboxylation-retro-ester-overmatch`). A manual audit of every other hand-crafted SMIRKS rule for the same atom-loss bug class found none — pinned down as regression tests (`substituent_preservation_regression_suite` in `chem_env.rs`). A full USPTO-50k re-benchmark (all 4,907 targets, corrected binary) is currently running; this notice will be replaced with corrected numbers once it completes. See `tasks/todo.md` (Phase 31) for progress.
 
 ## USPTO-50k Test Set
 

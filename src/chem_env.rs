@@ -831,10 +831,17 @@ pub fn default_rules() -> Vec<RetroRule> {
             "[c:1][C:2](=[O:3])>>[c:1].[C:2](=[O:3])Cl",
         ),
         // ── Aryl C-heteroatom disconnections ────────────────────────────
-        // Ar-COOH → Ar-H + HCOOH (retro-Kolbe-Schmitt / decarboxylation)
+        // Ar-COOH → Ar-H + HCOOH (retro-Kolbe-Schmitt / decarboxylation).
+        // The trailing atom is [OH], not bare O: a bare O also matches an ester
+        // oxygen (Ar-C(=O)-O-R), and the R substituent isn't captured by this
+        // 3-atom pattern — run_reactants then drops R entirely when building
+        // the "free HCOOH" precursor fragment, silently losing atoms (e.g.
+        // methyl benzoate COC(=O)c1ccccc1 → [benzene, formic acid], losing
+        // the OMe). Requiring a terminal hydroxyl restricts the match to
+        // genuine free carboxylic acids, where ester_cleavage doesn't apply.
         rr(
             "aryl_carboxylation_retro",
-            "[c:1][C:2](=O)O>>[c:1].[C:2](=O)O",
+            "[c:1][C:2](=O)[OH]>>[c:1].[C:2](=O)O",
         ),
         // Ar-N → Ar-H + amine (retro-SNAr / retro-Chan-Lam)
         rr("aryl_amine_retro", "[c:1][N:2]>>[c:1].[N:2]"),
@@ -1477,6 +1484,127 @@ mod tests {
         );
         let results = apply_retro(&mol, &rule);
         assert!(!results.is_empty());
+    }
+
+    // ── aryl_carboxylation_retro: [OH] restricts to free acids, excludes esters ──
+    //
+    // Regression coverage for the ester-overmatch atom-loss bug: the old pattern
+    // "[c:1][C:2](=O)O" (bare O, no H constraint) matched ester oxygens too, and
+    // apply_retro then discarded the ester's real alkyl leaving group entirely,
+    // fabricating free HCOOH instead — e.g. methyl benzoate COC(=O)c1ccccc1
+    // produced precursors [benzene, formic acid], losing OCH3 without a trace.
+
+    fn aryl_carboxylation_rule() -> RetroRule {
+        default_rules()
+            .into_iter()
+            .find(|r| r.name == "aryl_carboxylation_retro")
+            .expect("aryl_carboxylation_retro must be in default_rules()")
+    }
+
+    #[test]
+    fn aryl_carboxylation_fires_on_benzoic_acid() {
+        let mol = mol_from_smiles("OC(=O)c1ccccc1").unwrap();
+        let results = apply_retro(&mol, &aryl_carboxylation_rule());
+        assert!(
+            !results.is_empty(),
+            "free benzoic acid must still disconnect via aryl_carboxylation_retro"
+        );
+    }
+
+    #[test]
+    fn aryl_carboxylation_fires_on_substituted_benzoic_acid() {
+        let mol = mol_from_smiles("OC(=O)c1ccc(Cl)cc1").unwrap(); // 4-chlorobenzoic acid
+        let results = apply_retro(&mol, &aryl_carboxylation_rule());
+        assert!(
+            !results.is_empty(),
+            "substituted free acid must still disconnect via aryl_carboxylation_retro"
+        );
+    }
+
+    #[test]
+    fn aryl_carboxylation_skips_methyl_ester() {
+        let mol = mol_from_smiles("COC(=O)c1ccccc1").unwrap(); // methyl benzoate
+        let results = apply_retro(&mol, &aryl_carboxylation_rule());
+        assert!(
+            results.is_empty(),
+            "methyl benzoate must NOT disconnect via aryl_carboxylation_retro \
+             (that would silently drop the OMe group — ester_cleavage is the correct rule)"
+        );
+    }
+
+    #[test]
+    fn aryl_carboxylation_skips_ethyl_ester() {
+        let mol = mol_from_smiles("CCOC(=O)c1ccccc1").unwrap(); // ethyl benzoate
+        let results = apply_retro(&mol, &aryl_carboxylation_rule());
+        assert!(
+            results.is_empty(),
+            "ethyl benzoate must NOT disconnect via aryl_carboxylation_retro"
+        );
+    }
+
+    #[test]
+    fn aryl_carboxylation_skips_amide() {
+        let mol = mol_from_smiles("NC(=O)c1ccccc1").unwrap(); // benzamide
+        let results = apply_retro(&mol, &aryl_carboxylation_rule());
+        assert!(
+            results.is_empty(),
+            "benzamide (N, not O) must not match the carboxylation pattern"
+        );
+    }
+
+    #[test]
+    fn aryl_carboxylation_skips_carboxylate_anion() {
+        // Documented expected behavior: this rule targets free acids only. A
+        // deprotonated carboxylate has 0 H on that oxygen (not 1), so [OH]
+        // correctly excludes it — firing here would need a distinct salt-aware
+        // rule/step (protonation), not silently treated as equivalent to the
+        // free acid.
+        let mol = mol_from_smiles("[O-]C(=O)c1ccccc1").unwrap(); // benzoate anion
+        let results = apply_retro(&mol, &aryl_carboxylation_rule());
+        assert!(
+            results.is_empty(),
+            "carboxylate anion must not fire aryl_carboxylation_retro (free-acid-only by design)"
+        );
+    }
+
+    #[test]
+    fn methyl_benzoate_ester_cleavage_gives_correct_precursors() {
+        // Proves this isn't just "candidate removed" but "routed to the correct
+        // rule": ester_cleavage must produce benzoic acid + methanol.
+        let mol = mol_from_smiles("COC(=O)c1ccccc1").unwrap();
+        let rule = rr("ester_cleavage", "");
+        let results = apply_retro(&mol, &rule);
+        assert!(
+            !results.is_empty(),
+            "ester_cleavage must fire on methyl benzoate"
+        );
+        let found_correct_split = results.iter().any(|set| {
+            let smiles: Vec<String> = set.iter().map(|p| p.smiles.clone()).collect();
+            let has_acid = smiles.iter().any(|s| {
+                mol_from_smiles(s)
+                    .map(|m| {
+                        canonical_smiles(&m)
+                            == canonical_smiles(&mol_from_smiles("OC(=O)c1ccccc1").unwrap())
+                    })
+                    .unwrap_or(false)
+            });
+            let has_methanol = smiles.iter().any(|s| {
+                mol_from_smiles(s)
+                    .map(|m| {
+                        canonical_smiles(&m) == canonical_smiles(&mol_from_smiles("CO").unwrap())
+                    })
+                    .unwrap_or(false)
+            });
+            has_acid && has_methanol
+        });
+        assert!(
+            found_correct_split,
+            "ester_cleavage must split methyl benzoate into benzoic acid + methanol, got: {:?}",
+            results
+                .iter()
+                .map(|set| set.iter().map(|p| p.smiles.clone()).collect::<Vec<_>>())
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]

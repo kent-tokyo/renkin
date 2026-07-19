@@ -29,9 +29,10 @@ RENKINを競合超えのRust-native CASPエンジンへ進化させる長期ゴ�
   - n=400ランダムサンプル（修正版バイナリ）で92件solved、best routeの全ステップを集計 → **friedel_crafts_acylation_retro 使用0件**
   - ゲート条件（複数回採用/solved判定への寄与/ester・amideより上位/validation失敗主因）はいずれも非該当 → PR #3は不要と判断、全件再計測へ直行
   - 参考: この修正版バイナリでunbiased n=400 raw solved = 92/400（23%）— 旧78.0%を大幅に下回る
-- [ ] **31.7** USPTO-50k全4,907件 Stage1再計測（進行中）
+- [ ] **31.7** USPTO-50k全4,907件 Stage1再計測（ユーザー指示により中断、約25%＝1,200件程度まで完了・再開は最初から）
   - 5並列chunk × `RAYON_NUM_THREADS=2`（10コアのオーバーサブスクリプション回避）
   - 保存項目: raw_solved_rate, strict_validated_solved_rate, validation_coverage, evaluable_validation_pass_rate, pct_atom_balanced, depth=0 direct-hit rate, p50/p95/p99, best routeのrule使用状況, 失敗routeの最初のfailing rule
+  - 再開時: PR #25（https://github.com/kent-tokyo/renkin/pull/25）・PR #26（https://github.com/kent-tokyo/renkin/pull/26）のCI結果とマージ判断を先に行ってから着手
 - [ ] **31.8** cascade Stage2再計測（Stage1未解決分、depth=7 beam=300）— Stage1と結果を分離して報告
 - [ ] **31.9** README/docs/benchmark.md/バッジを修正版の実測値へ更新（「invalidated historical measurement」を正式な訂正値に置き換え）
 - [ ] **31.10**（保留）SMIRKS監査で見つかった `friedel_crafts_acylation_retro` の過剰マッチ問題への対応要否を、全件再計測後のbest-route出現頻度で再判断

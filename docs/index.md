@@ -128,7 +128,7 @@ RENKIN ships **31 handcrafted graph-based rules** covering common pharmaceutical
 - **Aliphatic**: reductive amination, N-/O-alkylation, Wittig, Grignard, Michael
 - **Oxidation**: alcohol → carbonyl
 
-With `--templates data/templates_extracted_5000.smi`, RENKIN uses ~5,000 additional rdchiral-extracted templates weighted by USPTO training frequency (Phase A), achieving **78.0% on USPTO-50k** (depth=5, beam=100).
+With `--templates data/templates_extracted_5000.smi`, RENKIN uses ~5,000 additional rdchiral-extracted templates weighted by USPTO training frequency (Phase A), achieving **78.0% on USPTO-50k** (depth=5, beam=100) (⚠️ under re-evaluation — see [Benchmark notice](benchmark.md)).
 
 ## Installation
 

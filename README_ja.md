@@ -25,11 +25,13 @@
   <img alt="MCP" src="https://img.shields.io/badge/MCP-ready-7f52ff">
   <img alt="templates" src="https://img.shields.io/badge/templates-up%20to%2050k-purple">
   <img alt="building blocks" src="https://img.shields.io/badge/building%20blocks-509-lightgrey">
-  <img alt="USPTO-50k" src="https://img.shields.io/badge/USPTO--50k-78.0%25%20solved-brightgreen">
-  <img alt="ChEMBL" src="https://img.shields.io/badge/ChEMBL-81.8%25%20solved-brightgreen">
+  <img alt="USPTO-50k" src="https://img.shields.io/badge/USPTO--50k-under%20re--evaluation-yellow">
+  <img alt="ChEMBL" src="https://img.shields.io/badge/ChEMBL-under%20re--evaluation-yellow">
 </p>
 
 [English README](./README.md) · [**ドキュメント**](https://kent-tokyo.github.io/renkin/) · [**ライブデモ →**](https://kent-tokyo.github.io/renkin/playground/)
+
+> ⚠️ **注記（2026-07-19）: 以下のUSPTO-50k数値は再評価中です。** 78.0%（単一パス）・95.9%（cascade）の解決率は、過広な逆合成ルール（`aryl_carboxylation_retro`）を修正する前に計測されたものです。このルールはエステル構造にも誤発火し、原子を暗黙に消失させて化学的に不正なルートを「解決済み」として数えていました。修正後の無作為なn=200再サンプルでは、raw solved rateが199/200から61/200に低下する一方、atom-balance通過率は12.1%から55.7%に上昇しました（能力低下ではなく偽陽性除去と整合的）。これらの数値——および同一ルールセットで計測されたChEMBL OOD 81.8%——は**無効化された過去の計測値**であり、修正済みベンチマークの再計測待ちです。現在のRENKINの性能として引用しないでください。
 
 ---
 
@@ -188,6 +190,8 @@ c1ccccc1-c2ccccc2
 
 ## ベンチマーク
 
+⚠️ このREADME冒頭の注記を参照——本セクションの数値（単一パス78.0%、cascade 95.9%、ChEMBL OOD 81.8%）は再評価中であり、現在のRENKINの性能として引用しないでください。
+
 USPTO-50kテストセット（全4,907分子評価）:
 
 > **評価条件の注記**: 全数値は USPTO-50k の標準 train/test 分割（同一コーパス）を使用。テンプレートは訓練セットから抽出しテストセットで評価——AiZynthFinder 等の論文と同じ手法。数値は USPTO-50k ドメイン内での性能を示すものであり、分布外（OOD）汎化性は別途検証が必要。
@@ -217,6 +221,8 @@ USPTO-50k 標準ベンチマーク（多段階経路探索、同 train/test 分�
 ---
 
 ## 競合比較
+
+⚠️ このREADME冒頭の注記を参照——以下に引用されているRENKINの78.0%/95.9%の数値は再評価中です。
 
 | ツール | 言語 | ライセンス | WASM | ゼロ依存 | アルゴリズム | テンプレート | 在庫 |
 |---|---|---|---|---|---|---|---|

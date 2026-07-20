@@ -12,6 +12,7 @@ DEPTH="${4:-3}"
 BEAM="${5:-50}"
 SCORER="${6:-}"           # optional: path to ONNX scorer (requires nn-scoring feature build)
 BUILDING_BLOCKS="${7:-}"  # optional: path to building blocks .smi file (default: built-in 480 BBs)
+PLAUSIBILITY="${8:-}"     # optional: "1" to pass --plausibility (atom-balance + forward validation)
 
 mkdir -p "$CHUNK_DIR"
 
@@ -28,6 +29,7 @@ echo "    templates: $TEMPLATES"
 echo "    depth=$DEPTH  beam=$BEAM"
 [ -n "$SCORER" ] && echo "    scorer: $SCORER"
 [ -n "$BUILDING_BLOCKS" ] && echo "    building-blocks: $BUILDING_BLOCKS"
+[ -n "$PLAUSIBILITY" ] && echo "    plausibility: on (atom-balance + forward validation)"
 echo "    results dir: $CHUNK_DIR"
 echo ""
 
@@ -68,6 +70,8 @@ for CHUNK in $CHUNKS; do
     [ -n "$SCORER" ] && SCORER_ARG="--scorer $SCORER"
     BB_ARG=""
     [ -n "$BUILDING_BLOCKS" ] && BB_ARG="--building-blocks $BUILDING_BLOCKS"
+    PLAUSIBILITY_ARG=""
+    [ -n "$PLAUSIBILITY" ] && PLAUSIBILITY_ARG="--plausibility"
     ./target/release/renkin-bench \
         --input "$CHUNK" \
         --depth $DEPTH \
@@ -76,6 +80,7 @@ for CHUNK in $CHUNKS; do
         --templates "$TEMPLATES" \
         $SCORER_ARG \
         $BB_ARG \
+        $PLAUSIBILITY_ARG \
         2>/dev/null > "$OUT" || true
     # If the binary crashed and left an empty file, remove and skip.
     if [ ! -s "$OUT" ]; then

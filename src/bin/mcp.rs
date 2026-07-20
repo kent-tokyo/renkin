@@ -14,11 +14,11 @@
 
 use std::io::{self, BufRead, Write};
 
-use chematic::chem::molecular_weight;
 use renkin::DEFAULT_BUILDING_BLOCKS;
-use renkin::chem_env::{self, elem_symbols_to_mask, mol_from_smiles};
+use renkin::chem_env::{self, elem_symbols_to_mask};
 use renkin::display::{explain_route, format_route_tree};
 use renkin::search::{self, Route, SearchConfig};
+use renkin::validation::step_balanced;
 use serde_json::{Value, json};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -500,22 +500,6 @@ fn mcp_tradeoff_label(
     } else {
         Some(labels.join("_and_"))
     }
-}
-
-fn step_balanced(target: &str, precursors: &[String]) -> bool {
-    let target_mw = mol_from_smiles(target)
-        .ok()
-        .map(|m| molecular_weight(&m))
-        .unwrap_or(0.0);
-    if target_mw == 0.0 {
-        return true;
-    }
-    let precursor_mw: f64 = precursors
-        .iter()
-        .filter_map(|s| mol_from_smiles(s).ok())
-        .map(|m| molecular_weight(&m))
-        .sum();
-    target_mw <= precursor_mw * 1.01
 }
 
 fn handle_validate_route(smiles: &str, args: &Value) -> Value {

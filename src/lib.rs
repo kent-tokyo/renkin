@@ -5,6 +5,7 @@ pub mod display;
 pub mod score;
 pub mod scorer;
 pub mod search;
+pub mod validation;
 
 #[cfg(feature = "python")]
 pub mod python;

@@ -25,12 +25,12 @@ use std::io::Write as _;
 use std::time::Instant;
 
 use anyhow::{Result, bail};
-use chematic::chem::molecular_weight;
-use chematic::rxn::run_reactants;
-use chematic::smiles::canonical_smiles;
 use renkin::DEFAULT_BUILDING_BLOCKS;
-use renkin::chem_env::{ChemEnv, RetroRule, default_rules, load_rules_from_file, mol_from_smiles};
+use renkin::chem_env::{ChemEnv, default_rules, load_rules_from_file};
 use renkin::search::{Route, SearchConfig, find_routes};
+use renkin::validation::{
+    RouteValidationStatus, StepValidationStatus, route_balanced, validate_route_steps,
+};
 use rustc_hash::FxHashSet;
 use serde::Serialize;
 
@@ -106,35 +106,6 @@ fn route_diversity(routes: &[Route]) -> f64 {
     1.0 - (total_sim / count as f64)
 }
 
-// ── Atom balance ─────────────────────────────────────────────────────────────
-
-/// True if target_MW ≤ Σ precursor_MW (within 1% float tolerance).
-/// In retrosynthesis the target is split from precursors; precursors must
-/// carry at least as many atoms (by weight) as the target. Violation means
-/// a template caused atoms to appear from nowhere — a CompleteRXN-style defect.
-fn step_balanced(target: &str, precursors: &[String]) -> bool {
-    let target_mw = mol_from_smiles(target)
-        .ok()
-        .map(|m| molecular_weight(&m))
-        .unwrap_or(0.0);
-    if target_mw == 0.0 {
-        return true;
-    }
-    let precursor_mw: f64 = precursors
-        .iter()
-        .filter_map(|s| mol_from_smiles(s).ok())
-        .map(|m| molecular_weight(&m))
-        .sum();
-    target_mw <= precursor_mw * 1.01
-}
-
-fn route_balanced(route: &Route) -> bool {
-    route
-        .steps
-        .iter()
-        .all(|s| step_balanced(&s.target, &s.precursors))
-}
-
 // ── Output structs ───────────────────────────────────────────────────────────
 
 #[derive(Serialize)]
@@ -164,9 +135,21 @@ struct BenchResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     atom_balance_ok: Option<bool>,
     /// True if every step passes forward validation (precursors → target confirmed).
-    /// None when --plausibility not set or no routes found.
+    /// None when --plausibility not set or no routes found. Equivalent to
+    /// `route_validation_status == Some("validated")`.
     #[serde(skip_serializing_if = "Option::is_none")]
     forward_validated: Option<bool>,
+    /// Three-valued forward-validation rollup for the best route's steps:
+    /// "validated" (all steps confirmed), "invalid" (≥1 step confirmed wrong),
+    /// "partially_validated" (mix of confirmed and not-evaluable), or
+    /// "not_evaluable" (no step could be checked). None when --plausibility
+    /// not set or no routes found. See `renkin::validation` for why this
+    /// replaces the old binary forward_validated as the source of truth:
+    /// 7 graph-based rules (ester/amide/Suzuki/sulfonamide/sulfone/Boc/Cbz)
+    /// have no SMIRKS to reverse-apply and need a separate structural check,
+    /// so "couldn't be checked" and "checked and wrong" must stay distinct.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    route_validation_status: Option<String>,
     /// True if any step uses a low-frequency template (step_confidence < 0.1).
     #[serde(skip_serializing_if = "Option::is_none")]
     low_template_confidence: Option<bool>,
@@ -208,9 +191,32 @@ struct BenchReport {
     /// Fraction of ALL targets solved (= success_rate). Mirror with explicit name for the metric trio.
     raw_solved_rate: f64,
     /// Fraction of ALL targets that are solved AND pass forward validation.
-    /// None when --plausibility not set. Always ≤ raw_solved_rate.
+    /// None when --plausibility not set. Always ≤ raw_solved_rate. Equal to
+    /// strict_validated_solved_rate — kept as a separate field for JSON
+    /// compatibility with pre-tri-state consumers.
     #[serde(skip_serializing_if = "Option::is_none")]
     validated_solved_rate: Option<f64>,
+    /// Fraction of ALL targets whose best route has route_validation_status ==
+    /// "validated" (every step confirmed, none invalid or not-evaluable).
+    /// None when --plausibility not set. Numerically equal to validated_solved_rate;
+    /// the explicit name distinguishes it from evaluable_validation_pass_rate.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    strict_validated_solved_rate: Option<f64>,
+    /// Fraction of all steps (across solved targets' best routes) whose status
+    /// was Valid or Invalid (i.e. NOT NotEvaluable) — how much of the route
+    /// set a validation method could even render a verdict on. Low coverage
+    /// means low pct_forward_validated reflects validator blind spots more
+    /// than actual chemistry quality. None when --plausibility not set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    validation_coverage: Option<f64>,
+    /// Fraction of evaluable steps (status Valid or Invalid) that were Valid.
+    /// Unlike pct_forward_validated / validated_solved_rate, the denominator
+    /// excludes NotEvaluable steps — this isolates validator *accuracy* on the
+    /// steps it can actually judge from validator *coverage* (see
+    /// validation_coverage). None when --plausibility not set or no step was
+    /// evaluable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    evaluable_validation_pass_rate: Option<f64>,
     /// Fraction of ALL targets that are solved AND have best_depth ≤ --practical-max-steps.
     /// None when --practical-max-steps not set. Always ≤ raw_solved_rate.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -474,8 +480,11 @@ fn cmd_cascade(args: &[String]) -> Result<()> {
                 if route_balanced(best) {
                     n_balanced += 1;
                 }
-                if quality && route_forward_validated(best, &rules) {
-                    n_fwd_validated += 1;
+                if quality {
+                    let (_, route_status) = validate_route_steps(&best.steps, &rules);
+                    if route_status == RouteValidationStatus::Validated {
+                        n_fwd_validated += 1;
+                    }
                 }
             }
         }
@@ -722,6 +731,13 @@ fn main() -> Result<()> {
     let mut results = Vec::new();
     let mut total_depth_sum = 0u32;
     let mut solved_count = 0usize;
+    // Step-level tri-state tallies (only incremented under --plausibility), used to
+    // separate validator *coverage* (steps_evaluable / steps_checked) from validator
+    // *accuracy on what it can judge* (steps_valid / steps_evaluable). See
+    // validation_coverage / evaluable_validation_pass_rate in BenchReport.
+    let mut steps_checked = 0usize;
+    let mut steps_evaluable = 0usize;
+    let mut steps_valid = 0usize;
 
     for (smiles, name, gt_depth) in &targets {
         let t0 = Instant::now();
@@ -744,10 +760,28 @@ fn main() -> Result<()> {
             _ => None,
         };
         let atom_balance_ok = routes.first().map(route_balanced);
-        let forward_validated = if plausibility {
-            routes.first().map(|r| route_forward_validated(r, &rules))
+        let (forward_validated, route_validation_status) = if plausibility {
+            match routes.first() {
+                Some(r) => {
+                    let (statuses, route_status) = validate_route_steps(&r.steps, &rules);
+                    steps_checked += statuses.len();
+                    steps_evaluable += statuses
+                        .iter()
+                        .filter(|s| **s != StepValidationStatus::NotEvaluable)
+                        .count();
+                    steps_valid += statuses
+                        .iter()
+                        .filter(|s| **s == StepValidationStatus::Valid)
+                        .count();
+                    (
+                        Some(route_status == RouteValidationStatus::Validated),
+                        Some(route_validation_status_str(route_status).to_string()),
+                    )
+                }
+                None => (None, None),
+            }
         } else {
-            None
+            (None, None)
         };
         let low_template_confidence = routes.first().map(route_low_confidence);
 
@@ -785,6 +819,7 @@ fn main() -> Result<()> {
             depth_delta,
             atom_balance_ok,
             forward_validated,
+            route_validation_status,
             low_template_confidence,
             beam_limit_hit: stats.beam_limit_hit,
             max_depth_reached: stats.max_depth_reached,
@@ -873,6 +908,27 @@ fn main() -> Result<()> {
     } else {
         None
     };
+    // strict_validated_solved_rate is numerically identical to validated_solved_rate —
+    // both count targets whose best route's RouteValidationStatus is Validated. Kept as
+    // a separate, explicitly-named field per the tri-state validation design so callers
+    // don't have to know that the pre-existing field means the same thing.
+    let strict_validated_solved_rate = validated_solved_rate;
+    // Coverage: how much of the checked route surface a validation method could judge
+    // at all (Valid or Invalid), vs. NotEvaluable. Low coverage means pct_forward_validated
+    // is dominated by validator blind spots, not chemistry quality.
+    let validation_coverage = if plausibility && steps_checked > 0 {
+        Some(steps_evaluable as f64 / steps_checked as f64)
+    } else {
+        None
+    };
+    // Accuracy on the subset the validator could actually judge, denominator excludes
+    // NotEvaluable steps — isolates "is what we can check actually right" from "how much
+    // can we check" (validation_coverage).
+    let evaluable_validation_pass_rate = if plausibility && steps_evaluable > 0 {
+        Some(steps_valid as f64 / steps_evaluable as f64)
+    } else {
+        None
+    };
     // practical: solved AND route depth within the practical step budget.
     let practical_solved_rate = practical_max_steps.map(|max_steps| {
         let n_practical = solved_results
@@ -901,6 +957,9 @@ fn main() -> Result<()> {
         plausibility_score,
         raw_solved_rate,
         validated_solved_rate,
+        strict_validated_solved_rate,
+        validation_coverage,
+        evaluable_validation_pass_rate,
         practical_solved_rate,
         results,
     };
@@ -969,37 +1028,18 @@ fn main() -> Result<()> {
 
 // ── Plausibility checks ──────────────────────────────────────────────────────
 
-/// True if every step of the route passes forward validation:
-/// applying each step's precursors forward reproduces the step's target.
-fn route_forward_validated(route: &Route, rules: &[RetroRule]) -> bool {
-    route.steps.iter().all(|step| {
-        let Ok(reactant_mols): Result<Vec<_>, _> =
-            step.precursors.iter().map(|s| mol_from_smiles(s)).collect()
-        else {
-            return false;
-        };
-        let Ok(target_mol) = mol_from_smiles(&step.target) else {
-            return false;
-        };
-        let target_canon = canonical_smiles(&target_mol);
-        let mol_refs: Vec<_> = reactant_mols.iter().collect();
-        rules.iter().filter(|r| !r.smirks.is_empty()).any(|rule| {
-            let Some((lhs, rhs)) = rule.smirks.split_once(">>") else {
-                return false;
-            };
-            let fwd = format!("{rhs}>>{lhs}");
-            run_reactants(&fwd, &mol_refs)
-                .into_iter()
-                .flatten()
-                .flatten()
-                .any(|m| canonical_smiles(&m) == target_canon)
-        })
-    })
-}
-
 /// True if any step uses a template with step_confidence < 0.1 (rare template).
 fn route_low_confidence(route: &Route) -> bool {
     route.steps.iter().any(|s| s.step_confidence < 0.1)
+}
+
+fn route_validation_status_str(status: RouteValidationStatus) -> &'static str {
+    match status {
+        RouteValidationStatus::Validated => "validated",
+        RouteValidationStatus::Invalid => "invalid",
+        RouteValidationStatus::PartiallyValidated => "partially_validated",
+        RouteValidationStatus::NotEvaluable => "not_evaluable",
+    }
 }
 
 fn avg_opt(rows: &[&BenchResult], f: impl Fn(&BenchResult) -> Option<f64>) -> f64 {

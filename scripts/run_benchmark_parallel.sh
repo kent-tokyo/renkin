@@ -13,8 +13,16 @@ DEPTH="${4:-5}"
 BEAM="${5:-100}"
 SHARDS="${6:-5}"
 THREADS_PER_SHARD="${7:-2}"
+BUILDING_BLOCKS="${8:-}"  # optional: path to building blocks .smi file (default: built-in ~160 BBs)
 
 mkdir -p "$OUT_DIR"
+
+echo "=== RENKIN parallel benchmark: $SHARDS shards x $THREADS_PER_SHARD threads ==="
+echo "    input: $INPUT"
+echo "    templates: $TEMPLATES"
+echo "    depth=$DEPTH  beam=$BEAM"
+echo "    building-blocks: ${BUILDING_BLOCKS:-<built-in default>}"
+echo ""
 
 grep -v "^#" "$INPUT" | awk -v n="$SHARDS" -v dir="$OUT_DIR" '{ print > (dir "/shard_" (NR % n) ".smi") }'
 
@@ -40,7 +48,7 @@ for ATTEMPT in 1 2 3; do
         (
             export RAYON_NUM_THREADS="$THREADS_PER_SHARD"
             /usr/bin/time -l bash scripts/run_benchmark_chunks.sh \
-                "$OUT_DIR/shard_${i}.smi" "$TEMPLATES" "$SHARD_DIR" "$DEPTH" "$BEAM" "" "" 1 \
+                "$OUT_DIR/shard_${i}.smi" "$TEMPLATES" "$SHARD_DIR" "$DEPTH" "$BEAM" "" "$BUILDING_BLOCKS" 1 \
                 > "$LOG" 2> "$RSS_LOG"
         ) &
         LAST_PID=$!

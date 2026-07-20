@@ -1,5 +1,44 @@
 # RENKIN - Todo
 
+## Phase 31: 検証精度の是正 — validated_solved_rate 修正と公開数値の再計測 🔴 進行中（2026-07-19）
+
+RENKINを競合超えのRust-native CASPエンジンへ進化させる長期ゴールのPhase 0/1着手。「まず測定→仮説→小PR→検証」の順で進行中。詳細な計測ログ・before/after数値は `tasks/phase0_baseline.md`（gitignore対象、ローカルのみ）を参照。
+
+- [x] **31.1** Phase 0 baseline測定（コード変更なし）（2026-07-19）
+  - raw/validated/practical solved rate再現、depth=0 direct stock hit率、cascade追加解決群の品質差、p50/p95/peak memory/nodes expandedを測定
+  - 3つの候補PRを効果・リスク・工数・保守負担で比較 → PR #1を選定
+- [x] **31.2** PR #1 `fix/forward-validation-graph-rule-blindspot`（3コミット、2026-07-19）
+  - forward validationを bool → 三値（`StepValidationStatus::{Valid,Invalid,NotEvaluable}` / `RouteValidationStatus`）に変更
+  - graph-based 7ルール（ester/amide/Suzuki/sulfonamide/sulfone/Boc/Cbz cleavage）専用の原子組成デルタ検証を追加（ホワイトリスト方式は不採用）
+  - `src/validation/` モジュール新設（`atom_conservation.rs` / `forward.rs` / `graph_rules.rs`）、`benchmark.rs`/`mcp.rs` の重複ヘルパーを統合
+  - `renkin-bench` に `route_validation_status` / `strict_validated_solved_rate` / `validation_coverage` / `evaluable_validation_pass_rate` を追加（JSON互換は維持）
+  - commit: `refactor: centralize shared validation helpers` → `fix: validate graph-based retrosynthesis rules` → `test: add graph-rule validation coverage`
+- [x] **31.3** PR #2 `fix/aryl-carboxylation-retro-ester-overmatch`（2026-07-19）
+  - **発見**: `aryl_carboxylation_retro` の SMIRKS（`[c:1][C:2](=O)O`）が末端酸素にH制約なく、エステルにも誤発火 → precursor生成時にR基が消失（例: 安息香酸メチル → `[benzene, formic acid]`、OMe消失）
+  - 修正: 末端を `[OH]` に制約（chematic-smarts のH-count実装を先に確認: `explicit_h + implicit_hcount == h` の完全一致）
+  - **unbiased n=200サンプルで raw solved 199/200 → 61/200（-69%）、pct_atom_balanced 12.1% → 55.7%** — 偽solved除去と判定（能力低下ではない）
+  - **含意**: 公開済みの78.0%（USPTO-50k単一パス）・95.9%（cascade）・81.8%（ChEMBL OOD）は本バグ修正前の計測値であり、信頼できない可能性が高いと判明
+- [x] **31.4** docs hotfix（2026-07-19）
+  - README.md/README_ja.md/docs/benchmark.md/docs/benchmark_ja.md/docs/index.md に「invalidated historical measurement」注記を追加、バッジを "under re-evaluation" に変更（数値は削除せず注記のみ）
+- [x] **31.5** SMIRKS element-conservation 手動監査（2026-07-19）
+  - `friedel_crafts_acylation_retro` を含む8ルールを `apply_retro` への境界ケース直接投入で検証
+  - **結論**: atom-lossバグは `aryl_carboxylation_retro` のみに孤立。他ルールはmapped原子の実置換基がH-count再宣言（CH2→CH3等）を跨いでも正しく保存されることを実証
+  - `friedel_crafts_acylation_retro` は原子は失わないが、エステル/アミド/アルデヒドへの過剰マッチで化学的に非現実的な試薬（クロロギ酸エステル等）を提案する別種の問題と判明（atom lossではなく妥当性の問題、優先度は低）
+  - 汎用監査CLI（`audit-smirks`）は作らず、発見した境界ケースを `chem_env.rs` にテーブル駆動回帰テスト（`substituent_preservation_regression_suite`）として固定（commit: `test: pin down substituent-preservation audit findings as regression coverage`）
+- [x] **31.6** friedel_crafts頻度ゲート判定（2026-07-19）
+  - n=400ランダムサンプル（修正版バイナリ）で92件solved、best routeの全ステップを集計 → **friedel_crafts_acylation_retro 使用0件**
+  - ゲート条件（複数回採用/solved判定への寄与/ester・amideより上位/validation失敗主因）はいずれも非該当 → PR #3は不要と判断、全件再計測へ直行
+  - 参考: この修正版バイナリでunbiased n=400 raw solved = 92/400（23%）— 旧78.0%を大幅に下回る
+- [ ] **31.7** USPTO-50k全4,907件 Stage1再計測（ユーザー指示により中断、約25%＝1,200件程度まで完了・再開は最初から）
+  - 5並列chunk × `RAYON_NUM_THREADS=2`（10コアのオーバーサブスクリプション回避）
+  - 保存項目: raw_solved_rate, strict_validated_solved_rate, validation_coverage, evaluable_validation_pass_rate, pct_atom_balanced, depth=0 direct-hit rate, p50/p95/p99, best routeのrule使用状況, 失敗routeの最初のfailing rule
+  - 再開時: PR #25（https://github.com/kent-tokyo/renkin/pull/25）・PR #26（https://github.com/kent-tokyo/renkin/pull/26）のCI結果とマージ判断を先に行ってから着手
+- [ ] **31.8** cascade Stage2再計測（Stage1未解決分、depth=7 beam=300）— Stage1と結果を分離して報告
+- [ ] **31.9** README/docs/benchmark.md/バッジを修正版の実測値へ更新（「invalidated historical measurement」を正式な訂正値に置き換え）
+- [ ] **31.10**（保留）SMIRKS監査で見つかった `friedel_crafts_acylation_retro` の過剰マッチ問題への対応要否を、全件再計測後のbest-route出現頻度で再判断
+
+---
+
 ## Phase 30: quietset × RENKIN 統合
 
 quietset（`cargo install quietset-cli`）を使い、複数設定を跨いで安定したルート・ベンチターゲットだけを残す。
@@ -25,7 +64,12 @@ quietset（`cargo install quietset-cli`）を使い、複数設定を跨いで�
 優先順位は「使える体験に変換」を軸に設定。
 
 - [x] **29.1** `renkin-doctor` — 環境診断コマンド（PR #8 マージ済み）
-- [ ] **29.2** `docs/site-sync` — docs サイトの残り古い記述を整理（api/rust.md 等）
+- [x] **29.2** `docs/site-sync` — docs サイトの残り古い記述を整理（2026-06-29）
+  - docs/index.md: "20 built-in rules" → "31 + ~5k extracted"、Key Features 更新
+  - docs/benchmark.md: 比較表を Table A/B/C に分割、v0.2.1 参照削除、Failure Taxonomy セクション追加
+  - docs/api/rust.md: "20 rules" → "31 handcrafted rules"
+  - pyproject.toml: 0.15.4 → 0.15.5（Cargo.toml との同期）
+  - README/README_ja: `renkin-forward (planned)` → `renkin-forward`（実装済みのため）
 - [ ] **29.3** `feat/playground-route-cards` — confidence/cost/atom_economy カード表示
   - Copy CLI / Copy Python / Copy JSON / Copy Mermaid ボタン
   - Constraint UI（avoid/require/depth/beam）、プリセット分子
@@ -290,9 +334,12 @@ USPTO-50k 訓練セット（40,008件）からアトムマッピング済み反�
 
 ### ポジション目標
 ```
-現在: 78.0%（Phase A baseline、リバート後の現状）
-次手: Phase B 別アプローチ検討（softmax 温度付き重み付けサンプリング、beam 内での動的テンプレート再選択など）
-目標: 80%+
+現在:
+  78.0%（Stage 1: depth=5, beam=100）
+  **95.9%（Cascade: Stage1 + Stage2 depth=7 beam=300）**（2026-06-29 確定、4,705/4,907）
+  Stage 2 残り未解決: 202 件のみ
+次手: cascade を正式スクリプト化（scripts/cascade_bench.sh）、scripts/merge_cascade.py で結果マージ
+目標: cascade 正式機能化 → README/docs 更新
 ```
 
 ### ⚠️ 評価の限界（Phase 20 で検証予定）

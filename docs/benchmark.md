@@ -1,5 +1,9 @@
 # Benchmark
 
+> ⚠️ **Notice (2026-07-19): USPTO-50k figures below are under re-evaluation.** The 78.0% (single-pass) and 95.9% (cascade) solved-rate figures were measured before fixing an over-broad retrosynthesis rule (`aryl_carboxylation_retro`) that matched ester substructures and silently discarded atoms, generating chemically invalid routes that were counted as "solved." An unbiased re-sample after the fix showed raw solved rate dropping from 199/200 to 61/200 (atom-balance pass rate rose from 12.1% to 55.7% over the same sample — consistent with removing false positives, not a real capability loss). These figures — and the related ChEMBL OOD 81.8% figure, measured with the same rule set — are **invalidated historical measurements** pending a full corrected re-benchmark. Do not cite these numbers as current RENKIN performance.
+>
+> **Status:** the fix is landed as two PRs (`fix/forward-validation-graph-rule-blindspot`, `fix/aryl-carboxylation-retro-ester-overmatch`). A manual audit of every other hand-crafted SMIRKS rule for the same atom-loss bug class found none — pinned down as regression tests (`substituent_preservation_regression_suite` in `chem_env.rs`). A full USPTO-50k re-benchmark (all 4,907 targets, corrected binary) is currently running; this notice will be replaced with corrected numbers once it completes. See `tasks/todo.md` (Phase 31) for progress.
+
 ## USPTO-50k Test Set
 
 RENKIN is evaluated on the full [USPTO-50k](https://huggingface.co/datasets/bisectgroup/USPTO_50K) test set (4,907 molecules) — the standard benchmark for multi-step retrosynthesis planning.
@@ -11,6 +15,8 @@ RENKIN is evaluated on the full [USPTO-50k](https://huggingface.co/datasets/bise
 | Config | Solved | Success Rate | Avg Time | Hardware |
 |--------|--------|-------------|----------|----------|
 | depth=5, beam=100, ~5,000 templates + Phase A | **3,826 / 4,907** | **78.0%** | **≈2,800 ms/mol** | Apple M-series, 8 threads |
+
+*Status: invalidated historical measurement — see notice above.*
 
 Building blocks: 509 hand-curated commercial reagents (default set).
 
@@ -26,6 +32,8 @@ Building blocks: 509 hand-curated commercial reagents (default set).
 | + Phase A frequency weighting | 3,540 / 4,907 | 72.1% | step_cost bonus for high-freq templates |
 | **+ ~5,000 templates (v0.15.5)** | **3,826 / 4,907** | **78.0%** | current default ✅ |
 | **Cascade: Stage 2 (depth=7, beam=300, unsolved only)** | **4,705 / 4,907** | **95.9%** | 2026-06-29 ✅ |
+
+*Status: invalidated historical measurement — see notice above.*
 
 ### Comparison: Multi-Step Planners (Table B)
 

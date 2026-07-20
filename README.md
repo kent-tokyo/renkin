@@ -25,11 +25,15 @@
   <img alt="MCP" src="https://img.shields.io/badge/MCP-ready-7f52ff">
   <img alt="templates" src="https://img.shields.io/badge/templates-up%20to%2050k-purple">
   <img alt="building blocks" src="https://img.shields.io/badge/building%20blocks-509-lightgrey">
-  <img alt="USPTO-50k" src="https://img.shields.io/badge/USPTO--50k-78.0%25%20solved-brightgreen">
-  <img alt="ChEMBL" src="https://img.shields.io/badge/ChEMBL-81.8%25%20solved-brightgreen">
+  <img alt="USPTO-50k" src="https://img.shields.io/badge/USPTO--50k-under%20re--evaluation-yellow">
+  <img alt="ChEMBL" src="https://img.shields.io/badge/ChEMBL-under%20re--evaluation-yellow">
 </p>
 
 [日本語版 README](./README_ja.md) · [**Documentation**](https://kent-tokyo.github.io/renkin/) · [**Live Demo →**](https://kent-tokyo.github.io/renkin/playground/)
+
+> ⚠️ **Notice (2026-07-19): USPTO-50k figures below are under re-evaluation.** The 78.0% (single-pass) and 95.9% (cascade) solved-rate figures were measured before fixing an over-broad retrosynthesis rule (`aryl_carboxylation_retro`) that matched ester substructures and silently discarded atoms, generating chemically invalid routes that were counted as "solved." An unbiased re-sample after the fix showed raw solved rate dropping from 199/200 to 61/200 (atom-balance pass rate rose from 12.1% to 55.7% over the same sample — consistent with removing false positives, not a real capability loss). These figures — and the related ChEMBL OOD 81.8% figure, measured with the same rule set — are **invalidated historical measurements** pending a full corrected re-benchmark. Do not cite these numbers as current RENKIN performance.
+>
+> **Status:** the fix is landed (2 PRs, `fix/forward-validation-graph-rule-blindspot` and `fix/aryl-carboxylation-retro-ester-overmatch`), plus a manual audit of every other hand-crafted SMIRKS rule for the same bug class — no further atom-loss bugs found, pinned down as regression tests. A full USPTO-50k re-benchmark (all 4,907 targets, corrected binary) is in progress; this notice will be replaced with corrected numbers once it completes. Follow progress in `tasks/todo.md` (Phase 31).
 
 ---
 
@@ -220,6 +224,8 @@ renkin -t "c1ccc(NC(=O)c2ccccc2)cc1" --templates data/templates_extracted_5000.s
 
 ## Benchmark
 
+⚠️ See notice near the top of this README — the figures in this section (78.0% single-pass, 95.9% cascade, 81.8% ChEMBL OOD) are under re-evaluation and should not be cited as current RENKIN performance.
+
 USPTO-50k test set (4,907 molecules, full evaluation):
 
 > **Evaluation definition**: A molecule is *solved* if `find_routes` returns at least one route whose leaf precursors are all in the 509-reagent building block set, within depth=5 and beam=100. Ground-truth reactants from USPTO-50k are **not** checked — any commercially accessible route counts.
@@ -265,6 +271,8 @@ The JSON output includes `avg_nodes_expanded`, `avg_confidence`, `avg_convergenc
 ---
 
 ## Competitive Landscape
+
+⚠️ See notice near the top of this README — RENKIN's 78.0%/95.9% figures quoted below are under re-evaluation and should not be cited as current performance.
 
 | Tool | Language | License | WASM | Zero-dep | Algorithm | Template source | Stock |
 |---|---|---|---|---|---|---|---|

@@ -1,5 +1,9 @@
 # ベンチマーク
 
+> ⚠️ **注記（2026-07-19）: 以下のUSPTO-50k数値は再評価中です。** 78.0%（単一パス）・95.9%（cascade）の解決率は、過広な逆合成ルール（`aryl_carboxylation_retro`）を修正する前に計測されたものです。このルールはエステル構造にも誤発火し、原子を暗黙に消失させて化学的に不正なルートを「解決済み」として数えていました。修正後の無作為なn=200再サンプルでは、raw solved rateが199/200から61/200に低下する一方、atom-balance通過率は12.1%から55.7%に上昇しました（能力低下ではなく偽陽性除去と整合的）。これらの数値——および同一ルールセットで計測されたChEMBL OOD 81.8%——は**無効化された過去の計測値**であり、修正済みベンチマークの再計測待ちです。現在のRENKINの性能として引用しないでください。
+>
+> **現在の状況:** 修正は2件のPR（`fix/forward-validation-graph-rule-blindspot`、`fix/aryl-carboxylation-retro-ester-overmatch`）としてland済み。手書きSMIRKSルール全件について同種の原子消失バグがないか手動監査を実施し、他に見つからず——発見内容は回帰テスト（`chem_env.rs` の `substituent_preservation_regression_suite`）として固定済み。USPTO-50k全4,907件の再計測（修正版バイナリ）を実行中で、完了後にこの注記を正式な訂正値へ置き換えます。進捗は `tasks/todo.md`（Phase 31）を参照。
+
 ## USPTO-50k テストセット
 
 RENKIN を [USPTO-50k](https://huggingface.co/datasets/bisectgroup/USPTO_50K) テストセット全件（4,907 分子）で評価します。逆合成の標準ベンチマークデータセットです。
@@ -9,6 +13,8 @@ RENKIN を [USPTO-50k](https://huggingface.co/datasets/bisectgroup/USPTO_50K) �
 | 設定 | 解決数 | 成功率 | 平均時間 | 実行環境 |
 |------|--------|--------|----------|----------|
 | depth=5, beam=100, 5,000 templates | **3,831 / 4,907** | **78.1%** | **≈2,800 ms/mol** | Apple M-series, 8 スレッド |
+
+*状態: 無効化された過去の計測値——上記の注記を参照。*
 
 ビルディングブロック: 509 種類の手選定市販試薬（デフォルトセット）
 
@@ -24,6 +30,8 @@ RENKIN を [USPTO-50k](https://huggingface.co/datasets/bisectgroup/USPTO_50K) �
 | Phase B（5k テンプレート, beam=100, NN スコアラー） | 3,826 / 4,907 | 78.0% | 3,394 ms/mol | depth=5・ONNX ニューラルスコアラー |
 | v0.1.3（5k テンプレート, beam=100） | 3,826 / 4,907 | 78.0% | 2,775 ms/mol | depth=5・Pure Rust 最適化 |
 | **v0.1.8（5k テンプレート, beam=100, diaryl sulfone ルール）** | **3,831 / 4,907** | **78.1%** | **≈2,800 ms/mol** | depth=5・diaryl_sulfone_retro + 509 BB |
+
+*状態: 無効化された過去の計測値——上記の注記を参照。*
 
 v0.1.8 では、ジアリールスルホン逆合成ルール（グラフベース）を追加し、ビルディングブロックを 509 件に拡充しました。
 

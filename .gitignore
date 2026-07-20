@@ -31,6 +31,7 @@ data/building_blocks_emolecules*.smi
 data/uspto50k_benchmark_result_v2.json
 data/templates_extracted*.smi
 data/bench_chunks*/
+data/bench_chunks*_orchestrator.log
 data/uspto50k_test.smi
 data/uspto50k_benchmark_result.json
 

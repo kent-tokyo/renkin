@@ -50,19 +50,33 @@ pub enum RouteValidationStatus {
     NotEvaluable,
 }
 
-/// Validate one route step: try SMIRKS-reversal forward validation first
-/// (unchanged behavior for the ~24 SMIRKS-based rules), then fall back to a
-/// rule-specific graph structural check for the 7 graph-based rules.
+/// Validate one route step against the rule it actually claims to have used
+/// (`step.rule`), looked up by name in `rules` first:
+///
+/// - Not found (e.g. an extracted template RENKIN can't match back): `NotEvaluable`.
+/// - Found, graph-based (empty `smirks`): routed to the dedicated structural
+///   check for the 7 graph-based rules.
+/// - Found, SMIRKS-based: `Valid` only if *that rule's own* reversed SMIRKS
+///   reproduces the target from the precursors, `Invalid` otherwise.
+///
+/// Deliberately does NOT fall back to "does any other rule's SMIRKS happen to
+/// reproduce this target" — a coincidental match from an unrelated rule
+/// doesn't confirm the step's own claimed rule was chemically valid, it just
+/// means two unrelated transformations connect the same two SMILES strings.
+/// See `forward::smirks_reproduces` for that broader (non-provenance-bound)
+/// check, still used elsewhere for "is this route chemically plausible at all".
 pub fn validate_step(step: &ReactionStep, rules: &[RetroRule]) -> StepValidationStatus {
-    if forward::smirks_reproduces(&step.target, &step.precursors, rules) {
-        return StepValidationStatus::Valid;
-    }
     match rules.iter().find(|r| r.name == step.rule) {
         Some(r) if r.smirks.is_empty() => {
             graph_rules::validate_graph_step(&step.rule, &step.target, &step.precursors)
         }
-        // Rule has SMIRKS but reversal didn't reproduce the target — a real mismatch.
-        Some(_) => StepValidationStatus::Invalid,
+        Some(r) => {
+            if forward::rule_reproduces(&step.target, &step.precursors, r) {
+                StepValidationStatus::Valid
+            } else {
+                StepValidationStatus::Invalid
+            }
+        }
         // Rule name not found (e.g. extracted template with no name match) — can't evaluate.
         None => StepValidationStatus::NotEvaluable,
     }
@@ -195,5 +209,98 @@ mod tests {
         let rules = crate::chem_env::default_rules();
         let s = step("ester_cleavage", "CC(=O)Oc1ccccc1", &["CCO"]);
         assert_eq!(validate_step(&s, &rules), Invalid);
+    }
+
+    // ── unmatched rule name → NotEvaluable ───────────────────────────────────
+    #[test]
+    fn unmatched_rule_name_not_evaluable() {
+        let rules = crate::chem_env::default_rules();
+        let s = step("some_extracted_template_no_name_match", "CCO", &["CC", "O"]);
+        assert_eq!(validate_step(&s, &rules), NotEvaluable);
+    }
+
+    // ── core fix: cross-rule corroboration must never upgrade a step ────────
+    // Regression test for the real false positive found via
+    // examples/inspect_validation.rs against a USPTO-50k re-measurement: 7 of
+    // 49 routes marked `validated` contained a step using `aryl_chloride_retro`
+    // ("[c:1][Cl]>>[c:1]", atom-imbalanced — it drops the leaving Cl with no
+    // accounting for it) that was nonetheless marked `Valid` under the old
+    // logic only because an unrelated rule's reversed SMIRKS happened to also
+    // reproduce the target from the step's (wrong) precursor.
+    //
+    // Inline minimal rule set — deliberately NOT `crate::chem_env::default_rules()`,
+    // per task constraints: `default_rules()` is being actively edited on a
+    // parallel branch fixing this exact rule, so an inline set keeps this
+    // regression stable regardless of that PR's outcome. `aryl_chloride_retro`'s
+    // SMIRKS is copied verbatim from `chem_env.rs`'s real rule table so the
+    // shape of the bug is faithfully reproduced; the corroborating rule is a
+    // synthetic stand-in for "some other, unrelated rule" (not a real
+    // `chem_env.rs` rule) chosen only to make its coincidental reverse-match
+    // concrete and deterministic.
+    #[test]
+    fn cross_rule_corroboration_does_not_upgrade_to_valid() {
+        let rules = vec![
+            RetroRule {
+                name: "aryl_chloride_retro".to_string(),
+                smirks: "[c:1][Cl]>>[c:1]".to_string(),
+                ..Default::default()
+            },
+            RetroRule {
+                name: "unrelated_bromide_to_chloride_swap".to_string(),
+                smirks: "[c:1]Cl>>[c:1][Br]".to_string(),
+                ..Default::default()
+            },
+        ];
+        // Step claims aryl_chloride_retro (Ar-Cl -> Ar-H), but its precursor
+        // is bromobenzene, not benzene. aryl_chloride_retro's own reversed
+        // SMIRKS (add Cl to any ring carbon) applied to bromobenzene keeps
+        // the existing Br and adds a second halogen, so it does NOT reproduce
+        // plain chlorobenzene — the step's own claimed rule does not confirm it.
+        let s = step("aryl_chloride_retro", "Clc1ccccc1", &["Brc1ccccc1"]);
+
+        // Sanity checks that this is a meaningful regression test: the step's
+        // own claimed rule genuinely fails on its own...
+        assert!(
+            !forward::rule_reproduces("Clc1ccccc1", &["Brc1ccccc1".to_string()], &rules[0]),
+            "sanity check failed: aryl_chloride_retro's own reversal unexpectedly reproduces the target"
+        );
+        // ...but an unrelated rule's reversed SMIRKS coincidentally does
+        // reproduce the target from the same precursor, so the old "any rule"
+        // scan (smirks_reproduces) would wrongly mark this step Valid.
+        assert!(
+            forward::smirks_reproduces("Clc1ccccc1", &["Brc1ccccc1".to_string()], &rules),
+            "sanity check failed: fixture no longer exercises a cross-rule coincidental match"
+        );
+
+        // The fix: validate_step must bind to the step's own claimed rule and
+        // ignore the unrelated corroboration.
+        assert_eq!(validate_step(&s, &rules), Invalid);
+    }
+
+    // ── route-level rollup still holds end-to-end with the fix ──────────────
+    #[test]
+    fn route_with_one_invalid_step_is_invalid_end_to_end() {
+        let rules = crate::chem_env::default_rules();
+        let valid_step = step(
+            "friedel_crafts_acylation_retro",
+            "CC(=O)c1ccccc1",
+            &["c1ccccc1", "CC(=O)Cl"],
+        );
+        let invalid_step = step("friedel_crafts_acylation_retro", "CC(=O)c1ccccc1", &["CCO"]);
+        let (_, route_status) = validate_route_steps(&[valid_step, invalid_step], &rules);
+        assert_eq!(route_status, RouteValidationStatus::Invalid);
+    }
+
+    #[test]
+    fn route_with_valid_and_not_evaluable_is_partially_validated_end_to_end() {
+        let rules = crate::chem_env::default_rules();
+        let valid_step = step(
+            "friedel_crafts_acylation_retro",
+            "CC(=O)c1ccccc1",
+            &["c1ccccc1", "CC(=O)Cl"],
+        );
+        let not_evaluable_step = step("no_such_rule", "CCO", &["CC", "O"]);
+        let (_, route_status) = validate_route_steps(&[valid_step, not_evaluable_step], &rules);
+        assert_eq!(route_status, RouteValidationStatus::PartiallyValidated);
     }
 }

@@ -21,6 +21,11 @@ AGENTS.md
 tasks/
 memo.txt
 
+# Measurement provenance docs are exceptions: they're the durable record of
+# what a published benchmark number actually measured, so they must be
+# tracked even though the rest of tasks/ is local scratch.
+!tasks/phase31_corrected_baseline_run.md
+
 # ---- ONNX model weights (large binaries) ----
 data/*.onnx
 data/*.onnx.data

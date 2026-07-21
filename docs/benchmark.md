@@ -2,7 +2,7 @@
 
 > ⚠️ **Notice (2026-07-19): USPTO-50k figures below are under re-evaluation.** The 78.0% (single-pass) and 95.9% (cascade) solved-rate figures were measured before fixing an over-broad retrosynthesis rule (`aryl_carboxylation_retro`) that matched ester substructures and silently discarded atoms, generating chemically invalid routes that were counted as "solved." An unbiased re-sample after the fix showed raw solved rate dropping from 199/200 to 61/200 (atom-balance pass rate rose from 12.1% to 55.7% over the same sample — consistent with removing false positives, not a real capability loss). These figures — and the related ChEMBL OOD 81.8% figure, measured with the same rule set — are **invalidated historical measurements** pending a full corrected re-benchmark. Do not cite these numbers as current RENKIN performance.
 >
-> **Status:** the fix is merged into master (commit `35f26cb`) as two PRs (`fix/forward-validation-graph-rule-blindspot`, `fix/aryl-carboxylation-retro-ester-overmatch`). A manual audit of every other hand-crafted SMIRKS rule for the same atom-loss bug class found none — pinned down as regression tests (`substituent_preservation_regression_suite` in `chem_env.rs`). A full corrected USPTO-50k re-benchmark (all 4,907 targets) started 2026-07-20 and is running now; this notice will be replaced with corrected numbers once it completes. See `tasks/todo.md` (Phase 31) for progress.
+> **Status:** the fix is merged into master (commit `35f26cb`) as two PRs (`fix/forward-validation-graph-rule-blindspot`, `fix/aryl-carboxylation-retro-ester-overmatch`). A follow-up manual audit initially found no further atom-loss bugs, but a later per-step validation inspection (`examples/inspect_validation.rs`) found the same bug class in three more hand-crafted rules — `aryl_chloride_retro`, `aryl_iodide_retro`, `aryl_fluoride_snAr_retro` (todo 31.11) — plus a forward-validator cross-rule corroboration issue (todo 31.12). A full corrected USPTO-50k re-benchmark (all 4,907 targets) completed 2026-07-21 against commit `35f26cb`, but its result is **not** published here: it predates the 31.11/31.12 fixes and, per the same pattern as the original 78.0%/95.9% figures, would likely be invalidated by them. This notice will be replaced once 31.11 and 31.12 are fixed and the benchmark is re-run against that commit. See `tasks/todo.md` (Phase 31) for progress.
 
 ## USPTO-50k Test Set
 
@@ -30,7 +30,7 @@ Building blocks: 509 hand-curated commercial reagents (default set).
 | + top-500 templates, depth=5 | 2,315 / 4,907 | 47.2% | 314 rules total |
 | + beam=100 | 2,688 / 4,907 | 54.8% | beam search |
 | + Phase A frequency weighting | 3,540 / 4,907 | 72.1% | step_cost bonus for high-freq templates |
-| **+ ~5,000 templates (v0.15.5)** | **3,826 / 4,907** | **78.0%** | current default ✅ |
+| **+ ~5,000 templates (v0.15.5)** | **3,826 / 4,907** | **78.0%** | pre-fix measurement, invalidated |
 | **Cascade: Stage 2 (depth=7, beam=300, unsolved only)** | **4,705 / 4,907** | **95.9%** | 2026-06-29 ✅ |
 
 *Status: invalidated historical measurement — see notice above.*
@@ -66,7 +66,6 @@ RENKIN achieves high accuracy on standard bond disconnections:
 - Amides → acid + amine (graph-based cleavage)
 - Biaryls → aryl halide + boronic acid (Suzuki, graph-based)
 - Aryl amines → aryl halide + amine (Buchwald-Hartwig)
-- C–halide bonds → dehalogenated arene
 - Boc / Cbz protecting group removal (graph-based)
 - Diaryl sulfones → arylsulfonyl chloride + arene (graph-based)
 - Sulfonamides → sulfonyl chloride + amine

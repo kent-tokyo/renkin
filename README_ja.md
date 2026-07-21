@@ -33,7 +33,7 @@
 
 > ⚠️ **注記（2026-07-19）: 以下のUSPTO-50k数値は再評価中です。** 78.0%（単一パス）・95.9%（cascade）の解決率は、過広な逆合成ルール（`aryl_carboxylation_retro`）を修正する前に計測されたものです。このルールはエステル構造にも誤発火し、原子を暗黙に消失させて化学的に不正なルートを「解決済み」として数えていました。修正後の無作為なn=200再サンプルでは、raw solved rateが199/200から61/200に低下する一方、atom-balance通過率は12.1%から55.7%に上昇しました（能力低下ではなく偽陽性除去と整合的）。これらの数値——および同一ルールセットで計測されたChEMBL OOD 81.8%——は**無効化された過去の計測値**であり、修正済みベンチマークの再計測待ちです。現在のRENKINの性能として引用しないでください。
 >
-> **現在の状況:** 修正は2件のPR（`fix/forward-validation-graph-rule-blindspot`、`fix/aryl-carboxylation-retro-ester-overmatch`）としてmasterにマージ済み（コミット `35f26cb`）。加えて、手書きSMIRKSルール全件について同種のバグがないか手動監査を実施し、他に原子消失バグは見つからず（発見内容は回帰テストとして固定済み）。USPTO-50k全4,907件の修正版再計測は2026-07-20に開始し、現在実行中です。完了後にこの注記を正式な訂正値へ置き換えます。進捗は `tasks/todo.md`（Phase 31）を参照。
+> **現在の状況:** 修正は2件のPR（`fix/forward-validation-graph-rule-blindspot`、`fix/aryl-carboxylation-retro-ester-overmatch`）としてmasterにマージ済み（コミット `35f26cb`）。加えて、当初の手動監査では他に原子消失バグは見つからなかったが、その後のper-step検証調査で同種のバグが手書きルール3件（`aryl_chloride_retro`、`aryl_iodide_retro`、`aryl_fluoride_snAr_retro`）とforward validatorのcross-rule corroboration問題に見つかった（todo 31.11/31.12で追跡）。USPTO-50k全4,907件の修正版再計測はcommit `35f26cb`に対して2026-07-21に完了したが、その結果はここでは公開しない——31.11/31.12の修正前の計測であり、旧78.0%/95.9%と同じパターンで修正後は無効化される可能性が高いため。31.11・31.12の修正と再計測が完了次第、この注記を正式な訂正値へ置き換える。進捗は `tasks/todo.md`（Phase 31）を参照。
 
 ---
 

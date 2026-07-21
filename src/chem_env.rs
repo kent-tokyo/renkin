@@ -850,13 +850,29 @@ pub fn default_rules() -> Vec<RetroRule> {
         // Ar-O → Ar-OH + leaving fragment (retro-Ullmann ether synthesis)
         rr("aryl_ether_retro", "[c:1][O:2]>>[c:1]O.[O:2]"),
         // ── Aryl C-halide disconnections ────────────────────────────────
-        // Ar-Cl → Ar-H + HCl (retro-SNAr or retro-Pd C-Cl activation)
-        rr("aryl_chloride_retro", "[c:1][Cl]>>[c:1]"),
-        // Ar-I → Ar-H (retro-Pd/Cu C-I; iodides are activated leaving groups)
-        rr("aryl_iodide_retro", "[c:1][I]>>[c:1]"),
-        // Ar-F → Ar-H (retro-SNAr; fluorine is best SNAr leaving group)
-        rr("aryl_fluoride_snAr_retro", "[c:1][F]>>[c:1]"),
+        // `aryl_chloride_retro` ("[c:1][Cl]>>[c:1]"), `aryl_iodide_retro`
+        // ("[c:1][I]>>[c:1]"), and `aryl_fluoride_snAr_retro`
+        // ("[c:1][F]>>[c:1]") were removed (31.11): each deleted a halogen
+        // with no tracked precursor for where it went. Real synthesis of
+        // Ar-X from Ar-H needs an explicit halogenating reagent (Cl2/FeCl3,
+        // NCS, I2/oxidant, Selectfluor, ...); hydrodehalogenation back to
+        // Ar-H needs an explicit reducing reagent (H2/Pd, Bu3SnH, ...).
+        // Neither is modeled, so retro-applying these rules silently
+        // dropped atoms (target MW > precursor MW) and produced
+        // chemically-invalid "solved" routes — confirmed 100% (F, I) and
+        // 73%+ (Cl; the remainder was a validator false-positive, tracked
+        // separately as 31.12) Invalid+imbalanced on sampled USPTO-50k
+        // targets. `aryl_fluoride_snAr_retro`'s name additionally claimed
+        // SNAr chemistry it didn't represent (a real SNAr retro keeps a
+        // leaving group on the ring; this one deleted straight to Ar-H).
+        // No atom-balanced disconnection for Ar-X <-> Ar-H exists without
+        // inventing an untracked reagent, so per project policy (default to
+        // remove/deprecate absent a real atom-balanced alternative) these
+        // were deleted outright rather than tightened. See
+        // `aryl_chloride_retro_removed_from_default_rules` below.
+        //
         // Ar-Cl → Ar-Br (halogen exchange retro; Ar-Br is often a cheaper BB)
+        // — atom-preserving halogen swap, NOT the same bug, kept unchanged.
         rr("aryl_chloride_to_bromide", "[c:1][Cl]>>[c:1][Br]"),
         // ── Aryl C-C disconnections ──────────────────────────────────────
         // Graph-based: find Ar-Ar bridge bonds and split into Ar-Br + Ar.
@@ -2121,23 +2137,84 @@ mod tests {
         );
     }
 
+    // 31.11: aryl_chloride_retro, aryl_iodide_retro, and aryl_fluoride_snAr_retro
+    // were removed from default_rules() — each deleted a halogen from the
+    // product with no tracked precursor accounting for where it went
+    // (target MW > precursor MW). The old version of this test asserted the
+    // buggy behavior (rule fires, benzene is the sole "precursor"); it built
+    // the rule directly via `rr(...)` rather than routing through
+    // `default_rules()`, so it would have kept passing even after the rule
+    // was deleted from the default set. These replacements route through
+    // `default_rules()` so they fail if the removal is ever reverted.
     #[test]
-    fn aryl_chloride_retro_on_chlorobenzene() {
+    fn aryl_chloride_retro_removed_from_default_rules() {
+        let rules = default_rules();
+        for removed in [
+            "aryl_chloride_retro",
+            "aryl_iodide_retro",
+            "aryl_fluoride_snAr_retro",
+        ] {
+            assert!(
+                rules.iter().all(|r| r.name != removed),
+                "{removed} must not be present in default_rules() (31.11: atom-loss, no tracked reagent)"
+            );
+        }
+    }
+
+    #[test]
+    fn default_rules_never_reduce_halobenzene_to_bare_benzene() {
+        // Cl/I/F atoms present in a target must never be silently dropped
+        // without a tracked reagent: no rule in default_rules() may turn
+        // chlorobenzene/iodobenzene/fluorobenzene into a single-fragment
+        // "benzene" precursor set — that's exactly the atom-loss bug these
+        // three rules had (retro-applying them "explained" Ar-X as coming
+        // from Ar-H with the halogen vanishing into nothing).
+        let benzene_smi = canonical_smiles(&mol_from_smiles("c1ccccc1").unwrap());
+        let rules = default_rules();
+        for (name, smi) in [
+            ("chlorobenzene", "Clc1ccccc1"),
+            ("iodobenzene", "Ic1ccccc1"),
+            ("fluorobenzene", "Fc1ccccc1"),
+        ] {
+            let mol = mol_from_smiles(smi).unwrap();
+            for rule in &rules {
+                for set in apply_retro(&mol, rule) {
+                    let is_bare_benzene = set.len() == 1
+                        && canonical_smiles(&mol_from_smiles(&set[0].smiles).unwrap())
+                            == benzene_smi;
+                    assert!(
+                        !is_bare_benzene,
+                        "{name}: rule '{}' must not reduce it to bare benzene with no tracked halogen precursor",
+                        rule.name
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn aryl_chloride_to_bromide_unaffected_by_halide_rule_removal() {
+        // aryl_chloride_to_bromide is a different, atom-preserving rule
+        // (halogen-for-halogen swap) and must keep firing exactly as before.
+        let rules = default_rules();
+        let rule = rules
+            .iter()
+            .find(|r| r.name == "aryl_chloride_to_bromide")
+            .expect("aryl_chloride_to_bromide must still be in default_rules()");
         let mol = mol_from_smiles("Clc1ccccc1").unwrap();
-        let rule = rr("aryl_chloride_retro", "[c:1][Cl]>>[c:1]");
-        let results = apply_retro(&mol, &rule);
+        let results = apply_retro(&mol, rule);
         assert!(
             !results.is_empty(),
-            "aryl_chloride_retro must fire on chlorobenzene"
+            "aryl_chloride_to_bromide must still fire on chlorobenzene"
         );
+        let bromobenzene_smi = canonical_smiles(&mol_from_smiles("Brc1ccccc1").unwrap());
         let flat: Vec<_> = results
             .iter()
             .flat_map(|s| s.iter().map(|p| p.smiles.as_str()))
             .collect();
-        let benzene_smi = canonical_smiles(&mol_from_smiles("c1ccccc1").unwrap());
         assert!(
-            flat.iter().any(|s| *s == benzene_smi),
-            "products must include benzene; got {flat:?}"
+            flat.iter().any(|s| *s == bromobenzene_smi),
+            "products must include bromobenzene; got {flat:?}"
         );
     }
 

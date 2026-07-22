@@ -1774,14 +1774,20 @@ mod tests {
             .flat_map(|set| set.iter().map(|p| p.smiles.clone()))
             .collect();
 
-        // Expect exactly bromobenzene and benzene (in some canonical form)
-        let has_bromobenzene = all_smiles
-            .iter()
-            .any(|s| s.contains("Br") && s.contains("c1ccccc1"));
-        let has_benzene = all_smiles.iter().any(|s| s == "c1ccccc1");
+        // Expect exactly bromobenzene and benzene. Compare against canonical
+        // forms computed at test time (not a hardcoded string) — the exact
+        // canonical SMILES chematic emits for a given molecule is an
+        // implementation detail that can change between chematic versions
+        // (e.g. 0.4.25 wrote "Brc1ccccc1", 0.4.30 writes "c1ccc(cc1)Br" for
+        // the same molecule); what must hold is chemical identity, not a
+        // specific string layout.
+        let bromobenzene_canon = canonical_smiles(&mol_from_smiles("Brc1ccccc1").unwrap());
+        let benzene_canon = canonical_smiles(&mol_from_smiles("c1ccccc1").unwrap());
+        let has_bromobenzene = all_smiles.iter().any(|s| *s == bromobenzene_canon);
+        let has_benzene = all_smiles.iter().any(|s| *s == benzene_canon);
         assert!(
             has_bromobenzene,
-            "expected bromobenzene fragment; got {all_smiles:?}"
+            "expected bromobenzene fragment ({bromobenzene_canon:?}); got {all_smiles:?}"
         );
         assert!(has_benzene, "expected benzene fragment; got {all_smiles:?}");
     }

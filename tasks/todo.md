@@ -1,6 +1,6 @@
 # RENKIN - Todo
 
-## Phase 31: 検証精度の是正 — validated_solved_rate 修正と公開数値の再計測 🔴 進行中（2026-07-19）
+## Phase 31: 検証精度の是正 — validated_solved_rate 修正と公開数値の再計測 ✅ corrected baseline公開完了（2026-07-22）
 
 RENKINを競合超えのRust-native CASPエンジンへ進化させる長期ゴールのPhase 0/1着手。「まず測定→仮説→小PR→検証」の順で進行中。詳細な計測ログ・before/after数値は `tasks/phase0_baseline.md`（gitignore対象、ローカルのみ）を参照。
 
@@ -35,11 +35,32 @@ RENKINを競合超えのRust-native CASPエンジンへ進化させる長期ゴ�
   - **結果（詳細・provenance: `tasks/phase31_corrected_baseline_run.md`）**: raw_solved_rate 24.01%(1178/4907)、depth=0 hit 0.04%、pct_atom_balanced 58.32%、validation_coverage 100%（Finding Aのblind spot解消を確認）、p50/p95/p99=8.2s/37.3s/79.9s
   - **strict_validated_solved_rate(0.9986%)・evaluable_validation_pass_rate(20.25%)は「正しさの指標」として未公開**: n=300サンプル調査で、(a) `aryl_fluoride_snAr_retro`/`aryl_iodide_retro`/`aryl_chloride_retro`が`aryl_carboxylation_retro`と同型のatom生成/消失バグ（`[c:1][X]>>[c:1]`、詳細は31.11）、(b) `smirks_reproduces()`が「実際に使ったrule」ではなく「どれかのruleが再現できればValid」なため、49件のvalidated routeのうち7件がatom不整合なaryl_chloride_retro stepを含むのにValid判定（偶然の別rule一致）— ValidにもInvalidにも既知の汚染があり、公開時は「validatorが確認できた範囲」としてのみ扱う
   - **raw_solved_rate 24.0%はcommit `35f26cb`時点の暫定値** — 31.11のhalideバグを直すと`aryl_carboxylation_retro`と同様にさらに下がる可能性が高い。修正→再計測→再修正の無限ループを避けるため、今回は意図的にこのcommitで確定・修正は次PRへ
-- [ ] **31.8** cascade Stage2再計測（Stage1未解決分、depth=7 beam=300）— Stage1と結果を分離して報告
-- [ ] **31.9** README/docs/benchmark.md/バッジを修正版の実測値へ更新 — 31.7のうちCONFIRMED分（raw/depth0/atom_balanced/latency/validation_coverage）は公開可能だが、strict_validated_solved_rate・evaluable_validation_pass_rateは31.11解消まで「validator確認値」の注記付きでのみ。**このセッションでは未実施**（raw_solved_rateが31.11で再度動く可能性があるため、READMEの現行「under re-evaluation」表記のまま据え置き — ユーザー判断待ち）
-- [ ] **31.10**（保留）SMIRKS監査で見つかった `friedel_crafts_acylation_retro` の過剰マッチ問題への対応要否を、全件再計測後のbest-route出現頻度で再判断
-- [ ] **31.11**（新規発見、未修正）ハンドクラフトruleの原子生成/消失バグ3件 — `aryl_fluoride_snAr_retro`(`[c:1][F]>>[c:1]`, n=300サンプルで36/36 100% invalid・100% atom不整合)、`aryl_iodide_retro`(同型, 8/8 100%)、`aryl_chloride_retro`(同型, 37件中27 invalid、残りはFinding 3の偶然corroboration)。いずれも「Ar-X → Ar-H」の一方向削除で、ハロゲン供給元reagentが一切追跡されない — `aryl_carboxylation_retro`（PR #26）と同じバグクラス。31.5の手動監査（「他ルールに同種バグなし」）はこの3件を見落としていた — 監査時は「product側MWがreactant側MWを超える単一fragment retro」を機械的にスキャンすべきだった。修正は次PRへ（このcommitのbaseline確定を優先し、直後の再修正による測定値の二度手間を避ける）
-- [ ] **31.12**（新規、accuracy/rule-provenance-validationへ吸収）forward validatorの二重汚染 — (1) `smirks_reproduces()`が「実際に使ったrule」でなく「どれかのruleで再現できればValid」となる設計のため、別rule偶然一致によるValid誤判定がある（実例: 31.7で発見、validated 49件中7件）。(2) 逆に、n=300サンプルのInvalid 695件中575件（83%）はatom-balanced済みなのにreverse-SMIRKS再現に失敗 — 本物の化学的誤りか、canonicalization/芳香族性/立体/tautomer起因の偽陰性か未分離（`suzuki_retro`は22/22 100%クリーンなのに対し`cc_single_cleavage`/`aryl_amine_retro`/`cn_aliphatic_cleavage`や複数の`extracted_N`は70-100% invalid）。会話冒頭のadvisorメモの提案通り、「実際に使ったruleのforward適用で確認」「別ruleで確認できた場合はAlternateRuleCorroborated」「元素差分だけならFormulaConsistent」等への三値→多値化が必要
+- [x] **31.9** README/docs/benchmark.md/バッジを修正版の実測値へ更新（PR #34、squash commit `96d74d3`、2026-07-22）
+  - 31.11・31.12マージ後のcommit `e20dc8c`でUSPTO-50k全4,907件を再計測（詳細・provenance: `tasks/phase31_final_remeasurement_run.md`）
+  - 公開: raw_solved_rate 20.09%(986/4907) → atom_balanced_solved_rate 15.41%(756/4907) → provenance_validated_solved_rate 0.88%(43/4907) の入れ子系列。Public label（Search-to-stock rate / Atom-balance-filtered rate / Current-validator-confirmed rate）を併記
+  - レビューで「floor」「正確性の下限」表現を撤回・是正（0.88%は実測正確性でも数学的に証明された下限でもない、と明記）、READMEバッジは非数値化、building block数はファイル行数(475)ではなく`ChemEnv::bb_count()`実ロード数(402)へ全箇所統一
+  - cascade(95.9%)・ChEMBL OOD(81.8%)は未再計測のまま明示的に無効化継続（本タスクでは再計測せず）
+- [x] **31.10**（判断確定）`friedel_crafts_acylation_retro` の過剰マッチ問題 — 31.6のn=400頻度ゲートで使用0件と確認済み、対応不要と結論。追加対応なし
+- [x] **31.11** ハンドクラフトruleの原子生成/消失バグ3件（PR #31、`4f47ede`、2026-07-21）
+  - `aryl_fluoride_snAr_retro`・`aryl_iodide_retro`・`aryl_chloride_retro`を`default_rules()`から削除（原子保存版の捏造は不採用、化学的根拠なしのため除去がデフォルト方針）
+  - n=300 before/after測定: 74/300(24.7%)→66/300(22.0%)、該当ルール依存9件中8件が正しくunsolvedへ
+- [x] **31.12a** forward validatorのrule-provenance拘束（PR #33、`e20dc8c`、2026-07-21）
+  - `validate_step`を「実際に使ったrule」のみのreverse-SMIRKS/graph-structural検証に拘束、cross-rule偶然一致によるValid誤判定を排除
+  - cross-rule false positiveの実例をinline rule setの回帰テストとして固定
+- [ ] **31.12b**（Phase 32へ）validator fidelity分析 — n=300サンプルでInvalid判定695件中575件(83%)相当がatom-balanced済みなのにreverse-SMIRKS再現失敗。本物の化学的誤りかvalidatorの偽陰性か未分離のまま。詳細は下記Phase 32参照
+
+Phase 31のcorrected baseline確立・公開はこれで完了。最終状態・全provenanceは `tasks/phase31_final_remeasurement_run.md` を参照。残る検証精度の課題はPhase 32へ引き継ぐ。
+
+---
+
+## Phase 32: 検証精度の残課題（backlog、2026-07-22 Phase 31から分離）
+
+Phase 31で「壊れた指標を先に直す」は完了。ここからは探索精度そのものではなく、残った検証・計測基盤の課題。
+
+- [ ] **31.8**（Phase 31より移動）cascade Stage2再計測（Stage1未解決分、depth=7 beam=300）— 修正版ルールセット(commit `e20dc8c`以降)に対して未実施。Stage1と結果を分離して報告
+- [ ] **31.12b**（Phase 31より移動、上記参照）validator fidelity分析 — 実際の化学的誤りとvalidator偽陰性（canonicalization/芳香族性/立体/tautomer起因）の分離。`suzuki_retro`は0%invalidな一方`cc_single_cleavage`/`cn_aliphatic_cleavage`等は70-100% invalidという広がりから、単一要因では説明できない。三値→多値化（`AlternateRuleCorroborated`/`FormulaConsistent`等）が候補
+- [ ] **32.1** `renkin-bench compare`のdedup keyバグ修正 — PR #32のharness監査で発見。`name`優先→`smiles`フォールバックだがUSPTO-50kは全件`name="UNK"`のため実質機能しない（100件サンプルで実際は12件regressionのところ0件と誤報告）。31.8・cascade再計測やPhase 31以降の before/after diff で使う前に必須
+- [ ] **32.2** ChEMBL OOD再計測 — 修正版ルールセット(commit `e20dc8c`以降)に対して未実施。旧81.8%は無効化のまま
 
 ---
 

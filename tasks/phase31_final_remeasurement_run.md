@@ -214,3 +214,35 @@ validator false negatives in the 72.2% `Invalid`-but-atom-balanced
 population — remains an explicit, open follow-up, not undertaken in this
 measurement. Cascade (Stage 2) and ChEMBL OOD re-measurement against the
 corrected rule set have also not been started.
+
+## Dependency note (2026-07-22, post-publication)
+
+`chematic` was bumped `0.4.25` → `0.4.30` on `master` shortly after this
+baseline was published (dependabot PR #24, `chore(deps): bump chematic
+from 0.4.25 to 0.4.30`). The measurement above (commit `e20dc8c`) was
+built against `chematic 0.4.25`; `master` as of the chematic bump uses
+`0.4.30`.
+
+Investigated before merging: the bump broke exactly one existing test
+(`suzuki_retro_biphenyl_gives_bromobenzene_and_benzene`), which hardcoded
+a canonical-SMILES string ("c1ccccc1" as a substring) that changed format
+between versions (0.4.25 wrote "Brc1ccccc1", 0.4.30 writes
+"c1ccc(cc1)Br" for the same molecule) — confirmed self-consistent (three
+different input SMILES for bromobenzene all canonicalize to the same
+0.4.30 string) and chemically identical, not a semantics change. Fixed by
+computing the expected canonical form at test time instead of hardcoding
+it. Full test suite (112/112) and the Phase-31-specific subset (halide-
+rule-removal regression tests, provenance-bound validator tests,
+cross-rule corroboration fixture) pass unchanged under `chematic 0.4.30`.
+
+`chematic`'s 0.4.26–0.4.30 changelog includes substantive fixes
+(a P0 stereo-metadata bug in `apply_kekule` and related functions, a
+SMARTS `[rN]` matching-accuracy fix from 96.9% to 99.93% agreement,
+an aromatic bond-direction stashing consolidation) — net expected
+direction is more correct, not less, but **the corrected-baseline numbers
+above (20.09% / 15.41% / 0.88%) were not re-measured against
+`chematic 0.4.30`** and should not be assumed to reproduce byte-for-byte
+against current `master`. A future re-measurement should record the
+`chematic` version in its manifest (already a required field per the
+Phase 31 measurement-reproducibility checklist) and note any drift
+explicitly rather than silently carrying these numbers forward.

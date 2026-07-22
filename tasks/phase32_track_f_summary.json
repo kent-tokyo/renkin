@@ -17,6 +17,13 @@
   "flipped_invalid_to_valid": 202,
   "regressed_valid_to_invalid": 0
  },
+ "independent_rdkit_reconciliation_of_flips": {
+  "note": "0 regressions only proves the fix never turns a Valid into Invalid; it does NOT bound the opposite (and actually risky) direction -- a VF2 over-match turning a genuinely-wrong step into a false Valid. This check targets that risk directly: for every one of the 202 Invalid->Valid flips, all forward-reaction candidate products chematic's own reaction engine generated (not just the one VF2 happened to accept) were canonicalized independently via RDKit and compared against the RDKit canonicalization of the step's target.",
+  "flips_checked": 202,
+  "flips_rdkit_confirmed_same_molecule": 202,
+  "flips_not_rdkit_confirmed": 0,
+  "conclusion": "Every flip corresponds to a genuine, independently-verified same-molecule match. No evidence of the VF2 fallback over-matching (accepting two structurally-different molecules as equal) in this gold set."
+ },
  "suspected_false_negative_cause_counts": {
   "canonical_smiles_format_difference(graph_isomorphic_but_different_string)": 202,
   "lost_stereo": 8,

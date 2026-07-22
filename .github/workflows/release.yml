@@ -36,7 +36,7 @@ jobs:
           args: --release --features python --out dist --find-interpreter
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-${{ matrix.os }}-${{ matrix.target }}
           path: dist/
@@ -53,7 +53,7 @@ jobs:
         with:
           command: sdist
           args: --out dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-sdist
           path: dist/

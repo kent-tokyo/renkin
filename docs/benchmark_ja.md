@@ -1,22 +1,35 @@
 # ベンチマーク
 
-> ⚠️ **注記（2026-07-19）: 以下のUSPTO-50k数値は再評価中です。** 78.0%（単一パス）・95.9%（cascade）の解決率は、過広な逆合成ルール（`aryl_carboxylation_retro`）を修正する前に計測されたものです。このルールはエステル構造にも誤発火し、原子を暗黙に消失させて化学的に不正なルートを「解決済み」として数えていました。修正後の無作為なn=200再サンプルでは、raw solved rateが199/200から61/200に低下する一方、atom-balance通過率は12.1%から55.7%に上昇しました（能力低下ではなく偽陽性除去と整合的）。これらの数値——および同一ルールセットで計測されたChEMBL OOD 81.8%——は**無効化された過去の計測値**であり、修正済みベンチマークの再計測待ちです。現在のRENKINの性能として引用しないでください。
+> ⚠️ **注記（2026-07-22）: このページの78.0%/95.9%/81.8%(ChEMBL)は無効化された過去の計測値であり、再計測されていません。** 「Corrected baseline」セクションのみが現行ルールセットの数値です。
 >
-> **現在の状況:** 修正は2件のPR（`fix/forward-validation-graph-rule-blindspot`、`fix/aryl-carboxylation-retro-ester-overmatch`）としてmasterにマージ済み（コミット `35f26cb`）。当初の手動監査では他に原子消失バグは見つからなかったが、その後のper-step検証ツール（`examples/inspect_validation.rs`）による調査で、同種のバグが手書きルール3件（`aryl_chloride_retro`、`aryl_iodide_retro`、`aryl_fluoride_snAr_retro` — todo 31.11で追跡）と、forward validatorのcross-rule corroboration問題（todo 31.12）に見つかった。USPTO-50k全4,907件の修正版再計測はcommit `35f26cb`に対して2026-07-21に完了したが、その結果はここでは公開しない——31.11/31.12の修正前の計測であり、旧78.0%/95.9%と同じパターンで修正後は無効化される可能性が高いため。31.11・31.12の修正と再計測が完了次第、この注記を正式な訂正値へ置き換える。進捗は `tasks/todo.md`（Phase 31）を参照。
+> **Corrected baseline — USPTO-50k Stage 1（単一パス）、コミット `e20dc8c`、2026-07-22。** `raw_solved_rate` **20.09%**（986/4,907）→ `atom_balanced_solved_rate` **15.41%**（756/4,907）→ `provenance_validated_solved_rate` **0.88%**（43/4,907）。この3つは同一4,907件に対する入れ子系列（各段はより厳格な部分集合）であり、独立した3つの計測値ではない。**`provenance_validated_solved_rate` は正確性の下限であり、実測の化学的正確性そのものではない**——現行validatorが各stepをそのoriginating ruleで肯定的に確認できたルートのみを数えており、`Invalid`判定のうち相当数（n=300診断サンプルで72.2%のstep）はatom-balanced済みにもかかわらずvalidatorを通過せず、実際の化学的誤りかvalidatorの偽陰性（正規化・互変異性・位置選択性の境界ケース）か未分離のまま（`suzuki_retro`は0%invalidな一方`cn_aliphatic_cleavage`は97.6%invalid——単一要因では説明できない広がり）。詳細な手法・ハッシュ・rule別内訳: [`tasks/phase31_final_remeasurement_run.md`](https://github.com/kent-tokyo/renkin/blob/master/tasks/phase31_final_remeasurement_run.md)。
+>
+> **修正の経緯:** `aryl_carboxylation_retro`のエステル誤発火を修正（PR #26）。原子を追跡なしに消失させる同型バグを持つルール3件——`aryl_chloride_retro`・`aryl_iodide_retro`・`aryl_fluoride_snAr_retro`——を発見・削除（PR #31、「31.11」）。forward validatorが「実際に使ったrule」ではなく「どれかのruleが偶然再現できればValid」としていた問題を、各stepの originating rule に拘束するよう修正（PR #33、「31.12」）。いずれもこの再計測前に個別CI確認の上でmasterへマージ済み。**cascade（95.9%）・ChEMBL OOD（81.8%）は修正版ルールセットに対して未再計測**——各セクションの注記を参照。
 
 ## USPTO-50k テストセット
 
 RENKIN を [USPTO-50k](https://huggingface.co/datasets/bisectgroup/USPTO_50K) テストセット全件（4,907 分子）で評価します。逆合成の標準ベンチマークデータセットです。
 
-### 最新結果 (v0.1.8) — depth=5, beam=100, 5,000 extracted templates
+### Corrected Baseline（コミット `e20dc8c`、2026-07-22） — depth=5, beam=100, 5,000 extracted templates, 28 handcrafted rules
+
+| 指標 | 値 | 分母 |
+|------|-----|------|
+| `raw_solved_rate` | **20.09%**（986/4,907） | 全4,907件 |
+| `atom_balanced_solved_rate` | **15.41%**（756/4,907） | 全4,907件——rawの部分集合 |
+| `provenance_validated_solved_rate` | **0.88%**（43/4,907） | 全4,907件——atom-balancedの部分集合。**正確性の下限であり上限ではない（上記注記参照）** |
+| depth=0 直接stock一致 | 0.04%（2/4,907） | 全4,907件 |
+| レイテンシ（全ターゲット） | p50 7.3s / p95 28.2s / p99 51.2s | 未解決ターゲット（探索予算まで実行）を含む |
+| レイテンシ（解決済のみ） | p50 1.0s / p95 9.4s / p99 15.6s | |
+
+ビルディングブロック: 475 種類の手選定市販試薬（`data/building_blocks.smi`）。詳細な設定・ハッシュ・rule別内訳は `tasks/phase31_final_remeasurement_run.md` を参照。
+
+### 過去の結果 (v0.1.8、修正前) — depth=5, beam=100, 5,000 extracted templates
 
 | 設定 | 解決数 | 成功率 | 平均時間 | 実行環境 |
 |------|--------|--------|----------|----------|
 | depth=5, beam=100, 5,000 templates | **3,831 / 4,907** | **78.1%** | **≈2,800 ms/mol** | Apple M-series, 8 スレッド |
 
-*状態: 無効化された過去の計測値——上記の注記を参照。*
-
-ビルディングブロック: 509 種類の手選定市販試薬（デフォルトセット）
+*状態: 無効化された過去の計測値、31.11/31.12修正前——上記の注記を参照。参考として保持。*
 
 ### 精度の変遷
 
@@ -39,14 +52,16 @@ v0.1.8 では、ジアリールスルホン逆合成ルール（グラフベー�
 
 | システム | Top-1 | 在庫 | テンプレート数 | 備考 |
 |---------|-------|------|-------------|------|
-| **RENKIN v0.1.8** | **78.1%** | **509 BBs** | **5,000** | Pure Rust、C++ 依存なし |
+| **RENKIN（corrected, raw_solved_rate）** | **20.09%** | **475 BBs** | **5,000** | Pure Rust、C++ 依存なし、2026-07-22 |
 | AiZynthFinder (Mol. Inf. 2020) | ~45% | eMolecules (~600 万) | ~50,000 | Python、RDKit |
 | Retro\* (ICML 2020) | ~40% | eMolecules (~600 万) | ~50,000 | Python |
 | LocalRetro (AAAI 2021) | ~65% | eMolecules (~600 万) | テンプレートフリー | GNN ベース |
 | GLN (NeurIPS 2020) | ~64% | eMolecules (~600 万) | ~17,000 | GNN ベース |
 
+RENKIN行は`raw_solved_rate`（stockへの経路が1件以上見つかった率）を使用——他システムの公表値も同様に、質量収支・step検証まで行った上での数値ではないため、これが最も公平な比較軸です。RENKIN はこれに加えてより厳格な入れ子指標（`atom_balanced_solved_rate` 15.41%、`provenance_validated_solved_rate` 0.88%——上記の注記参照）も報告していますが、他システムの論文には対応する数値がありません。
+
 !!! note "条件の違い"
-    RENKIN の 78.0% は **480 種類の市販試薬のみ**・**5,000 テンプレート**で達成しています。
+    RENKIN の 20.09% は **475 種類の市販試薬のみ**・**5,000 テンプレート**で達成しています。
     他システムは eMolecules 等の数百万化合物データベースと数万テンプレートを使用しており、
     RENKIN は不利な条件での評価です。
 
@@ -67,12 +82,14 @@ v0.1.8 では、ジアリールスルホン逆合成ルール（グラフベー�
 
 ### ドメイン外（OOD）評価
 
+> ⚠️ **修正版ルールセットに対して未再計測（31.11/31.12以前、無効化済み）。** 以下の2行はいずれも過去の参考値です。
+
 RENKIN の精度が USPTO-50k ドメイン限定かどうかを確認するため、ChEMBL の **FDA 承認薬 500 件**（Phase 4、MW 150–700、塩除外）で評価しました。
 
 | データセット | 解決数 | 成功率 | 備考 |
 |------------|--------|--------|------|
-| USPTO-50k テストセット | 3,831 / 4,907 | **78.1%** | in-distribution（テンプレートは USPTO 訓練セットから抽出） |
-| **ChEMBL 承認薬** | **409 / 500** | **81.8%** | out-of-distribution（実際の FDA 承認医薬品） |
+| USPTO-50k テストセット | 3,831 / 4,907 | **78.1%**（修正前） | in-distribution（テンプレートは USPTO 訓練セットから抽出） |
+| **ChEMBL 承認薬** | **409 / 500** | **81.8%**（修正前） | out-of-distribution（実際の FDA 承認医薬品） |
 
 **RENKIN は USPTO ドメインに限らず、実際の承認薬にも良く機能します。** +3.7 pp の向上は、ルールセットが USPTO 訓練データ特有の反応ではなく、医薬品合成で一般的な変換を幅広くカバーしていることを示します。
 

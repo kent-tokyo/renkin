@@ -25,15 +25,15 @@
   <img alt="MCP" src="https://img.shields.io/badge/MCP-ready-7f52ff">
   <img alt="templates" src="https://img.shields.io/badge/templates-up%20to%2050k-purple">
   <img alt="building blocks" src="https://img.shields.io/badge/building%20blocks-509-lightgrey">
-  <img alt="USPTO-50k" src="https://img.shields.io/badge/USPTO--50k-under%20re--evaluation-yellow">
+  <img alt="USPTO-50k" src="https://img.shields.io/badge/USPTO--50k-raw%2020.1%25%20(corrected)-blue">
   <img alt="ChEMBL" src="https://img.shields.io/badge/ChEMBL-under%20re--evaluation-yellow">
 </p>
 
 [English README](./README.md) · [**ドキュメント**](https://kent-tokyo.github.io/renkin/) · [**ライブデモ →**](https://kent-tokyo.github.io/renkin/playground/)
 
-> ⚠️ **注記（2026-07-19）: 以下のUSPTO-50k数値は再評価中です。** 78.0%（単一パス）・95.9%（cascade）の解決率は、過広な逆合成ルール（`aryl_carboxylation_retro`）を修正する前に計測されたものです。このルールはエステル構造にも誤発火し、原子を暗黙に消失させて化学的に不正なルートを「解決済み」として数えていました。修正後の無作為なn=200再サンプルでは、raw solved rateが199/200から61/200に低下する一方、atom-balance通過率は12.1%から55.7%に上昇しました（能力低下ではなく偽陽性除去と整合的）。これらの数値——および同一ルールセットで計測されたChEMBL OOD 81.8%——は**無効化された過去の計測値**であり、修正済みベンチマークの再計測待ちです。現在のRENKINの性能として引用しないでください。
+> ⚠️ **注記（2026-07-22）: 以下、修正版USPTO-50k Stage 1（単一パス）のcorrected baselineを掲載。** このページの他箇所にある78.0%/95.9%/81.8%(ChEMBL)は無効化された過去の値であり、再計測されていません。修正の全経緯と詳細な手法は [`docs/benchmark.md`](https://kent-tokyo.github.io/renkin/benchmark/) と [`tasks/phase31_final_remeasurement_run.md`](https://github.com/kent-tokyo/renkin/blob/master/tasks/phase31_final_remeasurement_run.md) を参照。
 >
-> **現在の状況:** 修正は2件のPR（`fix/forward-validation-graph-rule-blindspot`、`fix/aryl-carboxylation-retro-ester-overmatch`）としてmasterにマージ済み（コミット `35f26cb`）。加えて、当初の手動監査では他に原子消失バグは見つからなかったが、その後のper-step検証調査で同種のバグが手書きルール3件（`aryl_chloride_retro`、`aryl_iodide_retro`、`aryl_fluoride_snAr_retro`）とforward validatorのcross-rule corroboration問題に見つかった（todo 31.11/31.12で追跡）。USPTO-50k全4,907件の修正版再計測はcommit `35f26cb`に対して2026-07-21に完了したが、その結果はここでは公開しない——31.11/31.12の修正前の計測であり、旧78.0%/95.9%と同じパターンで修正後は無効化される可能性が高いため。31.11・31.12の修正と再計測が完了次第、この注記を正式な訂正値へ置き換える。進捗は `tasks/todo.md`（Phase 31）を参照。
+> **Corrected baseline（コミット `e20dc8c`、2026-07-22）:** `raw_solved_rate` **20.09%**（986/4,907）→ `atom_balanced_solved_rate` **15.41%**（756/4,907）→ `provenance_validated_solved_rate` **0.88%**（43/4,907）。この3つは同一の4,907件に対する入れ子系列であり、独立した3つの数値ではない。**最後の数値は正確性の下限であり、実測の正確性そのものではない**——現行のstep validatorが自身のoriginating ruleで肯定的に確認できたルートのみを数えており、「invalid」判定のうち相当数（n=300診断サンプルで72.2%のstep）が、実際の化学的誤りかvalidatorの偽陰性か未分離のまま残っている（詳細はリンク先参照）。cascade・ChEMBL OODは修正版ルールセットに対して未再計測。
 
 ---
 
@@ -192,9 +192,23 @@ c1ccccc1-c2ccccc2
 
 ## ベンチマーク
 
-⚠️ このREADME冒頭の注記を参照——本セクションの数値（単一パス78.0%、cascade 95.9%、ChEMBL OOD 81.8%）は再評価中であり、現在のRENKINの性能として引用しないでください。
-
 USPTO-50kテストセット（全4,907分子評価）:
+
+> **評価定義**: `find_routes` がbuilding block集合に含まれる末端precursorのみで構成される経路を depth=5・beam=100 以内で1件以上見つけられれば solved。USPTO-50k の正解試薬とは照合しない。
+
+### Corrected baseline（コミット `e20dc8c`、2026-07-22）
+
+| 指標 | 値 |
+|---|---|
+| `raw_solved_rate` | **20.09%**（986/4,907） |
+| `atom_balanced_solved_rate` | **15.41%**（756/4,907）— rawの部分集合 |
+| `provenance_validated_solved_rate` | **0.88%**（43/4,907）— atom_balancedの部分集合、正確性の下限 |
+
+475件の市販ビルディングブロック、5,000件の抽出テンプレート、28件のハンドクラフトルール、depth=5・beam=100。3つの数値は同一4,907件に対する入れ子系列であり、独立した数値として比較しないこと。詳細な手法・rule別内訳・再現コマンドは [`tasks/phase31_final_remeasurement_run.md`](https://github.com/kent-tokyo/renkin/blob/master/tasks/phase31_final_remeasurement_run.md) · [ベンチマーク詳細 →](https://kent-tokyo.github.io/renkin/benchmark/)
+
+### 過去の推移（修正前・無効化済み — 冒頭の注記参照）
+
+⚠️ 以下の数値（単一パス78.0%、cascade 95.9%、ChEMBL OOD 81.8%）は31.11/31.12修正前の計測であり無効化済み、再計測もされていません。参考として残していますが、現在のRENKINの性能として引用しないでください。
 
 > **評価条件の注記**: 全数値は USPTO-50k の標準 train/test 分割（同一コーパス）を使用。テンプレートは訓練セットから抽出しテストセットで評価——AiZynthFinder 等の論文と同じ手法。数値は USPTO-50k ドメイン内での性能を示すものであり、分布外（OOD）汎化性は別途検証が必要。
 
@@ -214,17 +228,15 @@ USPTO-50kテストセット（全4,907分子評価）:
 \* 29/50チャンク、旧バイナリ  
 † 全50チャンク完了 — **72.1%**（3,540/4,907）確認済
 
-USPTO-50k 標準ベンチマーク（多段階経路探索、同 train/test 分割）において、RENKIN は単一パスで **78.0%**、cascade 探索（未解決を depth=7・beam=300 で再探索）で **95.9%** に達する。AiZynthFinder（45–53%）・Retro\*（44.3%）・ASKCOS（41%）の論文値を数値上回るが、これらは 2019–2020 年の論文値で BB 数・テンプレート数等の条件が異なり、matched-condition 実験は未実施。  
-*注意: LocalRetro（53.4%）・GLG（58.0%）は単ステップ top-1 予測精度であり、多段階経路探索成功率とは別の指標のため直接比較不可。*  
-[ベンチマーク詳細 →](https://kent-tokyo.github.io/renkin/benchmark/)
+*注意: LocalRetro（53.4%）・GLG（58.0%）は単ステップ top-1 予測精度であり、多段階経路探索成功率とは別の指標のため直接比較不可。*
 
-> **ベンチマーク範囲に関する注意**: USPTO-50k はここでは *標準化されたサニティベンチマーク* として使用しており、実世界の広範な合成性能を証明するものではありません。同コーパスは主に製薬合成で一般的な C–C・C–N 結合形成に偏っており、USPTO の掲載が少ない反応タイプは体系的に不利になります。ChEMBL 承認薬（OOD）での **81.8%**（409/500）はルールセットがテストコーパスを超えて汎化することを示唆しますが、任意のターゲットに対する経路品質を保証するものではありません。
+> **ベンチマーク範囲に関する注意**: USPTO-50k はここでは *標準化されたサニティベンチマーク* として使用しており、実世界の広範な合成性能を証明するものではありません。同コーパスは主に製薬合成で一般的な C–C・C–N 結合形成に偏っており、USPTO の掲載が少ない反応タイプは体系的に不利になります。ChEMBL 承認薬（OOD）での **81.8%**（409/500、修正前・未再計測）はルールセットがテストコーパスを超えて汎化することを示唆していましたが、いずれの過去数値も任意のターゲットに対する経路品質を保証するものではありません。
 
 ---
 
 ## 競合比較
 
-⚠️ このREADME冒頭の注記を参照——以下に引用されているRENKINの78.0%/95.9%の数値は再評価中です。
+⚠️ 以下のRENKIN行は修正版の `raw_solved_rate`（20.09%）を使用——過去バージョンのこの表にあった cascade 95.9% は無効化済み・未再計測のためここには含めない。
 
 | ツール | 言語 | ライセンス | WASM | ゼロ依存 | アルゴリズム | テンプレート | 在庫 |
 |---|---|---|---|---|---|---|---|
@@ -233,9 +245,9 @@ USPTO-50k 標準ベンチマーク（多段階経路探索、同 train/test 分�
 | **SYNTHIA** | クローズド | 独自 | No | No | SMARTS+AND/OR | 手動作成 | Sigma-Aldrich |
 | **IBM RXN** | クローズド | SaaS | No | No | Transformer | USPTO | — |
 | **Retro\*** | Python | MIT | No | No（未メンテ） | A\*+AND/OR | USPTO（ML） | eMolecules |
-| **★ RENKIN** | **Rust** | **MIT** | **Yes** | **Yes** | **A\*+AND/OR** | 手動+rdchiral（5k デフォルト；`--templates` で50k対応） | 509+（拡張可） |
+| **★ RENKIN** | **Rust** | **MIT** | **Yes** | **Yes** | **A\*+AND/OR** | 手動+rdchiral（5k デフォルト；`--templates` で50k対応） | 475+（拡張可） |
 
-**RENKINの目標**: GPU なし・学習データなし・ブラックボックスなし——キュレーション済みルールと自動抽出テンプレートだけで、ニューラルネットベースのツールに匹敵する精度を目指す。USPTO-50k 標準ベンチマーク（全ツール共通の train/test 分割）で単一パス **78.0%**（3,826/4,907 — 全件確認済）、cascade 探索で **95.9%**（4,705/4,907）を達成。5,000件のテンプレートと509件の市販原料、テンプレート頻度重み付け（Phase A）——AiZynthFinder の NN テンプレートスコアリングと同原理——の組み合わせによる成果。そしてブラウザ・CLI・Python、どこでも動く。
+**RENKINの目標**: GPU なし・学習データなし・ブラックボックスなし——キュレーション済みルールと自動抽出テンプレートだけで、ニューラルネットベースのツールに匹敵する精度を目指す。RENKIN のベンチマーク設定（corrected baseline、コミット `e20dc8c`、2026-07-22）では単一パス `raw_solved_rate` **20.09%**（986/4,907）を達成——入れ子系列のフルセットと、より厳格な `provenance_validated_solved_rate`（0.88%）が「実測の正確性そのものではなく下限」である理由は上記ベンチマークセクション参照。ブラウザ・CLI・Python、どこでも動く。
 
 ---
 

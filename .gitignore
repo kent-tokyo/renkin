@@ -18,13 +18,19 @@ __pycache__/
 # ---- Project-specific (not version-controlled) ----
 .env
 AGENTS.md
-tasks/
+# `tasks/*` (not `tasks/`) deliberately: a trailing-slash directory pattern
+# excludes the directory itself, and git cannot re-include a file whose
+# parent directory is excluded -- the !exceptions below would silently not
+# apply. `tasks/*` excludes the same contents but lets git descend and
+# evaluate per-file negations.
+tasks/*
 memo.txt
 
 # Measurement provenance docs are exceptions: they're the durable record of
 # what a published benchmark number actually measured, so they must be
 # tracked even though the rest of tasks/ is local scratch.
 !tasks/phase31_corrected_baseline_run.md
+!tasks/phase31_final_remeasurement_run.md
 
 # ---- ONNX model weights (large binaries) ----
 data/*.onnx

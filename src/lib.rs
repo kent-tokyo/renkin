@@ -194,7 +194,7 @@ pub const DEFAULT_BUILDING_BLOCKS: &[&str] = &[
 
 /// 46-entry set kept for WASM size constraint testing; see DEFAULT_BUILDING_BLOCKS for the full set.
 #[allow(dead_code)]
-const _BB_COUNT_CHECK: usize = 0; // DEFAULT_BUILDING_BLOCKS has ~300 entries
+const _BB_COUNT_CHECK: usize = 0; // DEFAULT_BUILDING_BLOCKS has 160 raw entries, 152 unique per ChemEnv::bb_count() (verified 2026-07-22)
 
 #[cfg(test)]
 mod trace_test;

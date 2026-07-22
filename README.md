@@ -24,16 +24,16 @@
   <img alt="PyO3" src="https://img.shields.io/badge/PyO3-Python%20bindings-blue">
   <img alt="MCP" src="https://img.shields.io/badge/MCP-ready-7f52ff">
   <img alt="templates" src="https://img.shields.io/badge/templates-up%20to%2050k-purple">
-  <img alt="building blocks" src="https://img.shields.io/badge/building%20blocks-509-lightgrey">
-  <img alt="USPTO-50k" src="https://img.shields.io/badge/USPTO--50k-under%20re--evaluation-yellow">
+  <img alt="building blocks" src="https://img.shields.io/badge/building%20blocks-402-lightgrey">
+  <img alt="USPTO-50k" src="https://img.shields.io/badge/USPTO--50k-corrected%20baseline-blue">
   <img alt="ChEMBL" src="https://img.shields.io/badge/ChEMBL-under%20re--evaluation-yellow">
 </p>
 
 [日本語版 README](./README_ja.md) · [**Documentation**](https://kent-tokyo.github.io/renkin/) · [**Live Demo →**](https://kent-tokyo.github.io/renkin/playground/)
 
-> ⚠️ **Notice (2026-07-19): USPTO-50k figures below are under re-evaluation.** The 78.0% (single-pass) and 95.9% (cascade) solved-rate figures were measured before fixing an over-broad retrosynthesis rule (`aryl_carboxylation_retro`) that matched ester substructures and silently discarded atoms, generating chemically invalid routes that were counted as "solved." An unbiased re-sample after the fix showed raw solved rate dropping from 199/200 to 61/200 (atom-balance pass rate rose from 12.1% to 55.7% over the same sample — consistent with removing false positives, not a real capability loss). These figures — and the related ChEMBL OOD 81.8% figure, measured with the same rule set — are **invalidated historical measurements** pending a full corrected re-benchmark. Do not cite these numbers as current RENKIN performance.
+> ⚠️ **Notice (2026-07-22): corrected USPTO-50k Stage 1 (single-pass) baseline below — historical 78.0%/95.9%/81.8%(ChEMBL) figures elsewhere on this page are invalidated and have NOT been re-measured.** Full fix history and methodology: [`docs/benchmark.md`](https://kent-tokyo.github.io/renkin/benchmark/) and [`tasks/phase31_final_remeasurement_run.md`](https://github.com/kent-tokyo/renkin/blob/master/tasks/phase31_final_remeasurement_run.md).
 >
-> **Status:** the fix is merged into master (`35f26cb`; 2 PRs, `fix/forward-validation-graph-rule-blindspot` and `fix/aryl-carboxylation-retro-ester-overmatch`). A follow-up manual audit initially found no further atom-loss bugs, but a later per-step validation inspection found the same bug class in three more hand-crafted rules — `aryl_chloride_retro`, `aryl_iodide_retro`, `aryl_fluoride_snAr_retro` (todo 31.11) — plus a forward-validator cross-rule corroboration issue (todo 31.12). A full corrected USPTO-50k re-benchmark (all 4,907 targets) completed 2026-07-21 against commit `35f26cb`, but its result is **not** published here: it predates the 31.11/31.12 fixes and, per the same pattern as the original 78.0%/95.9% figures, would likely be invalidated by them. This notice will be replaced once 31.11 and 31.12 are fixed and the benchmark is re-run against that commit. Follow progress in `tasks/todo.md` (Phase 31).
+> **Corrected baseline (commit `e20dc8c`, 2026-07-22):** Search-to-stock rate (`raw_solved_rate`) **20.09%** (986/4,907) → atom-balance-filtered rate (`atom_balanced_solved_rate`) **15.41%** (756/4,907) → current-validator-confirmed rate (`provenance_validated_solved_rate`) **0.88%** (43/4,907). These are a *nested* series over the same 4,907 targets, not three independent numbers, and none is a measured or bounded chemical-correctness rate on its own. **The last figure is not a measured chemical-accuracy rate and not a proven lower bound on correctness** — it only counts routes the current validator can positively confirm under stated checks, and an unknown fraction of "invalid" verdicts may be validator false negatives rather than real chemistry errors (the split is unmeasured — open follow-up, see linked doc). Cascade and ChEMBL OOD have not been re-run against the corrected rule set.
 
 ---
 
@@ -203,7 +203,7 @@ Add `--verbose` to print search statistics (nodes expanded, elapsed time) to std
 | **Tetrahedral stereo @/@@** | Full stereochemistry support via chematic 0.4.16 |
 | **Python** | `pip install renkin` — pre-built wheels for Linux/macOS/Windows |
 | **WASM** | ~500 KB bundle — runs in the browser at near-native speed |
-| **509 building blocks** | Aryl halides, boronic acids, heterocycles, amines, acids, amino acids |
+| **402 building blocks** | Aryl halides, boronic acids, heterocycles, amines, acids, amino acids (`data/building_blocks.smi`, unique compounds actually loaded — see Benchmark section) |
 
 ---
 
@@ -224,13 +224,25 @@ renkin -t "c1ccc(NC(=O)c2ccccc2)cc1" --templates data/templates_extracted_5000.s
 
 ## Benchmark
 
-⚠️ See notice near the top of this README — the figures in this section (78.0% single-pass, 95.9% cascade, 81.8% ChEMBL OOD) are under re-evaluation and should not be cited as current RENKIN performance.
-
 USPTO-50k test set (4,907 molecules, full evaluation):
 
-> **Evaluation definition**: A molecule is *solved* if `find_routes` returns at least one route whose leaf precursors are all in the 509-reagent building block set, within depth=5 and beam=100. Ground-truth reactants from USPTO-50k are **not** checked — any commercially accessible route counts.
+> **Evaluation definition**: A molecule is *solved* if `find_routes` returns at least one route whose leaf precursors are all in the building block set, within depth=5 and beam=100. Ground-truth reactants from USPTO-50k are **not** checked — any commercially accessible route counts.
 
-> **Evaluation note**: All numbers use the standard USPTO-50k train/test split (same corpus). Templates are extracted from the training set and evaluated on the test set. Numbers reflect performance within the USPTO-50k domain; out-of-distribution generalization is separately evaluated via ChEMBL approved drugs (**81.8%**, 409/500).
+### Corrected baseline (commit `e20dc8c`, 2026-07-22)
+
+| Public label | Internal metric | Value |
+|---|---|---|
+| Search-to-stock rate | `raw_solved_rate` | **20.09%** (986/4,907) |
+| Atom-balance-filtered rate | `atom_balanced_solved_rate` | **15.41%** (756/4,907) — subset of search-to-stock |
+| Current-validator-confirmed rate | `provenance_validated_solved_rate` | **0.88%** (43/4,907) — subset of atom-balance-filtered |
+
+402 building blocks (unique compounds actually loaded from `data/building_blocks.smi` — see below), 5,000 extracted templates, 28 handcrafted rules, depth=5, beam=100. These three rates are a nested series over the same 4,907 targets, not independent numbers, and none is an experimentally-verified synthesis success rate or a human-chemist-reviewed route-accuracy figure. `provenance_validated_solved_rate` is not a measured chemical-accuracy rate and not a proven lower bound on correctness — it only counts routes the current validator can positively confirm, and an unknown fraction of "invalid" verdicts may be validator false negatives rather than real chemistry or route errors (the split is unmeasured). Full methodology, per-rule breakdown, and reproduction command: [`tasks/phase31_final_remeasurement_run.md`](https://github.com/kent-tokyo/renkin/blob/master/tasks/phase31_final_remeasurement_run.md) · [Full benchmark details →](https://kent-tokyo.github.io/renkin/benchmark/)
+
+### Historical progression (pre-fix, invalidated — see notice above)
+
+⚠️ The figures in this subsection (78.0% single-pass, 95.9% cascade, 81.8% ChEMBL OOD) predate the 31.11/31.12 fixes, are invalidated, and have not been re-measured. Kept for continuity only — do not cite as current performance.
+
+> **Evaluation note**: All numbers use the standard USPTO-50k train/test split (same corpus). Templates are extracted from the training set and evaluated on the test set. Numbers reflect performance within the USPTO-50k domain; out-of-distribution generalization was separately evaluated via ChEMBL approved drugs (**81.8%**, 409/500, also not re-measured).
 
 | Config | Solved | Rate | BBs | Templates | depth | beam | ms/mol |
 |---|---|---|---|---|---|---|---|
@@ -246,13 +258,12 @@ USPTO-50k test set (4,907 molecules, full evaluation):
 | Cascade (stage2: depth=7, beam=300 on unsolved) | 4705/4907 | **95.9%** | 509 | 5,000 | 7 | 300 | — |
 
 \* 29/50 chunks, previous binary  
-† 50/50 chunks — **72.1%** (3,540/4,907) confirmed
+† 50/50 chunks — **72.1%** (3,540/4,907) confirmed  
+BB counts in this historical table (463/480/509) are as originally documented at each point in time — legacy documentation values, not re-verified against `ChemEnv::bb_count()`. The corrected-baseline section above uses the actually-loaded count (402) for the current `data/building_blocks.smi`.
 
-Under RENKIN's evaluation setting (see definition above), RENKIN reaches **78.0%** single-pass on USPTO-50k, and **95.9%** with cascade search (re-running unsolved targets at depth=7, beam=300). Published numbers for AiZynthFinder (45–53%), Retro\* (44.3%), and ASKCOS (41%) use different stock databases, template counts, and evaluation years — **this is not a matched-condition comparison**.  
-*Note: LocalRetro (53.4%) and GLG (58.0%) report single-step top-1 prediction accuracy — a different metric, not directly comparable.*  
-[Full benchmark details →](https://kent-tokyo.github.io/renkin/benchmark/)
+*Note: LocalRetro (53.4%) and GLG (58.0%) report single-step top-1 prediction accuracy — a different metric, not directly comparable.*
 
-> **Benchmark scope note**: USPTO-50k is used here as a *standardized sanity benchmark*, not as proof of broad real-world synthesis performance. The corpus covers a narrow slice of reaction space (primarily C–C and C–N bond formations common in pharmaceutical synthesis), and reaction types with sparse USPTO representation are systematically underserved. Out-of-distribution performance on ChEMBL approved drugs (**81.8%**, 409/500) suggests the rule set generalizes beyond the test corpus, but neither number should be interpreted as a guarantee of route quality on arbitrary targets.
+> **Benchmark scope note**: USPTO-50k is used here as a *standardized sanity benchmark*, not as proof of broad real-world synthesis performance. The corpus covers a narrow slice of reaction space (primarily C–C and C–N bond formations common in pharmaceutical synthesis), and reaction types with sparse USPTO representation are systematically underserved. Out-of-distribution performance on ChEMBL approved drugs (**81.8%**, 409/500, pre-fix, not re-measured) suggested the rule set generalizes beyond the test corpus, but neither historical number should be interpreted as a guarantee of route quality on arbitrary targets.
 
 ### PaRoutes compatibility
 
@@ -272,7 +283,7 @@ The JSON output includes `avg_nodes_expanded`, `avg_confidence`, `avg_convergenc
 
 ## Competitive Landscape
 
-⚠️ See notice near the top of this README — RENKIN's 78.0%/95.9% figures quoted below are under re-evaluation and should not be cited as current performance.
+⚠️ RENKIN's row below uses the corrected `raw_solved_rate` (20.09%, see notice near the top of this README) — the 95.9% cascade figure some earlier versions of this table cited is invalidated and not re-measured; it is not included here.
 
 | Tool | Language | License | WASM | Zero-dep | Algorithm | Template source | Stock |
 |---|---|---|---|---|---|---|---|
@@ -281,9 +292,11 @@ The JSON output includes `avg_nodes_expanded`, `avg_confidence`, `avg_convergenc
 | **SYNTHIA** | Closed | Proprietary | No | No | SMARTS + AND/OR | Manual curated | Sigma-Aldrich |
 | **IBM RXN** | Closed | Cloud SaaS | No | No | Transformer | USPTO | — |
 | **Retro\*** | Python | MIT | No | No (unmaintained) | A\* + AND/OR | USPTO (ML) | eMolecules |
-| **★ RENKIN** | **Rust** | **MIT** | **Yes** | **Yes** | **A\* + AND/OR** | Hand-curated + rdchiral (5k default; 50k via `--templates`) | 509+ |
+| **★ RENKIN** | **Rust** | **MIT** | **Yes** | **Yes** | **A\* + AND/OR** | Hand-curated + rdchiral (5k default; 50k via `--templates`) | 402+ |
 
-**RENKIN's goal**: match state-of-the-art accuracy using only curated rules and auto-extracted SMIRKS templates — no GPU, no training data, no black boxes. Under RENKIN's benchmark setting, it reaches **78.0%** (3,826/4,907 — full run confirmed) single-pass, and **95.9%** (4,705/4,907) with cascade search. Template frequency weighting (Phase A) combined with 5,000 auto-extracted templates and 509 building blocks delivers this result. RENKIN runs anywhere: browser, CLI, Python — single `cargo build`.
+`raw_solved_rate` is the closest available RENKIN metric to the published route-finding success rates of the other planners above, but the figures are not directly comparable — stock size, template library, target set, search budget, and route-quality checks all differ across systems, and this table does not establish RENKIN as better or worse than the alternatives.
+
+**RENKIN's goal**: match state-of-the-art accuracy using only curated rules and auto-extracted SMIRKS templates — no GPU, no training data, no black boxes. Under RENKIN's benchmark setting (corrected baseline, commit `e20dc8c`, 2026-07-22), it reaches **20.09%** `raw_solved_rate` (986/4,907) single-pass — see the Benchmark section above for the full nested-metric series and why the stricter `provenance_validated_solved_rate` (0.88%) is not RENKIN's measured or bounded correctness rate. RENKIN runs anywhere: browser, CLI, Python — single `cargo build`.
 
 > ⚠️ The table above lists tools under different evaluation conditions. No matched-condition experiment against other tools has been performed.
 
@@ -314,7 +327,7 @@ The JSON output includes `avg_nodes_expanded`, `avg_confidence`, `avg_convergenc
 | `plan_with_constraints` | Constraint-DSL planning (element filters, step limits, confidence thresholds) |
 | `estimate_diversity` | Route diversity and coverage metrics |
 
-The server auto-detects `data/building_blocks.smi` and `data/templates_extracted_5000.smi` in the working directory. Falls back to the embedded 509-BB / 20-rule defaults if not found.
+The server auto-detects `data/building_blocks.smi` and `data/templates_extracted_5000.smi` in the working directory. Falls back to the embedded `DEFAULT_BUILDING_BLOCKS` / `default_rules()` defaults if not found (152 unique building blocks per `ChemEnv::bb_count()`, 28 handcrafted rules — verified 2026-07-22; a "509-BB / 20-rule" figure was previously documented here without verification).
 
 ```bash
 cargo build --release
@@ -407,7 +420,7 @@ renkin/                          ← Cargo workspace root
 │   ├── renkin-forward/          # forward reaction prediction (reactants → products)
 │   └── renkin-kg/               # reaction knowledge graph builder (GraphML / Cypher export)
 ├── data/
-│   ├── building_blocks.smi              # 509 curated commercial starting materials
+│   ├── building_blocks.smi              # 402 curated commercial starting materials (loaded/deduplicated count)
 │   ├── templates_extracted_5000.smi     # 5,000 auto-extracted SMIRKS templates
 │   ├── benchmark_targets.smi            # internal benchmark set
 │   └── bench_chunks/                    # USPTO-50k per-chunk results

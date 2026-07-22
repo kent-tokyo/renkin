@@ -8,6 +8,13 @@ records — the correct approach, since averaging 50 chunk-level percentages
 would mis-weight uneven chunk sizes (see the Phase-31 corrected-baseline
 run-doc for the methodology this mirrors).
 
+`provenance_validated_solved_rate` is Phase 31's primary metric candidate:
+solved AND atom_balance_ok AND route_validation_status == "validated"
+(i.e. every step is atom-balanced AND confirmed by its own originating
+rule's validator, not a coincidental cross-rule match), as a fraction of
+ALL targets. `raw_solved_rate` alone is deliberately not treated as RENKIN's
+representative performance number.
+
 Usage:
     python3 scripts/aggregate_bench_results.py <out_dir> [--expected-total N]
 
@@ -105,6 +112,12 @@ def main() -> None:
 
     depth0 = [r for r in solved if r.get("best_depth") == 0]
     balanced = [r for r in solved if r.get("atom_balance_ok") is True]
+    provenance_validated = [
+        r
+        for r in solved
+        if r.get("atom_balance_ok") is True
+        and r.get("route_validation_status") == "validated"
+    ]
 
     status_counts = {}
     for r in solved:
@@ -138,6 +151,7 @@ def main() -> None:
         "raw_solved_rate": n_solved / n if n else None,
         "depth0_direct_stock_hit_rate": len(depth0) / n if n else None,
         "pct_atom_balanced_of_solved": (len(balanced) / n_solved) if n_solved else None,
+        "provenance_validated_solved_rate": len(provenance_validated) / n if n else None,
         "route_validation_status_of_solved": status_counts,
         "depth_distribution_of_solved": {str(k): v for k, v in sorted(depth_dist.items(), key=lambda kv: (kv[0] is None, kv[0]))},
         "latency_ms_all_targets": latency_block(times_all),

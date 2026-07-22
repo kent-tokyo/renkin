@@ -63,12 +63,34 @@ the full run. 50/50 chunks, **0 failed chunks, 0 repair passes needed**
 Reconciliation: `sum(chunk.total) == len(results[]) == 4,907` (script
 hard-asserts this; ran with `--expected-total 4907`, exit 0).
 
+**Nested series — all three over the SAME denominator (4,907 total
+targets), so they ARE directly comparable to each other** (raw ⊇
+atom-balanced ⊇ provenance-validated, each a subset of the previous):
+
 | Metric | Value |
 |---|---|
 | `raw_solved_rate` | 986 / 4,907 = **20.09%** |
+| `atom_balanced_solved_rate` | 756 / 4,907 = **15.41%** |
+| `provenance_validated_solved_rate` | 43 / 4,907 = **0.88%** |
+
+**`provenance_validated_solved_rate` is a floor, not a ceiling, on
+chemical correctness** — see Finding 2 below (72.2% of steps in the n=300
+sample are `Invalid`-but-atom-balanced, with the real-error-vs-validator-
+false-negative split still unresolved). Do not read 0.88% as "RENKIN is
+chemically correct 0.88% of the time"; read it as "0.88% is the fraction
+the current reverse-SMIRKS/graph-structural validator can *positively
+confirm* end-to-end — with a large, unquantified population of additional
+routes that may also be correct but that this validator can't yet
+confirm." `atom_balanced_solved_rate` (15.41%) is a necessary-but-not-
+sufficient condition — mass balance does not imply regiochemical or
+mechanistic correctness.
+
+Other metrics:
+
+| Metric | Value |
+|---|---|
 | `depth=0` direct stock hit | 2 / 4,907 = 0.04% |
-| `pct_atom_balanced` (of 986 solved) | 76.67% (756/986) |
-| **`provenance_validated_solved_rate`** (primary metric — solved AND atom-balanced AND every step `Valid` via its own originating rule) | 43 / 4,907 = **0.88%** |
+| `pct_atom_balanced_of_solved` (diagnostic only — of 986 solved, NOT of all 4,907; do not compare directly to the nested series above) | 76.67% (756/986) |
 | `route_validation_status` (of 986 solved) | 942 invalid, 44 validated, 0 partially_validated, 0 not_evaluable |
 | `validation_coverage` (step-level) | 100.0% uniformly across all 50 chunks |
 | `evaluable_validation_pass_rate` | non-uniform across chunks (range 8.0%–38.9%) — **not exactly reconstructable as a single weighted figure** from the current JSON schema (known gap, see `scripts/aggregate_bench_results.py`'s docstring); do not average the range into a point estimate |
@@ -88,8 +110,9 @@ rather than silently dropped.
 | | Provisional (`35f26cb`, pre-31.11/31.12) | This run (`e20dc8c`, post-31.11/31.12) |
 |---|---|---|
 | `raw_solved_rate` | 24.01% (1,178/4,907) | **20.09%** (986/4,907) |
-| `pct_atom_balanced` of solved | 58.32% | 76.67% |
-| `route_validation_status=validated` of solved | 49/1,178 (4.2%) | 44/986 (4.5%) — but now provenance-bound, not cross-rule-contaminated |
+| `atom_balanced_solved_rate` (of all 4,907 — provisional run only reported `pct_atom_balanced_of_solved`; recomputed here for comparability: 687/4,907) | 14.00% | **15.41%** |
+| `pct_atom_balanced_of_solved` (diagnostic, different denominator) | 58.32% | 76.67% |
+| `route_validation_status=validated` of solved | 49/1,178 (4.2%) | 44/986 (4.5%) — but now provenance-bound, not cross-rule-contaminated (confounded comparison: both the rule set and the solved set changed between runs, so this is not evidence 31.12 "worked" on its own — the pinned regression test in PR #33 is the actual proof) |
 | `evaluable_validation_pass_rate` | 20.25% (single figure — later found to itself be a schema-averaging artifact) | non-uniform per-chunk range 8.0–38.9%, reported as a range rather than a misleading point estimate |
 
 The further raw-rate drop (24.01% → 20.09%) is the expected, predicted

@@ -150,8 +150,13 @@ def main() -> None:
         "solved": n_solved,
         "raw_solved_rate": n_solved / n if n else None,
         "depth0_direct_stock_hit_rate": len(depth0) / n if n else None,
-        "pct_atom_balanced_of_solved": (len(balanced) / n_solved) if n_solved else None,
+        # Nested series, all three over the SAME denominator (total targets),
+        # so they're directly comparable: raw >= atom_balanced >= provenance_validated.
+        "atom_balanced_solved_rate": len(balanced) / n if n else None,
         "provenance_validated_solved_rate": len(provenance_validated) / n if n else None,
+        # Diagnostic only (different denominator: of solved, not of total) -- do not
+        # compare this directly to the two _solved_rate fields above.
+        "pct_atom_balanced_of_solved": (len(balanced) / n_solved) if n_solved else None,
         "route_validation_status_of_solved": status_counts,
         "depth_distribution_of_solved": {str(k): v for k, v in sorted(depth_dist.items(), key=lambda kv: (kv[0] is None, kv[0]))},
         "latency_ms_all_targets": latency_block(times_all),

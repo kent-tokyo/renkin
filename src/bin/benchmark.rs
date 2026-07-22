@@ -238,6 +238,115 @@ struct QuietsetObs {
 
 // ── compare subcommand ───────────────────────────────────────────────────────
 
+/// Per-target identity keys for a `renkin-bench` JSON report, in result order.
+///
+/// `name` is NOT usable as an identity key: every USPTO-50k target has
+/// `name == "UNK"` (verified — every data row in data/uspto50k_test.smi has
+/// this), so keying on name collapses all targets into one "UNK" bucket and
+/// silently discards per-target deltas (found during the Phase 31 PR #32
+/// harness audit: a 100-target sample with 12 real regressions reported 0).
+///
+/// Identity precedence: canonical SMILES (unique for all but a handful of
+/// targets in this dataset — a few duplicate molecules do occur), falling
+/// back to `#<row index>:<smiles>` for any SMILES that repeats within a
+/// single report, so those targets still get distinct keys.
+fn target_identity_keys(report: &serde_json::Value) -> Result<Vec<String>> {
+    let arr = report["results"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("'results' array missing or not an array"))?;
+    let mut counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    for r in arr {
+        *counts
+            .entry(r["smiles"].as_str().unwrap_or(""))
+            .or_insert(0) += 1;
+    }
+    Ok(arr
+        .iter()
+        .enumerate()
+        .map(|(i, r)| {
+            let smiles = r["smiles"].as_str().unwrap_or("");
+            if smiles.is_empty() || counts[smiles] > 1 {
+                format!("#{i}:{smiles}")
+            } else {
+                smiles.to_string()
+            }
+        })
+        .collect())
+}
+
+/// Diff two `renkin-bench` JSON reports' per-target solved state.
+///
+/// Fails loudly (instead of silently comparing misaligned data) if the two
+/// runs don't cover the same target set: different target counts, or a
+/// target present in one but not the other.
+///
+/// Returns `(gained, lost)`: identity keys newly solved / newly unsolved in
+/// `curr` relative to `base`, both sorted.
+fn diff_solved_sets(
+    base: &serde_json::Value,
+    curr: &serde_json::Value,
+) -> Result<(Vec<String>, Vec<String>)> {
+    let base_arr = base["results"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("baseline: 'results' array missing or not an array"))?;
+    let curr_arr = curr["results"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("current: 'results' array missing or not an array"))?;
+
+    if base_arr.len() != curr_arr.len() {
+        bail!(
+            "target-set mismatch: baseline has {} target(s), current has {} target(s) — \
+             refusing to compare misaligned runs",
+            base_arr.len(),
+            curr_arr.len()
+        );
+    }
+
+    let base_keys = target_identity_keys(base)?;
+    let curr_keys = target_identity_keys(curr)?;
+
+    let base_set: FxHashSet<&str> = base_keys.iter().map(String::as_str).collect();
+    let curr_set: FxHashSet<&str> = curr_keys.iter().map(String::as_str).collect();
+    let mut only_in_base: Vec<&str> = base_set.difference(&curr_set).copied().collect();
+    let mut only_in_curr: Vec<&str> = curr_set.difference(&base_set).copied().collect();
+    if !only_in_base.is_empty() || !only_in_curr.is_empty() {
+        only_in_base.sort_unstable();
+        only_in_curr.sort_unstable();
+        bail!(
+            "target-set mismatch: {} target(s) only in baseline, {} target(s) only in current \
+             (e.g. baseline-only={:?}, current-only={:?}) — refusing to compare misaligned runs",
+            only_in_base.len(),
+            only_in_curr.len(),
+            only_in_base.iter().take(3).collect::<Vec<_>>(),
+            only_in_curr.iter().take(3).collect::<Vec<_>>()
+        );
+    }
+
+    let base_map: std::collections::HashMap<&str, bool> = base_keys
+        .iter()
+        .zip(base_arr.iter())
+        .map(|(k, r)| (k.as_str(), r["solved"].as_bool().unwrap_or(false)))
+        .collect();
+    let curr_map: std::collections::HashMap<&str, bool> = curr_keys
+        .iter()
+        .zip(curr_arr.iter())
+        .map(|(k, r)| (k.as_str(), r["solved"].as_bool().unwrap_or(false)))
+        .collect();
+
+    let mut gained: Vec<String> = Vec::new();
+    let mut lost: Vec<String> = Vec::new();
+    for (&key, &now) in &curr_map {
+        match base_map.get(key) {
+            Some(&before) if !before && now => gained.push(key.to_string()),
+            Some(&before) if before && !now => lost.push(key.to_string()),
+            _ => {}
+        }
+    }
+    gained.sort_unstable();
+    lost.sort_unstable();
+    Ok((gained, lost))
+}
+
 fn cmd_compare(paths: &[String]) -> Result<()> {
     if paths.len() < 2 {
         bail!("Usage: renkin-bench compare <baseline.json> <current.json>");
@@ -255,40 +364,7 @@ fn cmd_compare(paths: &[String]) -> Result<()> {
     let time_delta = curr_time - base_time;
     let time_sign = if time_delta >= 0.0 { "+" } else { "" };
 
-    // Build solved-state maps keyed by name (fall back to smiles)
-    let solved_map = |report: &serde_json::Value| -> std::collections::HashMap<String, bool> {
-        report["results"]
-            .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .map(|r| {
-                        let key = r["name"]
-                            .as_str()
-                            .filter(|s| !s.is_empty())
-                            .unwrap_or_else(|| r["smiles"].as_str().unwrap_or(""))
-                            .to_string();
-                        let solved = r["solved"].as_bool().unwrap_or(false);
-                        (key, solved)
-                    })
-                    .collect()
-            })
-            .unwrap_or_default()
-    };
-
-    let base_map = solved_map(&base);
-    let curr_map = solved_map(&curr);
-
-    let mut gained: Vec<&str> = Vec::new();
-    let mut lost: Vec<&str> = Vec::new();
-    for (name, &now) in &curr_map {
-        match base_map.get(name) {
-            Some(&before) if !before && now => gained.push(name),
-            Some(&before) if before && !now => lost.push(name),
-            _ => {}
-        }
-    }
-    gained.sort_unstable();
-    lost.sort_unstable();
+    let (gained, lost) = diff_solved_sets(&base, &curr)?;
 
     println!("=== renkin-bench compare ===");
     println!("Baseline : {}  ({:.1}%)", paths[0], base_rate);
@@ -305,8 +381,8 @@ fn cmd_compare(paths: &[String]) -> Result<()> {
         println!("Newly solved (0): (none)");
     } else {
         println!("Newly solved ({}):", gained.len());
-        for name in &gained {
-            println!("  + {name}");
+        for key in &gained {
+            println!("  + {key}");
         }
     }
     println!();
@@ -314,11 +390,84 @@ fn cmd_compare(paths: &[String]) -> Result<()> {
         println!("Regressions (0): (none)");
     } else {
         println!("Regressions ({}):", lost.len());
-        for name in &lost {
-            println!("  - {name}");
+        for key in &lost {
+            println!("  - {key}");
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod compare_tests {
+    use super::*;
+    use serde_json::json;
+
+    /// Build a minimal renkin-bench report with `name` == "UNK" for every
+    /// target, mirroring the real USPTO-50k data (all rows have name=UNK).
+    fn report(entries: &[(&str, bool)]) -> serde_json::Value {
+        let results: Vec<_> = entries
+            .iter()
+            .map(|(smiles, solved)| json!({"smiles": smiles, "name": "UNK", "solved": solved}))
+            .collect();
+        json!({ "success_rate": 0.0, "avg_time_ms": 0.0, "results": results })
+    }
+
+    /// Pins the dedup-key bug: all targets share name="UNK", and two targets
+    /// have genuinely different before/after outcomes (one newly solved, one
+    /// newly a regression). Keying on `name` alone collapses everything into
+    /// one "UNK" bucket and both deltas vanish. On unfixed code this test
+    /// fails (gained/lost end up empty or wrong); after the fix it passes.
+    #[test]
+    fn dedup_key_bug_is_fixed() {
+        let base = report(&[
+            ("CCO", true),  // unchanged: solved -> solved
+            ("CCN", false), // regression: unsolved -> solved is NOT this one
+            ("CCC", true),  // regression: solved -> unsolved
+            ("CCF", false), // unchanged: unsolved -> unsolved
+        ]);
+        let curr = report(&[
+            ("CCO", true),
+            ("CCN", true),  // gained
+            ("CCC", false), // lost
+            ("CCF", false),
+        ]);
+
+        let (gained, lost) = diff_solved_sets(&base, &curr).expect("reports should diff cleanly");
+        assert_eq!(gained, vec!["CCN".to_string()]);
+        assert_eq!(lost, vec!["CCC".to_string()]);
+    }
+
+    #[test]
+    fn duplicate_smiles_within_a_report_still_get_distinct_keys() {
+        // Same SMILES appears twice in each report (as happens ~4x in the
+        // real USPTO-50k test set) with different outcomes at each position.
+        let base = report(&[("CCO", true), ("CCO", false)]);
+        let curr = report(&[("CCO", true), ("CCO", true)]);
+
+        let (gained, lost) = diff_solved_sets(&base, &curr).expect("reports should diff cleanly");
+        // Only the second occurrence (index 1) changed outcome.
+        assert_eq!(gained, vec!["#1:CCO".to_string()]);
+        assert!(lost.is_empty());
+    }
+
+    #[test]
+    fn mismatched_target_counts_fail_loudly() {
+        let base = report(&[("CCO", true), ("CCN", false)]);
+        let curr = report(&[("CCO", true)]);
+
+        let err = diff_solved_sets(&base, &curr).expect_err("count mismatch must error");
+        assert!(err.to_string().contains("target-set mismatch"));
+    }
+
+    #[test]
+    fn mismatched_target_identity_fails_loudly() {
+        // Same count, but current swapped one target for a different molecule.
+        let base = report(&[("CCO", true), ("CCN", false)]);
+        let curr = report(&[("CCO", true), ("CCC", false)]);
+
+        let err = diff_solved_sets(&base, &curr).expect_err("identity mismatch must error");
+        assert!(err.to_string().contains("target-set mismatch"));
+    }
 }
 
 // ── cascade subcommand ───────────────────────────────────────────────────────

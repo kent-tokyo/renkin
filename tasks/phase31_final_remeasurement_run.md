@@ -29,7 +29,7 @@ because it predates both fixes).
 | beam-width | 100 |
 | max-routes | 1 (`run_benchmark_chunks.sh` default) |
 | templates | `data/templates_extracted_5000.smi` — sha256 `517f6a084921141b6080c3827c75e6c51ac148455218695dee6e9712e3731517`, 5,000 entries |
-| building blocks | `data/building_blocks.smi` — sha256 `6fb4550dbc29480427ef4331dc492f0f66a315776b32bf1a6ab7057c6f1521dd`, 475 entries |
+| building blocks | `data/building_blocks.smi` — sha256 `6fb4550dbc29480427ef4331dc492f0f66a315776b32bf1a6ab7057c6f1521dd`. **`ChemEnv::bb_count()` after `ChemEnv::load()` = 402** (the actual loaded/searchable count — not the raw line count). Breakdown: 449 non-empty non-comment trimmed lines → 3 fail to parse → 446 parse successfully → 44 are duplicates after canonicalization → 402 unique. Do not cite "475" (a naive `grep -cv '^#'` line count used in an earlier draft of this doc, before this check) or the older "509" figure (a historical documentation value from an earlier measurement era, not independently re-verified against this file) as the building-block count for this run. |
 | targets | `data/uspto50k_test.smi` — sha256 `ac246998c6e7b2c68904eaf030e4c6d8c72f0c35334f86e55100d504586fff3d`, 4,907 targets |
 | `--plausibility` | on (hardcoded by `run_benchmark_parallel.sh`, atom-balance + rule-provenance-bound forward validation) |
 | sharding | 5-way round-robin (`NR % 5`), `RAYON_NUM_THREADS=2` per shard |
@@ -65,25 +65,33 @@ hard-asserts this; ran with `--expected-total 4907`, exit 0).
 
 **Nested series — all three over the SAME denominator (4,907 total
 targets), so they ARE directly comparable to each other** (raw ⊇
-atom-balanced ⊇ provenance-validated, each a subset of the previous):
+atom-balanced ⊇ current-validator-confirmed, each a subset of the previous):
 
-| Metric | Value |
-|---|---|
-| `raw_solved_rate` | 986 / 4,907 = **20.09%** |
-| `atom_balanced_solved_rate` | 756 / 4,907 = **15.41%** |
-| `provenance_validated_solved_rate` | 43 / 4,907 = **0.88%** |
+| Public label | Internal metric | Value |
+|---|---|---|
+| Search-to-stock rate | `raw_solved_rate` | 986 / 4,907 = **20.09%** |
+| Atom-balance-filtered rate | `atom_balanced_solved_rate` | 756 / 4,907 = **15.41%** |
+| Current-validator-confirmed rate | `provenance_validated_solved_rate` | 43 / 4,907 = **0.88%** |
 
-**`provenance_validated_solved_rate` is a floor, not a ceiling, on
-chemical correctness** — see Finding 2 below (72.2% of steps in the n=300
-sample are `Invalid`-but-atom-balanced, with the real-error-vs-validator-
-false-negative split still unresolved). Do not read 0.88% as "RENKIN is
-chemically correct 0.88% of the time"; read it as "0.88% is the fraction
-the current reverse-SMIRKS/graph-structural validator can *positively
-confirm* end-to-end — with a large, unquantified population of additional
-routes that may also be correct but that this validator can't yet
-confirm." `atom_balanced_solved_rate` (15.41%) is a necessary-but-not-
-sufficient condition — mass balance does not imply regiochemical or
-mechanistic correctness.
+These three are a nested series over the same 4,907 targets, not
+independent measurements, and none of them is an experimentally-verified
+synthesis success rate or a human-chemist-reviewed route-accuracy figure.
+
+**What `provenance_validated_solved_rate` (0.88%) actually is, precisely**:
+the fraction of targets with a complete stock route where every step (a)
+passes the coarse atom-balance check AND (b) is positively confirmed by
+its own originating rule's current validator (reverse-SMIRKS match or
+graph-structural check, as applicable). **This is not a measured
+chemical-accuracy rate, and it is not a proven lower bound on true
+correctness** — that would require knowing the validator has no false
+positives, which has not been established (see the caveat below: 1 of the
+44 `validated` routes fails the atom-balance check, and a diagnostic
+sample shows 14/864 steps are `Valid`-but-atom-imbalanced). Read 0.88% as
+"the fraction positively confirmed by the current validator under the
+stated checks" — not as "RENKIN is chemically correct 0.88% of the time,"
+and not as a guaranteed floor on that number either. `atom_balanced_solved_rate`
+(15.41%) is likewise necessary-but-not-sufficient for correctness — mass
+balance does not imply regiochemical or mechanistic correctness.
 
 Other metrics:
 
@@ -173,17 +181,36 @@ Top rules by usage (≥10 occurrences), Valid/Invalid/NotEvaluable:
 | `extracted_12` | 16 | 1 | 15 | 93.8% |
 
 **Not resolved by this PR or this measurement** (explicitly out of scope,
-matches `tasks/todo.md` 31.12's still-open second half): whether the bulk
-of `Invalid`-but-atom-balanced verdicts (624/864 = 72.2% of all steps in
-this sample) reflect real chemical errors in those rules/templates, or
-false negatives in the reverse-SMIRKS-reproduction check itself (e.g. a
-`chematic` canonicalization quirk already found and documented in PR #33's
-description: a freshly-installed bracket atom gets `hydrogen_count =
+matches `tasks/todo.md` 31.12's still-open second half): what 72.2%
+(624/864 steps in this sample) directly establishes is only that these
+steps are `Invalid` under the reverse-SMIRKS/graph-structural check *and*
+pass the coarse MW-based atom-balance check — atom balance is closer to a
+necessary condition for a correct reaction than a sufficient one, so
+passing it does not mean the step is chemically correct. **An unknown
+fraction of these `Invalid` verdicts may be validator false negatives; the
+remainder may be genuine rule or route errors. The split between the two
+has not yet been measured.** One concrete false-negative mechanism is
+already documented (PR #33's description): a `chematic` canonicalization
+quirk where a freshly-installed bracket atom gets `hydrogen_count =
 Some(0)` while a parsed target's bare atom gets `hydrogen_count = None`,
 so `canonical_smiles` never matches even for a chemically-correct pair —
 confirmed for `aryl_chloride_to_bromide`'s own reversal, not investigated
-beyond that one rule). `suzuki_retro` at 0% invalid vs. e.g.
-`cn_aliphatic_cleavage` at 97.6% invalid is a wide enough spread that both
-explanations (some rules genuinely wrong, some false-negative from the
-validator) are plausible and likely coexist. Recommended as the next
-Phase-31-adjacent investigation, not undertaken here.
+beyond that one rule, and not shown to generalize to the other 623 steps.
+`suzuki_retro` at 0% invalid vs. `cn_aliphatic_cleavage` at 97.6% invalid
+is a wide enough spread to be worth investigating further, but does not by
+itself establish which of the two explanations (rule/template errors vs.
+validator false negatives) dominates, or in what proportion. Recommended
+as the next Phase-31-adjacent investigation, not undertaken here.
+
+## Phase 31 status
+
+Phase 31 corrected-baseline publication is complete: the three nested
+metrics above are measured, reproducible (`scripts/aggregate_bench_results.py`
+against the raw chunk JSON, `data/bench_chunks_phase31_final_e20dc8c`),
+and published with explicit framing against misreading
+`provenance_validated_solved_rate` as a measured correctness rate.
+Validator fidelity analysis — separating real chemistry errors from
+validator false negatives in the 72.2% `Invalid`-but-atom-balanced
+population — remains an explicit, open follow-up, not undertaken in this
+measurement. Cascade (Stage 2) and ChEMBL OOD re-measurement against the
+corrected rule set have also not been started.

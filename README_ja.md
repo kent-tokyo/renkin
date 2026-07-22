@@ -24,8 +24,8 @@
   <img alt="PyO3" src="https://img.shields.io/badge/PyO3-Python%20bindings-blue">
   <img alt="MCP" src="https://img.shields.io/badge/MCP-ready-7f52ff">
   <img alt="templates" src="https://img.shields.io/badge/templates-up%20to%2050k-purple">
-  <img alt="building blocks" src="https://img.shields.io/badge/building%20blocks-509-lightgrey">
-  <img alt="USPTO-50k" src="https://img.shields.io/badge/USPTO--50k-raw%2020.1%25%20(corrected)-blue">
+  <img alt="building blocks" src="https://img.shields.io/badge/building%20blocks-402-lightgrey">
+  <img alt="USPTO-50k" src="https://img.shields.io/badge/USPTO--50k-corrected%20baseline-blue">
   <img alt="ChEMBL" src="https://img.shields.io/badge/ChEMBL-under%20re--evaluation-yellow">
 </p>
 
@@ -33,7 +33,7 @@
 
 > ⚠️ **注記（2026-07-22）: 以下、修正版USPTO-50k Stage 1（単一パス）のcorrected baselineを掲載。** このページの他箇所にある78.0%/95.9%/81.8%(ChEMBL)は無効化された過去の値であり、再計測されていません。修正の全経緯と詳細な手法は [`docs/benchmark.md`](https://kent-tokyo.github.io/renkin/benchmark/) と [`tasks/phase31_final_remeasurement_run.md`](https://github.com/kent-tokyo/renkin/blob/master/tasks/phase31_final_remeasurement_run.md) を参照。
 >
-> **Corrected baseline（コミット `e20dc8c`、2026-07-22）:** `raw_solved_rate` **20.09%**（986/4,907）→ `atom_balanced_solved_rate` **15.41%**（756/4,907）→ `provenance_validated_solved_rate` **0.88%**（43/4,907）。この3つは同一の4,907件に対する入れ子系列であり、独立した3つの数値ではない。**最後の数値は正確性の下限であり、実測の正確性そのものではない**——現行のstep validatorが自身のoriginating ruleで肯定的に確認できたルートのみを数えており、「invalid」判定のうち相当数（n=300診断サンプルで72.2%のstep）が、実際の化学的誤りかvalidatorの偽陰性か未分離のまま残っている（詳細はリンク先参照）。cascade・ChEMBL OODは修正版ルールセットに対して未再計測。
+> **Corrected baseline（コミット `e20dc8c`、2026-07-22）:** Search-to-stock rate（`raw_solved_rate`）**20.09%**（986/4,907）→ Atom-balance-filtered rate（`atom_balanced_solved_rate`）**15.41%**（756/4,907）→ Current-validator-confirmed rate（`provenance_validated_solved_rate`）**0.88%**（43/4,907）。この3つは同一の4,907件に対する入れ子系列であり、独立した3つの数値ではなく、いずれも単独では化学的正確性の実測値でも保証された値でもない。**最後の数値は実測の化学的正確性の値ではなく、正確性について数学的に証明された下限でもない**——現行のvalidatorが定められた条件下で肯定的に確認できたルートのみを数えており、「invalid」判定のうち未知の割合がvalidatorの偽陰性である可能性がある一方、実際のrule・route誤りも含まれ得る（両者の比率は未計測、詳細はリンク先参照）。cascade・ChEMBL OODは修正版ルールセットに対して未再計測。
 
 ---
 
@@ -186,7 +186,7 @@ c1ccccc1-c2ccccc2
 | **四面体ステレオ @/@@** | chematic 0.4.16 による完全な立体化学サポート |
 | **Python** | `pip install renkin` — Linux/macOS/Windows プリビルドwheels |
 | **WASM** | ~500 KB バンドル — ブラウザでネイティブに近い速度で動作 |
-| **509件の市販原料** | アリールハライド、ボロン酸、ヘテロ環、医薬品アミン、アミノ酸 |
+| **402件の市販原料** | アリールハライド、ボロン酸、ヘテロ環、医薬品アミン、アミノ酸（`data/building_blocks.smi`、実際にロードされたユニーク化合物数——ベンチマークセクション参照） |
 
 ---
 
@@ -198,13 +198,13 @@ USPTO-50kテストセット（全4,907分子評価）:
 
 ### Corrected baseline（コミット `e20dc8c`、2026-07-22）
 
-| 指標 | 値 |
-|---|---|
-| `raw_solved_rate` | **20.09%**（986/4,907） |
-| `atom_balanced_solved_rate` | **15.41%**（756/4,907）— rawの部分集合 |
-| `provenance_validated_solved_rate` | **0.88%**（43/4,907）— atom_balancedの部分集合、正確性の下限 |
+| Public label | 指標 | 値 |
+|---|---|---|
+| Search-to-stock rate | `raw_solved_rate` | **20.09%**（986/4,907） |
+| Atom-balance-filtered rate | `atom_balanced_solved_rate` | **15.41%**（756/4,907）— search-to-stockの部分集合 |
+| Current-validator-confirmed rate | `provenance_validated_solved_rate` | **0.88%**（43/4,907）— atom-balance-filteredの部分集合 |
 
-475件の市販ビルディングブロック、5,000件の抽出テンプレート、28件のハンドクラフトルール、depth=5・beam=100。3つの数値は同一4,907件に対する入れ子系列であり、独立した数値として比較しないこと。詳細な手法・rule別内訳・再現コマンドは [`tasks/phase31_final_remeasurement_run.md`](https://github.com/kent-tokyo/renkin/blob/master/tasks/phase31_final_remeasurement_run.md) · [ベンチマーク詳細 →](https://kent-tokyo.github.io/renkin/benchmark/)
+402件（`data/building_blocks.smi`から実際にロードされたユニーク化合物数）の市販ビルディングブロック、5,000件の抽出テンプレート、28件のハンドクラフトルール、depth=5・beam=100。3つの数値は同一4,907件に対する入れ子系列であり、独立した数値として比較しないこと。いずれも実験的に検証された合成成功率や人間の化学者によるルート正確性評価ではない。`provenance_validated_solved_rate`は実測の化学的正確性の値でも、証明された正確性の下限でもない——現行validatorが確認できたルートのみを数えており、「invalid」判定のうち未知の割合がvalidator偽陰性である可能性がある一方、実際のrule・route誤りも含まれ得る（比率未計測）。詳細な手法・rule別内訳・再現コマンドは [`tasks/phase31_final_remeasurement_run.md`](https://github.com/kent-tokyo/renkin/blob/master/tasks/phase31_final_remeasurement_run.md) · [ベンチマーク詳細 →](https://kent-tokyo.github.io/renkin/benchmark/)
 
 ### 過去の推移（修正前・無効化済み — 冒頭の注記参照）
 
@@ -226,7 +226,8 @@ USPTO-50kテストセット（全4,907分子評価）:
 | Cascade（stage2: 未解決のみ depth=7, beam=300） | 4705/4907 | **95.9%** | 509 | 5,000 | 7 | 300 | — |
 
 \* 29/50チャンク、旧バイナリ  
-† 全50チャンク完了 — **72.1%**（3,540/4,907）確認済
+† 全50チャンク完了 — **72.1%**（3,540/4,907）確認済  
+この過去の表のBB数（463/480/509）は当時の記載値そのままであり、`ChemEnv::bb_count()`による再検証はしていないlegacy documentation value。現在の`data/building_blocks.smi`の実ロード数は上記corrected baselineの402件。
 
 *注意: LocalRetro（53.4%）・GLG（58.0%）は単ステップ top-1 予測精度であり、多段階経路探索成功率とは別の指標のため直接比較不可。*
 
@@ -245,9 +246,11 @@ USPTO-50kテストセット（全4,907分子評価）:
 | **SYNTHIA** | クローズド | 独自 | No | No | SMARTS+AND/OR | 手動作成 | Sigma-Aldrich |
 | **IBM RXN** | クローズド | SaaS | No | No | Transformer | USPTO | — |
 | **Retro\*** | Python | MIT | No | No（未メンテ） | A\*+AND/OR | USPTO（ML） | eMolecules |
-| **★ RENKIN** | **Rust** | **MIT** | **Yes** | **Yes** | **A\*+AND/OR** | 手動+rdchiral（5k デフォルト；`--templates` で50k対応） | 475+（拡張可） |
+| **★ RENKIN** | **Rust** | **MIT** | **Yes** | **Yes** | **A\*+AND/OR** | 手動+rdchiral（5k デフォルト；`--templates` で50k対応） | 402+（拡張可） |
 
-**RENKINの目標**: GPU なし・学習データなし・ブラックボックスなし——キュレーション済みルールと自動抽出テンプレートだけで、ニューラルネットベースのツールに匹敵する精度を目指す。RENKIN のベンチマーク設定（corrected baseline、コミット `e20dc8c`、2026-07-22）では単一パス `raw_solved_rate` **20.09%**（986/4,907）を達成——入れ子系列のフルセットと、より厳格な `provenance_validated_solved_rate`（0.88%）が「実測の正確性そのものではなく下限」である理由は上記ベンチマークセクション参照。ブラウザ・CLI・Python、どこでも動く。
+`raw_solved_rate`は他plannerが公開しているroute-finding成功率に最も近いRENKIN側の指標だが、stock規模・template集合・target集合・探索budget・route品質検査がシステムごとに異なるため直接比較はできず、この表はRENKINが他システムより優れている（あるいは劣っている）ことを示すものではない。
+
+**RENKINの目標**: GPU なし・学習データなし・ブラックボックスなし——キュレーション済みルールと自動抽出テンプレートだけで、ニューラルネットベースのツールに匹敵する精度を目指す。RENKIN のベンチマーク設定（corrected baseline、コミット `e20dc8c`、2026-07-22）では単一パス `raw_solved_rate` **20.09%**（986/4,907）を達成——入れ子系列のフルセットと、より厳格な `provenance_validated_solved_rate`（0.88%）が実測の正確性の値でも保証された下限でもない理由は上記ベンチマークセクション参照。ブラウザ・CLI・Python、どこでも動く。
 
 ---
 
@@ -367,7 +370,7 @@ renkin/                          ← Cargo workspace ルート
 │   ├── renkin-forward/          # 順反応予測（reactants → products）
 │   └── renkin-kg/               # 反応知識グラフ（分子↔反応 二部グラフ、GraphML/Cypher エクスポート）
 ├── data/
-│   ├── building_blocks.smi              # 509件の市販原料（キュレーション済み）
+│   ├── building_blocks.smi              # 402件の市販原料（実ロード・重複除去後の数）
 │   ├── templates_extracted_5000.smi     # 5,000件の自動抽出SMIRKSテンプレート
 │   ├── benchmark_targets.smi            # 内部ベンチマークセット
 │   └── bench_chunks/                    # USPTO-50k チャンク別結果

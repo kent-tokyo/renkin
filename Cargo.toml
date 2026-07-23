@@ -50,6 +50,9 @@ path = "src/bin/mcp.rs"
 name = "renkin-doctor"
 path = "src/bin/doctor.rs"
 
+[[example]]
+name = "canonicalize_smiles"
+
 [lib]
 name = "renkin"
 crate-type = ["cdylib", "rlib"]

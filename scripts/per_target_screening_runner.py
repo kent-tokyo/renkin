@@ -261,6 +261,10 @@ def main():
     ap.add_argument("--soft-timeout", type=float, default=180.0)
     ap.add_argument("--hard-timeout", type=float, default=600.0)
     ap.add_argument("--only-indices", help="comma-separated corpus row indices to (re)run; default = all")
+    ap.add_argument("--parallel", type=int, default=1,
+                     help="run this many targets concurrently (each still its own isolated "
+                          "subprocess with its own timeout -- this only affects throughput, "
+                          "never correctness or isolation)")
     args = ap.parse_args()
 
     repo_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -278,22 +282,32 @@ def main():
 
     canon_map = canonicalize_batch(repo_dir, [targets[i]["smiles"] for i in indices])
 
-    for n, i in enumerate(indices):
+    def do_one(n, i):
         smiles = targets[i]["smiles"]
         canonical = canon_map.get(smiles)
         target_hash = hashlib.sha256((canonical or smiles).encode()).hexdigest()
         out_path = os.path.join(args.out_dir, f"target_{i}.json")
-        print(f"[{n + 1}/{len(indices)}] row={i} {smiles[:60]}...", file=sys.stderr, flush=True)
+        print(f"[{n + 1}/{len(indices)}] row={i} start {smiles[:60]}...", file=sys.stderr, flush=True)
         record = run_one_target(args, repo_dir, i, smiles, canonical, target_hash)
         with open(out_path, "w") as f:
             json.dump(record, f, indent=2)
         tail_flag = " SOFT-TAIL" if record["soft_tail_exceeded"] else ""
         timeout_flag = " TIMEOUT" if record["timeout"] else ""
         print(
-            f"    -> solved={record['solved']} elapsed={record['elapsed_s']:.1f}s"
-            f"{tail_flag}{timeout_flag}",
+            f"[{n + 1}/{len(indices)}] row={i} -> solved={record['solved']} "
+            f"elapsed={record['elapsed_s']:.1f}s{tail_flag}{timeout_flag}",
             file=sys.stderr, flush=True,
         )
+
+    if args.parallel <= 1:
+        for n, i in enumerate(indices):
+            do_one(n, i)
+    else:
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=args.parallel) as pool:
+            futures = [pool.submit(do_one, n, i) for n, i in enumerate(indices)]
+            for fut in concurrent.futures.as_completed(futures):
+                fut.result()  # surface any exception immediately rather than swallowing it
 
 
 if __name__ == "__main__":

@@ -136,11 +136,24 @@ def run_one_target(args, repo_dir, index, smiles, canonical, target_hash):
     stdout_path = os.path.join(args.out_dir, f"target_{index}.stdout.json")
     stderr_path = os.path.join(args.out_dir, f"target_{index}.stderr.txt")
 
+    # renkin-bench defaults to one rayon worker thread per logical core.
+    # With --parallel > 1, N concurrent children each doing that oversubscribes
+    # the machine (observed: 5 concurrent unbounded children on 10 cores starved
+    # this script's own orchestrator threads badly enough that
+    # Popen.wait(timeout=600) simply never got scheduled to notice the
+    # deadline had passed -- 5/500 targets in an earlier run completed
+    # "successfully" at 1000-1500s+ with the 600s hard timeout never firing).
+    # Capping each child to cores/parallel keeps total demand <= core count.
+    env = dict(os.environ)
+    rayon_threads = max(1, (os.cpu_count() or 1) // max(1, args.parallel))
+    env["RAYON_NUM_THREADS"] = str(rayon_threads)
+
     start_wall = time.time()
     start_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(start_wall))
     proc = subprocess.Popen(
         wrapped_cmd, stdout=open(stdout_path, "w"), stderr=open(stderr_path, "w"),
         preexec_fn=os.setsid,  # own process group -> can kill the whole /usr/bin/time + child tree
+        env=env,
     )
 
     timed_out = False
@@ -231,6 +244,8 @@ def run_one_target(args, repo_dir, index, smiles, canonical, target_hash):
             "plausibility": args.plausibility,
             "soft_timeout_s": args.soft_timeout,
             "hard_timeout_s": args.hard_timeout,
+            "parallel": args.parallel,
+            "rayon_num_threads": rayon_threads,
         },
         "provenance": {
             "binary": os.path.abspath(args.binary),

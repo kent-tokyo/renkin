@@ -1261,4 +1261,131 @@ mod tests {
         assert!(!routes.is_empty());
         assert!(stats.nodes_expanded >= routes.len() as u64);
     }
+
+    // ── E2 closed-set correctness: proven LATENT bug reproduction ───────────
+    //
+    // `closed: FxHashSet<u64>` is a boolean "already visited" set keyed only
+    // by frontier molecule content (`state_hash`) — no `g` is stored, so
+    // there is no reopen-on-lower-g. For a *consistent* heuristic, A* graph
+    // search guarantees the first pop of a state has optimal `g`, so a plain
+    // closed set is safe.
+    //
+    // IMPORTANT — this test is a LATENT bug demonstration, not a live one:
+    // it requires an injected `ReactionPrior`/`MoleculeValueEstimator` (bonus
+    // 5.0, h 100.0) to force the pop order needed. Every production entry
+    // point (CLI, renkin-bench, Python, WASM) passes `reaction_prior: None`
+    // / `value_estimator: None` today (grep confirms), so this exact
+    // mechanism does not fire in current production runs. Separately, E4
+    // (below) shows the *default* cost formula is already inadmissible
+    // (net step cost can be 0.8 < the heuristic's assumed 1.0 floor) — but
+    // algebraically, that bounded 0.2 gap can never make a longer path to
+    // the same single-molecule state cheaper than a direct one (extra hop
+    // costs >=0.8, max bonus saving is 0.2), so today's default config
+    // cannot trigger *this specific* construction either. The risk is real
+    // but currently dormant: `ReactionPrior`/`MoleculeValueEstimator` are
+    // unbounded public hooks meant for future NN-based scoring (Track D/E3)
+    // — the day one is wired up without a floor clamp, this closed set will
+    // silently drop better paths in production.
+    //
+    // Minimal deterministic reproduction using the real `find_routes` (real
+    // heap, real closed set, real chematic SMIRKS chemistry), with an
+    // injected prior/estimator to force the exact pop order needed to prove
+    // the mechanism:
+    //
+    //   T (ClCCI) --r_direct (bonus 0)--------------> M (BrCCBr)  [g≈1.09]
+    //   T (ClCCI) --r_step1  (bonus 5)--> Y (BrCCI)
+    //                 Y      --r_step2  (bonus 5)--> M (BrCCBr)  [g≈-7.79]
+    //   M --r_final--------------------------------> Z (FCCF, the only BB)
+    //
+    // h(Y) is set artificially high (100) so the direct T->M arrival (g≈1.09)
+    // pops and closes state {M} *before* the much cheaper T->Y->M arrival
+    // (g≈-7.79) is even generated. When the cheaper arrival is later popped,
+    // it finds {M} already closed and is discarded without expansion — the
+    // true-optimal route (T->Y->M->Z, g≈-6.76) is never found; only the
+    // worse route (T->M->Z, g≈2.13) is returned.
+    //
+    // NOTE for whoever implements the E2 fix: this test asserts the CURRENT
+    // (buggy) behavior and will start FAILING once the closed set reopens on
+    // a lower g (verified experimentally: swapping `closed` for a
+    // `FxHashMap<u64, f64>` best-g map with a reopen check makes
+    // `best_score` land at -6.755613, matching the hand-derived optimum). At
+    // that point, invert the assertions below to pin the fixed behavior.
+    #[test]
+    fn closed_set_discards_better_path_reaching_same_state() {
+        fn rr(name: &str, smirks: &str) -> RetroRule {
+            RetroRule {
+                name: name.to_string(),
+                smirks: smirks.to_string(),
+                weight: 1.0,
+                required_elements: 0,
+            }
+        }
+
+        let rules = vec![
+            rr("r_direct", "[Cl][C:1][C:2][I]>>[Br][C:1][C:2][Br]"),
+            rr("r_step1", "[Cl][C:1][C:2][I]>>[Br][C:1][C:2][I]"),
+            rr("r_step2", "[Br][C:1][C:2][I]>>[Br][C:1][C:2][Br]"),
+            rr("r_final", "[Br][C:1][C:2][Br]>>[F][C:1][C:2][F]"),
+        ];
+
+        // Discover Y's canonical SMILES dynamically — don't hardcode a
+        // chematic-version-dependent canonical string (chematic has already
+        // moved 0.4.25 -> 0.4.30 once in this repo's history).
+        let t_mol = mol_from_smiles("ClCCI").unwrap();
+        let y_smiles = apply_retro(&t_mol, &rules[1])[0][0].smiles.clone();
+
+        let env = ChemEnv::in_memory(&["FCCF"]); // the only building block
+
+        struct FixedPrior;
+        impl ReactionPrior for FixedPrior {
+            fn prior(&self, template_name: &str, _target_smiles: &str) -> f64 {
+                match template_name {
+                    "r_step1" | "r_step2" => 5.0,
+                    _ => 0.0,
+                }
+            }
+        }
+
+        struct FixedEstimator {
+            y_smiles: String,
+        }
+        impl MoleculeValueEstimator for FixedEstimator {
+            fn estimate_cost(&self, smiles: &str) -> f64 {
+                if smiles == self.y_smiles { 100.0 } else { 0.0 }
+            }
+        }
+
+        let config = SearchConfig {
+            max_depth: 5,
+            max_routes: 10,
+            beam_width: 0,
+            reaction_prior: Some(std::sync::Arc::new(FixedPrior)),
+            value_estimator: Some(std::sync::Arc::new(FixedEstimator {
+                y_smiles: y_smiles.clone(),
+            })),
+            ..Default::default()
+        };
+
+        let (routes, _stats) = find_routes("ClCCI", &env, &rules, &config).unwrap();
+
+        assert!(!routes.is_empty(), "must find at least the direct route");
+        let best_score = routes.iter().map(|r| r.score).fold(f64::INFINITY, f64::min);
+
+        // The true optimum (T->Y->M->Z) has g ≈ -6.76. If the closed set
+        // reopened on a better g, `best_score` would be deeply negative.
+        // Instead only the worse direct route (g ≈ 2.13) is ever recorded —
+        // proving the cheaper re-arrival at {M} was discarded unexpanded.
+        assert!(
+            best_score > -1.0,
+            "expected the boolean closed-set bug to discard the better \
+             (g≈-6.76) route, leaving only the worse (g≈2.13) route — but \
+             best_score={best_score} suggests the optimal route WAS found \
+             (bug fixed, or test assumptions stale)"
+        );
+        assert!(
+            (best_score - 2.127).abs() < 0.05,
+            "expected the only recorded route to be the direct-path route \
+             (g≈2.13), got best_score={best_score}"
+        );
+    }
 }

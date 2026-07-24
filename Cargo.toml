@@ -51,6 +51,10 @@ name = "renkin-doctor"
 path = "src/bin/doctor.rs"
 
 [[example]]
+name = "measure_rank_recall"
+required-features = ["nn-scoring"]
+
+[[example]]
 name = "canonicalize_smiles"
 
 [lib]

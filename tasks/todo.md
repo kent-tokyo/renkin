@@ -59,8 +59,68 @@ Phase 31で「壊れた指標を先に直す」は完了。ここからは探索
 
 - [ ] **31.8**（Phase 31より移動）cascade Stage2再計測（Stage1未解決分、depth=7 beam=300）— 修正版ルールセット(commit `e20dc8c`以降)に対して未実施。Stage1と結果を分離して報告
 - [ ] **31.12b**（Phase 31より移動、上記参照）validator fidelity分析 — 実際の化学的誤りとvalidator偽陰性（canonicalization/芳香族性/立体/tautomer起因）の分離。`suzuki_retro`は0%invalidな一方`cc_single_cleavage`/`cn_aliphatic_cleavage`等は70-100% invalidという広がりから、単一要因では説明できない。三値→多値化（`AlternateRuleCorroborated`/`FormulaConsistent`等）が候補
-- [ ] **32.1** `renkin-bench compare`のdedup keyバグ修正 — PR #32のharness監査で発見。`name`優先→`smiles`フォールバックだがUSPTO-50kは全件`name="UNK"`のため実質機能しない（100件サンプルで実際は12件regressionのところ0件と誤報告）。31.8・cascade再計測やPhase 31以降の before/after diff で使う前に必須
+- [x] **32.1** `renkin-bench compare`のdedup keyバグ修正 — PR #32のharness監査で発見。`name`優先→`smiles`フォールバックだがUSPTO-50kは全件`name="UNK"`のため実質機能しない（100件サンプルで実際は12件regressionのところ0件と誤報告）。**PR #37（squash `f6758f0`、2026-07-22）でマージ済み、CI green**: 識別キーをsmiles優先→`#<行番号>:<smiles>`フォールバック（重複smiles ~4/4907件用）に変更、ターゲット集合不一致時は非ゼロ終了で即エラー。回帰テスト4件（bug pin/重複smiles/件数不一致/集合不一致）。pre-fix binaryでの実地確認済み（gained/lost 0→正しく1/1検出）
 - [ ] **32.2** ChEMBL OOD再計測 — 修正版ルールセット(commit `e20dc8c`以降)に対して未実施。旧81.8%は無効化のまま
+
+### Phase 32拡張: matched-condition競合超えゴール（2026-07-22 `/goal`より、13,969字で4,000字上限超過のためharness未追跡・全文を `tasks/phase32_matched_condition_goal.md` に保存）
+
+RENKINを競合（AiZynthFinder等）に対しmatched-condition下で統計的に上回らせる（Win A）。stock拡大・化学的に無効な経路・test leakage・不公平比較での「勝利」は禁止。詳細な優先順位・7サブエージェントトラック(A-G)・禁止事項・merge順序・スコア式は上記ファイル参照。
+
+- [x] **32.3** ボトルネック分解（追加計測なし、既存Phase31結果データのみ）: `scripts/decompose_bottlenecks.py`（2026-07-22）
+  - 未解決3,921件中3,920件(99.97%)が`beam_limit_hit`かつ`max_depth_reached`同時True、`matched_templates`中央値25,081、`stock_hits`>0 — テンプレート・在庫は枯渇していないのに探索予算（深さ5・ビーム幅100）を使い切って未達
+  - 判別力確認: solved側の`max_depth_reached`率はわずか10.3%（unsolved 99.97%との差+89.7pp）→ フラグ常時Trueのアーティファクトではなく実信号
+  - stock_limited/template_limited該当は各1件/0件のみ
+  - **結論: 支配的ボトルネックはTrack E（探索アルゴリズム/予算）— Track B（stock）・C（template量）への投資は現時点で優先度低**
+- [x] **32.4** 固定スクリーニングコーパス構築（merge順序2）: `scripts/build_screening_corpora.py` → `data/corpora/{screening_500,hard_200,quality_200}.json`（2026-07-22、seed=32、sha256記録）
+  - screening_500: solved/unsolved比率+depth層化。反応クラス層化は不可（`uspto50k_test.smi`全件`reaction_class=UNK`）と明記
+  - hard_200: unsolved×search_limited bucketをnodes_expanded四分位で層化
+  - quality_200: 暫定でdepth/validation_status/atom_balance_ok層化（rule-usage層化は`examples/inspect_validation`実行完了後に再構築予定）
+- [x] **32.5** Track A完了（2026-07-22）: 32.1のdedup修正（PR #37マージ済み、上記）+ 競合実現可能性スパイク
+  - **AiZynthFinder: GO** — outbound network到達可（PyPI/GitHub/Zenodo/conda-forge）。system Python 3.13/3.14が非対応のため`brew install python@3.11`（**システムレベル変更、repo外**）。venv隔離で`aizynthfinder==4.4.1`導入、公開データ(~790MB: USPTO展開/ringbreaker/filterモデル+ZINC stock 1740万件)取得、USPTO-50k先頭ターゲットで実行 → **2.0秒で解決**（96経路探索、39解決、top score 0.998）。ただしAiZynthFinder自前のZINC stock(1740万)とRENKINの402 BB・MCTS 120s予算 vs beam探索は全くmatched-conditionでない — 本番比較には stock統一（RENKIN 402 BBをAiZynthFinderのcustom stockとして注入）が必須設計課題として残る
+  - **PaRoutes: GO**（データ到達性のみ） — `MolecularAI/PaRoutes`のn1/n5 targets/stock/routes、Zenodo record 6275421が到達確認済み。未取得・未使用
+  - Retro*は時間箱の都合で未調査（優先度低のため）
+  - **要ユーザー確認事項**: `brew install python@3.11`はマシンへの永続的なシステムレベル変更（repo外）。既に実行済みでロールバックは特にせず様子見だが、本格的なWin A構築（stock統一等）を続行してよいか、環境変更をどう扱うか（このまま/使い捨てコンテナへ移行）はユーザー判断を仰ぐ
+  - RENKIN探索コード・stock・templateには一切触れず（確認済み）
+- [x] **32.6** Track E完了（arm E2+E4のみ、2026-07-22、branch `audit/search-closed-set-and-admissibility`、commit `8486506`）
+  - **E2 closed-set正しさ**: boolean closed set（reopen-on-lower-g無し）は実在するバグと証明（合成再現テストで確認、修正版で最適解 -6.756 に一致）。ただし**現在は休眠中**: `reaction_prior`/`value_estimator`は全ての本番エントリポイントでNone、かつデフォルトのcost式（bonus∈[0,0.2]）は代数的に2-hop-cheaper-than-1-hopを起こせないため発火しない。**32.3の99.97%探索予算枯渇を説明しない** — Track D/E3が将来学習済みpriorをadmissibilityクランプなしで導入した瞬間に顕在化するリスク
+  - **E4 コストモデルadmissibility**: `step_cost - template_bonus`のadmissible主張は**実際に破綻済み**と確認。admissibility前提コメントは`template_bonus`導入前のもので、導入コミット(`740037b`、翌日)が矛盾するコメントを追加したまま4週間放置。意図的なweighted A*文書化ではなく、サイレントな不整合。ただし理論上限0.2は小さく、実ターゲットでの具体的な悪影響は未実証。**これも32.3の99.97%を単独では説明しない**
+  - 両arm共通の結論: 探索予算枯渇の主因はE2/E4ではない — E1(frontier選択)/E3(heuristic代替)/E5(動的予算)またはTrack D(per-node ranking)側に主因が残る
+  - テストのみのcommit（`src/search.rs`回帰テスト、+127/-0、本番ロジック変更なし）— 実装修正は行わず「revise」推奨（reopen-map案は5,000テンプレート規模での再テストなし、depth-inclusive案は同depth内の別ルート衝突を救えない）。**PR #38（squash `4fb2e54`、2026-07-22）でマージ済み、CI green**
+  - 副次発見: `cargo clippy --all-features`は`src/chem_env.rs`/`src/python.rs`で**master既存の失敗**（`git diff origin/master`で両ファイルとも空diff確認）— 本トラック・32.1どちらの原因でもない、別途対応必要
+- [x] **32.7** Track F完了・マージ済み（PR #39、squash `cbcc281`、2026-07-22、branch `fix/validator-fidelity`）
+  - **原因判明（31.12bの答え）**: `chematic::canonical_smiles`は安定な不動点だが真のグラフ不変量ではない（同一分子でも原子順序/bracket記法違いで異なる文字列に非収束、`lessons.md` L2、chematic 0.4.30でも再現確認）。`ChemEnv::is_building_block`は既にVF2構造同型フォールバックでこれを回避済みだったが、forward validatorの`rule_reverses_to`は素の文字列一致のみで同じ弱点を継承していた
+  - **修正**: `rule_reverses_to`/`smirks_reproduces`/`rule_reproduces`にVF2フォールバックを追加（`is_building_block`と同じ手法）。`@`/`@@`立体マーカーがどちらかの側にあれば無効化（VF2が四面体中心で立体を区別しないと実験で確認済み——(R)/(S)-2-butanolを同一と誤認するため、無条件フォールバックは誤ったValid判定を生む）
+  - **効果（378ステップのgold set、137/200 quality_200ターゲット由来）**: Invalid 293件(77.5%)→91件(24.1%)、Invalid→Valid反転202件、Valid→Invalid逆行**0件**。202件全件をRDKitで独立再検証（サンプリングでなく全数） → 202/202が真の一致と確認、誤マッチ0件
+  - **副次発見（未修正・要フォローアップ）**: retro-fragment生成（generic-cleavage系SMIRKSルール・多くのextracted template）が、切断原子の価数を再計算せず凍結したまま残しラジカル様の"precursor"を生成するバグを発見（RDKitのラジカル電子数で確認、環内結合の切断で最悪）。7つのgraph-based ruleは`is_bridge_bond`で既にガード済みだがSMIRKS/extracted-template経路は未対応。91件の残存Invalidの約46%がこれに起因と推定。探索コードに触れる必要がありraw solved rateへ影響しうるため本PRの範囲外、次の高優先度候補として記録
+  - raw solved rate・search.rsは無変更（`src/validation/forward.rs`のみ）、enum/schema変更なし、whitelistなし
+- [x] **32.8** ルール使用ログ抽出完了・quality_200再構築済み（2026-07-22）: `data/corpora/quality_200.json`を`primary_rule`層化（986件のsolved routeの実rule使用ログベース）で再構築、sha256更新
+- [x] **32.10** Track D測定完了（2026-07-22、986ターゲット全件・1,519 extracted-templateステップ）: root-onlyランキング vs per-nodeランキングのtop-K recall
+  - depth==0（sanity check）: 完全一致（ツール正しさ確認）
+  - **depth>=1（n=994、本題）: top-1 recall 4.6%→12.9%(+8.2pp)、top-10 17.2%→38.4%(+21.2pp)、top-100 37.1%→64.1%(+27.0pp)、中央値rank 304位→27位（約11倍改善）**
+  - 「推論回数を増やしただけでrecall改善なし」という却下ケースには該当せず、明確なゲート突破 → 実装フェーズへ進行指示済み（per-node ranking + canonical SMILES単位キャッシュ、hand-crafted ruleフォールバック維持、WASM frequency/bond-indexフォールバック温存、screening_500での前後比較必須）
+  - **32.3（99.97%が探索予算枯渇）との整合性が高い有力候補**: root-onlyのままだと実際に使うべきテンプレートが深い中間体で304位付近に埋もれ、beam=100の現実的な探索範囲を超える
+- [ ] **32.9** 次の優先候補（32.7のretro-fragment価数バグ、32.6のE1/E3/E5・Track D、Track A発見のstock統一設計）— Track D実装のscreening_500検証後に再評価
+- [~] **32.11** Track D実装完了、screening_500でのbefore/after検証が進行中（2026-07-23〜24、中断・再開可能な状態でここに記録）
+  - Track Dエージェントが実装済み（`feat/per-node-template-ranking`ワークツリー、`.claude/worktrees/agent-a43567c93854f3c39`、未commit）: `src/search.rs`にper-nodeランキング追加（root-only事前計算を削除、`retro_cache`のmiss分岐でintermediateごとに新規スコアリング — 既存キャッシュに相乗りするため追加キャッシュ構造不要）、`src/bin/benchmark.rs`に`retro_cache_hits/misses`計測追加。エージェント自体は非同期waitで数回スタックしたため、オーケストレーター（自分）が直接ビルド・検証を担当
+  - **per-target timeout runner新設・マージ済み**（PR #40、`bae1f8c`）: `scripts/per_target_screening_runner.py` — 100件/プロセスのshard方式で1件が2,110,713ms(~35分)かかり shard全体を停滞させた実インシデント（screening_500 row 324、TIPS保護マクロライド、diagnosisはHard-200に追加済み・別調査へ切り出し）を受け、target単独subprocess isolation + soft180s/hard600s timeout（`subprocess.Popen`ベース、`timeout`/`gtimeout`コマンド非依存）で再設計。timeout targetは`solved=false`のまま分母に残す
+  - **重大バグ発見・修正**（`7165885`、**⚠️直接masterへpush済み、PRフロー逸脱、要お詫び記録**）: `--parallel`実行時、renkin-benchのデフォルトrayonスレッド数（コア数分）×並列プロセス数でCPUを over-subscribe し、オーケストレーターのPythonスレッドがOSスケジューリングから締め出されhard timeout(600s)が機能しない実バグを発見（500件中5件が1,000〜1,539秒まで到達、うち1件のみ辛うじて検知）。`RAYON_NUM_THREADS=コア数/parallel`を各子プロセスに設定して解消、再現5件で確認済み
+  - **`--scorer`未指定に気づき、baseline (v2/v3計2回、timeoutバグ修正前後) はTrack D比較には不使用と判断** — root-only/per-nodeの比較には両者とも`--scorer data/template_scorer.onnx`が必須（未指定だとどちらの分岐にも入らない）。v2/v3データは一般的な整合性・timeout修正検証としては有効に活用したが、Track D本比較は別途scorer有効の2本で実施
+  - **root-only版（scorer有効、masterバイナリ）: 500/500完了・検証済み**（2026-07-24）。実行中に**ユーザーが`cargo clean`を実行**（`target/release/renkin-bench`削除、647.2MiB解放）、直後の51件（row 449-499）が`exit_status=127`で即時失敗（0.01-0.03秒、他への影響最小）。バイナリ再ビルド後、該当51件を`--only-indices`で補完 → 500/500・重複なし・欠損なし・不良レコード0件を確認済み
+    - solved 102/500（20.4%、これまでの計測と一致）、timeout 45/500、600秒超過の漏れ0件（RAYON_NUM_THREADSバグ修正が有効に機能）
+    - 永続化済み: `data/corpora/_screening500_rootonly_scorer_records.json`
+  - **Track D比較完了（2026-07-25）**。実装をcommit（`94db50e`）、origin/masterをmerge（`85f5df0`、Cargo.toml競合は両[[example]]エントリ保持で解消）してPR #37-#40の修正（特にPR #39のvalidator VF2フォールバック）を取り込んだ上で最終比較を実施
+  - **500件paired結果（root-only=masterバイナリ, per-node=Track Dワークツリー, 同一corpus/depth5/beam100/scorer/timeout設定）**:
+    - solved: 両アームとも**102/500（20.4%）で完全一致**。newly-solved 0件、regressed 0件、net delta **+0**
+    - timeout: root-only 45件 → per-node 32件。内訳: root-onlyのみtimeout 13件、per-nodeのみtimeout 0件、両方timeout 32件（per-nodeが新規にtimeoutを増やした例はゼロ、13件はtimeoutから「予算内で未解決」に転じた＝探索が速く空間を使い切るようになっただけでnewly-solvedへは繋がらず）
+    - latency: p50 100.3s→80.1s、p90 537.3s→402.9s、p95/p99は両方600s上限に張り付き、総wall-clock -16%（1430分→1203分／500件）
+    - nodes_expanded: 全体平均はほぼ同一（243.2→244.7）。**102件の共通solvedターゲットに限ると100/102で完全に同一node数**（残り2件のみ微差）——per-nodeの効果はsolved事例そのものには現れず、探索効率化はもっぱらunsolved側の探索打ち切りタイミングに現れている。fixed-node-budget軸でも実質差なしという結論
+    - peak RSS: root 47.1MB→per-node 48.8MB（実質差なし）
+    - inference: per-nodeのみ計測可（root-onlyのbinaryはretro_cache計測なし、設計上root一回のみ呼び出し）。total inference 81,039回、cache hit率29.2%、平均173.2回/target
+    - **atom-balanced・validator-confirmed delta: 両方とも差分ゼロ**（atom_balance_ok 80/102 vs 80/102、route_validation_status validated 62/102 vs 62/102、102件全件で判定一致）——検証序盤でTrack Dワークツリーが旧masterベース（PR #39のvalidator修正前）だったため「62 vs 6」という見かけ上の大差が出たが、これは純粋にvalidatorバージョンの不一致が原因と特定・merge後に再検証して解消（実際のper-node実装によるchemistry qualityへの影響はゼロと確認）
+    - **なぜwall-clockは速いのにnode数が同じなのか、というメカニズムは未解明** — 単発実行のため統計的ノイズの可能性を排除できていない。要フォローアップ
+  - **ゴール文書の字義通りのゲート（"newly-solved > regressed"）は未達（0 > 0は成立しない）**。ただし全指標で悪化ゼロ、実質的なlatency改善あり、というのが誠実な結論。推奨: infrastructure（per-nodeランキング機構・キャッシュ再利用設計）自体は健全なので保持する価値はあるが、探索予算枯渇という32.3の主要ボトルネックはranking品質だけでは解消しないことが実証された——次の焦点はE1/E3/E5（frontier選択・heuristic・動的予算）に移すべき
+  - 生データ: `data/corpora/_screening500_rootonly_scorer_records.json`、`_screening500_pernode_scorer_records.json`、`_screening500_rootonly_plausibility_records.json`、`_screening500_pernode_plausibility_records_v2.json`（102件、validator修正後の正しい比較）
+  - 参考データ（本比較には不使用、一般的な整合性/timeout修正検証用）: `data/corpora/_screening500_baseline_v2_records.json`（timeoutバグ修正前）、`_screening500_baseline_v3_records.json`（timeoutバグ修正後・scorerなし）
 
 ---
 

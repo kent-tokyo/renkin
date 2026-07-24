@@ -32,6 +32,12 @@ memo.txt
 !tasks/phase31_corrected_baseline_run.md
 !tasks/phase31_final_remeasurement_run.md
 
+# Phase 32 Track F (validator fidelity) gold-set classification data: the
+# durable diagnostic record backing the forward-validator canonical-SMILES
+# fallback fix, per the same "measurement provenance must be tracked" rule.
+!tasks/phase32_track_f_gold_set.json
+!tasks/phase32_track_f_summary.json
+
 # ---- ONNX model weights (large binaries) ----
 data/*.onnx
 data/*.onnx.data

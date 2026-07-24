@@ -54,6 +54,9 @@ path = "src/bin/doctor.rs"
 name = "measure_rank_recall"
 required-features = ["nn-scoring"]
 
+[[example]]
+name = "canonicalize_smiles"
+
 [lib]
 name = "renkin"
 crate-type = ["cdylib", "rlib"]

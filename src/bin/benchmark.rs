@@ -158,6 +158,11 @@ struct BenchResult {
     max_depth_reached: bool,
     matched_templates: u64,
     stock_hits: u64,
+    /// Phase D: retro_cache hits/misses for this target. With `--scorer` set,
+    /// misses == ONNX inference calls (one per unique canonical intermediate;
+    /// see `nn_rank` in search.rs), hits == reuses that needed no inference.
+    retro_cache_hits: u64,
+    retro_cache_misses: u64,
 }
 
 #[derive(Serialize)]
@@ -221,6 +226,11 @@ struct BenchReport {
     /// None when --practical-max-steps not set. Always ≤ raw_solved_rate.
     #[serde(skip_serializing_if = "Option::is_none")]
     practical_solved_rate: Option<f64>,
+    /// Phase D: sum of per-target retro_cache_hits/misses. With `--scorer` set,
+    /// total_retro_cache_misses is the total ONNX inference call count for the
+    /// whole run; hit_rate = hits / (hits + misses).
+    total_retro_cache_hits: u64,
+    total_retro_cache_misses: u64,
     results: Vec<BenchResult>,
 }
 
@@ -825,6 +835,8 @@ fn main() -> Result<()> {
             max_depth_reached: stats.max_depth_reached,
             matched_templates: stats.matched_templates,
             stock_hits: stats.stock_hits,
+            retro_cache_hits: stats.retro_cache_hits,
+            retro_cache_misses: stats.retro_cache_misses,
         });
     }
 
@@ -961,6 +973,8 @@ fn main() -> Result<()> {
         validation_coverage,
         evaluable_validation_pass_rate,
         practical_solved_rate,
+        total_retro_cache_hits: results.iter().map(|r| r.retro_cache_hits).sum(),
+        total_retro_cache_misses: results.iter().map(|r| r.retro_cache_misses).sum(),
         results,
     };
 

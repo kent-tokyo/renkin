@@ -50,6 +50,10 @@ path = "src/bin/mcp.rs"
 name = "renkin-doctor"
 path = "src/bin/doctor.rs"
 
+[[example]]
+name = "measure_rank_recall"
+required-features = ["nn-scoring"]
+
 [lib]
 name = "renkin"
 crate-type = ["cdylib", "rlib"]

@@ -18,6 +18,8 @@ __pycache__/
 # ---- Project-specific (not version-controlled) ----
 .env
 AGENTS.md
+lessons.md
+tasks/todo.md
 # `tasks/*` (not `tasks/`) deliberately: a trailing-slash directory pattern
 # excludes the directory itself, and git cannot re-include a file whose
 # parent directory is excluded -- the !exceptions below would silently not

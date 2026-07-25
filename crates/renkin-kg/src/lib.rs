@@ -242,6 +242,7 @@ mod tests {
         Route {
             steps: vec![ReactionStep {
                 rule: "amide_retro".to_string(),
+                template_id: "rule:amide_retro".to_string(),
                 target: "CC(=O)N".to_string(),
                 precursors: vec!["CC(=O)O".to_string(), "N".to_string()],
                 conditions: None,
@@ -251,6 +252,7 @@ mod tests {
                 reaction_family: Some("amide_coupling".to_string()),
                 metadata_source: None,
                 metadata_scope: None,
+                evidence: None,
             }],
             depth: 1,
             score: 1.5,

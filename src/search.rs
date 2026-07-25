@@ -12,12 +12,16 @@ use smallvec::{SmallVec, smallvec};
 use crate::chem_env::{
     ChemEnv, PrecursorMol, RetroRule, TemplateBondIndex, apply_retro, mol_from_smiles, to_canonical,
 };
-use crate::evidence::{EvidenceScope, MetadataSource};
+use crate::evidence::{EvidenceScope, MetadataSource, StepEvidence, TemplateMetadataEntry};
 use crate::score::{step_cost, template_bonus};
 
 /// Cached expansion for one (target_smiles, rule) combination.
-/// Tuple: (rule_name, net_step_cost, precursor_smiles_list).
-type RetroEntry = (String, f64, Vec<String>);
+struct RetroEntry {
+    rule_name: String,
+    template_id: String,
+    step_cost: f64,
+    precursor_smiles: Vec<String>,
+}
 type RetroCache = FxHashMap<String, Arc<Vec<RetroEntry>>>;
 
 /// Suggested reaction conditions for a synthesis step (rule-based, hand-crafted rules only).
@@ -36,6 +40,10 @@ pub struct ReactionConditions {
 #[derive(Debug, Clone, Serialize)]
 pub struct ReactionStep {
     pub rule: String,
+    /// Stable identity of the template used (see `RetroRule::template_id`).
+    /// Always populated -- `rule:<name>` for hand-crafted rules,
+    /// `smirks-sha256:<hex>` for extracted templates.
+    pub template_id: String,
     pub target: String,
     pub precursors: Vec<String>,
     /// Suggested conditions for the forward reaction (None for extracted templates).
@@ -64,6 +72,12 @@ pub struct ReactionStep {
     /// Scope at which `metadata_source` was assigned. `None` for extracted templates.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata_scope: Option<EvidenceScope>,
+    /// Curated external evidence (conditions/yields/warnings/references) matched
+    /// by `template_id` from an optional metadata sidecar. `None` unless a
+    /// sidecar was supplied and matched -- nothing is fabricated for templates
+    /// without an entry.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub evidence: Option<StepEvidence>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -366,12 +380,13 @@ fn reaction_family_for_rule(rule: &str) -> Option<&'static str> {
 }
 
 /// True iff `rule` came from `chem_env::load_rules_from_file` (always named
-/// `extracted_{i}`) rather than `default_rules()`. This is the only reliable
-/// discriminator at the [`ReactionStep`] construction site -- `RetroRule`'s own
-/// provenance is already erased into `RetroEntry`'s `(name, weight, precursors)`
-/// tuple by that point, and `conditions_for_rule`/`reaction_family_for_rule` both
-/// return `None` for 3 legitimately-hand-crafted generic-cleavage rules, so
-/// `.is_some()` on either would mis-tag those 3 as extracted.
+/// `extracted_{i}`) rather than `default_rules()`. Used for `metadata_source`/
+/// `metadata_scope` tagging (unchanged since PR #48): `conditions_for_rule`/
+/// `reaction_family_for_rule` both return `None` for 3 legitimately-hand-crafted
+/// generic-cleavage rules, so `.is_some()` on either would mis-tag those 3 as
+/// extracted. (`RetroRule::template_id`'s `rule:`/`smirks-sha256:` prefix is
+/// also a reliable discriminator now, but this function's name-prefix check
+/// is kept as-is to avoid changing existing tagging behavior.)
 fn is_extracted_template(rule: &str) -> bool {
     rule.starts_with("extracted_")
 }
@@ -608,6 +623,12 @@ pub struct SearchConfig {
     /// Custom reaction prior for template scoring.
     /// None = use `FrequencyPrior` (log-frequency weighting, same as pre-v0.9 behaviour).
     pub reaction_prior: Option<std::sync::Arc<dyn ReactionPrior>>,
+    /// Optional template metadata sidecar (`--template-metadata` / Python
+    /// `template_metadata_path`), keyed by `RetroRule::template_id`. When Some,
+    /// matching steps get `evidence` populated in post-processing; unmatched
+    /// templates are left as `None` -- nothing is fabricated. `None` (the
+    /// default) reproduces pre-existing search behaviour exactly.
+    pub template_metadata: Option<std::collections::HashMap<String, TemplateMetadataEntry>>,
     /// Phase B: ONNX template relevance scorer (CLI/Python only, not WASM).
     /// When Some, pre-filters rules to top-K most relevant before SMARTS matching.
     #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
@@ -627,6 +648,7 @@ impl Default for SearchConfig {
             bb_price_map: None,
             value_estimator: None,
             reaction_prior: None,
+            template_metadata: None,
             #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
             nn_scorer: None,
         }
@@ -824,7 +846,7 @@ pub fn find_routes(
             };
 
             #[cfg(not(target_arch = "wasm32"))]
-            let raw: Vec<(String, f64, Vec<PrecursorMol>)> = active_rules
+            let raw: Vec<(String, String, f64, Vec<PrecursorMol>)> = active_rules
                 .par_iter()
                 .copied()
                 .filter(|rule| {
@@ -834,12 +856,19 @@ pub fn find_routes(
                 .flat_map(|rule| {
                     apply_retro(&target_mol, rule)
                         .into_iter()
-                        .map(|precs| (rule.name.to_string(), rule.weight, precs))
+                        .map(|precs| {
+                            (
+                                rule.name.to_string(),
+                                rule.template_id.clone(),
+                                rule.weight,
+                                precs,
+                            )
+                        })
                         .collect::<Vec<_>>()
                 })
                 .collect();
             #[cfg(target_arch = "wasm32")]
-            let raw: Vec<(String, f64, Vec<PrecursorMol>)> = active_rules
+            let raw: Vec<(String, String, f64, Vec<PrecursorMol>)> = active_rules
                 .iter()
                 .copied()
                 .filter(|rule| {
@@ -849,17 +878,24 @@ pub fn find_routes(
                 .flat_map(|rule| {
                     apply_retro(&target_mol, rule)
                         .into_iter()
-                        .map(|precs| (rule.name.to_string(), rule.weight, precs))
+                        .map(|precs| {
+                            (
+                                rule.name.to_string(),
+                                rule.template_id.clone(),
+                                rule.weight,
+                                precs,
+                            )
+                        })
                         .collect::<Vec<_>>()
                 })
                 .collect();
 
-            let entries: Vec<(String, f64, Vec<String>)> = raw
+            let entries: Vec<RetroEntry> = raw
                 .into_iter()
-                .filter(|(_, _, precs)| {
+                .filter(|(_, _, _, precs)| {
                     !precs.is_empty() && !precs.iter().any(|p| p.smiles == target_smi)
                 })
-                .map(|(rule_name, rule_weight, precs)| {
+                .map(|(rule_name, template_id, rule_weight, precs)| {
                     let bonus = if let Some(ref prior) = config.reaction_prior {
                         prior.prior(&rule_name, &target_smi)
                     } else {
@@ -868,7 +904,12 @@ pub fn find_routes(
                     let step_c =
                         step_cost(&precs.iter().map(|p| &p.mol).collect::<Vec<_>>()) - bonus;
                     let smiles_list: Vec<String> = precs.iter().map(|p| p.smiles.clone()).collect();
-                    (rule_name, step_c, smiles_list)
+                    RetroEntry {
+                        rule_name,
+                        template_id,
+                        step_cost: step_c,
+                        precursor_smiles: smiles_list,
+                    }
                 })
                 .collect();
             let arc = Arc::new(entries);
@@ -878,14 +919,15 @@ pub fn find_routes(
 
         matched_templates += expansions.len() as u64;
 
-        for (rule_name, step_c, precursor_smiles) in expansions.iter() {
+        for entry in expansions.iter() {
             let new_frontier: SmallVec<[FEntry; 6]> = node
                 .frontier
                 .iter()
                 .filter(|e| e.smiles != target_smi)
                 .cloned()
                 .chain(
-                    precursor_smiles
+                    entry
+                        .precursor_smiles
                         .iter()
                         .map(|s| FEntry { smiles: s.clone() }),
                 )
@@ -901,18 +943,20 @@ pub fn find_routes(
             // O(1) Arc::clone — shares the parent prefix without copying.
             let new_path = Some(Arc::new(PathNode {
                 step: ReactionStep {
-                    rule: rule_name.clone(),
+                    rule: entry.rule_name.clone(),
+                    template_id: entry.template_id.clone(),
                     target: target_smi.clone(),
-                    precursors: precursor_smiles.clone(),
-                    conditions: conditions_for_rule(rule_name),
+                    precursors: entry.precursor_smiles.clone(),
+                    conditions: conditions_for_rule(&entry.rule_name),
                     atom_economy: None,   // populated in post-processing
                     step_confidence: 0.0, // populated in post-processing
-                    reaction_family: reaction_family_for_rule(rule_name).map(str::to_string),
-                    procedure_hint: procedure_hint_for_rule(rule_name).map(str::to_string),
-                    metadata_source: (!is_extracted_template(rule_name))
+                    reaction_family: reaction_family_for_rule(&entry.rule_name).map(str::to_string),
+                    procedure_hint: procedure_hint_for_rule(&entry.rule_name).map(str::to_string),
+                    metadata_source: (!is_extracted_template(&entry.rule_name))
                         .then_some(MetadataSource::HandcraftedDefault),
-                    metadata_scope: (!is_extracted_template(rule_name))
+                    metadata_scope: (!is_extracted_template(&entry.rule_name))
                         .then_some(EvidenceScope::ReactionFamily),
+                    evidence: None, // populated in post-processing, routes actually returned only
                 },
                 prev: node.path.clone(),
             }));
@@ -921,7 +965,8 @@ pub fn find_routes(
             // forbidden element. Avoids pushing dead-end nodes onto the heap.
             if config.forbidden_elements != 0 {
                 let mask = config.forbidden_elements;
-                if precursor_smiles
+                if entry
+                    .precursor_smiles
                     .iter()
                     .filter(|p| is_bb(p, env))
                     .any(|p| (elem_mask_from_smiles(p) & mask) != 0)
@@ -934,7 +979,7 @@ pub fn find_routes(
                 frontier: new_frontier,
                 path: new_path,
                 depth: node.depth + 1,
-                g: node.g + step_c,
+                g: node.g + entry.step_cost,
                 h: new_h,
             });
         }
@@ -982,6 +1027,12 @@ pub fn find_routes(
                         None
                     }
                 });
+
+                step.evidence = config
+                    .template_metadata
+                    .as_ref()
+                    .and_then(|m| m.get(&step.template_id))
+                    .and_then(|e| e.to_step_evidence());
             }
 
             route.success_probability = route
@@ -1248,6 +1299,7 @@ mod tests {
         // change from before these fields were added.
         let step = ReactionStep {
             rule: "extracted_0".to_string(),
+            template_id: "smirks-sha256:deadbeef".to_string(),
             target: "CC(=O)O".to_string(),
             precursors: vec!["C".to_string(), "O=C=O".to_string()],
             conditions: None,
@@ -1257,10 +1309,13 @@ mod tests {
             reaction_family: None,
             metadata_source: None,
             metadata_scope: None,
+            evidence: None,
         };
         let json = serde_json::to_string(&step).unwrap();
         assert!(
-            !json.contains("metadata_source") && !json.contains("metadata_scope"),
+            !json.contains("metadata_source")
+                && !json.contains("metadata_scope")
+                && !json.contains("evidence"),
             "absent metadata fields must be omitted from JSON, got: {json}"
         );
     }
@@ -1295,6 +1350,90 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn no_metadata_configured_means_no_evidence() {
+        // config.template_metadata defaults to None -- every step.evidence must be
+        // None, reproducing pre-existing (pre-evidence-sidecar) behavior exactly.
+        let env = aspirin_env();
+        let rules = default_rules();
+        let routes = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg(3))
+            .unwrap()
+            .0;
+        assert!(!routes.is_empty());
+        for route in &routes {
+            for step in &route.steps {
+                assert!(
+                    step.evidence.is_none(),
+                    "no metadata sidecar configured -- step.evidence must stay None"
+                );
+                assert!(
+                    !step.template_id.is_empty(),
+                    "template_id must always be populated"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn evidence_attached_only_to_matching_template_id() {
+        let env = aspirin_env();
+        let rules = default_rules();
+        let target_template_id = rules
+            .iter()
+            .find(|r| r.name == "ester_cleavage")
+            .unwrap()
+            .template_id
+            .clone();
+
+        let mut templates = std::collections::HashMap::new();
+        templates.insert(
+            target_template_id.clone(),
+            crate::evidence::TemplateMetadataEntry {
+                warnings: vec![crate::evidence::ReactionWarning {
+                    code: "test_code".to_string(),
+                    severity: crate::evidence::WarningSeverity::Low,
+                    message: "test warning".to_string(),
+                    source: MetadataSource::Literature,
+                    scope: EvidenceScope::Template,
+                    reference_ids: vec![],
+                }],
+                ..Default::default()
+            },
+        );
+        let config = SearchConfig {
+            template_metadata: Some(templates),
+            ..cfg(3)
+        };
+        let routes = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &config)
+            .unwrap()
+            .0;
+
+        let mut saw_match = false;
+        let mut saw_non_match = false;
+        for route in &routes {
+            for step in &route.steps {
+                if step.template_id == target_template_id {
+                    assert!(
+                        step.evidence.is_some(),
+                        "step using the metadata-matched template must get evidence"
+                    );
+                    saw_match = true;
+                } else {
+                    assert!(
+                        step.evidence.is_none(),
+                        "step using a non-matched template must not get evidence"
+                    );
+                    saw_non_match = true;
+                }
+            }
+        }
+        assert!(saw_match, "expected at least one step using ester_cleavage");
+        assert!(
+            saw_non_match,
+            "expected at least one step using a different rule"
+        );
     }
 
     #[test]
@@ -1430,6 +1569,7 @@ mod tests {
         fn rr(name: &str, smirks: &str) -> RetroRule {
             RetroRule {
                 name: name.to_string(),
+                template_id: format!("rule:{name}"),
                 smirks: smirks.to_string(),
                 weight: 1.0,
                 required_elements: 0,

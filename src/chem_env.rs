@@ -8,12 +8,17 @@ use chematic::core::{Atom, AtomIdx, BondIdx, BondOrder, Element, MoleculeBuilder
 use chematic::rxn::run_reactants;
 use chematic::smarts::{QueryMolecule, find_matches, parse_smarts};
 use chematic::smiles::{canonical_smiles, parse};
+use sha2::{Digest, Sha256};
 
 pub use chematic::core::Molecule;
 
 #[derive(Debug, Clone)]
 pub struct RetroRule {
     pub name: String,
+    /// Stable identity, independent of file position/order/count and of the
+    /// `name` display string. Hand-crafted rules: `rule:<name>`. Extracted
+    /// templates: `smirks-sha256:<hex>` (see `template_id_for_smirks`).
+    pub template_id: String,
     /// SMIRKS in "reactant>>product1.product2" form (retro direction).
     pub smirks: String,
     /// Log-frequency weight from USPTO training data. Hand-crafted rules use 1.0 (neutral).
@@ -28,11 +33,23 @@ impl Default for RetroRule {
     fn default() -> Self {
         Self {
             name: String::new(),
+            template_id: String::new(),
             smirks: String::new(),
             weight: 1.0,
             required_elements: 0,
         }
     }
+}
+
+/// Stable identity for an extracted SMIRKS template: SHA-256 of the *trimmed*
+/// SMIRKS string, hex-encoded, formatted as `smirks-sha256:<hex>`. Independent
+/// of file position, load order, and count. Purely syntactic — no SMIRKS
+/// canonicalization is performed, so two semantically-equivalent SMIRKS written
+/// differently (e.g. different atom-map numbering) get different IDs.
+pub fn template_id_for_smirks(smirks: &str) -> String {
+    let digest = Sha256::digest(smirks.trim().as_bytes());
+    let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+    format!("smirks-sha256:{hex}")
 }
 
 /// Building-block library.
@@ -812,6 +829,7 @@ fn rr(name: &str, smirks: &str) -> RetroRule {
     let required_elements = required_elements_from_smirks(smirks);
     RetroRule {
         name: name.into(),
+        template_id: format!("rule:{name}"),
         smirks: smirks.into(),
         required_elements,
         ..Default::default()
@@ -1197,6 +1215,7 @@ pub fn load_rules_from_file(path: &str) -> Vec<RetroRule> {
             let required_elements = required_elements_from_smirks(smirks);
             Some(RetroRule {
                 name: format!("extracted_{i}"),
+                template_id: template_id_for_smirks(smirks),
                 smirks: smirks.to_string(),
                 weight,
                 required_elements,
@@ -2177,11 +2196,12 @@ mod tests {
 
     // Guards the invariant `search::is_extracted_template` depends on: it
     // discriminates hand-crafted rules from extracted templates purely by
-    // checking for an `"extracted_"` name prefix (the only reliable signal left
-    // by the time a ReactionStep is built -- RetroRule's own provenance is
-    // already erased into a plain (name, weight, precursors) tuple upstream).
-    // If a hand-crafted rule ever used that prefix, it would be silently
-    // mis-tagged as having no metadata provenance.
+    // checking for an `"extracted_"` name prefix. (`RetroRule.template_id` is
+    // a reliable hand-crafted/extracted discriminator too -- `rule:` vs
+    // `smirks-sha256:` -- but `metadata_source`/`metadata_scope` tagging keeps
+    // using the name-prefix check unchanged, matching pre-template_id behavior.)
+    // If a hand-crafted rule ever used the `extracted_` prefix, it would be
+    // silently mis-tagged as having no metadata provenance.
     #[test]
     fn default_rule_names_never_use_extracted_prefix() {
         let rules = default_rules();
@@ -2192,6 +2212,111 @@ mod tests {
                  reserved for load_rules_from_file",
                 rule.name
             );
+        }
+    }
+
+    fn write_templates_file(dir: &std::path::Path, name: &str, content: &str) -> String {
+        let path = dir.join(name);
+        std::fs::write(&path, content).unwrap();
+        path.to_str().unwrap().to_string()
+    }
+
+    #[test]
+    fn template_id_stable_across_file_reordering() {
+        let dir = std::env::temp_dir();
+        let a = "[O:3]=[C:2]-[OH:1]>>C-[O:1]-[C:2]=[O:3]";
+        let b = "[NH2:1]-[c:2]>>O=[N+:1](-[O-])-[c:2]";
+        let path1 = write_templates_file(
+            &dir,
+            "renkin_tid_order1.smi",
+            &format!("{a}\t10\n{b}\t20\n"),
+        );
+        let path2 = write_templates_file(
+            &dir,
+            "renkin_tid_order2.smi",
+            &format!("{b}\t20\n{a}\t10\n"),
+        );
+        let rules1 = load_rules_from_file(&path1);
+        let rules2 = load_rules_from_file(&path2);
+        let id_a_1 = rules1
+            .iter()
+            .find(|r| r.smirks == a)
+            .unwrap()
+            .template_id
+            .clone();
+        let id_a_2 = rules2
+            .iter()
+            .find(|r| r.smirks == a)
+            .unwrap()
+            .template_id
+            .clone();
+        assert_eq!(id_a_1, id_a_2, "template_id must not depend on line order");
+        std::fs::remove_file(&path1).ok();
+        std::fs::remove_file(&path2).ok();
+    }
+
+    #[test]
+    fn template_id_stable_when_count_changes() {
+        let dir = std::env::temp_dir();
+        let smirks = "[O:3]=[C:2]-[OH:1]>>C-[O:1]-[C:2]=[O:3]";
+        let path1 = write_templates_file(&dir, "renkin_tid_count1.smi", &format!("{smirks}\t1\n"));
+        let path2 = write_templates_file(
+            &dir,
+            "renkin_tid_count2.smi",
+            &format!("{smirks}\t999999\n"),
+        );
+        let id1 = load_rules_from_file(&path1)[0].template_id.clone();
+        let id2 = load_rules_from_file(&path2)[0].template_id.clone();
+        assert_eq!(id1, id2, "template_id must not depend on count");
+        std::fs::remove_file(&path1).ok();
+        std::fs::remove_file(&path2).ok();
+    }
+
+    #[test]
+    fn different_smirks_give_different_template_id() {
+        let dir = std::env::temp_dir();
+        let path = write_templates_file(
+            &dir,
+            "renkin_tid_distinct.smi",
+            "[O:3]=[C:2]-[OH:1]>>C-[O:1]-[C:2]=[O:3]\t1\n[NH2:1]-[c:2]>>O=[N+:1](-[O-])-[c:2]\t1\n",
+        );
+        let rules = load_rules_from_file(&path);
+        assert_eq!(rules.len(), 2);
+        assert_ne!(
+            rules[0].template_id, rules[1].template_id,
+            "different SMIRKS must produce different template_id"
+        );
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn extracted_template_id_uses_smirks_sha256_prefix() {
+        let dir = std::env::temp_dir();
+        let path = write_templates_file(
+            &dir,
+            "renkin_tid_prefix.smi",
+            "[O:3]=[C:2]-[OH:1]>>C-[O:1]-[C:2]=[O:3]\t1\n",
+        );
+        let rules = load_rules_from_file(&path);
+        assert!(rules[0].template_id.starts_with("smirks-sha256:"));
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn hand_crafted_rule_template_id_is_stable_rule_prefix() {
+        let rules = default_rules();
+        for rule in &rules {
+            assert_eq!(
+                rule.template_id,
+                format!("rule:{}", rule.name),
+                "hand-crafted rule {:?} must have template_id `rule:<name>`",
+                rule.name
+            );
+        }
+        // Stable across repeated calls (no hidden nondeterminism, e.g. hashing order).
+        let rules_again = default_rules();
+        for (r1, r2) in rules.iter().zip(rules_again.iter()) {
+            assert_eq!(r1.template_id, r2.template_id);
         }
     }
 

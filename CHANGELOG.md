@@ -8,6 +8,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.17.0] — 2026-07-25
+
 ### Added
 - **`renkin` search** — stable `template_id` on every `RetroRule`/`ReactionStep` (`rule:<name>` for hand-crafted rules, `smirks-sha256:<hex>` for extracted templates), independent of file order/position/count ([#41](https://github.com/kent-tokyo/renkin/issues/41) phase 1)
 - **`renkin` search** — `--template-metadata <path>` / Python `template_metadata_path` — JSON evidence sidecar (curated conditions, reported yields, references, warnings) attached to matching steps via `template_id`; validated before search starts, unmatched templates get no fabricated data

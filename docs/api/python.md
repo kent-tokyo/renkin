@@ -66,7 +66,9 @@ a `dict` — parse it with `json.loads()` before accessing fields.
                     "step_confidence": float,
                     # conditions / atom_economy / procedure_hint / reaction_family /
                     # metadata_source / metadata_scope / evidence are present when
-                    # applicable and omitted from the JSON otherwise
+                    # applicable and omitted from the JSON otherwise. evidence, when
+                    # present, may itself include an "examples" array (schema_version
+                    # 2 sidecars only) -- see Template Evidence Metadata
                 }
             ]
         }

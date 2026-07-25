@@ -236,6 +236,48 @@ reference ID・収率の範囲・range の `min <= max`・DOI/特許識別子の
 [#41](https://github.com/kent-tokyo/renkin/issues/41) で今後のタスクとして
 追跡されています。
 
+### 基質固有のexample（`schema_version: 2`）
+
+ここまでの内容はすべて**テンプレート単位**の evidence であり、対象分子に関わらず
+そのテンプレートを使う全ステップに適用されます。`schema_version: 2` では、
+`examples` という配列が追加され、各エントリは「この対象・この原料の組み合わせで
+実際に報告された1件の記録」を表します（`target_smiles`/`precursor_smiles` で
+キーづけ）:
+
+```json
+{
+  "schema_version": 2,
+  "templates": {
+    "smirks-sha256:...": {
+      "references": [{ "id": "ref-1", "kind": "doi", "identifier": "10.xxxx/example" }],
+      "examples": [{
+        "id": "ex-1",
+        "target_smiles": "c1ccc(-c2ccccc2)cc1",
+        "precursor_smiles": ["Brc1ccccc1", "c1ccccc1"],
+        "conditions": { "catalysts": ["Pd(PPh3)4"], "solvents": ["EtOH"], "source": "literature", "scope": "substrate_specific", "reference_ids": ["ref-1"] },
+        "reported_yield": { "percentage": 78.0, "basis": "isolated", "source": "literature", "scope": "substrate_specific", "reference_ids": ["ref-1"] },
+        "reference_ids": ["ref-1"]
+      }]
+    }
+  }
+}
+```
+
+`examples` は `schema_version: 2` でのみ使用可能です（`1` で指定するとハード
+エラーになります）。example内の condition/yield/warning はすべて
+`substrate_specific` スコープでなければなりません。ルートのステップの
+`evidence.examples` は、canonical化したtarget SMILESと、canonical化・順序非依存
+でsort＋dedupしたprecursor集合の両方でそのステップと照合されます —
+サイドカー内の `precursor_smiles` の順序を変えても結果は変わりません。
+`--format explain` では1ステップあたり最大3件のexampleを表示し、**exact
+substrate matchを先に**表示します。異なる基質のexample（同一テンプレートだが
+異なる基質）も表示はされますが、必ず「different substrate; not a
+prediction」と明記されます — これはあくまでそのテンプレートの文献上の前例で
+あり、実際に検索した分子に対するevidenceではありません。詳細なマッチング／
+検証仕様は
+[Reaction Evidence guide](docs/guides/reaction-evidence.md#substrate-specific-examples-schema_version-2)
+を参照してください。
+
 ---
 
 ## 特徴
@@ -247,7 +289,7 @@ reference ID・収率の範囲・range の `min <= max`・DOI/特許識別子の
 | **最大50k逆合成テンプレート** | USPTO-50k/MIT からrdchiralで自動抽出；頻度重み付け優先；`--templates` でカスタムセット対応 |
 | **ルートスコアリング** | `confidence`, `step_confidence`, `success_probability`（Retro-prob方式）, `convergency`, `atom_economy` — 下の注記も参照 |
 | **ステップメタデータの出所表示** | 各ステップに `metadata_source`/`metadata_scope`（例: `handcrafted_default`/`reaction_family`）を付与し、`conditions`/`reaction_family` がルール作者による既定値なのか、それ以上の根拠があるのかを機械可読に区別。extracted templateには何も付与しない（捏造しない）。 |
-| **安定 template_id + evidence サイドカー** | すべてのテンプレートに安定した `template_id` を付与——hand-crafted ruleは `rule:<name>`、extracted templateは `smirks-sha256:<hex>`（ファイル内の並び順・位置・count値に依存しない）。`--template-metadata sidecar.json`（`template_id` をキーとするJSON）でDOI・特許・報告済み条件・報告済み収率・既知の副反応警告を紐づけ可能。一致したステップにのみ `evidence` フィールドが付与され、それ以外は変化しない——詳細は下記「[テンプレート evidence メタデータ](#テンプレート-evidence-メタデータ)」参照。`renkin template ids <file.smi>` で安定IDの一覧を出力し、サイドカー作成に使用できる。収率・成功率の自動予測や文献自動検索は引き続きスコープ外（[#41](https://github.com/kent-tokyo/renkin/issues/41)で追跡）。 |
+| **安定 template_id + evidence サイドカー** | すべてのテンプレートに安定した `template_id` を付与——hand-crafted ruleは `rule:<name>`、extracted templateは `smirks-sha256:<hex>`（ファイル内の並び順・位置・count値に依存しない）。`--template-metadata sidecar.json`（`template_id` をキーとするJSON）でDOI・特許・報告済み条件・報告済み収率・既知の副反応警告を紐づけ可能。一致したステップにのみ `evidence` フィールドが付与され、それ以外は変化しない——詳細は下記「[テンプレート evidence メタデータ](#テンプレート-evidence-メタデータ)」参照。`schema_version: 2` サイドカーではさらに `examples`（対象・原料の組み合わせ1件ごとの記録）を紐づけ可能——canonical SMILESで照合され、`--format explain` ではexact substrate matchが先に表示される。`renkin template ids <file.smi>` で安定IDの一覧を出力し、サイドカー作成に使用できる。収率・成功率の自動予測や文献自動検索は引き続きスコープ外（[#41](https://github.com/kent-tokyo/renkin/issues/41)で追跡）。 |
 | **ルートコストスコアリング** | `route_cost = Σ(BB価格) + ステップ数×0.5`；`--bb-prices CSV` または `--stock stock.csv` で実価格対応 |
 | **Pareto多目的探索** | `--format pareto` で `route_cost`・`success_probability`・`steps` 等のパレートフロントを返す；`--objectives` で目的関数をカスタム設定 |
 | **制約 DSL** | `--constraints constraints.json` — JSON駆動の合成計画：元素フィルタ・ステップ数制限・信頼度閾値・優先反応族；LLM → RENKIN パイプラインに対応 |

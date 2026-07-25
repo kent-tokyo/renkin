@@ -265,6 +265,44 @@ Yield/success prediction and automatic literature search are explicitly out
 of scope for this phase — tracked as future work in
 [#41](https://github.com/kent-tokyo/renkin/issues/41).
 
+### Substrate-specific examples (`schema_version: 2`)
+
+Everything above is *template-level*: it applies to every step using that
+template, regardless of the actual molecule. `schema_version: 2` adds
+`examples` — a per-template array where each entry is one curated record of
+*this exact reaction*, keyed by `target_smiles`/`precursor_smiles`:
+
+```json
+{
+  "schema_version": 2,
+  "templates": {
+    "smirks-sha256:...": {
+      "references": [{ "id": "ref-1", "kind": "doi", "identifier": "10.xxxx/example" }],
+      "examples": [{
+        "id": "ex-1",
+        "target_smiles": "c1ccc(-c2ccccc2)cc1",
+        "precursor_smiles": ["Brc1ccccc1", "c1ccccc1"],
+        "conditions": { "catalysts": ["Pd(PPh3)4"], "solvents": ["EtOH"], "source": "literature", "scope": "substrate_specific", "reference_ids": ["ref-1"] },
+        "reported_yield": { "percentage": 78.0, "basis": "isolated", "source": "literature", "scope": "substrate_specific", "reference_ids": ["ref-1"] },
+        "reference_ids": ["ref-1"]
+      }]
+    }
+  }
+}
+```
+
+`examples` requires `schema_version: 2` (a hard error under `1`); every
+condition/yield/warning nested inside an example must be scoped
+`substrate_specific`. A route step's `evidence.examples` are matched against
+that step by canonical target SMILES plus the canonical, order-independent
+precursor set — reordering `precursor_smiles` in the sidecar changes
+nothing. `--format explain` shows up to 3 examples per step, **exact-substrate
+matches first**; a same-template-different-substrate example is still shown,
+but explicitly labeled *"different substrate; not a prediction"* — it's
+literature precedent for the reaction type, never evidence for the molecule
+you actually searched. See [Reaction Evidence guide](docs/guides/reaction-evidence.md#substrate-specific-examples-schema_version-2)
+for full matching/validation semantics.
+
 ---
 
 ## Key Features
@@ -276,7 +314,7 @@ of scope for this phase — tracked as future work in
 | **Up to 50k reaction templates** | Auto-extracted from USPTO-50k/MIT via rdchiral; frequency-weighted priority; `--templates` for custom sets |
 | **Route scoring** | `confidence`, `step_confidence`, `success_probability` (Retro-prob style), `convergency`, `atom_economy` per step — see caveat below the table |
 | **Step metadata provenance** | Each step reports `metadata_source`/`metadata_scope` (e.g. `handcrafted_default`/`reaction_family`) so it's machine-readable whether `conditions`/`reaction_family` came from a rule-author default vs. something more grounded; absent for extracted templates, since nothing is fabricated for them. |
-| **Stable template IDs + evidence sidecar** | Every template gets a stable `template_id` — `rule:<name>` for hand-crafted rules, `smirks-sha256:<hex>` for extracted templates (independent of file order/position/count). Attach curated DOIs/patents, reported conditions, reported yields, and known side-reaction warnings via a `--template-metadata sidecar.json` file keyed by `template_id`; matching steps get an `evidence` field, everything else stays untouched — see [Template evidence metadata](#template-evidence-metadata) below. Run `renkin template ids <file.smi>` to list stable IDs for authoring a sidecar. Automatic yield/success prediction and literature search remain out of scope ([#41](https://github.com/kent-tokyo/renkin/issues/41)). |
+| **Stable template IDs + evidence sidecar** | Every template gets a stable `template_id` — `rule:<name>` for hand-crafted rules, `smirks-sha256:<hex>` for extracted templates (independent of file order/position/count). Attach curated DOIs/patents, reported conditions, reported yields, and known side-reaction warnings via a `--template-metadata sidecar.json` file keyed by `template_id`; matching steps get an `evidence` field, everything else stays untouched — see [Template evidence metadata](#template-evidence-metadata) below. `schema_version: 2` sidecars can additionally attach `examples` — curated records tied to one exact target/precursor set, matched by canonical SMILES and surfaced first in `--format explain`. Run `renkin template ids <file.smi>` to list stable IDs for authoring a sidecar. Automatic yield/success prediction and literature search remain out of scope ([#41](https://github.com/kent-tokyo/renkin/issues/41)). |
 | **Route cost scoring** | `route_cost = Σ(BB cost) + steps×0.5`; actual prices via `--bb-prices CSV` or `--stock stock.csv` |
 | **Pareto multi-objective search** | `--format pareto` returns a Pareto front across `route_cost`, `success_probability`, `steps`, etc.; objectives configurable via `--objectives cost:min,success_probability:max,steps:min` |
 | **Constraint DSL** | `--constraints constraints.json` — JSON-driven synthesis planning: element filters, step limits, confidence thresholds, preferred reaction families; enables LLM → RENKIN pipeline |

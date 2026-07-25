@@ -1,3 +1,8 @@
+---
+title: "RENKIN Quick Start: Find a Retrosynthesis Route in a Few Lines"
+description: "A minimal, CI-tested working example of RENKIN's find_routes API in Python, Rust, and the CLI, plus how to supply a custom building-block stock."
+---
+
 # Quick Start
 
 ## Python

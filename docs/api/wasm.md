@@ -1,3 +1,8 @@
+---
+title: "Browser-Based Retrosynthesis with RENKIN WebAssembly"
+description: "Run RENKIN's retrosynthesis search entirely in the browser or Node.js via WebAssembly -- no server, no installation. API reference and examples."
+---
+
 # WASM / JavaScript API
 
 ## Installation

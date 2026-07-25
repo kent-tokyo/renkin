@@ -1,3 +1,8 @@
+---
+title: "Rust Retrosynthesis Library: RENKIN API Reference"
+description: "RENKIN's core Rust API: ChemEnv, SearchConfig, find_routes, RetroRule, and the feature flags for Python bindings and the NN template scorer."
+---
+
 # Rust API
 
 ## Core Types

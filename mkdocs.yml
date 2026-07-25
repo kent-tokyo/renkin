@@ -35,6 +35,9 @@ theme:
 
 plugins:
   - search
+  - social:
+      cards_layout_options:
+        background_color: "#7c4dff"
 
 markdown_extensions:
   - pymdownx.highlight:

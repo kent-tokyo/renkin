@@ -1,3 +1,8 @@
+---
+title: "RENKIN: Open-Source Retrosynthesis Engine for Python, Rust and WebAssembly"
+description: "Plan multi-step synthesis routes from SMILES with RENKIN, a pure-Rust computer-aided synthesis planning engine available for Python, CLI, Rust and WebAssembly."
+---
+
 # RENKIN
 
 > **Computer-Aided Synthesis Planning (CASP) · Pure Rust · WebAssembly · Python**  

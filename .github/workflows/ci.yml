@@ -126,9 +126,11 @@ jobs:
           node examples/quickstart.mjs
           rm -rf pkg
 
+      - name: Install Cairo (required by the social plugin for OG card images)
+        run: sudo apt-get update && sudo apt-get install -y libcairo2-dev libfreetype6-dev libffi-dev libjpeg-dev libpng-dev libz-dev
       - name: Install MkDocs Material
-        run: pip install mkdocs-material
-      - name: Build docs site (--strict fails on broken links/snippet includes)
+        run: pip install "mkdocs-material[imaging]"
+      - name: Build docs site (--strict fails on broken links/snippet includes/missing social-card deps)
         run: mkdocs build --strict -d /tmp/site
 
       - name: Check sitemap.xml includes key pages
@@ -137,3 +139,10 @@ jobs:
             grep -q "$page/" /tmp/site/sitemap.xml || { echo "ERROR: $page missing from sitemap.xml"; exit 1; }
           done
           echo "OK: sitemap.xml includes all key pages"
+
+      - name: Check social card images were generated for key pages
+        run: |
+          for page in index api/python api/rust api/wasm benchmark benchmark_ja getting_started/installation getting_started/quickstart examples/aspirin examples/druglike; do
+            test -s "/tmp/site/assets/images/social/$page.png" || { echo "ERROR: social card missing for $page"; exit 1; }
+          done
+          echo "OK: social card images generated for all key pages"

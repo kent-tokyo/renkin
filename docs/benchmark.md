@@ -1,3 +1,8 @@
+---
+title: "RENKIN Retrosynthesis Benchmark: USPTO-50k Results and Methodology"
+description: "Corrected USPTO-50k benchmark results for RENKIN, with full methodology, comparison to other retrosynthesis planners, and known limitations."
+---
+
 # Benchmark
 
 > ⚠️ **Notice (2026-07-22): historical 78.0% (single-pass) / 95.9% (cascade) / 81.8% (ChEMBL OOD) figures on this page are invalidated and have NOT been re-measured.** They were measured before fixing four retrosynthesis-rule/validator bugs that inflated solved counts with chemically-invalid or falsely-corroborated routes (full history below). **Only the "Corrected baseline" section below reflects the current rule set** — everywhere else on this page still shows the old, invalidated numbers for historical continuity, each marked accordingly. Do not cite the unmarked historical figures as current RENKIN performance.

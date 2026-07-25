@@ -1,3 +1,8 @@
+---
+title: "Python Retrosynthesis with RENKIN: API Reference and Examples"
+description: "Full Python API reference for RENKIN's find_routes, predict_forward, and validate_forward functions, including parameters, return shapes, and error handling."
+---
+
 # Python API
 
 ## `find_routes`

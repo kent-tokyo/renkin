@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use RENKIN in academic work, please cite it as below."
+title: "RENKIN: Retrosynthesis Engine for Knowledge-Informed Navigation"
+authors:
+  - name: "kent-tokyo"
+version: "0.16.0"
+date-released: "2026-07-25"
+url: "https://github.com/kent-tokyo/renkin"
+repository-code: "https://github.com/kent-tokyo/renkin"
+license: MIT
+type: software
+keywords:
+  - retrosynthesis
+  - cheminformatics
+  - chemistry
+  - computer-aided-synthesis-planning
+  - drug-discovery

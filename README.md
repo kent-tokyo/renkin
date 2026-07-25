@@ -19,35 +19,13 @@
 
 [日本語版 README](./README_ja.md) · [中文版 README](./README_zh.md) · [**Documentation**](https://kent-tokyo.github.io/renkin/) · [**Live Demo →**](https://kent-tokyo.github.io/renkin/playground/)
 
-> ⚠️ **Notice (2026-07-22): corrected USPTO-50k Stage 1 (single-pass) baseline below — historical 78.0%/95.9%/81.8%(ChEMBL) figures elsewhere on this page are invalidated and have NOT been re-measured.** Full fix history and methodology: [`docs/benchmark.md`](https://kent-tokyo.github.io/renkin/benchmark/) and [`tasks/phase31_final_remeasurement_run.md`](https://github.com/kent-tokyo/renkin/blob/master/tasks/phase31_final_remeasurement_run.md).
->
-> **Corrected baseline (commit `e20dc8c`, 2026-07-22):** Search-to-stock rate (`raw_solved_rate`) **20.09%** (986/4,907) → atom-balance-filtered rate (`atom_balanced_solved_rate`) **15.41%** (756/4,907) → current-validator-confirmed rate (`provenance_validated_solved_rate`) **0.88%** (43/4,907). These are a *nested* series over the same 4,907 targets, not three independent numbers, and none is a measured or bounded chemical-correctness rate on its own. **The last figure is not a measured chemical-accuracy rate and not a proven lower bound on correctness** — it only counts routes the current validator can positively confirm under stated checks, and an unknown fraction of "invalid" verdicts may be validator false negatives rather than real chemistry errors (the split is unmeasured — open follow-up, see linked doc). Cascade and ChEMBL OOD have not been re-run against the corrected rule set.
-
 ---
 
 ## What is RENKIN?
 
 RENKIN is an open-source **retrosynthesis engine** for **computer-aided synthesis planning (CASP)** that automatically discovers optimal chemical reaction routes from a target molecule back to cheap, commercially available starting materials.
 
-Built entirely in Rust with the [`chematic`](https://docs.rs/chematic/) cheminformatics crate. Zero C/C++ dependencies. All crates enforce `#![forbid(unsafe_code)]` — compiler-verified Pure Safe Rust throughout.
-
-**[→ Try the Live Playground](https://kent-tokyo.github.io/renkin/playground/)** — runs entirely in WebAssembly, no installation needed.  
-**[→ Full Documentation](https://kent-tokyo.github.io/renkin/)** — API reference, examples, benchmark.
-
----
-
-## Why RENKIN?
-
-RENKIN is designed as a Rust-native synthesis planning stack:
-
-| | |
-|---|---|
-| **Fast** | A\* / AND-OR tree search with beam search and template frequency weighting |
-| **Portable** | Native CLI · Python wheels · npm/WASM · browser playground — one codebase |
-| **Explainable** | Per-step `confidence`, `atom_economy`, `route_cost`, and `procedure_hint` |
-| **Verifiable** | `renkin-forward` validates each retrosynthetic step by forward-applying templates |
-| **Benchmarkable** | USPTO-50k, PaRoutes-style evaluation, route diversity, and atom balance checks |
-| **Agent-ready** | MCP server exposes routes and validation to Claude Desktop and AI agents |
+Built entirely in Rust with the [`chematic`](https://docs.rs/chematic/) cheminformatics crate — zero C/C++ dependencies, `#![forbid(unsafe_code)]` throughout. One codebase compiles to a native CLI, a Rust library, Python wheels (PyO3), and a WebAssembly module that runs entirely client-side in the browser.
 
 ---
 
@@ -61,15 +39,24 @@ npm install renkin          # JavaScript / Node.js
 
 ---
 
+## Live Playground
+
+**[→ Try it now](https://kent-tokyo.github.io/renkin/playground/)** — runs entirely in WebAssembly: no installation, no server, no network calls.
+
+---
+
 ## Quick Start
 
 ```python
+import json
 import renkin
 
-result = renkin.find_routes(
-    "CC(=O)Oc1ccccc1C(=O)O",   # Aspirin
-    depth=5,
-    max_routes=3,
+result = json.loads(
+    renkin.find_routes(
+        target="CC(=O)Oc1ccccc1C(=O)O",  # Aspirin
+        depth=5,
+        max_routes=3,
+    )
 )
 
 for route in result["routes"]:
@@ -114,6 +101,32 @@ OC(=O)c1ccccc1OC(=O)C
 Use `--format mermaid` for GitHub/Notion-compatible flowcharts.
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kent-tokyo/renkin/blob/master/examples/renkin_quickstart.ipynb)
+
+---
+
+## Current Limitations
+
+⚠️ Benchmark numbers are under active re-measurement after a validator-accuracy
+fix — historical 78.0%/95.9%/81.8%(ChEMBL) figures elsewhere in this repo predate
+that fix and are invalidated. RENKIN does not predict yields, success
+probabilities, or side reactions, and does not search the literature
+automatically. See [Benchmark](https://kent-tokyo.github.io/renkin/benchmark/)
+for the current corrected numbers, full methodology, and known limitations.
+
+---
+
+## Why RENKIN?
+
+RENKIN is designed as a Rust-native synthesis planning stack:
+
+| | |
+|---|---|
+| **Fast** | A\* / AND-OR tree search with beam search and template frequency weighting |
+| **Portable** | Native CLI · Python wheels · npm/WASM · browser playground — one codebase |
+| **Explainable** | Per-step `confidence`, `atom_economy`, `route_cost`, and `procedure_hint` |
+| **Verifiable** | `renkin-forward` validates each retrosynthetic step by forward-applying templates |
+| **Benchmarkable** | USPTO-50k, PaRoutes-style evaluation, route diversity, and atom balance checks |
+| **Agent-ready** | MCP server exposes routes and validation to Claude Desktop and AI agents |
 
 ---
 

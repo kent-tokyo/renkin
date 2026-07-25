@@ -19,35 +19,13 @@
 
 [English README](./README.md) · [日本語版 README](./README_ja.md) · [**文档**](https://kent-tokyo.github.io/renkin/) · [**在线演示 →**](https://kent-tokyo.github.io/renkin/playground/)
 
-> ⚠️ **重要提示（2026-07-22）：下方为修正后的 USPTO-50k Stage 1（单次搜索）基线数据——本页其他位置出现的 78.0%/95.9%/81.8%（ChEMBL）等历史数值已被判定无效，且尚未重新测量。** 完整的修正过程与方法说明参见 [`docs/benchmark.md`](https://kent-tokyo.github.io/renkin/benchmark/) 与 [`tasks/phase31_final_remeasurement_run.md`](https://github.com/kent-tokyo/renkin/blob/master/tasks/phase31_final_remeasurement_run.md)。
->
-> **修正后基线（commit `e20dc8c`，2026-07-22）：** 搜索命中库存率（`raw_solved_rate`）**20.09%**（986/4,907）→ 原子平衡过滤后比率（`atom_balanced_solved_rate`）**15.41%**（756/4,907）→ 当前验证器确认比率（`provenance_validated_solved_rate`）**0.88%**（43/4,907）。这三个数值是针对同一批 4,907 个目标分子的*嵌套*序列，并非三个相互独立的数字，其中任何一个都不能单独视为经过测量或有明确边界的化学正确率。**最后一个数值并非实测的化学准确率，也不是经过证明的正确率下限**——它只统计当前验证器在既定检查规则下能够正面确认的路线；判定为"无效"的结果中有未知比例可能是验证器的假阴性，而非真实的化学错误（该比例尚未测量——属于待办事项，详见链接文档）。Cascade 与 ChEMBL OOD 尚未针对修正后的规则集重新运行。
-
 ---
 
 ## 什么是 RENKIN？
 
 RENKIN 是一个开源的**逆合成引擎（retrosynthesis engine）**，用于**计算机辅助合成路线设计（CASP）**，能够自动从目标分子出发，逆向发现通向廉价、可商购起始原料的最优化学反应路线。
 
-完全基于 Rust 构建，使用 [`chematic`](https://docs.rs/chematic/) 化学信息学 crate。零 C/C++ 依赖。所有 crate 均启用 `#![forbid(unsafe_code)]`——全程经编译器验证的纯安全 Rust。
-
-**[→ 体验在线 Playground](https://kent-tokyo.github.io/renkin/playground/)** — 完全运行于 WebAssembly，无需安装。  
-**[→ 完整文档](https://kent-tokyo.github.io/renkin/)** — API 参考、示例、基准测试。
-
----
-
-## 为什么选择 RENKIN？
-
-RENKIN 的设计目标是打造一套 Rust 原生的合成路线设计技术栈：
-
-| | |
-|---|---|
-| **快速** | A\* / AND-OR 树搜索，结合束搜索与模板频率加权 |
-| **可移植** | 原生 CLI · Python wheel · npm/WASM · 浏览器 Playground —— 同一套代码库 |
-| **可解释** | 每一步都带有 `confidence`、`atom_economy`、`route_cost`、`procedure_hint` |
-| **可验证** | `renkin-forward` 通过正向应用模板来验证每一步逆合成 |
-| **可基准测试** | 支持 USPTO-50k、PaRoutes 风格评估、路线多样性与原子平衡检查 |
-| **面向智能体** | MCP 服务器向 Claude Desktop 等 AI 智能体开放路线搜索与验证能力 |
+完全基于 Rust 构建，使用 [`chematic`](https://docs.rs/chematic/) 化学信息学 crate——零 C/C++ 依赖，所有 crate 均启用 `#![forbid(unsafe_code)]`。同一套代码库可编译为原生 CLI、Rust 库、Python wheel（PyO3），以及完全在浏览器端运行的 WebAssembly 模块。
 
 ---
 
@@ -61,15 +39,24 @@ npm install renkin          # JavaScript / Node.js
 
 ---
 
+## 在线 Playground
+
+**[→ 立即体验](https://kent-tokyo.github.io/renkin/playground/)** — 完全运行于 WebAssembly：无需安装、无需服务器、无网络请求。
+
+---
+
 ## 快速开始
 
 ```python
+import json
 import renkin
 
-result = renkin.find_routes(
-    "CC(=O)Oc1ccccc1C(=O)O",   # 阿司匹林
-    depth=5,
-    max_routes=3,
+result = json.loads(
+    renkin.find_routes(
+        target="CC(=O)Oc1ccccc1C(=O)O",  # 阿司匹林
+        depth=5,
+        max_routes=3,
+    )
 )
 
 for route in result["routes"]:
@@ -114,6 +101,27 @@ OC(=O)c1ccccc1OC(=O)C
 使用 `--format mermaid` 可生成兼容 GitHub/Notion 的流程图。
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kent-tokyo/renkin/blob/master/examples/renkin_quickstart.ipynb)
+
+---
+
+## 当前局限
+
+⚠️ 基准测试数值正在经历validator准确性修复后的重新测量——本仓库其他位置出现的78.0%/95.9%/81.8%（ChEMBL）均为修复前的历史数值，已被判定无效。RENKIN不预测收率、成功概率或副反应，也不会自动检索文献。当前修正后的数值、完整方法说明与已知局限请参见[基准测试](https://kent-tokyo.github.io/renkin/benchmark/)。
+
+---
+
+## 为什么选择 RENKIN？
+
+RENKIN 的设计目标是打造一套 Rust 原生的合成路线设计技术栈：
+
+| | |
+|---|---|
+| **快速** | A\* / AND-OR 树搜索，结合束搜索与模板频率加权 |
+| **可移植** | 原生 CLI · Python wheel · npm/WASM · 浏览器 Playground —— 同一套代码库 |
+| **可解释** | 每一步都带有 `confidence`、`atom_economy`、`route_cost`、`procedure_hint` |
+| **可验证** | `renkin-forward` 通过正向应用模板来验证每一步逆合成 |
+| **可基准测试** | 支持 USPTO-50k、PaRoutes 风格评估、路线多样性与原子平衡检查 |
+| **面向智能体** | MCP 服务器向 Claude Desktop 等 AI 智能体开放路线搜索与验证能力 |
 
 ---
 

@@ -13,7 +13,11 @@ struct Output {
     target: String,
     routes_found: usize,
     routes: Vec<search::Route>,
-    /// P(at least one route succeeds) = 1 − Π(1 − route.success_probability).
+    /// Combines each route's frequency-derived route_score across all
+    /// returned routes: 1 − Π(1 − route.success_probability). Not a
+    /// calibrated probability that any route succeeds -- route.success_probability
+    /// itself is a template-frequency ranking score, not a measured or
+    /// predicted experimental success rate.
     joint_success_probability: f64,
 }
 

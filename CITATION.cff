@@ -3,7 +3,7 @@ message: "If you use RENKIN in academic work, please cite it as below."
 title: "RENKIN: Retrosynthesis Engine for Knowledge-Informed Navigation"
 authors:
   - name: "kent-tokyo"
-version: "0.16.0"
+version: "0.17.0"
 date-released: "2026-07-25"
 url: "https://github.com/kent-tokyo/renkin"
 repository-code: "https://github.com/kent-tokyo/renkin"

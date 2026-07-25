@@ -128,7 +128,7 @@ See [Benchmark](benchmark.md) for current USPTO-50k results and methodology — 
 
     ```toml
     [dependencies]
-    renkin = "0.16"
+    renkin = "0.17"
     ```
 
 === "npm"

@@ -19,35 +19,13 @@
 
 [English README](./README.md) · [中文版 README](./README_zh.md) · [**ドキュメント**](https://kent-tokyo.github.io/renkin/) · [**ライブデモ →**](https://kent-tokyo.github.io/renkin/playground/)
 
-> ⚠️ **注記（2026-07-22）: 以下、修正版USPTO-50k Stage 1（単一パス）のcorrected baselineを掲載。** このページの他箇所にある78.0%/95.9%/81.8%(ChEMBL)は無効化された過去の値であり、再計測されていません。修正の全経緯と詳細な手法は [`docs/benchmark.md`](https://kent-tokyo.github.io/renkin/benchmark/) と [`tasks/phase31_final_remeasurement_run.md`](https://github.com/kent-tokyo/renkin/blob/master/tasks/phase31_final_remeasurement_run.md) を参照。
->
-> **Corrected baseline（コミット `e20dc8c`、2026-07-22）:** Search-to-stock rate（`raw_solved_rate`）**20.09%**（986/4,907）→ Atom-balance-filtered rate（`atom_balanced_solved_rate`）**15.41%**（756/4,907）→ Current-validator-confirmed rate（`provenance_validated_solved_rate`）**0.88%**（43/4,907）。この3つは同一の4,907件に対する入れ子系列であり、独立した3つの数値ではなく、いずれも単独では化学的正確性の実測値でも保証された値でもない。**最後の数値は実測の化学的正確性の値ではなく、正確性について数学的に証明された下限でもない**——現行のvalidatorが定められた条件下で肯定的に確認できたルートのみを数えており、「invalid」判定のうち未知の割合がvalidatorの偽陰性である可能性がある一方、実際のrule・route誤りも含まれ得る（両者の比率は未計測、詳細はリンク先参照）。cascade・ChEMBL OODは修正版ルールセットに対して未再計測。
-
 ---
 
 ## RENKINとは
 
 RENKINは、目標分子（ゴール）から逆算して市販の安価な原料へと至る最適な化学反応経路を自動発見する**逆合成（Retrosynthesis）エンジン**です。**創薬・医薬化学・ケモインフォマティクス**において中心的な問題を解きます。
 
-Rust言語と [`chematic`](https://docs.rs/chematic/) クレートで実装された純粋なRust製エンジン。C/C++依存ゼロ。全クレートに `#![forbid(unsafe_code)]` を適用し、コンパイラレベルで Pure Safe Rust を保証しています。
-
-**[→ ライブプレイグラウンドを試す](https://kent-tokyo.github.io/renkin/playground/)** — ブラウザ上でWebAssemblyとして動作。インストール不要。  
-**[→ ドキュメント全文](https://kent-tokyo.github.io/renkin/)** — APIリファレンス、使用例、ベンチマーク。
-
----
-
-## RENKIN を選ぶ理由
-
-RENKIN は Rust ネイティブの合成計画スタックとして設計されています：
-
-| | |
-|---|---|
-| **高速** | A\* / AND-OR ツリー探索 · ビームサーチ · テンプレート頻度重み付け |
-| **ポータブル** | CLI · Python · npm/WASM · ブラウザ Playground をひとつのコードベースで |
-| **説明可能** | ステップごとに `confidence`・`atom_economy`・`route_cost`・`procedure_hint` |
-| **検証可能** | `renkin-forward` が各逆合成ステップをフォワード適用で検証 |
-| **ベンチマーク対応** | USPTO-50k・PaRoutes 形式評価・ルート多様性・原子収支チェック |
-| **AIエージェント対応** | MCP サーバーで Claude Desktop 等への経路・検証ツール公開 |
+Rust言語と [`chematic`](https://docs.rs/chematic/) クレートで実装された純粋なRust製エンジン——C/C++依存ゼロ、全クレートに `#![forbid(unsafe_code)]` を適用。単一のコードベースがネイティブCLI・Rustライブラリ・Pythonホイール（PyO3）・ブラウザ上で完全にクライアントサイド動作するWebAssemblyモジュールへとコンパイルされます。
 
 ---
 
@@ -61,15 +39,24 @@ npm install renkin          # JavaScript / Node.js
 
 ---
 
+## ライブプレイグラウンド
+
+**[→ 今すぐ試す](https://kent-tokyo.github.io/renkin/playground/)** — ブラウザ上で完全にWebAssemblyとして動作。インストール不要、サーバー不要、ネットワーク通信なし。
+
+---
+
 ## クイックスタート
 
 ```python
+import json
 import renkin
 
-result = renkin.find_routes(
-    "CC(=O)Oc1ccccc1C(=O)O",   # アスピリン
-    depth=5,
-    max_routes=3,
+result = json.loads(
+    renkin.find_routes(
+        target="CC(=O)Oc1ccccc1C(=O)O",  # アスピリン
+        depth=5,
+        max_routes=3,
+    )
 )
 
 for route in result["routes"]:
@@ -102,6 +89,27 @@ OC(=O)c1ccccc1OC(=O)C
 `--format mermaid` で GitHub/Notion 対応フローチャートも出力できます。
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kent-tokyo/renkin/blob/master/examples/renkin_quickstart.ipynb)
+
+---
+
+## 現在の制約
+
+⚠️ ベンチマーク数値はvalidator精度修正後、再計測が進行中です——このリポジトリの他箇所にある78.0%/95.9%/81.8%(ChEMBL)はこの修正より前の値であり、無効化されています。RENKINは収率・成功確率・副反応を予測せず、文献の自動検索も行いません。現行の修正済み数値・詳細な手法・既知の制約は[ベンチマーク](https://kent-tokyo.github.io/renkin/benchmark/)を参照してください。
+
+---
+
+## RENKIN を選ぶ理由
+
+RENKIN は Rust ネイティブの合成計画スタックとして設計されています：
+
+| | |
+|---|---|
+| **高速** | A\* / AND-OR ツリー探索 · ビームサーチ · テンプレート頻度重み付け |
+| **ポータブル** | CLI · Python · npm/WASM · ブラウザ Playground をひとつのコードベースで |
+| **説明可能** | ステップごとに `confidence`・`atom_economy`・`route_cost`・`procedure_hint` |
+| **検証可能** | `renkin-forward` が各逆合成ステップをフォワード適用で検証 |
+| **ベンチマーク対応** | USPTO-50k・PaRoutes 形式評価・ルート多様性・原子収支チェック |
+| **AIエージェント対応** | MCP サーバーで Claude Desktop 等への経路・検証ツール公開 |
 
 ---
 

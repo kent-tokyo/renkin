@@ -6,6 +6,7 @@ resolver = "2"
 name = "renkin"
 version = "0.17.0"
 edition = "2024"
+authors = ["kent-tokyo <kent-tokyo@users.noreply.github.com>"]
 description = "Ultra-fast retrosynthesis engine for computer-aided synthesis planning (CASP) — pure Rust, WASM-ready, Python bindings via PyO3"
 repository    = "https://github.com/kent-tokyo/renkin"
 homepage      = "https://github.com/kent-tokyo/renkin"

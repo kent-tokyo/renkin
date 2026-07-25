@@ -17,19 +17,7 @@
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
 </p>
 
-<p>
-  <img alt="Pure Rust" src="https://img.shields.io/badge/Pure%20Rust-100%25-orange?logo=rust">
-  <img alt="unsafe forbidden" src="https://img.shields.io/badge/unsafe-forbidden-success.svg">
-  <img alt="WASM" src="https://img.shields.io/badge/WASM-ready-brightgreen">
-  <img alt="PyO3" src="https://img.shields.io/badge/PyO3-Python%20bindings-blue">
-  <img alt="MCP" src="https://img.shields.io/badge/MCP-ready-7f52ff">
-  <img alt="templates" src="https://img.shields.io/badge/templates-up%20to%2050k-purple">
-  <img alt="building blocks" src="https://img.shields.io/badge/building%20blocks-402-lightgrey">
-  <img alt="USPTO-50k" src="https://img.shields.io/badge/USPTO--50k-corrected%20baseline-blue">
-  <img alt="ChEMBL" src="https://img.shields.io/badge/ChEMBL-under%20re--evaluation-yellow">
-</p>
-
-[English README](./README.md) · [**ドキュメント**](https://kent-tokyo.github.io/renkin/) · [**ライブデモ →**](https://kent-tokyo.github.io/renkin/playground/)
+[English README](./README.md) · [中文版 README](./README_zh.md) · [**ドキュメント**](https://kent-tokyo.github.io/renkin/) · [**ライブデモ →**](https://kent-tokyo.github.io/renkin/playground/)
 
 > ⚠️ **注記（2026-07-22）: 以下、修正版USPTO-50k Stage 1（単一パス）のcorrected baselineを掲載。** このページの他箇所にある78.0%/95.9%/81.8%(ChEMBL)は無効化された過去の値であり、再計測されていません。修正の全経緯と詳細な手法は [`docs/benchmark.md`](https://kent-tokyo.github.io/renkin/benchmark/) と [`tasks/phase31_final_remeasurement_run.md`](https://github.com/kent-tokyo/renkin/blob/master/tasks/phase31_final_remeasurement_run.md) を参照。
 >
@@ -164,7 +152,8 @@ c1ccccc1-c2ccccc2
 | **Pure Safe Rust** | 全クレートに `#![forbid(unsafe_code)]` — コンパイラ保証、C/C++依存ゼロ |
 | **A\* / AND-OR木探索** | プラガブルフック付きRetro\*相当アルゴリズム（`MoleculeValueEstimator`, `ReactionPrior`） |
 | **最大50k逆合成テンプレート** | USPTO-50k/MIT からrdchiralで自動抽出；頻度重み付け優先；`--templates` でカスタムセット対応 |
-| **ルートスコアリング** | `confidence`, `step_confidence`, `success_probability`（Retro-prob方式）, `convergency`, `atom_economy` |
+| **ルートスコアリング** | `confidence`, `step_confidence`, `success_probability`（Retro-prob方式）, `convergency`, `atom_economy` — 下の注記も参照 |
+| **ステップメタデータの出所表示** | 各ステップに `metadata_source`/`metadata_scope`（例: `handcrafted_default`/`reaction_family`）を付与し、`conditions`/`reaction_family` がルール作者による既定値なのか、それ以上の根拠があるのかを機械可読に区別。extracted templateには何も付与しない（捏造しない）。実際の文献参照・収率推定・副反応警告は未実装——本フィールドはそれらの将来実装に向けた出所管理基盤（[#41](https://github.com/kent-tokyo/renkin/issues/41)で追跡）。 |
 | **ルートコストスコアリング** | `route_cost = Σ(BB価格) + ステップ数×0.5`；`--bb-prices CSV` または `--stock stock.csv` で実価格対応 |
 | **Pareto多目的探索** | `--format pareto` で `route_cost`・`success_probability`・`steps` 等のパレートフロントを返す；`--objectives` で目的関数をカスタム設定 |
 | **制約 DSL** | `--constraints constraints.json` — JSON駆動の合成計画：元素フィルタ・ステップ数制限・信頼度閾値・優先反応族；LLM → RENKIN パイプラインに対応 |
@@ -187,6 +176,10 @@ c1ccccc1-c2ccccc2
 | **Python** | `pip install renkin` — Linux/macOS/Windows プリビルドwheels |
 | **WASM** | ~500 KB バンドル — ブラウザでネイティブに近い速度で動作 |
 | **402件の市販原料** | アリールハライド、ボロン酸、ヘテロ環、医薬品アミン、アミノ酸（`data/building_blocks.smi`、実際にロードされたユニーク化合物数——ベンチマークセクション参照） |
+
+> **`step_confidence`/`success_probability` は収率でも実測の成功率でもない。**
+> テンプレート出現頻度から導かれる探索順位付けスコア（`rule_weight / max_rule_weight` をステップ間で乗算）であり、
+> 実験的成功確率のキャリブレーション値でも、期待単離収率でもない。ルート単位の実験的収率・成功率報告は未実装。
 
 ---
 
@@ -440,8 +433,8 @@ renkin/                          ← Cargo workspace ルート
   author    = {kent-tokyo},
   title     = {{RENKIN}: Retrosynthesis Engine for Knowledge-Informed Navigation},
   year      = {2026},
-  url       = {https://github.com/kent-tokyo/renkin/releases/tag/v0.15.5},
-  version   = {0.15.5},
+  url       = {https://github.com/kent-tokyo/renkin/releases/tag/v0.16.0},
+  version   = {0.16.0},
   license   = {MIT}
 }
 ```

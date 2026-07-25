@@ -2,6 +2,7 @@
 
 pub mod chem_env;
 pub mod display;
+pub mod evidence;
 pub mod score;
 pub mod scorer;
 pub mod search;

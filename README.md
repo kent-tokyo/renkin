@@ -17,19 +17,7 @@
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
 </p>
 
-<p>
-  <img alt="Pure Rust" src="https://img.shields.io/badge/Pure%20Rust-100%25-orange?logo=rust">
-  <img alt="unsafe forbidden" src="https://img.shields.io/badge/unsafe-forbidden-success.svg">
-  <img alt="WASM" src="https://img.shields.io/badge/WASM-ready-brightgreen">
-  <img alt="PyO3" src="https://img.shields.io/badge/PyO3-Python%20bindings-blue">
-  <img alt="MCP" src="https://img.shields.io/badge/MCP-ready-7f52ff">
-  <img alt="templates" src="https://img.shields.io/badge/templates-up%20to%2050k-purple">
-  <img alt="building blocks" src="https://img.shields.io/badge/building%20blocks-402-lightgrey">
-  <img alt="USPTO-50k" src="https://img.shields.io/badge/USPTO--50k-corrected%20baseline-blue">
-  <img alt="ChEMBL" src="https://img.shields.io/badge/ChEMBL-under%20re--evaluation-yellow">
-</p>
-
-[日本語版 README](./README_ja.md) · [**Documentation**](https://kent-tokyo.github.io/renkin/) · [**Live Demo →**](https://kent-tokyo.github.io/renkin/playground/)
+[日本語版 README](./README_ja.md) · [中文版 README](./README_zh.md) · [**Documentation**](https://kent-tokyo.github.io/renkin/) · [**Live Demo →**](https://kent-tokyo.github.io/renkin/playground/)
 
 > ⚠️ **Notice (2026-07-22): corrected USPTO-50k Stage 1 (single-pass) baseline below — historical 78.0%/95.9%/81.8%(ChEMBL) figures elsewhere on this page are invalidated and have NOT been re-measured.** Full fix history and methodology: [`docs/benchmark.md`](https://kent-tokyo.github.io/renkin/benchmark/) and [`tasks/phase31_final_remeasurement_run.md`](https://github.com/kent-tokyo/renkin/blob/master/tasks/phase31_final_remeasurement_run.md).
 >
@@ -181,7 +169,8 @@ Add `--verbose` to print search statistics (nodes expanded, elapsed time) to std
 | **Pure Safe Rust** | `#![forbid(unsafe_code)]` on all crates — compiler-enforced, zero C/C++ dependencies |
 | **A\* / AND-OR Tree Search** | Retro\*-equivalent algorithm with pluggable heuristics (`MoleculeValueEstimator`, `ReactionPrior`) |
 | **Up to 50k reaction templates** | Auto-extracted from USPTO-50k/MIT via rdchiral; frequency-weighted priority; `--templates` for custom sets |
-| **Route scoring** | `confidence`, `step_confidence`, `success_probability` (Retro-prob style), `convergency`, `atom_economy` per step |
+| **Route scoring** | `confidence`, `step_confidence`, `success_probability` (Retro-prob style), `convergency`, `atom_economy` per step — see caveat below the table |
+| **Step metadata provenance** | Each step reports `metadata_source`/`metadata_scope` (e.g. `handcrafted_default`/`reaction_family`) so it's machine-readable whether `conditions`/`reaction_family` came from a rule-author default vs. something more grounded; absent for extracted templates, since nothing is fabricated for them. Real literature references, yield estimates, and side-reaction warnings are not implemented yet — this is provenance-tagging infrastructure for that future work, tracked in [#41](https://github.com/kent-tokyo/renkin/issues/41). |
 | **Route cost scoring** | `route_cost = Σ(BB cost) + steps×0.5`; actual prices via `--bb-prices CSV` or `--stock stock.csv` |
 | **Pareto multi-objective search** | `--format pareto` returns a Pareto front across `route_cost`, `success_probability`, `steps`, etc.; objectives configurable via `--objectives cost:min,success_probability:max,steps:min` |
 | **Constraint DSL** | `--constraints constraints.json` — JSON-driven synthesis planning: element filters, step limits, confidence thresholds, preferred reaction families; enables LLM → RENKIN pipeline |
@@ -204,6 +193,12 @@ Add `--verbose` to print search statistics (nodes expanded, elapsed time) to std
 | **Python** | `pip install renkin` — pre-built wheels for Linux/macOS/Windows |
 | **WASM** | ~500 KB bundle — runs in the browser at near-native speed |
 | **402 building blocks** | Aryl halides, boronic acids, heterocycles, amines, acids, amino acids (`data/building_blocks.smi`, unique compounds actually loaded — see Benchmark section) |
+
+> **`step_confidence`/`success_probability` are not yields or measured success rates.**
+> They're template-frequency-derived search-ranking scores (`rule_weight / max_rule_weight`,
+> multiplied across a route's steps) used to order candidate disconnections during search —
+> not a calibrated probability of experimental success, and not an expected isolated yield.
+> Route-level experimental yield/success-rate reporting is not implemented.
 
 ---
 
@@ -505,8 +500,8 @@ If you use RENKIN in academic work, please cite:
   author    = {kent-tokyo},
   title     = {{RENKIN}: Retrosynthesis Engine for Knowledge-Informed Navigation},
   year      = {2026},
-  url       = {https://github.com/kent-tokyo/renkin/releases/tag/v0.15.5},
-  version   = {0.15.5},
+  url       = {https://github.com/kent-tokyo/renkin/releases/tag/v0.16.0},
+  version   = {0.16.0},
   license   = {MIT}
 }
 ```

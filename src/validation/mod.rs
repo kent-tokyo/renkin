@@ -169,6 +169,8 @@ mod tests {
             step_confidence: 1.0,
             procedure_hint: None,
             reaction_family: None,
+            metadata_source: None,
+            metadata_scope: None,
         }
     }
 

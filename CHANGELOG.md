@@ -8,6 +8,14 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **`renkin` search** — `ReactionExample` substrate-specific evidence records (metadata sidecar `schema_version: 2`, `examples` array): curated conditions/reported yield/warnings/references tied to one exact target + precursor set, distinct from template-level evidence ([#41](https://github.com/kent-tokyo/renkin/issues/41) phase 2)
+- **`renkin` search** — `evidence.examples` matched against a route step by canonical target SMILES plus the canonical, order-independent precursor set (exact-substrate match vs. same-template-different-substrate); `schema_version: 1` sidecars are unaffected, `examples` requires `schema_version: 2`
+- **`renkin` CLI** — `--format explain` now renders per-step evidence: rule-author default conditions (labeled as such, never conflated with literature data), up to 3 curated examples (exact-substrate matches shown first, template-only ones explicitly labeled "not a prediction"), and warnings with their resolved references
+
+### Changed
+- **`renkin` search** — corrected `success_probability`'s framing in docs and `--format explain` output: it's a template-frequency route ranking score, not a calibrated experimental success probability (JSON field name unchanged)
+
 ## [0.17.0] — 2026-07-25
 
 ### Added

@@ -104,6 +104,77 @@ file is a hard error, not a silent partial load:
   prints a warning (not a failure) — it's not silently ignored, but it also
   doesn't block a search over a different template set.
 
+## Substrate-Specific Examples (`schema_version: 2`)
+
+Everything above is *template-level* evidence: it applies to every step that
+uses that template, regardless of the actual molecule. `schema_version: 2`
+adds `examples` — a per-template array where each entry is one curated record
+of *this exact reaction*, not the template in general:
+
+```json
+{
+  "schema_version": 2,
+  "templates": {
+    "smirks-sha256:ef8778a2888469d619c52cce7e74f6848e101049050dd1b765b78f32e3c94498": {
+      "references": [
+        { "id": "ref-1", "kind": "doi", "identifier": "10.xxxx/example" }
+      ],
+      "examples": [
+        {
+          "id": "ex-1",
+          "target_smiles": "c1ccc(-c2ccccc2)cc1",
+          "precursor_smiles": ["Brc1ccccc1", "c1ccccc1"],
+          "conditions": {
+            "catalysts": ["Pd(PPh3)4"],
+            "solvents": ["EtOH"],
+            "source": "literature",
+            "scope": "substrate_specific",
+            "reference_ids": ["ref-1"]
+          },
+          "reported_yield": {
+            "percentage": 78.0,
+            "basis": "isolated",
+            "source": "literature",
+            "scope": "substrate_specific",
+            "reference_ids": ["ref-1"]
+          },
+          "reference_ids": ["ref-1"]
+        }
+      ]
+    }
+  }
+}
+```
+
+Key rules:
+
+- **`examples` requires `schema_version: 2`.** A `schema_version: 1` sidecar
+  with an `examples` key is a hard error, not a silent no-op — v1 sidecars
+  without `examples` load and behave exactly as before.
+- **Every nested `conditions`/`reported_yield`/`warnings` entry inside an
+  example must be scoped `"substrate_specific"`.** This is enforced at load
+  time (any other scope there is rejected), unlike template-level entries,
+  which aren't scope-restricted.
+- `target_smiles`/`precursor_smiles` must parse and `precursor_smiles` must
+  be non-empty; `id` must be non-empty and unique within its template;
+  `reference_ids` (both the example's own and any nested one) must point at
+  a reference declared in that template's `references` list.
+
+**Matching an example to a route step.** A step's `evidence.examples` are
+compared against that step's actual `target`/`precursors` by canonical
+SMILES: the target must match exactly, and the precursor set must match after
+canonicalizing, sorting, and deduplicating both sides — so the order
+`precursor_smiles` are listed in the sidecar never matters. An example whose
+target/precursors don't match the step is still shown (it's a literature
+precedent for the same template), but is never treated as evidence for the
+molecule actually being searched.
+
+**In `--format explain`:** each step shows up to 3 examples, exact-substrate
+matches first, each labeled either `Exact substrate example:` or
+`Template-level literature example (different substrate; not a
+prediction):`. Any remaining examples beyond the first 3 are summarized as
+`... and N more template examples` rather than silently dropped.
+
 ## Reported vs. Predicted — Read This Before You Cite a Number
 
 This is the single most important distinction on this page:
@@ -111,7 +182,13 @@ This is the single most important distinction on this page:
 - **`reported_yields` is a citation, not a prediction.** It's exactly what
   the reference you supplied says was achieved, for that specific
   template/reaction — never a value RENKIN computed or estimated for your
-  target molecule.
+  target molecule. The same is true of an example's `reported_yield`, even
+  when the example is an *exact* substrate match: it's what was reported for
+  that reaction, not a RENKIN forecast for your route.
+- **A template-only example (different substrate) is reference context, not
+  a forecast.** It shows the template has literature precedent, not that
+  your specific target/precursors will behave the same way — that's exactly
+  why `--format explain` always labels it "not a prediction".
 - **`step_confidence` / `success_probability` are unrelated to yield.** They
   are template-frequency-derived search-ranking scores (how common a
   disconnection was in the training corpus) — not a measured yield, not a
@@ -120,8 +197,9 @@ This is the single most important distinction on this page:
 - **`warnings` reflects only what's in the sidecar you supplied.** RENKIN
   does not run automatic side-reaction detection, does not search the
   literature for you, and does not infer a warning from structure alone. An
-  empty `warnings` list means *no warning was curated for this template* —
-  it does not mean *no side reaction is possible*.
+  empty `warnings` list — whether at the template level or inside a specific
+  example — means *no warning was curated* for that template or substrate.
+  It does not mean *no side reaction is possible*.
 - **Templates without a sidecar entry get nothing fabricated.** No made-up
   conditions, no invented yield, no synthesized-sounding warning.
 

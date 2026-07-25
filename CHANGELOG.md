@@ -6,6 +6,40 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.16.0] — 2026-07-25
+
+### Added
+- **`renkin` search** — `cascade` subcommand (Stage 1 + Stage 2 chained search), retro cache stats, graph ester cleavage rule
+- **`renkin` search** — `--top-templates` filter; raw/validated/practical solved-rate metrics
+- **`renkin` search** — graph-based sulfonamide cleavage rule, cascade quality metrics, hard-case corpus
+- **`renkin` search** — templates now ranked per-node instead of once at the root
+- **`renkin` search** — step metadata now tagged with provenance (handcrafted vs unknown template)
+- **renkin-bench** — `--plausibility` passthrough, N-way parallel shard runner
+- **renkin-bench** — per-target screening runner with a hard timeout, isolated per-target subprocess
+- **examples/inspect_validation** — new example for inspecting validation output
+- **scripts/aggregate_bench_results.py** — aggregates chunked bench output for harness-integrity checks
+
+### Fixed
+- **validation** — forward validation changed from bool to a three-valued `StepValidationStatus` (`Valid`/`Invalid`/`NotEvaluable`) for graph-based retro rules — API change for consumers of the validation output
+- **validation** — step validation now binds to the originating rule instead of any corroborating rule, eliminating cross-rule false-positive `Valid` results
+- **validation** — VF2 structural fallback for canonical-SMILES false negatives
+- **chem** — `aryl_carboxylation_retro` restricted to free carboxylic acids (was misfiring on esters, silently dropping the ester's R group)
+- **renkin-bench** — `compare` now keys on smiles+index instead of name
+- **renkin-bench** — cap `RAYON_NUM_THREADS` per child in the per-target screening runner
+
+### Removed
+- **chem** — `aryl_fluoride_snAr_retro`, `aryl_iodide_retro`, `aryl_chloride_retro` dropped from `default_rules()`: each had an atom-generation/loss bug (`[c:1][X]>>[c:1]`) with no chemically valid fix, so they were removed rather than patched
+
+### Changed
+- **benchmark** — re-measured USPTO-50k after the validation and rule fixes above; publicly reported solved rates dropped from the previous (bugged) 78.0% raw / 95.9% cascade to a corrected raw_solved_rate of 20.09% (986/4907). The prior numbers counted routes inflated by the atom-loss and cross-rule validation bugs, not a regression in search capability — see `tasks/phase31_final_remeasurement_run.md` for full provenance
+- **data** — deduplicated `building_blocks.smi`, added heteroaryl sulfonyl chlorides
+- **deps** — `chematic` 0.4.22 → 0.4.30
+- **deps** — `crossbeam-epoch` 0.9.18 → 0.9.20 (RUSTSEC-2026-0204)
+- **deps** — `rustc-hash` 2.1.2 → 2.1.3, `tract-onnx` 0.23.3 → 0.23.4
+- **ci** — bumped `actions/upload-artifact`, `actions/cache`, `actions/setup-node`
+
+---
+
 ## [0.15.5] — 2026-06-28
 
 ### Added

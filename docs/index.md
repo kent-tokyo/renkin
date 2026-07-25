@@ -142,7 +142,7 @@ With `--templates data/templates_extracted_5000.smi`, RENKIN uses ~5,000 additio
 
     ```toml
     [dependencies]
-    renkin = "0.15"
+    renkin = "0.16"
     ```
 
 === "npm"

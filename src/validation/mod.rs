@@ -162,6 +162,7 @@ mod tests {
     fn step(rule: &str, target: &str, precursors: &[&str]) -> ReactionStep {
         ReactionStep {
             rule: rule.to_string(),
+            template_id: format!("rule:{rule}"),
             target: target.to_string(),
             precursors: precursors.iter().map(|s| s.to_string()).collect(),
             conditions: None,
@@ -171,6 +172,7 @@ mod tests {
             reaction_family: None,
             metadata_source: None,
             metadata_scope: None,
+            evidence: None,
         }
     }
 

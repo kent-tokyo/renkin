@@ -1,3 +1,8 @@
+---
+title: "Aspirin Retrosynthesis Example with RENKIN"
+description: "A worked example of retrosynthetic route search for aspirin (acetylsalicylic acid) using RENKIN, with real, reproducible engine output."
+---
+
 # Aspirin Retrosynthesis
 
 Aspirin (acetylsalicylic acid, ASA) is one of the world's most widely used pharmaceuticals. Its classical synthesis involves esterification of salicylic acid with acetic anhydride.

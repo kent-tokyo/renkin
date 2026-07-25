@@ -1,3 +1,8 @@
+---
+title: "Retrosynthesis Examples for Drug-Like Molecules with RENKIN"
+description: "Suzuki coupling, Buchwald-Hartwig amination, and amide bond disconnection examples on drug-like molecules using RENKIN's retrosynthesis engine."
+---
+
 # Drug-like Molecules
 
 Examples of retrosynthesis on more complex, drug-like molecules.

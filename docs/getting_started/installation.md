@@ -1,3 +1,8 @@
+---
+title: "Install RENKIN for Python, Rust, CLI and WebAssembly"
+description: "Install RENKIN via pip, cargo, or npm, or build it from source. Covers Python wheel availability, Rust MSRV, and WASM builds."
+---
+
 # Installation
 
 ## Python

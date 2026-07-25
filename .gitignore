@@ -5,6 +5,10 @@ Cargo.lock
 # ---- WASM build output ----
 /pkg/
 
+# ---- MkDocs build output / social-plugin image cache ----
+/site/
+/.cache/
+
 # ---- Python ----
 .venv/
 *.whl

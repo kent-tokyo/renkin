@@ -17,18 +17,6 @@
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
 </p>
 
-<p>
-  <img alt="Pure Rust" src="https://img.shields.io/badge/Pure%20Rust-100%25-orange?logo=rust">
-  <img alt="unsafe forbidden" src="https://img.shields.io/badge/unsafe-forbidden-success.svg">
-  <img alt="WASM" src="https://img.shields.io/badge/WASM-ready-brightgreen">
-  <img alt="PyO3" src="https://img.shields.io/badge/PyO3-Python%20bindings-blue">
-  <img alt="MCP" src="https://img.shields.io/badge/MCP-ready-7f52ff">
-  <img alt="templates" src="https://img.shields.io/badge/templates-up%20to%2050k-purple">
-  <img alt="building blocks" src="https://img.shields.io/badge/building%20blocks-402-lightgrey">
-  <img alt="USPTO-50k" src="https://img.shields.io/badge/USPTO--50k-corrected%20baseline-blue">
-  <img alt="ChEMBL" src="https://img.shields.io/badge/ChEMBL-under%20re--evaluation-yellow">
-</p>
-
 [English README](./README.md) · [日本語版 README](./README_ja.md) · [**文档**](https://kent-tokyo.github.io/renkin/) · [**在线演示 →**](https://kent-tokyo.github.io/renkin/playground/)
 
 > ⚠️ **重要提示（2026-07-22）：下方为修正后的 USPTO-50k Stage 1（单次搜索）基线数据——本页其他位置出现的 78.0%/95.9%/81.8%（ChEMBL）等历史数值已被判定无效，且尚未重新测量。** 完整的修正过程与方法说明参见 [`docs/benchmark.md`](https://kent-tokyo.github.io/renkin/benchmark/) 与 [`tasks/phase31_final_remeasurement_run.md`](https://github.com/kent-tokyo/renkin/blob/master/tasks/phase31_final_remeasurement_run.md)。

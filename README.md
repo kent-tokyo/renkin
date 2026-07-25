@@ -29,7 +29,7 @@
   <img alt="ChEMBL" src="https://img.shields.io/badge/ChEMBL-under%20re--evaluation-yellow">
 </p>
 
-[日本語版 README](./README_ja.md) · [**Documentation**](https://kent-tokyo.github.io/renkin/) · [**Live Demo →**](https://kent-tokyo.github.io/renkin/playground/)
+[日本語版 README](./README_ja.md) · [中文版 README](./README_zh.md) · [**Documentation**](https://kent-tokyo.github.io/renkin/) · [**Live Demo →**](https://kent-tokyo.github.io/renkin/playground/)
 
 > ⚠️ **Notice (2026-07-22): corrected USPTO-50k Stage 1 (single-pass) baseline below — historical 78.0%/95.9%/81.8%(ChEMBL) figures elsewhere on this page are invalidated and have NOT been re-measured.** Full fix history and methodology: [`docs/benchmark.md`](https://kent-tokyo.github.io/renkin/benchmark/) and [`tasks/phase31_final_remeasurement_run.md`](https://github.com/kent-tokyo/renkin/blob/master/tasks/phase31_final_remeasurement_run.md).
 >

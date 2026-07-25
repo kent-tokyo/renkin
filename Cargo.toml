@@ -70,7 +70,7 @@ python = ["pyo3/extension-module"]
 nn-scoring = ["dep:tract-onnx", "chematic/fp"]
 
 [dependencies]
-chematic = { version = "0.4", features = ["smiles", "chem", "smarts", "rxn"] }
+chematic = { version = "0.6", features = ["smiles", "chem", "smarts", "rxn"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"

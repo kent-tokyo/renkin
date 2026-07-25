@@ -1176,6 +1176,14 @@ pub fn load_rules_from_file(path: &str) -> Vec<RetroRule> {
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
         .enumerate()
         .filter_map(|(i, line)| {
+            // Format is exactly 2 tab-separated columns today: SMIRKS, count.
+            // `splitn(2, '\t')`'s second half is everything after the first tab,
+            // including any further tab-separated content -- so a naive 3rd column
+            // (e.g. a template ID or DOI for provenance metadata) added later without
+            // a format-version bump won't error here. It'll just make `count.parse()`
+            // fail on the combined string and silently fall back to `weight = 1.0`
+            // via `.unwrap_or(1.0)` below, corrupting the frequency weight for every
+            // such line. Whoever adds a 3rd column needs to change this split first.
             let mut cols = line.splitn(2, '\t');
             let smirks = cols.next()?.trim();
             let count: f64 = cols
@@ -2163,6 +2171,26 @@ mod tests {
             assert!(
                 rules.iter().all(|r| r.name != removed),
                 "{removed} must not be present in default_rules() (31.11: atom-loss, no tracked reagent)"
+            );
+        }
+    }
+
+    // Guards the invariant `search::is_extracted_template` depends on: it
+    // discriminates hand-crafted rules from extracted templates purely by
+    // checking for an `"extracted_"` name prefix (the only reliable signal left
+    // by the time a ReactionStep is built -- RetroRule's own provenance is
+    // already erased into a plain (name, weight, precursors) tuple upstream).
+    // If a hand-crafted rule ever used that prefix, it would be silently
+    // mis-tagged as having no metadata provenance.
+    #[test]
+    fn default_rule_names_never_use_extracted_prefix() {
+        let rules = default_rules();
+        for rule in &rules {
+            assert!(
+                !rule.name.starts_with("extracted_"),
+                "hand-crafted rule {:?} must not use the extracted_ name prefix \
+                 reserved for load_rules_from_file",
+                rule.name
             );
         }
     }

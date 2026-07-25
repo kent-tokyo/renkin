@@ -249,6 +249,8 @@ mod tests {
                 step_confidence: 0.8,
                 procedure_hint: None,
                 reaction_family: Some("amide_coupling".to_string()),
+                metadata_source: None,
+                metadata_scope: None,
             }],
             depth: 1,
             score: 1.5,

@@ -3,9 +3,13 @@
 and data, so a stale count (like the 509->402, 31->28 regression this script
 exists to prevent) fails CI instead of silently shipping.
 
-Usage: check_docs_facts.py <rule_count> <bb_count>
-(rule_count/bb_count come from `cargo run --example doc_facts`, computed live
-from default_rules().len() and data/building_blocks.smi -- not hardcoded here.)
+Usage: check_docs_facts.py <rule_count> <bb_file_count> <bb_fallback_count>
+(all three come from `cargo run --example doc_facts`, computed live from
+default_rules().len(), data/building_blocks.smi, and DEFAULT_BUILDING_BLOCKS
+-- not hardcoded here. Two separate BB counts exist because CLI/Python only
+use the 402-compound file when it's found relative to the cwd at runtime;
+otherwise, and always for WASM, they fall back to the 152-compound compiled-in
+set -- a real, user-visible distinction docs must not collapse into one.)
 
 Pages like README.md/benchmark.md legitimately discuss old, invalidated
 figures (78.0% pre-fix, 509 BBs before a later dedup, etc.) side by side with
@@ -44,7 +48,8 @@ BANNED_PATTERNS = [
 
 def main() -> None:
     rule_count = sys.argv[1]
-    bb_count = sys.argv[2]
+    bb_file_count = sys.argv[2]
+    bb_fallback_count = sys.argv[3]
 
     targets = list(Path("docs").rglob("*.md")) + [
         Path("README.md"),
@@ -77,13 +82,17 @@ def main() -> None:
 
     # Sanity check: the CURRENT correct facts should still be mentioned on the
     # primary landing pages -- catches the numbers being silently deleted
-    # entirely, not just replaced with something else wrong.
+    # entirely, not just replaced with something else wrong. Both BB counts
+    # must appear (not just the 402 file count) so a doc can't describe the
+    # file-backed stock without ever disclosing the compiled-in fallback.
     for path in [Path("README.md"), Path("docs/index.md")]:
         text = path.read_text(encoding="utf-8")
         if rule_count not in text:
             errors.append(f"{path}: does not mention the current hand-crafted rule count ({rule_count})")
-        if bb_count not in text:
-            errors.append(f"{path}: does not mention the current building block count ({bb_count})")
+        if bb_file_count not in text:
+            errors.append(f"{path}: does not mention the current building-block file count ({bb_file_count})")
+        if bb_fallback_count not in text:
+            errors.append(f"{path}: does not mention the current building-block fallback count ({bb_fallback_count})")
 
     if errors:
         print(f"Found {len(errors)} doc-facts issue(s):", file=sys.stderr)
@@ -91,7 +100,10 @@ def main() -> None:
             print(f"  - {e}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"OK: no stale facts found (rule_count={rule_count}, bb_count={bb_count})")
+    print(
+        f"OK: no stale facts found (rule_count={rule_count}, "
+        f"bb_file_count={bb_file_count}, bb_fallback_count={bb_fallback_count})"
+    )
 
 
 if __name__ == "__main__":

@@ -59,8 +59,18 @@ jobs:
         with:
           command: build
           args: --release --features python --out dist
-      - run: |
-          pip install dist/*.whl --force-reinstall
+      - run: pip install dist/*.whl --force-reinstall
+      - name: Smoke test from a non-repo directory
+        # Deliberately NOT run from the repo root: find_routes with no
+        # building_blocks argument looks for data/building_blocks.smi
+        # relative to the cwd and falls back to the compiled-in
+        # DEFAULT_BUILDING_BLOCKS set (152 compounds) if it's not found --
+        # exactly what a real `pip install renkin` user gets when running
+        # from anywhere that isn't a checkout of this repo. Running the
+        # smoke test from repo root would silently test only the 402-file
+        # path and never catch a regression in the fallback.
+        run: |
+          cd /tmp
           python -c "
           import renkin
           assert hasattr(renkin, '__version__'), '__version__ missing'
@@ -95,16 +105,17 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Derive live facts (rule count, building block count)
+      - name: Derive live facts (rule count, building block file/fallback counts)
         id: facts
         run: |
           FACTS=$(cargo run --quiet --example doc_facts)
           echo "$FACTS"
           echo "rule_count=$(echo "$FACTS" | grep -oP 'HAND_CRAFTED_RULE_COUNT=\K\d+')" >> "$GITHUB_OUTPUT"
-          echo "bb_count=$(echo "$FACTS" | grep -oP 'BUILDING_BLOCK_COUNT=\K\d+')" >> "$GITHUB_OUTPUT"
+          echo "bb_file_count=$(echo "$FACTS" | grep -oP 'BUILDING_BLOCK_FILE_COUNT=\K\d+')" >> "$GITHUB_OUTPUT"
+          echo "bb_fallback_count=$(echo "$FACTS" | grep -oP 'BUILDING_BLOCK_FALLBACK_COUNT=\K\d+')" >> "$GITHUB_OUTPUT"
 
       - name: Check docs/README against live facts
-        run: python3 scripts/check_docs_facts.py "${{ steps.facts.outputs.rule_count }}" "${{ steps.facts.outputs.bb_count }}"
+        run: python3 scripts/check_docs_facts.py "${{ steps.facts.outputs.rule_count }}" "${{ steps.facts.outputs.bb_file_count }}" "${{ steps.facts.outputs.bb_fallback_count }}"
 
       - name: Compile and run the Rust quickstart example
         run: cargo run --example quickstart

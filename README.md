@@ -108,10 +108,12 @@ Use `--format mermaid` for GitHub/Notion-compatible flowcharts.
 
 ⚠️ Benchmark numbers are under active re-measurement after a validator-accuracy
 fix — historical 78.0%/95.9%/81.8%(ChEMBL) figures elsewhere in this repo predate
-that fix and are invalidated. RENKIN does not predict yields, success
-probabilities, or side reactions, and does not search the literature
-automatically. See [Benchmark](https://kent-tokyo.github.io/renkin/benchmark/)
-for the current corrected numbers, full methodology, and known limitations.
+that fix and are invalidated. RENKIN does not predict yields, calibrated
+experimental success probabilities, or side reactions, and does not search
+the literature automatically (`success_probability` is a template-frequency
+search-ranking score, not a calibrated prediction — see
+[Benchmark](https://kent-tokyo.github.io/renkin/benchmark/) for the current
+corrected numbers, full methodology, and known limitations).
 
 ---
 

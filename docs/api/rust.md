@@ -14,7 +14,8 @@ The chemical environment holding the building block database.
 ```rust
 use renkin::chem_env::{ChemEnv, mol_from_smiles};
 
-// Load from SMILES file (402 unique compounds in the default data/building_blocks.smi)
+// Load from SMILES file (402 unique compounds when this file is present --
+// `?` propagates an error if it isn't; ChemEnv::load itself has no fallback).
 let env = ChemEnv::load("data/building_blocks.smi")?;
 
 // Load from in-memory list

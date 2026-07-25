@@ -11,7 +11,9 @@ description: "A minimal, CI-tested working example of RENKIN's find_routes API i
 --8<-- "examples/quickstart.py"
 ```
 
-Output (re-run as part of CI, so this can't silently drift):
+Output, captured from an actual run of the example above (CI executes the
+example on every change to confirm it still runs without error, but does not
+diff its output against the text below):
 ```
 Routes found: 3
 Route (depth 1):

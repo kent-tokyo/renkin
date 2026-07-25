@@ -6,50 +6,59 @@ Aspirin (acetylsalicylic acid, ASA) is one of the world's most widely used pharm
 
 **Aspirin**: `CC(=O)Oc1ccccc1C(=O)O`
 
-```python
-import renkin
+The output below is real, current output — reproduced with:
 
-result = renkin.find_routes(
-    smiles="CC(=O)Oc1ccccc1C(=O)O",
-    depth=5,
-    max_routes=5,
-)
-
-for route in result["routes"]:
-    print(f"Route (depth {route['depth']}):")
-    for step in route["steps"]:
-        print(f"  {' + '.join(step['precursors'])}  [{step['rule']}]")
+```bash
+cargo run --bin renkin -- --target "CC(=O)Oc1ccccc1C(=O)O" --depth 5 --max-routes 3 --format tree
 ```
 
-## Expected Routes
+(equivalently in Python, see `examples/quickstart.py` — also run in CI, see
+[Python API](../api/python.md) — which finds the same three routes via
+`renkin.find_routes(target=..., depth=5, max_routes=3)`).
 
-RENKIN finds two main disconnection strategies:
-
-### Route 1: Ester cleavage (depth 1)
-
-```
-CC(=O)Oc1ccccc1C(=O)O
-    → CC(=O)O + Oc1ccccc1C(=O)O
-    [ester_cleavage]
-```
-
-- **Acetic acid** (`CC(=O)O`) — available from stock
-- **Salicylic acid** (`Oc1ccccc1C(=O)O`) — available from stock
-
-This corresponds to the reverse of the Fischer esterification / Einhorn procedure.
-
-### Route 2: Acyl chloride route (depth 1)
+## Actual Routes Found
 
 ```
-CC(=O)Oc1ccccc1C(=O)O
-    → CC(=O)Cl + Oc1ccccc1C(=O)O
-    [aryl_ether_retro / friedel_crafts variant]
+Target: CC(=O)Oc1ccccc1C(=O)O
+Routes found: 3
+
+Route 1  [score=1.09, depth=1]
+OC(=O)c1ccccc1OC(=O)C
+└── [co_aliphatic_cleavage]
+    ├── O=CC  ✓ BB
+    └── c1cccc(c1O)C(O)=O  ✓ BB
+
+Route 2  [score=1.10, depth=1]
+OC(=O)c1ccccc1OC(=O)C
+└── [ester_cleavage]
+    ├── OC(=O)C  ✓ BB
+    └── c1cccc(c1O)C(O)=O  ✓ BB
+
+Route 3  [score=1.10, depth=1]
+OC(=O)c1ccccc1OC(=O)C
+└── [aryl_ether_retro]
+    ├── c1cccc(c1O)C(O)=O  ✓ BB
+    └── OC(=O)C  ✓ BB
 ```
 
-- **Acetyl chloride** (`CC(=O)Cl`) — available from stock
-- **Salicylic acid** (`Oc1ccccc1C(=O)O`) — available from stock
+### Route 2: `ester_cleavage`
 
-This corresponds to the classical industrial synthesis using acetyl chloride.
+- **Acetic acid** (`OC(=O)C`) — available from stock
+- **Salicylic acid** (`c1cccc(c1O)C(O)=O`) — available from stock
+
+This corresponds to the reverse of the Fischer esterification / Einhorn procedure — the classical textbook disconnection for aspirin.
+
+### Routes 1 & 3: `co_aliphatic_cleavage` / `aryl_ether_retro`
+
+RENKIN's search also surfaces two additional graph-based disconnections
+(`co_aliphatic_cleavage`, `aryl_ether_retro`) that reach the same
+acetic-acid + salicylic-acid precursor pair through a different bond-breaking
+path. These reflect generic C-O cleavage rules in RENKIN's rule set finding
+multiple valid retrosynthetic justifications for the same physical bond — not
+three independently useful synthetic strategies. `ester_cleavage` is the
+chemically idiomatic one to cite; the other two are shown here for
+transparency about what the search actually returns, not as recommended
+routes.
 
 ## Try It
 

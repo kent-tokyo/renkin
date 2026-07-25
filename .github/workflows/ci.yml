@@ -73,3 +73,67 @@ jobs:
           assert result, 'find_routes with template_metadata_path=None returned empty'
           print('ok:', renkin.__version__)
           "
+
+  # Prevents documentation from silently drifting from reality (regression:
+  # docs once claimed 31 rules / 509 building blocks / a non-existent
+  # renkin.version() function after the real API had already moved on).
+  # Two-tier: (1) the example scripts embedded into docs/ via pymdownx.snippets
+  # are actually executed/compiled here, not just eyeballed; (2) known-stale
+  # figures are checked against live-derived facts rather than hardcoded.
+  docs-check:
+    name: Docs facts & examples
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Derive live facts (rule count, building block count)
+        id: facts
+        run: |
+          FACTS=$(cargo run --quiet --example doc_facts)
+          echo "$FACTS"
+          echo "rule_count=$(echo "$FACTS" | grep -oP 'HAND_CRAFTED_RULE_COUNT=\K\d+')" >> "$GITHUB_OUTPUT"
+          echo "bb_count=$(echo "$FACTS" | grep -oP 'BUILDING_BLOCK_COUNT=\K\d+')" >> "$GITHUB_OUTPUT"
+
+      - name: Check docs/README against live facts
+        run: python3 scripts/check_docs_facts.py "${{ steps.facts.outputs.rule_count }}" "${{ steps.facts.outputs.bb_count }}"
+
+      - name: Compile and run the Rust quickstart example
+        run: cargo run --example quickstart
+
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --features python --out dist
+      - name: Run the Python quickstart example
+        run: |
+          pip install dist/*.whl --force-reinstall
+          python3 examples/quickstart.py
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: Build WASM (nodejs target) and run the JS quickstart example
+        run: |
+          wasm-pack build --target nodejs --no-default-features
+          node examples/quickstart.mjs
+          rm -rf pkg
+
+      - name: Install MkDocs Material
+        run: pip install mkdocs-material
+      - name: Build docs site (--strict fails on broken links/snippet includes)
+        run: mkdocs build --strict -d /tmp/site
+
+      - name: Check sitemap.xml includes key pages
+        run: |
+          for page in api/python api/rust api/wasm benchmark benchmark_ja getting_started/installation getting_started/quickstart examples/aspirin examples/druglike; do
+            grep -q "$page/" /tmp/site/sitemap.xml || { echo "ERROR: $page missing from sitemap.xml"; exit 1; }
+          done
+          echo "OK: sitemap.xml includes all key pages"

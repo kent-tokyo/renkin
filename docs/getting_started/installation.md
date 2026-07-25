@@ -8,16 +8,12 @@ Install from PyPI — no RDKit or any C/C++ dependency required:
 pip install renkin
 ```
 
-Requires Python 3.9+ and a modern platform. Pre-built wheels are provided for:
-
-| Platform | Python | Status |
-|----------|--------|--------|
-| Linux x86_64 | 3.9–3.13 | ✅ GitHub Actions |
-| macOS arm64 (Apple Silicon) | 3.9–3.13 | ✅ GitHub Actions |
-| macOS x86_64 | 3.9–3.13 | ✅ GitHub Actions |
-| Windows x86_64 | 3.9–3.13 | ✅ GitHub Actions |
-
-If your platform isn't listed, pip will attempt to build from source (requires Rust toolchain).
+Requires Python 3.8+ (`requires-python = ">=3.8"` in `pyproject.toml`). Pre-built
+wheels are published for common combinations of Linux/macOS (Apple Silicon)/Windows
+and recent CPython versions — see the live, authoritative list of built wheels
+on the [PyPI files page](https://pypi.org/project/renkin/#files). If no wheel
+matches your platform, pip will attempt to build from source (requires a Rust
+toolchain — see [Building from Source](#building-from-source) below).
 
 ## Rust
 
@@ -63,7 +59,7 @@ The WASM module is bundled with the npm package. For direct browser use without 
 
 ## Building from Source
 
-Requires Rust 1.75+ (stable):
+Requires Rust 1.85+ (stable) — RENKIN uses `edition = "2024"`, which requires this floor:
 
 ```bash
 git clone https://github.com/kent-tokyo/renkin
@@ -82,5 +78,5 @@ For WASM (requires [wasm-pack](https://rustwasm.github.io/wasm-pack/)):
 
 ```bash
 wasm-pack build --target web --no-default-features
-python3 -m http.server 8080  # then visit http://localhost:8080/demo/
+python3 -m http.server 8080  # then visit http://localhost:8080/docs/playground/
 ```

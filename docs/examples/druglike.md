@@ -8,11 +8,14 @@ SMILES: `c1ccc(-c2ccncc2)cc1`
 
 This biaryl compound is typically synthesized via Suzuki-Miyaura cross-coupling.
 
-RENKIN's graph-based `suzuki_retro` rule disconnects the biaryl bond:
+RENKIN's graph-based `suzuki_retro` rule disconnects the biaryl bond into an
+aryl bromide + an aryl-H fragment (`suzuki_retro` tracks only these two
+organic fragments, not a boronic ester/acid as a separate species — the
+missing boronate activation on the aryl-H side is implicit, not modeled):
 
 ```
 c1ccc(-c2ccncc2)cc1
-    → Brc1ccccc1 + OB(O)c1ccncc1
+    → Brc1ccccc1 + c1ccccn1
     [suzuki_retro]
 ```
 
@@ -20,11 +23,11 @@ or
 
 ```
 c1ccc(-c2ccncc2)cc1
-    → Brc1ccncc1 + OB(O)c1ccccc1
+    → Brc1ccncc1 + c1ccccc1
     [suzuki_retro]
 ```
 
-Both bromobenzene (`Brc1ccccc1`) and 4-pyridineboronic acid (`OB(O)c1ccncc1`) are in the default building block stock.
+Both bromobenzene (`Brc1ccccc1`) and pyridine (`c1ccccn1`) are in the default building block stock.
 
 ## N-Phenyl-2-aminopyridine (Buchwald-Hartwig product)
 
@@ -43,18 +46,19 @@ c1ccc(Nc2ccccn2)cc1
 
 SMILES: `Fc1ccc(-c2ccccc2)cc1`
 
-RENKIN finds two Suzuki disconnection modes:
+RENKIN finds two Suzuki disconnection modes (again, aryl bromide + aryl-H —
+see the note above about the implicit boronate side):
 
 1. Fluorine-substituted arene as the bromide partner:
 ```
 Fc1ccc(-c2ccccc2)cc1
-    → Brc1ccc(F)cc1 + OB(O)c1ccccc1
+    → Fc1ccc(Br)cc1 + c1ccccc1
 ```
 
 2. Or the reverse:
 ```
 Fc1ccc(-c2ccccc2)cc1
-    → Brc1ccccc1 + OB(O)c1ccc(F)cc1
+    → Brc1ccccc1 + Fc1ccccc1
 ```
 
 ## Paracetamol (Acetaminophen)

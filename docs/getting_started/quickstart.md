@@ -3,89 +3,61 @@
 ## Python
 
 ```python
-import renkin
-
-# Find retrosynthetic routes for Aspirin
-result = renkin.find_routes(
-    smiles="CC(=O)Oc1ccccc1C(=O)O",
-    depth=5,
-    max_routes=3,
-)
-
-print(f"Found {result['routes_found']} routes")
-
-for i, route in enumerate(result["routes"]):
-    print(f"\nRoute {i+1} (depth {route['depth']}):")
-    for step in route["steps"]:
-        precursors = " + ".join(step["precursors"])
-        print(f"  {step['target']}")
-        print(f"  → {precursors}  [{step['rule']}]")
+--8<-- "examples/quickstart.py"
 ```
 
-Output:
+Output (re-run as part of CI, so this can't silently drift):
 ```
-Found 2 routes
-
-Route 1 (depth 2):
-  CC(=O)Oc1ccccc1C(=O)O
-  → CC(=O)O + Oc1ccccc1C(=O)O  [ester_cleavage]
-
-Route 2 (depth 2):
-  CC(=O)Oc1ccccc1C(=O)O
-  → CC(=O)Cl + Oc1ccccc1C(=O)O  [ester_acyl_chloride]
+Routes found: 3
+Route (depth 1):
+  OC(=O)c1ccccc1OC(=O)C -> O=CC + c1cccc(c1O)C(O)=O
+  via co_aliphatic_cleavage
+Route (depth 1):
+  OC(=O)c1ccccc1OC(=O)C -> OC(=O)C + c1cccc(c1O)C(O)=O
+  via ester_cleavage
+Route (depth 1):
+  OC(=O)c1ccccc1OC(=O)C -> c1cccc(c1O)C(O)=O + OC(=O)C
+  via aryl_ether_retro
 ```
+
+`find_routes` returns a **JSON string** — always `json.loads()` it before
+accessing fields; see [Python API](../api/python.md) for the full parameter
+list (custom templates, evidence metadata, constraints, pricing, etc.).
 
 ## Custom Building Blocks
 
 You can supply your own building block library:
 
 ```python
-import renkin
+import renkin, json
 
-# List of SMILES strings
 my_stock = [
-    "CC(=O)O",      # acetic acid
-    "Oc1ccccc1",    # phenol
-    "c1ccccc1",     # benzene
-    "Brc1ccccc1",   # bromobenzene
+    "CC(=O)O",       # acetic acid
+    "Oc1ccccc1",     # phenol
+    "c1ccccc1",      # benzene
+    "Brc1ccccc1",    # bromobenzene
     "OB(O)c1ccccc1", # phenylboronic acid
 ]
 
-result = renkin.find_routes(
-    smiles="c1ccc(-c2ccccc2)cc1",  # biphenyl
+result = json.loads(renkin.find_routes(
+    target="c1ccc(-c2ccccc2)cc1",  # biphenyl
     building_blocks=my_stock,
     depth=3,
-)
+))
+print(f"Routes found: {result['routes_found']}")
+# Routes found: 1 (bromobenzene + benzene via suzuki_retro, the only rule
+# this small 5-compound stock can support)
 ```
 
 ## Rust
 
 ```rust
-use renkin::{
-    chem_env::{ChemEnv, default_rules},
-    search::{SearchConfig, find_routes},
-};
-
-fn main() -> anyhow::Result<()> {
-    // Load building blocks from a SMILES file
-    let env = ChemEnv::load("data/building_blocks.smi")?;
-    
-    let config = SearchConfig {
-        max_depth: 5,
-        max_routes: 3,
-        beam_width: 0,  // 0 = unlimited A*
-    };
-    
-    let routes = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &config)?;
-    
-    println!("Found {} routes", routes.len());
-    for (i, route) in routes.iter().enumerate() {
-        println!("Route {} (depth {}):", i + 1, route.depth());
-    }
-    
-    Ok(())
-}
+--8<-- "examples/quickstart.rs"
 ```
+
+`find_routes` returns `Result<(Vec<Route>, SearchStats)>` — destructure the
+tuple, and note `route.depth`/`route.steps` are plain fields, not methods. See
+[Rust API](../api/rust.md) for the full signature and `SearchConfig` fields.
 
 ## CLI Benchmark
 

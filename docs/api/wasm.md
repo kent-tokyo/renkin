@@ -44,12 +44,18 @@ const result = JSON.parse(raw);
 
 ```typescript
 function find_routes(
-  smiles: string,    // Target molecule SMILES
-  depth: number,     // Maximum retrosynthetic depth
+  target: string,     // Target molecule SMILES
+  depth: number,      // Maximum retrosynthetic depth
   max_routes: number, // Maximum routes to return
   beam_width: number  // A* beam width (0 = unlimited)
 ): string  // JSON-encoded result
 ```
+
+WASM always uses the compiled-in default rule set (28 hand-crafted rules) and
+building blocks — there is no way to load an external templates file or
+custom building blocks list from the WASM entry point (unlike the CLI/Python
+bindings). See [Rust API](rust.md) or [Python API](python.md) for
+`--templates`/`templates_path` support.
 
 **Return value (JSON):**
 
@@ -61,13 +67,24 @@ interface Result {
 
 interface Route {
   depth: number;
+  score: number;
+  confidence: number;
+  success_probability: number;
+  convergency: number;
+  route_cost: number;
+  building_blocks: string[];
   steps: Step[];
 }
 
 interface Step {
-  target: string;      // SMILES of target at this step
-  rule: string;        // reaction rule name
-  precursors: string[]; // SMILES of precursor molecules
+  target: string;         // SMILES of target at this step
+  rule: string;           // reaction rule name
+  template_id: string;    // stable template identity (rule:<name> / smirks-sha256:<hex>)
+  precursors: string[];   // SMILES of precursor molecules
+  step_confidence: number;
+  // conditions / atom_economy / procedure_hint / reaction_family /
+  // metadata_source / metadata_scope / evidence are present when applicable
+  // and simply absent from the JSON otherwise
 }
 ```
 
@@ -78,6 +95,15 @@ function version(): string
 ```
 
 Returns the RENKIN version string (e.g., `"0.16.0"`).
+
+## Minimal Node.js Example (CI-verified)
+
+`examples/quickstart.mjs` is run against a `wasm-pack build --target nodejs`
+output as part of CI, so this call shape can't silently drift from the real API:
+
+```javascript
+--8<-- "examples/quickstart.mjs"
+```
 
 ## Live Playground
 

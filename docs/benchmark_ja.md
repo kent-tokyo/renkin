@@ -1,109 +1,127 @@
 # ベンチマーク
 
-> ⚠️ **注記（2026-07-22）: このページの78.0%/95.9%/81.8%(ChEMBL)は無効化された過去の計測値であり、再計測されていません。** 「Corrected baseline」セクションのみが現行ルールセットの数値です。
+> ⚠️ **注記（2026-07-22）: このページに残る78.0%（単一パス）/95.9%（cascade）/81.8%（ChEMBL OOD）は無効化された過去の計測値であり、再計測されていません。** これらは、解決数を化学的に不正な経路や誤って肯定判定されたルートで水増ししていた4件の逆合成ルール・validatorバグを修正する前に計測されたものです（経緯は下記）。**「Corrected baseline」セクションのみが現行ルールセットを反映しています**——このページの他の箇所は歴史的な連続性のために旧い無効化済みの数値をそのまま残しており、それぞれその旨を明記しています。マークのない過去の数値をRENKINの現在の性能として引用しないでください。
 >
-> **Corrected baseline — USPTO-50k Stage 1（単一パス）、コミット `e20dc8c`、2026-07-22。** Search-to-stock rate（`raw_solved_rate`）**20.09%**（986/4,907）→ Atom-balance-filtered rate（`atom_balanced_solved_rate`）**15.41%**（756/4,907）→ Current-validator-confirmed rate（`provenance_validated_solved_rate`）**0.88%**（43/4,907）。この3つは同一4,907件に対する入れ子系列（各段はより厳格な部分集合）であり、独立した3つの計測値ではなく、いずれも実験的に検証された合成成功率でも人間の化学者によるルート正確性評価でもない。
+> **Corrected baseline — USPTO-50k Stage 1（単一パス）、コミット `e20dc8c`、2026-07-22。** Search-to-stock rate（`raw_solved_rate`）**20.09%**（986/4,907）→ atom-balance-filtered rate（`atom_balanced_solved_rate`）**15.41%**（756/4,907）→ current-validator-confirmed rate（`provenance_validated_solved_rate`）**0.88%**（43/4,907）。この3つは同一4,907件に対する*入れ子系列*（各段が前段のより厳格な部分集合）であり、独立した3つの計測値ではなく、いずれも単独では実験的に検証された合成成功率でも人間の化学者によるルート正確性評価でもありません。
 >
-> **0.88%が正確に何を表すか:** stockまで到達する完全な経路があり、かつ全stepがatom-balance checkを通過し、かつ全stepがそれぞれのoriginating ruleの現行validatorで肯定的に確認された、その割合。**これは実測の化学的正確性の値ではなく、真の正確性について数学的に証明された下限でもない**——下限と言うにはvalidatorに偽陽性がないことの証明が必要だが、それは示されていない（44件のValidatedのうち1件はatom-balance checkを通らず、診断サンプルでも864 step中14 stepがValidかつatom-imbalanced）。同様に`Invalid`判定も誤りだと証明されたわけではない：n=300診断サンプルで72.2%のstepがInvalidだがatom-balanced済みであり、そのうち未知の割合がvalidator偽陰性（正規化・互変異性・位置選択性の境界ケース）である可能性がある一方、実際のrule・route誤りも含まれ得る。両者の比率は未計測である（`suzuki_retro`は0%invalid、`cn_aliphatic_cleavage`は97.6%invalidという広がりはさらなる調査に値するが、いずれの原因にも未帰属）。詳細な手法・ハッシュ・rule別内訳: [`tasks/phase31_final_remeasurement_run.md`](https://github.com/kent-tokyo/renkin/blob/master/tasks/phase31_final_remeasurement_run.md)。
+> **0.88%が正確に何を表すか:** stockまで到達する完全な経路があり、かつ全stepがatom-balance checkを通過し、かつ全stepがそれぞれのoriginating ruleの現行validatorによって肯定的に確認された、その割合です。**これは実測の化学的正確性の値ではなく、真の正確性について数学的に証明された下限でもありません**——下限と言うにはvalidatorに偽陽性がないことの証明が必要ですが、それは示されていません（44件の`validated`ルートのうち1件はatom-balance checkを通らず、診断サンプルでも864 step中14 stepが`Valid`かつatom-imbalancedです）。同様に`Invalid`判定も誤りだと証明されたわけではありません：n=300診断サンプルで72.2%のstepが`Invalid`かつatom-balanced済みであり、そのうち未知の割合がvalidatorの偽陰性（正規化・互変異性・位置選択性の境界ケース）である可能性がある一方、実際のrule・route誤りも含まれ得ます。両者の比率は未計測です（`suzuki_retro`は0%invalid、`cn_aliphatic_cleavage`は97.6%invalidという広がりはさらなる調査に値しますが、いずれの原因にも未帰属です）。詳細な手法・設定ハッシュ・rule別内訳: [`tasks/phase31_final_remeasurement_run.md`](https://github.com/kent-tokyo/renkin/blob/master/tasks/phase31_final_remeasurement_run.md)。
 >
-> **修正の経緯:** `aryl_carboxylation_retro`のエステル誤発火を修正（PR #26）。原子を追跡なしに消失させる同型バグを持つルール3件——`aryl_chloride_retro`・`aryl_iodide_retro`・`aryl_fluoride_snAr_retro`——を発見・削除（PR #31、「31.11」）。forward validatorが「実際に使ったrule」ではなく「どれかのruleが偶然再現できればValid」としていた問題を、各stepの originating rule に拘束するよう修正（PR #33、「31.12」）。いずれもこの再計測前に個別CI確認の上でmasterへマージ済み。**cascade（95.9%）・ChEMBL OOD（81.8%）は修正版ルールセットに対して未再計測**——各セクションの注記を参照。Phase 31のcorrected baseline確立・公開はこれで完了。validatorの偽陰性と実際のrule誤りの分離調査は後続課題として残る。
+> **修正の経緯:** `aryl_carboxylation_retro`のエステル誤発火を修正（PR #26）。原子を追跡なく消失させる同型バグを持つルール3件——`aryl_chloride_retro`・`aryl_iodide_retro`・`aryl_fluoride_snAr_retro`——を発見・削除（PR #31、「31.11」：いずれもハロゲン原子を追跡対象試薬なしに削除していました）。forward validatorが「実際にそのstepが使ったrule」ではなく「どれかのruleのSMIRKSが偶然targetを再現できればValid」としていた問題を、各stepの originating rule に拘束するよう修正（PR #33、「31.12」）。いずれもこの再計測前に、この順序で個別にCI確認の上でmasterへマージ済みです。**cascade（95.9%）・ChEMBL OOD（81.8%）は修正版ルールセットに対して未再計測**であり、無効化された過去の数値のまま残っています——各セクションの注記を参照してください。Phase 31のcorrected baseline確立・公開はこれで完了ですが、validatorの偽陰性と実際のrule誤りを切り分ける忠実性分析は、明示的な未解決の後続課題として残っています。
 
 ## USPTO-50k テストセット
 
-RENKIN を [USPTO-50k](https://huggingface.co/datasets/bisectgroup/USPTO_50K) テストセット全件（4,907 分子）で評価します。逆合成の標準ベンチマークデータセットです。
+RENKIN は [USPTO-50k](https://huggingface.co/datasets/bisectgroup/USPTO_50K) テストセット全件（4,907分子）で評価されます——多段階逆合成計画の標準ベンチマークです。
 
-### Corrected Baseline（コミット `e20dc8c`、2026-07-22） — depth=5, beam=100, 5,000 extracted templates, 28 handcrafted rules
+**「解決（solved）」の意味:** ターゲットは、すべてのリーフ前駆体がビルディングブロック集合に含まれる完全な逆合成経路が1つ以上見つかった場合に*solved*と判定されます（下記のcorrected-baseline実行では`data/building_blocks.smi`から読み込んだ402件のユニークな化合物——ファイルの生の行数と異なる理由は同セクション参照）。これはUSPTOデータセットのground-truth試薬との照合では**ありません**。
 
-| Public label | 指標 | 値 | 分母 |
+### Corrected Baseline（コミット `e20dc8c`、2026-07-22） — depth=5, beam=100, 5,000 extracted templates, 28 hand-crafted rules
+
+| Public label | 内部指標 | 値 | 分母 |
 |------|------|-----|------|
 | Search-to-stock rate | `raw_solved_rate` | **20.09%**（986/4,907） | 全4,907件 |
 | Atom-balance-filtered rate | `atom_balanced_solved_rate` | **15.41%**（756/4,907） | 全4,907件——search-to-stockの部分集合 |
-| Current-validator-confirmed rate | `provenance_validated_solved_rate` | **0.88%**（43/4,907） | 全4,907件——atom-balance-filteredの部分集合。詳細は上記注記参照 |
+| Current-validator-confirmed rate | `provenance_validated_solved_rate` | **0.88%**（43/4,907） | 全4,907件——atom-balance-filteredの部分集合。この値が何であり何でないかは上記注記を参照 |
 | depth=0 直接stock一致 | — | 0.04%（2/4,907） | 全4,907件 |
 | レイテンシ（全ターゲット） | — | p50 7.3s / p95 28.2s / p99 51.2s | 未解決ターゲット（探索予算まで実行）を含む |
 | レイテンシ（解決済のみ） | — | p50 1.0s / p95 9.4s / p99 15.6s | |
 
-この3指標は同一4,907件に対する入れ子系列であり独立した数値ではなく、いずれも単独では化学的正確性を実測・保証するものではない——引用前に上記注記を参照。
+この3指標は同一4,907件に対する入れ子系列であり独立した数値ではなく、いずれも単独では化学的正確性を実測・保証するものではありません——単独で引用する前に上記の注記を参照してください。
 
-ビルディングブロック: `ChemEnv::load("data/building_blocks.smi")`が実際にロードした**402**件のユニークな化合物（`ChemEnv::bb_count()`）——parse・canonical化・重複除去後の数であり、ファイルの生の行数ではない（非コメント行449 → parse失敗3 → canonical化後の重複44 → ユニーク402）。詳細な設定・ハッシュ・rule別内訳は `tasks/phase31_final_remeasurement_run.md` を参照。
+ビルディングブロック: `ChemEnv::load("data/building_blocks.smi")`（`ChemEnv::bb_count()`）が実際にロードした**402**件のユニークな化合物——parse・canonical化・重複除去後の数であり、ファイルの生の行数ではありません（非コメント行449 → parse失敗3 → canonical化後の重複44 → ユニーク402）。詳細な設定・ハッシュ・rule別内訳は `tasks/phase31_final_remeasurement_run.md` を参照してください。
 
-### 過去の結果 (v0.1.8、修正前) — depth=5, beam=100, 5,000 extracted templates
+### 過去の結果（v0.15.5、修正前） — depth=5, beam=100, 約5,000 extracted templates
 
 | 設定 | 解決数 | 成功率 | 平均時間 | 実行環境 |
 |------|--------|--------|----------|----------|
-| depth=5, beam=100, 5,000 templates | **3,831 / 4,907** | **78.1%** | **≈2,800 ms/mol** | Apple M-series, 8 スレッド |
+| depth=5, beam=100, 約5,000テンプレート + Phase A | **3,826 / 4,907** | **78.0%** | **≈2,800 ms/mol** | Apple M-series, 8スレッド |
 
-*状態: 無効化された過去の計測値、31.11/31.12修正前——上記の注記を参照。参考として保持。*
+*状態: 無効化された過去の計測値、31.11/31.12修正前——上記の注記を参照。継続性のためだけに保持。*
 
-### 精度の変遷
+### 進捗の推移（Table A — RENKIN内部）
 
-| バージョン / フェーズ | 解決数 | 成功率 | 平均時間 | 備考 |
-|----------------------|--------|--------|----------|------|
-| v0.1.0 | 25 / 500 | 5.0% | 79 ms/mol | ルール 20 件・BB 480 件・depth=2・500mol サンプル |
-| v0.1.1（ベースライン） | 1,363 / 4,907 | 27.8% | — | デフォルトルールのみ・depth=3 |
-| Phase A（500 テンプレート, beam=100） | 2,315 / 4,907 | 47.2% | — | depth=5・抽出テンプレート 500 件追加 |
-| Phase A（5k テンプレート, beam=100） | 3,540 / 4,907 | 72.1% | 1,742 ms/mol | depth=5・テンプレート頻度重み付け |
-| Phase A（5k テンプレート, unlimited A\*） | 3,830 / 4,907 | 78.1% | 2,956 ms/mol | depth=5・beam=0（無制限） |
-| Phase B（5k テンプレート, beam=100, NN スコアラー） | 3,826 / 4,907 | 78.0% | 3,394 ms/mol | depth=5・ONNX ニューラルスコアラー |
-| v0.1.3（5k テンプレート, beam=100） | 3,826 / 4,907 | 78.0% | 2,775 ms/mol | depth=5・Pure Rust 最適化 |
-| **v0.1.8（5k テンプレート, beam=100, diaryl sulfone ルール）** | **3,831 / 4,907** | **78.1%** | **≈2,800 ms/mol** | depth=5・diaryl_sulfone_retro + 509 BB |
+| フェーズ | 解決数 | 成功率 | 備考 |
+|-------|--------|------|-------|
+| ルール31件のみ、depth=3 | 366 / 4,907 | 7.5% | hand-crafted ruleのみ |
+| + 抽出テンプレート191件、depth=3 | 1,363 / 4,907 | 27.8% | rdchiral top-300 |
+| + depth=5 | 1,909 / 4,907 | 38.9% | depth増加 |
+| + top-500テンプレート、depth=5 | 2,315 / 4,907 | 47.2% | 合計314ルール |
+| + beam=100 | 2,688 / 4,907 | 54.8% | ビームサーチ |
+| + Phase A頻度重み付け | 3,540 / 4,907 | 72.1% | 高頻度テンプレートへのstep_costボーナス |
+| **+ 約5,000テンプレート（v0.15.5）** | **3,826 / 4,907** | **78.0%** | 修正前計測値、無効化済み |
+| **Cascade: Stage 2（depth=7, beam=300, 未解決分のみ）** | **4,705 / 4,907** | **95.9%** | 2026-06-29 ✅ |
 
 *状態: 無効化された過去の計測値——上記の注記を参照。*
 
-v0.1.8 では、ジアリールスルホン逆合成ルール（グラフベース）を追加し、ビルディングブロックを 509 件（当時のドキュメント記載値。`bb_count()`での再検証はしていないlegacy documentation value）に拡充したと記録されています。
+### 比較: 多段階プランナー（Table B）
 
-### 他システムとの比較
+> **⚠️ 条件を揃えた比較ではありません。** ビルディングブロック数・テンプレート数・評価設定はシステムごとに大きく異なります。この数値だけでツールの優劣を確定的にランク付けすることはできません。同一のBB集合・同一のテンプレートによる条件統一実験はまだ行われていません。
 
-| システム | Top-1 | 在庫 | テンプレート数 | 備考 |
-|---------|-------|------|-------------|------|
-| **RENKIN（corrected, raw_solved_rate）** | **20.09%** | **402 BBs** | **5,000** | Pure Rust、C++ 依存なし、2026-07-22 |
-| AiZynthFinder (Mol. Inf. 2020) | ~45% | eMolecules (~600 万) | ~50,000 | Python、RDKit |
-| Retro\* (ICML 2020) | ~40% | eMolecules (~600 万) | ~50,000 | Python |
-| LocalRetro (AAAI 2021) | ~65% | eMolecules (~600 万) | テンプレートフリー | GNN ベース |
-| GLN (NeurIPS 2020) | ~64% | eMolecules (~600 万) | ~17,000 | GNN ベース |
+| システム | 多段階成功率 | 在庫 | テンプレート | 出典 |
+|--------|----------------|-------|-----------|--------|
+| **RENKIN v0.16.0（corrected, `raw_solved_rate`）** | **20.09%** | 402 BB | 約5,000 | 本ページ、2026-07-22 |
+| AiZynthFinder | 45–53% | 約600万（eMolecules） | 約50,000 | Genheden et al., J. Cheminform. 2020 |
+| Retro\* | 44.3% | 約20,000 | 約17,000 | Chen et al., NeurIPS 2020 |
+| ASKCOS | 約41% | 約20,000 | 約195,000 | Coley et al., Science 2019 |
 
-RENKIN行は`raw_solved_rate`（stockへの経路が1件以上見つかった率）を使用——他システムが公表しているroute-finding成功率に最も近いRENKIN側の指標です。ただし在庫規模・テンプレート集合・ターゲット集合・探索budget・ルート品質検査がシステムごとに異なるため、直接比較はできず、この表はRENKINが他システムより優れている（あるいは劣っている）ことを示すものではありません。RENKIN はこれに加えてより厳格な入れ子指標（`atom_balanced_solved_rate` 15.41%、`provenance_validated_solved_rate` 0.88%——上記の注記参照）も報告していますが、他システムの論文には直接対応する数値がありません。
+RENKIN行は`raw_solved_rate`（stockへの経路が1件以上見つかった率）を使用しています——他システムが公表しているroute-finding成功率に最も近いRENKIN側の指標です。ただし在庫規模・テンプレート集合・ターゲット集合・探索budget・ルート品質検査がシステムごとに異なるため直接比較はできず、この表はRENKINが他システムより優れている（あるいは劣っている）ことを示すものではありません。RENKINはこれに加えてより厳格な2つの入れ子指標（`atom_balanced_solved_rate` 15.41%、`provenance_validated_solved_rate` 0.88%——上記のcorrected-baseline注記参照）も報告していますが、他システムの論文には直接対応する数値がありません。
+
+### 比較: 単一ステップTop-1モデル（Table C — 異なる指標）
+
+> **⚠️ 異なる指標です。** これらは単一ステップのtop-1予測精度（モデルのtop-1予測が既知の反応と一致するか）を測定するものであり、多段階プランニングの成功率では**ありません**。Table Bとの直接比較は妥当ではありません。
+
+| システム | 単一ステップTop-1 | 出典 |
+|--------|------------------|--------|
+| LocalRetro | 53.4% | Chen et al., ACS Cent. Sci. 2021 |
+| GLN | 58.0% | Yu et al., NeurIPS 2022 |
 
 !!! note "条件の違い"
-    RENKIN の 20.09% は **402 種類の市販試薬のみ**・**5,000 テンプレート**で達成しています。
-    他システムは eMolecules 等の数百万化合物データベースと数万テンプレートを使用しており、
-    RENKIN は不利な条件での評価です。
-
-    RENKIN の強みは **Pure Rust・ゼロ C/C++ 依存・WASM/Python 対応** による移植性と組み込みやすさです。
-    `cargo build` 一発でビルドでき、ブラウザ（WASM）・Python・CLI どこでも同一バイナリが動作します。
+    RENKIN の 20.09% は **402種類の市販試薬のみ**・**約5,000テンプレート**で達成しています。一方 AiZynthFinder のようなシステムは600万化合物データベースと5万テンプレートを使用しています。RENKIN の強みは**移植性**です：Pure Rust、ゼロ C/C++ 依存、単一バイナリで WASM + Python + CLI に対応します。
 
 ### RENKIN が得意とする反応
 
-標準的な結合切断に対して高い精度を示します：
+RENKIN は標準的な結合切断に対して高い精度を示します：
 
 - エステル → カルボン酸 + アルコール
 - アミド → 酸 + アミン（グラフベース切断）
-- ビアリール → アリールハライド + ボロン酸（Suzuki）
+- ビアリール → アリールハライド + ボロン酸（Suzuki、グラフベース）
 - アリールアミン → アリールハライド + アミン（Buchwald-Hartwig）
-- Boc / Cbz 保護基の脱保護
-- ジアリールスルホン → アリールスルホニルクロリド + アレーン（グラフベース、v0.1.8）
+- Boc / Cbz 保護基の脱保護（グラフベース）
+- ジアリールスルホン → アリールスルホニルクロリド + アレーン（グラフベース）
 - スルホンアミド → スルホニルクロリド + アミン
 
 ### ドメイン外（OOD）評価
 
-> ⚠️ **修正版ルールセットに対して未再計測（31.11/31.12以前、無効化済み）。** 以下の2行はいずれも過去の参考値です。
+> ⚠️ **修正版ルールセットに対して未再計測です（31.11/31.12以前、無効化済み）。** 以下の2行はいずれも過去の参考値として扱ってください。
 
-RENKIN の精度が USPTO-50k ドメイン限定かどうかを確認するため、ChEMBL の **FDA 承認薬 500 件**（Phase 4、MW 150–700、塩除外）で評価しました。
+RENKIN の精度が USPTO-50k ドメインに固有かどうかを確認するため、ChEMBL の **FDA承認薬500件**（Phase 4、MW 150–700、塩を除外、2026-06-25）で評価しました。
 
 | データセット | 解決数 | 成功率 | 備考 |
 |------------|--------|--------|------|
-| USPTO-50k テストセット | 3,831 / 4,907 | **78.1%**（修正前） | in-distribution（テンプレートは USPTO 訓練セットから抽出） |
-| **ChEMBL 承認薬** | **409 / 500** | **81.8%**（修正前） | out-of-distribution（実際の FDA 承認医薬品） |
+| USPTO-50k テストセット（in-domain） | 3,826 / 4,907 | **78.0%**（修正前） | テンプレートはUSPTO訓練セットから抽出 |
+| **ChEMBL 承認薬（OOD）** | **409 / 500** | **81.8%**（修正前） | 実際のFDA承認医薬品 |
 
-**RENKIN は USPTO ドメインに限らず、実際の承認薬にも良く機能します。** +3.7 pp の向上は、ルールセットが USPTO 訓練データ特有の反応ではなく、医薬品合成で一般的な変換を幅広くカバーしていることを示します。
+承認薬での+3.8ポイントの差は、ルールセットが医薬品合成で一般的な変換を広くカバーしているという仮説と整合します。ただし、この結果は慎重に解釈すべきです：両データセットともsmall-molecule有機化学であり、OODギャップとしての振れ幅は限定的です。両データセットで未解決分子は共通のプロファイルを示します：窒素の多い複素環（+17ポイント）とフッ素化合物（+11ポイント）。
 
-未解決分子のパターンは両データセットで共通です：N の多い複素環（未解決で +17 pp）とフッ素化合物（+11 pp）。これはドメイン固有の問題ではなく、構造的な難しさによるものです。
+### 失敗要因の分類（2026-06-29、500分子サンプル）
+
+> ⚠️ **修正版ルールセットに対して未再計測です（31.11/31.12以前、無効化済み）。** 手法の参考としてのみ保持しています。
+
+`renkin-bench --failure-taxonomy` は未解決ターゲットを原因別に分類します：
+
+| 原因 | 件数 | 未解決分に占める割合 | 説明 |
+|-------|-------|--------------|------|
+| beam_limit_hit | 111 / 112 | 99.1% | beamが有望なノードを枝刈りした |
+| max_depth_reached | 111 / 112 | 99.1% | depth=5を超えるルートが必要だった |
+| stock_near_miss | 111 / 112 | 99.1% | frontierにBBはあったが完全な経路がなかった |
+| no_template_match | 1 / 112 | 0.9% | マッチしたテンプレートが3件未満だった |
+
+**主な知見:** テンプレートやビルディングブロックのカバレッジはボトルネックではありません。未解決ターゲットのほぼすべてが探索予算（beam/depth）の上限に達しています。Cascade search（Stage 2: 未解決分のみdepth=7, beam=300で再実行）は、以前未解決だった1,081件中879件（81.3%）を解決し、全体の成功率を78.0%から**95.9%**へ引き上げました。
 
 ### 成功率をさらに高めるには
 
-1. **在庫データベースの拡充** — eMolecules、ZINC、社内在庫を `--building-blocks` で指定
-2. **テンプレート数の増加** — USPTO 全データからより多くのテンプレートを抽出
-3. **探索深度の増加** — `--depth 7` 等で多段階合成ルートをカバー
+1. **Cascade search** — 未解決ターゲットをより高いbeam/depthで再実行（`--depth 7 --beam-width 300`）。失敗要因分析では、これが主要なレバーであることが示されています。
+2. **ビルディングブロックデータベースの拡充** — eMolecules、ZINC、社内在庫を `--building-blocks` で指定
+3. **テンプレートの追加** — USPTO全訓練セットからより多くのテンプレートを抽出（`--templates data/templates_extracted_5000.smi`）
 
 ### ベンチマークの実行方法
 
@@ -111,25 +129,29 @@ RENKIN の精度が USPTO-50k ドメイン限定かどうかを確認するた�
 # ビルド
 cargo build --release
 
-# USPTO-50k テストセット取得（初回のみ）
-python3 scripts/download_uspto50k.py
-
-# 全件ベンチマーク（50 チャンク × 100 mol、中断再開可能）
+# 全件ベンチマーク — 50チャンク × 100分子、中断・再開可能
 bash scripts/run_benchmark_chunks.sh \
     data/uspto50k_test.smi \
     data/templates_extracted_5000.smi \
     data/bench_chunks \
     5 100
 
-# 結果集計
+# 未解決分の失敗要因分析
+./target/release/renkin-bench \
+    --input data/uspto50k_test.smi \
+    --depth 5 --beam-width 100 \
+    --templates data/templates_extracted_5000.smi \
+    --failure-taxonomy \
+    > bench_result.json
+
+# チャンクの集計
 python3 -c "
 import json, glob
 files = sorted(glob.glob('data/bench_chunks/chunk_*.json'))
-total = solved = 0; times = []
+total = solved = 0
 for f in files:
     d = json.load(open(f))
     total += d['total']; solved += d['solved']
-    times.append(d['avg_time_ms'])
-print(f'{solved}/{total} = {solved/total:.1%}, avg {sum(times)/len(times):.0f} ms/mol')
+print(f'{solved}/{total} = {solved/total:.1%}')
 "
 ```

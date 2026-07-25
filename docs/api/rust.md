@@ -7,9 +7,9 @@
 The chemical environment holding the building block database.
 
 ```rust
-use renkin::chem_env::ChemEnv;
+use renkin::chem_env::{ChemEnv, mol_from_smiles};
 
-// Load from SMILES file
+// Load from SMILES file (402 unique compounds in the default data/building_blocks.smi)
 let env = ChemEnv::load("data/building_blocks.smi")?;
 
 // Load from in-memory list
@@ -22,7 +22,9 @@ assert!(env.is_building_block(&mol));
 
 ### `SearchConfig`
 
-Configuration for the retrosynthesis search.
+Configuration for the retrosynthesis search. Has a manual `Default` impl (not
+`#[derive(Default)]`) — always use `..Default::default()` for fields you don't
+set explicitly, since new fields are added over time.
 
 ```rust
 use renkin::search::SearchConfig;
@@ -31,22 +33,33 @@ let config = SearchConfig {
     max_depth: 5,      // maximum retrosynthetic depth
     max_routes: 3,     // maximum number of routes to return
     beam_width: 50,    // A* beam width (0 = unlimited)
+    ..Default::default()
 };
 ```
 
 ### `find_routes`
 
-Main search function.
+Main search function. Returns `(Vec<Route>, SearchStats)`, not a bare `Vec<Route>`.
 
 ```rust
+use renkin::chem_env::{ChemEnv, default_rules};
 use renkin::search::{SearchConfig, find_routes};
-use renkin::chem_env::ChemEnv;
 
 let env = ChemEnv::load("data/building_blocks.smi")?;
+let rules = default_rules();
 let config = SearchConfig { max_depth: 5, ..Default::default() };
 
-let routes = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &config)?;
-println!("Found {} routes", routes.len());
+let (routes, stats) = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &config)?;
+println!("Found {} routes ({} nodes expanded)", routes.len(), stats.nodes_expanded);
+for route in &routes {
+    println!("Route depth: {}", route.depth); // `depth` is a plain field, not a method
+}
+```
+
+A full, CI-compiled-and-run version of this example lives at `examples/quickstart.rs`:
+
+```rust
+--8<-- "examples/quickstart.rs"
 ```
 
 ## Reaction Rules
@@ -54,20 +67,28 @@ println!("Found {} routes", routes.len());
 ```rust
 use renkin::chem_env::{default_rules, RetroRule};
 
-// Get the default rule set (31 handcrafted rules)
+// Get the default rule set (28 hand-crafted rules)
 let rules = default_rules();
 
-// Each rule has a name and SMIRKS pattern
+// Each rule has a stable template_id, name, and SMIRKS pattern
+// (SMIRKS is empty for graph-based rules dispatched by name in apply_retro,
+// e.g. "ester_cleavage", "amide_cleavage", "suzuki_retro")
 for rule in &rules {
-    println!("{}: {}", rule.name, rule.smirks);
+    println!("{} ({}): {}", rule.name, rule.template_id, rule.smirks);
 }
 
 // Apply a single rule to a molecule
 use renkin::chem_env::{apply_retro, mol_from_smiles};
 let mol = mol_from_smiles("CC(=O)Oc1ccccc1C(=O)O")?;
-let rule = RetroRule { name: "ester_cleavage", smirks: "[C:1](=[O:2])[O:3]>>[C:1](=[O:2])O.[O:3]" };
-let precursor_sets = apply_retro(&mol, &rule);
+let ester_rule = rules.iter().find(|r| r.name == "ester_cleavage").unwrap();
+let precursor_sets = apply_retro(&mol, ester_rule); // Vec<Vec<PrecursorMol>>
 ```
+
+`RetroRule` has 5 fields: `name`, `template_id` (`rule:<name>` for hand-crafted
+rules, `smirks-sha256:<hex>` for extracted templates — see [Template Evidence
+Metadata](https://github.com/kent-tokyo/renkin#template-evidence-metadata)),
+`smirks`, `weight`, `required_elements`. A hand-written `RetroRule { .. }`
+literal needs `..Default::default()` for any field you don't set explicitly.
 
 ## Molecule Utilities
 
@@ -87,10 +108,14 @@ println!("{}", canon);  // "CC(=O)O"
 | Feature | Description |
 |---------|-------------|
 | `python` | Enable PyO3 Python bindings (for `maturin build`) |
-| *(default: wasm32)* | WASM bindings via `wasm-bindgen` |
+| `nn-scoring` | ONNX-based template relevance scorer (`--scorer` CLI flag); not available on wasm32 |
+| *(default: wasm32 target)* | WASM bindings via `wasm-bindgen`, gated on `target_arch = "wasm32"` rather than a Cargo feature |
 
 ## Error Types
 
-RENKIN uses `anyhow::Error` for all fallible operations. Common errors:
+RENKIN uses `anyhow::Error` for all fallible operations in the CLI and native
+library surface (PyO3 wraps these as Python `ValueError`; WASM formats them
+into the `{"error": "..."}` JSON shape). Common errors:
 - SMILES parse failures from chematic
 - Building block file I/O errors
+- Template metadata sidecar validation failures (schema version, duplicate/dangling reference IDs, out-of-range yields, etc.)

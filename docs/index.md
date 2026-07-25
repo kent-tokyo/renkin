@@ -31,7 +31,7 @@ RENKIN is a **retrosynthesis engine** that automatically plans multi-step chemic
     ```
     ```python
     import renkin
-    result = renkin.find_routes("CC(=O)Oc1ccccc1C(=O)O", depth=5)
+    result = renkin.find_routes(target="CC(=O)Oc1ccccc1C(=O)O", depth=5)
     ```
 
 ## Key Features
@@ -41,10 +41,11 @@ RENKIN is a **retrosynthesis engine** that automatically plans multi-step chemic
 | **Pure Rust** | Zero C/C++ dependencies — safe, fast, cross-platform |
 | **WebAssembly** | Runs in the browser at near-native speed |
 | **Python bindings** | `pip install renkin` — no RDKit required |
-| **31 handcrafted rules + ~5,000 extracted via `--templates`** | Ester, amide, Suzuki, Buchwald-Hartwig, Wittig, sulfonamide, and more; extended via rdchiral-extracted templates (up to 50k) |
-| **509 building blocks** | Common pharma starting materials pre-loaded |
+| **28 hand-crafted rules + up to 50k extracted via `--templates`** | Ester, amide, Suzuki, Buchwald-Hartwig, Wittig, sulfonamide, and more; extended via rdchiral-extracted templates |
+| **402 building blocks** | Common pharma starting materials pre-loaded (`data/building_blocks.smi`, unique canonical SMILES) |
 | **A\* / beam search** | Frequency-weighted A* with beam-width control; `step_cost` reduced for high-frequency templates (Phase A) |
 | **Route scoring** | Per-step `confidence`, `success_probability` (Retro-prob), `route_cost` with optional `--bb-prices CSV` |
+| **Stable template IDs + evidence sidecar** | Every template has a stable `template_id`; attach curated conditions/yields/warnings via `--template-metadata` — see [Template Evidence](https://github.com/kent-tokyo/renkin#template-evidence-metadata) |
 | **Constraint DSL** | `--avoid-elements Br,I --require-elements B` filters routes by element profile |
 | **Forward validation** | `renkin-forward validate` verifies each retrosynthetic step by forward prediction; pipe-friendly (stdin support) |
 | **Failure diagnostics** | `renkin-bench --failure-taxonomy` classifies unsolved targets by cause (beam limit, depth limit, template gap, stock near-miss) |
@@ -57,33 +58,13 @@ RENKIN is a **retrosynthesis engine** that automatically plans multi-step chemic
 === "Python"
 
     ```python
-    import renkin
-
-    routes = renkin.find_routes(
-        smiles="CC(=O)Oc1ccccc1C(=O)O",  # Aspirin
-        depth=5,
-        max_routes=3,
-    )
-
-    for route in routes["routes"]:
-        print(f"Route (depth {route['depth']}):")
-        for step in route["steps"]:
-            print(f"  {step['target']} → {' + '.join(step['precursors'])}")
-            print(f"  via {step['rule']}")
+    --8<-- "examples/quickstart.py"
     ```
 
 === "Rust"
 
     ```rust
-    use renkin::{chem_env::ChemEnv, search::{SearchConfig, find_routes}};
-
-    let env = ChemEnv::load("data/building_blocks.smi")?;
-    let config = SearchConfig { max_depth: 5, ..Default::default() };
-    let routes = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &config)?;
-
-    for route in &routes {
-        println!("Route depth: {}", route.depth());
-    }
+    --8<-- "examples/quickstart.rs"
     ```
 
 === "JavaScript (WASM)"
@@ -102,11 +83,11 @@ RENKIN is a **retrosynthesis engine** that automatically plans multi-step chemic
 Target molecule (SMILES)
         │
         ▼
-  Retrosynthetic   ←── 31 built-in + ~5k extracted (--templates)
+  Retrosynthetic   ←── 28 built-in + up to 50k extracted (--templates)
   rule application
         │
         ▼
-  Precursor set    ←── Check against 509 building blocks
+  Precursor set    ←── Check against 402 building blocks
         │
         ▼
   A* / BFS search  ←── Beam width, depth limit
@@ -117,18 +98,19 @@ Target molecule (SMILES)
 
 ## Reaction Rules
 
-RENKIN ships **31 handcrafted graph-based rules** covering common pharmaceutical bond disconnections, plus supports up to 50k rdchiral-extracted templates via `--templates`:
+RENKIN ships **28 hand-crafted graph-based rules** covering common pharmaceutical bond disconnections, plus supports up to 50k rdchiral-extracted templates via `--templates`:
 
 - **Acyl disconnections**: ester hydrolysis, amide cleavage (graph-based), Friedel-Crafts acylation
-- **Aryl C-heteroatom**: Buchwald-Hartwig (C-N), Ullmann ether (C-O), SNAr, sulfonamide cleavage
-- **Aryl C-halide**: C-Cl, C-I, C-F disconnections (Pd-activation / SNAr retro)
+- **Acyl disconnections**: ester hydrolysis, amide cleavage (graph-based), Friedel-Crafts acylation, acyl chloride formation
+- **Aryl C-heteroatom**: Buchwald-Hartwig (C-N), Chan-Lam coupling, Ullmann ether (C-O), sulfonamide formation, decarboxylation
+- **Aryl C-halide**: chloride/bromide halogen exchange
 - **Aryl C-C coupling**: Suzuki (graph-based), Heck, Negishi, Sonogashira
 - **Sulfone disconnections**: diaryl sulfone cleavage (graph-based)
 - **Protecting groups**: Boc, Cbz deprotection (graph-based)
-- **Aliphatic**: reductive amination, N-/O-alkylation, Wittig, Grignard, Michael
+- **Aliphatic**: reductive amination, N-benzylation, Wittig, Grignard addition, Claisen condensation, Michael addition
 - **Oxidation**: alcohol → carbonyl
 
-With `--templates data/templates_extracted_5000.smi`, RENKIN uses ~5,000 additional rdchiral-extracted templates weighted by USPTO training frequency (Phase A), achieving **78.0% on USPTO-50k** (depth=5, beam=100) (⚠️ under re-evaluation — see [Benchmark notice](benchmark.md)).
+See [Benchmark](benchmark.md) for current USPTO-50k results and methodology — historical figures (78.0%/95.9%/81.8%) shown elsewhere on the web are invalidated and not representative of current performance; do not cite them.
 
 ## Installation
 

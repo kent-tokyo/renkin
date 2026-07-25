@@ -575,7 +575,12 @@
     await mod.default();
     findRoutesFn = mod.find_routes;
     const ver = mod.version ? mod.version() : 'renkin';
-    wasmStatusEl.textContent = `WASM ready — ${ver} · 45 building blocks · 20 reaction rules`;
+    // 152 unique canonical SMILES (DEFAULT_BUILDING_BLOCKS, the compiled-in WASM
+    // fallback set) and 28 hand-crafted rules -- verified against src/lib.rs's
+    // _BB_COUNT_CHECK comment and chem_env::default_rules().len(). The full
+    // 402-compound data/building_blocks.smi and extracted templates are CLI/Python
+    // only -- WASM has no file-loading capability in-browser.
+    wasmStatusEl.textContent = `WASM ready — ${ver} · 152 building blocks · 28 reaction rules`;
     wasmStatusEl.className = 'wasm-status ready';
     searchBtn.disabled = false;
     statusTextEl.dataset.state = 'status_init';

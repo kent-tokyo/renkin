@@ -4,10 +4,13 @@ use anyhow::{Context, Result, bail};
 use serde::de::{self, Deserializer, MapAccess, Visitor};
 use serde::{Deserialize, Serialize};
 
-/// How a step's metadata (today: `conditions`/`reaction_family`; future phases:
-/// yield, references, warnings) was determined. Distinct from `step_confidence`/
-/// `success_probability`, which are template-frequency-derived search-ranking
-/// scores, not experimental measurements.
+use crate::chem_env::{mol_from_smiles, to_canonical};
+
+/// How a step's metadata (`conditions`/`reaction_family`, and -- via
+/// `StepEvidence` -- yield/references/warnings/examples) was determined.
+/// Distinct from `step_confidence`/`success_probability`, which are
+/// template-frequency-derived search-ranking scores, not experimental
+/// measurements.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MetadataSource {
@@ -34,8 +37,9 @@ pub enum EvidenceScope {
     /// Assigned to one specific extracted SMIRKS template (sidecar metadata,
     /// keyed by `RetroRule::template_id`).
     Template,
-    /// Reserved: assigned to this exact target/precursor substrate. No code path
-    /// before per-substrate literature lookup exists can produce this.
+    /// Assigned to this exact target/precursor substrate. Required scope for
+    /// every condition/yield/warning nested inside a `ReactionExample`
+    /// (schema_version 2+); rejected at any other scope there.
     SubstrateSpecific,
 }
 
@@ -157,6 +161,96 @@ pub struct ReactionWarning {
     pub reference_ids: Vec<String>,
 }
 
+/// One concrete literature/dataset example of this template being run on a
+/// specific substrate: "this target, from these precursors, under these
+/// conditions, reportedly in this yield" (schema_version 2+ only). Unlike
+/// the template-scoped `condition_candidates`/`reported_yields`/`warnings`
+/// above, every nested condition/yield/warning here must be scoped
+/// `substrate_specific` -- see `validate_template_metadata`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReactionExample {
+    pub id: String,
+
+    /// Forward-direction product, corresponding to ReactionStep.target.
+    pub target_smiles: String,
+
+    /// Forward-direction reactants, corresponding to ReactionStep.precursors.
+    pub precursor_smiles: Vec<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub conditions: Option<ConditionCandidate>,
+
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub reported_yield: Option<ReportedYield>,
+
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<ReactionWarning>,
+
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reference_ids: Vec<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub dataset_record_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub notes: Option<String>,
+}
+
+/// How closely a curated [`ReactionExample`] matches a specific route step's
+/// exact substrate -- see [`match_example`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExampleMatch {
+    /// Target and full precursor set match the step's substrate exactly
+    /// (canonical SMILES; precursor order is irrelevant).
+    ExactSubstrate,
+    /// Same template, but a different substrate: a literature precedent for
+    /// the reaction type, not evidence for this exact transformation.
+    TemplateOnly,
+}
+
+/// Classifies `example` against a step's `target`/`precursors` SMILES.
+/// Stereochemistry-insensitive, canonical-SMILES-only comparison -- no
+/// partial-structure similarity is attempted. A SMILES that fails to parse
+/// never matches (conservatively yields `TemplateOnly`).
+pub fn match_example(
+    example: &ReactionExample,
+    target: &str,
+    precursors: &[String],
+) -> ExampleMatch {
+    fn canonicalize(smiles: &str) -> Option<String> {
+        mol_from_smiles(smiles).ok().map(|m| to_canonical(&m))
+    }
+    fn canonical_set(smiles: &[String]) -> Option<Vec<String>> {
+        let mut out = smiles
+            .iter()
+            .map(|s| canonicalize(s))
+            .collect::<Option<Vec<_>>>()?;
+        out.sort();
+        out.dedup();
+        Some(out)
+    }
+
+    let target_matches = matches!(
+        (canonicalize(&example.target_smiles), canonicalize(target)),
+        (Some(a), Some(b)) if a == b
+    );
+    let precursors_match = target_matches
+        && matches!(
+            (
+                canonical_set(&example.precursor_smiles),
+                canonical_set(precursors),
+            ),
+            (Some(a), Some(b)) if a == b
+        );
+
+    if precursors_match {
+        ExampleMatch::ExactSubstrate
+    } else {
+        ExampleMatch::TemplateOnly
+    }
+}
+
 /// Curated external evidence attached to one [`crate::search::ReactionStep`]
 /// via its `template_id`. Absent (`None` on the step) unless a metadata
 /// sidecar was supplied and matched.
@@ -170,6 +264,10 @@ pub struct StepEvidence {
     pub references: Vec<EvidenceReference>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<ReactionWarning>,
+    /// Substrate-specific examples (schema_version 2+); empty for
+    /// schema_version 1 sidecars.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub examples: Vec<ReactionExample>,
 }
 
 impl StepEvidence {
@@ -178,6 +276,7 @@ impl StepEvidence {
             && self.reported_yields.is_empty()
             && self.references.is_empty()
             && self.warnings.is_empty()
+            && self.examples.is_empty()
     }
 }
 
@@ -193,17 +292,22 @@ pub struct TemplateMetadataEntry {
     pub reported_yields: Vec<ReportedYield>,
     #[serde(default)]
     pub warnings: Vec<ReactionWarning>,
+    /// Substrate-specific examples (schema_version 2+ only -- rejected by
+    /// `validate_template_metadata` under schema_version 1).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub examples: Vec<ReactionExample>,
 }
 
 impl TemplateMetadataEntry {
     /// Builds the `StepEvidence` to attach to a matching `ReactionStep`, or
-    /// `None` if this entry carries no actual data (all four lists empty).
+    /// `None` if this entry carries no actual data (all five lists empty).
     pub fn to_step_evidence(&self) -> Option<StepEvidence> {
         let evidence = StepEvidence {
             condition_candidates: self.condition_candidates.clone(),
             reported_yields: self.reported_yields.clone(),
             references: self.references.clone(),
             warnings: self.warnings.clone(),
+            examples: self.examples.clone(),
         };
         (!evidence.is_empty()).then_some(evidence)
     }
@@ -219,7 +323,7 @@ pub struct TemplateMetadataFile {
     pub templates: HashMap<String, TemplateMetadataEntry>,
 }
 
-const SUPPORTED_SCHEMA_VERSIONS: &[u32] = &[1];
+const SUPPORTED_SCHEMA_VERSIONS: &[u32] = &[1, 2];
 
 /// JSON objects silently keep the last value on a duplicate key -- both
 /// `serde_json::Value` and a plain `HashMap` `Deserialize` impl already lose
@@ -271,6 +375,116 @@ pub fn load_template_metadata(path: &str) -> Result<TemplateMetadataFile> {
     Ok(file)
 }
 
+/// Checks that every id in `reference_ids` is present in `seen_ref_ids`
+/// (the enclosing template's own `references` list). `context` names the
+/// field being checked, purely for the error message (e.g. `"reported_yield"`
+/// or `"example \"ex-1\" conditions"`).
+fn check_reference_ids(
+    reference_ids: &[String],
+    context: &str,
+    template_id: &str,
+    seen_ref_ids: &HashSet<&str>,
+) -> Result<()> {
+    for rid in reference_ids {
+        if !seen_ref_ids.contains(rid.as_str()) {
+            bail!("template {template_id:?}: {context} references unknown reference id {rid:?}");
+        }
+    }
+    Ok(())
+}
+
+fn check_range(r: &FloatRange, template_id: &str, context: &str) -> Result<()> {
+    if r.min > r.max {
+        bail!(
+            "template {template_id:?}: {context} range min {} > max {}",
+            r.min,
+            r.max
+        );
+    }
+    Ok(())
+}
+
+fn check_scope(
+    actual: EvidenceScope,
+    required: Option<EvidenceScope>,
+    template_id: &str,
+    context: &str,
+) -> Result<()> {
+    if let Some(required) = required
+        && actual != required
+    {
+        bail!("template {template_id:?}: {context} scope must be {required:?}, got {actual:?}");
+    }
+    Ok(())
+}
+
+fn check_condition_candidate(
+    c: &ConditionCandidate,
+    template_id: &str,
+    seen_ref_ids: &HashSet<&str>,
+    required_scope: Option<EvidenceScope>,
+    context: &str,
+) -> Result<()> {
+    check_reference_ids(&c.reference_ids, context, template_id, seen_ref_ids)?;
+    if let Some(r) = &c.temperature_c {
+        check_range(r, template_id, &format!("{context} temperature_c"))?;
+    }
+    if let Some(r) = &c.time_hours {
+        check_range(r, template_id, &format!("{context} time_hours"))?;
+    }
+    check_scope(c.scope, required_scope, template_id, context)
+}
+
+fn check_yield_percentage(p: &YieldPercentage, template_id: &str, context: &str) -> Result<()> {
+    match p {
+        YieldPercentage::Single(v) => {
+            if !(0.0..=100.0).contains(v) {
+                bail!("template {template_id:?}: {context} percentage {v} out of range [0, 100]");
+            }
+        }
+        YieldPercentage::Range(r) => {
+            if r.min > r.max {
+                bail!(
+                    "template {template_id:?}: {context} percentage range min {} > max {}",
+                    r.min,
+                    r.max
+                );
+            }
+            if !(0.0..=100.0).contains(&r.min) || !(0.0..=100.0).contains(&r.max) {
+                bail!(
+                    "template {template_id:?}: {context} percentage range [{}, {}] out of range [0, 100]",
+                    r.min,
+                    r.max
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+fn check_reported_yield(
+    y: &ReportedYield,
+    template_id: &str,
+    seen_ref_ids: &HashSet<&str>,
+    required_scope: Option<EvidenceScope>,
+    context: &str,
+) -> Result<()> {
+    check_reference_ids(&y.reference_ids, context, template_id, seen_ref_ids)?;
+    check_yield_percentage(&y.percentage, template_id, context)?;
+    check_scope(y.scope, required_scope, template_id, context)
+}
+
+fn check_warning(
+    w: &ReactionWarning,
+    template_id: &str,
+    seen_ref_ids: &HashSet<&str>,
+    required_scope: Option<EvidenceScope>,
+    context: &str,
+) -> Result<()> {
+    check_reference_ids(&w.reference_ids, context, template_id, seen_ref_ids)?;
+    check_scope(w.scope, required_scope, template_id, context)
+}
+
 fn validate_template_metadata(file: &TemplateMetadataFile) -> Result<()> {
     if !SUPPORTED_SCHEMA_VERSIONS.contains(&file.schema_version) {
         bail!(
@@ -280,6 +494,12 @@ fn validate_template_metadata(file: &TemplateMetadataFile) -> Result<()> {
     }
 
     for (template_id, entry) in &file.templates {
+        if file.schema_version == 1 && !entry.examples.is_empty() {
+            bail!(
+                "template {template_id:?}: schema_version 1 does not support `examples` (requires schema_version 2)"
+            );
+        }
+
         let mut seen_ref_ids: HashSet<&str> = HashSet::new();
         for r in &entry.references {
             if !seen_ref_ids.insert(r.id.as_str()) {
@@ -299,70 +519,81 @@ fn validate_template_metadata(file: &TemplateMetadataFile) -> Result<()> {
             }
         }
 
-        let check_reference_ids = |reference_ids: &[String], what: &str| -> Result<()> {
-            for rid in reference_ids {
-                if !seen_ref_ids.contains(rid.as_str()) {
-                    bail!(
-                        "template {template_id:?}: {what} references unknown reference id {rid:?}"
-                    );
-                }
-            }
-            Ok(())
-        };
-
         for c in &entry.condition_candidates {
-            check_reference_ids(&c.reference_ids, "condition_candidate")?;
-            if let Some(r) = &c.temperature_c
-                && r.min > r.max
-            {
-                bail!(
-                    "template {template_id:?}: temperature_c range min {} > max {}",
-                    r.min,
-                    r.max
-                );
-            }
-            if let Some(r) = &c.time_hours
-                && r.min > r.max
-            {
-                bail!(
-                    "template {template_id:?}: time_hours range min {} > max {}",
-                    r.min,
-                    r.max
-                );
-            }
+            check_condition_candidate(c, template_id, &seen_ref_ids, None, "condition_candidate")?;
         }
-
         for y in &entry.reported_yields {
-            check_reference_ids(&y.reference_ids, "reported_yield")?;
-            match &y.percentage {
-                YieldPercentage::Single(p) => {
-                    if !(0.0..=100.0).contains(p) {
-                        bail!(
-                            "template {template_id:?}: yield percentage {p} out of range [0, 100]"
-                        );
-                    }
-                }
-                YieldPercentage::Range(r) => {
-                    if r.min > r.max {
-                        bail!(
-                            "template {template_id:?}: yield percentage range min {} > max {}",
-                            r.min,
-                            r.max
-                        );
-                    }
-                    if !(0.0..=100.0).contains(&r.min) || !(0.0..=100.0).contains(&r.max) {
-                        bail!(
-                            "template {template_id:?}: yield percentage range [{}, {}] out of range [0, 100]",
-                            r.min,
-                            r.max
-                        );
-                    }
-                }
-            }
+            check_reported_yield(y, template_id, &seen_ref_ids, None, "reported_yield")?;
+        }
+        for w in &entry.warnings {
+            check_warning(w, template_id, &seen_ref_ids, None, "warning")?;
         }
 
-        for w in &entry.warnings {
-            check_reference_ids(&w.reference_ids, "warning")?;
+        let mut seen_example_ids: HashSet<&str> = HashSet::new();
+        for example in &entry.examples {
+            if example.id.trim().is_empty() {
+                bail!("template {template_id:?}: example id must not be empty");
+            }
+            if !seen_example_ids.insert(example.id.as_str()) {
+                bail!(
+                    "template {template_id:?}: duplicate example id {:?}",
+                    example.id
+                );
+            }
+            let ctx = format!("example {:?}", example.id);
+
+            mol_from_smiles(&example.target_smiles).with_context(|| {
+                format!(
+                    "template {template_id:?}: {ctx}: target_smiles {:?} does not parse",
+                    example.target_smiles
+                )
+            })?;
+            if example.precursor_smiles.is_empty() {
+                bail!("template {template_id:?}: {ctx}: precursor_smiles must not be empty");
+            }
+            for p in &example.precursor_smiles {
+                mol_from_smiles(p).with_context(|| {
+                    format!(
+                        "template {template_id:?}: {ctx}: precursor_smiles {p:?} does not parse"
+                    )
+                })?;
+            }
+
+            check_reference_ids(&example.reference_ids, &ctx, template_id, &seen_ref_ids)?;
+            if let Some(c) = &example.conditions {
+                check_condition_candidate(
+                    c,
+                    template_id,
+                    &seen_ref_ids,
+                    Some(EvidenceScope::SubstrateSpecific),
+                    &format!("{ctx} conditions"),
+                )?;
+            }
+            if let Some(y) = &example.reported_yield {
+                check_reported_yield(
+                    y,
+                    template_id,
+                    &seen_ref_ids,
+                    Some(EvidenceScope::SubstrateSpecific),
+                    &format!("{ctx} reported_yield"),
+                )?;
+            }
+            for w in &example.warnings {
+                check_warning(
+                    w,
+                    template_id,
+                    &seen_ref_ids,
+                    Some(EvidenceScope::SubstrateSpecific),
+                    &format!("{ctx} warning"),
+                )?;
+            }
+            if let Some(drid) = &example.dataset_record_id
+                && drid.trim().is_empty()
+            {
+                bail!(
+                    "template {template_id:?}: {ctx}: dataset_record_id must not be empty when present"
+                );
+            }
         }
     }
 
@@ -660,5 +891,357 @@ mod tests {
         // Should not panic and should not affect the Result — just a stderr warning.
         warn_unknown_templates(&file, &known);
         std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn v1_sidecar_examples_absent_and_omitted_from_json() {
+        // A v1 sidecar with no `examples` key must behave exactly as it did
+        // before this field existed: `entry.examples` empty, and the field
+        // omitted from serialized StepEvidence (unchanged JSON shape).
+        let dir = std::env::temp_dir();
+        let path = write_sidecar(
+            &dir,
+            "renkin_evidence_v1_no_examples.json",
+            r#"{
+                "schema_version": 1,
+                "templates": {
+                    "t1": {
+                        "warnings": [{
+                            "code": "x", "severity": "low", "message": "m",
+                            "source": "literature", "scope": "template",
+                            "reference_ids": []
+                        }]
+                    }
+                }
+            }"#,
+        );
+        let file = load_template_metadata(&path).unwrap();
+        let entry = file.templates.get("t1").unwrap();
+        assert!(entry.examples.is_empty());
+        let evidence = entry.to_step_evidence().unwrap();
+        let json = serde_json::to_string(&evidence).unwrap();
+        assert!(!json.contains("examples"), "got: {json}");
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn schema_v2_example_loads_and_matches_expected_shape() {
+        let dir = std::env::temp_dir();
+        let path = write_sidecar(
+            &dir,
+            "renkin_evidence_v2_example.json",
+            r#"{
+                "schema_version": 2,
+                "templates": {
+                    "smirks-sha256:abc": {
+                        "references": [{"id": "ref-1", "kind": "doi", "identifier": "10.xxxx/example"}],
+                        "examples": [{
+                            "id": "ex-1",
+                            "target_smiles": "c1ccc(-c2ccccc2)cc1",
+                            "precursor_smiles": ["Brc1ccccc1", "c1ccccc1"],
+                            "conditions": {
+                                "catalysts": ["Pd(PPh3)4"],
+                                "solvents": ["EtOH"],
+                                "source": "literature",
+                                "scope": "substrate_specific",
+                                "reference_ids": ["ref-1"]
+                            },
+                            "reported_yield": {
+                                "percentage": 78.0,
+                                "basis": "isolated",
+                                "source": "literature",
+                                "scope": "substrate_specific",
+                                "reference_ids": ["ref-1"]
+                            },
+                            "reference_ids": ["ref-1"]
+                        }]
+                    }
+                }
+            }"#,
+        );
+        let file = load_template_metadata(&path).unwrap();
+        assert_eq!(file.schema_version, 2);
+        let entry = file.templates.get("smirks-sha256:abc").unwrap();
+        assert_eq!(entry.examples.len(), 1);
+        let evidence = entry.to_step_evidence().unwrap();
+        assert_eq!(evidence.examples.len(), 1);
+        assert_eq!(evidence.examples[0].id, "ex-1");
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn examples_under_schema_v1_are_rejected() {
+        let dir = std::env::temp_dir();
+        let path = write_sidecar(
+            &dir,
+            "renkin_evidence_v1_with_examples.json",
+            r#"{
+                "schema_version": 1,
+                "templates": {
+                    "t1": {
+                        "examples": [{
+                            "id": "ex-1",
+                            "target_smiles": "c1ccccc1",
+                            "precursor_smiles": ["c1ccccc1"]
+                        }]
+                    }
+                }
+            }"#,
+        );
+        let err = load_template_metadata(&path).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("schema_version 1 does not support"),
+            "got: {err}"
+        );
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn duplicate_example_id_is_rejected() {
+        let dir = std::env::temp_dir();
+        let path = write_sidecar(
+            &dir,
+            "renkin_evidence_dup_example_id.json",
+            r#"{
+                "schema_version": 2,
+                "templates": {
+                    "t1": {
+                        "examples": [
+                            {"id": "ex-1", "target_smiles": "c1ccccc1", "precursor_smiles": ["c1ccccc1"]},
+                            {"id": "ex-1", "target_smiles": "CCO", "precursor_smiles": ["CCO"]}
+                        ]
+                    }
+                }
+            }"#,
+        );
+        let err = load_template_metadata(&path).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("duplicate example id"),
+            "got: {err}"
+        );
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn empty_example_id_is_rejected() {
+        let dir = std::env::temp_dir();
+        let path = write_sidecar(
+            &dir,
+            "renkin_evidence_empty_example_id.json",
+            r#"{
+                "schema_version": 2,
+                "templates": {
+                    "t1": {
+                        "examples": [{"id": "   ", "target_smiles": "c1ccccc1", "precursor_smiles": ["c1ccccc1"]}]
+                    }
+                }
+            }"#,
+        );
+        let err = load_template_metadata(&path).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("example id must not be empty"),
+            "got: {err}"
+        );
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn malformed_target_smiles_is_rejected() {
+        let dir = std::env::temp_dir();
+        let path = write_sidecar(
+            &dir,
+            "renkin_evidence_bad_target_smiles.json",
+            r#"{
+                "schema_version": 2,
+                "templates": {
+                    "t1": {
+                        "examples": [{"id": "ex-1", "target_smiles": "not(a smiles", "precursor_smiles": ["c1ccccc1"]}]
+                    }
+                }
+            }"#,
+        );
+        let err = load_template_metadata(&path).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("target_smiles") && msg.contains("does not parse"),
+            "got: {err}"
+        );
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn malformed_precursor_smiles_is_rejected() {
+        let dir = std::env::temp_dir();
+        let path = write_sidecar(
+            &dir,
+            "renkin_evidence_bad_precursor_smiles.json",
+            r#"{
+                "schema_version": 2,
+                "templates": {
+                    "t1": {
+                        "examples": [{"id": "ex-1", "target_smiles": "c1ccccc1", "precursor_smiles": ["not(a smiles"]}]
+                    }
+                }
+            }"#,
+        );
+        let err = load_template_metadata(&path).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("precursor_smiles") && msg.contains("does not parse"),
+            "got: {err}"
+        );
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn empty_precursor_list_is_rejected() {
+        let dir = std::env::temp_dir();
+        let path = write_sidecar(
+            &dir,
+            "renkin_evidence_empty_precursors.json",
+            r#"{
+                "schema_version": 2,
+                "templates": {
+                    "t1": {
+                        "examples": [{"id": "ex-1", "target_smiles": "c1ccccc1", "precursor_smiles": []}]
+                    }
+                }
+            }"#,
+        );
+        let err = load_template_metadata(&path).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("precursor_smiles must not be empty"),
+            "got: {err}"
+        );
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn dangling_reference_id_in_example_is_rejected() {
+        let dir = std::env::temp_dir();
+        let path = write_sidecar(
+            &dir,
+            "renkin_evidence_example_dangling_ref.json",
+            r#"{
+                "schema_version": 2,
+                "templates": {
+                    "t1": {
+                        "examples": [{
+                            "id": "ex-1",
+                            "target_smiles": "c1ccccc1",
+                            "precursor_smiles": ["c1ccccc1"],
+                            "reference_ids": ["missing-ref"]
+                        }]
+                    }
+                }
+            }"#,
+        );
+        let err = load_template_metadata(&path).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("unknown reference id"),
+            "got: {err}"
+        );
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn non_substrate_specific_scope_in_example_is_rejected() {
+        let dir = std::env::temp_dir();
+        let path = write_sidecar(
+            &dir,
+            "renkin_evidence_example_bad_scope.json",
+            r#"{
+                "schema_version": 2,
+                "templates": {
+                    "t1": {
+                        "examples": [{
+                            "id": "ex-1",
+                            "target_smiles": "c1ccccc1",
+                            "precursor_smiles": ["c1ccccc1"],
+                            "conditions": {"source": "literature", "scope": "template"}
+                        }]
+                    }
+                }
+            }"#,
+        );
+        let err = load_template_metadata(&path).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("scope must be SubstrateSpecific"),
+            "got: {err}"
+        );
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn empty_dataset_record_id_is_rejected() {
+        let dir = std::env::temp_dir();
+        let path = write_sidecar(
+            &dir,
+            "renkin_evidence_empty_dataset_record_id.json",
+            r#"{
+                "schema_version": 2,
+                "templates": {
+                    "t1": {
+                        "examples": [{
+                            "id": "ex-1",
+                            "target_smiles": "c1ccccc1",
+                            "precursor_smiles": ["c1ccccc1"],
+                            "dataset_record_id": "  "
+                        }]
+                    }
+                }
+            }"#,
+        );
+        let err = load_template_metadata(&path).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("dataset_record_id must not be empty"),
+            "got: {err}"
+        );
+        std::fs::remove_file(&path).ok();
+    }
+
+    fn sample_example(target: &str, precursors: &[&str]) -> ReactionExample {
+        ReactionExample {
+            id: "ex-1".to_string(),
+            target_smiles: target.to_string(),
+            precursor_smiles: precursors.iter().map(|s| s.to_string()).collect(),
+            conditions: None,
+            reported_yield: None,
+            warnings: vec![],
+            reference_ids: vec![],
+            dataset_record_id: None,
+            notes: None,
+        }
+    }
+
+    #[test]
+    fn exact_substrate_match_ignores_precursor_order() {
+        let example = sample_example("c1ccc(-c2ccccc2)cc1", &["Brc1ccccc1", "c1ccccc1"]);
+        let step_precursors = vec!["c1ccccc1".to_string(), "Brc1ccccc1".to_string()];
+        assert_eq!(
+            match_example(&example, "c1ccc(-c2ccccc2)cc1", &step_precursors),
+            ExampleMatch::ExactSubstrate
+        );
+    }
+
+    #[test]
+    fn different_target_yields_template_only() {
+        let example = sample_example("c1ccc(-c2ccccc2)cc1", &["Brc1ccccc1", "c1ccccc1"]);
+        let step_precursors = vec!["Brc1ccccc1".to_string(), "c1ccccc1".to_string()];
+        assert_eq!(
+            match_example(&example, "CCO", &step_precursors),
+            ExampleMatch::TemplateOnly
+        );
+    }
+
+    #[test]
+    fn different_precursors_yield_template_only() {
+        let example = sample_example("c1ccc(-c2ccccc2)cc1", &["Brc1ccccc1", "c1ccccc1"]);
+        let step_precursors = vec!["Clc1ccccc1".to_string(), "c1ccccc1".to_string()];
+        assert_eq!(
+            match_example(&example, "c1ccc(-c2ccccc2)cc1", &step_precursors),
+            ExampleMatch::TemplateOnly
+        );
     }
 }

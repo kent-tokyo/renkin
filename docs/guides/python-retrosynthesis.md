@@ -32,8 +32,13 @@ are both pure Rust, compiled ahead of time into the wheel.
 
 ## Custom Building Blocks
 
-By default RENKIN searches against a built-in library of 402 unique
-commercially available compounds. Supply your own stock instead:
+With no `building_blocks` argument, RENKIN searches against `data/building_blocks.smi`
+(402 unique compounds) *if that path resolves relative to your current working
+directory* — in practice, only when running from a checkout of this repo. A
+`pip install renkin` wheel does not bundle that file, so a plain `pip install`
+run from anywhere else silently falls back to a smaller, compiled-in
+152-compound set instead. Don't rely on either default having a specific
+compound — supply your own stock explicitly:
 
 ```python
 import renkin, json
@@ -115,8 +120,10 @@ Real output for aspirin at `depth=1` (hand-crafted rules only, one route shown):
       "atom_economy": 90.90950376941474,
       "reaction_family": "esterification",
       "conditions": {"catalyst": "NaOH or LiOH (2 eq)", "solvent": "THF/H₂O (2:1)", "temperature": "rt → 60 °C"},
-      "procedure_hint": "Dissolve in THF/H₂O, add NaOH (2 eq), stir at 60 °C, acidify to pH 2."
-      # metadata_source / metadata_scope / evidence appear only when applicable
+      "procedure_hint": "Dissolve in THF/H₂O, add NaOH (2 eq), stir at 60 °C, acidify to pH 2.",
+      "metadata_source": "handcrafted_default",
+      "metadata_scope": "reaction_family"
+      # evidence appears only when a --template-metadata sidecar matches this template_id
     }
   ]
 }
@@ -132,8 +139,9 @@ distinction and how to attach real cited evidence.
 
 ## Current Limitations
 
-- The built-in default stock (402 compounds) and 28 hand-crafted rules cover
-  common pharmaceutical disconnections well, but broader reaction space needs
+- The default stock (402 compounds when running from a repo checkout, 152
+  otherwise — see [Building Blocks](../api/python.md#building-blocks)) and 28
+  hand-crafted rules cover common pharmaceutical disconnections well, but broader reaction space needs
   the larger extracted-template files or your own stock.
 - No literature/patent auto-search, no automatic side-reaction prediction, no
   yield prediction — see [Reaction Evidence Metadata](reaction-evidence.md)

@@ -34,7 +34,7 @@ a `dict` — parse it with `json.loads()` before accessing fields.
 | `depth` | `int` | `5` | Maximum number of retrosynthetic steps |
 | `max_routes` | `int` | `5` | Maximum number of routes to return |
 | `beam_width` | `int` | `0` | A\* beam width (0 = unlimited BFS/A\*) |
-| `building_blocks` | `list[str] \| None` | `None` | Custom building block SMILES list. If `None`, uses the built-in default set (402 unique compounds, `data/building_blocks.smi`) |
+| `building_blocks` | `list[str] \| None` | `None` | Custom building block SMILES list. If `None`, uses `data/building_blocks.smi` (402 unique compounds) when that path resolves relative to the current working directory, otherwise falls back to a compiled-in 152-compound set — see [Building Blocks](#building-blocks) below |
 | `avoid_elements` | `str` | `""` | Comma-separated element symbols to ban from building blocks (e.g. `"Br,I"`) |
 | `require_elements` | `str` | `""` | Comma-separated element symbols that must each appear in at least one leaf building block (e.g. `"B"` for Suzuki-type routes) |
 | `verbose` | `bool` | `False` | Print search statistics (nodes expanded, elapsed time) to stderr |
@@ -108,8 +108,18 @@ renkin.validate_forward(
 
 Validates each step of a retrosynthetic route by checking whether forward
 template application reproduces the claimed target from its precursors.
-`route_json` accepts either a single route object (`find_routes()["routes"][0]`
-after parsing) or the full `find_routes()` output. Returns a JSON string:
+`route_json` must be a **single route object** with a top-level `steps` array
+— i.e. one entry of `find_routes()`'s `routes` list, not the full
+`find_routes()` output itself (which has no top-level `steps` key and raises
+`ValueError: route JSON must have a 'steps' array` if passed directly):
+
+```python
+result = json.loads(renkin.find_routes(target="CC(=O)Oc1ccccc1C(=O)O", depth=1, max_routes=1))
+route_json = json.dumps(result["routes"][0])
+validation = json.loads(renkin.validate_forward(route_json))
+```
+
+Returns a JSON string:
 `[{"step_index": int, "target": str, "verified": bool, "top_predictions": [...]}, ...]`.
 
 ## `__version__`
@@ -124,21 +134,37 @@ The version string is a module attribute, not a function.
 
 ## Building Blocks
 
-The default building block library (`data/building_blocks.smi`) includes 402
-unique compounds (by canonical SMILES):
+There are **two different building-block sets**, and which one you get by
+default depends on where you run Python from:
 
-- Simple aliphatics (C1–C6 chains, alcohols, acids)
-- Aryl and heteroaryl halides (Br, Cl, I)
-- Boronic acids (Suzuki coupling acceptors)
-- Pyridines, pyrimidines, pyrazoles, imidazoles, furans, thiophenes
-- Common pharmaceutical amines (piperidine, morpholine, piperazine, etc.)
-- Aldehydes and ketones for reductive amination
-- Protecting group reagents (Boc, Cbz)
-- Amino acids (Gly, Ala, Asp, Glu, Ser, Phe, Tyr, Lys, Cys, Val)
+- **`data/building_blocks.smi`** — the full curated library, 402 unique
+  compounds (by canonical SMILES). Loaded automatically only when that
+  relative path resolves from your current working directory — in practice,
+  when you're running from a checkout of the
+  [renkin repository](https://github.com/kent-tokyo/renkin) itself. A wheel
+  installed from PyPI (`pip install renkin`) does **not** bundle this file.
+- **Compiled-in fallback (`DEFAULT_BUILDING_BLOCKS`)** — 152 unique compounds,
+  built into the extension module itself. Used automatically whenever the
+  402-compound file above isn't found — which, for a typical
+  `pip install renkin` used outside a repo checkout, is every time.
 
-To use a custom library, pass a list of SMILES strings to the `building_blocks`
-parameter. Entries that fail to parse as SMILES are silently skipped (not an
-error) — they simply can't match as a leaf building block during search.
+Both cover similar ground (simple aliphatics, aryl/heteroaryl halides,
+boronic acids, common heterocycles and pharmaceutical amines, protecting-group
+reagents, amino acids), but they are **not the same list** — don't assume a
+specific compound is present in one because it's present in the other.
+
+**To get a specific, known set reliably, pass it explicitly** rather than
+relying on either default:
+
+```python
+result = renkin.find_routes(
+    target="...",
+    building_blocks=["CC(=O)O", "Oc1ccccc1", ...],  # or read your own data/building_blocks.smi
+)
+```
+
+Entries that fail to parse as SMILES are silently skipped (not an error) —
+they simply can't match as a leaf building block during search.
 
 ## Error Handling
 

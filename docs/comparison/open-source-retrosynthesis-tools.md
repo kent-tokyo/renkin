@@ -17,23 +17,27 @@ caveated performance data does exist for RENKIN specifically.
 
 ## At a Glance
 
-| | [RENKIN](https://github.com/kent-tokyo/renkin) | [AiZynthFinder](https://github.com/MolecularAI/aizynthfinder) | [ASKCOS](https://github.com/ASKCOS/ASKCOS) | [Syntheseus](https://github.com/microsoft/syntheseus) |
+| | [RENKIN](https://github.com/kent-tokyo/renkin) | [AiZynthFinder](https://github.com/MolecularAI/aizynthfinder) | [ASKCOS v2](https://gitlab.com/mlpds_mit/askcosv2/askcos2_core) | [Syntheseus](https://github.com/microsoft/syntheseus) |
 |---|---|---|---|---|
-| Maintainer | Independent | AstraZeneca (MolecularAI) | MIT (mlpds_mit) | Microsoft Research |
+| Maintainer | Independent | AstraZeneca (MolecularAI) | MIT (mlpds_mit consortium) | Microsoft Research |
 | Core language | Rust | Python | Python (multi-service) | Python |
-| License (code) | MIT | MIT | MPL 2.0 (data/models: CC BY-NC-SA, noncommercial) | MIT |
+| License (code) | MIT | MIT | MIT (current v2; the archived [v1 GitHub repo](https://github.com/ASKCOS/ASKCOS) was MPL 2.0, with data/models under CC BY-NC-SA) | MIT |
 | Install | `pip` / `cargo` / `npm`, single binary or wheel | `pip install aizynthfinder[all]` | Docker Compose or Kubernetes; no simple pip install | `pip install "syntheseus[all]"` |
 | Runs in a browser (WASM) | Yes — a full client-side build | No | No | No |
 | Chemistry backend | [`chematic`](https://docs.rs/chematic/) (pure Rust, no C/C++) | RDKit | RDKit + trained models | Depends on the wrapped model(s) |
 | Ships its own retrosynthesis engine | Yes — rules + search built in | Yes — trained expansion policy + MCTS | Yes — multiple built-in template-based and ML models | No — orchestrates/benchmarks external models (LocalRetro, MEGAN, Chemformer, RootAligned, ...) |
 | Search algorithm | A\* / beam search | Monte Carlo Tree Search over a trained policy | Multiple (template-based + template-free/Transformer) | Pluggable — implements common search algorithms over whichever model you plug in |
 | Custom reaction templates | Yes (`--templates`, up to 50k SMIRKS) | Yes (trainable expansion policy + custom stock) | Yes, via self-hosted configuration | Depends on the wrapped model |
-| Curated evidence (DOI/patent/yield/conditions) per template | Yes — native `--template-metadata` sidecar | No built-in equivalent | No built-in equivalent | No built-in equivalent |
-| Minimum local footprint | Single binary, no network calls | Local Python process | 4+ CPU cores, 32 GB+ RAM, x86-only (no Apple Silicon) for self-hosting | Local Python process (plus whatever the wrapped model needs, e.g. PyTorch/GPU) |
+| Curated per-template evidence (DOI/patent/yield/conditions) | Yes — native `--template-metadata` sidecar; user-supplied, no bundled evidence corpus | No native template-ID evidence sidecar documented in the current official docs | No native template-ID evidence sidecar documented in the current official docs | No native template-ID evidence sidecar documented in the current official docs |
+| Minimum local footprint | Single binary, no network calls | Local Python process | Per current [ASKCOS v2 deployment docs](https://askcos-docs.mit.edu/): 4+ CPU cores, 32 GB+ RAM, x86-only (no Apple Silicon) for self-hosting | Local Python process (plus whatever the wrapped model needs, e.g. PyTorch/GPU) |
 
 Facts above were checked directly against each project's own repository and
-docs (linked in the table headers); if something has changed since, the
-project's own README is the source of truth.
+docs (linked in the table) as of this page's last update; ASKCOS in
+particular has migrated from the archived `ASKCOS/ASKCOS` GitHub repo (v1,
+no longer updated per its own README) to `askcos2_core` on GitLab (v2, the
+row above) — if you land on the old repo, follow its own link to the current
+one. If anything else has changed since, each project's own README/docs are
+the source of truth.
 
 ## What Each Tool Is Actually For
 
@@ -45,18 +49,19 @@ different problems:
   entirely in a browser tab with no server. If you want retrosynthesis search
   inside another tool, a browser demo, an MCP-connected AI agent, or a
   resource-constrained environment, this is the shape that fits.
-- **AiZynthFinder** is a production planning tool built around trained neural
-  expansion policies and Monte Carlo Tree Search, developed and used
-  internally at AstraZeneca before being open-sourced. It's the closest
-  architectural peer to RENKIN in scope (a standalone library you run
-  locally), but it's Python/RDKit-based and its search relies on trained
-  models rather than (only) hand-curated or extracted rules.
-- **ASKCOS** is a full synthesis-planning *platform*, not a library — it's
-  designed to be self-hosted as a multi-service application (Docker Compose
-  or Kubernetes) with template-based and template-free forward/retro models,
-  a reaction-condition recommender, and more. If you want an organization-wide
-  deployed service rather than an embeddable engine, this is that shape —
-  at the cost of a much heavier install (4+ cores, 32 GB+ RAM, x86-only).
+- **AiZynthFinder** is a planning tool built around trained neural expansion
+  policies and Monte Carlo Tree Search, developed at AstraZeneca (MolecularAI)
+  and published as open source. It's the closest architectural peer to RENKIN
+  in scope (a standalone library you run locally), but it's Python/RDKit-based
+  and its search relies on trained models rather than (only) hand-curated or
+  extracted rules.
+- **ASKCOS** is a full synthesis-planning *platform*, not a library — current
+  ASKCOS v2 is designed to be self-hosted as a multi-service application
+  (Docker Compose or Kubernetes) with template-based and template-free
+  forward/retro models, a reaction-condition recommender, and more. If you
+  want an organization-wide deployed service rather than an embeddable
+  engine, this is that shape — at the cost of a much heavier install (4+
+  cores, 32 GB+ RAM, x86-only, per its own deployment docs).
 - **Syntheseus** isn't a standalone retrosynthesis engine at all — it's a
   benchmarking/orchestration framework from Microsoft Research that wraps
   *other* published models (LocalRetro, MEGAN, Chemformer, RootAligned, and
@@ -69,16 +74,18 @@ different problems:
 
 - You need the engine to run **without a Python/Docker runtime** — in a
   browser, a Rust service, or a CLI tool distributed as a single binary.
-- You want **curated, citable evidence** (a DOI, a reported yield, a known
-  side reaction) attached to specific templates, not just a bare
-  disconnection — see [Reaction Evidence Metadata](../guides/reaction-evidence.md).
+- You want to attach **curated, citable evidence you supply** (a DOI, a
+  reported yield, a known side reaction) to specific templates, not just a
+  bare disconnection — see [Reaction Evidence Metadata](../guides/reaction-evidence.md).
+  RENKIN doesn't ship a bundled evidence corpus either; the sidecar is a
+  mechanism for evidence you curate yourself.
 - You want **zero C/C++ dependencies** and a `cargo build`/`pip install`
   install story with no GPU, no Docker, and no multi-service deployment.
 
 ## Where Another Tool Is a Better Fit
 
-- You need trained-model-driven route ranking at production pharma scale with
-  years of internal validation → **AiZynthFinder**.
+- You need trained-model-driven route ranking (expansion policy + MCTS) and
+  are comfortable with a Python/RDKit dependency stack → **AiZynthFinder**.
 - You're deploying a shared, organization-wide synthesis-planning service with
   forward prediction, condition recommendation, and more, and can dedicate the
   infrastructure to it → **ASKCOS**.

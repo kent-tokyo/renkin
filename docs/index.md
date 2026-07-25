@@ -47,7 +47,7 @@ RENKIN is a **retrosynthesis engine** that automatically plans multi-step chemic
 | **WebAssembly** | Runs in the browser at near-native speed |
 | **Python bindings** | `pip install renkin` — no RDKit required |
 | **28 hand-crafted rules + up to 50k extracted via `--templates`** | Ester, amide, Suzuki, Buchwald-Hartwig, Wittig, sulfonamide, and more; extended via rdchiral-extracted templates |
-| **402 building blocks** | Common pharma starting materials pre-loaded (`data/building_blocks.smi`, unique canonical SMILES) |
+| **Building blocks** | 402 unique compounds in `data/building_blocks.smi` (used when found relative to the current working directory); otherwise CLI/Python fall back to a compiled-in 152-compound set, which WASM always uses. Pass `--building-blocks`/`building_blocks=` to specify explicitly |
 | **A\* / beam search** | Frequency-weighted A* with beam-width control; `step_cost` reduced for high-frequency templates (Phase A) |
 | **Route scoring** | Per-step `confidence`, `success_probability` (Retro-prob), `route_cost` with optional `--bb-prices CSV` |
 | **Stable template IDs + evidence sidecar** | Every template has a stable `template_id`; attach curated conditions/yields/warnings via `--template-metadata` — see [Template Evidence](https://github.com/kent-tokyo/renkin#template-evidence-metadata) |
@@ -92,7 +92,7 @@ Target molecule (SMILES)
   rule application
         │
         ▼
-  Precursor set    ←── Check against 402 building blocks
+  Precursor set    ←── Check against building block stock (402 file / 152 fallback)
         │
         ▼
   A* / BFS search  ←── Beam width, depth limit
@@ -103,9 +103,8 @@ Target molecule (SMILES)
 
 ## Reaction Rules
 
-RENKIN ships **28 hand-crafted graph-based rules** covering common pharmaceutical bond disconnections, plus supports up to 50k rdchiral-extracted templates via `--templates`:
+RENKIN ships **28 hand-crafted rules** (a mix of graph-based dispatch and SMIRKS-based patterns) covering common pharmaceutical bond disconnections, plus supports up to 50k rdchiral-extracted templates via `--templates`:
 
-- **Acyl disconnections**: ester hydrolysis, amide cleavage (graph-based), Friedel-Crafts acylation
 - **Acyl disconnections**: ester hydrolysis, amide cleavage (graph-based), Friedel-Crafts acylation, acyl chloride formation
 - **Aryl C-heteroatom**: Buchwald-Hartwig (C-N), Chan-Lam coupling, Ullmann ether (C-O), sulfonamide formation, decarboxylation
 - **Aryl C-halide**: chloride/bromide halogen exchange

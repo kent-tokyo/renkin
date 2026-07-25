@@ -1,5 +1,9 @@
 use std::collections::HashMap;
 
+use crate::evidence::{
+    ConditionCandidate, EvidenceReference, ExampleMatch, FloatRange, ReactionExample,
+    ReferenceKind, ReportedYield, WarningSeverity, YieldBasis, YieldPercentage, match_example,
+};
 use crate::search::{ReactionStep, Route};
 
 // ── Tree node ──────────────────────────────────────────────────────────────
@@ -185,6 +189,198 @@ fn collect_mermaid(
     }
 }
 
+// ── Evidence formatting helpers ────────────────────────────────────────────
+
+fn trim_float(v: f64) -> String {
+    if v.fract() == 0.0 {
+        format!("{v:.0}")
+    } else {
+        format!("{v}")
+    }
+}
+
+/// Formats an inclusive range as `"75–85°C"`, or a bare value when `min == max`.
+fn format_range(r: &FloatRange, unit: &str) -> String {
+    if (r.min - r.max).abs() < f64::EPSILON {
+        format!("{}{unit}", trim_float(r.min))
+    } else {
+        format!("{}–{}{unit}", trim_float(r.min), trim_float(r.max))
+    }
+}
+
+/// Single-line, chemist-readable summary of a curated condition set.
+fn format_condition_candidate(c: &ConditionCandidate) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    parts.extend(c.catalysts.iter().cloned());
+    parts.extend(c.reagents.iter().cloned());
+    parts.extend(c.bases.iter().cloned());
+    if !c.solvents.is_empty() {
+        parts.push(c.solvents.join("/"));
+    }
+    if let Some(r) = &c.temperature_c {
+        parts.push(format_range(r, "°C"));
+    }
+    if let Some(r) = &c.time_hours {
+        parts.push(format_range(r, " h"));
+    }
+    if let Some(a) = &c.atmosphere {
+        parts.push(format!("{a} atmosphere"));
+    }
+    if let Some(n) = &c.notes {
+        parts.push(n.clone());
+    }
+    if parts.is_empty() {
+        "no details recorded".to_string()
+    } else {
+        parts.join(", ")
+    }
+}
+
+fn format_yield_basis(b: YieldBasis) -> &'static str {
+    match b {
+        YieldBasis::Isolated => "isolated",
+        YieldBasis::Assay => "assay",
+        YieldBasis::Conversion => "conversion",
+        YieldBasis::Unknown => "unknown basis",
+    }
+}
+
+/// Formats a reported yield as `"78% isolated"` or `"72–81% isolated"`.
+fn format_reported_yield(y: &ReportedYield) -> String {
+    let pct = match &y.percentage {
+        YieldPercentage::Single(p) => format!("{}%", trim_float(*p)),
+        YieldPercentage::Range(r) => format!("{}–{}%", trim_float(r.min), trim_float(r.max)),
+    };
+    format!("{pct} {}", format_yield_basis(y.basis))
+}
+
+fn format_reference_kind(k: ReferenceKind) -> &'static str {
+    match k {
+        ReferenceKind::Doi => "DOI",
+        ReferenceKind::Patent => "Patent",
+        ReferenceKind::Url => "URL",
+        ReferenceKind::DatasetRecord => "Dataset record",
+    }
+}
+
+fn format_reference(r: &EvidenceReference) -> String {
+    format!("{} {}", format_reference_kind(r.kind), r.identifier)
+}
+
+fn format_warning_severity(s: WarningSeverity) -> &'static str {
+    match s {
+        WarningSeverity::Info => "info",
+        WarningSeverity::Low => "low",
+        WarningSeverity::Medium => "medium",
+        WarningSeverity::High => "high",
+    }
+}
+
+/// Resolves `ids` against `all_refs` (a step's full `evidence.references`
+/// list), silently skipping any id with no matching reference -- should not
+/// occur after sidecar validation, but this renderer must never panic on it.
+fn resolve_references<'a>(
+    ids: &[String],
+    all_refs: &'a [EvidenceReference],
+) -> Vec<&'a EvidenceReference> {
+    ids.iter()
+        .filter_map(|id| all_refs.iter().find(|r| &r.id == id))
+        .collect()
+}
+
+/// Renders one step's curated evidence: rule-author default conditions (if
+/// any), up to 3 curated examples (exact-substrate matches first), and any
+/// template-level warnings. Appends directly to `out`.
+fn render_step_evidence(out: &mut String, step: &ReactionStep) {
+    if let Some(cond) = &step.conditions {
+        out.push_str("    Rule-author default conditions (not literature-derived):\n");
+        if let Some(c) = &cond.catalyst {
+            out.push_str(&format!("      Catalyst/reagent: {c}\n"));
+        }
+        if let Some(s) = &cond.solvent {
+            out.push_str(&format!("      Solvent: {s}\n"));
+        }
+        if let Some(t) = &cond.temperature {
+            out.push_str(&format!("      Temperature: {t}\n"));
+        }
+    }
+
+    let Some(evidence) = &step.evidence else {
+        return;
+    };
+
+    if !evidence.examples.is_empty() {
+        out.push_str("    Evidence:\n");
+        let mut ranked: Vec<(ExampleMatch, &ReactionExample)> = evidence
+            .examples
+            .iter()
+            .map(|ex| (match_example(ex, &step.target, &step.precursors), ex))
+            .collect();
+        ranked.sort_by_key(|(m, _)| match m {
+            ExampleMatch::ExactSubstrate => 0,
+            ExampleMatch::TemplateOnly => 1,
+        });
+
+        for (m, ex) in ranked.iter().take(3) {
+            let header = match m {
+                ExampleMatch::ExactSubstrate => "Exact substrate example:",
+                ExampleMatch::TemplateOnly => {
+                    "Template-level literature example (different substrate; not a prediction):"
+                }
+            };
+            out.push_str(&format!("      {header}\n"));
+            if let Some(c) = &ex.conditions {
+                out.push_str(&format!(
+                    "        Conditions: {}\n",
+                    format_condition_candidate(c)
+                ));
+            }
+            if let Some(y) = &ex.reported_yield {
+                out.push_str(&format!(
+                    "        Reported yield: {}\n",
+                    format_reported_yield(y)
+                ));
+            }
+            for r in resolve_references(&ex.reference_ids, &evidence.references) {
+                out.push_str(&format!("        Reference: {}\n", format_reference(r)));
+            }
+            if let Some(drid) = &ex.dataset_record_id {
+                out.push_str(&format!("        Dataset record: {drid}\n"));
+            }
+            for w in &ex.warnings {
+                out.push_str(&format!(
+                    "        Warning: [{}] {}\n",
+                    format_warning_severity(w.severity),
+                    w.message
+                ));
+                for r in resolve_references(&w.reference_ids, &evidence.references) {
+                    out.push_str(&format!("          Source: {}\n", format_reference(r)));
+                }
+            }
+        }
+        let remaining = ranked.len().saturating_sub(3);
+        if remaining > 0 {
+            out.push_str(&format!(
+                "      ... and {remaining} more template examples\n"
+            ));
+        }
+    }
+
+    if !evidence.warnings.is_empty() {
+        out.push_str("    Warnings:\n");
+        for w in &evidence.warnings {
+            out.push_str(&format!(
+                "      [{}] {}\n",
+                format_warning_severity(w.severity),
+                w.message
+            ));
+            for r in resolve_references(&w.reference_ids, &evidence.references) {
+                out.push_str(&format!("        Source: {}\n", format_reference(r)));
+            }
+        }
+    }
+}
+
 // ── Explain renderer ──────────────────────────────────────────────────────
 
 /// Format a human-readable explanation of why a route was ranked as it is.
@@ -220,12 +416,12 @@ pub fn explain_route(route: &Route, target: &str, num: usize) -> String {
     }
     if route.success_probability >= 0.7 {
         strengths.push(format!(
-            "high step-success probability ({:.2})",
+            "high template-frequency route score ({:.2}) — not a calibrated experimental success probability",
             route.success_probability
         ));
     } else if route.success_probability < 0.5 {
         weaknesses.push(format!(
-            "success_probability {:.2} — cascaded template uncertainty",
+            "low frequency-derived route ranking score ({:.2}) — cascaded template rarity, not a calibrated experimental success probability",
             route.success_probability
         ));
     }
@@ -294,6 +490,7 @@ pub fn explain_route(route: &Route, target: &str, num: usize) -> String {
         if let Some(hint) = &step.procedure_hint {
             out.push_str(&format!("    Procedure: {hint}\n"));
         }
+        render_step_evidence(&mut out, step);
     }
     out.push('\n');
     out
@@ -366,4 +563,277 @@ pub fn format_route_mermaid(route: &Route, target: &str, route_num: usize) -> St
         out.push_str(&format!("  n{} -->|{}| n{}\n", e.from, e.label, e.to));
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::evidence::{
+        EvidenceScope, MetadataSource, ReactionWarning, StepEvidence, WarningSeverity,
+    };
+    use crate::search::ReactionConditions;
+
+    fn base_step() -> ReactionStep {
+        ReactionStep {
+            rule: "ester_cleavage".to_string(),
+            template_id: "rule:ester_cleavage".to_string(),
+            target: "CC(=O)Oc1ccccc1C(=O)O".to_string(),
+            precursors: vec!["CC(=O)O".to_string(), "Oc1ccccc1C(=O)O".to_string()],
+            conditions: None,
+            atom_economy: Some(90.0),
+            step_confidence: 1.0,
+            procedure_hint: None,
+            reaction_family: Some("esterification".to_string()),
+            metadata_source: Some(MetadataSource::HandcraftedDefault),
+            metadata_scope: Some(EvidenceScope::ReactionFamily),
+            evidence: None,
+        }
+    }
+
+    fn base_route(steps: Vec<ReactionStep>, success_probability: f64) -> Route {
+        Route {
+            steps,
+            depth: 1,
+            score: 1.0,
+            building_blocks: vec![],
+            confidence: 0.9,
+            convergency: 0.0,
+            success_probability,
+            route_cost: 1.0,
+        }
+    }
+
+    fn sample_reference() -> EvidenceReference {
+        EvidenceReference {
+            id: "ref-1".to_string(),
+            kind: ReferenceKind::Doi,
+            identifier: "10.xxxx/example".to_string(),
+            title: None,
+        }
+    }
+
+    fn sample_example(target: &str) -> ReactionExample {
+        ReactionExample {
+            id: "ex-1".to_string(),
+            target_smiles: target.to_string(),
+            precursor_smiles: vec!["CC(=O)O".to_string(), "Oc1ccccc1C(=O)O".to_string()],
+            conditions: Some(ConditionCandidate {
+                catalysts: vec![],
+                reagents: vec!["H2SO4".to_string()],
+                bases: vec![],
+                solvents: vec!["toluene".to_string()],
+                temperature_c: None,
+                time_hours: None,
+                atmosphere: None,
+                notes: None,
+                source: MetadataSource::Literature,
+                scope: EvidenceScope::SubstrateSpecific,
+                reference_ids: vec!["ref-1".to_string()],
+            }),
+            reported_yield: Some(ReportedYield {
+                percentage: YieldPercentage::Single(78.0),
+                basis: YieldBasis::Isolated,
+                source: MetadataSource::Literature,
+                scope: EvidenceScope::SubstrateSpecific,
+                reference_ids: vec!["ref-1".to_string()],
+            }),
+            warnings: vec![],
+            reference_ids: vec!["ref-1".to_string()],
+            dataset_record_id: Some("ds-1".to_string()),
+            notes: None,
+        }
+    }
+
+    #[test]
+    fn generic_conditions_labeled_not_literature_derived() {
+        let mut step = base_step();
+        step.conditions = Some(ReactionConditions {
+            catalyst: Some("H2SO4".to_string()),
+            solvent: Some("toluene".to_string()),
+            temperature: Some("reflux".to_string()),
+            notes: None,
+        });
+        let route = base_route(vec![step], 0.9);
+        let out = explain_route(&route, "CC(=O)Oc1ccccc1C(=O)O", 1);
+        assert!(out.contains("Rule-author default conditions (not literature-derived):"));
+        assert!(out.contains("Catalyst/reagent: H2SO4"));
+        assert!(out.contains("Solvent: toluene"));
+        assert!(out.contains("Temperature: reflux"));
+    }
+
+    #[test]
+    fn exact_substrate_example_renders_conditions_yield_reference_and_dataset_record() {
+        let mut step = base_step();
+        step.evidence = Some(StepEvidence {
+            condition_candidates: vec![],
+            reported_yields: vec![],
+            references: vec![sample_reference()],
+            warnings: vec![],
+            examples: vec![sample_example("CC(=O)Oc1ccccc1C(=O)O")],
+        });
+        let route = base_route(vec![step], 0.9);
+        let out = explain_route(&route, "CC(=O)Oc1ccccc1C(=O)O", 1);
+        assert!(out.contains("Evidence:"));
+        assert!(out.contains("Exact substrate example:"));
+        assert!(out.contains("Reported yield: 78% isolated"));
+        assert!(out.contains("Reference: DOI 10.xxxx/example"));
+        assert!(out.contains("Dataset record: ds-1"));
+    }
+
+    #[test]
+    fn different_substrate_example_labeled_not_a_prediction() {
+        let mut step = base_step();
+        step.evidence = Some(StepEvidence {
+            condition_candidates: vec![],
+            reported_yields: vec![],
+            references: vec![sample_reference()],
+            warnings: vec![],
+            examples: vec![sample_example("CCO")], // different target -> TemplateOnly
+        });
+        let route = base_route(vec![step], 0.9);
+        let out = explain_route(&route, "CC(=O)Oc1ccccc1C(=O)O", 1);
+        assert!(out.contains(
+            "Template-level literature example (different substrate; not a prediction):"
+        ));
+        assert!(!out.contains("Exact substrate example:"));
+    }
+
+    #[test]
+    fn more_than_three_examples_reports_remainder() {
+        let mut step = base_step();
+        let examples: Vec<ReactionExample> = (0..5)
+            .map(|i| {
+                let mut ex = sample_example("CCO"); // all TemplateOnly, order preserved
+                ex.id = format!("ex-{i}");
+                ex
+            })
+            .collect();
+        step.evidence = Some(StepEvidence {
+            condition_candidates: vec![],
+            reported_yields: vec![],
+            references: vec![],
+            warnings: vec![],
+            examples,
+        });
+        let route = base_route(vec![step], 0.9);
+        let out = explain_route(&route, "CC(=O)Oc1ccccc1C(=O)O", 1);
+        assert!(out.contains("... and 2 more template examples"));
+    }
+
+    #[test]
+    fn exact_match_sorts_before_template_only_when_mixed() {
+        let mut step = base_step();
+        let mut examples: Vec<ReactionExample> = (0..4)
+            .map(|i| {
+                let mut ex = sample_example("CCO"); // TemplateOnly
+                ex.id = format!("template-only-{i}");
+                ex
+            })
+            .collect();
+        let mut exact = sample_example("CC(=O)Oc1ccccc1C(=O)O"); // matches step target/precursors
+        exact.id = "the-exact-one".to_string();
+        examples.push(exact); // exact match placed last on input, must still sort first
+        step.evidence = Some(StepEvidence {
+            condition_candidates: vec![],
+            reported_yields: vec![],
+            references: vec![],
+            warnings: vec![],
+            examples,
+        });
+        let route = base_route(vec![step], 0.9);
+        let out = explain_route(&route, "CC(=O)Oc1ccccc1C(=O)O", 1);
+        let exact_pos = out.find("Exact substrate example:").unwrap();
+        let template_only_pos = out.find("Template-level literature example").unwrap();
+        assert!(
+            exact_pos < template_only_pos,
+            "exact-substrate match must be listed before template-only matches, got: {out}"
+        );
+        // Only 3 shown out of 5 total -- the exact match must be among them, not bumped out.
+        assert!(out.contains("... and 2 more template examples"));
+    }
+
+    #[test]
+    fn example_level_warning_is_rendered() {
+        let mut step = base_step();
+        let mut example = sample_example("CC(=O)Oc1ccccc1C(=O)O");
+        example.warnings = vec![ReactionWarning {
+            code: "substrate_specific_side_reaction".to_string(),
+            severity: WarningSeverity::High,
+            message: "Decomposition observed for this exact substrate above 100C.".to_string(),
+            source: MetadataSource::Literature,
+            scope: EvidenceScope::SubstrateSpecific,
+            reference_ids: vec!["ref-1".to_string()],
+        }];
+        step.evidence = Some(StepEvidence {
+            condition_candidates: vec![],
+            reported_yields: vec![],
+            references: vec![sample_reference()],
+            warnings: vec![],
+            examples: vec![example],
+        });
+        let route = base_route(vec![step], 0.9);
+        let out = explain_route(&route, "CC(=O)Oc1ccccc1C(=O)O", 1);
+        assert!(out.contains(
+            "Warning: [high] Decomposition observed for this exact substrate above 100C."
+        ));
+        assert!(out.contains("Source: DOI 10.xxxx/example"));
+    }
+
+    #[test]
+    fn warnings_rendered_with_severity_and_source() {
+        let mut step = base_step();
+        step.evidence = Some(StepEvidence {
+            condition_candidates: vec![],
+            reported_yields: vec![],
+            references: vec![sample_reference()],
+            warnings: vec![ReactionWarning {
+                code: "possible_protodeboronation".to_string(),
+                severity: WarningSeverity::Medium,
+                message: "Possible protodeboronation under prolonged heating.".to_string(),
+                source: MetadataSource::Literature,
+                scope: EvidenceScope::Template,
+                reference_ids: vec!["ref-1".to_string()],
+            }],
+            examples: vec![],
+        });
+        let route = base_route(vec![step], 0.9);
+        let out = explain_route(&route, "CC(=O)Oc1ccccc1C(=O)O", 1);
+        assert!(out.contains("Warnings:"));
+        assert!(out.contains("[medium] Possible protodeboronation under prolonged heating."));
+        assert!(out.contains("Source: DOI 10.xxxx/example"));
+    }
+
+    #[test]
+    fn absent_warnings_are_not_rendered_as_no_side_reactions() {
+        let mut step = base_step();
+        step.evidence = Some(StepEvidence {
+            condition_candidates: vec![],
+            reported_yields: vec![],
+            references: vec![],
+            warnings: vec![],
+            examples: vec![],
+        });
+        let route = base_route(vec![step], 0.9);
+        let out = explain_route(&route, "CC(=O)Oc1ccccc1C(=O)O", 1);
+        assert!(!out.contains("Warnings:"));
+        assert!(!out.to_lowercase().contains("no side reaction"));
+    }
+
+    #[test]
+    fn high_success_probability_wording_avoids_forbidden_phrase() {
+        let route = base_route(vec![base_step()], 0.9);
+        let out = explain_route(&route, "CC(=O)Oc1ccccc1C(=O)O", 1);
+        assert!(!out.contains("step-success"));
+        assert!(out.contains("template-frequency route score"));
+        assert!(out.contains("not a calibrated experimental success probability"));
+    }
+
+    #[test]
+    fn low_success_probability_wording_avoids_forbidden_phrase() {
+        let route = base_route(vec![base_step()], 0.3);
+        let out = explain_route(&route, "CC(=O)Oc1ccccc1C(=O)O", 1);
+        assert!(!out.contains("step-success"));
+        assert!(!out.contains("probability that every step"));
+        assert!(out.contains("frequency-derived route ranking score"));
+    }
 }

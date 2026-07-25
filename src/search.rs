@@ -94,9 +94,12 @@ pub struct Route {
     /// Convergency score: 1.0 = all branches same depth (parallel synthesis possible);
     /// 0.0 = purely linear route.
     pub convergency: f64,
-    /// Product of step_confidence values (Retro-prob style).
-    /// Estimates the probability that every step in the route succeeds.
-    /// Single-step: equals step_confidence. Multi-step: decays multiplicatively.
+    /// Product of step_confidence values (Retro-prob style): a
+    /// frequency-derived route ranking score, not a calibrated experimental
+    /// success probability -- decays with route length purely because rarer
+    /// templates compound, not because of any measured or predicted failure
+    /// rate. Single-step: equals step_confidence. Multi-step: decays
+    /// multiplicatively.
     pub success_probability: f64,
     /// Estimated synthesis cost: Σ(BB complexity or price) + step_count × 0.5.
     /// Uses SA Score as complexity proxy when no price file is provided.

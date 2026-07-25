@@ -61,6 +61,10 @@ nav:
   - Getting Started:
     - Installation: getting_started/installation.md
     - Quick Start: getting_started/quickstart.md
+  - Guides:
+    - Python Retrosynthesis: guides/python-retrosynthesis.md
+    - Rust Retrosynthesis: guides/rust-retrosynthesis.md
+    - Reaction Evidence Metadata: guides/reaction-evidence.md
   - API Reference:
     - Rust API: api/rust.md
     - Python API: api/python.md
@@ -68,6 +72,8 @@ nav:
   - Examples:
     - Aspirin Retrosynthesis: examples/aspirin.md
     - Drug-like Molecules: examples/druglike.md
+  - Comparison:
+    - Open-Source Retrosynthesis Tools: comparison/open-source-retrosynthesis-tools.md
   - Playground: playground/index.html
   - Benchmark:
     - Results (EN): benchmark.md

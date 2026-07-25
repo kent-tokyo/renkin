@@ -633,6 +633,32 @@ impl Default for SearchConfig {
     }
 }
 
+/// Per-node NN template ranking (Phase D). `None` when no scorer is configured,
+/// and always `None` on WASM / without the `nn-scoring` feature — callers must
+/// fall back to `ranked_rules`/`bond_idx`, preserving the existing WASM
+/// frequency/bond-index-only retrieval path unchanged.
+#[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
+fn nn_rank<'a>(
+    config: &SearchConfig,
+    rules: &'a [RetroRule],
+    smiles: &str,
+) -> Option<Vec<&'a RetroRule>> {
+    config.nn_scorer.as_ref().map(|sc| {
+        sc.top_k_indices(smiles, rules.len())
+            .into_iter()
+            .filter_map(|i| rules.get(i))
+            .collect()
+    })
+}
+#[cfg(not(all(not(target_arch = "wasm32"), feature = "nn-scoring")))]
+fn nn_rank<'a>(
+    _config: &SearchConfig,
+    _rules: &'a [RetroRule],
+    _smiles: &str,
+) -> Option<Vec<&'a RetroRule>> {
+    None
+}
+
 pub fn find_routes(
     target_smiles: &str,
     env: &ChemEnv,
@@ -642,23 +668,16 @@ pub fn find_routes(
     let target_mol = mol_from_smiles(target_smiles)?;
     let target_canonical = to_canonical(&target_mol);
 
-    // Phase B: pre-rank rules ONCE for the initial target molecule.
-    // The scorer is called here (before the A* loop) — not per-node — to avoid
-    // hundreds of ONNX inference calls per search. The ranking is reused across
-    // all A* expansions; deeper intermediates use the same ordering.
-    //
-    #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
-    let ranked_rules: Vec<&RetroRule> = {
-        if let Some(sc) = &config.nn_scorer {
-            sc.top_k_indices(target_smiles, rules.len())
-                .into_iter()
-                .filter_map(|i| rules.get(i))
-                .collect()
-        } else {
-            rules.iter().collect()
-        }
-    };
-    #[cfg(not(all(not(target_arch = "wasm32"), feature = "nn-scoring")))]
+    // Default rule order when no scorer/bond-index retrieval narrows it down.
+    // Phase D (2026-07): the NN scorer used to rank ONCE against the root target
+    // and reuse that order for every deeper intermediate. Measurement (986 solved
+    // targets, 994 depth>=1 ground-truth steps) showed that's a poor proxy for
+    // what's actually applicable at an intermediate: top-100 recall of the
+    // ground-truth rule was 37.1% under root-only ranking vs 64.1% re-ranked
+    // fresh on the intermediate (median rank 304 -> 27). So scoring now happens
+    // per-node, right below in the retro_cache-miss branch — which already keys
+    // on canonical intermediate SMILES, so each unique intermediate still gets
+    // exactly one ONNX call for the whole search (cache hits skip it entirely).
     let ranked_rules: Vec<&RetroRule> = rules.iter().collect();
 
     let max_rule_weight = rules.iter().map(|r| r.weight).fold(1.0_f64, f64::max);
@@ -782,8 +801,14 @@ pub fn find_routes(
         } else {
             retro_cache_misses += 1;
             // Bond-center retrieval: filter ranked_rules to those relevant to this molecule's bonds.
-            // Falls back to ranked_rules unchanged when bond_idx is None (--bond-index not set).
+            // Else, per-node NN ranking (Phase D) — scored fresh against THIS intermediate,
+            // not the root; this whole branch only runs once per unique canonical
+            // `target_smi` (retro_cache dedupes repeat visits), so it's exactly one ONNX
+            // inference call per unique intermediate for the whole search, same as a
+            // dedicated SMILES-keyed cache would give, with no extra cache to maintain.
+            // Falls back to ranked_rules unchanged when neither is configured.
             let retrieved: Vec<&RetroRule>;
+            let per_node: Vec<&RetroRule>;
             let active_rules: &[&RetroRule] = if let Some(ref idx) = bond_idx {
                 retrieved = idx
                     .retrieve(&target_mol, 0, rules) // top_k=0 = no truncation
@@ -791,6 +816,9 @@ pub fn find_routes(
                     .filter_map(|i| rules.get(i))
                     .collect();
                 &retrieved
+            } else if let Some(v) = nn_rank(config, rules, &target_smi) {
+                per_node = v;
+                &per_node
             } else {
                 &ranked_rules
             };

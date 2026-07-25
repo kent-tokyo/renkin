@@ -5,7 +5,7 @@ use renkin::chem_env;
 use renkin::display;
 use renkin::search::{self, SearchConfig};
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -35,6 +35,7 @@ fn main() -> Result<()> {
     let mut max_depth: u32 = 5;
     let mut bb_path: Option<String> = None;
     let mut templates_path: Option<String> = None;
+    let mut template_metadata_path: Option<String> = None;
     let mut top_templates: Option<usize> = None;
     let mut max_routes: usize = 5;
     let mut beam_width: usize = 0;
@@ -75,6 +76,12 @@ fn main() -> Result<()> {
                 i += 1;
                 if i < args.len() {
                     templates_path = Some(args[i].clone());
+                }
+            }
+            "--template-metadata" => {
+                i += 1;
+                if i < args.len() {
+                    template_metadata_path = Some(args[i].clone());
                 }
             }
             "--top-templates" => {
@@ -168,6 +175,7 @@ fn main() -> Result<()> {
              --beam-width / -w  Beam search width, 0 = unlimited A* (default: 0)\n  \
              --building-blocks  Path to .smi file of commercial starting materials\n  \
              --templates        Path to extracted SMIRKS templates file (tab-separated)\n  \
+             --template-metadata <path>  JSON sidecar of curated evidence keyed by template_id\n  \
              --format / -f      Output format: json (default), tree, mermaid\n  \
              --avoid-elements / -e  Comma-separated elements to ban from BBs (e.g. \"Br,I\")\n  \
              --require-elements / -r  Comma-separated elements each route must supply (e.g. \"B\")\n  \
@@ -206,6 +214,17 @@ fn main() -> Result<()> {
         }
         eprintln!("Loaded {} templates from {path}", extra.len());
         rules.extend(extra);
+    }
+
+    // Malformed metadata must fail before any search runs.
+    let template_metadata = template_metadata_path
+        .as_deref()
+        .map(renkin::evidence::load_template_metadata)
+        .transpose()?;
+    if let Some(ref tm) = template_metadata {
+        let known_ids: std::collections::HashSet<&str> =
+            rules.iter().map(|r| r.template_id.as_str()).collect();
+        renkin::evidence::warn_unknown_templates(tm, &known_ids);
     }
     #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
     let nn_scorer: Option<std::sync::Arc<renkin::scorer::nn::TemplateScorer>> =
@@ -257,6 +276,7 @@ fn main() -> Result<()> {
         verbose,
         bond_index,
         bb_price_map,
+        template_metadata: template_metadata.map(|tm| tm.templates),
         #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
         nn_scorer,
         ..Default::default()
@@ -482,6 +502,7 @@ fn run_template(args: &[String]) -> Result<()> {
         "dedup" => template_dedup(rest),
         "explain" => template_explain(rest),
         "coverage" => template_coverage(rest),
+        "ids" => template_ids(rest),
         _ => {
             println!("Usage: renkin template <cmd> [args]");
             println!("  stats    <file.smi>                   — count, frequency distribution");
@@ -489,9 +510,77 @@ fn run_template(args: &[String]) -> Result<()> {
             println!("  dedup    <file.smi>                   — find duplicate SMIRKS");
             println!("  explain  <name> [--templates <path>]  — show one template by name");
             println!("  coverage <targets.smi> [--templates <path>] [--depth N]");
+            println!(
+                "  ids      <file.smi> [--format tsv|json]  — stable template_id per template"
+            );
             Ok(())
         }
     }
+}
+
+/// Print `template_id`, current display name, SMIRKS, and weight for every
+/// template in `path`, so users can author a `--template-metadata` sidecar.
+/// Uses `chem_env::load_rules_from_file` (not `read_template_lines`) so the
+/// reported `template_id`/name match exactly what real search runs assign --
+/// that reader validates and filters lines the same way the search engine does.
+fn template_ids(args: &[String]) -> Result<()> {
+    // Skip `--format <value>` when picking the positional path argument, so
+    // `renkin template ids --format json <file>` (or the flag before the
+    // path at all) doesn't mistake "--format" itself for the file path.
+    let path = args
+        .iter()
+        .enumerate()
+        .find(|(i, a)| !a.starts_with("--") && !(*i > 0 && args[*i - 1] == "--format"))
+        .map(|(_, a)| a.as_str())
+        .unwrap_or("data/templates_extracted_5000.smi");
+    // load_rules_from_file warns-and-returns-empty on a read error (matching its
+    // use in the main search path); this subcommand must fail loudly instead.
+    let meta =
+        std::fs::metadata(path).with_context(|| format!("cannot read template file {path}"))?;
+    if !meta.is_file() {
+        bail!("template file {path} is not a file");
+    }
+    let format = args
+        .windows(2)
+        .find(|w| w[0] == "--format")
+        .map(|w| w[1].as_str())
+        .unwrap_or("tsv");
+    let rules = chem_env::load_rules_from_file(path);
+
+    if format == "json" {
+        #[derive(Serialize)]
+        struct Row<'a> {
+            template_id: &'a str,
+            name: &'a str,
+            smirks: &'a str,
+            weight: f64,
+            approx_count: f64,
+        }
+        let rows: Vec<Row> = rules
+            .iter()
+            .map(|r| Row {
+                template_id: &r.template_id,
+                name: &r.name,
+                smirks: &r.smirks,
+                weight: r.weight,
+                approx_count: r.weight.exp() - 1.0,
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&rows)?);
+    } else {
+        println!("template_id\tname\tsmirks\tweight\tapprox_count");
+        for r in &rules {
+            println!(
+                "{}\t{}\t{}\t{:.4}\t{:.1}",
+                r.template_id,
+                r.name,
+                r.smirks,
+                r.weight,
+                r.weight.exp() - 1.0
+            );
+        }
+    }
+    Ok(())
 }
 
 /// Read raw template file → Vec<(smirks, count)>, skipping comments and blank lines.

@@ -145,6 +145,91 @@ c1ccccc1-c2ccccc2
 
 ---
 
+## テンプレート evidence メタデータ
+
+extracted templateはファイル内の位置に基づく表示名（`extracted_{i}`）しか持たず、
+ファイルの並び替えや再抽出のたびに変わってしまうため、DOI・報告収率・既知の副反応
+といった外部知識を永続的に紐づけられませんでした。すべてのテンプレート（hand-crafted
+とextracted両方）に、代わりに安定した `template_id` が付与されます:
+
+- hand-crafted rule: `rule:<rule_name>`（例: `rule:suzuki_retro`）
+- extracted template: `smirks-sha256:<hex>` — trim済みSMIRKS文字列のSHA-256 hex
+  digest。ファイル内の位置・読み込み順・count値に依存しない。純粋に構文的な値であり
+  SMIRKSの意味的canonicalizationは行わない（同じ意味でも表記が異なるSMIRKSは別IDになる）。
+
+`renkin template ids <file.smi>` を実行すると、各テンプレートの `template_id`・
+表示名・SMIRKS・weightの一覧を出力する（既定はTSV、`--format json` でJSON出力）。
+サイドカーファイル作成時のID確認に使用する。
+
+`--template-metadata sidecar.json`（Pythonでは
+`find_routes(..., template_metadata_path=...)`）で、`template_id` をキーとする
+evidenceを紐づけられる:
+
+```json
+{
+  "schema_version": 1,
+  "templates": {
+    "smirks-sha256:ef8778a2888469d619c52cce7e74f6848e101049050dd1b765b78f32e3c94498": {
+      "references": [
+        { "id": "ref-1", "kind": "doi", "identifier": "10.xxxx/example" }
+      ],
+      "condition_candidates": [
+        {
+          "catalysts": ["Pd(PPh3)4"],
+          "bases": ["K2CO3"],
+          "solvents": ["EtOH", "water"],
+          "temperature_c": { "min": 75.0, "max": 85.0 },
+          "source": "literature",
+          "scope": "template",
+          "reference_ids": ["ref-1"]
+        }
+      ],
+      "reported_yields": [
+        {
+          "percentage": { "min": 72.0, "max": 81.0 },
+          "basis": "isolated",
+          "source": "literature",
+          "scope": "template",
+          "reference_ids": ["ref-1"]
+        }
+      ],
+      "warnings": [
+        {
+          "code": "possible_protodeboronation",
+          "severity": "medium",
+          "message": "Protodeboronation has been reported under prolonged aqueous heating.",
+          "source": "literature",
+          "scope": "template",
+          "reference_ids": ["ref-1"]
+        }
+      ]
+    }
+  }
+}
+```
+
+一致したステップには `condition_candidates`・`reported_yields`・`references`・
+`warnings` を含む `evidence` フィールドが付与され、サイドカーに該当エントリがない
+テンプレートを使うステップには `evidence` キー自体が存在しません。サイドカーは
+**探索が始まる前に**読み込み・検証されます（schema_version・重複/存在しない
+reference ID・収率の範囲・range の `min <= max`・DOI/特許識別子の非空チェック）。
+不正なメタデータはハードエラーになり、ロードされたルールに一致しない `template_id`
+がサイドカーにある場合は警告のみ（失敗はしない）です。
+
+**これは何ではないか:**
+- `reported_yields` は外部で報告された値を記録したものであり、**RENKIN自身の予測
+  ではありません**。`step_confidence`/`success_probability` はこれに影響されず、
+  引き続きtemplate frequency由来の探索スコアであって実験成功率ではありません。
+- `warnings` は与えたサイドカーに明示的に含まれる内容のみを反映し、**自動的な
+  副反応検出ではありません**。
+- サイドカーに該当エントリがないテンプレートには、evidenceは一切捏造されません。
+
+収率・成功率の自動予測や文献の自動検索は本フェーズのスコープ外であり、
+[#41](https://github.com/kent-tokyo/renkin/issues/41) で今後のタスクとして
+追跡されています。
+
+---
+
 ## 特徴
 
 | 特徴 | 詳細 |
@@ -153,7 +238,8 @@ c1ccccc1-c2ccccc2
 | **A\* / AND-OR木探索** | プラガブルフック付きRetro\*相当アルゴリズム（`MoleculeValueEstimator`, `ReactionPrior`） |
 | **最大50k逆合成テンプレート** | USPTO-50k/MIT からrdchiralで自動抽出；頻度重み付け優先；`--templates` でカスタムセット対応 |
 | **ルートスコアリング** | `confidence`, `step_confidence`, `success_probability`（Retro-prob方式）, `convergency`, `atom_economy` — 下の注記も参照 |
-| **ステップメタデータの出所表示** | 各ステップに `metadata_source`/`metadata_scope`（例: `handcrafted_default`/`reaction_family`）を付与し、`conditions`/`reaction_family` がルール作者による既定値なのか、それ以上の根拠があるのかを機械可読に区別。extracted templateには何も付与しない（捏造しない）。実際の文献参照・収率推定・副反応警告は未実装——本フィールドはそれらの将来実装に向けた出所管理基盤（[#41](https://github.com/kent-tokyo/renkin/issues/41)で追跡）。 |
+| **ステップメタデータの出所表示** | 各ステップに `metadata_source`/`metadata_scope`（例: `handcrafted_default`/`reaction_family`）を付与し、`conditions`/`reaction_family` がルール作者による既定値なのか、それ以上の根拠があるのかを機械可読に区別。extracted templateには何も付与しない（捏造しない）。 |
+| **安定 template_id + evidence サイドカー** | すべてのテンプレートに安定した `template_id` を付与——hand-crafted ruleは `rule:<name>`、extracted templateは `smirks-sha256:<hex>`（ファイル内の並び順・位置・count値に依存しない）。`--template-metadata sidecar.json`（`template_id` をキーとするJSON）でDOI・特許・報告済み条件・報告済み収率・既知の副反応警告を紐づけ可能。一致したステップにのみ `evidence` フィールドが付与され、それ以外は変化しない——詳細は下記「[テンプレート evidence メタデータ](#テンプレート-evidence-メタデータ)」参照。`renkin template ids <file.smi>` で安定IDの一覧を出力し、サイドカー作成に使用できる。収率・成功率の自動予測や文献自動検索は引き続きスコープ外（[#41](https://github.com/kent-tokyo/renkin/issues/41)で追跡）。 |
 | **ルートコストスコアリング** | `route_cost = Σ(BB価格) + ステップ数×0.5`；`--bb-prices CSV` または `--stock stock.csv` で実価格対応 |
 | **Pareto多目的探索** | `--format pareto` で `route_cost`・`success_probability`・`steps` 等のパレートフロントを返す；`--objectives` で目的関数をカスタム設定 |
 | **制約 DSL** | `--constraints constraints.json` — JSON駆動の合成計画：元素フィルタ・ステップ数制限・信頼度閾値・優先反応族；LLM → RENKIN パイプラインに対応 |
@@ -164,7 +250,7 @@ c1ccccc1-c2ccccc2
 | **PaRoutesベンチマーク** | `renkin-bench --input-format paroutes` でmulti-step ground-truth評価（`depth_delta`, `route_diversity`） |
 | **原子収支チェック** | `renkin-bench` で `target_MW > Σ precursor_MW` のステップを検出（CompleteRXN参照） |
 | **stock CSV 管理** | `renkin stock stats\|validate\|coverage` — SMILES・名称・ベンダー・価格・ハザード情報を持つ stock CSV を検査 |
-| **テンプレート品質ツール** | `renkin template stats\|validate\|dedup\|explain\|coverage` — テンプレートセットの頻度分布・有効性・重複・検索・カバレッジを検査 |
+| **テンプレート品質ツール** | `renkin template stats\|validate\|dedup\|explain\|coverage\|ids` — テンプレートセットの頻度分布・有効性・重複・検索・カバレッジ・安定IDを検査 |
 | **MCPサーバー** | `renkin-mcp` が 6 ツールを提供：`find_routes`, `validate_route`, `explain_route`, `find_pareto_routes`, `plan_with_constraints`, `estimate_diversity` |
 | **`renkin-doctor`** | 環境診断バイナリ — テンプレート・市販品データ・Python インポート・ツールバージョンを検査 |
 | **`renkin-kg`** | 反応知識グラフ構築ツール — ルートから分子↔反応の二部グラフを生成；GraphML / Cypher 形式でエクスポート |
@@ -348,7 +434,7 @@ renkin/                          ← Cargo workspace ルート
 ├── Cargo.toml
 ├── src/                         ← renkin クレート（逆合成）
 │   ├── lib.rs                   # ライブラリクレート
-│   ├── main.rs                  # CLI バイナリ（--templates, --scorer, --constraints, --objectives フラグ対応）
+│   ├── main.rs                  # CLI バイナリ（--templates, --template-metadata, --scorer, --constraints, --objectives フラグ対応）
 │   ├── bin/benchmark.rs         # renkin-bench バイナリ（--plausibility フラグ対応）
 │   ├── bin/doctor.rs            # renkin-doctor 環境診断バイナリ
 │   ├── bin/fp.rs                # renkin-fp ECFP4 フィンガープリント（nn-scoring フィーチャー）
@@ -421,6 +507,7 @@ renkin/                          ← Cargo workspace ルート
 - [x] `renkin template stats|validate|dedup|explain|coverage` — テンプレート品質ツール
 - [x] `renkin-kg` — 反応知識グラフ（分子↔反応 二部グラフ、GraphML/Cypher エクスポート）
 - [x] MCP サーバー拡張 — 6 ツール体制（`explain_route`・`find_pareto_routes`・`plan_with_constraints` 追加）
+- [x] 安定 `template_id`（`rule:<name>` / `smirks-sha256:<hex>`）+ `--template-metadata` evidence サイドカー + `renkin template ids`（[#41](https://github.com/kent-tokyo/renkin/issues/41) phase 1）
 
 ---
 

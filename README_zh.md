@@ -170,7 +170,8 @@ c1ccccc1-c2ccccc2
 | **A\* / AND-OR 树搜索** | 等价于 Retro\* 的算法，启发函数可插拔替换（`MoleculeValueEstimator`、`ReactionPrior`） |
 | **最多 5 万条反应模板** | 通过 rdchiral 从 USPTO-50k/MIT 自动提取；按出现频率加权排序；可用 `--templates` 指定自定义模板集 |
 | **路线评分** | 每一步均给出 `confidence`、`step_confidence`、`success_probability`（Retro-prob 风格）、`convergency`、`atom_economy` —— 重要说明见表格下方 |
-| **步骤元数据来源标注** | 每一步都会报告 `metadata_source`/`metadata_scope`（例如 `handcrafted_default`/`reaction_family`），从而可以机器可读地区分 `conditions`/`reaction_family` 究竟来自规则作者设定的默认值，还是有更充分依据的来源；对自动提取的模板不会填充该字段，因为没有可靠信息可填，不会凭空捏造。目前尚未实现真实文献引用、收率估算和副反应警示——该字段只是为未来实现这些功能预先搭建的来源标注基础设施，进展追踪见 [#41](https://github.com/kent-tokyo/renkin/issues/41)。 |
+| **步骤元数据来源标注** | 每一步都会报告 `metadata_source`/`metadata_scope`（例如 `handcrafted_default`/`reaction_family`），从而可以机器可读地区分 `conditions`/`reaction_family` 究竟来自规则作者设定的默认值，还是有更充分依据的来源；对自动提取的模板不会填充该字段，因为没有可靠信息可填，不会凭空捏造。 |
+| **稳定 template_id + evidence 元数据侧车** | 每个模板都有稳定的 `template_id`——手工规则为 `rule:<name>`，自动提取的模板为 `smirks-sha256:<hex>`（与文件顺序/位置/count 无关）。通过 `--template-metadata sidecar.json`（以 `template_id` 为键的 JSON）可以关联真实的 DOI/专利、报告条件、报告收率和已知副反应警示；仅匹配到的步骤会获得 `evidence` 字段，其余不受影响，且这些均为人工整理证据，并非 RENKIN 的预测。运行 `renkin template ids <file.smi>` 可列出稳定 ID 以便编写侧车文件。自动收率/成功率预测和文献自动检索仍在范围之外，进展追踪见 [#41](https://github.com/kent-tokyo/renkin/issues/41)。 |
 | **路线成本评分** | `route_cost = Σ(起始原料成本) + 步数×0.5`；可通过 `--bb-prices CSV` 或 `--stock stock.csv` 使用真实价格 |
 | **帕累托多目标搜索** | `--format pareto` 返回 `route_cost`、`success_probability`、`steps` 等指标上的帕累托前沿；可通过 `--objectives cost:min,success_probability:max,steps:min` 自定义目标函数 |
 | **约束 DSL** | `--constraints constraints.json` —— 基于 JSON 驱动的合成路线规划：元素过滤、步数限制、置信度阈值、优先反应族；支持 LLM → RENKIN 的调用流程 |

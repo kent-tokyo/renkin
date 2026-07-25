@@ -162,6 +162,96 @@ Add `--verbose` to print search statistics (nodes expanded, elapsed time) to std
 
 ---
 
+## Template Evidence Metadata
+
+Extracted templates only have a positional display name (`extracted_{i}`) that
+changes whenever the source `.smi` file is reordered or re-extracted, so
+external knowledge (a DOI, a reported yield, a known side reaction) can't be
+durably attached to one. Every template — hand-crafted and extracted — now
+has a stable `template_id` instead:
+
+- Hand-crafted rules: `rule:<rule_name>` (e.g. `rule:suzuki_retro`).
+- Extracted templates: `smirks-sha256:<hex>` — the SHA-256 hex digest of the
+  *trimmed* SMIRKS string. Independent of file position, load order, and
+  count; purely syntactic (no SMIRKS canonicalization — a semantically
+  equivalent SMIRKS written differently gets a different ID).
+
+Run `renkin template ids <file.smi>` to list every template's `template_id`,
+display name, SMIRKS, and weight (TSV by default, `--format json` for JSON) —
+use this to look up the IDs you need when authoring a sidecar file.
+
+Attach curated evidence with `--template-metadata sidecar.json` (also
+available in Python as `find_routes(..., template_metadata_path=...)`),
+keyed by `template_id`:
+
+```json
+{
+  "schema_version": 1,
+  "templates": {
+    "smirks-sha256:ef8778a2888469d619c52cce7e74f6848e101049050dd1b765b78f32e3c94498": {
+      "references": [
+        { "id": "ref-1", "kind": "doi", "identifier": "10.xxxx/example" }
+      ],
+      "condition_candidates": [
+        {
+          "catalysts": ["Pd(PPh3)4"],
+          "bases": ["K2CO3"],
+          "solvents": ["EtOH", "water"],
+          "temperature_c": { "min": 75.0, "max": 85.0 },
+          "source": "literature",
+          "scope": "template",
+          "reference_ids": ["ref-1"]
+        }
+      ],
+      "reported_yields": [
+        {
+          "percentage": { "min": 72.0, "max": 81.0 },
+          "basis": "isolated",
+          "source": "literature",
+          "scope": "template",
+          "reference_ids": ["ref-1"]
+        }
+      ],
+      "warnings": [
+        {
+          "code": "possible_protodeboronation",
+          "severity": "medium",
+          "message": "Protodeboronation has been reported under prolonged aqueous heating.",
+          "source": "literature",
+          "scope": "template",
+          "reference_ids": ["ref-1"]
+        }
+      ]
+    }
+  }
+}
+```
+
+A matching step gets an `evidence` field with `condition_candidates`,
+`reported_yields`, `references`, and `warnings`; steps whose template has no
+sidecar entry get no `evidence` key at all. The sidecar is loaded and
+validated (schema version, duplicate/dangling reference IDs, yield range,
+range `min <= max`, non-empty DOI/patent identifiers) **before search
+starts** — malformed metadata is a hard error, and a `template_id` in the
+sidecar that matches no loaded rule prints a warning rather than failing
+silently.
+
+**What this is not:**
+- `reported_yields` is a curated record of what was reported externally —
+  **not a RENKIN prediction**. `step_confidence`/`success_probability` are
+  unaffected and keep meaning template-frequency-derived search-ranking
+  scores, not experimental success rates.
+- `warnings` reflects only what's explicitly present in the sidecar you
+  supply — **not** automatic side-reaction detection.
+- Templates without a matching sidecar entry get no fabricated evidence.
+  Nothing is invented for missing data.
+
+Yield/success prediction and automatic literature search are explicitly out
+of scope for this phase — tracked as future work in
+[#41](https://github.com/kent-tokyo/renkin/issues/41).
+
+---
+
 ## Key Features
 
 | Feature | Detail |
@@ -170,7 +260,8 @@ Add `--verbose` to print search statistics (nodes expanded, elapsed time) to std
 | **A\* / AND-OR Tree Search** | Retro\*-equivalent algorithm with pluggable heuristics (`MoleculeValueEstimator`, `ReactionPrior`) |
 | **Up to 50k reaction templates** | Auto-extracted from USPTO-50k/MIT via rdchiral; frequency-weighted priority; `--templates` for custom sets |
 | **Route scoring** | `confidence`, `step_confidence`, `success_probability` (Retro-prob style), `convergency`, `atom_economy` per step — see caveat below the table |
-| **Step metadata provenance** | Each step reports `metadata_source`/`metadata_scope` (e.g. `handcrafted_default`/`reaction_family`) so it's machine-readable whether `conditions`/`reaction_family` came from a rule-author default vs. something more grounded; absent for extracted templates, since nothing is fabricated for them. Real literature references, yield estimates, and side-reaction warnings are not implemented yet — this is provenance-tagging infrastructure for that future work, tracked in [#41](https://github.com/kent-tokyo/renkin/issues/41). |
+| **Step metadata provenance** | Each step reports `metadata_source`/`metadata_scope` (e.g. `handcrafted_default`/`reaction_family`) so it's machine-readable whether `conditions`/`reaction_family` came from a rule-author default vs. something more grounded; absent for extracted templates, since nothing is fabricated for them. |
+| **Stable template IDs + evidence sidecar** | Every template gets a stable `template_id` — `rule:<name>` for hand-crafted rules, `smirks-sha256:<hex>` for extracted templates (independent of file order/position/count). Attach curated DOIs/patents, reported conditions, reported yields, and known side-reaction warnings via a `--template-metadata sidecar.json` file keyed by `template_id`; matching steps get an `evidence` field, everything else stays untouched — see [Template evidence metadata](#template-evidence-metadata) below. Run `renkin template ids <file.smi>` to list stable IDs for authoring a sidecar. Automatic yield/success prediction and literature search remain out of scope ([#41](https://github.com/kent-tokyo/renkin/issues/41)). |
 | **Route cost scoring** | `route_cost = Σ(BB cost) + steps×0.5`; actual prices via `--bb-prices CSV` or `--stock stock.csv` |
 | **Pareto multi-objective search** | `--format pareto` returns a Pareto front across `route_cost`, `success_probability`, `steps`, etc.; objectives configurable via `--objectives cost:min,success_probability:max,steps:min` |
 | **Constraint DSL** | `--constraints constraints.json` — JSON-driven synthesis planning: element filters, step limits, confidence thresholds, preferred reaction families; enables LLM → RENKIN pipeline |
@@ -181,7 +272,7 @@ Add `--verbose` to print search statistics (nodes expanded, elapsed time) to std
 | **PaRoutes benchmark** | `renkin-bench --input-format paroutes` for multi-step ground-truth evaluation with `depth_delta` and `route_diversity` |
 | **Atom balance check** | `renkin-bench` flags steps where `target_MW > Σ precursor_MW` (CompleteRXN reference) |
 | **Stock CSV management** | `renkin stock stats\|validate\|coverage` — inspect and validate stock CSV files with SMILES, name, vendor, price, hazard fields |
-| **Template quality tools** | `renkin template stats\|validate\|dedup\|explain\|coverage` — inspect SMIRKS template sets: frequency distribution, validity, duplicates, per-template lookup, coverage rate |
+| **Template quality tools** | `renkin template stats\|validate\|dedup\|explain\|coverage\|ids` — inspect SMIRKS template sets: frequency distribution, validity, duplicates, per-template lookup, coverage rate, stable template IDs |
 | **MCP server** | `renkin-mcp` exposes 6 tools: `find_routes`, `validate_route`, `explain_route`, `find_pareto_routes`, `plan_with_constraints`, `estimate_diversity` |
 | **`renkin-doctor`** | Environment diagnostic binary — checks templates, building blocks, Python import, tool versions, and data integrity |
 | **`renkin-kg`** | Reaction knowledge graph builder — constructs bipartite mol↔reaction graphs from routes; exports to GraphML or Cypher |
@@ -400,7 +491,7 @@ renkin/                          ← Cargo workspace root
 ├── Cargo.toml
 ├── src/                         ← renkin crate (retrosynthesis)
 │   ├── lib.rs                   # public library
-│   ├── main.rs                  # CLI binary (--templates, --scorer, --constraints, --objectives flags)
+│   ├── main.rs                  # CLI binary (--templates, --template-metadata, --scorer, --constraints, --objectives flags)
 │   ├── bin/benchmark.rs         # renkin-bench binary (--plausibility flag)
 │   ├── bin/doctor.rs            # renkin-doctor diagnostic binary
 │   ├── bin/fp.rs                # renkin-fp ECFP4 fingerprint (nn-scoring feature)
@@ -432,6 +523,7 @@ renkin/                          ← Cargo workspace root
 
 ### Recently shipped
 
+- [x] Stable `template_id` (`rule:<name>` / `smirks-sha256:<hex>`) + `--template-metadata` evidence sidecar + `renkin template ids` ([#41](https://github.com/kent-tokyo/renkin/issues/41) phase 1)
 - [x] `renkin-bench cascade` — multi-stage search (fast defaults → hard cases re-run deeper); only unsolved targets propagate to later stages. **78.0% → 95.9%** on USPTO-50k
 - [x] `renkin-bench --failure-taxonomy` — classify unsolved targets by cause (beam limit / depth limit / template gap / stock near-miss)
 - [x] Graph-based ester cleavage — BFS-leakage-free `R-C(=O)-O-R' → RCOOH + R'OH`

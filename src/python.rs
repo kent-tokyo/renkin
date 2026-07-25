@@ -23,6 +23,13 @@ use crate::search::{SearchConfig, find_routes};
 ///         Default: ``""`` (no constraint).
 ///     verbose (bool): Print search statistics (nodes expanded, elapsed time) to
 ///         stderr after the search completes. Default: ``False``.
+///     templates_path (str | None): Path to an extracted SMIRKS templates .smi
+///         file (tab-separated). None = hand-crafted rules only. Default: ``None``.
+///     template_metadata_path (str | None): Path to a JSON metadata sidecar
+///         (curated conditions/yields/warnings/references keyed by
+///         `template_id`, see ``renkin template ids``). Matching steps get an
+///         ``evidence`` field; unmatched templates get none -- nothing is
+///         fabricated. Default: ``None``.
 ///
 /// Returns:
 ///     str: JSON string with retrosynthesis routes.
@@ -33,7 +40,8 @@ use crate::search::{SearchConfig, find_routes};
 ///     routes = json.loads(renkin.find_routes("CC(=O)Oc1ccccc1C(=O)O", depth=3))
 ///     print(routes["routes_found"])
 #[pyfunction]
-#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None))]
+#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None))]
+#[allow(clippy::too_many_arguments)]
 pub fn find_routes_py(
     target: &str,
     depth: u32,
@@ -44,6 +52,8 @@ pub fn find_routes_py(
     require_elements: &str,
     verbose: bool,
     bb_prices_path: Option<&str>,
+    templates_path: Option<&str>,
+    template_metadata_path: Option<&str>,
 ) -> PyResult<String> {
     let env = match building_blocks {
         Some(ref bbs) => {
@@ -54,7 +64,22 @@ pub fn find_routes_py(
             .unwrap_or_else(|_| ChemEnv::in_memory(crate::DEFAULT_BUILDING_BLOCKS)),
     };
 
-    let rules = default_rules();
+    let mut rules = default_rules();
+    if let Some(path) = templates_path {
+        rules.extend(load_rules_from_file(path));
+    }
+
+    // Malformed metadata must fail before any search runs.
+    let template_metadata = template_metadata_path
+        .map(crate::evidence::load_template_metadata)
+        .transpose()
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    if let Some(ref tm) = template_metadata {
+        let known_ids: std::collections::HashSet<&str> =
+            rules.iter().map(|r| r.template_id.as_str()).collect();
+        crate::evidence::warn_unknown_templates(tm, &known_ids);
+    }
+
     let bb_price_map = bb_prices_path.map(|path| {
         std::fs::read_to_string(path)
             .ok()
@@ -79,6 +104,7 @@ pub fn find_routes_py(
         required_element_present: elem_symbols_to_mask(require_elements),
         verbose,
         bb_price_map,
+        template_metadata: template_metadata.map(|tm| tm.templates),
         ..Default::default()
     };
     let (routes, stats) = find_routes(target, &env, &rules, &config)

@@ -181,7 +181,8 @@ Add `--verbose` to print search statistics (nodes expanded, elapsed time) to std
 | **Pure Safe Rust** | `#![forbid(unsafe_code)]` on all crates — compiler-enforced, zero C/C++ dependencies |
 | **A\* / AND-OR Tree Search** | Retro\*-equivalent algorithm with pluggable heuristics (`MoleculeValueEstimator`, `ReactionPrior`) |
 | **Up to 50k reaction templates** | Auto-extracted from USPTO-50k/MIT via rdchiral; frequency-weighted priority; `--templates` for custom sets |
-| **Route scoring** | `confidence`, `step_confidence`, `success_probability` (Retro-prob style), `convergency`, `atom_economy` per step |
+| **Route scoring** | `confidence`, `step_confidence`, `success_probability` (Retro-prob style), `convergency`, `atom_economy` per step — see caveat below the table |
+| **Step metadata provenance** | Each step reports `metadata_source`/`metadata_scope` (e.g. `handcrafted_default`/`reaction_family`) so it's machine-readable whether `conditions`/`reaction_family` came from a rule-author default vs. something more grounded; absent for extracted templates, since nothing is fabricated for them. Real literature references, yield estimates, and side-reaction warnings are not implemented yet — this is provenance-tagging infrastructure for that future work, tracked in [#41](https://github.com/kent-tokyo/renkin/issues/41). |
 | **Route cost scoring** | `route_cost = Σ(BB cost) + steps×0.5`; actual prices via `--bb-prices CSV` or `--stock stock.csv` |
 | **Pareto multi-objective search** | `--format pareto` returns a Pareto front across `route_cost`, `success_probability`, `steps`, etc.; objectives configurable via `--objectives cost:min,success_probability:max,steps:min` |
 | **Constraint DSL** | `--constraints constraints.json` — JSON-driven synthesis planning: element filters, step limits, confidence thresholds, preferred reaction families; enables LLM → RENKIN pipeline |
@@ -204,6 +205,12 @@ Add `--verbose` to print search statistics (nodes expanded, elapsed time) to std
 | **Python** | `pip install renkin` — pre-built wheels for Linux/macOS/Windows |
 | **WASM** | ~500 KB bundle — runs in the browser at near-native speed |
 | **402 building blocks** | Aryl halides, boronic acids, heterocycles, amines, acids, amino acids (`data/building_blocks.smi`, unique compounds actually loaded — see Benchmark section) |
+
+> **`step_confidence`/`success_probability` are not yields or measured success rates.**
+> They're template-frequency-derived search-ranking scores (`rule_weight / max_rule_weight`,
+> multiplied across a route's steps) used to order candidate disconnections during search —
+> not a calibrated probability of experimental success, and not an expected isolated yield.
+> Route-level experimental yield/success-rate reporting is not implemented.
 
 ---
 

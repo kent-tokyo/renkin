@@ -164,7 +164,8 @@ c1ccccc1-c2ccccc2
 | **Pure Safe Rust** | 全クレートに `#![forbid(unsafe_code)]` — コンパイラ保証、C/C++依存ゼロ |
 | **A\* / AND-OR木探索** | プラガブルフック付きRetro\*相当アルゴリズム（`MoleculeValueEstimator`, `ReactionPrior`） |
 | **最大50k逆合成テンプレート** | USPTO-50k/MIT からrdchiralで自動抽出；頻度重み付け優先；`--templates` でカスタムセット対応 |
-| **ルートスコアリング** | `confidence`, `step_confidence`, `success_probability`（Retro-prob方式）, `convergency`, `atom_economy` |
+| **ルートスコアリング** | `confidence`, `step_confidence`, `success_probability`（Retro-prob方式）, `convergency`, `atom_economy` — 下の注記も参照 |
+| **ステップメタデータの出所表示** | 各ステップに `metadata_source`/`metadata_scope`（例: `handcrafted_default`/`reaction_family`）を付与し、`conditions`/`reaction_family` がルール作者による既定値なのか、それ以上の根拠があるのかを機械可読に区別。extracted templateには何も付与しない（捏造しない）。実際の文献参照・収率推定・副反応警告は未実装——本フィールドはそれらの将来実装に向けた出所管理基盤（[#41](https://github.com/kent-tokyo/renkin/issues/41)で追跡）。 |
 | **ルートコストスコアリング** | `route_cost = Σ(BB価格) + ステップ数×0.5`；`--bb-prices CSV` または `--stock stock.csv` で実価格対応 |
 | **Pareto多目的探索** | `--format pareto` で `route_cost`・`success_probability`・`steps` 等のパレートフロントを返す；`--objectives` で目的関数をカスタム設定 |
 | **制約 DSL** | `--constraints constraints.json` — JSON駆動の合成計画：元素フィルタ・ステップ数制限・信頼度閾値・優先反応族；LLM → RENKIN パイプラインに対応 |
@@ -187,6 +188,10 @@ c1ccccc1-c2ccccc2
 | **Python** | `pip install renkin` — Linux/macOS/Windows プリビルドwheels |
 | **WASM** | ~500 KB バンドル — ブラウザでネイティブに近い速度で動作 |
 | **402件の市販原料** | アリールハライド、ボロン酸、ヘテロ環、医薬品アミン、アミノ酸（`data/building_blocks.smi`、実際にロードされたユニーク化合物数——ベンチマークセクション参照） |
+
+> **`step_confidence`/`success_probability` は収率でも実測の成功率でもない。**
+> テンプレート出現頻度から導かれる探索順位付けスコア（`rule_weight / max_rule_weight` をステップ間で乗算）であり、
+> 実験的成功確率のキャリブレーション値でも、期待単離収率でもない。ルート単位の実験的収率・成功率報告は未実装。
 
 ---
 

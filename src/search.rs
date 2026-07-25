@@ -12,6 +12,7 @@ use smallvec::{SmallVec, smallvec};
 use crate::chem_env::{
     ChemEnv, PrecursorMol, RetroRule, TemplateBondIndex, apply_retro, mol_from_smiles, to_canonical,
 };
+use crate::evidence::{EvidenceScope, MetadataSource};
 use crate::score::{step_cost, template_bonus};
 
 /// Cached expansion for one (target_smiles, rule) combination.
@@ -56,6 +57,13 @@ pub struct ReactionStep {
     /// None for extracted templates that have no manual assignment.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reaction_family: Option<String>,
+    /// Provenance of `conditions`/`reaction_family`. `None` for extracted templates --
+    /// nothing is fabricated for them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata_source: Option<MetadataSource>,
+    /// Scope at which `metadata_source` was assigned. `None` for extracted templates.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata_scope: Option<EvidenceScope>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -355,6 +363,17 @@ fn reaction_family_for_rule(rule: &str) -> Option<&'static str> {
         "alcohol_oxidation_retro" => Some("carbonyl_reduction"),
         _ => None,
     }
+}
+
+/// True iff `rule` came from `chem_env::load_rules_from_file` (always named
+/// `extracted_{i}`) rather than `default_rules()`. This is the only reliable
+/// discriminator at the [`ReactionStep`] construction site -- `RetroRule`'s own
+/// provenance is already erased into `RetroEntry`'s `(name, weight, precursors)`
+/// tuple by that point, and `conditions_for_rule`/`reaction_family_for_rule` both
+/// return `None` for 3 legitimately-hand-crafted generic-cleavage rules, so
+/// `.is_some()` on either would mis-tag those 3 as extracted.
+fn is_extracted_template(rule: &str) -> bool {
+    rule.starts_with("extracted_")
 }
 
 /// Rule-based reaction conditions for hand-crafted retro rules.
@@ -862,6 +881,10 @@ pub fn find_routes(
                     step_confidence: 0.0, // populated in post-processing
                     reaction_family: reaction_family_for_rule(rule_name).map(str::to_string),
                     procedure_hint: procedure_hint_for_rule(rule_name).map(str::to_string),
+                    metadata_source: (!is_extracted_template(rule_name))
+                        .then_some(MetadataSource::HandcraftedDefault),
+                    metadata_scope: (!is_extracted_template(rule_name))
+                        .then_some(EvidenceScope::ReactionFamily),
                 },
                 prev: node.path.clone(),
             }));
@@ -1177,6 +1200,70 @@ mod tests {
                 assert!(
                     !step.precursors.is_empty(),
                     "step.precursors must be non-empty"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn is_extracted_template_detects_name_prefix_only() {
+        assert!(is_extracted_template("extracted_0"));
+        assert!(is_extracted_template("extracted_1234"));
+        assert!(!is_extracted_template("suzuki_retro"));
+        assert!(!is_extracted_template("cc_single_cleavage"));
+    }
+
+    #[test]
+    fn absent_metadata_fields_are_omitted_from_json() {
+        // An extracted-template-shaped step (metadata_source/scope both None) must
+        // serialize with neither key present, so pre-existing JSON consumers see no
+        // change from before these fields were added.
+        let step = ReactionStep {
+            rule: "extracted_0".to_string(),
+            target: "CC(=O)O".to_string(),
+            precursors: vec!["C".to_string(), "O=C=O".to_string()],
+            conditions: None,
+            atom_economy: None,
+            step_confidence: 0.5,
+            procedure_hint: None,
+            reaction_family: None,
+            metadata_source: None,
+            metadata_scope: None,
+        };
+        let json = serde_json::to_string(&step).unwrap();
+        assert!(
+            !json.contains("metadata_source") && !json.contains("metadata_scope"),
+            "absent metadata fields must be omitted from JSON, got: {json}"
+        );
+    }
+
+    #[test]
+    fn handcrafted_rule_step_is_tagged() {
+        // default_rules() contains only hand-crafted rules (no extracted templates
+        // loaded), so every step of every route found here must be hand-crafted.
+        let env = aspirin_env();
+        let rules = default_rules();
+        let routes = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg(3))
+            .unwrap()
+            .0;
+        let non_zero: Vec<_> = routes.iter().filter(|r| r.depth > 0).collect();
+        assert!(
+            !non_zero.is_empty(),
+            "must find at least one multi-step route"
+        );
+        for r in non_zero {
+            for step in &r.steps {
+                assert_eq!(
+                    step.metadata_source,
+                    Some(MetadataSource::HandcraftedDefault),
+                    "step using hand-crafted rule {:?} must be tagged HandcraftedDefault",
+                    step.rule
+                );
+                assert_eq!(
+                    step.metadata_scope,
+                    Some(EvidenceScope::ReactionFamily),
+                    "step using hand-crafted rule {:?} must be scoped ReactionFamily",
+                    step.rule
                 );
             }
         }

@@ -1810,8 +1810,8 @@ mod tests {
         // specific string layout.
         let bromobenzene_canon = canonical_smiles(&mol_from_smiles("Brc1ccccc1").unwrap());
         let benzene_canon = canonical_smiles(&mol_from_smiles("c1ccccc1").unwrap());
-        let has_bromobenzene = all_smiles.iter().any(|s| *s == bromobenzene_canon);
-        let has_benzene = all_smiles.iter().any(|s| *s == benzene_canon);
+        let has_bromobenzene = all_smiles.contains(&bromobenzene_canon);
+        let has_benzene = all_smiles.contains(&benzene_canon);
         assert!(
             has_bromobenzene,
             "expected bromobenzene fragment ({bromobenzene_canon:?}); got {all_smiles:?}"
@@ -2058,10 +2058,6 @@ mod tests {
     }
 
     // ── Layer 1: retro rule unit tests ───────────────────────────────────────
-
-    fn smiles_set(results: &[Vec<PrecursorMol>], idx: usize) -> Vec<String> {
-        results[idx].iter().map(|p| p.smiles.clone()).collect()
-    }
 
     #[test]
     fn friedel_crafts_retro_on_acetophenone() {
@@ -2590,7 +2586,7 @@ mod chematic_regression {
         // canonical SMILES for PhSO2Cl is "O=S(c1ccccc1)(Cl)=O"
         let has_so2cl = flat.iter().any(|s| s.contains("Cl") && s.contains('S'));
         assert!(has_so2cl, "must produce ArSO2Cl; got {flat:?}");
-        let has_benzene = flat.iter().any(|s| *s == "c1ccccc1");
+        let has_benzene = flat.contains(&"c1ccccc1");
         assert!(has_benzene, "must produce benzene; got {flat:?}");
     }
 
@@ -2765,8 +2761,7 @@ mod phase15_stereo {
         );
 
         // Product must carry @@ stereo (transfer confirmed)
-        let product_smiles: Vec<String> =
-            l_results[0].iter().map(|m| canonical_smiles(m)).collect();
+        let product_smiles: Vec<String> = l_results[0].iter().map(canonical_smiles).collect();
         assert!(
             product_smiles.iter().any(|s| s.contains('@')),
             "product must carry @/@@ stereo annotation; got {:?}",

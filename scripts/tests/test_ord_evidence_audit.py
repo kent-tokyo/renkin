@@ -78,6 +78,95 @@ class JsonWriterDeterminismTests(unittest.TestCase):
             self.assertEqual(p1.read_bytes(), p2.read_bytes())
 
 
+class BuildSidecarTests(unittest.TestCase):
+    """build_sidecar takes plain Candidate objects + a match_results dict --
+    no ord-schema/protobuf needed to exercise its rejection-path handling."""
+
+    def _candidate(self, record_id="ds:rxn-1", ref_id="doi:10.1000/shared"):
+        dataset_id, reaction_id = record_id.split(":", 1)
+        return m.Candidate(
+            dataset_id, reaction_id, "CC(=O)OCC", ["CC(=O)O", "CCO"],
+            None, {"percentage": 90.0, "basis": "unknown"},
+            [{"id": ref_id, "kind": "doi", "identifier": ref_id.split(":", 1)[1]}],
+            0,
+        )
+
+    def test_invalid_input_status_is_rejected(self):
+        c = self._candidate()
+        match_results = {c.record_id: {"status": "invalid_input", "matching_template_ids": []}}
+        report = m.AuditReport()
+        sidecar = m.build_sidecar([c], match_results, report)
+        self.assertEqual(sidecar["templates"], {})
+        self.assertEqual(report.by_rejection_reason.get(m.RejectionReason.INVALID_SMILES), 1)
+        self.assertEqual(report.records_rejected, 1)
+
+    def test_no_match_status_is_rejected(self):
+        c = self._candidate()
+        match_results = {c.record_id: {"status": "no_match", "matching_template_ids": []}}
+        report = m.AuditReport()
+        sidecar = m.build_sidecar([c], match_results, report)
+        self.assertEqual(sidecar["templates"], {})
+        self.assertEqual(report.no_template_matches, 1)
+        self.assertEqual(report.by_rejection_reason.get(m.RejectionReason.NO_TEMPLATE_MATCH), 1)
+
+    def test_ambiguous_status_is_rejected(self):
+        c = self._candidate()
+        match_results = {
+            c.record_id: {
+                "status": "ambiguous",
+                "matching_template_ids": ["rule:ester_cleavage", "rule:amide_cleavage"],
+            }
+        }
+        report = m.AuditReport()
+        sidecar = m.build_sidecar([c], match_results, report)
+        self.assertEqual(sidecar["templates"], {})
+        self.assertEqual(report.ambiguous_template_matches, 1)
+        self.assertEqual(report.by_rejection_reason.get(m.RejectionReason.AMBIGUOUS_TEMPLATE_MATCH), 1)
+
+    def test_audit_only_template_is_excluded_from_sidecar_but_counted(self):
+        c = self._candidate()
+        match_results = {c.record_id: {"status": "unique", "matching_template_ids": ["rule:michael_retro"]}}
+        report = m.AuditReport()
+        sidecar = m.build_sidecar([c], match_results, report)
+        self.assertEqual(sidecar["templates"], {})
+        self.assertEqual(report.records_audit_only_excluded, 1)
+        self.assertEqual(report.by_template_id.get("rule:michael_retro"), 1)
+        self.assertEqual(report.records_accepted, 0)
+
+    def test_unique_priority_template_is_accepted(self):
+        c = self._candidate()
+        match_results = {
+            c.record_id: {
+                "status": "unique",
+                "matching_template_ids": ["rule:ester_cleavage"],
+                "canonical_target": "CC(=O)OCC",
+                "canonical_precursors": ["CC(=O)O", "CCO"],
+            }
+        }
+        report = m.AuditReport()
+        sidecar = m.build_sidecar([c], match_results, report)
+        self.assertIn("rule:ester_cleavage", sidecar["templates"])
+        self.assertEqual(report.records_accepted, 1)
+
+    def test_reference_ids_deduped_across_records_sharing_one_template(self):
+        c1 = self._candidate(record_id="ds:rxn-1", ref_id="doi:10.1000/shared")
+        c2 = self._candidate(record_id="ds:rxn-2", ref_id="doi:10.1000/shared")
+        match_results = {
+            c.record_id: {
+                "status": "unique",
+                "matching_template_ids": ["rule:ester_cleavage"],
+                "canonical_target": "CC(=O)OCC",
+                "canonical_precursors": ["CC(=O)O", "CCO"],
+            }
+            for c in (c1, c2)
+        }
+        report = m.AuditReport()
+        sidecar = m.build_sidecar([c1, c2], match_results, report)
+        refs = sidecar["templates"]["rule:ester_cleavage"]["references"]
+        self.assertEqual([r["id"] for r in refs], ["doi:10.1000/shared"])  # one entry, not two
+        self.assertEqual(len(sidecar["templates"]["rule:ester_cleavage"]["examples"]), 2)
+
+
 @requires_ord_schema
 class ExtractionTests(unittest.TestCase):
     def setUp(self):
@@ -299,6 +388,25 @@ class ExtractionTests(unittest.TestCase):
             kinds = {r["kind"] for r in candidates[0].references}
             self.assertEqual(kinds, {"dataset_record"})
 
+    def test_missing_dataset_id_rejects_every_reaction_and_stays_accounted(self):
+        # A dataset-level skip must not let reactions escape records_seen, and
+        # by_rejection_reason's total must still equal records_rejected.
+        import tempfile
+
+        dataset = self._dataset(dataset_id="")
+        self._add_basic_reaction(dataset, reaction_id="rxn-a")
+        self._add_basic_reaction(dataset, reaction_id="rxn-b")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_dataset(dataset, Path(tmp))
+            candidates = m.extract_candidates([path], self.report)
+            self.assertEqual(len(candidates), 0)
+            self.assertEqual(self.report.records_seen, 2)
+            self.assertEqual(self.report.records_rejected, 2)
+            self.assertEqual(
+                self.report.by_rejection_reason.get(m.RejectionReason.MISSING_DATASET_ID), 2
+            )
+            self.assertEqual(sum(self.report.by_rejection_reason.values()), self.report.records_rejected)
+
     def test_no_yield_or_condition_is_rejected(self):
         import tempfile
 
@@ -311,6 +419,72 @@ class ExtractionTests(unittest.TestCase):
             self.assertEqual(
                 self.report.by_rejection_reason.get(m.RejectionReason.NO_YIELD_OR_CONDITION), 1
             )
+
+    def test_temperature_fahrenheit_converts_to_celsius(self):
+        import tempfile
+        from ord_schema.proto import reaction_pb2
+
+        dataset = self._dataset()
+        r = self._add_basic_reaction(dataset)
+        r.conditions.temperature.setpoint.value = 212.0
+        r.conditions.temperature.setpoint.units = reaction_pb2.Temperature.FAHRENHEIT
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_dataset(dataset, Path(tmp))
+            candidates = m.extract_candidates([path], self.report)
+            self.assertEqual(candidates[0].conditions["temperature_c"], {"min": 100.0, "max": 100.0})
+
+    def test_temperature_kelvin_converts_to_celsius(self):
+        import tempfile
+        from ord_schema.proto import reaction_pb2
+
+        dataset = self._dataset()
+        r = self._add_basic_reaction(dataset)
+        r.conditions.temperature.setpoint.value = 298.15
+        r.conditions.temperature.setpoint.units = reaction_pb2.Temperature.KELVIN
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_dataset(dataset, Path(tmp))
+            candidates = m.extract_candidates([path], self.report)
+            self.assertEqual(candidates[0].conditions["temperature_c"], {"min": 25.0, "max": 25.0})
+
+    def test_temperature_fahrenheit_precision_is_scaled_not_copied(self):
+        import tempfile
+        from ord_schema.proto import reaction_pb2
+
+        dataset = self._dataset()
+        r = self._add_basic_reaction(dataset)
+        r.conditions.temperature.setpoint.value = 212.0
+        r.conditions.temperature.setpoint.units = reaction_pb2.Temperature.FAHRENHEIT
+        r.conditions.temperature.setpoint.precision = 9.0  # 9 F° = 5 C°
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_dataset(dataset, Path(tmp))
+            candidates = m.extract_candidates([path], self.report)
+            self.assertEqual(candidates[0].conditions["temperature_c"], {"min": 95.0, "max": 105.0})
+
+    def test_time_minutes_converts_to_hours(self):
+        import tempfile
+        from ord_schema.proto import reaction_pb2
+
+        dataset = self._dataset()
+        r = self._add_basic_reaction(dataset)
+        r.outcomes[0].reaction_time.value = 30.0
+        r.outcomes[0].reaction_time.units = reaction_pb2.Time.MINUTE
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_dataset(dataset, Path(tmp))
+            candidates = m.extract_candidates([path], self.report)
+            self.assertEqual(candidates[0].conditions["time_hours"], {"min": 0.5, "max": 0.5})
+
+    def test_time_days_converts_to_hours(self):
+        import tempfile
+        from ord_schema.proto import reaction_pb2
+
+        dataset = self._dataset()
+        r = self._add_basic_reaction(dataset)
+        r.outcomes[0].reaction_time.value = 0.5
+        r.outcomes[0].reaction_time.units = reaction_pb2.Time.DAY
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_dataset(dataset, Path(tmp))
+            candidates = m.extract_candidates([path], self.report)
+            self.assertEqual(candidates[0].conditions["time_hours"], {"min": 12.0, "max": 12.0})
 
 
 @requires_ord_schema

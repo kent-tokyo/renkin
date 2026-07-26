@@ -438,13 +438,21 @@ def extract_candidates(dataset_files: list[Path], report: "AuditReport") -> list
     for path in dataset_files:
         dataset = load_dataset(path)
         dataset_id = dataset.dataset_id
-        if not dataset_id:
-            report.record_dataset_rejection(str(path), RejectionReason.MISSING_DATASET_ID)
-            continue
-        report.note_dataset_id(dataset_id)
+        # Every reaction is counted in records_seen/records_rejected even
+        # when dataset_id itself is missing -- a per-file skip that bypassed
+        # the reactions loop would make by_rejection_reason's total silently
+        # diverge from records_rejected, and hide those reactions from
+        # records_seen entirely.
+        bucket_id = dataset_id if dataset_id else f"<missing dataset_id: {path}>"
+        if dataset_id:
+            report.note_dataset_id(dataset_id)
 
         for reaction in dataset.reactions:
             report.records_seen += 1
+            if not dataset_id:
+                report.reject(bucket_id, RejectionReason.MISSING_DATASET_ID)
+                continue
+
             reaction_id = reaction.reaction_id
             if not reaction_id:
                 report.reject(dataset_id, RejectionReason.MISSING_REACTION_ID)
@@ -567,14 +575,18 @@ class AuditReport:
             "a canonicalization-tie-breaking artifact of the underlying SMILES "
             "engine (see AGENTS.md); it is not proof the reaction type is absent "
             "from the loaded template set.",
+            "Accepted examples are only guaranteed to resolve as an exact-substrate "
+            "match at route-display time (match_kind: exact_substrate, not "
+            "template_only) if RENKIN's route-search precursor standardization "
+            "(chem_env::standardize, applied before canonicalization when a route "
+            "step's precursors are generated) agrees with this importer's plain "
+            "canonicalize-only pipeline for that molecule -- verified empirically "
+            "for the committed fixture (`renkin --format explain`), not proven for "
+            "every molecule.",
         ]
 
     def note_dataset_id(self, dataset_id: str) -> None:
         self.by_dataset_id.setdefault(dataset_id, {"accepted": 0, "rejected": 0})
-
-    def record_dataset_rejection(self, path: str, reason: str) -> None:
-        self.records_rejected += 0  # no per-reaction record exists yet; file-level only
-        self.by_rejection_reason[reason] = self.by_rejection_reason.get(reason, 0) + 1
 
     def reject(self, dataset_id: str, reason: str) -> None:
         self.records_rejected += 1

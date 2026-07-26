@@ -441,6 +441,8 @@ renkin/                          ← Cargo workspace 根目录
 
 ### 近期完成
 
+- [x] 稳定的 `template_id`（`rule:<name>` / `smirks-sha256:<hex>`）+ `--template-metadata` evidence 附加文件 + `renkin template ids`（[#41](https://github.com/kent-tokyo/renkin/issues/41) phase 1）
+- [x] 针对特定底物的 `examples`（`schema_version: 2`）——按每个步骤解析为「精确底物匹配」或「同模板但底物不同」，在 `--format explain` 中展示，并在 JSON 中以 `match_kind` 字段体现（[#41](https://github.com/kent-tokyo/renkin/issues/41) phase 2）
 - [x] `renkin-bench cascade` — 多阶段搜索（先用较快的默认参数搜索，未解决的困难目标再用更深的参数重跑）；只有未解决的目标才会进入后续阶段。USPTO-50k 上 **78.0% → 95.9%**
 - [x] `renkin-bench --failure-taxonomy` — 按失败原因对未解决目标分类（束宽限制 / 深度限制 / 模板缺口 / 库存接近命中）
 - [x] 基于图的酯裂解 — 无 BFS 泄漏的 `R-C(=O)-O-R' → RCOOH + R'OH`

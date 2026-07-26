@@ -38,8 +38,13 @@ A record is written to the sidecar only if **all** of the following hold:
 - exactly one desired product, with a parseable SMILES
 - at least one `REACTANT`-role component, each with a parseable SMILES
 - `renkin evidence match` reports a **unique** template match (not
-  `no_match`, `ambiguous`, or `invalid_input`) — see below for the three
-  rules excluded from export even when unique
+  `no_match`, `ambiguous`, or `invalid_input`), **and** that `template_id` is
+  on the reviewed export allowlist (`rule:ester_cleavage`,
+  `rule:amide_cleavage`, `rule:reductive_amination_retro`) — see below for
+  what happens to a unique match on any other template
+- every explicit `temperature`/`reaction_time` unit converts cleanly (an
+  explicit value with an unsupported/unspecified unit, or a negative/invalid
+  precision, rejects the record rather than silently dropping that field)
 - at least one of {yield, condition} is present
 - a single, unambiguous yield candidate (or none) — multiple non-duplicate
   yield measurements reject the record rather than picking one
@@ -52,8 +57,15 @@ under a named reason in `by_rejection_reason` in the audit report.
 
 `rule:cn_aliphatic_cleavage`, `rule:michael_retro`, and
 `rule:co_aliphatic_cleavage` are counted in the audit report
-(`by_template_id`, `records_audit_only_excluded`) but never written to the
+(`by_template_id`, `records_audit_only_excluded`, and
+`by_dataset_id[...]["audit_only_excluded"]`) but never written to the
 sidecar in this phase — see `docs/guides/reaction-evidence.md` for why.
+
+A unique match on *any other* template — another hand-crafted rule (e.g.
+Suzuki), or any `smirks-sha256:*` extracted template — is rejected as
+`out_of_scope_template`. The export allowlist is enforced explicitly
+(`PRIORITY_TEMPLATE_IDS` in `ord_evidence_audit.py`), not inferred from the
+absence of the three audit-only ids.
 
 ## Field mapping (short version)
 
@@ -74,10 +86,14 @@ sidecar in this phase — see `docs/guides/reaction-evidence.md` for why.
   `--output-sidecar` and `--output-report` (see
   `scripts/tests/test_ord_evidence_audit.py`'s
   `test_two_runs_are_byte_identical_except_manifest_timestamp`).
-- `--output-manifest` records input file hashes, the RENKIN version/git
-  commit, dependency versions, and the exact CLI invocation used — everything
-  except `generated_at` (explicitly marked informational, excluded from
-  reproducibility comparison).
+- `--output-manifest` records: input file hashes (keyed by path *relative to
+  `--ord-data`*, so the manifest stays comparable across differently-located
+  checkouts), the SHA-256 of the `--templates` file and the `--renkin-bin`
+  binary actually used, the RENKIN version/git commit, dependency versions,
+  and the exact CLI invocation. `reproducibility_excluded_fields` names the
+  two keys (`cli_invocation`, `generated_at`) that are environment/wall-clock
+  information, not facts about the input→output mapping — sidecar and report
+  are byte-identical across two runs, and every other manifest field is too.
 - The generated sidecar is re-validated via `renkin evidence
   validate-sidecar` before this script reports success; a sidecar that fails
   that validation makes the whole run exit non-zero.

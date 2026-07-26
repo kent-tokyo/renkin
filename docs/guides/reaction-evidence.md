@@ -291,14 +291,19 @@ python scripts/ord_evidence_audit.py \
 - **Not a guarantee that every unique match is safe evidence.** A record is
   only written to the sidecar if RENKIN's matcher reports a *unique* template
   match — ambiguous or no-match records are excluded and counted in the audit
-  report, never guessed at. Even so, three generic single-bond-break rules
+  report, never guessed at. Even a unique match is not enough by itself:
+  the importer also checks the matched `template_id` against an explicit,
+  reviewed export allowlist (`rule:ester_cleavage`, `rule:amide_cleavage`,
+  `rule:reductive_amination_retro`). Three generic single-bond-break rules
   (`rule:cn_aliphatic_cleavage`, `rule:michael_retro`,
   `rule:co_aliphatic_cleavage`) are **audited but never exported to the
   sidecar** in this phase: a broad rule like these can cover chemically
   distinct reaction contexts under one `template_id`, so a unique
   exact-precursor match alone isn't yet trusted as sufficient evidence for
-  them. `rule:ester_cleavage`, `rule:amide_cleavage`, and
-  `rule:reductive_amination_retro` are the initial export-eligible set.
+  them. A unique match on *any other* template — another hand-crafted rule,
+  or any `smirks-sha256:*` extracted template — is likewise rejected
+  (`out_of_scope_template`): the allowlist is enforced explicitly, not
+  inferred from the absence of the three audit-only ids.
 - **Yield basis is conservative by construction.** ORD's `ProductMeasurement`
   `YIELD` type does not itself distinguish an isolated-weight yield from a
   calibrated-assay yield (the `uses_internal_standard`/`uses_authentic_standard`

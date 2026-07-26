@@ -127,9 +127,12 @@ class RejectionReason:
     INVALID_SMILES = "invalid_smiles"
     NO_TEMPLATE_MATCH = "no_template_match"
     AMBIGUOUS_TEMPLATE_MATCH = "ambiguous_template_match"
-    AUDIT_ONLY_TEMPLATE = "audit_only_template_excluded_from_sidecar"
+    OUT_OF_SCOPE_TEMPLATE = "out_of_scope_template"
     NO_YIELD_OR_CONDITION = "no_yield_or_condition"
     AMBIGUOUS_YIELD = "ambiguous_yield"
+    UNSUPPORTED_TEMPERATURE_UNIT = "unsupported_temperature_unit"
+    UNSUPPORTED_TIME_UNIT = "unsupported_time_unit"
+    INVALID_CONDITION_RANGE = "invalid_condition_range"
 
 
 # ── ORD dataset discovery & parsing ──────────────────────────────────────────
@@ -265,19 +268,28 @@ def extract_conditions(reaction) -> dict | None:
             elif role == "SOLVENT":
                 solvents.add(name)
 
+    # An explicit value with a unit we can't convert (or that converts to a
+    # nonsensical range) is rejected, not silently dropped -- accepting the
+    # record anyway (e.g. because a yield is also present) would mean an
+    # ORD-reported temperature/time simply vanished from the sidecar with no
+    # trace in the audit report.
     temperature_c = None
     temp = reaction.conditions.temperature
     if temp.HasField("setpoint") and temp.setpoint.HasField("value"):
         unit = _enum_name(temp.setpoint, "units")
         convert = TEMPERATURE_TO_CELSIUS.get(unit)
-        if convert:
-            value_c = convert(temp.setpoint.value)
-            precision_c = 0.0
-            if temp.setpoint.HasField("precision"):
-                precision_c = TEMPERATURE_PRECISION_TO_CELSIUS[unit](temp.setpoint.precision)
-            lo, hi = value_c - precision_c, value_c + precision_c
-            if 0.0 <= precision_c and lo <= hi:
-                temperature_c = {"min": round_value(lo), "max": round_value(hi)}
+        if convert is None:
+            raise ExtractionFailure(RejectionReason.UNSUPPORTED_TEMPERATURE_UNIT)
+        value_c = convert(temp.setpoint.value)
+        precision_c = 0.0
+        if temp.setpoint.HasField("precision"):
+            precision_c = TEMPERATURE_PRECISION_TO_CELSIUS[unit](temp.setpoint.precision)
+        if precision_c < 0.0 or value_c - precision_c > value_c + precision_c:
+            raise ExtractionFailure(RejectionReason.INVALID_CONDITION_RANGE)
+        temperature_c = {
+            "min": round_value(value_c - precision_c),
+            "max": round_value(value_c + precision_c),
+        }
 
     time_hours = None
     if len(reaction.outcomes) == 1:
@@ -285,12 +297,16 @@ def extract_conditions(reaction) -> dict | None:
         if rt.HasField("value"):
             unit = _enum_name(rt, "units")
             convert = TIME_TO_HOURS.get(unit)
-            if convert:
-                value_h = convert(rt.value)
-                precision_h = convert(rt.precision) if rt.HasField("precision") else 0.0
-                lo, hi = value_h - precision_h, value_h + precision_h
-                if 0.0 <= precision_h and lo <= hi:
-                    time_hours = {"min": round_value(lo), "max": round_value(hi)}
+            if convert is None:
+                raise ExtractionFailure(RejectionReason.UNSUPPORTED_TIME_UNIT)
+            value_h = convert(rt.value)
+            precision_h = convert(rt.precision) if rt.HasField("precision") else 0.0
+            if precision_h < 0.0 or value_h - precision_h > value_h + precision_h:
+                raise ExtractionFailure(RejectionReason.INVALID_CONDITION_RANGE)
+            time_hours = {
+                "min": round_value(value_h - precision_h),
+                "max": round_value(value_h + precision_h),
+            }
 
     atmosphere = None
     atm = reaction.conditions.pressure.atmosphere
@@ -471,7 +487,12 @@ def extract_candidates(dataset_files: list[Path], report: "AuditReport") -> list
                 report.reject(dataset_id, failure.reason)
                 continue
 
-            conditions = extract_conditions(reaction)
+            try:
+                conditions = extract_conditions(reaction)
+            except ExtractionFailure as failure:
+                report.reject(dataset_id, failure.reason)
+                continue
+
             reported_yield, yield_reject_reason = extract_yield(reaction)
             if yield_reject_reason:
                 report.reject(dataset_id, yield_reject_reason)
@@ -563,6 +584,10 @@ class AuditReport:
         self.by_template_id: dict[str, int] = {}
         self.by_rejection_reason: dict[str, int] = {}
         self.by_dataset_id: dict[str, dict[str, int]] = {}
+        # Real ORD dataset_ids only -- excludes the "<missing dataset_id: ...>"
+        # placeholder buckets used in by_dataset_id, so the manifest's
+        # source_dataset_ids never contains a non-existent id.
+        self.known_dataset_ids: set[str] = set()
         self.known_limitations = [
             "ORD has no BASE reaction role distinct from REAGENT; `bases` is "
             "always empty and REAGENT-role components are surfaced under "
@@ -585,20 +610,29 @@ class AuditReport:
             "every molecule.",
         ]
 
+    def _dataset_bucket(self, dataset_id: str) -> dict[str, int]:
+        return self.by_dataset_id.setdefault(
+            dataset_id, {"accepted": 0, "rejected": 0, "audit_only_excluded": 0}
+        )
+
     def note_dataset_id(self, dataset_id: str) -> None:
-        self.by_dataset_id.setdefault(dataset_id, {"accepted": 0, "rejected": 0})
+        self.known_dataset_ids.add(dataset_id)
+        self._dataset_bucket(dataset_id)
 
     def reject(self, dataset_id: str, reason: str) -> None:
         self.records_rejected += 1
         self.by_rejection_reason[reason] = self.by_rejection_reason.get(reason, 0) + 1
-        self.by_dataset_id.setdefault(dataset_id, {"accepted": 0, "rejected": 0})
-        self.by_dataset_id[dataset_id]["rejected"] += 1
+        self._dataset_bucket(dataset_id)["rejected"] += 1
 
     def accept(self, dataset_id: str, template_id: str) -> None:
         self.records_accepted += 1
         self.by_template_id[template_id] = self.by_template_id.get(template_id, 0) + 1
-        self.by_dataset_id.setdefault(dataset_id, {"accepted": 0, "rejected": 0})
-        self.by_dataset_id[dataset_id]["accepted"] += 1
+        self._dataset_bucket(dataset_id)["accepted"] += 1
+
+    def exclude_audit_only(self, dataset_id: str, template_id: str) -> None:
+        self.records_audit_only_excluded += 1
+        self.by_template_id[template_id] = self.by_template_id.get(template_id, 0) + 1
+        self._dataset_bucket(dataset_id)["audit_only_excluded"] += 1
 
     def to_dict(self) -> dict:
         return {
@@ -645,9 +679,16 @@ def build_sidecar(candidates: list[Candidate], match_results: dict[str, dict], r
         report.unique_template_matches += 1
         template_id = row["matching_template_ids"][0]
 
+        # Three-way, not two-way: a unique match is only exported if its
+        # template_id is explicitly on the reviewed priority allowlist.
+        # Anything else -- other hand-crafted rules (e.g. Suzuki), any
+        # smirks-sha256:* extracted template -- is out of scope for Phase 3A
+        # and rejected, even though the match itself was unambiguous.
         if template_id in AUDIT_ONLY_TEMPLATE_IDS:
-            report.records_audit_only_excluded += 1
-            report.by_template_id[template_id] = report.by_template_id.get(template_id, 0) + 1
+            report.exclude_audit_only(c.dataset_id, template_id)
+            continue
+        if template_id not in PRIORITY_TEMPLATE_IDS:
+            report.reject(c.dataset_id, RejectionReason.OUT_OF_SCOPE_TEMPLATE)
             continue
 
         report.accept(c.dataset_id, template_id)
@@ -786,16 +827,25 @@ def main(argv=None) -> int:
 
     write_json(args.output_report, report.to_dict())
 
-    input_sha256 = {str(p): sha256_file(p) for p in dataset_files}
+    # Relative to --ord-data so the manifest's reproducibility-target fields
+    # don't vary between checkouts at a different absolute path.
+    relative_inputs = [str(p.relative_to(args.ord_data)) for p in dataset_files]
+    input_sha256 = {
+        str(p.relative_to(args.ord_data)): sha256_file(p) for p in dataset_files
+    }
     manifest = {
         "importer_schema_version": IMPORTER_SCHEMA_VERSION,
         "renkin_version": read_renkin_version(Path(__file__)),
         "renkin_git_commit": read_git_commit(Path(__file__)),
-        "input_files": [str(p) for p in dataset_files],
+        "renkin_binary_sha256": sha256_file(Path(args.renkin_bin)),
+        "templates_path": args.templates,
+        "templates_sha256": sha256_file(Path(args.templates)),
+        "input_files": relative_inputs,
         "input_sha256": input_sha256,
-        "source_dataset_ids": sorted(report.by_dataset_id.keys()),
+        "source_dataset_ids": sorted(report.known_dataset_ids),
         "source_license": SOURCE_DATA_LICENSE,
         "importer_code_license": IMPORTER_CODE_LICENSE,
+        "generated_artifact_license": SOURCE_DATA_LICENSE,
         "dependency_versions": dependency_versions(),
         "selection_algorithm_version": SELECTION_ALGORITHM_VERSION,
         "records_accepted": report.records_accepted,
@@ -810,9 +860,15 @@ def main(argv=None) -> int:
             "reference_ids deduped and sorted",
             "catalysts/reagents/solvents deduped and sorted",
         ],
+        # Both fields below are environment/informational, not facts about the
+        # input->output mapping: cli_invocation embeds this machine's absolute
+        # paths, and generated_at is a wall-clock timestamp. Two runs on the
+        # same input, from the same invocation, are byte-identical everywhere
+        # else in this manifest (and in the sidecar/report outright) -- these
+        # two keys are excluded when comparing manifests for reproducibility.
+        "reproducibility_excluded_fields": ["cli_invocation", "generated_at"],
         "cli_invocation": sys.argv,
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "generated_at_note": "informational only; excluded from reproducibility comparison",
     }
     write_json(args.output_manifest, manifest)
 

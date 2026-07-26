@@ -341,10 +341,14 @@ impl TemplateMetadataEntry {
     /// kept, and same-template-different-substrate precedents are capped at
     /// [`MAX_TEMPLATE_ONLY_EXAMPLES`] (exact matches always sort first) --
     /// this is what keeps a step's JSON output bounded even when a template
-    /// carries hundreds of dataset-derived examples. `references` is
-    /// likewise trimmed to only the ids actually cited by what's kept
-    /// (template-level condition/yield/warning entries plus the retained
-    /// examples), not the template's full reference list.
+    /// carries hundreds of dataset-derived examples. When `examples` is
+    /// non-empty, `references` is likewise trimmed to only the ids actually
+    /// cited by what's kept (template-level condition/yield/warning entries
+    /// plus the retained examples). schema_version 1 entries never have
+    /// `examples` (rejected by `validate_template_metadata`), so this never
+    /// touches them: their full `references` list -- including standalone
+    /// citations not cited by anything else in the entry -- is preserved
+    /// exactly as before `examples` existed.
     pub fn to_step_evidence(&self, target: &str, precursors: &[String]) -> Option<StepEvidence> {
         const MAX_TEMPLATE_ONLY_EXAMPLES: usize = 3;
 
@@ -393,12 +397,18 @@ impl TemplateMetadataEntry {
                 note_refs(&mut used_ref_ids, &w.reference_ids);
             }
         }
-        let references: Vec<EvidenceReference> = self
-            .references
-            .iter()
-            .filter(|r| used_ref_ids.contains(r.id.as_str()))
-            .cloned()
-            .collect();
+        let references = if self.examples.is_empty() {
+            // No examples to bound the output against (schema_version 1 always
+            // takes this path) -- preserve the full reference list, including
+            // standalone citations not cited by any condition/yield/warning.
+            self.references.clone()
+        } else {
+            self.references
+                .iter()
+                .filter(|r| used_ref_ids.contains(r.id.as_str()))
+                .cloned()
+                .collect()
+        };
 
         let evidence = StepEvidence {
             condition_candidates: self.condition_candidates.clone(),
@@ -1024,6 +1034,38 @@ mod tests {
         assert!(entry.examples.is_empty());
         let evidence = entry.to_step_evidence("irrelevant", &[]).unwrap();
         let json = serde_json::to_string(&evidence).unwrap();
+        assert!(!json.contains("examples"), "got: {json}");
+        assert!(!json.contains("template_examples_total"), "got: {json}");
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn schema_v1_reference_only_entry_is_preserved_in_step_evidence() {
+        // A template entry whose only content is a standalone `references`
+        // list (not cited by any condition/yield/warning) must still produce
+        // Some(StepEvidence) carrying that reference -- reference trimming is
+        // only ever applied when `examples` is in play, and schema_version 1
+        // never has `examples`.
+        let dir = std::env::temp_dir();
+        let path = write_sidecar(
+            &dir,
+            "renkin_evidence_v1_reference_only.json",
+            r#"{
+                "schema_version": 1,
+                "templates": {
+                    "rule:suzuki_retro": {
+                        "references": [
+                            {"id": "review", "kind": "doi", "identifier": "10.xxxx/review"}
+                        ]
+                    }
+                }
+            }"#,
+        );
+        let file = load_template_metadata(&path).unwrap();
+        let entry = file.templates.get("rule:suzuki_retro").unwrap();
+        let evidence = entry.to_step_evidence("irrelevant", &[]).unwrap();
+        let json = serde_json::to_string(&evidence).unwrap();
+        assert!(json.contains("10.xxxx/review"), "got: {json}");
         assert!(!json.contains("examples"), "got: {json}");
         assert!(!json.contains("template_examples_total"), "got: {json}");
         std::fs::remove_file(&path).ok();

@@ -184,9 +184,15 @@ fields, and `evidence.template_examples_total` reports how many examples the
 template declared in total — so a JSON/Python consumer can tell "evidence for
 this exact reaction" from "literature precedent for a different substrate"
 without re-implementing the canonical-SMILES comparison itself, and can tell
-how many precedents were truncated. `evidence.references` is trimmed to only
-the ids actually cited by what's kept (template-level entries plus the
-retained examples), not the template's full reference list.
+how many precedents were truncated. When a template has `examples`,
+`evidence.references` is trimmed to only the ids actually cited by what's
+kept (template-level entries plus the retained examples), not the template's
+full reference list — this is what keeps output bounded when a template
+carries hundreds of dataset-derived examples. A template with **no**
+`examples` (every `schema_version: 1` entry, and any `schema_version: 2`
+entry that doesn't happen to use `examples`) keeps its full `references`
+list untouched, including a standalone citation not cited by any
+condition/yield/warning — trimming only ever kicks in alongside `examples`.
 
 **In `--format explain`:** each step shows every exact-substrate example plus
 up to 3 template-only ones, exact matches first, each labeled either `Exact

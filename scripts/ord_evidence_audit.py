@@ -313,24 +313,52 @@ def extract_conditions(reaction) -> dict | None:
     }
 
 
+def measurement_provenance_note(measurement) -> str:
+    """A deterministic, machine-readable record of *how* a YIELD measurement
+    was made, for `ReactionExample.notes` -- NOT used to infer yield basis.
+
+    `uses_internal_standard`/`uses_authentic_standard` describe quantification
+    method, not whether the number is an isolated weight or a calibrated
+    assay value: a false/unset flag is not evidence of "isolated" (unstandardized
+    NMR/LC yields exist too), and a true flag is not evidence of "assay" either.
+    ORD's YIELD measurement type simply doesn't carry that distinction, so
+    RENKIN maps it to `basis: "unknown"` unconditionally and keeps this
+    provenance only as a note for a human (or a future, more specific rule) to
+    read -- never as an input to the basis decision itself.
+    """
+    has = lambda name: measurement.HasField(name)  # noqa: E731
+    fields = {
+        "ord_measurement_type": _enum_name(measurement, "type"),
+        "analysis_key": measurement.analysis_key or None,
+        "uses_internal_standard": measurement.uses_internal_standard if has("uses_internal_standard") else None,
+        "uses_authentic_standard": measurement.uses_authentic_standard if has("uses_authentic_standard") else None,
+        "details": measurement.details or None,
+    }
+    return json.dumps(fields, sort_keys=True)
+
+
 def extract_yield(reaction) -> tuple[dict | None, str | None]:
     """Returns (reported_yield_dict_or_None, rejection_reason_or_None).
 
     Only two bases are ever produced: `conversion` (ORD's own outcome.conversion
     field) and `unknown` (ORD's ProductMeasurement YIELD type does not itself
     distinguish isolated-weight from calibrated-assay measurements -- see
-    docs/guides/reaction-evidence.md -- so `isolated`/`assay` are never guessed).
+    measurement_provenance_note and docs/guides/reaction-evidence.md -- so
+    `isolated`/`assay` are never guessed from uses_internal_standard/
+    uses_authentic_standard or anything else).
     Multiple non-duplicate candidates reject the record rather than picking one.
     """
     if len(reaction.outcomes) != 1:
         return None, None
     outcome = reaction.outcomes[0]
-    candidates: set[tuple[float, str]] = set()
+    # value/basis is the dedup key; notes travels along keyed by the same pair
+    # (first-seen wins if two measurements coincidentally share value+basis).
+    candidates: dict[tuple[float, str], str | None] = {}
 
     if outcome.conversion.HasField("value"):
         value = outcome.conversion.value
         if 0.0 <= value <= 100.0:
-            candidates.add((round_value(value), "conversion"))
+            candidates.setdefault((round_value(value), "conversion"), None)
 
     desired = [p for p in outcome.products if p.is_desired_product]
     if len(desired) == 1:
@@ -342,14 +370,18 @@ def extract_yield(reaction) -> tuple[dict | None, str | None]:
             ):
                 value = measurement.percentage.value
                 if 0.0 <= value <= 100.0:
-                    candidates.add((round_value(value), "unknown"))
+                    key = (round_value(value), "unknown")
+                    candidates.setdefault(key, measurement_provenance_note(measurement))
 
     if not candidates:
         return None, None
     if len(candidates) > 1:
         return None, RejectionReason.AMBIGUOUS_YIELD
-    (value, basis) = next(iter(candidates))
-    return {"percentage": value, "basis": basis}, None
+    (value, basis), note = next(iter(candidates.items()))
+    result = {"percentage": value, "basis": basis}
+    if note is not None:
+        result["notes"] = note
+    return result, None
 
 
 def extract_references(dataset_id: str, reaction_id: str, reaction) -> list[dict]:
@@ -630,6 +662,12 @@ def build_sidecar(candidates: list[Candidate], match_results: dict[str, dict], r
                 "scope": "substrate_specific",
                 "reference_ids": reference_ids,
             }
+            # Deterministic, machine-readable record of *how* the yield was
+            # measured (never used to infer basis -- see
+            # measurement_provenance_note). ReactionExample.notes is the only
+            # place this fits; ReportedYield itself has no notes field.
+            if c.reported_yield.get("notes") is not None:
+                example["notes"] = c.reported_yield["notes"]
         example["reference_ids"] = reference_ids
 
         entry = templates.setdefault(

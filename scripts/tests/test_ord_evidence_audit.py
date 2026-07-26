@@ -95,7 +95,9 @@ class ExtractionTests(unittest.TestCase):
         self.assertEqual(c.conditions["atmosphere"], "nitrogen")
         self.assertEqual(c.conditions["temperature_c"], {"min": 78.0, "max": 78.0})
         self.assertEqual(c.conditions["time_hours"], {"min": 2.0, "max": 2.0})
-        self.assertEqual(c.reported_yield, {"percentage": 87.5, "basis": "unknown"})
+        self.assertEqual(c.reported_yield["percentage"], 87.5)
+        self.assertEqual(c.reported_yield["basis"], "unknown")
+        self.assertIn("notes", c.reported_yield)  # measurement provenance, not used for basis
         ref_ids = {r["id"] for r in c.references}
         self.assertIn("doi:10.1000/renkin-fixture-example", ref_ids)
 
@@ -220,7 +222,53 @@ class ExtractionTests(unittest.TestCase):
             path = self._write_dataset(dataset, Path(tmp))
             candidates = m.extract_candidates([path], self.report)
             self.assertEqual(len(candidates), 1)
-            self.assertEqual(candidates[0].reported_yield, {"percentage": 90.0, "basis": "unknown"})
+            self.assertEqual(candidates[0].reported_yield["percentage"], 90.0)
+            self.assertEqual(candidates[0].reported_yield["basis"], "unknown")
+
+    def test_yield_basis_is_unknown_regardless_of_standard_flags(self):
+        """uses_internal_standard/uses_authentic_standard describe *how* a
+        yield was quantified, not whether it's isolated or assay -- neither
+        flag, in either state, ever changes the resulting basis. See
+        measurement_provenance_note's docstring for why."""
+        from ord_schema.proto import reaction_pb2
+
+        cases = [
+            ("internal_standard_true", {"uses_internal_standard": True}),
+            ("internal_standard_false", {"uses_internal_standard": False}),
+            ("internal_standard_unset", {}),
+            ("authentic_standard_true", {"uses_authentic_standard": True}),
+        ]
+        for name, flags in cases:
+            with self.subTest(name):
+                import tempfile
+
+                dataset = self._dataset(dataset_id=f"ord_dataset-{name}")
+                r = self._add_basic_reaction(dataset, with_yield=False)
+                meas = r.outcomes[0].products[0].measurements.add()
+                meas.type = reaction_pb2.ProductMeasurement.YIELD
+                meas.percentage.value = 90.0
+                for field, value in flags.items():
+                    setattr(meas, field, value)
+                with tempfile.TemporaryDirectory() as tmp:
+                    path = self._write_dataset(dataset, Path(tmp))
+                    report = m.AuditReport()
+                    candidates = m.extract_candidates([path], report)
+                    self.assertEqual(len(candidates), 1)
+                    self.assertEqual(candidates[0].reported_yield["basis"], "unknown")
+
+    def test_explicit_conversion_gives_basis_conversion(self):
+        import tempfile
+
+        dataset = self._dataset()
+        r = self._add_basic_reaction(dataset, with_yield=False)
+        r.outcomes[0].conversion.value = 65.0
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_dataset(dataset, Path(tmp))
+            candidates = m.extract_candidates([path], self.report)
+            self.assertEqual(len(candidates), 1)
+            self.assertEqual(
+                candidates[0].reported_yield, {"percentage": 65.0, "basis": "conversion"}
+            )
 
     def test_duplicate_source_record_is_rejected_on_second_occurrence(self):
         import tempfile

@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use crate::evidence::{
-    ConditionCandidate, EvidenceReference, ExampleMatch, FloatRange, ReactionExample,
-    ReferenceKind, ReportedYield, WarningSeverity, YieldBasis, YieldPercentage, match_example,
+    ConditionCandidate, EvidenceReference, ExampleMatch, FloatRange, ReferenceKind, ReportedYield,
+    WarningSeverity, YieldBasis, YieldPercentage,
 };
 use crate::search::{ReactionStep, Route};
 
@@ -289,7 +289,9 @@ fn resolve_references<'a>(
 }
 
 /// Renders one step's curated evidence: rule-author default conditions (if
-/// any), up to 3 curated examples (exact-substrate matches first), and any
+/// any), curated examples (already resolved and capped by
+/// `TemplateMetadataEntry::to_step_evidence` -- every exact-substrate match
+/// plus up to 3 same-template-different-substrate precedents), and any
 /// template-level warnings. Appends directly to `out`.
 fn render_step_evidence(out: &mut String, step: &ReactionStep) {
     if let Some(cond) = &step.conditions {
@@ -311,42 +313,57 @@ fn render_step_evidence(out: &mut String, step: &ReactionStep) {
 
     if !evidence.examples.is_empty() {
         out.push_str("    Evidence:\n");
-        let mut ranked: Vec<(ExampleMatch, &ReactionExample)> = evidence
-            .examples
-            .iter()
-            .map(|ex| (match_example(ex, &step.target, &step.precursors), ex))
-            .collect();
-        ranked.sort_by_key(|(m, _)| match m {
-            ExampleMatch::ExactSubstrate => 0,
-            ExampleMatch::TemplateOnly => 1,
-        });
-
-        for (m, ex) in ranked.iter().take(3) {
-            let header = match m {
+        // Already resolved (exact matches first, template-only capped at 3) by
+        // TemplateMetadataEntry::to_step_evidence -- no re-canonicalizing here.
+        for resolved in &evidence.examples {
+            let ex = &resolved.example;
+            let header = match resolved.match_kind {
                 ExampleMatch::ExactSubstrate => "Exact substrate example:",
                 ExampleMatch::TemplateOnly => {
                     "Template-level literature example (different substrate; not a prediction):"
                 }
             };
             out.push_str(&format!("      {header}\n"));
+            // Dedups references shown more than once among conditions/yield/the
+            // example's own reference_ids -- all rendered under "Reference:".
+            // Warnings get their own dedup set: a reference explaining *why
+            // there's a warning* is a distinct citation from one backing the
+            // conditions/yield data, even if it's the same id, so it still
+            // renders its own "Source:" line.
+            let mut shown_content_refs: std::collections::HashSet<&str> =
+                std::collections::HashSet::new();
             if let Some(c) = &ex.conditions {
                 out.push_str(&format!(
                     "        Conditions: {}\n",
                     format_condition_candidate(c)
                 ));
+                for r in resolve_references(&c.reference_ids, &evidence.references) {
+                    if shown_content_refs.insert(r.id.as_str()) {
+                        out.push_str(&format!("          Reference: {}\n", format_reference(r)));
+                    }
+                }
             }
             if let Some(y) = &ex.reported_yield {
                 out.push_str(&format!(
                     "        Reported yield: {}\n",
                     format_reported_yield(y)
                 ));
+                for r in resolve_references(&y.reference_ids, &evidence.references) {
+                    if shown_content_refs.insert(r.id.as_str()) {
+                        out.push_str(&format!("          Reference: {}\n", format_reference(r)));
+                    }
+                }
             }
             for r in resolve_references(&ex.reference_ids, &evidence.references) {
-                out.push_str(&format!("        Reference: {}\n", format_reference(r)));
+                if shown_content_refs.insert(r.id.as_str()) {
+                    out.push_str(&format!("        Reference: {}\n", format_reference(r)));
+                }
             }
             if let Some(drid) = &ex.dataset_record_id {
                 out.push_str(&format!("        Dataset record: {drid}\n"));
             }
+            let mut shown_warning_refs: std::collections::HashSet<&str> =
+                std::collections::HashSet::new();
             for w in &ex.warnings {
                 out.push_str(&format!(
                     "        Warning: [{}] {}\n",
@@ -354,11 +371,15 @@ fn render_step_evidence(out: &mut String, step: &ReactionStep) {
                     w.message
                 ));
                 for r in resolve_references(&w.reference_ids, &evidence.references) {
-                    out.push_str(&format!("          Source: {}\n", format_reference(r)));
+                    if shown_warning_refs.insert(r.id.as_str()) {
+                        out.push_str(&format!("          Source: {}\n", format_reference(r)));
+                    }
                 }
             }
         }
-        let remaining = ranked.len().saturating_sub(3);
+        let remaining = evidence
+            .template_examples_total
+            .saturating_sub(evidence.examples.len());
         if remaining > 0 {
             out.push_str(&format!(
                 "      ... and {remaining} more template examples\n"
@@ -569,7 +590,8 @@ pub fn format_route_mermaid(route: &Route, target: &str, route_num: usize) -> St
 mod tests {
     use super::*;
     use crate::evidence::{
-        EvidenceScope, MetadataSource, ReactionWarning, StepEvidence, WarningSeverity,
+        EvidenceScope, MetadataSource, ReactionExample, ReactionWarning, ResolvedReactionExample,
+        StepEvidence, WarningSeverity,
     };
     use crate::search::ReactionConditions;
 
@@ -644,6 +666,33 @@ mod tests {
         }
     }
 
+    fn resolved(match_kind: ExampleMatch, example: ReactionExample) -> ResolvedReactionExample {
+        ResolvedReactionExample {
+            match_kind,
+            example,
+        }
+    }
+
+    // Mirrors what `TemplateMetadataEntry::to_step_evidence` actually hands a
+    // step: already-resolved/capped `examples` plus `template_examples_total`.
+    // Display-layer tests build this directly rather than a raw sidecar, since
+    // resolution/capping/ordering are evidence.rs's responsibility now.
+    fn step_evidence(
+        references: Vec<EvidenceReference>,
+        warnings: Vec<ReactionWarning>,
+        examples: Vec<ResolvedReactionExample>,
+        template_examples_total: usize,
+    ) -> StepEvidence {
+        StepEvidence {
+            condition_candidates: vec![],
+            reported_yields: vec![],
+            references,
+            warnings,
+            examples,
+            template_examples_total,
+        }
+    }
+
     #[test]
     fn generic_conditions_labeled_not_literature_derived() {
         let mut step = base_step();
@@ -664,13 +713,15 @@ mod tests {
     #[test]
     fn exact_substrate_example_renders_conditions_yield_reference_and_dataset_record() {
         let mut step = base_step();
-        step.evidence = Some(StepEvidence {
-            condition_candidates: vec![],
-            reported_yields: vec![],
-            references: vec![sample_reference()],
-            warnings: vec![],
-            examples: vec![sample_example("CC(=O)Oc1ccccc1C(=O)O")],
-        });
+        step.evidence = Some(step_evidence(
+            vec![sample_reference()],
+            vec![],
+            vec![resolved(
+                ExampleMatch::ExactSubstrate,
+                sample_example("CC(=O)Oc1ccccc1C(=O)O"),
+            )],
+            1,
+        ));
         let route = base_route(vec![step], 0.9);
         let out = explain_route(&route, "CC(=O)Oc1ccccc1C(=O)O", 1);
         assert!(out.contains("Evidence:"));
@@ -681,15 +732,149 @@ mod tests {
     }
 
     #[test]
+    fn condition_specific_reference_is_shown_even_when_example_level_ids_empty() {
+        let mut step = base_step();
+        let example = ReactionExample {
+            id: "ex-1".to_string(),
+            target_smiles: "CC(=O)Oc1ccccc1C(=O)O".to_string(),
+            precursor_smiles: vec!["CC(=O)O".to_string(), "Oc1ccccc1C(=O)O".to_string()],
+            conditions: Some(ConditionCandidate {
+                catalysts: vec![],
+                reagents: vec!["H2SO4".to_string()],
+                bases: vec![],
+                solvents: vec![],
+                temperature_c: None,
+                time_hours: None,
+                atmosphere: None,
+                notes: None,
+                source: MetadataSource::Literature,
+                scope: EvidenceScope::SubstrateSpecific,
+                reference_ids: vec!["cond-ref".to_string()],
+            }),
+            reported_yield: None,
+            warnings: vec![],
+            reference_ids: vec![], // deliberately empty -- must not suppress the condition's own reference
+            dataset_record_id: None,
+            notes: None,
+        };
+        let references = vec![EvidenceReference {
+            id: "cond-ref".to_string(),
+            kind: ReferenceKind::Doi,
+            identifier: "10.aaa/cond".to_string(),
+            title: None,
+        }];
+        step.evidence = Some(step_evidence(
+            references,
+            vec![],
+            vec![resolved(ExampleMatch::ExactSubstrate, example)],
+            1,
+        ));
+        let route = base_route(vec![step], 0.9);
+        let out = explain_route(&route, "CC(=O)Oc1ccccc1C(=O)O", 1);
+        assert!(out.contains("Reference: DOI 10.aaa/cond"));
+    }
+
+    #[test]
+    fn yield_specific_reference_is_shown_even_when_example_level_ids_empty() {
+        let mut step = base_step();
+        let example = ReactionExample {
+            id: "ex-1".to_string(),
+            target_smiles: "CC(=O)Oc1ccccc1C(=O)O".to_string(),
+            precursor_smiles: vec!["CC(=O)O".to_string(), "Oc1ccccc1C(=O)O".to_string()],
+            conditions: None,
+            reported_yield: Some(ReportedYield {
+                percentage: YieldPercentage::Single(78.0),
+                basis: YieldBasis::Isolated,
+                source: MetadataSource::Literature,
+                scope: EvidenceScope::SubstrateSpecific,
+                reference_ids: vec!["yield-ref".to_string()],
+            }),
+            warnings: vec![],
+            reference_ids: vec![], // deliberately empty -- must not suppress the yield's own reference
+            dataset_record_id: None,
+            notes: None,
+        };
+        let references = vec![EvidenceReference {
+            id: "yield-ref".to_string(),
+            kind: ReferenceKind::Doi,
+            identifier: "10.bbb/yield".to_string(),
+            title: None,
+        }];
+        step.evidence = Some(step_evidence(
+            references,
+            vec![],
+            vec![resolved(ExampleMatch::ExactSubstrate, example)],
+            1,
+        ));
+        let route = base_route(vec![step], 0.9);
+        let out = explain_route(&route, "CC(=O)Oc1ccccc1C(=O)O", 1);
+        assert!(out.contains("Reference: DOI 10.bbb/yield"));
+    }
+
+    #[test]
+    fn reference_shared_by_conditions_and_yield_is_shown_once() {
+        let mut step = base_step();
+        let shared_ref_ids = vec!["shared-ref".to_string()];
+        let example = ReactionExample {
+            id: "ex-1".to_string(),
+            target_smiles: "CC(=O)Oc1ccccc1C(=O)O".to_string(),
+            precursor_smiles: vec!["CC(=O)O".to_string(), "Oc1ccccc1C(=O)O".to_string()],
+            conditions: Some(ConditionCandidate {
+                catalysts: vec![],
+                reagents: vec!["H2SO4".to_string()],
+                bases: vec![],
+                solvents: vec![],
+                temperature_c: None,
+                time_hours: None,
+                atmosphere: None,
+                notes: None,
+                source: MetadataSource::Literature,
+                scope: EvidenceScope::SubstrateSpecific,
+                reference_ids: shared_ref_ids.clone(),
+            }),
+            reported_yield: Some(ReportedYield {
+                percentage: YieldPercentage::Single(78.0),
+                basis: YieldBasis::Isolated,
+                source: MetadataSource::Literature,
+                scope: EvidenceScope::SubstrateSpecific,
+                reference_ids: shared_ref_ids.clone(),
+            }),
+            warnings: vec![],
+            reference_ids: shared_ref_ids,
+            dataset_record_id: None,
+            notes: None,
+        };
+        let references = vec![EvidenceReference {
+            id: "shared-ref".to_string(),
+            kind: ReferenceKind::Doi,
+            identifier: "10.ccc/shared".to_string(),
+            title: None,
+        }];
+        step.evidence = Some(step_evidence(
+            references,
+            vec![],
+            vec![resolved(ExampleMatch::ExactSubstrate, example)],
+            1,
+        ));
+        let route = base_route(vec![step], 0.9);
+        let out = explain_route(&route, "CC(=O)Oc1ccccc1C(=O)O", 1);
+        assert_eq!(
+            out.matches("Reference: DOI 10.ccc/shared").count(),
+            1,
+            "a reference cited by conditions, reported_yield, and the example's own \
+             reference_ids must render only once, got: {out}"
+        );
+    }
+
+    #[test]
     fn different_substrate_example_labeled_not_a_prediction() {
         let mut step = base_step();
-        step.evidence = Some(StepEvidence {
-            condition_candidates: vec![],
-            reported_yields: vec![],
-            references: vec![sample_reference()],
-            warnings: vec![],
-            examples: vec![sample_example("CCO")], // different target -> TemplateOnly
-        });
+        step.evidence = Some(step_evidence(
+            vec![sample_reference()],
+            vec![],
+            vec![resolved(ExampleMatch::TemplateOnly, sample_example("CCO"))],
+            1,
+        ));
         let route = base_route(vec![step], 0.9);
         let out = explain_route(&route, "CC(=O)Oc1ccccc1C(=O)O", 1);
         assert!(out.contains(
@@ -699,57 +884,44 @@ mod tests {
     }
 
     #[test]
-    fn more_than_three_examples_reports_remainder() {
+    fn remainder_count_is_total_minus_shown() {
+        // Resolution/capping is evidence.rs's job (see
+        // to_step_evidence_keeps_all_exact_and_caps_template_only_at_three);
+        // this only checks display.rs's "... and N more" arithmetic against
+        // whatever `template_examples_total` it's handed.
         let mut step = base_step();
-        let examples: Vec<ReactionExample> = (0..5)
+        let examples: Vec<ResolvedReactionExample> = (0..3)
             .map(|i| {
-                let mut ex = sample_example("CCO"); // all TemplateOnly, order preserved
+                let mut ex = sample_example("CCO");
                 ex.id = format!("ex-{i}");
-                ex
+                resolved(ExampleMatch::TemplateOnly, ex)
             })
             .collect();
-        step.evidence = Some(StepEvidence {
-            condition_candidates: vec![],
-            reported_yields: vec![],
-            references: vec![],
-            warnings: vec![],
-            examples,
-        });
+        step.evidence = Some(step_evidence(vec![], vec![], examples, 5));
         let route = base_route(vec![step], 0.9);
         let out = explain_route(&route, "CC(=O)Oc1ccccc1C(=O)O", 1);
         assert!(out.contains("... and 2 more template examples"));
     }
 
     #[test]
-    fn exact_match_sorts_before_template_only_when_mixed() {
+    fn exact_substrate_examples_render_before_template_only() {
         let mut step = base_step();
-        let mut examples: Vec<ReactionExample> = (0..4)
-            .map(|i| {
-                let mut ex = sample_example("CCO"); // TemplateOnly
-                ex.id = format!("template-only-{i}");
-                ex
-            })
-            .collect();
-        let mut exact = sample_example("CC(=O)Oc1ccccc1C(=O)O"); // matches step target/precursors
-        exact.id = "the-exact-one".to_string();
-        examples.push(exact); // exact match placed last on input, must still sort first
-        step.evidence = Some(StepEvidence {
-            condition_candidates: vec![],
-            reported_yields: vec![],
-            references: vec![],
-            warnings: vec![],
-            examples,
-        });
+        let examples = vec![
+            resolved(
+                ExampleMatch::ExactSubstrate,
+                sample_example("CC(=O)Oc1ccccc1C(=O)O"),
+            ),
+            resolved(ExampleMatch::TemplateOnly, sample_example("CCO")),
+        ];
+        step.evidence = Some(step_evidence(vec![], vec![], examples, 2));
         let route = base_route(vec![step], 0.9);
         let out = explain_route(&route, "CC(=O)Oc1ccccc1C(=O)O", 1);
         let exact_pos = out.find("Exact substrate example:").unwrap();
         let template_only_pos = out.find("Template-level literature example").unwrap();
         assert!(
             exact_pos < template_only_pos,
-            "exact-substrate match must be listed before template-only matches, got: {out}"
+            "exact-substrate match must render before template-only matches, got: {out}"
         );
-        // Only 3 shown out of 5 total -- the exact match must be among them, not bumped out.
-        assert!(out.contains("... and 2 more template examples"));
     }
 
     #[test]
@@ -764,13 +936,12 @@ mod tests {
             scope: EvidenceScope::SubstrateSpecific,
             reference_ids: vec!["ref-1".to_string()],
         }];
-        step.evidence = Some(StepEvidence {
-            condition_candidates: vec![],
-            reported_yields: vec![],
-            references: vec![sample_reference()],
-            warnings: vec![],
-            examples: vec![example],
-        });
+        step.evidence = Some(step_evidence(
+            vec![sample_reference()],
+            vec![],
+            vec![resolved(ExampleMatch::ExactSubstrate, example)],
+            1,
+        ));
         let route = base_route(vec![step], 0.9);
         let out = explain_route(&route, "CC(=O)Oc1ccccc1C(=O)O", 1);
         assert!(out.contains(
@@ -782,11 +953,9 @@ mod tests {
     #[test]
     fn warnings_rendered_with_severity_and_source() {
         let mut step = base_step();
-        step.evidence = Some(StepEvidence {
-            condition_candidates: vec![],
-            reported_yields: vec![],
-            references: vec![sample_reference()],
-            warnings: vec![ReactionWarning {
+        step.evidence = Some(step_evidence(
+            vec![sample_reference()],
+            vec![ReactionWarning {
                 code: "possible_protodeboronation".to_string(),
                 severity: WarningSeverity::Medium,
                 message: "Possible protodeboronation under prolonged heating.".to_string(),
@@ -794,8 +963,9 @@ mod tests {
                 scope: EvidenceScope::Template,
                 reference_ids: vec!["ref-1".to_string()],
             }],
-            examples: vec![],
-        });
+            vec![],
+            0,
+        ));
         let route = base_route(vec![step], 0.9);
         let out = explain_route(&route, "CC(=O)Oc1ccccc1C(=O)O", 1);
         assert!(out.contains("Warnings:"));
@@ -806,13 +976,7 @@ mod tests {
     #[test]
     fn absent_warnings_are_not_rendered_as_no_side_reactions() {
         let mut step = base_step();
-        step.evidence = Some(StepEvidence {
-            condition_candidates: vec![],
-            reported_yields: vec![],
-            references: vec![],
-            warnings: vec![],
-            examples: vec![],
-        });
+        step.evidence = Some(step_evidence(vec![], vec![], vec![], 0));
         let route = base_route(vec![step], 0.9);
         let out = explain_route(&route, "CC(=O)Oc1ccccc1C(=O)O", 1);
         assert!(!out.contains("Warnings:"));

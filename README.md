@@ -291,16 +291,27 @@ template, regardless of the actual molecule. `schema_version: 2` adds
 }
 ```
 
-`examples` requires `schema_version: 2` (a hard error under `1`); every
-condition/yield/warning nested inside an example must be scoped
-`substrate_specific`. A route step's `evidence.examples` are matched against
-that step by canonical target SMILES plus the canonical, order-independent
-precursor set — reordering `precursor_smiles` in the sidecar changes
-nothing. `--format explain` shows up to 3 examples per step, **exact-substrate
-matches first**; a same-template-different-substrate example is still shown,
-but explicitly labeled *"different substrate; not a prediction"* — it's
-literature precedent for the reaction type, never evidence for the molecule
-you actually searched. See [Reaction Evidence guide](docs/guides/reaction-evidence.md#substrate-specific-examples-schema_version-2)
+`examples` requires `schema_version: 2` (a hard error under `1`); under
+`schema_version: 2`, reported yields must live under `examples[].reported_yield`
+too — a non-empty template-level `reported_yields` is a hard error there (it
+stays allowed under `schema_version: 1`), so a substrate-specific number can't
+leak onto every step using that template. Every condition/yield/warning
+nested inside an example must be scoped `substrate_specific`.
+
+A route step's `evidence.examples` are **resolved**, not just copied from the
+sidecar: matched against that step by canonical target SMILES plus the
+canonical, order-independent precursor set (reordering `precursor_smiles` in
+the sidecar changes nothing), with every exact-substrate match kept and
+same-template-different-substrate precedents capped at 3. Each resolved entry
+carries a `match_kind` (`exact_substrate`/`template_only`) in the JSON itself,
+plus a `template_examples_total` count — so JSON/Python consumers, not just
+`--format explain`, can tell "evidence for this exact reaction" apart from
+"literature precedent for a different substrate." `--format explain` shows
+exact-substrate matches first, each labeled either `Exact substrate example:`
+or *"different substrate; not a prediction"*, with `conditions`/
+`reported_yield`/`warnings` each showing their own cited references directly
+underneath (deduplicated when the same reference backs more than one part of
+an example). See [Reaction Evidence guide](docs/guides/reaction-evidence.md#substrate-specific-examples-schema_version-2)
 for full matching/validation semantics.
 
 ---

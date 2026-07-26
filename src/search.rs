@@ -1035,7 +1035,7 @@ pub fn find_routes(
                     .template_metadata
                     .as_ref()
                     .and_then(|m| m.get(&step.template_id))
-                    .and_then(|e| e.to_step_evidence());
+                    .and_then(|e| e.to_step_evidence(&step.target, &step.precursors));
             }
 
             route.success_probability = route

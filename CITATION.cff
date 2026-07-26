@@ -2,7 +2,8 @@ cff-version: 1.2.0
 message: "If you use RENKIN in academic work, please cite it as below."
 title: "RENKIN: Retrosynthesis Engine for Knowledge-Informed Navigation"
 authors:
-  - name: "kent-tokyo"
+  - family-names: "Tanabe"
+    given-names: "Kentaro"
 version: "0.18.0"
 date-released: "2026-07-26"
 url: "https://github.com/kent-tokyo/renkin"

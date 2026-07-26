@@ -264,17 +264,28 @@ reference ID・収率の範囲・range の `min <= max`・DOI/特許識別子の
 ```
 
 `examples` は `schema_version: 2` でのみ使用可能です（`1` で指定するとハード
-エラーになります）。example内の condition/yield/warning はすべて
-`substrate_specific` スコープでなければなりません。ルートのステップの
-`evidence.examples` は、canonical化したtarget SMILESと、canonical化・順序非依存
-でsort＋dedupしたprecursor集合の両方でそのステップと照合されます —
-サイドカー内の `precursor_smiles` の順序を変えても結果は変わりません。
-`--format explain` では1ステップあたり最大3件のexampleを表示し、**exact
-substrate matchを先に**表示します。異なる基質のexample（同一テンプレートだが
-異なる基質）も表示はされますが、必ず「different substrate; not a
-prediction」と明記されます — これはあくまでそのテンプレートの文献上の前例で
-あり、実際に検索した分子に対するevidenceではありません。詳細なマッチング／
-検証仕様は
+エラーになります）。`schema_version: 2` では報告収率も `examples[].reported_yield`
+に置く必要があり、テンプレート単位の `reported_yields` が非空だとハード
+エラーになります（`schema_version: 1` では引き続き許可されます）——
+これにより、基質固有の数値がそのテンプレートを使う全ステップへ漏れ伝わる
+ことを防ぎます。example内の condition/yield/warning はすべて
+`substrate_specific` スコープでなければなりません。
+
+ルートのステップの `evidence.examples` は、サイドカーからの単純コピーでは
+なく**解決済み**の状態で渡されます：canonical化したtarget SMILESと、
+canonical化・順序非依存でsort＋dedupしたprecursor集合の両方でそのステップと
+照合され（サイドカー内の `precursor_smiles` の順序を変えても結果は
+変わりません）、exact substrate matchはすべて保持し、同一テンプレート・
+異なる基質のexampleは最大3件までに制限されます。各エントリはJSON上に
+`match_kind`（`exact_substrate`/`template_only`）を持ち、
+`template_examples_total` で宣言されていたexample総数も分かるため、
+`--format explain` だけでなくJSON／Pythonの利用者も「この反応そのものの
+evidence」と「別基質の文献上の前例」を機械的に区別できます。
+`--format explain` ではexact substrate matchを先に表示し、それぞれ
+「Exact substrate example:」または「different substrate; not a
+prediction」と明記されます。`conditions`／`reported_yield`／`warnings`は
+それぞれ自身が引用するreferenceを直下に表示し（同じreferenceが複数箇所で
+使われても重複表示はしません）。詳細なマッチング／検証仕様は
 [Reaction Evidence guide](docs/guides/reaction-evidence.md#substrate-specific-examples-schema_version-2)
 を参照してください。
 

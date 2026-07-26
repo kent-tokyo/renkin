@@ -151,29 +151,52 @@ Key rules:
 - **`examples` requires `schema_version: 2`.** A `schema_version: 1` sidecar
   with an `examples` key is a hard error, not a silent no-op — v1 sidecars
   without `examples` load and behave exactly as before.
+- **`schema_version: 2` requires reported yields under `examples[].reported_yield`,
+  not the template-level `reported_yields` list.** A non-empty template-level
+  `reported_yields` under `schema_version: 2` is a hard error — otherwise a
+  substrate-specific number could be placed at the template level and get
+  applied to every step using that template, defeating the point of
+  substrate-specific evidence. (Template-level `condition_candidates`,
+  `warnings`, and `references` remain allowed under `schema_version: 2` — only
+  `reported_yields` moves to the example level.) `schema_version: 1` keeps
+  allowing template-level `reported_yields`, unchanged, for backward
+  compatibility.
 - **Every nested `conditions`/`reported_yield`/`warnings` entry inside an
   example must be scoped `"substrate_specific"`.** This is enforced at load
   time (any other scope there is rejected), unlike template-level entries,
   which aren't scope-restricted.
 - `target_smiles`/`precursor_smiles` must parse and `precursor_smiles` must
   be non-empty; `id` must be non-empty and unique within its template;
-  `reference_ids` (both the example's own and any nested one) must point at
-  a reference declared in that template's `references` list.
+  `reference_ids` (the example's own, and each nested `conditions`/
+  `reported_yield`/`warnings` entry's own) must each point at a reference
+  declared in that template's `references` list.
 
-**Matching an example to a route step.** A step's `evidence.examples` are
-compared against that step's actual `target`/`precursors` by canonical
-SMILES: the target must match exactly, and the precursor set must match after
-canonicalizing, sorting, and deduplicating both sides — so the order
-`precursor_smiles` are listed in the sidecar never matters. An example whose
-target/precursors don't match the step is still shown (it's a literature
-precedent for the same template), but is never treated as evidence for the
-molecule actually being searched.
+**Matching an example to a route step.** This happens once per step, not just
+in `--format explain` — a step's `evidence.examples` are *resolved*, not
+merely copied from the sidecar. Each example is compared against that step's
+actual `target`/`precursors` by canonical SMILES (target must match exactly;
+the precursor set must match after canonicalizing, sorting, and
+deduplicating both sides, so `precursor_smiles` order in the sidecar never
+matters). Every exact-substrate match is kept; same-template-different-substrate
+precedents are capped at 3. Each resolved entry in JSON carries a `match_kind`
+(`"exact_substrate"` or `"template_only"`) right alongside the example's own
+fields, and `evidence.template_examples_total` reports how many examples the
+template declared in total — so a JSON/Python consumer can tell "evidence for
+this exact reaction" from "literature precedent for a different substrate"
+without re-implementing the canonical-SMILES comparison itself, and can tell
+how many precedents were truncated. `evidence.references` is trimmed to only
+the ids actually cited by what's kept (template-level entries plus the
+retained examples), not the template's full reference list.
 
-**In `--format explain`:** each step shows up to 3 examples, exact-substrate
-matches first, each labeled either `Exact substrate example:` or
-`Template-level literature example (different substrate; not a
-prediction):`. Any remaining examples beyond the first 3 are summarized as
-`... and N more template examples` rather than silently dropped.
+**In `--format explain`:** each step shows every exact-substrate example plus
+up to 3 template-only ones, exact matches first, each labeled either `Exact
+substrate example:` or `Template-level literature example (different
+substrate; not a prediction):`. Any examples beyond what's shown are
+summarized as `... and N more template examples` rather than silently
+dropped. Under each example, `conditions`/`reported_yield`/`warnings` each
+show their *own* cited references directly beneath them (not just the
+example's top-level `reference_ids`) — a reference cited in more than one
+place for the same example is shown once, not repeated.
 
 ## Reported vs. Predicted — Read This Before You Cite a Number
 

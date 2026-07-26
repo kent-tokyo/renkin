@@ -68,7 +68,8 @@ a `dict` — parse it with `json.loads()` before accessing fields.
                     # metadata_source / metadata_scope / evidence are present when
                     # applicable and omitted from the JSON otherwise. evidence, when
                     # present, may itself include an "examples" array (schema_version
-                    # 2 sidecars only) -- see Template Evidence Metadata
+                    # 2 sidecars only), each entry carrying a "match_kind" of
+                    # "exact_substrate" or "template_only" -- see Template Evidence Metadata
                 }
             ]
         }

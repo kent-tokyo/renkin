@@ -198,8 +198,13 @@ pub struct ReactionExample {
 }
 
 /// How closely a curated [`ReactionExample`] matches a specific route step's
-/// exact substrate -- see [`match_example`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// exact substrate -- see [`match_example`]. Serialized onto
+/// [`ResolvedReactionExample`] so JSON/Python consumers, not just
+/// `--format explain`, can tell an exact-substrate match from a
+/// same-template literature precedent without re-canonicalizing SMILES
+/// themselves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ExampleMatch {
     /// Target and full precursor set match the step's substrate exactly
     /// (canonical SMILES; precursor order is irrelevant).
@@ -210,9 +215,10 @@ pub enum ExampleMatch {
 }
 
 /// Classifies `example` against a step's `target`/`precursors` SMILES.
-/// Stereochemistry-insensitive, canonical-SMILES-only comparison -- no
-/// partial-structure similarity is attempted. A SMILES that fails to parse
-/// never matches (conservatively yields `TemplateOnly`).
+/// Comparison follows RENKIN's current canonical-SMILES behavior; no
+/// separate stereo-ignoring normalization is applied. No partial-structure
+/// similarity is attempted. A SMILES that fails to parse never matches
+/// (conservatively yields `TemplateOnly`).
 pub fn match_example(
     example: &ReactionExample,
     target: &str,
@@ -251,6 +257,20 @@ pub fn match_example(
     }
 }
 
+/// A [`ReactionExample`] resolved against one route step's substrate,
+/// carrying its [`ExampleMatch`] classification alongside the example
+/// itself. This is what actually gets attached to a step -- see
+/// `TemplateMetadataEntry::to_step_evidence` -- precisely so that JSON/
+/// Python consumers can tell "evidence for this exact reaction" apart from
+/// "literature precedent for a different substrate" without redoing the
+/// canonical-SMILES comparison themselves.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResolvedReactionExample {
+    pub match_kind: ExampleMatch,
+    #[serde(flatten)]
+    pub example: ReactionExample,
+}
+
 /// Curated external evidence attached to one [`crate::search::ReactionStep`]
 /// via its `template_id`. Absent (`None` on the step) unless a metadata
 /// sidecar was supplied and matched.
@@ -264,10 +284,23 @@ pub struct StepEvidence {
     pub references: Vec<EvidenceReference>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<ReactionWarning>,
-    /// Substrate-specific examples (schema_version 2+); empty for
-    /// schema_version 1 sidecars.
+    /// Substrate-specific examples (schema_version 2+), resolved against
+    /// this step's exact target/precursors: every exact-substrate match,
+    /// plus up to 3 same-template-different-substrate precedents. Empty for
+    /// schema_version 1 sidecars. See `template_examples_total` for how many
+    /// were declared for this template in total.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub examples: Vec<ReactionExample>,
+    pub examples: Vec<ResolvedReactionExample>,
+    /// Total number of `examples` declared for this template in the
+    /// sidecar, before the per-step exact/template-only resolution and cap
+    /// above -- lets a consumer tell `"... and N more"` from `examples.len()`
+    /// without needing the raw sidecar. 0 when `examples` is empty.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub template_examples_total: usize,
+}
+
+fn is_zero(n: &usize) -> bool {
+    *n == 0
 }
 
 impl StepEvidence {
@@ -299,15 +332,81 @@ pub struct TemplateMetadataEntry {
 }
 
 impl TemplateMetadataEntry {
-    /// Builds the `StepEvidence` to attach to a matching `ReactionStep`, or
-    /// `None` if this entry carries no actual data (all five lists empty).
-    pub fn to_step_evidence(&self) -> Option<StepEvidence> {
+    /// Builds the `StepEvidence` to attach to a matching `ReactionStep`,
+    /// resolved against that step's exact `target`/`precursors` -- or `None`
+    /// if this entry carries no actual data.
+    ///
+    /// Examples are resolved, not merely cloned: every `target`/`precursors`
+    /// is compared via [`match_example`], every exact-substrate match is
+    /// kept, and same-template-different-substrate precedents are capped at
+    /// [`MAX_TEMPLATE_ONLY_EXAMPLES`] (exact matches always sort first) --
+    /// this is what keeps a step's JSON output bounded even when a template
+    /// carries hundreds of dataset-derived examples. `references` is
+    /// likewise trimmed to only the ids actually cited by what's kept
+    /// (template-level condition/yield/warning entries plus the retained
+    /// examples), not the template's full reference list.
+    pub fn to_step_evidence(&self, target: &str, precursors: &[String]) -> Option<StepEvidence> {
+        const MAX_TEMPLATE_ONLY_EXAMPLES: usize = 3;
+
+        let mut exact = Vec::new();
+        let mut template_only = Vec::new();
+        for example in &self.examples {
+            let match_kind = match_example(example, target, precursors);
+            let resolved = ResolvedReactionExample {
+                match_kind,
+                example: example.clone(),
+            };
+            match match_kind {
+                ExampleMatch::ExactSubstrate => exact.push(resolved),
+                ExampleMatch::TemplateOnly => template_only.push(resolved),
+            }
+        }
+        let template_examples_total = self.examples.len();
+        template_only.truncate(MAX_TEMPLATE_ONLY_EXAMPLES);
+        exact.extend(template_only);
+        let examples = exact;
+
+        fn note_refs<'a>(used: &mut HashSet<&'a str>, ids: &'a [String]) {
+            used.extend(ids.iter().map(String::as_str));
+        }
+
+        let mut used_ref_ids: HashSet<&str> = HashSet::new();
+        for c in &self.condition_candidates {
+            note_refs(&mut used_ref_ids, &c.reference_ids);
+        }
+        for y in &self.reported_yields {
+            note_refs(&mut used_ref_ids, &y.reference_ids);
+        }
+        for w in &self.warnings {
+            note_refs(&mut used_ref_ids, &w.reference_ids);
+        }
+        for resolved in &examples {
+            let ex = &resolved.example;
+            note_refs(&mut used_ref_ids, &ex.reference_ids);
+            if let Some(c) = &ex.conditions {
+                note_refs(&mut used_ref_ids, &c.reference_ids);
+            }
+            if let Some(y) = &ex.reported_yield {
+                note_refs(&mut used_ref_ids, &y.reference_ids);
+            }
+            for w in &ex.warnings {
+                note_refs(&mut used_ref_ids, &w.reference_ids);
+            }
+        }
+        let references: Vec<EvidenceReference> = self
+            .references
+            .iter()
+            .filter(|r| used_ref_ids.contains(r.id.as_str()))
+            .cloned()
+            .collect();
+
         let evidence = StepEvidence {
             condition_candidates: self.condition_candidates.clone(),
             reported_yields: self.reported_yields.clone(),
-            references: self.references.clone(),
+            references,
             warnings: self.warnings.clone(),
-            examples: self.examples.clone(),
+            examples,
+            template_examples_total,
         };
         (!evidence.is_empty()).then_some(evidence)
     }
@@ -499,6 +598,11 @@ fn validate_template_metadata(file: &TemplateMetadataFile) -> Result<()> {
                 "template {template_id:?}: schema_version 1 does not support `examples` (requires schema_version 2)"
             );
         }
+        if file.schema_version == 2 && !entry.reported_yields.is_empty() {
+            bail!(
+                "template {template_id:?}: schema_version 2 requires reported yields under examples[].reported_yield (template-level `reported_yields` is not allowed under schema_version 2)"
+            );
+        }
 
         let mut seen_ref_ids: HashSet<&str> = HashSet::new();
         for r in &entry.references {
@@ -667,7 +771,7 @@ mod tests {
         assert_eq!(file.schema_version, 1);
         let entry = file.templates.get("smirks-sha256:abc").unwrap();
         assert_eq!(entry.references.len(), 1);
-        let evidence = entry.to_step_evidence().unwrap();
+        let evidence = entry.to_step_evidence("irrelevant", &[]).unwrap();
         assert_eq!(evidence.condition_candidates.len(), 1);
         assert_eq!(evidence.reported_yields.len(), 1);
         assert_eq!(evidence.warnings.len(), 1);
@@ -677,7 +781,7 @@ mod tests {
     #[test]
     fn empty_entry_yields_no_step_evidence() {
         let entry = TemplateMetadataEntry::default();
-        assert!(entry.to_step_evidence().is_none());
+        assert!(entry.to_step_evidence("irrelevant", &[]).is_none());
     }
 
     #[test]
@@ -918,9 +1022,10 @@ mod tests {
         let file = load_template_metadata(&path).unwrap();
         let entry = file.templates.get("t1").unwrap();
         assert!(entry.examples.is_empty());
-        let evidence = entry.to_step_evidence().unwrap();
+        let evidence = entry.to_step_evidence("irrelevant", &[]).unwrap();
         let json = serde_json::to_string(&evidence).unwrap();
         assert!(!json.contains("examples"), "got: {json}");
+        assert!(!json.contains("template_examples_total"), "got: {json}");
         std::fs::remove_file(&path).ok();
     }
 
@@ -963,10 +1068,141 @@ mod tests {
         assert_eq!(file.schema_version, 2);
         let entry = file.templates.get("smirks-sha256:abc").unwrap();
         assert_eq!(entry.examples.len(), 1);
-        let evidence = entry.to_step_evidence().unwrap();
+        let evidence = entry
+            .to_step_evidence(
+                "c1ccc(-c2ccccc2)cc1",
+                &["Brc1ccccc1".to_string(), "c1ccccc1".to_string()],
+            )
+            .unwrap();
         assert_eq!(evidence.examples.len(), 1);
-        assert_eq!(evidence.examples[0].id, "ex-1");
+        assert_eq!(evidence.examples[0].example.id, "ex-1");
+        assert_eq!(
+            evidence.examples[0].match_kind,
+            ExampleMatch::ExactSubstrate
+        );
+        assert_eq!(evidence.template_examples_total, 1);
         std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn template_level_reported_yields_rejected_under_schema_v2() {
+        let dir = std::env::temp_dir();
+        let path = write_sidecar(
+            &dir,
+            "renkin_evidence_v2_template_level_yield.json",
+            r#"{
+                "schema_version": 2,
+                "templates": {
+                    "t1": {
+                        "reported_yields": [{
+                            "percentage": 78.0,
+                            "basis": "isolated",
+                            "source": "literature",
+                            "scope": "template"
+                        }]
+                    }
+                }
+            }"#,
+        );
+        let err = load_template_metadata(&path).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("requires reported yields under examples[].reported_yield"),
+            "got: {err}"
+        );
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn template_level_reported_yields_still_allowed_under_schema_v1() {
+        // Backward compatibility: schema_version 1 sidecars never had `examples`,
+        // so template-level reported_yields must keep working exactly as before.
+        let dir = std::env::temp_dir();
+        let path = write_sidecar(
+            &dir,
+            "renkin_evidence_v1_template_level_yield.json",
+            r#"{
+                "schema_version": 1,
+                "templates": {
+                    "t1": {
+                        "reported_yields": [{
+                            "percentage": 78.0,
+                            "basis": "isolated",
+                            "source": "literature",
+                            "scope": "template"
+                        }]
+                    }
+                }
+            }"#,
+        );
+        assert!(load_template_metadata(&path).is_ok());
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn to_step_evidence_keeps_all_exact_and_caps_template_only_at_three() {
+        let target = "c1ccc(-c2ccccc2)cc1";
+        let precursors = vec!["Brc1ccccc1".to_string(), "c1ccccc1".to_string()];
+
+        let mut entry = TemplateMetadataEntry::default();
+        for i in 0..2 {
+            let mut ex = sample_example(target, &["Brc1ccccc1", "c1ccccc1"]);
+            ex.id = format!("exact-{i}");
+            entry.examples.push(ex);
+        }
+        for i in 0..5 {
+            let mut ex = sample_example("CCO", &["CCO"]);
+            ex.id = format!("template-only-{i}");
+            entry.examples.push(ex);
+        }
+
+        let evidence = entry.to_step_evidence(target, &precursors).unwrap();
+        // All exact matches kept, template-only capped at 3 -- 2 + 3 = 5 shown
+        // out of 7 declared.
+        assert_eq!(evidence.examples.len(), 5);
+        assert_eq!(evidence.template_examples_total, 7);
+        assert!(
+            evidence.examples[..2]
+                .iter()
+                .all(|r| r.match_kind == ExampleMatch::ExactSubstrate),
+            "exact matches must sort first"
+        );
+        assert!(
+            evidence.examples[2..]
+                .iter()
+                .all(|r| r.match_kind == ExampleMatch::TemplateOnly)
+        );
+    }
+
+    #[test]
+    fn to_step_evidence_trims_references_to_only_used_ids() {
+        let target = "c1ccc(-c2ccccc2)cc1";
+        let precursors = vec!["Brc1ccccc1".to_string(), "c1ccccc1".to_string()];
+
+        let mut example = sample_example(target, &["Brc1ccccc1", "c1ccccc1"]);
+        example.reference_ids = vec!["used-ref".to_string()];
+
+        let entry = TemplateMetadataEntry {
+            references: vec![
+                EvidenceReference {
+                    id: "used-ref".to_string(),
+                    kind: ReferenceKind::Doi,
+                    identifier: "10.aaa/used".to_string(),
+                    title: None,
+                },
+                EvidenceReference {
+                    id: "unused-ref".to_string(),
+                    kind: ReferenceKind::Doi,
+                    identifier: "10.bbb/unused".to_string(),
+                    title: None,
+                },
+            ],
+            examples: vec![example],
+            ..Default::default()
+        };
+
+        let evidence = entry.to_step_evidence(target, &precursors).unwrap();
+        let ref_ids: Vec<&str> = evidence.references.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ref_ids, vec!["used-ref"]);
     }
 
     #[test]

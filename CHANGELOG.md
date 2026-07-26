@@ -8,6 +8,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.18.0] — 2026-07-26
+
 ### Added
 - **`renkin` search** — `ReactionExample` substrate-specific evidence records (metadata sidecar `schema_version: 2`, `examples` array): curated conditions/reported yield/warnings/references tied to one exact target + precursor set, distinct from template-level evidence ([#41](https://github.com/kent-tokyo/renkin/issues/41) phase 2)
 - **`renkin` search** — `evidence.examples` resolved per step (not merely cloned) against the step's exact target/precursors via canonical, order-independent SMILES matching: every exact-substrate match is kept, same-template-different-substrate precedents are capped at 3, and each entry carries a machine-readable `match_kind` (`exact_substrate`/`template_only`) plus a `template_examples_total` count — so JSON/Python consumers, not just `--format explain`, can tell "evidence for this exact reaction" from "literature precedent for a different substrate" and know how many examples were truncated. When a template has `examples`, `evidence.references` is likewise trimmed to only the ids actually cited by what's kept; a template with no `examples` keeps its full reference list untouched (including standalone citations not cited by any condition/yield/warning), so this never affects `schema_version: 1` entries. `schema_version: 1` sidecars are unaffected; `examples` requires `schema_version: 2`, and (to keep substrate-specific data actually substrate-specific) `schema_version: 2` requires reported yields under `examples[].reported_yield` rather than the template-level `reported_yields` list

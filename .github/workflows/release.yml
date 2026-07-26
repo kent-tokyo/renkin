@@ -155,7 +155,7 @@ jobs:
   # ── GitHub Release ────────────────────────────────────────────────────────
   github-release:
     name: GitHub Release
-    needs: [publish-pypi, publish-npm, publish-crates]
+    needs: [publish-pypi, publish-npm, publish-crates, smoke-pypi]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -164,9 +164,13 @@ jobs:
       TAG: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@v7
-      - name: Create release
+      - name: Create release (skip if already exists)
         run: |
-          gh release create "${TAG}" \
-            --title "RENKIN ${TAG}" \
-            --notes "See [CHANGELOG.md](https://github.com/kent-tokyo/renkin/blob/master/CHANGELOG.md) for details." \
-            --latest || echo "Release already exists, skipping"
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "release ${TAG} already exists, skipping"
+          else
+            gh release create "${TAG}" \
+              --title "RENKIN ${TAG}" \
+              --notes "See [CHANGELOG.md](https://github.com/kent-tokyo/renkin/blob/master/CHANGELOG.md) for details." \
+              --latest
+          fi

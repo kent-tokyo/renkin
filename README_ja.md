@@ -289,6 +289,20 @@ prediction」と明記されます。`conditions`／`reported_yield`／`warnings
 [Reaction Evidence guide](docs/guides/reaction-evidence.md#substrate-specific-examples-schema_version-2)
 を参照してください。
 
+**ORDからのevidenceインポート。** `renkin evidence match`(exact-setの
+バッチtemplate matching、fuzzy/類似度matchingなし)と
+[`scripts/ord_evidence_audit.py`](scripts/README_ord_evidence.md)(オフライン、
+ネットワークアクセスなし)により、ローカルにダウンロード済みの
+[Open Reaction Database](https://github.com/open-reaction-database/ord-data)
+corpusを`schema_version: 2`のsidecarへ変換できます。採用されたrecordはRENKIN
+自身のloaderで再検証され、一意にmatchせず・provenanceが確認できないものは
+推測せずaudit reportへ除外理由付きで記録されます。RENKIN自体が文献検索を行う
+ことはなく、reported yieldは予測値ではありません。ORDのreaction dataは
+CC-BY-SA-4.0であり、RENKIN本体コードのMITとは別ライセンスです。詳細な採用
+基準とライセンスの分離については
+[Reaction Evidence guide](docs/guides/reaction-evidence.md#importing-from-ord-open-reaction-database)
+を参照してください。
+
 ---
 
 ## 特徴
@@ -570,6 +584,7 @@ renkin/                          ← Cargo workspace ルート
 - [x] MCP サーバー拡張 — 6 ツール体制（`explain_route`・`find_pareto_routes`・`plan_with_constraints` 追加）
 - [x] 安定 `template_id`（`rule:<name>` / `smirks-sha256:<hex>`）+ `--template-metadata` evidence サイドカー + `renkin template ids`（[#41](https://github.com/kent-tokyo/renkin/issues/41) phase 1）
 - [x] 基質固有の `examples`（`schema_version: 2`）— ステップごとに「exact substrate match」か「同一テンプレート・別基質」かを解決し、`--format explain` に表示、JSONでは `match_kind` フィールドとして提供（[#41](https://github.com/kent-tokyo/renkin/issues/41) phase 2）
+- [x] 決定的なORD（Open Reaction Database）evidenceインポート — オフラインの `renkin evidence match`（exact-setバッチtemplate matcher）+ `scripts/ord_evidence_audit.py`（audit/converter）により `schema_version: 2` サイドカーへ変換。ネットワークアクセスなし、fuzzy matchingなし、ambiguous/provenance不明なrecordは推測せずaudit reportへ除外理由付きで記録（[#41](https://github.com/kent-tokyo/renkin/issues/41) phase 3A）
 
 ---
 

@@ -337,7 +337,7 @@ for full matching/validation semantics.
 | **Atom balance check** | `renkin-bench` flags steps where `target_MW > Σ precursor_MW` (CompleteRXN reference) |
 | **Stock CSV management** | `renkin stock stats\|validate\|coverage` — inspect and validate stock CSV files with SMILES, name, vendor, price, hazard fields |
 | **Template quality tools** | `renkin template stats\|validate\|dedup\|explain\|coverage\|ids` — inspect SMIRKS template sets: frequency distribution, validity, duplicates, per-template lookup, coverage rate, stable template IDs |
-| **MCP server** | `renkin-mcp` exposes 6 tools: `find_routes`, `validate_route`, `explain_route`, `find_pareto_routes`, `plan_with_constraints`, `estimate_diversity` |
+| **MCP server** | `renkin-mcp` exposes 7 tools (`find_routes`, `validate_route`, `explain_route`, `find_pareto_routes`, `plan_with_constraints`, `estimate_diversity`, `diagnose_failure`) over stdio; supports both the legacy `2024-11-05` and modern `2026-07-28` protocol revisions |
 | **`renkin-doctor`** | Environment diagnostic binary — checks templates, building blocks, Python import, tool versions, and data integrity |
 | **`renkin-kg`** | Reaction knowledge graph builder — constructs bipartite mol↔reaction graphs from routes; exports to GraphML or Cypher |
 | **Beam search** | `--beam-width N` for memory-bounded exploration; `SmallVec<[FEntry; 6]>` stack-allocated frontier |
@@ -454,9 +454,9 @@ The JSON output includes `avg_nodes_expanded`, `avg_confidence`, `avg_convergenc
 
 ## MCP Server
 
-`renkin-mcp` exposes retrosynthesis as an MCP tool so AI agents (Claude, etc.) can call it directly.
+`renkin-mcp` exposes retrosynthesis as an MCP tool so AI agents (Claude, etc.) can call it directly. Transport is stdio only. Both the legacy `2024-11-05` handshake and the modern `2026-07-28` `server/discover` / per-request `_meta` negotiation are supported on the same binary — see [`docs/guides/mcp.md`](docs/guides/mcp.md) for the full protocol support matrix, error taxonomy, and troubleshooting.
 
-**Setup** — add to `claude_desktop_config.json`:
+**Setup** — add to `claude_desktop_config.json` (works for both protocol eras; the client's own request shape decides which one the connection uses):
 
 ```json
 {
@@ -466,7 +466,7 @@ The JSON output includes `avg_nodes_expanded`, `avg_confidence`, `avg_convergenc
 }
 ```
 
-**Tools** (6):
+**Tools** (7):
 
 | Tool | Description |
 |---|---|
@@ -476,6 +476,7 @@ The JSON output includes `avg_nodes_expanded`, `avg_confidence`, `avg_convergenc
 | `find_pareto_routes` | Pareto-front multi-objective route search |
 | `plan_with_constraints` | Constraint-DSL planning (element filters, step limits, confidence thresholds) |
 | `estimate_diversity` | Route diversity and coverage metrics |
+| `diagnose_failure` | Explain why no route was found and suggest search-parameter adjustments |
 
 The server auto-detects `data/building_blocks.smi` and `data/templates_extracted_5000.smi` in the working directory. Falls back to the embedded `DEFAULT_BUILDING_BLOCKS` / `default_rules()` defaults if not found (152 unique building blocks per `ChemEnv::bb_count()`, 28 handcrafted rules — verified 2026-07-22; a "509-BB / 20-rule" figure was previously documented here without verification).
 
@@ -559,7 +560,8 @@ renkin/                          ← Cargo workspace root
 │   ├── bin/benchmark.rs         # renkin-bench binary (--plausibility flag)
 │   ├── bin/doctor.rs            # renkin-doctor diagnostic binary
 │   ├── bin/fp.rs                # renkin-fp ECFP4 fingerprint (nn-scoring feature)
-│   ├── bin/mcp.rs               # renkin-mcp MCP server (6 tools)
+│   ├── bin/mcp.rs               # renkin-mcp launcher (2024-11-05 + 2026-07-28 dual-era)
+│   ├── mcp/                     # MCP protocol (jsonrpc/protocol/stdio) + 7 tool handlers
 │   ├── chem_env.rs              # retro rules + BB lookup + template loader
 │   ├── score.rs                 # SA Score heuristic + step cost
 │   ├── search.rs                # A* / AND-OR tree engine + beam pruning

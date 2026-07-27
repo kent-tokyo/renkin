@@ -8,6 +8,14 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **`renkin-mcp`** — dual-era MCP protocol support: the legacy `2024-11-05` `initialize` handshake and the modern `2026-07-28` `server/discover` / per-request `_meta` negotiation are now both served by the same stdio binary, auto-detected from the connection's opening request. Modern clients get `resultType`/`_meta.serverInfo` response envelopes, `tools/list` caching hints (`ttlMs`/`cacheScope`), JSON Schema 2020-12 tool schemas with enforced bounds, and `structuredContent` on `validate_route`/`estimate_diversity`/`diagnose_failure`. See [`docs/guides/mcp.md`](docs/guides/mcp.md) for the full protocol support matrix, error taxonomy, and non-goals (Streamable HTTP, OAuth, MCP Apps, and the Tasks extension are explicitly out of scope for this release). Legacy `2024-11-05` clients are unaffected — verified against a transcript captured from the pre-change binary.
+
+### Changed
+- **`renkin-mcp`** — `src/bin/mcp.rs` is now a two-line launcher; protocol parsing and RENKIN tool business logic live in the new `src/mcp/` module (`jsonrpc.rs`, `protocol.rs`, `tools.rs`, `stdio.rs`)
+- **`renkin-mcp`** — malformed JSON on stdin now gets a proper JSON-RPC `-32700 Parse error` response instead of being silently dropped; response write/flush failures are no longer silently ignored
+- **`renkin-mcp`** — `find_routes`' tool description no longer claims a stale "509 curated building blocks" figure
+
 ## [0.18.0] — 2026-07-26
 
 ### Added

@@ -312,7 +312,7 @@ prediction」と明記されます。`conditions`／`reported_yield`／`warnings
 | **原子収支チェック** | `renkin-bench` で `target_MW > Σ precursor_MW` のステップを検出（CompleteRXN参照） |
 | **stock CSV 管理** | `renkin stock stats\|validate\|coverage` — SMILES・名称・ベンダー・価格・ハザード情報を持つ stock CSV を検査 |
 | **テンプレート品質ツール** | `renkin template stats\|validate\|dedup\|explain\|coverage\|ids` — テンプレートセットの頻度分布・有効性・重複・検索・カバレッジ・安定IDを検査 |
-| **MCPサーバー** | `renkin-mcp` が 6 ツールを提供：`find_routes`, `validate_route`, `explain_route`, `find_pareto_routes`, `plan_with_constraints`, `estimate_diversity` |
+| **MCPサーバー** | `renkin-mcp` が stdio 経由で 7 ツールを提供（`find_routes`, `validate_route`, `explain_route`, `find_pareto_routes`, `plan_with_constraints`, `estimate_diversity`, `diagnose_failure`）。レガシー `2024-11-05` とモダン `2026-07-28` の両プロトコル改訂に対応 |
 | **`renkin-doctor`** | 環境診断バイナリ — テンプレート・市販品データ・Python インポート・ツールバージョンを検査 |
 | **`renkin-kg`** | 反応知識グラフ構築ツール — ルートから分子↔反応の二部グラフを生成；GraphML / Cypher 形式でエクスポート |
 | **ビームサーチ** | `--beam-width N` でメモリ制約付き探索；`SmallVec<[FEntry; 6]>` スタック割り当て |
@@ -396,9 +396,9 @@ USPTO-50kテストセット（全4,907分子評価）:
 
 ## MCP サーバー
 
-`renkin-mcp` は逆合成を MCP ツールとして公開し、AI エージェント（Claude 等）から直接呼び出せます。
+`renkin-mcp` は逆合成を MCP ツールとして公開し、AI エージェント（Claude 等）から直接呼び出せます。トランスポートは stdio のみ。レガシー `2024-11-05` ハンドシェイクとモダン `2026-07-28` の `server/discover`／リクエスト単位 `_meta` の両方に、同一バイナリで対応しています。プロトコル対応表・エラー分類・トラブルシューティングの詳細は [`docs/guides/mcp.md`](docs/guides/mcp.md)（英語）を参照してください。
 
-**設定** — `claude_desktop_config.json` に追加：
+**設定** — `claude_desktop_config.json` に追加（どちらのプロトコル世代でも動作し、クライアント側の最初のリクエスト形状で自動判定されます）：
 
 ```json
 {
@@ -408,7 +408,7 @@ USPTO-50kテストセット（全4,907分子評価）:
 }
 ```
 
-**ツール一覧** (6):
+**ツール一覧** (7):
 
 | ツール | 説明 |
 |---|---|
@@ -418,6 +418,7 @@ USPTO-50kテストセット（全4,907分子評価）:
 | `find_pareto_routes` | 多目的パレートフロント探索 |
 | `plan_with_constraints` | 制約 DSL による合成計画（元素フィルタ・ステップ数・信頼度閾値） |
 | `estimate_diversity` | ルート多様性・カバレッジ指標 |
+| `diagnose_failure` | ルートが見つからない原因の分析と探索パラメータの提案 |
 
 ```bash
 cargo build --release
@@ -499,7 +500,8 @@ renkin/                          ← Cargo workspace ルート
 │   ├── bin/benchmark.rs         # renkin-bench バイナリ（--plausibility フラグ対応）
 │   ├── bin/doctor.rs            # renkin-doctor 環境診断バイナリ
 │   ├── bin/fp.rs                # renkin-fp ECFP4 フィンガープリント（nn-scoring フィーチャー）
-│   ├── bin/mcp.rs               # renkin-mcp MCP サーバー（6 ツール）
+│   ├── bin/mcp.rs               # renkin-mcp 起動処理（2024-11-05 + 2026-07-28 両対応）
+│   ├── mcp/                     # MCPプロトコル（jsonrpc/protocol/stdio）+ 7ツールハンドラ
 │   ├── chem_env.rs              # 逆合成ルール・市販品判定・テンプレートローダー
 │   ├── score.rs                 # SA Score ヒューリスティック
 │   ├── search.rs                # A* / AND-OR 木探索エンジン

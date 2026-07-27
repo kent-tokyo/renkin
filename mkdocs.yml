@@ -65,6 +65,7 @@ nav:
     - Python Retrosynthesis: guides/python-retrosynthesis.md
     - Rust Retrosynthesis: guides/rust-retrosynthesis.md
     - Reaction Evidence Metadata: guides/reaction-evidence.md
+    - MCP Server: guides/mcp.md
   - API Reference:
     - Rust API: api/rust.md
     - Python API: api/python.md

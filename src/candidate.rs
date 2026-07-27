@@ -829,6 +829,39 @@ mod tests {
         }
     }
 
+    #[test]
+    fn scorer_conditioned_with_no_scores_selects_only_handcrafted_no_frequency_substitution() {
+        // Simulates the caller receiving TemplateScoreOutput { scores: vec![],
+        // status: <failure> } from TemplateScorer::score_templates and
+        // passing that empty `scores` straight through -- ScorerConditioned
+        // must select exactly zero file templates in that case, never a
+        // frequency-ranked top-K (that would be a silent, undocumented
+        // fallback disguised as a successful narrowing), and never fall back
+        // to Exhaustive on its own initiative.
+        let mut rules = default_rules();
+        let n_handcrafted = rules.len();
+        rules.push(extracted_rule(0, "[C:1][C:2]>>[C:1].[C:2]", 3.0));
+        rules.push(extracted_rule(1, "[C:1][C:2]>>[C:1].[C:2]", 2.0));
+
+        let mode = ProposalMode::ScorerConditioned {
+            scores: Vec::new(),
+            top_k: 10,
+        };
+        let target_mol = mol_from_smiles("CCCC").unwrap();
+        let active = select_active_rules(&target_mol, &rules, &mode);
+
+        assert_eq!(
+            active.len(),
+            n_handcrafted,
+            "must select only hand-crafted rules, zero file templates"
+        );
+        assert!(active.iter().all(|r| !is_extracted_template(&r.rule.name)));
+        assert!(
+            active.iter().all(|r| r.upstream_score.is_none()),
+            "no frequency-derived value may appear in upstream_score when the scorer produced no scores"
+        );
+    }
+
     // ---- raw_propose / golden equivalence ----
 
     #[test]

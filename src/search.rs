@@ -386,7 +386,7 @@ fn reaction_family_for_rule(rule: &str) -> Option<&'static str> {
 /// extracted. (`RetroRule::template_id`'s `rule:`/`smirks-sha256:` prefix is
 /// also a reliable discriminator now, but this function's name-prefix check
 /// is kept as-is to avoid changing existing tagging behavior.)
-fn is_extracted_template(rule: &str) -> bool {
+pub(crate) fn is_extracted_template(rule: &str) -> bool {
     rule.starts_with("extracted_")
 }
 
@@ -846,8 +846,26 @@ pub fn find_routes(
             // (`crate::candidate::raw_propose`) so route search and offline
             // candidate generation apply the exact same rule-application
             // logic -- this must stay a call, not a re-inlined copy.
+            // find_routes' own active-rule selection (above) is *not* a
+            // ProposalMode -- it has its own bond_idx/nn_rank/ranked_rules
+            // fallback chain, including per-node NN re-ranking that
+            // ProposalMode::ScorerConditioned deliberately does not
+            // reproduce (see candidate module doc) -- so these scores are
+            // marked NotApplicable rather than reusing UpstreamScoreStatus's
+            // Available variant, which is reserved for candidate-pool
+            // generation going through an explicit ProposalMode.
+            let scored_active_rules: Vec<crate::candidate::ScoredRuleRef<'_>> = active_rules
+                .iter()
+                .enumerate()
+                .map(|(rank, &rule)| crate::candidate::ScoredRuleRef {
+                    rule,
+                    source_rank: rank,
+                    upstream_score: None,
+                    upstream_score_status: crate::candidate::UpstreamScoreStatus::NotApplicable,
+                })
+                .collect();
             let raw_proposals =
-                crate::candidate::raw_propose(&target_mol, &target_smi, active_rules);
+                crate::candidate::raw_propose(&target_mol, &target_smi, &scored_active_rules);
 
             let entries: Vec<RetroEntry> = raw_proposals
                 .into_iter()

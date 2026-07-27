@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+pub mod candidate;
 pub mod chem_env;
 pub mod display;
 pub mod evidence;

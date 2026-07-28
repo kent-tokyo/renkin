@@ -149,6 +149,86 @@ class OfflineGateTests(unittest.TestCase):
         self.assertEqual(result["thresholds"], tr.GATE_THRESHOLDS)
 
 
+def synthetic_bootstrap_result(top1_delta, top1_ci_low, mrr_delta, top10_delta):
+    """A hand-constructed bootstrap_result exercising exact GATE_THRESHOLDS
+    boundary values directly -- evaluate_offline_gate only ever reads
+    bootstrap_result["deltas"], so paired_bootstrap's own resampling
+    randomness is irrelevant to pinning down its >=/> operator semantics.
+    """
+    return {
+        "deltas": {
+            "top1_hit_rate": {"mean_delta": top1_delta, "ci_95": [top1_ci_low, top1_delta + 0.05]},
+            "mean_reciprocal_rank": {"mean_delta": mrr_delta, "ci_95": [mrr_delta - 0.01, mrr_delta + 0.01]},
+            "top10_hit_rate": {"mean_delta": top10_delta, "ci_95": [top10_delta - 0.01, top10_delta + 0.01]},
+        }
+    }
+
+
+class OfflineGateThresholdBoundaryTests(unittest.TestCase):
+    """Pins the exact >=/> operator semantics of each individual
+    evaluate_offline_gate check (GATE_THRESHOLDS) -- distinct from
+    OfflineGateTests above, which only exercises "clearly passes"/"clearly
+    fails" cases through real paired_bootstrap output.
+    """
+
+    def test_top1_delta_exactly_at_threshold_passes(self):
+        result = tr.evaluate_offline_gate(
+            synthetic_bootstrap_result(top1_delta=0.01, top1_ci_low=0.001, mrr_delta=0.02, top10_delta=0.0),
+            coverage_identical=True, baseline_arm="a", treatment_arm="b",
+        )
+        self.assertTrue(result["checks"]["top1_hit_rate_delta_meets_threshold"], "exactly +1.0pp must PASS (>=, not >)")
+
+    def test_top1_delta_just_below_threshold_fails(self):
+        result = tr.evaluate_offline_gate(
+            synthetic_bootstrap_result(top1_delta=0.009, top1_ci_low=0.001, mrr_delta=0.02, top10_delta=0.0),
+            coverage_identical=True, baseline_arm="a", treatment_arm="b",
+        )
+        self.assertFalse(result["checks"]["top1_hit_rate_delta_meets_threshold"])
+
+    def test_top10_regression_exactly_at_threshold_passes(self):
+        result = tr.evaluate_offline_gate(
+            synthetic_bootstrap_result(top1_delta=0.02, top1_ci_low=0.001, mrr_delta=0.02, top10_delta=-0.002),
+            coverage_identical=True, baseline_arm="a", treatment_arm="b",
+        )
+        self.assertTrue(
+            result["checks"]["top10_hit_rate_regression_within_threshold"], "exactly -0.2pp must PASS (>=, not >)"
+        )
+
+    def test_top10_regression_just_beyond_threshold_fails(self):
+        result = tr.evaluate_offline_gate(
+            synthetic_bootstrap_result(top1_delta=0.02, top1_ci_low=0.001, mrr_delta=0.02, top10_delta=-0.0021),
+            coverage_identical=True, baseline_arm="a", treatment_arm="b",
+        )
+        self.assertFalse(result["checks"]["top10_hit_rate_regression_within_threshold"])
+
+    def test_ci_lower_bound_exactly_zero_fails(self):
+        result = tr.evaluate_offline_gate(
+            synthetic_bootstrap_result(top1_delta=0.02, top1_ci_low=0.0, mrr_delta=0.02, top10_delta=0.0),
+            coverage_identical=True, baseline_arm="a", treatment_arm="b",
+        )
+        self.assertFalse(
+            result["checks"]["top1_hit_rate_ci_lower_bound_positive"], "CI lower bound of exactly 0 must FAIL (>, not >=)"
+        )
+
+    def test_ci_lower_bound_barely_positive_passes(self):
+        result = tr.evaluate_offline_gate(
+            synthetic_bootstrap_result(top1_delta=0.02, top1_ci_low=1e-9, mrr_delta=0.02, top10_delta=0.0),
+            coverage_identical=True, baseline_arm="a", treatment_arm="b",
+        )
+        self.assertTrue(result["checks"]["top1_hit_rate_ci_lower_bound_positive"])
+
+    def test_mrr_only_failure_is_isolated_from_other_checks(self):
+        result = tr.evaluate_offline_gate(
+            synthetic_bootstrap_result(top1_delta=0.02, top1_ci_low=0.001, mrr_delta=0.005, top10_delta=0.0),
+            coverage_identical=True, baseline_arm="a", treatment_arm="b",
+        )
+        self.assertEqual(result["result"], "FAIL")
+        self.assertFalse(result["checks"]["mean_reciprocal_rank_delta_meets_threshold"])
+        self.assertTrue(result["checks"]["top1_hit_rate_delta_meets_threshold"])
+        self.assertTrue(result["checks"]["top10_hit_rate_regression_within_threshold"])
+        self.assertTrue(result["checks"]["top1_hit_rate_ci_lower_bound_positive"])
+
+
 class RunOfflineGateIntegrationTests(unittest.TestCase):
     """run_offline_gate's own coverage-identical check: since both arms
     are always scored over the SAME rows/split, this is trivially satisfied

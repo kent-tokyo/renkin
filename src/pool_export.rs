@@ -1037,6 +1037,36 @@ mod tests {
     }
 
     #[test]
+    fn manifest_records_embedded_fallback_used_provenance() {
+        // PoolProvenance::default() (used by every other manifest test in
+        // this file) leaves embedded_fallback_used at its default (false),
+        // which alone can't distinguish "correctly recorded false" from
+        // "field never wired through at all". Set it true explicitly and
+        // confirm it survives build_manifest and JSON serialization.
+        let rules = default_rules();
+        let provenance = PoolProvenance {
+            embedded_fallback_used: true,
+            ..PoolProvenance::default()
+        };
+        let manifest = build_manifest(
+            &[],
+            "sha256:empty",
+            &[],
+            "sha256:empty",
+            &rules,
+            &ProposalMode::Exhaustive,
+            None,
+            provenance,
+        )
+        .unwrap();
+        assert!(manifest.provenance.embedded_fallback_used);
+
+        let json = serde_json::to_string(&manifest).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["provenance"]["embedded_fallback_used"], true);
+    }
+
+    #[test]
     fn build_manifest_rejects_group_id_missing_from_group_index() {
         let rules = default_rules();
         let target = "CC(=O)c1ccccc1";

@@ -1923,6 +1923,69 @@ mod tests {
     }
 
     #[test]
+    fn merge_into_candidates_output_is_independent_of_input_order() {
+        // candidate_id/grouping is keyed by canonical target + sorted
+        // precursors (order-independent by construction), and every
+        // aggregated field (best_upstream_score/rank, min_base_step_cost,
+        // frequencies, sources' own sort) is computed via commutative
+        // min/max/fold/sort -- never "whichever RawCandidate arrived
+        // first/last". The only order-DEPENDENT thing is the returned
+        // Vec's overall position (first-seen insertion order), which a
+        // caller must sort by candidate_id before comparing (exactly as
+        // `pool_export`'s exporter already does).
+        fn one(rule_name: &str, template_id: &str, rank: usize, precursor: &str) -> RawCandidate {
+            RawCandidate {
+                rule_name: rule_name.to_string(),
+                template_id: template_id.to_string(),
+                rule_weight: 1.0,
+                original_rank: rank,
+                upstream_score: None,
+                upstream_score_status: UpstreamScoreStatus::NotApplicable,
+                precursors: vec![precs(precursor)],
+            }
+        }
+        fn summarize(candidates: Vec<ReactionCandidate>) -> Vec<(String, Vec<String>)> {
+            let mut summary: Vec<(String, Vec<String>)> = candidates
+                .into_iter()
+                .map(|c| {
+                    let mut rule_names: Vec<String> =
+                        c.sources.iter().map(|s| s.rule_name.clone()).collect();
+                    rule_names.sort();
+                    (c.candidate_id, rule_names)
+                })
+                .collect();
+            summary.sort_by(|a, b| a.0.cmp(&b.0));
+            summary
+        }
+
+        // rule_a and rule_c both propose the same precursor ("CC") -> merge
+        // into one candidate with two sources; rule_b proposes a distinct
+        // precursor ("CCO") -> its own separate candidate.
+        let forward = vec![
+            one("rule_a", "rule:a", 0, "CC"),
+            one("rule_b", "rule:b", 1, "CCO"),
+            one("rule_c", "rule:c", 2, "CC"),
+        ];
+        let reversed = vec![
+            one("rule_c", "rule:c", 2, "CC"),
+            one("rule_b", "rule:b", 1, "CCO"),
+            one("rule_a", "rule:a", 0, "CC"),
+        ];
+
+        let forward_summary = summarize(merge_into_candidates("target", forward).unwrap());
+        let reversed_summary = summarize(merge_into_candidates("target", reversed).unwrap());
+        assert_eq!(
+            forward_summary, reversed_summary,
+            "merged candidate set/content must not depend on RawCandidate input order"
+        );
+        assert_eq!(
+            forward_summary.len(),
+            2,
+            "CC merges rule_a+rule_c; CCO stays separate"
+        );
+    }
+
+    #[test]
     fn no_precursors_produces_no_self_loop_candidate() {
         let target = "CCO";
         let rules = vec![rule("noop", "[C:1]>>[C:1]")];
@@ -1992,6 +2055,48 @@ mod tests {
         let unmapped_rule = rule("fake_unmapped", "CC>>C.C");
         let f = template_transformation_features(&unmapped_rule);
         assert!(!f.extractable);
+    }
+
+    #[test]
+    fn partially_mapped_smirks_is_extractable_over_the_mapped_atoms_only() {
+        // Only atom map 1 is annotated; the rest of both sides are
+        // unmapped. This is NOT the same code path as fully-unmapped
+        // (`by_map.is_empty()`): `by_map` is non-empty and has no
+        // duplicates, so this must be `extractable: true`, with the
+        // reaction-center diff computed only over the mapped
+        // intersection -- never guessed for the unmapped atoms, and never
+        // downgraded to "missing" just because most atoms lack a map.
+        let partial_rule = rule("partial_map", "[C:1]CC>>[C:1]C.C");
+        let f = template_transformation_features(&partial_rule);
+        assert!(
+            f.extractable,
+            "a partially-mapped SMIRKS (>=1 mapped atom, no duplicates) must still be extractable"
+        );
+        assert_eq!(
+            f.mapped_atom_count, 1,
+            "only atom map 1 is annotated on either side"
+        );
+    }
+
+    #[test]
+    fn changed_bond_order_is_detected_without_adding_or_deleting_a_bond() {
+        // The C:1-O:2 bond survives (same two mapped atoms bonded on both
+        // sides) but its order changes (double -> single) -- this must hit
+        // the `changed_bond_order_count` branch specifically, not be
+        // miscounted as a deleted+added bond pair.
+        let bond_order_change_rule = rule("retro_reduction", "[C:1]=[O:2]>>[C:1][O:2]");
+        let f = template_transformation_features(&bond_order_change_rule);
+        assert!(f.extractable);
+        assert_eq!(f.deleted_bond_count, 0, "the C:1-O:2 bond is never deleted");
+        assert_eq!(
+            f.added_bond_count, 0,
+            "the C:1-O:2 bond is never newly formed"
+        );
+        assert_eq!(
+            f.changed_bond_order_count, 1,
+            "the C:1-O:2 bond order changes from double to single"
+        );
+        assert!(f.reaction_center_atom_count > 0);
     }
 
     #[test]

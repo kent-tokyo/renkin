@@ -356,6 +356,7 @@ fn validate_rows_consistent_with_group_index(
         .iter()
         .map(|r| (r.group_id.as_str(), r))
         .collect();
+    let mut row_count_by_group: HashMap<&str, usize> = HashMap::new();
     for row in rows {
         match index.get(row.group_id.as_str()) {
             None => anyhow::bail!(
@@ -382,6 +383,27 @@ fn validate_rows_consistent_with_group_index(
                     );
                 }
             }
+        }
+        *row_count_by_group.entry(row.group_id.as_str()).or_insert(0) += 1;
+    }
+    // Every group's `candidate_count` is a claim about how many candidate
+    // rows exist for it -- checked against the rows actually present, not
+    // just recorded and trusted. A record claiming a nonzero count with no
+    // matching rows (or vice versa) is caught here too, since a missing
+    // group_id contributes 0 to `row_count_by_group`.
+    for record in target_pool_records {
+        let actual = row_count_by_group
+            .get(record.group_id.as_str())
+            .copied()
+            .unwrap_or(0);
+        if actual != record.candidate_count {
+            anyhow::bail!(
+                "group_id {:?}: group index claims candidate_count={}, but {} candidate \
+                 row(s) were actually found",
+                record.group_id,
+                record.candidate_count,
+                actual
+            );
         }
     }
     Ok(())
@@ -553,7 +575,10 @@ pub struct PoolManifest {
     pub provenance: PoolProvenance,
 }
 
-pub const MANIFEST_SCHEMA_VERSION: u32 = 1;
+/// Bumped to 2 for the Commit-4 manifest shape change (five new required
+/// fields, plus `rules_content_hash`'s algorithm change) -- a v1 and a v2
+/// manifest must never be silently treated as the same shape by a consumer.
+pub const MANIFEST_SCHEMA_VERSION: u32 = 2;
 
 /// Build the manifest for an export spanning `rows`, cross-validated
 /// against `target_pool_records` (the same group/target index written by
@@ -1070,6 +1095,37 @@ mod tests {
         assert!(
             result.is_err(),
             "a duplicate group_id in the group index must be a hard error"
+        );
+    }
+
+    #[test]
+    fn build_manifest_rejects_candidate_count_mismatch() {
+        let rules = default_rules();
+        let target = "CC(=O)c1ccccc1";
+        let target_mol = mol_from_smiles(target).unwrap();
+        let pool = propose_one_step("group:1", target, &rules, &ProposalConfig::default()).unwrap();
+        let templates_by_id = index_rules_by_template_id(&rules).unwrap();
+        let rows = candidate_rows_for_pool(&pool, &target_mol, &templates_by_id, None);
+        assert!(
+            rows.len() > 1,
+            "fixture must have more than one candidate for this check to bite"
+        );
+
+        let mut record = target_pool_record_for_pool(&pool);
+        record.candidate_count += 1; // claims one more row than actually exists
+        let result = build_manifest(
+            &rows,
+            "sha256:whatever",
+            &[record],
+            "sha256:whatever",
+            &rules,
+            &ProposalMode::Exhaustive,
+            None,
+            PoolProvenance::default(),
+        );
+        assert!(
+            result.is_err(),
+            "a group index candidate_count that disagrees with the actual row count must be rejected"
         );
     }
 

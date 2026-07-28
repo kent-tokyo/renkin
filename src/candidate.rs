@@ -2128,8 +2128,9 @@ mod tests {
         // current FEATURE_NAMES_V1/FEATURE_SCHEMA_VERSION and cross-checked
         // against the Python mirror at commit time -- if this assertion
         // ever fails after an intentional feature-schema change, the
-        // Python-side literal in train_reranker.py's self-test must be
-        // updated to match, not just this one.
+        // pinned literal in scripts/tests/test_reranker_schema.py's
+        // FeatureSchemaHashPinTests must be updated to match, not just
+        // this one.
         assert_eq!(
             a,
             "sha256:756404c59bbee9a65e194f92df3530e1b801028f333e01c67214917977061df1"

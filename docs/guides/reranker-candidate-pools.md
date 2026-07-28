@@ -181,7 +181,7 @@ can be built from it plus labels, never by counting which `group_id`s happen
 to appear in the candidate rows (a zero-candidate group would otherwise
 silently vanish).
 
-The manifest (`PoolManifest`, `MANIFEST_SCHEMA_VERSION = 1`) records
+The manifest (`PoolManifest`, `MANIFEST_SCHEMA_VERSION = 2`) records
 `feature_schema_version`, `feature_names`, `feature_schema_hash` (SHA-256
 over the version + names, so a same-length rename/reorder is still
 detectable), `proposal_mode` (mode + `top_k`, plus -- for
@@ -207,7 +207,12 @@ could pass for real provenance). `build_manifest` itself now returns
 `anyhow::Result<PoolManifest>`: it hard-validates that every `group_id` in
 `rows` has a consistent entry in the target/group index before building
 anything, so a mismatch between the two files is caught at manifest-build
-time, not discovered by a downstream loader.
+time, not discovered by a downstream loader -- including that each group
+index record's `candidate_count` matches the number of candidate rows
+actually observed for that `group_id`, not just that the `group_id` exists.
+(`MANIFEST_SCHEMA_VERSION` moved 1 -> 2 for the 5 new required fields above
+plus the `rules_content_hash` algorithm change; both `pool_export.rs` and
+`train_reranker.py` reject a manifest declaring the old version.)
 
 ## Training and evaluating a reranker
 
@@ -220,11 +225,15 @@ time, not discovered by a downstream loader.
 python3 scripts/train_reranker.py --self-test
 ```
 
-runs the deterministic split/label/group/tie-break logic against an
-embedded synthetic fixture, with no real data or `lightgbm` required; if
-`lightgbm` is importable it also runs a tiny end-to-end smoke pass. This is
-a code-path check, not a model-quality check — the synthetic fixture is far
-too small to mean anything about ranking quality.
+is a fast (~1-2s), dependency-minimal smoke test — split determinism,
+minimal manifest/row schema round-trip, labeling and missing-to-NaN,
+`evaluate()`'s tie-break, and a tiny paired-bootstrap + gate PASS smoke, all
+against an embedded synthetic fixture with no real data required; if
+`lightgbm` is importable it also runs a minimal end-to-end train+evaluate
+smoke. This is a code-path check, not a model-quality check — the synthetic
+fixture is far too small to mean anything about ranking quality. It
+deliberately does **not** carry detailed regression coverage; that lives in
+`scripts/tests/` (below).
 
 ```bash
 python3 scripts/train_reranker.py \
@@ -271,20 +280,101 @@ python3 scripts/train_reranker.py \
   (e.g. two literature reactions producing the same product) always land in
   the same split. LightGBM's ranking "group" is `group_id`, so those two
   groups still form separate ranking groups.
-- The evaluation report separates **coverage** (`groups_with_zero_positive_in_pool`
-  — a group with no positive candidate in its own pool, including one with
-  zero candidates at all, which no reranker can fix) from **ranking
-  quality** (`top1_hit_rate`, `mean_reciprocal_rank`, computed only over
-  groups that do have a positive candidate). Coverage counts (`target_count`,
-  `group_count`) are built from `--groups` + `--labels`, not inferred from
-  `--pool`.
+- Every group's metrics are reported two ways: **conditional** (denominator
+  is only groups with a positive candidate in their own pool — "given the
+  answer is somewhere in the pool, did the ranker surface it") and
+  **end-to-end** (denominator is every labeled group for the split; a
+  coverage-miss group contributes 0 to every metric instead of being
+  excluded, so a reranker cannot look better by ignoring groups it can't
+  win). Both report `top1_hit_rate`, `top10_hit_rate`, `mean_reciprocal_rank`,
+  `mean_ndcg10`, and `mean_best_positive_rank`. Coverage counts
+  (`target_count`, `group_count`) are built from `--groups` + `--labels`,
+  not inferred from `--pool`.
 - If `manifest.proposal_mode.mode` isn't `"exhaustive"`, the script warns
   on stderr: training on a narrowed pool means the reranker never sees
   candidates outside that narrowing.
 
+### `score_fn`: one scoring interface for the trained model and every baseline
+
+Every arm — the trained LightGBM ranker and every deterministic baseline —
+is scored through the same `score_fn(rows: list[LabeledRow]) -> list[float]`
+interface and the same `evaluate()`/metrics code, so no arm can get a
+different tie-break rule or a different metric definition than any other.
+`evaluate()` hard-rejects a `score_fn` returning the wrong length or a
+non-finite value; ties break deterministically on `(-score, candidate_id)`.
+
+A row missing an arm's relevant feature scores `_MISSING_SENTINEL`
+(a large-but-finite negative value), so it always ranks last rather than
+producing NaN/Inf — `not_computable` status is reported separately, per
+arm, when the relevant feature is absent for every row in a group.
+
+Seven deterministic baseline arms (A–G) are always computable without
+`lightgbm`: `original_rank` (upstream proposal order), `upstream_score`,
+`template_frequency`, `upstream_plus_frequency` (rank fusion via
+Borda-style summed rank, not raw score averaging — the two scales aren't
+commensurable), `structural`, `reaction_center`, and `availability`. The
+trained LightGBM ranker is arm H (`full_configured_model`), scored through
+`lightgbm_score_fn()`.
+
+`template_frequency` (and arm H's frequency features) come from
+`fit_template_frequency()`, fit on **train-split rows only**: it counts how
+often each `source_template_ids` entry is *proposed* across train rows,
+regardless of that row's own label — this is deliberately "how often is
+this template proposed", not "how often is it correct" (the latter would
+leak label information into a supposedly-unsupervised feature).
+`impute_frequency_features()` is a local, training-script-only step: it
+returns new `LabeledRow` copies and never mutates the frozen exported
+feature schema (features 16/17 stay `missing` in every exported row; see
+`FEATURE_NAMES_V1`'s own doc).
+
+LightGBM hyperparameters (`LIGHTGBM_HYPERPARAMETERS`, `lambdarank`
+objective, fixed seed/threads/`deterministic=True`) and
+`EARLY_STOPPING_ROUNDS` are pinned constants, not left at library defaults,
+so a training run is reproducible run-to-run.
+
+### Offline gate: paired bootstrap + PASS/FAIL
+
+`--gate-baseline-arm`/`--gate-treatment-arm` (arm names from the list
+above) run a paired bootstrap (`paired_bootstrap`, `--bootstrap-resamples`,
+default 1000, `--bootstrap-seed`, default 1234) comparing two arms on
+`--gate-split` (default `test`), writing the result to `--gate-out`.
+Resampling is clustered at `target_id`, **never** at `group_id` alone: two
+groups sharing a `target_id` always move together in a resample, matching
+the same leakage-safe grouping the train/val/test split itself uses.
+
+`run_offline_gate` judges **PASS** only when *all* of the following hold:
+identical group coverage between the two arms (a structural assertion, not
+a metric comparison — if this fails, the two arms weren't compared on the
+same problem), top-1 hit-rate delta ≥ +1.0pp, MRR delta ≥ +0.01, top-10
+regression capped at 0.2pp, and the top-1 delta's 95% CI lower bound > 0
+(guards against an improvement that's just resampling noise). Any failing
+check is named individually in the result, not just a bare FAIL.
+
+### Test suite
+
+`scripts/tests/` is a `unittest`-based suite (`__init__.py` +
+`test_reranker_schema.py`, `test_reranker_labels.py`,
+`test_reranker_metrics.py`, `test_reranker_baselines.py`,
+`test_reranker_bootstrap.py`, `test_reranker_training.py`) that carries all
+the detailed regression coverage `--self-test` intentionally does not (see
+`--self-test`'s own doc below). LightGBM-dependent tests are isolated into
+their own `@unittest.skipUnless(LIGHTGBM_AVAILABLE, ...)`-gated classes so
+the rest of each file runs with no dependency and asserts training
+code-path/artifact-field correctness only, never a model-quality claim (a
+handful of synthetic groups mean nothing about ranking quality). Run with:
+
+```bash
+python3 -m unittest discover -s scripts/tests -p "test_*.py"
+```
+
+Wired into CI as the `reranker-tests` job in `.github/workflows/ci.yml`
+alongside `--self-test`.
+
 ## Status
 
 Implemented and unit/integration-tested: feature schema v1, JSONL
-export + manifest, and this training/evaluation script. Not yet done:
-real-scale pool generation, an actual training run, an offline-gate
-decision, and runtime integration — see [What this is not (yet)](#what-this-is-not-yet).
+export + manifest, the training/evaluation script (conditional/end-to-end
+metrics, baseline arms A–H, paired bootstrap, offline gate), and the
+`scripts/tests/` suite. Not yet done: real-scale pool generation, an actual
+training run, a real offline-gate decision, and runtime integration — see
+[What this is not (yet)](#what-this-is-not-yet).

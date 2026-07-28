@@ -33,22 +33,43 @@ Pipeline:
   3. Split by target_id (SHA-256(target_id) mod 100 -> bucket), NEVER by
      candidate and NEVER by group_id -- every candidate for one target lands
      in exactly one of train/val/test, even across different group_ids.
-  4. Train a LightGBM LGBMRanker (objective="lambdarank") on the train
-     split, with one "group" per group_id (not per target_id).
-  5. Evaluate on val/test: top-1 hit rate (does the highest-scored candidate
-     in a ranking group carry the positive label) and mean reciprocal rank,
-     plus a separate "zero-positive-in-pool" count -- a group with no
-     positive candidate at all (including one with zero candidates) is a
-     *candidate-generation* coverage gap, not something any reranker could
-     fix, and conflating the two would make ranking quality and pool
-     coverage indistinguishable.
+  4. Fit train-frozen template frequency (fit_template_frequency, train
+     rows only) and train a LightGBM LGBMRanker (objective="lambdarank",
+     LIGHTGBM_HYPERPARAMETERS, early stopping on val) on the train split,
+     with one "group" per group_id (not per target_id).
+  5. Evaluate every arm -- the trained model (arm H) and seven deterministic
+     baseline arms (A-G: original_rank, upstream_score, template_frequency,
+     upstream_plus_frequency, structural, reaction_center, availability) --
+     through the SAME score_fn/evaluate() path, reporting both conditional
+     (denominator = groups with a positive candidate in-pool) and
+     end-to-end (denominator = every labeled group; a coverage miss scores
+     0, never excluded) top-1/top-10/MRR/NDCG@10/mean-best-positive-rank.
+     A "zero-positive-in-pool" group is a *candidate-generation* coverage
+     gap, not something any reranker could fix, and end-to-end metrics
+     keep that gap visible rather than excluding it.
+  6. Optionally (--gate-baseline-arm/--gate-treatment-arm) run a paired
+     bootstrap (clustered at target_id, never group_id alone) between two
+     arms and judge PASS/FAIL against a fixed set of thresholds
+     (GATE_THRESHOLDS) -- coverage must be identical between the two arms,
+     and the top-1 delta's 95% CI lower bound must be positive, not just
+     its mean.
 
 Requires (not declared in pyproject.toml -- this is a standalone dev
 script, like the other scripts/*.py in this repo, e.g.
 train_template_scorer.py's torch/datasets/rdchiral): `pip install lightgbm`.
-Missing lightgbm is a hard error for --train/--evaluate; `--self-test`
-still exercises everything that doesn't need it and reports what it
-skipped.
+Missing lightgbm is a hard error for --train/--evaluate (and for baseline
+arm H / the lightgbm-gated smoke in --self-test); every deterministic
+baseline arm (A-G) and the bootstrap/gate machinery need no lightgbm at
+all.
+
+`--self-test` is a fast (~1-2s), dependency-minimal smoke test of the
+deterministic core (split determinism, minimal manifest/row schema
+round-trip, labeling/missing-to-NaN, evaluate()'s tie-break, a tiny
+paired-bootstrap + gate PASS smoke, plus a minimal lightgbm end-to-end
+smoke if lightgbm is importable) -- it is NOT where detailed regression
+coverage lives. That lives in `scripts/tests/` (six files, run with
+`python3 -m unittest discover -s scripts/tests -p "test_*.py"`, wired into
+CI as the `reranker-tests` job).
 
 Usage:
     python3 scripts/train_reranker.py \
@@ -64,15 +85,20 @@ import argparse
 import hashlib
 import json
 import math
+import random
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 TRAIN_MAX_BUCKET = 70  # buckets [0, 70) -> train
 VAL_MAX_BUCKET = 85  # buckets [70, 85) -> val, [85, 100) -> test
 
 LABELS_SCHEMA_VERSION = 1
-MANIFEST_SCHEMA_VERSION = 1
+# Bumped to 2 alongside src/pool_export.rs::MANIFEST_SCHEMA_VERSION -- the
+# manifest shape changed (five new required fields, plus a
+# rules_content_hash algorithm change), so a v1 and a v2 manifest must never
+# be silently treated as the same shape.
+MANIFEST_SCHEMA_VERSION = 2
 FEATURE_SCHEMA_VERSION = 1
 
 # Mirrors `renkin::candidate::FEATURE_NAMES_V1` (src/candidate.rs) exactly --
@@ -269,6 +295,24 @@ def validate_pool_rows(pool_rows: list, group_records: list) -> None:
             raise ValueError(f"duplicate candidate_id {candidate_id!r} within group_id {group_id!r}")
         seen.add(candidate_id)
 
+    # Every group_index record's `candidate_count` is a claim about how many
+    # rows exist for it -- checked against the rows actually present, not
+    # just trusted. A group with rows but no index entry was already
+    # rejected above; a group with an index entry but zero matching rows
+    # falls out here as `actual == 0`.
+    row_count_by_group: dict = {}
+    for group_id in seen_within_group:
+        row_count_by_group[group_id] = len(seen_within_group[group_id])
+    for record in group_records:
+        group_id = record["group_id"]
+        actual = row_count_by_group.get(group_id, 0)
+        expected = record["candidate_count"]
+        if actual != expected:
+            raise ValueError(
+                f"group_id {group_id!r}: group index claims candidate_count={expected}, "
+                f"but {actual} candidate row(s) were actually found in --pool"
+            )
+
 
 def target_split_bucket(target_id: str) -> int:
     """Deterministic bucket in [0, 100) for a target_id, via SHA-256 -- not
@@ -379,6 +423,14 @@ class LabeledRow:
     features: list  # float, NaN where feature_missing[i] is True
     label: int
     split: str
+    # Carried through for the deterministic baseline arms (see BASELINE_ARMS)
+    # that don't use the feature vector at all: `best_upstream_rank` backs
+    # the "original rank" arm, `source_template_ids` backs the train-frozen
+    # frequency arm. Defaulted (not required) so every pre-existing
+    # `LabeledRow(...)` fixture in this file's own tests keeps working
+    # unchanged.
+    best_upstream_rank: int = 0
+    source_template_ids: tuple = ()
 
 
 def label_and_split_rows(
@@ -445,6 +497,7 @@ def label_and_split_rows(
                 "would silently truncate to the shorter one"
             )
         features = [float("nan") if m else v for v, m in zip(values, missing)]
+        source_template_ids = tuple(sorted({s["template_id"] for s in row.get("sources", [])}))
         out.append(
             LabeledRow(
                 group_id=group_id,
@@ -453,6 +506,8 @@ def label_and_split_rows(
                 features=features,
                 label=label,
                 split=split_for_target(row["target_id"]),
+                best_upstream_rank=row.get("best_upstream_rank", 0),
+                source_template_ids=source_template_ids,
             )
         )
     return out, len(unlabeled_set)
@@ -525,18 +580,65 @@ def group_sizes(rows: list) -> list:
     return sizes
 
 
-def train_ranker(train_rows: list):
-    """Fit an LGBMRanker (lambdarank objective = LambdaMART). Requires
-    lightgbm; raises ImportError with an actionable message if missing.
+# Fixed, explicit hyperparameters -- never left at library defaults, so a
+# training run is reproducible and its exact configuration is recorded in
+# the eval artifact (see `main`/`run_offline_evaluation`), rather than
+# silently depending on whatever lightgbm's own defaults happen to be on
+# whatever version is installed. Chosen as reasonable, conservative values
+# for a small-to-medium tabular ranking problem -- NOT tuned against any
+# real corpus (none has been run yet; see this script's module doc).
+LIGHTGBM_HYPERPARAMETERS = {
+    "objective": "lambdarank",
+    "metric": "ndcg",
+    "eval_at": [1, 10],
+    "boosting_type": "gbdt",
+    "n_estimators": 200,
+    "learning_rate": 0.05,
+    "num_leaves": 31,
+    "max_depth": -1,
+    "min_child_weight": 1e-3,
+    "min_child_samples": 5,
+    "subsample": 0.8,
+    "subsample_freq": 1,
+    "colsample_bytree": 0.8,
+    "reg_alpha": 0.0,
+    "reg_lambda": 0.1,
+    "random_state": 42,
+    "deterministic": True,
+    "num_threads": 1,
+    "verbosity": -1,
+}
+
+EARLY_STOPPING_ROUNDS = 20
+
+
+def train_ranker(train_rows: list, val_rows: list = None) -> dict:
+    """Fit an LGBMRanker (lambdarank objective = LambdaMART) with fixed,
+    explicit hyperparameters (`LIGHTGBM_HYPERPARAMETERS`) -- deterministic
+    given the same input (fixed `random_state`, `deterministic=True`,
+    single-threaded). Requires lightgbm; raises ImportError with an
+    actionable message if missing.
+
+    If `val_rows` is given, training early-stops on it
+    (`EARLY_STOPPING_ROUNDS`, `metric`/`eval_at` from
+    `LIGHTGBM_HYPERPARAMETERS`) -- `val_rows` must be a genuinely different
+    split from `train_rows` (leakage-safe by the caller's own
+    train/val/test split, not re-checked here).
+
+    Returns `{"ranker", "best_iteration", "hyperparameters",
+    "package_versions"}` -- everything an eval artifact needs to record
+    and audit this exact training run.
     """
     try:
         import lightgbm as lgb
+        import numpy as np
     except ImportError as e:
         raise ImportError(
             "lightgbm is required for --train/--evaluate. Install it with "
             "`pip install lightgbm` (not a pyproject.toml dependency -- "
             "this script is a standalone dev tool, like the other "
-            "scripts/*.py training scripts in this repo)."
+            "scripts/*.py training scripts in this repo). numpy comes in "
+            "as lightgbm's own dependency."
         ) from e
 
     # Sort by (group_id, candidate_id): group_sizes() only needs group_id
@@ -544,180 +646,718 @@ def train_ranker(train_rows: list):
     # order -- and therefore training input -- independent of whatever
     # order the JSONL happened to list candidates in.
     rows = sorted(train_rows, key=lambda r: (r.group_id, r.candidate_id))
-    X = [r.features for r in rows]
-    y = [r.label for r in rows]
+    X = np.asarray([r.features for r in rows], dtype=np.float64)
+    y = np.asarray([r.label for r in rows], dtype=np.float64)
     groups = group_sizes(rows)
 
-    ranker = lgb.LGBMRanker(objective="lambdarank", verbosity=-1)
-    ranker.fit(X, y, group=groups)
-    return ranker
+    ranker = lgb.LGBMRanker(**LIGHTGBM_HYPERPARAMETERS)
+    fit_kwargs = {}
+    if val_rows:
+        # lightgbm 4.7's eval_set validation rejects a plain list-of-lists
+        # ("Data list can only be of ndarray or Sequence") even though the
+        # primary X/y accept one fine -- explicit ndarrays sidestep that
+        # version-specific quirk.
+        val_sorted = sorted(val_rows, key=lambda r: (r.group_id, r.candidate_id))
+        X_val = np.asarray([r.features for r in val_sorted], dtype=np.float64)
+        y_val = np.asarray([r.label for r in val_sorted], dtype=np.float64)
+        fit_kwargs["eval_set"] = [(X_val, y_val)]
+        fit_kwargs["eval_group"] = [group_sizes(val_sorted)]
+        fit_kwargs["callbacks"] = [lgb.early_stopping(EARLY_STOPPING_ROUNDS, verbose=False)]
+    # `eval_at` is deliberately fixed via the constructor (part of
+    # LIGHTGBM_HYPERPARAMETERS, for provenance) rather than passed to
+    # fit() -- lightgbm logs a purely informational "Found 'eval_at' in
+    # params" notice about that precedence on every call (via its own
+    # internal logger, not Python's `warnings` module, so it can't be
+    # filtered from here); it does not indicate a problem.
+    ranker.fit(X, y, group=groups, **fit_kwargs)
+
+    return {
+        "ranker": ranker,
+        "best_iteration": getattr(ranker, "best_iteration_", None),
+        "hyperparameters": dict(LIGHTGBM_HYPERPARAMETERS),
+        "package_versions": {"lightgbm": lgb.__version__},
+    }
 
 
-def evaluate(ranker, rows: list, group_records: list, labels: dict, split: str) -> dict:
-    """Top-1 hit rate and mean reciprocal rank on `split`, computed per
-    ranking group (`group_id`), plus the zero-positive-in-pool coverage
-    count (a group with no positive candidate in its pool -- including one
-    with zero candidates at all -- can't be salvaged by any reranker;
-    reporting it alongside hit rate keeps the two failure modes
-    distinguishable).
+def lightgbm_score_fn(ranker):
+    """Wraps a trained `LGBMRanker` as an `evaluate()`-compatible `score_fn`
+    -- the same scoring interface every deterministic baseline arm uses
+    (see `BASELINE_ARMS`), so the trained model and the arms share one
+    evaluation code path.
+    """
+
+    def score_fn(rows):
+        return list(ranker.predict([r.features for r in rows]))
+
+    return score_fn
+
+
+def compute_group_metrics(ranked_rows: list) -> dict:
+    """Per-group raw metrics from `ranked_rows`, already sorted by (score
+    descending, candidate_id ascending) -- see `evaluate`'s tie-break.
+    Binary relevance (label 0/1); NDCG@10's ideal DCG is capped at
+    `min(n_positives, 10)`, the standard binary-gain NDCG@k normalization.
+    `has_positive=False` marks a coverage gap (see `summarize_coverage`) --
+    every field here is well-defined only when `has_positive` is true;
+    `evaluate`'s end-to-end aggregation is what decides how a coverage gap
+    contributes (0, not "skip"; see `aggregate_metrics`).
+    """
+    labels = [r.label for r in ranked_rows]
+    n_pos = sum(labels)
+    if n_pos == 0:
+        return {
+            "has_positive": False,
+            "top1_hit": 0,
+            "top10_hit": 0,
+            "reciprocal_rank": 0.0,
+            "ndcg10": 0.0,
+            "best_positive_rank": None,
+        }
+    best_positive_rank = next(i + 1 for i, label in enumerate(labels) if label == 1)
+    dcg = sum(1.0 / math.log2(i + 2) for i, label in enumerate(labels[:10]) if label == 1)
+    idcg = sum(1.0 / math.log2(i + 2) for i in range(min(n_pos, 10)))
+    return {
+        "has_positive": True,
+        "top1_hit": 1 if labels[0] == 1 else 0,
+        "top10_hit": 1 if any(labels[:10]) else 0,
+        "reciprocal_rank": 1.0 / best_positive_rank,
+        "ndcg10": (dcg / idcg) if idcg > 0 else 0.0,
+        "best_positive_rank": best_positive_rank,
+    }
+
+
+def _mean(xs: list):
+    return (sum(xs) / len(xs)) if xs else None
+
+
+def aggregate_metrics(per_group_metrics: dict, group_ids_all: list, group_ids_with_positive: list) -> dict:
+    """Two denominators, computed from the SAME `per_group_metrics`:
+
+    - `conditional`: only groups with a positive candidate in their own
+      pool (`group_ids_with_positive`) -- "given that ranking is possible at
+      all, how good is it".
+    - `end_to_end`: every labeled group for this split (`group_ids_all`,
+      built from the group/target index -- see `evaluate`), including a
+      group that was never scored (no rows, or no positive) at all. A
+      missing/zero-positive group contributes 0 to every metric here
+      (coverage miss = 0), it is never excluded from the denominator --
+      that is precisely what makes this variant "end-to-end" rather than
+      conditional.
+    """
+    cond = [per_group_metrics[g] for g in group_ids_with_positive]
+    e2e = [per_group_metrics.get(g, {"top1_hit": 0, "top10_hit": 0, "reciprocal_rank": 0.0, "ndcg10": 0.0}) for g in group_ids_all]
+    return {
+        "conditional": {
+            "top1_hit_rate": _mean([m["top1_hit"] for m in cond]),
+            "top10_hit_rate": _mean([m["top10_hit"] for m in cond]),
+            "mean_reciprocal_rank": _mean([m["reciprocal_rank"] for m in cond]),
+            "ndcg_at_10": _mean([m["ndcg10"] for m in cond]),
+            "mean_best_positive_rank": _mean([m["best_positive_rank"] for m in cond]),
+            "n_groups": len(cond),
+        },
+        "end_to_end": {
+            "top1_hit_rate": _mean([m["top1_hit"] for m in e2e]),
+            "top10_hit_rate": _mean([m["top10_hit"] for m in e2e]),
+            "mean_reciprocal_rank": _mean([m["reciprocal_rank"] for m in e2e]),
+            "ndcg_at_10": _mean([m["ndcg10"] for m in e2e]),
+            "n_groups": len(e2e),
+        },
+    }
+
+
+def compute_arm_group_metrics(score_fn, rows: list, split: str) -> dict:
+    """Score every group in `split` with `score_fn` and return the raw
+    `group_id -> compute_group_metrics(...)` dict -- the shared inner loop
+    behind both `evaluate()` (which aggregates it into conditional/
+    end-to-end summaries) and `paired_bootstrap` (which resamples which
+    groups' ALREADY-COMPUTED metrics contribute, without rescoring).
+
+    `score_fn(group_rows: list[LabeledRow]) -> list[float]` is the ONE
+    scoring interface shared by the trained LightGBM ranker (see
+    `lightgbm_score_fn`) and every deterministic baseline arm (see
+    `build_baseline_arms`) -- only what produces the scores differs.
     """
     by_group: dict = {}
     for r in rows:
         if r.split == split:
             by_group.setdefault(r.group_id, []).append(r)
 
-    top1_hits = 0
-    reciprocal_ranks = []
-    scored_groups = 0
-    for group_rows in by_group.values():
-        if not any(r.label == 1 for r in group_rows):
-            continue  # coverage gap, not a ranking failure -- see summarize_coverage
-        scored_groups += 1
-        scores = ranker.predict([r.features for r in group_rows])
-        # Explicit candidate_id secondary key: LightGBM produces exact score
-        # ties on this feature set (many candidates share identical group-1
-        # values), and a tie broken by whatever order the rows arrived in
-        # would make top1_hit_rate/mean_reciprocal_rank depend on JSONL line
-        # order rather than on the model. Score is negated so ascending sort
-        # puts the highest score first -- `reverse=True` would also reverse
-        # the candidate_id tie-break, which is not what we want.
-        ranked = sorted(
-            zip(scores, group_rows), key=lambda p: (-p[0], p[1].candidate_id)
-        )
-        if ranked[0][1].label == 1:
-            top1_hits += 1
-        rank = next(
-            i + 1 for i, (_, r) in enumerate(ranked) if r.label == 1
-        )
-        reciprocal_ranks.append(1.0 / rank)
+    per_group_metrics: dict = {}
+    for group_id, group_rows in by_group.items():
+        scores = score_fn(group_rows)
+        if len(scores) != len(group_rows):
+            raise ValueError(
+                f"score_fn returned {len(scores)} score(s) for {len(group_rows)} "
+                f"row(s) in group_id={group_id!r} -- a scorer must return exactly "
+                "one score per row"
+            )
+        for s in scores:
+            if not math.isfinite(s):
+                raise ValueError(
+                    f"score_fn returned a non-finite score ({s!r}) for "
+                    f"group_id={group_id!r}"
+                )
+        # Explicit candidate_id secondary key: many scorers (a trained
+        # LightGBM ranker, or a deterministic arm reading a coarse feature)
+        # produce exact score ties, and a tie broken by whatever order the
+        # rows arrived in would make every metric here depend on JSONL line
+        # order rather than on the scorer. Score is negated so ascending
+        # sort puts the highest score first -- `reverse=True` would also
+        # reverse the candidate_id tie-break, which is not what we want.
+        ranked = sorted(zip(scores, group_rows), key=lambda p: (-p[0], p[1].candidate_id))
+        per_group_metrics[group_id] = compute_group_metrics([r for _, r in ranked])
+    return per_group_metrics
+
+
+def evaluate(score_fn, rows: list, group_records: list, labels: dict, split: str) -> dict:
+    """Evaluate an arbitrary scoring method on `split`, computed per ranking
+    group (`group_id`) via `compute_arm_group_metrics`.
+
+    Returns both `conditional` (only groups with a positive in their own
+    pool) and `end_to_end` (every labeled group for this split, coverage
+    miss = 0) metrics -- see `aggregate_metrics`. Top-level
+    `top1_hit_rate`/`mean_reciprocal_rank` mirror the conditional variant,
+    for backward compatibility with earlier reports.
+    """
+    per_group_metrics = compute_arm_group_metrics(score_fn, rows, split)
 
     coverage = summarize_coverage(rows, group_records, labels, split)
+    group_ids_with_positive = [g for g, m in per_group_metrics.items() if m["has_positive"]]
+    group_ids_all = [
+        record["group_id"]
+        for record in group_records
+        if record["group_id"] in labels and split_for_target(record["target_id"]) == split
+    ]
+
+    metrics = aggregate_metrics(per_group_metrics, group_ids_all, group_ids_with_positive)
     return {
         "split": split,
         "target_count": coverage.target_count,
         "group_count": coverage.group_count,
-        "scored_groups": scored_groups,
+        "scored_groups": len(group_ids_with_positive),
         "groups_with_zero_positive_in_pool": coverage.groups_with_zero_positive,
-        "top1_hit_rate": (top1_hits / scored_groups) if scored_groups else None,
-        "mean_reciprocal_rank": (
-            sum(reciprocal_ranks) / len(reciprocal_ranks) if reciprocal_ranks else None
+        "top1_hit_rate": metrics["conditional"]["top1_hit_rate"],
+        "mean_reciprocal_rank": metrics["conditional"]["mean_reciprocal_rank"],
+        "conditional": metrics["conditional"],
+        "end_to_end": metrics["end_to_end"],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Baseline arms (A-H)
+#
+# Arms A-G are deterministic scoring functions over already-loaded rows --
+# no LightGBM, no training -- all sharing `evaluate()`'s one code path (see
+# that function's doc), computed on the SAME candidate pool as arm H. Arm H
+# (the fully trained model) is NOT built here -- it needs a fitted
+# LGBMRanker, wired in separately by the caller (see `run_baseline_arms`).
+#
+# A row missing an arm's relevant feature (e.g. best_upstream_score under
+# Exhaustive/BondIndexed mode, where no scorer ran at all) is scored with
+# `_MISSING_SENTINEL` -- a large-but-finite negative value, never NaN/Inf
+# (`evaluate()` hard-rejects non-finite scores) -- so it deterministically
+# ranks last instead of corrupting the comparison. If EVERY row in a split
+# is missing that feature, the whole arm is reported as "not computable"
+# for that pool (see `arm_is_computable`) rather than silently reporting a
+# same-sentinel-value tie for every candidate as if it were a real result.
+# ---------------------------------------------------------------------------
+
+_MISSING_SENTINEL = -1e18
+
+
+def feature_index_of(name: str) -> int:
+    return FEATURE_NAMES_V1.index(name)
+
+
+def fit_template_frequency(train_rows: list) -> dict:
+    """Fit a train-frozen `template_id -> log-frequency` table from
+    TRAIN-split rows' `source_template_ids` ONLY -- never from val/test
+    rows, labels, or counts (this table is later looked up for val/test
+    rows too, so it must never have seen them; that is what makes it
+    leakage-safe).
+
+    Fit policy (documented deliberately, not incidental): counts each
+    template_id's occurrence across every TRAIN-split candidate row's
+    `sources`, regardless of that candidate's own label -- i.e. "how often
+    is this template proposed as a disconnection option in the training
+    data", not "how often is it the CORRECT answer". The latter would only
+    be definable for positive candidates and would leak label information
+    into what is meant to be a purely template-prevalence feature; the
+    former is computable from `sources` alone (present on every row,
+    positive or not) and mirrors what `RetroRule.weight`'s pre-existing
+    "raw" frequency already measures -- just recomputed from the actual
+    train split instead of whatever full rule set a caller happened to
+    pass to `propose_one_step`.
+    """
+    counts: dict = {}
+    for row in train_rows:
+        for template_id in row.source_template_ids:
+            counts[template_id] = counts.get(template_id, 0) + 1
+    return {template_id: math.log(count + 1) for template_id, count in counts.items()}
+
+
+def template_frequency_table_sha256(freq_table: dict) -> str:
+    """SHA-256 over the fitted table (sorted by template_id), so a fitted
+    table can be persisted and later verified unchanged without re-fitting."""
+    h = hashlib.sha256()
+    for template_id in sorted(freq_table):
+        h.update(template_id.encode("utf-8"))
+        h.update(b"\0")
+        h.update(repr(freq_table[template_id]).encode("utf-8"))
+        h.update(b"\0")
+    return f"sha256:{h.hexdigest()}"
+
+
+def impute_frequency_features(rows: list, freq_table: dict) -> list:
+    """Return NEW `LabeledRow` copies with `max_template_log_frequency`/
+    `mean_template_log_frequency` (feature indices 16/17, always `missing`
+    in every exported row -- see `FEATURE_NAMES_V1`'s doc) populated from
+    `freq_table` instead of left NaN.
+
+    This is used ONLY for arm H (the "full configured model" baseline),
+    which is meant to use every available signal, including template
+    frequency -- arms A-G and the exported `FEATURE_NAMES_V1` schema itself
+    are entirely unaffected. This is a deliberate, documented post-hoc
+    imputation performed by this training script alone: `feature_schema_v1`
+    stays frozen and the Rust exporter never populates these two features
+    (that would require split-aware recomputation baked into the export
+    step itself, which does not exist), so arm H's own training/evaluation
+    input is the one place index 16/17 get a real value, and that value is
+    never written back to any exported pool file.
+
+    A candidate with no known (TRAIN-seen) source template is left NaN --
+    genuinely no information to impute, not a value to guess.
+    """
+    max_i = feature_index_of("max_template_log_frequency")
+    mean_i = feature_index_of("mean_template_log_frequency")
+    imputed = []
+    for r in rows:
+        known = [freq_table[t] for t in r.source_template_ids if t in freq_table]
+        new_features = list(r.features)
+        if known:
+            new_features[max_i] = max(known)
+            new_features[mean_i] = sum(known) / len(known)
+        imputed.append(replace(r, features=new_features))
+    return imputed
+
+
+def _feature_score(index: int):
+    def score_fn(rows):
+        return [
+            _MISSING_SENTINEL if math.isnan(r.features[index]) else r.features[index]
+            for r in rows
+        ]
+
+    return score_fn
+
+
+def _frequency_score(freq_table: dict):
+    def score_fn(rows):
+        scores = []
+        for r in rows:
+            # A candidate can have multiple contributing templates (merged
+            # sources) -- score by the MAX fitted frequency among them (the
+            # single strongest prior-frequency justification for this
+            # candidate), not the mean, so one well-attested template isn't
+            # diluted by other, rarer co-contributing ones.
+            known = [freq_table[t] for t in r.source_template_ids if t in freq_table]
+            scores.append(max(known) if known else _MISSING_SENTINEL)
+        return scores
+
+    return score_fn
+
+
+def _rank_fusion_score(component_score_fns: list):
+    """Combine several component `score_fn`s via rank fusion: within the
+    rows being scored, each component ranks all of them (ties broken by
+    candidate_id, matching `evaluate()`'s own tie-break), and the fused
+    score is the negative sum of those ranks (lower total rank -> higher
+    fused score). This avoids needing to normalize component scores onto a
+    common scale -- upstream logits and log-frequencies live on very
+    different scales -- a well-known, robust alternative to a hand-tuned
+    weighted sum (reciprocal/Borda rank fusion).
+    """
+
+    def score_fn(rows):
+        total_rank = [0] * len(rows)
+        for component in component_score_fns:
+            component_scores = component(rows)
+            order = sorted(
+                range(len(rows)), key=lambda i: (-component_scores[i], rows[i].candidate_id)
+            )
+            for rank, i in enumerate(order):
+                total_rank[i] += rank
+        return [float(-r) for r in total_rank]
+
+    return score_fn
+
+
+def _reaction_center_score(rows):
+    scores = []
+    extractable_i = feature_index_of("reaction_center_extractable_fraction")
+    mean_i = feature_index_of("reaction_center_atom_count_mean")
+    for r in rows:
+        extractable_fraction = r.features[extractable_i]
+        if math.isnan(extractable_fraction) or extractable_fraction == 0.0:
+            # extractable_fraction == 0.0 means "no source template's
+            # reaction center was extractable", not "a reaction center of
+            # size 0" -- treating it as the smallest (best) reaction center
+            # would silently reward a candidate this arm has no real signal
+            # about, so it is scored as not-computable-for-this-candidate
+            # instead.
+            scores.append(_MISSING_SENTINEL)
+        else:
+            scores.append(-r.features[mean_i])
+    return scores
+
+
+def build_baseline_arms(freq_table: dict) -> list:
+    """Arms A-G, each `{name, description, score_fn, computable_fn}`.
+    `computable_fn(rows) -> bool` decides, for a given split's rows,
+    whether this arm has any real signal at all -- see the module
+    docstring above `_MISSING_SENTINEL`.
+    """
+    upstream_i = feature_index_of("best_upstream_score")
+    stock_frac_i = feature_index_of("fraction_precursors_in_stock")
+    stock_all_i = feature_index_of("all_precursors_in_stock")
+    charge_i = feature_index_of("net_charge_balanced")
+    no_gain_i = feature_index_of("no_heavy_atom_gain")
+    n_precursors_i = feature_index_of("num_precursors")
+    extractable_i = feature_index_of("reaction_center_extractable_fraction")
+
+    upstream_score_fn = _feature_score(upstream_i)
+    frequency_score_fn = _frequency_score(freq_table)
+
+    def upstream_computable(rows):
+        return any(not math.isnan(r.features[upstream_i]) for r in rows)
+
+    def frequency_computable(rows):
+        return any(t in freq_table for r in rows for t in r.source_template_ids)
+
+    def availability_score_fn(rows):
+        scores = []
+        for r in rows:
+            frac = r.features[stock_frac_i]
+            if math.isnan(frac):
+                scores.append(_MISSING_SENTINEL)
+            else:
+                scores.append(frac + r.features[stock_all_i])
+        return scores
+
+    def availability_computable(rows):
+        return any(not math.isnan(r.features[stock_frac_i]) for r in rows)
+
+    def reaction_center_computable(rows):
+        return any(
+            not math.isnan(r.features[extractable_i]) and r.features[extractable_i] > 0.0
+            for r in rows
+        )
+
+    return [
+        {
+            "name": "original_rank",
+            "description": (
+                "Ascending best_upstream_rank (the order the proposal/scorer "
+                "originally produced candidates in) -- a sanity-check baseline: "
+                "if the reranker can't beat 'trust the upstream order', it isn't "
+                "adding anything."
+            ),
+            "score_fn": lambda rows: [-float(r.best_upstream_rank) for r in rows],
+            "computable_fn": lambda rows: True,
+        },
+        {
+            "name": "upstream_score",
+            "description": (
+                "best_upstream_score alone -- only meaningful for a "
+                "ScorerConditioned pool (always missing under Exhaustive/"
+                "BondIndexed, see FEATURE_NAMES_V1's doc)."
+            ),
+            "score_fn": upstream_score_fn,
+            "computable_fn": upstream_computable,
+        },
+        {
+            "name": "template_frequency",
+            "description": (
+                "Train-frozen template-frequency table (see "
+                "fit_template_frequency) -- 'prefer whatever templates were "
+                "common in training', independent of this candidate's own "
+                "chemistry."
+            ),
+            "score_fn": frequency_score_fn,
+            "computable_fn": frequency_computable,
+        },
+        {
+            "name": "upstream_plus_frequency",
+            "description": "Rank fusion (see _rank_fusion_score) of upstream_score and template_frequency.",
+            "score_fn": _rank_fusion_score([upstream_score_fn, frequency_score_fn]),
+            "computable_fn": lambda rows: upstream_computable(rows) or frequency_computable(rows),
+        },
+        {
+            "name": "structural",
+            "description": "net_charge_balanced + no_heavy_atom_gain - num_precursors -- prefer chemistry-valid, low-precursor-count candidates.",
+            "score_fn": lambda rows: [
+                r.features[charge_i] + r.features[no_gain_i] - r.features[n_precursors_i]
+                for r in rows
+            ],
+            "computable_fn": lambda rows: any(not math.isnan(r.features[n_precursors_i]) for r in rows),
+        },
+        {
+            "name": "reaction_center",
+            "description": "Prefer a smaller, well-defined (extractable) reaction center -- see _reaction_center_score.",
+            "score_fn": _reaction_center_score,
+            "computable_fn": reaction_center_computable,
+        },
+        {
+            "name": "availability",
+            "description": (
+                "fraction_precursors_in_stock + all_precursors_in_stock -- "
+                "prefer candidates whose precursors are actually purchasable. "
+                "Not computable without a stock supplied to feature extraction."
+            ),
+            "score_fn": availability_score_fn,
+            "computable_fn": availability_computable,
+        },
+    ]
+
+
+def run_baseline_arms(freq_table: dict, rows: list, group_records: list, labels: dict, split: str) -> dict:
+    """Evaluate every arm A-G on `split`, reporting `{"status": "not_computable"}`
+    (never a misleading numeric result) for an arm whose `computable_fn`
+    returns false on this split's rows. Arm H (the trained model) is not
+    included -- see `build_baseline_arms`'s doc.
+    """
+    split_rows = [r for r in rows if r.split == split]
+    results = {}
+    for arm in build_baseline_arms(freq_table):
+        if not arm["computable_fn"](split_rows):
+            results[arm["name"]] = {"status": "not_computable", "description": arm["description"]}
+            continue
+        report = evaluate(arm["score_fn"], rows, group_records, labels, split)
+        report["description"] = arm["description"]
+        report["status"] = "ok"
+        results[arm["name"]] = report
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Paired bootstrap + offline gate
+#
+# Explicitly NOT run against any real/formal data in this commit -- this is
+# the tooling itself, exercised only against synthetic self-test fixtures
+# until a real (30-target or larger) evaluation exists (see this script's
+# module doc and the repo's staged candidate-pool gate).
+# ---------------------------------------------------------------------------
+
+GATE_THRESHOLDS = {
+    "top1_hit_rate_min_delta": 0.01,
+    "mean_reciprocal_rank_min_delta": 0.01,
+    "top10_hit_rate_max_regression": 0.002,
+}
+
+_E2E_METRIC_KEYS = ("top1_hit_rate", "top10_hit_rate", "mean_reciprocal_rank")
+
+
+def _e2e_group_value(per_group_metrics: dict, group_id: str, key: str) -> float:
+    """One group's end-to-end contribution for `key` -- 0.0 (coverage
+    miss) if the group was never scored (no rows) or has no positive
+    candidate, matching `aggregate_metrics`'s end-to-end semantics exactly.
+    """
+    m = per_group_metrics.get(group_id)
+    if m is None or not m["has_positive"]:
+        return 0.0
+    return {
+        "top1_hit_rate": float(m["top1_hit"]),
+        "top10_hit_rate": float(m["top10_hit"]),
+        "mean_reciprocal_rank": m["reciprocal_rank"],
+    }[key]
+
+
+def _percentile(values: list, p: float):
+    if not values:
+        return None
+    values_sorted = sorted(values)
+    index = min(len(values_sorted) - 1, max(0, round(p * (len(values_sorted) - 1))))
+    return values_sorted[index]
+
+
+def paired_bootstrap(
+    baseline_metrics: dict,
+    treatment_metrics: dict,
+    target_to_groups: dict,
+    n_resamples: int = 1000,
+    seed: int = 1234,
+) -> dict:
+    """Paired bootstrap over TARGET_ID clusters -- never individual groups.
+    `target_id` is the leakage-safe split key (see `split_for_target`), so
+    two groups sharing a `target_id` must always resample together, exactly
+    like the train/val/test split itself never separates them. Resampling
+    an individual `group_id` instead would silently violate that same
+    invariant the split was built to protect.
+
+    `baseline_metrics`/`treatment_metrics` are per-`group_id` metrics dicts
+    (see `compute_arm_group_metrics`), already computed ONCE over the real
+    (non-resampled) data -- each iteration only changes which groups'
+    already-computed end-to-end values contribute to the mean (see
+    `_e2e_group_value`); no rescoring happens per resample.
+
+    "Paired": baseline and treatment are evaluated on the IDENTICAL
+    resampled group set every iteration, so the delta directly reflects a
+    real difference between the two arms, not resampling noise common to
+    both.
+
+    Uses Python's stdlib `random.Random(seed)`, not numpy -- deterministic
+    given the same seed, independent of whatever numpy version (if any) is
+    installed. `seed` is recorded in the result, never left implicit.
+    """
+    target_ids = sorted(target_to_groups)
+    n = len(target_ids)
+    rng = random.Random(seed)
+    deltas = {key: [] for key in _E2E_METRIC_KEYS}
+
+    for _ in range(n_resamples):
+        sampled_groups = []
+        for _ in range(n):
+            t = target_ids[rng.randrange(n)] if n else None
+            if t is not None:
+                sampled_groups.extend(target_to_groups[t])
+        for key in _E2E_METRIC_KEYS:
+            baseline_mean = _mean([_e2e_group_value(baseline_metrics, g, key) for g in sampled_groups])
+            treatment_mean = _mean([_e2e_group_value(treatment_metrics, g, key) for g in sampled_groups])
+            if baseline_mean is None or treatment_mean is None:
+                continue  # n == 0 (no target_ids at all) -- nothing to resample
+            deltas[key].append(treatment_mean - baseline_mean)
+
+    return {
+        "n_resamples": n_resamples,
+        "seed": seed,
+        "resample_unit": "target_id (cluster bootstrap -- all groups sharing a target_id resample together)",
+        "n_target_ids": n,
+        "deltas": {
+            key: {
+                "mean_delta": _mean(values),
+                "ci_95": [_percentile(values, 0.025), _percentile(values, 0.975)],
+                "n_resamples_used": len(values),
+            }
+            for key, values in deltas.items()
+        },
+    }
+
+
+def run_offline_gate(
+    baseline_score_fn,
+    treatment_score_fn,
+    rows: list,
+    group_records: list,
+    labels: dict,
+    split: str,
+    baseline_arm: str,
+    treatment_arm: str,
+    n_resamples: int = 1000,
+    seed: int = 1234,
+) -> dict:
+    """Compute both arms' per-group metrics on `split`, hard-verify they
+    scored the IDENTICAL group set (see `evaluate_offline_gate`'s doc on
+    why this is a structural assertion, not a metric comparison), bootstrap
+    the paired delta, and judge it against the predefined offline gate.
+    """
+    baseline_metrics = compute_arm_group_metrics(baseline_score_fn, rows, split)
+    treatment_metrics = compute_arm_group_metrics(treatment_score_fn, rows, split)
+    if set(baseline_metrics) != set(treatment_metrics):
+        raise ValueError(
+            f"baseline_arm={baseline_arm!r} and treatment_arm={treatment_arm!r} scored "
+            "different group sets on the same pool/split -- both arms must run over the "
+            "identical candidate pool for a gate comparison to be meaningful"
+        )
+
+    target_to_groups: dict = {}
+    for record in group_records:
+        if record["group_id"] in labels and split_for_target(record["target_id"]) == split:
+            target_to_groups.setdefault(record["target_id"], []).append(record["group_id"])
+
+    bootstrap_result = paired_bootstrap(
+        baseline_metrics, treatment_metrics, target_to_groups, n_resamples=n_resamples, seed=seed
+    )
+    return evaluate_offline_gate(bootstrap_result, coverage_identical=True, baseline_arm=baseline_arm, treatment_arm=treatment_arm)
+
+
+def evaluate_offline_gate(
+    bootstrap_result: dict, coverage_identical: bool, baseline_arm: str, treatment_arm: str
+) -> dict:
+    """Machine-judge the predefined offline gate against a `paired_bootstrap`
+    result -- PASS requires ALL of:
+
+      - `coverage_identical`: both arms scored the IDENTICAL group set (a
+        structural assertion the caller establishes -- see
+        `run_offline_gate` -- never a metric comparison, which would be
+        trivially true whenever both arms simply share one candidate pool
+        and would catch nothing).
+      - end-to-end top-1 hit rate delta (treatment - baseline) >=
+        `GATE_THRESHOLDS["top1_hit_rate_min_delta"]` (+1.0pp).
+      - end-to-end mean reciprocal rank delta >=
+        `GATE_THRESHOLDS["mean_reciprocal_rank_min_delta"]` (+0.01).
+      - end-to-end top-10 hit rate delta >=
+        `-GATE_THRESHOLDS["top10_hit_rate_max_regression"]` (regression
+        capped at 0.2pp, not merely "not worse").
+      - the top-1 hit rate delta's 95% CI lower bound > 0 (the improvement
+        is not attributable to resampling noise alone).
+    """
+    top1 = bootstrap_result["deltas"]["top1_hit_rate"]
+    mrr = bootstrap_result["deltas"]["mean_reciprocal_rank"]
+    top10 = bootstrap_result["deltas"]["top10_hit_rate"]
+
+    checks = {
+        "coverage_unchanged": bool(coverage_identical),
+        "top1_hit_rate_delta_meets_threshold": (
+            top1["mean_delta"] is not None and top1["mean_delta"] >= GATE_THRESHOLDS["top1_hit_rate_min_delta"]
         ),
+        "mean_reciprocal_rank_delta_meets_threshold": (
+            mrr["mean_delta"] is not None
+            and mrr["mean_delta"] >= GATE_THRESHOLDS["mean_reciprocal_rank_min_delta"]
+        ),
+        "top10_hit_rate_regression_within_threshold": (
+            top10["mean_delta"] is not None
+            and top10["mean_delta"] >= -GATE_THRESHOLDS["top10_hit_rate_max_regression"]
+        ),
+        "top1_hit_rate_ci_lower_bound_positive": (
+            top1["ci_95"][0] is not None and top1["ci_95"][0] > 0
+        ),
+    }
+    return {
+        "baseline_arm": baseline_arm,
+        "treatment_arm": treatment_arm,
+        "result": "PASS" if all(checks.values()) else "FAIL",
+        "checks": checks,
+        "thresholds": dict(GATE_THRESHOLDS),
+        "bootstrap": bootstrap_result,
     }
 
 
 def self_test() -> None:
-    """Assert-based self-check of every piece of logic that doesn't need
-    lightgbm; if lightgbm IS importable, also runs a tiny end-to-end
-    train+evaluate pass and asserts it produces a well-formed report (not
-    that any particular metric value is achieved -- 2-3 synthetic groups
-    is far too small to mean anything, and this is a code-path check, not a
-    model-quality check).
+    """Fast (well under a second), dependency-free smoke check of the core
+    deterministic logic against a tiny embedded fixture: split determinism,
+    a minimal manifest/row schema round-trip, missing-feature-to-NaN
+    labeling, evaluate()'s tie-break, and a tiny paired-bootstrap +
+    offline-gate smoke. If lightgbm is importable, also runs a minimal
+    end-to-end train+evaluate pass.
+
+    Detailed regression coverage (schema/label/metrics/baseline-arm/
+    bootstrap/training edge cases) lives in scripts/tests/ instead -- run
+    via `python3 -m unittest discover -s scripts/tests -p "test_*.py"` --
+    not duplicated here; this function is deliberately just a quick
+    "is the core logic sane" signal for a developer without lightgbm/
+    scikit-learn installed, not a substitute for that suite.
     """
-    # -- split determinism and no target crosses splits --
-    ids = ["target_a", "target_b", "target_c", "target_d", "target_e"]
-    first = {t: split_for_target(t) for t in ids}
-    second = {t: split_for_target(t) for t in ids}
-    assert first == second, "split assignment must be deterministic"
-
-    # -- same target, different group: same split, different ranking group --
-    assert split_for_target("target_a") == split_for_target("target_a")
-    group_records_same_target = [
-        {"group_id": "rxn-1", "target_id": "target_a", "target_smiles": "CC(=O)OCC",
-         "candidate_count": 1, "proposal_status": "ok"},
-        {"group_id": "rxn-2", "target_id": "target_a", "target_smiles": "CC(=O)OCC",
-         "candidate_count": 1, "proposal_status": "ok"},
-    ]
-    rows_same_target = [
-        {"group_id": "rxn-1", "target_id": "target_a", "candidate_id": "sha256:a1",
-         "precursor_smiles": ["CC(=O)O", "CCO"], "feature_values": [0.0], "feature_missing": [False]},
-        {"group_id": "rxn-2", "target_id": "target_a", "candidate_id": "sha256:a2",
-         "precursor_smiles": ["CC(=O)O", "CCO"], "feature_values": [0.0], "feature_missing": [False]},
-    ]
-    labels_same_target = {
-        "rxn-1": GroupLabel(target_id="target_a", correct_precursor_sets=frozenset({("CC(=O)O", "CCO")})),
-        "rxn-2": GroupLabel(target_id="target_a", correct_precursor_sets=frozenset({("CC(=O)O", "CCO")})),
-    }
-    labeled_same_target, unlabeled_n = label_and_split_rows(
-        rows_same_target, labels_same_target, group_records_same_target
-    )
-    assert unlabeled_n == 0
-    splits = {r.group_id: r.split for r in labeled_same_target}
-    assert splits["rxn-1"] == splits["rxn-2"], "same target_id must land in the same split"
-    sizes = group_sizes(sorted(labeled_same_target, key=lambda r: (r.group_id, r.candidate_id)))
-    assert sizes == [1, 1], "different group_id must form separate LightGBM ranking groups"
-
-    # -- labels schema v1: multiple correct precursor sets, sortedness, duplicates --
-    import tempfile
+    import math
     import os
+    import tempfile
 
-    with tempfile.TemporaryDirectory() as tmp:
-        labels_path = os.path.join(tmp, "labels.jsonl")
-        with open(labels_path, "w", encoding="utf-8") as f:
-            f.write(json.dumps({
-                "schema_version": 1, "group_id": "rxn-multi", "target_id": "target_multi",
-                "correct_precursor_sets": [["CC(=O)O", "CCO"], ["CCO", "CCl"]],
-            }) + "\n")
-            # An identical duplicate is tolerated, not an error.
-            f.write(json.dumps({
-                "schema_version": 1, "group_id": "rxn-multi", "target_id": "target_multi",
-                "correct_precursor_sets": [["CCO", "CCl"], ["CC(=O)O", "CCO"]],
-            }) + "\n")
-        multi_labels = load_labels(labels_path)
-        assert len(multi_labels) == 1, "an identical duplicate group_id must not raise or double-count"
-        assert ("CC(=O)O", "CCO") in multi_labels["rxn-multi"].correct_precursor_sets
-        assert ("CCO", "CCl") in multi_labels["rxn-multi"].correct_precursor_sets
+    # -- split determinism --
+    ids = ["target_a", "target_b", "target_c"]
+    assert {t: split_for_target(t) for t in ids} == {t: split_for_target(t) for t in ids}, (
+        "split assignment must be deterministic"
+    )
 
-        conflicting_path = os.path.join(tmp, "labels_conflict.jsonl")
-        with open(conflicting_path, "w", encoding="utf-8") as f:
-            f.write(json.dumps({
-                "schema_version": 1, "group_id": "rxn-x", "target_id": "target_x",
-                "correct_precursor_sets": [["A", "B"]],
-            }) + "\n")
-            f.write(json.dumps({
-                "schema_version": 1, "group_id": "rxn-x", "target_id": "target_x",
-                "correct_precursor_sets": [["C", "D"]],
-            }) + "\n")
-        try:
-            load_labels(conflicting_path)
-            raise AssertionError("conflicting duplicate group_id must be a hard error")
-        except ValueError:
-            pass
-
-        unsorted_path = os.path.join(tmp, "labels_unsorted.jsonl")
-        with open(unsorted_path, "w", encoding="utf-8") as f:
-            f.write(json.dumps({
-                "schema_version": 1, "group_id": "rxn-y", "target_id": "target_y",
-                "correct_precursor_sets": [["CCO", "CC(=O)O"]],  # not sorted
-            }) + "\n")
-        try:
-            load_labels(unsorted_path)
-            raise AssertionError("an unsorted correct_precursor_sets entry must be a hard error")
-        except ValueError:
-            pass
-
-        wrong_schema_path = os.path.join(tmp, "labels_wrong_schema.jsonl")
-        with open(wrong_schema_path, "w", encoding="utf-8") as f:
-            f.write(json.dumps({
-                "schema_version": 2, "group_id": "rxn-z", "target_id": "target_z",
-                "correct_precursor_sets": [["A"]],
-            }) + "\n")
-        try:
-            load_labels(wrong_schema_path)
-            raise AssertionError("a non-v1 schema_version must be a hard error")
-        except ValueError:
-            pass
-
-    print("self-test: labels schema v1 (multi-set, duplicates, sortedness) OK", flush=True)
-
-    # -- feature_schema_hash is pinned against the Rust implementation --
-    # (see `feature_schema_hash_is_stable_and_pinned_for_cross_language_verification`
-    # in src/candidate.rs -- both literals were computed from the same
-    # algorithm and must be updated together on any intentional schema change).
-    assert feature_schema_hash() == (
-        "sha256:756404c59bbee9a65e194f92df3530e1b801028f333e01c67214917977061df1"
-    ), "feature_schema_hash() drifted from the pinned Rust-side value"
-
-    # -- validate_manifest: every field is cross-checked, not trusted --
+    # -- minimal manifest + candidate-row schema round-trip --
     with tempfile.TemporaryDirectory() as tmp:
         pool_path = os.path.join(tmp, "pool.jsonl")
         with open(pool_path, "w", encoding="utf-8") as f:
@@ -725,225 +1365,46 @@ def self_test() -> None:
         groups_path = os.path.join(tmp, "groups.jsonl")
         with open(groups_path, "w", encoding="utf-8") as f:
             f.write('{"group_id": "g1"}\n')
+        manifest = {
+            "manifest_schema_version": MANIFEST_SCHEMA_VERSION,
+            "feature_schema_version": FEATURE_SCHEMA_VERSION,
+            "feature_names": list(FEATURE_NAMES_V1),
+            "feature_schema_hash": feature_schema_hash(),
+            "proposal_mode": {"mode": "exhaustive"},
+            "rules_content_hash": "sha256:deadbeef",
+            "candidate_jsonl_sha256": sha256_file(pool_path),
+            "target_group_index_sha256": sha256_file(groups_path),
+            "stock_identity": None,
+            "stock_content_sha256": None,
+        }
+        validate_manifest(manifest, pool_path, groups_path)  # must not raise
 
-        def base_manifest() -> dict:
-            return {
-                "manifest_schema_version": MANIFEST_SCHEMA_VERSION,
-                "feature_schema_version": FEATURE_SCHEMA_VERSION,
-                "feature_names": list(FEATURE_NAMES_V1),
-                "feature_schema_hash": feature_schema_hash(),
-                "proposal_mode": {"mode": "exhaustive"},
-                "rules_content_hash": "sha256:deadbeef",
-                "candidate_jsonl_sha256": sha256_file(pool_path),
-                "target_group_index_sha256": sha256_file(groups_path),
-                "stock_identity": None,
-                "stock_content_sha256": None,
-            }
-
-        validate_manifest(base_manifest(), pool_path, groups_path)  # must not raise
-
-        bad_cases = [
-            {**base_manifest(), "manifest_schema_version": 999},
-            {**base_manifest(), "feature_schema_version": 999},
-            {**base_manifest(), "feature_names": ["wrong"]},
-            {**base_manifest(), "feature_schema_hash": "sha256:wrong"},
-            {**base_manifest(), "rules_content_hash": ""},
-            {**base_manifest(), "candidate_jsonl_sha256": "sha256:wrong"},
-            {**base_manifest(), "target_group_index_sha256": "sha256:wrong"},
-            {
-                **base_manifest(),
-                "proposal_mode": {"mode": "scorer_conditioned", "scorer_status": "inference_failed"},
-            },
-            {**base_manifest(), "stock_identity": "some/path.smi", "stock_content_sha256": None},
-        ]
-        for i, bad in enumerate(bad_cases):
-            try:
-                validate_manifest(bad, pool_path, groups_path)
-                raise AssertionError(f"bad_cases[{i}] should have been rejected: {bad}")
-            except ValueError:
-                pass
-
-    print("self-test: validate_manifest rejects every mismatched field OK", flush=True)
-
-    # -- validate_pool_rows: schema/group-index consistency, no silent zip() truncation --
-    good_groups = [
-        {"group_id": "g1", "target_id": "t1", "target_smiles": "CCO", "candidate_count": 1, "proposal_status": "ok"},
-    ]
-
-    def good_row(**overrides) -> dict:
-        row = {
-            "group_id": "g1",
-            "target_id": "t1",
-            "target_smiles": "CCO",
-            "candidate_id": "c1",
-            "precursor_smiles": ["CCO"],
-            "sources": [{"template_id": "rule:x"}],
+        pool_row = {
+            "group_id": "g1", "target_id": "t1", "target_smiles": "CCO", "candidate_id": "c1",
+            "precursor_smiles": ["CCO"], "sources": [{"template_id": "rule:x"}],
             "feature_schema_version": FEATURE_SCHEMA_VERSION,
             "feature_values": [0.0] * len(FEATURE_NAMES_V1),
             "feature_missing": [True] * len(FEATURE_NAMES_V1),
         }
-        row.update(overrides)
-        return row
+        group_records = [
+            {"group_id": "g1", "target_id": "t1", "target_smiles": "CCO", "candidate_count": 1, "proposal_status": "ok"},
+        ]
+        validate_pool_rows([pool_row], group_records)  # must not raise
 
-    validate_pool_rows([good_row()], good_groups)  # must not raise
+    print("self-test: minimal schema-loader fixture OK", flush=True)
 
-    row_bad_lengths = good_row(feature_values=[0.0] * (len(FEATURE_NAMES_V1) - 1))
-    row_non_finite = good_row(
-        feature_values=[float("nan")] + [0.0] * (len(FEATURE_NAMES_V1) - 1),
-        feature_missing=[False] * len(FEATURE_NAMES_V1),
-    )
-    row_empty_precursors = good_row(precursor_smiles=[])
-    row_empty_sources = good_row(sources=[])
-    row_unknown_group = good_row(group_id="g-missing")
-    row_wrong_target_id = good_row(target_id="t-wrong")
-    row_wrong_target_smiles = good_row(target_smiles="CCN")
+    # -- labeling + missing-feature-to-NaN --
+    labels = {"g1": GroupLabel(target_id="t1", correct_precursor_sets=frozenset({("CCO",)}))}
+    labeled, unlabeled_count = label_and_split_rows([pool_row], labels, group_records)
+    assert unlabeled_count == 0
+    assert labeled[0].label == 1, "exact precursor-set match must be labeled positive"
+    assert math.isnan(labeled[0].features[-1]), "a missing feature must become NaN, not 0"
 
-    for label, bad_rows in [
-        ("mismatched feature_values/feature_missing length", [row_bad_lengths]),
-        ("non-finite non-missing feature value", [row_non_finite]),
-        ("empty precursor_smiles", [row_empty_precursors]),
-        ("empty sources", [row_empty_sources]),
-        ("group_id absent from --groups", [row_unknown_group]),
-        ("target_id inconsistent with group index", [row_wrong_target_id]),
-        ("target_smiles inconsistent with group index", [row_wrong_target_smiles]),
-        ("duplicate candidate_id within one group", [good_row(), good_row()]),
-    ]:
-        try:
-            validate_pool_rows(bad_rows, good_groups)
-            raise AssertionError(f"should have been rejected: {label}")
-        except ValueError:
-            pass
-
-    print("self-test: validate_pool_rows rejects every malformed row OK", flush=True)
-
-    try:
-        label_and_split_rows(
-            [{
-                "group_id": "g1", "target_id": "t1", "candidate_id": "c1",
-                "precursor_smiles": ["CCO"],
-                "feature_values": [0.0, 1.0],
-                "feature_missing": [False],  # deliberately shorter -- must not silently zip()-truncate
-            }],
-            {"g1": GroupLabel(target_id="t1", correct_precursor_sets=frozenset({("CCO",)}))},
-            [{"group_id": "g1", "target_id": "t1", "target_smiles": "CCO", "candidate_count": 1, "proposal_status": "ok"}],
-        )
-        raise AssertionError("mismatched feature_values/feature_missing lengths must be a hard error")
-    except ValueError:
-        pass
-
-    print("self-test: label_and_split_rows rejects mismatched feature-vector lengths OK", flush=True)
-
-    # -- label assignment, unlabeled != negative, zero-candidate group coverage --
-    pool_rows = [
-        {
-            "group_id": "rxn-a1",
-            "target_id": "target_a",
-            "target_smiles": "CC(=O)OCC",
-            "candidate_id": "sha256:aaa",
-            "precursor_smiles": ["CC(=O)O", "CCO"],
-            "source_template_count": 1,
-            "best_upstream_rank": 0,
-            "feature_schema_version": 1,
-            "feature_values": [2.0, 6.0, 6.0, 4.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.5, 0.0],
-            "feature_missing": [False] * 13 + [True],
-        },
-        {
-            "group_id": "rxn-a1",
-            "target_id": "target_a",
-            "target_smiles": "CC(=O)OCC",
-            "candidate_id": "sha256:bbb",
-            "precursor_smiles": ["CCl", "CCO"],
-            "source_template_count": 1,
-            "best_upstream_rank": 1,
-            "feature_schema_version": 1,
-            "feature_values": [2.0] + [0.0] * 12 + [0.0],
-            "feature_missing": [False] * 13 + [True],
-        },
-        {
-            "group_id": "rxn-b1",
-            "target_id": "target_b",
-            "target_smiles": "CCN",
-            "candidate_id": "sha256:ccc",
-            "precursor_smiles": ["CCBr"],
-            "source_template_count": 1,
-            "best_upstream_rank": 0,
-            "feature_schema_version": 1,
-            "feature_values": [1.0] + [0.0] * 12 + [0.0],
-            "feature_missing": [False] * 13 + [True],
-        },
-    ]
-    # rxn-c1 has zero candidates -- present only in the group index.
-    group_records = [
-        {"group_id": "rxn-a1", "target_id": "target_a", "target_smiles": "CC(=O)OCC",
-         "candidate_count": 2, "proposal_status": "ok"},
-        {"group_id": "rxn-b1", "target_id": "target_b", "target_smiles": "CCN",
-         "candidate_count": 1, "proposal_status": "ok"},
-        {"group_id": "rxn-c1", "target_id": "target_c", "target_smiles": "CCC",
-         "candidate_count": 0, "proposal_status": "ok"},
-        {"group_id": "rxn-d1", "target_id": "target_d", "target_smiles": "CCCC",
-         "candidate_count": 0, "proposal_status": "target_parse_failed"},
-    ]
-    labels = {
-        "rxn-a1": GroupLabel(target_id="target_a", correct_precursor_sets=frozenset({("CC(=O)O", "CCO")})),
-        "rxn-c1": GroupLabel(target_id="target_c", correct_precursor_sets=frozenset({("X", "Y")})),
-        "rxn-d1": GroupLabel(target_id="target_d", correct_precursor_sets=frozenset({("X", "Y")})),
-        # rxn-b1 deliberately absent -> exercised via --allow-unlabeled below.
-    }
-
-    try:
-        label_and_split_rows(pool_rows, labels, group_records, allow_unlabeled=False)
-        raise AssertionError("an unlabeled group must be a hard error by default")
-    except ValueError:
-        pass
-
-    labeled, unlabeled_count = label_and_split_rows(
-        pool_rows, labels, group_records, allow_unlabeled=True
-    )
-    assert unlabeled_count == 1, "exactly rxn-b1 is unlabeled"
-    assert all(r.group_id != "rxn-b1" for r in labeled), (
-        "an unlabeled group must be excluded entirely, never defaulted to all-negative"
-    )
-
-    by_id = {r.candidate_id: r for r in labeled}
-    assert by_id["sha256:aaa"].label == 1, "exact precursor-set match must be labeled positive"
-    assert by_id["sha256:bbb"].label == 0, "non-matching precursor set must be labeled negative"
-
-    # -- feature_missing -> NaN, not silently 0 --
-    import math
-
-    assert math.isnan(by_id["sha256:aaa"].features[-1]), "a missing feature must become NaN, not 0"
-
-    # -- zero-candidate group counted in coverage denominator --
-    # Force every target into "test" for this check by using the real
-    # split_for_target output rather than overriding it, then compute
-    # coverage per each split actually produced and assert the totals add up
-    # across all three splits (whichever split each synthetic target_id
-    # really falls into).
-    all_splits = {"train", "val", "test"}
-    total_group_count = 0
-    total_target_count = 0
-    for split in all_splits:
-        cov = summarize_coverage(labeled, group_records, labels, split)
-        total_group_count += cov.group_count
-        total_target_count += cov.target_count
-    # rxn-b1 is unlabeled (excluded) -- only rxn-a1, rxn-c1, rxn-d1 count.
-    assert total_group_count == 3, "labeled groups (including zero-candidate ones) must all be counted exactly once across splits"
-    assert total_target_count == 3, "target_a, target_c, target_d -- one each"
-
-    print("self-test: labeling, unlabeled-group handling, and zero-candidate-group coverage OK", flush=True)
-
-    # -- group_sizes requires group_id-sorted input --
-    sorted_rows = sorted(labeled, key=lambda r: (r.group_id, r.candidate_id))
-    sizes = group_sizes(sorted_rows)
-    assert sum(sizes) == len(sorted_rows)
-    assert len(sizes) == len({r.group_id for r in labeled})
-
-    print("self-test: deterministic split, labeling, and grouping logic OK", flush=True)
+    print("self-test: labeling and missing-feature-to-NaN OK", flush=True)
 
     # -- evaluate() ranking tie-break is deterministic, independent of lightgbm --
-    class _ConstantRanker:
-        def predict(self, X):
-            return [0.0] * len(X)
+    def constant_score_fn(rows):
+        return [0.0] * len(rows)
 
     tie_group_records = [
         {"group_id": "t", "target_id": "tt", "target_smiles": "tt", "candidate_count": 2, "proposal_status": "ok"},
@@ -954,10 +1415,24 @@ def self_test() -> None:
         LabeledRow("t", "tt", "sha256:aaa", [1.0], 0, "test"),
     ]
     tied_b = list(reversed(tied_a))
-    report_a = evaluate(_ConstantRanker(), tied_a, tie_group_records, tie_labels, "test")
-    report_b = evaluate(_ConstantRanker(), tied_b, tie_group_records, tie_labels, "test")
+    report_a = evaluate(constant_score_fn, tied_a, tie_group_records, tie_labels, "test")
+    report_b = evaluate(constant_score_fn, tied_b, tie_group_records, tie_labels, "test")
     assert report_a == report_b, "tied scores must rank identically regardless of input row order"
+
     print("self-test: evaluate() tie-break is order-independent OK", flush=True)
+
+    # -- tiny paired-bootstrap + offline-gate smoke --
+    def metric(top1, mrr, top10):
+        return {"has_positive": True, "top1_hit": top1, "top10_hit": top10, "reciprocal_rank": mrr, "ndcg10": 0.0, "best_positive_rank": 1}
+
+    target_to_groups = {"ta": ["gg1"], "tb": ["gg2"]}
+    baseline_metrics = {g: metric(0, 0.0, 0) for g in ("gg1", "gg2")}
+    treatment_metrics = {g: metric(1, 1.0, 1) for g in ("gg1", "gg2")}
+    bootstrap_result = paired_bootstrap(baseline_metrics, treatment_metrics, target_to_groups, n_resamples=20, seed=1)
+    gate = evaluate_offline_gate(bootstrap_result, coverage_identical=True, baseline_arm="a", treatment_arm="b")
+    assert gate["result"] == "PASS"
+
+    print("self-test: paired bootstrap + offline gate smoke OK", flush=True)
 
     try:
         import lightgbm  # noqa: F401
@@ -969,33 +1444,40 @@ def self_test() -> None:
         )
         return
 
-    # `train_ranker` doesn't care what `.split` any row carries -- it just
-    # fits on whatever rows it's handed -- so training needs no override.
-    # Evaluation's coverage fields, though, are computed from `group_records`
-    # via the REAL `split_for_target(target_id)` (see `summarize_coverage`),
-    # not from `LabeledRow.split` -- so unlike the pre-group_id version of
-    # this script, an artificial "force every row into one split" override
-    # would silently desync row-level `.split` from group-index coverage.
-    # Summing `evaluate()` over all three real splits instead is robust to
-    # wherever these tiny synthetic target_ids actually hash to.
-    ranker = train_ranker(labeled)
-    total_group_count = 0
-    total_scored_groups = 0
-    total_zero_positive = 0
-    for split in ("train", "val", "test"):
-        report = evaluate(ranker, labeled, group_records, labels, split)
-        assert report["split"] == split
-        total_group_count += report["group_count"]
-        total_scored_groups += report["scored_groups"]
-        total_zero_positive += report["groups_with_zero_positive_in_pool"]
-    assert total_group_count == 3, "rxn-a1, rxn-c1, rxn-d1 (rxn-b1 excluded, unlabeled)"
-    assert total_scored_groups == 1, "only rxn-a1 has a positive candidate"
-    assert total_zero_positive == 2, "rxn-c1 and rxn-d1 have none"
-    print(
-        f"self-test: end-to-end train+evaluate OK, "
-        f"group_count={total_group_count} scored_groups={total_scored_groups}",
-        flush=True,
-    )
+    # -- minimal end-to-end train+evaluate smoke (a code-path check, not a
+    # model-quality check -- a handful of synthetic groups is far too small
+    # to mean anything about ranking quality). --
+    smoke_rows = []
+    smoke_group_records = []
+    smoke_labels = {}
+    for i in range(8):
+        gid, tid = f"smoke-g{i}", f"smoke-t{i}"
+        smoke_group_records.append(
+            {"group_id": gid, "target_id": tid, "target_smiles": tid, "candidate_count": 2, "proposal_status": "ok"}
+        )
+        smoke_labels[gid] = GroupLabel(target_id=tid, correct_precursor_sets=frozenset({("pos",)}))
+        for j, label in enumerate((1, 0)):
+            smoke_rows.append({
+                "group_id": gid, "target_id": tid, "target_smiles": tid, "candidate_id": f"c{i}-{j}",
+                "precursor_smiles": ["pos"] if label else ["neg"],
+                "sources": [{"template_id": "rule:x"}],
+                "feature_schema_version": FEATURE_SCHEMA_VERSION,
+                "feature_values": [float(j)] * len(FEATURE_NAMES_V1),
+                "feature_missing": [False] * 13 + [True] * 5,
+                "best_upstream_rank": j,
+            })
+    labeled_smoke, _ = label_and_split_rows(smoke_rows, smoke_labels, smoke_group_records)
+    train_rows_smoke = [r for r in labeled_smoke if r.split == "train"]
+    if not train_rows_smoke:
+        print("self-test: no synthetic row landed in the train split this run -- skipping lightgbm smoke", flush=True)
+        return
+
+    train_result = train_ranker(train_rows_smoke)
+    score_fn = lightgbm_score_fn(train_result["ranker"])
+    report = evaluate(score_fn, labeled_smoke, smoke_group_records, smoke_labels, "train")
+    assert "conditional" in report and "end_to_end" in report
+
+    print("self-test: end-to-end train+evaluate smoke OK", flush=True)
 
 
 def main() -> None:
@@ -1021,6 +1503,28 @@ def main() -> None:
     )
     parser.add_argument("--model-out", help="Path to save the trained LightGBM booster (text format)")
     parser.add_argument("--eval-out", help="Path to save the evaluation report JSON")
+    parser.add_argument(
+        "--gate-baseline-arm",
+        help="Arm name (see the printed report's 'arms' keys, e.g. 'original_rank') to "
+             "compare against --gate-treatment-arm via the offline gate. Both must be given "
+             "together. Explicitly NOT intended to be run against real/formal data yet -- "
+             "see this script's module doc.",
+    )
+    parser.add_argument("--gate-treatment-arm", help="Arm name to compare against --gate-baseline-arm.")
+    parser.add_argument(
+        "--gate-split", default="test",
+        help="Split the gate is computed on (default: test -- the held-out split).",
+    )
+    parser.add_argument("--gate-out", help="Path to save the offline-gate PASS/FAIL report JSON.")
+    parser.add_argument(
+        "--bootstrap-resamples", type=int, default=1000,
+        help="Number of paired-bootstrap resamples for the offline gate (default: 1000).",
+    )
+    parser.add_argument(
+        "--bootstrap-seed", type=int, default=1234,
+        help="Fixed seed for the paired bootstrap (default: 1234) -- always recorded in the "
+             "gate report, so a run is reproducible.",
+    )
     parser.add_argument(
         "--self-test", action="store_true",
         help="Run the deterministic-logic self-check (and, if lightgbm is installed, "
@@ -1071,27 +1575,53 @@ def main() -> None:
         )
 
     train_rows = [r for r in labeled if r.split == "train"]
+    val_rows = [r for r in labeled if r.split == "val"]
     if not train_rows:
         print("ERROR: no rows in the train split.", file=sys.stderr)
         sys.exit(1)
 
-    ranker = train_ranker(train_rows)
+    # Train-frozen frequency table (see fit_template_frequency): fit from
+    # TRAIN rows only, used both as its own baseline arm (C) and to impute
+    # the otherwise-always-missing frequency features for arm H alone (see
+    # impute_frequency_features).
+    freq_table = fit_template_frequency(train_rows)
+    imputed_labeled = impute_frequency_features(labeled, freq_table)
+    imputed_train_rows = [r for r in imputed_labeled if r.split == "train"]
+    imputed_val_rows = [r for r in imputed_labeled if r.split == "val"]
+
+    train_result = train_ranker(imputed_train_rows, val_rows=imputed_val_rows or None)
+    ranker = train_result["ranker"]
 
     if args.model_out:
         Path(args.model_out).parent.mkdir(parents=True, exist_ok=True)
         ranker.booster_.save_model(args.model_out)
         print(f"Saved model to {args.model_out}", flush=True)
 
-    reports = {
-        split: evaluate(ranker, labeled, group_records, labels, split)
-        for split in ("train", "val", "test")
-    }
+    full_model_score_fn = lightgbm_score_fn(ranker)
+
+    # Every arm (A-H) evaluated on the SAME candidate pool, through the
+    # same evaluate() code path -- see BASELINE_ARMS/run_baseline_arms and
+    # evaluate()'s own doc.
+    arm_reports: dict = {}
+    for split in ("train", "val", "test"):
+        for arm_name, report in run_baseline_arms(freq_table, labeled, group_records, labels, split).items():
+            arm_reports.setdefault(arm_name, {})[split] = report
+        arm_reports.setdefault("full_configured_model", {})[split] = evaluate(
+            full_model_score_fn, imputed_labeled, group_records, labels, split
+        )
+
     result = {
         "feature_schema_version": from_export_schema,
         "proposal_mode": manifest.get("proposal_mode"),
         "rules_content_hash": manifest.get("rules_content_hash"),
         "unlabeled_group_count": unlabeled_group_count,
-        "reports": reports,
+        "template_frequency_table_sha256": template_frequency_table_sha256(freq_table),
+        "lightgbm": {
+            "hyperparameters": train_result["hyperparameters"],
+            "package_versions": train_result["package_versions"],
+            "best_iteration": train_result["best_iteration"],
+        },
+        "arms": arm_reports,
     }
     print(json.dumps(result, indent=2), flush=True)
 
@@ -1100,6 +1630,41 @@ def main() -> None:
         with open(args.eval_out, "w", encoding="utf-8") as f:
             json.dump(result, f, indent=2)
         print(f"Saved evaluation report to {args.eval_out}", flush=True)
+
+    if bool(args.gate_baseline_arm) != bool(args.gate_treatment_arm):
+        parser.error("--gate-baseline-arm and --gate-treatment-arm must be given together")
+    if args.gate_baseline_arm and args.gate_treatment_arm:
+        # Every baseline arm's score_fn, plus arm H's (full_configured_model)
+        # -- imputed_labeled is used uniformly for both arms regardless of
+        # which is chosen: imputation only touches features 16/17
+        # (max/mean_template_log_frequency), which no arm A-G reads (they
+        # use source_template_ids or other feature indices directly), so
+        # this never changes a baseline arm's own score_fn output.
+        arm_score_fns = {arm["name"]: arm["score_fn"] for arm in build_baseline_arms(freq_table)}
+        arm_score_fns["full_configured_model"] = full_model_score_fn
+        for name in (args.gate_baseline_arm, args.gate_treatment_arm):
+            if name not in arm_score_fns:
+                parser.error(
+                    f"unknown arm {name!r} -- must be one of {sorted(arm_score_fns)}"
+                )
+        gate_result = run_offline_gate(
+            arm_score_fns[args.gate_baseline_arm],
+            arm_score_fns[args.gate_treatment_arm],
+            imputed_labeled,
+            group_records,
+            labels,
+            args.gate_split,
+            args.gate_baseline_arm,
+            args.gate_treatment_arm,
+            n_resamples=args.bootstrap_resamples,
+            seed=args.bootstrap_seed,
+        )
+        print(json.dumps(gate_result, indent=2), flush=True)
+        if args.gate_out:
+            Path(args.gate_out).parent.mkdir(parents=True, exist_ok=True)
+            with open(args.gate_out, "w", encoding="utf-8") as f:
+                json.dump(gate_result, f, indent=2)
+            print(f"Saved offline-gate report to {args.gate_out}", flush=True)
 
 
 if __name__ == "__main__":

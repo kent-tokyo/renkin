@@ -16,6 +16,18 @@ use sha2::{Digest, Sha256};
 /// detect incompatible changes instead of silently misreading a report.
 pub const FORWARD_REPORT_SCHEMA_VERSION: u32 = 1;
 
+// Test-only instrumentation: counts `predict_products_detailed` calls, so
+// tests can assert that callers with a single-execution contract
+// (`validate_route`, the CLI) never make a redundant second pass over the
+// (potentially large) rule set for the same step. Thread-local, not a
+// process-wide static: `cargo test` runs tests concurrently on separate
+// threads, and a shared counter would be polluted by unrelated tests
+// calling `predict_products_detailed` at the same time.
+#[cfg(test)]
+thread_local! {
+    static PREDICT_DETAILED_CALL_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 /// A predicted forward reaction outcome.
 ///
 /// Legacy shape, kept for backward compatibility -- see
@@ -288,12 +300,95 @@ fn atom_charge_imbalance_diagnostic(
     }
 }
 
+/// Hashes a sequence of strings into `hasher` with an unambiguous framing:
+/// the element count, then each element as (length, bytes). A plain
+/// `.join(".")` is not safe here -- a single canonical SMILES can itself
+/// contain a `.` (e.g. a disconnected salt/ion-pair species), so
+/// `["C.C", "N"]` and `["C", "C.N"]` would join to the identical string
+/// `"C.C.N"` despite being different sequences. Length-prefixing makes the
+/// encoding injective: the original sequence can always be reconstructed
+/// from the byte stream, so two different sequences can never produce it.
+fn hash_string_sequence(hasher: &mut Sha256, values: &[String]) {
+    hasher.update((values.len() as u64).to_be_bytes());
+    for value in values {
+        let bytes = value.as_bytes();
+        hasher.update((bytes.len() as u64).to_be_bytes());
+        hasher.update(bytes);
+    }
+}
+
+/// Candidate identity, documented so downstream consumers can independently
+/// recompute it: SHA-256 over a domain separator (`renkin-forward-candidate-v1`,
+/// pinning this to a specific framing so it can be revised later without
+/// silently colliding with an older scheme), the sorted canonical reactants
+/// ([`hash_string_sequence`]), an explicit section separator, then the
+/// sorted canonical product multiset ([`hash_string_sequence`]).
 fn candidate_id_for(reactant_canon: &[String], products: &[String]) -> String {
     let mut hasher = Sha256::new();
-    hasher.update(reactant_canon.join("."));
-    hasher.update(b"\0");
-    hasher.update(products.join("."));
+    hasher.update(b"renkin-forward-candidate-v1\0");
+    hash_string_sequence(&mut hasher, reactant_canon);
+    hasher.update(b"\0products\0");
+    hash_string_sequence(&mut hasher, products);
     format!("sha256:{:x}", hasher.finalize())
+}
+
+/// `chematic::rxn::run_reactants` binds `reactants[i]` to the i-th
+/// left-hand-side SMIRKS component positionally -- it does not itself try
+/// every assignment of the supplied molecules to template components. A
+/// two-(or more-)reactant template can therefore match in one caller-given
+/// order and silently fail to match in the reverse order, even though the
+/// same molecules and template are involved. To make candidate discovery
+/// independent of the order the caller happened to type `--reactants` in,
+/// every distinct ordering is tried and their outcomes pooled -- outcomes
+/// found this way still collapse into the same candidate, since
+/// [`candidate_id_for`] keys off the *sorted* canonical reactants regardless
+/// of which ordering produced them. The caller-visible order (`ForwardReactant`,
+/// `input_index`) is never touched; only which orderings are attempted
+/// against `run_reactants`.
+///
+/// Capped at [`MAX_PERMUTED_REACTANTS`] reactants (permutations grow
+/// factorially; real templates rarely have more components) -- above the
+/// cap only the caller's original order is tried, and `predict_products_detailed`
+/// reports a `reactant_permutations_capped` warning rather than silently
+/// reducing coverage. Below the cap, if every reactant already canonicalizes
+/// to the same SMILES, permuting can't find anything new and is skipped.
+const MAX_PERMUTED_REACTANTS: usize = 3;
+
+fn reactant_orderings<'a>(
+    mol_refs: &[&'a Molecule],
+    reactant_canon: &[String],
+) -> (Vec<Vec<&'a Molecule>>, bool) {
+    if mol_refs.len() < 2 {
+        return (vec![mol_refs.to_vec()], false);
+    }
+    if mol_refs.len() > MAX_PERMUTED_REACTANTS {
+        return (vec![mol_refs.to_vec()], true);
+    }
+
+    let mut sorted_canon = reactant_canon.to_vec();
+    sorted_canon.sort_unstable();
+    if sorted_canon.windows(2).all(|w| w[0] == w[1]) {
+        return (vec![mol_refs.to_vec()], false);
+    }
+
+    let mut indices: Vec<usize> = (0..mol_refs.len()).collect();
+    let mut orderings = Vec::new();
+    permute_indices(&mut indices, 0, &mut |perm| {
+        orderings.push(perm.iter().map(|&i| mol_refs[i]).collect());
+    });
+    (orderings, false)
+}
+
+fn permute_indices(indices: &mut [usize], k: usize, visit: &mut impl FnMut(&[usize])) {
+    if k == indices.len() {
+        visit(indices);
+        return;
+    }
+    for i in k..indices.len() {
+        indices.swap(k, i);
+        permute_indices(indices, k + 1, visit);
+        indices.swap(k, i);
+    }
 }
 
 /// Strict wrapper around `renkin::chem_env::load_rules_from_file` for
@@ -338,6 +433,11 @@ pub fn predict_products_detailed(
     if config.max_results == 0 {
         bail!("max_results must be greater than 0");
     }
+    if reactants.is_empty() {
+        bail!("at least one reactant is required");
+    }
+    #[cfg(test)]
+    PREDICT_DETAILED_CALL_COUNT.with(|c| c.set(c.get() + 1));
 
     let mut reactant_mols = Vec::with_capacity(reactants.len());
     for (idx, smiles) in reactants.iter().enumerate() {
@@ -345,8 +445,13 @@ pub fn predict_products_detailed(
             .with_context(|| format!("reactant {idx} ({smiles:?}) failed to parse"))?;
         reactant_mols.push(mol);
     }
-    // Caller-supplied order is preserved for run_reactants; only the
-    // candidate-identity fingerprint below uses a sorted copy.
+    // Caller-supplied order is never *sorted* -- it's reported verbatim in
+    // `forward_reactants` below (`input_index`) and is always one of the
+    // orderings tried against `run_reactants` (see `reactant_orderings`).
+    // Additional orderings may also be tried, since `run_reactants` binds
+    // reactant slots to SMIRKS components positionally; trying more
+    // orderings is not the same as reordering the caller's input. The
+    // candidate-identity fingerprint below separately uses a sorted copy.
     let mol_refs: Vec<&Molecule> = reactant_mols.iter().collect();
 
     let forward_reactants: Vec<ForwardReactant> = reactants
@@ -371,6 +476,21 @@ pub fn predict_products_detailed(
         ..Default::default()
     };
     let mut warnings: Vec<ForwardWarning> = Vec::new();
+
+    let (orderings, permutations_capped) = reactant_orderings(&mol_refs, &reactant_canon);
+    if permutations_capped {
+        warnings.push(ForwardWarning {
+            code: "reactant_permutations_capped".to_string(),
+            template_id: None,
+            rule_name: None,
+            message: format!(
+                "{} reactants exceeds the {MAX_PERMUTED_REACTANTS}-reactant cap on trying \
+                 every ordering against multi-component templates; only the supplied order \
+                 was tried, so candidates that require a different ordering may be missing",
+                mol_refs.len()
+            ),
+        });
+    }
 
     // Keyed by candidate_id -> (products, sources). BTreeMap keeps iteration
     // order deterministic (candidate_id lexicographic) independent of the
@@ -421,9 +541,22 @@ pub fn predict_products_detailed(
             }
         };
 
-        let outcomes = match chematic::rxn::run_reactants(&fwd, &mol_refs) {
-            Ok(o) => o,
-            Err(e) => {
+        // `run_reactants` matches reactant slots to SMIRKS components
+        // positionally, so every distinct ordering computed above is tried;
+        // an ordering that doesn't match the template's arity/shape just
+        // contributes no outcomes, not an error. Only report an error if
+        // every ordering failed.
+        let mut outcomes: Vec<Vec<Molecule>> = Vec::new();
+        let mut last_err = None;
+        for ordering in &orderings {
+            match chematic::rxn::run_reactants(&fwd, ordering) {
+                Ok(o) => outcomes.extend(o),
+                Err(e) => last_err = Some(e),
+            }
+        }
+
+        if outcomes.is_empty() {
+            if let Some(e) = last_err {
                 stats.template_application_errors += 1;
                 let msg = format!(
                     "template {:?}: run_reactants failed: {e:?}",
@@ -438,11 +571,7 @@ pub fn predict_products_detailed(
                     rule_name: Some(rule.name.clone()),
                     message: msg,
                 });
-                continue;
             }
-        };
-
-        if outcomes.is_empty() {
             continue;
         }
         stats.templates_matched += 1;
@@ -494,12 +623,32 @@ pub fn predict_products_detailed(
                 }
                 Entry::Occupied(mut e) => {
                     stats.duplicate_candidates_merged += 1;
-                    let (_, sources) = e.get_mut();
-                    let already_present = sources.iter().any(|s| {
+                    let (existing_products, sources) = e.get_mut();
+                    // A candidate_id collision between two different product
+                    // multisets would silently corrupt merging -- catch it
+                    // immediately in debug/test builds rather than let it
+                    // manifest as a mysteriously wrong `products` field.
+                    debug_assert_eq!(
+                        existing_products, &products,
+                        "candidate_id collision: different product multisets hashed to the same ID"
+                    );
+                    match sources.iter_mut().find(|s| {
                         s.template_id == source.template_id && s.rule_name == source.rule_name
-                    });
-                    if !already_present {
-                        sources.push(source);
+                    }) {
+                        // The same (template_id, rule_name) reached this
+                        // candidate again, possibly with a different weight
+                        // or source_rank (e.g. a caller-supplied `rules`
+                        // slice with near-duplicate entries) -- merge
+                        // deterministically (max weight, min source_rank)
+                        // rather than silently keeping whichever arrived
+                        // first.
+                        Some(existing) => {
+                            if source.template_weight > existing.template_weight {
+                                existing.template_weight = source.template_weight;
+                            }
+                            existing.source_rank = existing.source_rank.min(source.source_rank);
+                        }
+                        None => sources.push(source),
                     }
                 }
             }
@@ -548,6 +697,22 @@ pub fn predict_products_detailed(
     stats.candidates_returned = built.len();
     stats.truncated = truncated;
 
+    // A symmetric multi-reactant template can raise the exact same
+    // diagnostic from more than one tried reactant ordering (e.g. the same
+    // invalid/no-op outcome found twice) -- dedupe by full content, keeping
+    // first-seen order (via `Vec::retain`'s in-order traversal), so a
+    // caller sees each distinct warning once rather than once per ordering
+    // that happened to rediscover it.
+    let mut seen_warnings = std::collections::HashSet::new();
+    warnings.retain(|w| {
+        seen_warnings.insert((
+            w.code.clone(),
+            w.template_id.clone(),
+            w.rule_name.clone(),
+            w.message.clone(),
+        ))
+    });
+
     Ok(ForwardPredictionReport {
         schema_version: FORWARD_REPORT_SCHEMA_VERSION,
         reactants: forward_reactants,
@@ -555,6 +720,34 @@ pub fn predict_products_detailed(
         stats,
         warnings,
     })
+}
+
+/// Expands a report's merged candidates back into the legacy
+/// [`ForwardPrediction`] shape: candidates in their final rank order, each
+/// candidate's sources in their own deterministic order, one legacy record
+/// per source -- then truncates the resulting **flat record list** to
+/// `max_results`. This is the only place that decides the final legacy
+/// record count; a caller wanting `result.len() <= max_results` to hold
+/// must pass a `report` built with an effectively unlimited
+/// `ForwardPredictConfig::max_results` (see [`predict_products`]), since
+/// truncating candidates first and expanding after could yield either more
+/// or fewer than `max_results` records.
+pub fn legacy_predictions_from_report(
+    report: &ForwardPredictionReport,
+    max_results: usize,
+) -> Vec<ForwardPrediction> {
+    let mut out = Vec::new();
+    for candidate in &report.candidates {
+        for source in &candidate.sources {
+            out.push(ForwardPrediction {
+                template: source.rule_name.clone(),
+                products: candidate.products.clone(),
+                weight: source.template_weight,
+            });
+        }
+    }
+    out.truncate(max_results);
+    out
 }
 
 /// Predict forward reaction products for a given set of reactants.
@@ -565,7 +758,16 @@ pub fn predict_products_detailed(
 /// expanded back into its own record -- the same `template` name may
 /// legitimately appear more than once. This is not deprecated: new
 /// integrations should prefer [`predict_products_detailed`], which retains
-/// full candidate/source provenance and structured stats/warnings.
+/// full candidate/source provenance and structured stats/warnings --
+/// notably including [`ForwardWarning`]s, which this function's signature
+/// has no way to return; if you need visibility into template-level
+/// failures, call [`predict_products_detailed`] directly.
+///
+/// `max_results` bounds the final flat record count
+/// (`result.len() <= max_results` always holds): every candidate is
+/// generated internally (not capped at the candidate level) before
+/// expanding to legacy records and truncating, since one candidate can
+/// expand into several records (one per source).
 ///
 /// `max_results == 0` returns an empty result here (matching this function's
 /// pre-existing behavior), unlike [`predict_products_detailed`], which
@@ -579,30 +781,26 @@ pub fn predict_products(
         return Ok(Vec::new());
     }
     let config = ForwardPredictConfig {
-        max_results,
+        max_results: usize::MAX,
         ..Default::default()
     };
     let report = predict_products_detailed(reactants, rules, &config)?;
-    let mut out = Vec::new();
-    for candidate in &report.candidates {
-        for source in &candidate.sources {
-            out.push(ForwardPrediction {
-                template: source.rule_name.clone(),
-                products: candidate.products.clone(),
-                weight: source.template_weight,
-            });
-        }
-    }
-    Ok(out)
+    Ok(legacy_predictions_from_report(&report, max_results))
 }
 
 /// Validate each step in a retrosynthetic route using forward reaction prediction.
 ///
-/// For each step, applies forward prediction to the step's precursors and
-/// checks whether the canonical SMILES of the step's target appears among
-/// any candidate's products. `verified` is computed over the full
+/// For each step, applies forward prediction to the step's precursors
+/// **exactly once** (a single [`predict_products_detailed`] call, not one
+/// for `verified` and a separate one for `top_predictions`) and checks
+/// whether the canonical SMILES of the step's target appears among any
+/// candidate's products. `verified` is computed over the full
 /// (untruncated) candidate set -- so the outcome a target actually appears
-/// in can never be hidden by an arbitrary display cap -- while
+/// in can never be hidden by an arbitrary display cap. This is a behavior
+/// change from versions prior to this fix, which computed `verified` only
+/// over an already-`--max-results`-truncated list; a route step that was
+/// previously `verified: false` purely because its matching template fell
+/// outside the top 5 will now correctly read `verified: true`.
 /// `top_predictions` remains the same capped, legacy-shaped list as before.
 pub fn validate_route(route: &Route, rules: &[RetroRule]) -> Result<Vec<StepValidation>> {
     let mut validations = Vec::with_capacity(route.steps.len());
@@ -614,19 +812,19 @@ pub fn validate_route(route: &Route, rules: &[RetroRule]) -> Result<Vec<StepVali
             max_results: usize::MAX,
             ..Default::default()
         };
-        let full_report = predict_products_detailed(&reactant_refs, rules, &full_config)?;
+        let report = predict_products_detailed(&reactant_refs, rules, &full_config)?;
 
         let target_canon = mol_from_smiles(&step.target)
             .ok()
             .map(|m| canonical_smiles(&m))
             .unwrap_or_else(|| step.target.clone());
 
-        let verified = full_report
+        let verified = report
             .candidates
             .iter()
             .any(|c| c.products.contains(&target_canon));
 
-        let top_predictions = predict_products(&reactant_refs, rules, 5)?;
+        let top_predictions = legacy_predictions_from_report(&report, 5);
 
         validations.push(StepValidation {
             step_index: i,
@@ -708,15 +906,22 @@ mod tests {
     /// Regression fixture for outcome separation, verified empirically against
     /// a real `chematic::rxn::run_reactants` call (not hypothesized): a
     /// hand-authored halide-metathesis SMIRKS applied to two dihalides with
-    /// non-equivalent halogen sites returns 4 independent raw outcomes, each
-    /// with 2 products. One of the 4 (the combination that reassigns each
-    /// molecule's halogens back to its own starting arrangement) is a genuine
-    /// no-op and is correctly filtered, leaving 3 -- confirmed by checking
-    /// each raw outcome's product pair against the reactants' canonical forms
-    /// directly. The surviving outcomes' product *pairings* differ even
-    /// though individual products repeat across them, which is exactly the
-    /// information a flat `flat_map` would destroy by merging everything
-    /// into one undifferentiated product bag.
+    /// non-equivalent halogen sites. `run_reactants` binds reactant slots to
+    /// SMIRKS components positionally, so the caller's order alone changes
+    /// which combinations it finds: the given order yields 4 raw outcomes
+    /// (one a genuine no-op, reassigning each molecule's halogens back to its
+    /// own starting arrangement), while the reversed order yields 1 further
+    /// raw outcome absent from the first ordering entirely (confirmed via a
+    /// scratch probe against the reversed forward SMIRKS). Since
+    /// `predict_products` tries every reactant ordering up to
+    /// [`MAX_PERMUTED_REACTANTS`] (see [`reactant_orderings`]), all 5 raw
+    /// outcomes are pooled, leaving 4 survivors after the 1 no-op is
+    /// filtered -- confirmed by checking each raw outcome's product pair
+    /// against the reactants' canonical forms directly. The surviving
+    /// outcomes' product *pairings* differ even though individual products
+    /// repeat across them, which is exactly the information a flat
+    /// `flat_map` would destroy by merging everything into one
+    /// undifferentiated product bag.
     #[test]
     fn outcomes_are_never_flattened_together() {
         let result = predict_products(
@@ -728,8 +933,9 @@ mod tests {
 
         assert_eq!(
             result.len(),
-            3,
-            "expected 3 surviving outcomes (4 raw outcomes minus 1 genuine no-op), got {result:?}"
+            4,
+            "expected 4 surviving outcomes (5 raw outcomes across both reactant \
+             orderings minus 1 genuine no-op), got {result:?}"
         );
         for entry in &result {
             assert_eq!(
@@ -744,8 +950,8 @@ mod tests {
         pairs.dedup();
         assert_eq!(
             pairs.len(),
-            3,
-            "all 3 surviving outcomes must have distinct product pairings, got {pairs:?}"
+            4,
+            "all 4 surviving outcomes must have distinct product pairings, got {pairs:?}"
         );
 
         let mut reactant_canon = vec![
@@ -772,7 +978,7 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(full.candidates.len(), 3);
+        assert_eq!(full.candidates.len(), 4);
         assert!(!full.stats.truncated);
 
         let capped = predict_products_detailed(
@@ -1013,6 +1219,93 @@ mod tests {
         assert!(result.is_empty());
     }
 
+    fn dummy_report(candidates: Vec<ForwardCandidate>) -> ForwardPredictionReport {
+        ForwardPredictionReport {
+            schema_version: FORWARD_REPORT_SCHEMA_VERSION,
+            reactants: Vec::new(),
+            candidates,
+            stats: ForwardStats::default(),
+            warnings: Vec::new(),
+        }
+    }
+
+    fn dummy_source(name: &str, weight: f64) -> ForwardCandidateSource {
+        ForwardCandidateSource {
+            template_id: format!("rule:{name}"),
+            rule_name: name.to_string(),
+            template_weight: weight,
+            source_rank: 0,
+        }
+    }
+
+    #[test]
+    fn legacy_helper_truncates_flat_records_one_candidate_many_sources() {
+        let sources: Vec<_> = (0..10)
+            .map(|i| dummy_source(&format!("rule_{i}"), f64::from(i)))
+            .collect();
+        let candidate = ForwardCandidate {
+            candidate_id: "sha256:dummy".to_string(),
+            products: vec!["X".to_string()],
+            rank: 0,
+            proposal_score: 9.0,
+            sources,
+        };
+        let report = dummy_report(vec![candidate]);
+        assert_eq!(legacy_predictions_from_report(&report, 5).len(), 5);
+    }
+
+    #[test]
+    fn legacy_helper_truncates_flat_records_many_candidates_one_source_each() {
+        let candidates: Vec<_> = (0..10)
+            .map(|i| ForwardCandidate {
+                candidate_id: format!("sha256:dummy{i}"),
+                products: vec![format!("X{i}")],
+                rank: i,
+                proposal_score: 1.0,
+                sources: vec![dummy_source(&format!("rule_{i}"), 1.0)],
+            })
+            .collect();
+        let report = dummy_report(candidates);
+        assert_eq!(legacy_predictions_from_report(&report, 5).len(), 5);
+    }
+
+    #[test]
+    fn legacy_helper_max_results_one() {
+        let candidates: Vec<_> = (0..3)
+            .map(|i| ForwardCandidate {
+                candidate_id: format!("sha256:dummy{i}"),
+                products: vec![format!("X{i}")],
+                rank: i,
+                proposal_score: 1.0,
+                sources: vec![dummy_source(&format!("rule_{i}"), 1.0)],
+            })
+            .collect();
+        let report = dummy_report(candidates);
+        assert_eq!(legacy_predictions_from_report(&report, 1).len(), 1);
+    }
+
+    #[test]
+    fn legacy_predict_products_respects_max_results_across_candidate_merges() {
+        // Two rules with distinct names sharing the same SMIRKS converge on
+        // the same 3 candidates from the dihalide fixture, each candidate
+        // ending up with 2 sources -- 6 legacy records total if unbounded.
+        // max_results=1 must still cap the FINAL flat list at 1, not at 1
+        // candidate's worth of sources (which would be 2 here).
+        let mut rule_a = synthetic_metathesis_rule();
+        rule_a.name = "rule_a".to_string();
+        rule_a.template_id = "rule:rule_a".to_string();
+        let mut rule_b = synthetic_metathesis_rule();
+        rule_b.name = "rule_b".to_string();
+        rule_b.template_id = "rule:rule_b".to_string();
+
+        let result =
+            predict_products(&["ClCC(Cl)CBr", "BrCC(Br)CCl"], &[rule_a, rule_b], 1).unwrap();
+        assert!(
+            result.len() <= 1,
+            "expected at most 1 record, got {result:?}"
+        );
+    }
+
     #[test]
     fn candidate_id_is_stable_sha256_prefixed() {
         let id_a = candidate_id_for(&["CCO".to_string()], &["CC(=O)O".to_string()]);
@@ -1027,6 +1320,145 @@ mod tests {
             id_a, id_c,
             "multiset multiplicity must change the candidate ID"
         );
+    }
+
+    #[test]
+    fn candidate_id_products_join_ambiguity_is_resolved() {
+        // A naive `.join(".")` would make these two DIFFERENT product
+        // sequences collide: ["C.C", "N"].join(".") == "C.C.N"
+        //                    ["C", "C.N"].join(".") == "C.C.N"
+        let id_a = candidate_id_for(&["X".to_string()], &["C.C".to_string(), "N".to_string()]);
+        let id_b = candidate_id_for(&["X".to_string()], &["C".to_string(), "C.N".to_string()]);
+        assert_ne!(id_a, id_b, "product-side join ambiguity must not collide");
+    }
+
+    #[test]
+    fn candidate_id_reactants_join_ambiguity_is_resolved() {
+        let id_a = candidate_id_for(&["C.C".to_string(), "N".to_string()], &["X".to_string()]);
+        let id_b = candidate_id_for(&["C".to_string(), "C.N".to_string()], &["X".to_string()]);
+        assert_ne!(id_a, id_b, "reactant-side join ambiguity must not collide");
+    }
+
+    #[test]
+    fn candidate_id_is_order_independent_given_presorted_input() {
+        // candidate_id_for itself just hashes whatever order it's given --
+        // order-independence is a property of the CALLER always sorting
+        // first (canonicalize_outcome, predict_products_detailed's
+        // reactant_canon). This test pins that contract: the same multiset,
+        // sorted, gives the same ID regardless of the order it started in.
+        let mut products_a = vec!["b".to_string(), "a".to_string()];
+        products_a.sort_unstable();
+        let mut products_b = vec!["a".to_string(), "b".to_string()];
+        products_b.sort_unstable();
+        assert_eq!(products_a, products_b);
+        let id_a = candidate_id_for(&["X".to_string()], &products_a);
+        let id_b = candidate_id_for(&["X".to_string()], &products_b);
+        assert_eq!(id_a, id_b);
+    }
+
+    #[test]
+    fn candidate_id_differs_by_product_multiplicity() {
+        // ["CO"] and ["CO", "CO"] are different candidates (a multiset, not
+        // a set) -- the ID must reflect that, not just the set of distinct
+        // products.
+        let one = candidate_id_for(&["X".to_string()], &["CO".to_string()]);
+        let two = candidate_id_for(&["X".to_string()], &["CO".to_string(), "CO".to_string()]);
+        assert_ne!(one, two, "differing product multiplicity must not collide");
+    }
+
+    #[test]
+    fn same_input_produces_byte_identical_report_json() {
+        let rules = renkin::chem_env::default_rules();
+        let config = ForwardPredictConfig::default();
+        let report_a = predict_products_detailed(&["CC(=O)O", "CCO"], &rules, &config).unwrap();
+        let report_b = predict_products_detailed(&["CC(=O)O", "CCO"], &rules, &config).unwrap();
+        let json_a = serde_json::to_string(&report_a).unwrap();
+        let json_b = serde_json::to_string(&report_b).unwrap();
+        assert_eq!(json_a, json_b);
+    }
+
+    #[test]
+    fn reactant_input_order_alone_does_not_change_candidate_ids() {
+        let rules = renkin::chem_env::default_rules();
+        let config = ForwardPredictConfig::default();
+        let report_a =
+            predict_products_detailed(&["Oc1ccccc1C(=O)O", "CCO"], &rules, &config).unwrap();
+        let report_b =
+            predict_products_detailed(&["CCO", "Oc1ccccc1C(=O)O"], &rules, &config).unwrap();
+        let mut ids_a: Vec<&str> = report_a
+            .candidates
+            .iter()
+            .map(|c| c.candidate_id.as_str())
+            .collect();
+        let mut ids_b: Vec<&str> = report_b
+            .candidates
+            .iter()
+            .map(|c| c.candidate_id.as_str())
+            .collect();
+        ids_a.sort_unstable();
+        ids_b.sort_unstable();
+        assert_eq!(
+            ids_a, ids_b,
+            "swapping reactant input order must not change the resulting candidate ID set"
+        );
+    }
+
+    #[test]
+    fn reactant_permutations_beyond_cap_emit_a_warning() {
+        let rules = renkin::chem_env::default_rules();
+        let config = ForwardPredictConfig::default();
+        // MAX_PERMUTED_REACTANTS + 1 distinct reactants: too many for every
+        // ordering to be tried, so only the caller's order is attempted and
+        // the caller must be told coverage was reduced, not left to assume
+        // the full order-independence guarantee silently held anyway.
+        let report =
+            predict_products_detailed(&["CCO", "CC(=O)O", "c1ccccc1", "CCN"], &rules, &config)
+                .unwrap();
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|w| w.code == "reactant_permutations_capped"),
+            "expected a reactant_permutations_capped warning for {} reactants, got {:?}",
+            4,
+            report.warnings
+        );
+    }
+
+    #[test]
+    fn duplicate_source_metadata_conflict_merges_to_max_weight_min_rank() {
+        // Two entries in the caller's `rules` slice share the same
+        // (template_id, rule_name) but differ in weight/position -- this
+        // must merge deterministically, not silently keep whichever the
+        // loop visited first.
+        let mut first = synthetic_metathesis_rule();
+        first.weight = 3.0;
+        let mut second = synthetic_metathesis_rule(); // same name/template_id
+        second.weight = 9.0;
+
+        let report = predict_products_detailed(
+            &["ClCC(Cl)CBr", "BrCC(Br)CCl"],
+            &[first, second],
+            &ForwardPredictConfig {
+                max_results: usize::MAX,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        for candidate in &report.candidates {
+            let matching: Vec<_> = candidate
+                .sources
+                .iter()
+                .filter(|s| s.rule_name == "synthetic_halide_metathesis")
+                .collect();
+            assert_eq!(
+                matching.len(),
+                1,
+                "duplicate (template_id, rule_name) must merge to one source entry"
+            );
+            assert_eq!(matching[0].template_weight, 9.0, "must keep the max weight");
+            assert_eq!(matching[0].source_rank, 0, "must keep the min source_rank");
+        }
     }
 
     #[test]
@@ -1173,6 +1605,95 @@ mod tests {
             validations[0].verified,
             "expected aryl_ether_retro forward application to verify the target, got {:?}",
             validations[0]
+        );
+    }
+
+    /// `chematic::rxn::run_reactants` binds precursor slots to SMIRKS
+    /// components positionally: for this exact rule/precursor pair, a
+    /// scratch probe confirmed the precursor order in
+    /// `validate_route_golden_fixture_verified_true` finds a match while the
+    /// reversed order finds none. A route search can emit precursors in
+    /// either order for the same underlying chemistry, so `verified` must
+    /// not depend on it -- this is the same reactant-ordering fix as
+    /// [`reactant_input_order_alone_does_not_change_candidate_ids`], exercised
+    /// through `validate_route` instead of `predict_products_detailed`
+    /// directly.
+    #[test]
+    fn validate_route_verified_is_independent_of_precursor_order() {
+        use renkin::search::ReactionStep;
+
+        let rules = renkin::chem_env::default_rules();
+        let step = ReactionStep {
+            rule: "aryl_ether_retro".to_string(),
+            template_id: "rule:aryl_ether_retro".to_string(),
+            target: "CCOc1ccccc1C(=O)O".to_string(),
+            precursors: vec!["CCO".to_string(), "Oc1ccccc1C(=O)O".to_string()],
+            conditions: None,
+            atom_economy: None,
+            step_confidence: 1.0,
+            procedure_hint: None,
+            reaction_family: None,
+            metadata_source: None,
+            metadata_scope: None,
+            evidence: None,
+        };
+        let route = Route {
+            steps: vec![step],
+            depth: 1,
+            score: 1.0,
+            building_blocks: vec!["CCO".to_string(), "Oc1ccccc1C(=O)O".to_string()],
+            confidence: 1.0,
+            convergency: 1.0,
+            success_probability: 1.0,
+            route_cost: 1.0,
+        };
+
+        let validations = validate_route(&route, &rules).unwrap();
+        assert_eq!(validations.len(), 1);
+        assert!(
+            validations[0].verified,
+            "reversing precursor order alone must not flip verified to false, got {:?}",
+            validations[0]
+        );
+    }
+
+    #[test]
+    fn validate_route_calls_predict_products_detailed_exactly_once_per_step() {
+        use renkin::search::ReactionStep;
+
+        PREDICT_DETAILED_CALL_COUNT.with(|c| c.set(0));
+
+        let rules = renkin::chem_env::default_rules();
+        let step = ReactionStep {
+            rule: "aryl_ether_retro".to_string(),
+            template_id: "rule:aryl_ether_retro".to_string(),
+            target: "CCOc1ccccc1C(=O)O".to_string(),
+            precursors: vec!["Oc1ccccc1C(=O)O".to_string(), "CCO".to_string()],
+            conditions: None,
+            atom_economy: None,
+            step_confidence: 1.0,
+            procedure_hint: None,
+            reaction_family: None,
+            metadata_source: None,
+            metadata_scope: None,
+            evidence: None,
+        };
+        let route = Route {
+            steps: vec![step],
+            depth: 1,
+            score: 1.0,
+            building_blocks: vec!["Oc1ccccc1C(=O)O".to_string(), "CCO".to_string()],
+            confidence: 1.0,
+            convergency: 1.0,
+            success_probability: 1.0,
+            route_cost: 1.0,
+        };
+
+        validate_route(&route, &rules).unwrap();
+        assert_eq!(
+            PREDICT_DETAILED_CALL_COUNT.with(|c| c.get()),
+            1,
+            "validate_route must call predict_products_detailed exactly once per step, not once for `verified` and again for `top_predictions`"
         );
     }
 

@@ -11,7 +11,7 @@
 use anyhow::{Result, bail};
 use renkin::chem_env::default_rules;
 use renkin_forward::{
-    ForwardPredictConfig, ForwardPrediction, load_templates_strict, predict_products,
+    ForwardPredictConfig, ForwardPrediction, legacy_predictions_from_report, load_templates_strict,
     predict_products_detailed,
 };
 
@@ -33,7 +33,10 @@ renkin-forward predict --reactants <SMILES>... [--templates <path>] [--max-resul
 Options:\n  \
 --reactants <SMILES>...   One or more reactant SMILES (required)\n  \
 --templates <path>        Additional SMIRKS template file (hard error if missing/unreadable/empty)\n  \
---max-results N           Maximum candidates to return (default 5, must be > 0)\n  \
+--max-results N           Without --report: maximum legacy prediction records returned, after\n                            \
+per-source expansion. With --report: maximum merged candidates included in\n                            \
+the report. Same flag, different meaning depending on --report. Must be > 0\n                            \
+(default 5).\n  \
 --report                  Emit a full ForwardPredictionReport instead of the legacy array\n\
 \n\
 Without --report, output is a JSON array of {template, products, weight} (products may repeat\n\
@@ -84,7 +87,11 @@ struct ParsedArgs {
 
 /// Strict argument parser shared by `predict`/`validate`: unknown options,
 /// missing option values, and invalid integers are all hard errors, never
-/// silently ignored or defaulted.
+/// silently ignored or defaulted. Each subcommand also has its own option
+/// allowlist -- `--reactants`/`--report` only make sense for `predict`,
+/// `--route-json` only for `validate` -- so an option valid for the *other*
+/// subcommand (e.g. `predict --route-json`, `validate --reactants`) is
+/// itself an unknown-option hard error, not silently accepted or ignored.
 fn parse_args(subcommand: &str, args: &[String]) -> Result<ParsedArgs> {
     let mut reactants: Vec<String> = Vec::new();
     let mut route_json: Option<String> = None;
@@ -95,7 +102,7 @@ fn parse_args(subcommand: &str, args: &[String]) -> Result<ParsedArgs> {
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
-            "--reactants" => {
+            "--reactants" if subcommand == "predict" => {
                 i += 1;
                 let start = i;
                 while i < args.len() && !args[i].starts_with("--") {
@@ -107,7 +114,7 @@ fn parse_args(subcommand: &str, args: &[String]) -> Result<ParsedArgs> {
                 }
                 continue;
             }
-            "--route-json" => {
+            "--route-json" if subcommand == "validate" => {
                 i += 1;
                 let v = args
                     .get(i)
@@ -128,7 +135,7 @@ fn parse_args(subcommand: &str, args: &[String]) -> Result<ParsedArgs> {
                     .ok_or_else(|| anyhow::anyhow!("--max-results requires a value"))?;
                 max_results = parse_max_results(v)?;
             }
-            "--report" => {
+            "--report" if subcommand == "predict" => {
                 report = true;
             }
             "--help" | "-h" => {
@@ -154,6 +161,45 @@ fn parse_args(subcommand: &str, args: &[String]) -> Result<ParsedArgs> {
         max_results,
         report,
     })
+}
+
+/// Strictly validates and extracts one route-JSON step's `target` and
+/// `precursors`, with the step index and offending field name in every
+/// error -- a step that isn't an object, or has a missing/wrong-type/empty
+/// field, is a hard error, never silently coerced or dropped (a
+/// `filter_map`/`as_str` pattern would drop a malformed precursor instead of
+/// rejecting the whole step).
+fn parse_step(idx: usize, step: &serde_json::Value) -> Result<(String, Vec<String>)> {
+    if !step.is_object() {
+        bail!("step {idx}: expected a JSON object, got {step}");
+    }
+
+    let target = step["target"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("step {idx}: missing or non-string 'target' field"))?;
+    if target.is_empty() {
+        bail!("step {idx}: 'target' must not be empty");
+    }
+
+    let precursors_json = step["precursors"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("step {idx}: missing or non-array 'precursors' field"))?;
+    if precursors_json.is_empty() {
+        bail!("step {idx}: 'precursors' must not be empty");
+    }
+
+    let mut precursors = Vec::with_capacity(precursors_json.len());
+    for (p_idx, p) in precursors_json.iter().enumerate() {
+        let s = p
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("step {idx}: precursors[{p_idx}] is not a string"))?;
+        if s.is_empty() {
+            bail!("step {idx}: precursors[{p_idx}] must not be empty");
+        }
+        precursors.push(s.to_string());
+    }
+
+    Ok((target.to_string(), precursors))
 }
 
 /// Loads the embedded default rules plus, if given, an explicit external
@@ -208,19 +254,31 @@ fn main() -> Result<()> {
                 bail!("predict requires --reactants <SMILES>...");
             }
             let refs: Vec<&str> = parsed.reactants.iter().map(|s| s.as_str()).collect();
+            // Exactly one prediction pass regardless of --report: with
+            // --report, --max-results caps the merged candidates directly
+            // (config.max_results below); without it, the full candidate
+            // set is generated and --max-results instead caps the flat
+            // legacy record list *after* per-source expansion (see
+            // `legacy_predictions_from_report`) -- the same two numbers
+            // would otherwise silently mean different things at the same
+            // call site.
+            let config = ForwardPredictConfig {
+                max_results: if parsed.report {
+                    parsed.max_results
+                } else {
+                    usize::MAX
+                },
+                ..Default::default()
+            };
+            let report = predict_products_detailed(&refs, &rules, &config)?;
+            for w in &report.warnings {
+                eprintln!("warning[{}]: {}", w.code, w.message);
+            }
             if parsed.report {
-                let config = ForwardPredictConfig {
-                    max_results: parsed.max_results,
-                    ..Default::default()
-                };
-                let report = predict_products_detailed(&refs, &rules, &config)?;
-                for w in &report.warnings {
-                    eprintln!("warning[{}]: {}", w.code, w.message);
-                }
                 println!("{}", serde_json::to_string_pretty(&report)?);
             } else {
                 let predictions: Vec<ForwardPrediction> =
-                    predict_products(&refs, &rules, parsed.max_results)?;
+                    legacy_predictions_from_report(&report, parsed.max_results);
                 println!("{}", serde_json::to_string_pretty(&predictions)?);
             }
         }
@@ -252,29 +310,33 @@ fn main() -> Result<()> {
 
             let mut results: Vec<serde_json::Value> = Vec::new();
             for (idx, step) in steps.iter().enumerate() {
-                let target = step["target"].as_str().unwrap_or("");
-                let prec_refs: Vec<&str> = step["precursors"]
-                    .as_array()
-                    .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
-                    .unwrap_or_default();
+                let (target, precursors) = parse_step(idx, step)?;
+                let prec_refs: Vec<&str> = precursors.iter().map(|s| s.as_str()).collect();
 
+                // One prediction pass per step: `verified` and
+                // `top_predictions` are both derived from this same
+                // `full_report`, not from two separate template-application
+                // passes over the (potentially large) rule set.
                 let full_config = ForwardPredictConfig {
                     max_results: usize::MAX,
                     ..Default::default()
                 };
                 let full_report = predict_products_detailed(&prec_refs, &rules, &full_config)?;
+                for w in &full_report.warnings {
+                    eprintln!("warning[{}]: {}", w.code, w.message);
+                }
 
-                let target_canon = renkin::chem_env::mol_from_smiles(target)
+                let target_canon = renkin::chem_env::mol_from_smiles(&target)
                     .ok()
                     .map(|m| chematic::smiles::canonical_smiles(&m))
-                    .unwrap_or_else(|| target.to_string());
+                    .unwrap_or_else(|| target.clone());
                 let verified = full_report
                     .candidates
                     .iter()
                     .any(|c| c.products.contains(&target_canon));
 
                 let preds: Vec<ForwardPrediction> =
-                    predict_products(&prec_refs, &rules, parsed.max_results)?;
+                    legacy_predictions_from_report(&full_report, parsed.max_results);
 
                 results.push(serde_json::json!({
                     "step_index": idx,

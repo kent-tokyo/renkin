@@ -226,3 +226,151 @@ fn unknown_subcommand_is_hard_error() {
     let out = run(&["frobnicate"]);
     assert!(!out.status.success());
 }
+
+#[test]
+fn predict_rejects_validate_only_route_json_option() {
+    let out = run(&["predict", "--reactants", "CCO", "--route-json", "{}"]);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("--route-json") || stderr.contains("unknown option"));
+}
+
+#[test]
+fn validate_rejects_predict_only_reactants_option() {
+    let out = run(&["validate", "--reactants", "CCO"]);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("--reactants") || stderr.contains("unknown option"));
+}
+
+#[test]
+fn validate_rejects_predict_only_report_option() {
+    let out = run(&[
+        "validate",
+        "--route-json",
+        r#"{"steps":[{"target":"CC(=O)OCC","precursors":["CC(=O)O","CCO"]}]}"#,
+        "--report",
+    ]);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("--report") || stderr.contains("unknown option"));
+}
+
+#[test]
+fn predict_legacy_mode_surfaces_warnings_on_stderr() {
+    // A default rule that requires exactly 1 reactant, applied to 2 here,
+    // fails inside run_reactants (ReactantCountMismatch) and is reported as
+    // a warning -- this must reach stderr even without --report, since
+    // predict_products_detailed's Rust return type can't carry warnings
+    // back through the legacy array.
+    let out = run(&["predict", "--reactants", "c1ccccc1Cl", "CCO"]);
+    assert!(out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("warning["),
+        "expected at least one warning on stderr in legacy (non --report) mode, got: {stderr}"
+    );
+}
+
+#[test]
+fn validate_step_that_is_not_an_object_is_hard_error() {
+    let out = run(&["validate", "--route-json", r#"{"steps":["not-an-object"]}"#]);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("step 0"));
+}
+
+#[test]
+fn validate_step_missing_target_is_hard_error() {
+    let out = run(&[
+        "validate",
+        "--route-json",
+        r#"{"steps":[{"precursors":["CCO"]}]}"#,
+    ]);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("step 0"));
+    assert!(stderr.contains("target"));
+}
+
+#[test]
+fn validate_step_empty_precursors_array_is_hard_error() {
+    let out = run(&[
+        "validate",
+        "--route-json",
+        r#"{"steps":[{"target":"CCO","precursors":[]}]}"#,
+    ]);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("step 0"));
+    assert!(stderr.contains("precursors"));
+}
+
+#[test]
+fn predict_calls_prediction_engine_exactly_once_regardless_of_report() {
+    // `aryl_chloride_to_bromide` requires exactly 1 reactant; applied to 2,
+    // it fails inside run_reactants for every reactant ordering the fix
+    // tries, and the warning is deduped to one entry per rule -- but
+    // several other default rules also require exactly 1 reactant and fail
+    // the same way, so the proxy must count occurrences of this ONE rule's
+    // name, not the shared `template_application_failed` code (which
+    // legitimately appears once per distinct failing rule). If `predict`
+    // (in legacy mode) ran the engine twice, per the old bug where it
+    // called `predict_products_detailed` once for `--report`'s report and
+    // `predict_products` again for the legacy array, this rule's warning
+    // would be primed to appear twice as well (it doesn't).
+    let legacy = run(&["predict", "--reactants", "c1ccccc1Cl", "CCO"]);
+    assert!(legacy.status.success());
+    let legacy_stderr = String::from_utf8_lossy(&legacy.stderr);
+    let legacy_count = legacy_stderr
+        .matches("rule:aryl_chloride_to_bromide")
+        .count();
+    assert_eq!(
+        legacy_count, 1,
+        "expected exactly 1 aryl_chloride_to_bromide warning in legacy mode, got {legacy_count}: {legacy_stderr}"
+    );
+
+    let report = run(&["predict", "--reactants", "c1ccccc1Cl", "CCO", "--report"]);
+    assert!(report.status.success());
+    let report_stderr = String::from_utf8_lossy(&report.stderr);
+    let report_count = report_stderr
+        .matches("rule:aryl_chloride_to_bromide")
+        .count();
+    assert_eq!(
+        report_count, 1,
+        "expected exactly 1 aryl_chloride_to_bromide warning with --report, got {report_count}: {report_stderr}"
+    );
+}
+
+#[test]
+fn validate_calls_prediction_engine_exactly_once_per_step() {
+    // Same proxy as predict_calls_prediction_engine_exactly_once_regardless_of_report,
+    // but through `validate`: if `verified` and `top_predictions` were each
+    // computed by a separate prediction pass (the original bug), this
+    // rule's warning would appear twice for the one step.
+    let out = run(&[
+        "validate",
+        "--route-json",
+        r#"{"steps":[{"target":"CCO","precursors":["c1ccccc1Cl","CCO"]}]}"#,
+    ]);
+    assert!(out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let count = stderr.matches("rule:aryl_chloride_to_bromide").count();
+    assert_eq!(
+        count, 1,
+        "expected exactly 1 aryl_chloride_to_bromide warning for 1 step, got {count}: {stderr}"
+    );
+}
+
+#[test]
+fn validate_step_non_string_precursor_is_hard_error_not_silently_dropped() {
+    let out = run(&[
+        "validate",
+        "--route-json",
+        r#"{"steps":[{"target":"CC(=O)OCC","precursors":["CC(=O)O", 42]}]}"#,
+    ]);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("step 0"));
+    assert!(stderr.contains("precursors"));
+}

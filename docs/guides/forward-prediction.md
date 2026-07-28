@@ -201,7 +201,8 @@ silently-empty corpus.
 Warning codes you may see: `invalid_forward_smirks`, `template_application_failed`,
 `invalid_template_weight`, `empty_product_outcome`, `product_roundtrip_failed`,
 `atom_balance_diagnostic` (informational only — see below, never rejects a
-candidate).
+candidate), `reactant_permutations_capped` (more than 3 reactants supplied;
+see Limitations).
 
 ## Limitations
 
@@ -226,6 +227,13 @@ candidate).
   applied.
 - **Input reactants must structurally match a template's reactant pattern**;
   RENKIN does not suggest alternative reactants or protecting groups.
+- **Reactant-order independence is guaranteed up to 3 reactants.**
+  `chematic::rxn::run_reactants` binds reactant slots to SMIRKS components
+  positionally, so candidate discovery tries every distinct ordering of up
+  to 3 reactants and pools the results. Beyond 3 reactants (6+ orderings),
+  only the caller-supplied order is tried, and a `reactant_permutations_capped`
+  warning is emitted — candidates reachable only via a different ordering
+  of 4+ reactants may be missing in that case.
 
 ## Rust API
 

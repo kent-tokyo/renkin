@@ -60,6 +60,7 @@ impl ProposalModeSummary {
 /// One exported candidate row (one JSONL line).
 #[derive(Debug, Clone, Serialize)]
 pub struct CandidateRow {
+    pub group_id: String,
     pub target_id: String,
     pub target_smiles: String,
     pub candidate_id: String,
@@ -94,6 +95,7 @@ pub fn candidate_rows_for_pool(
         .map(|c| {
             let features = extract_features(c, target_mol, templates_by_id, stock);
             CandidateRow {
+                group_id: pool.group_id.clone(),
                 target_id: pool.target_id.clone(),
                 target_smiles: pool.target_smiles.clone(),
                 candidate_id: c.candidate_id.clone(),
@@ -106,6 +108,82 @@ pub fn candidate_rows_for_pool(
             }
         })
         .collect()
+}
+
+/// Why a [`TargetPoolRecord`] has the candidate count it does. Kept distinct
+/// from "zero candidates" so a consumer can tell "the target parsed fine and
+/// genuinely has no one-step disconnections" apart from "proposal never ran
+/// for this group at all" -- both produce `candidate_count == 0`, but only
+/// the first is a real coverage gap; the second is a data-generation defect
+/// that must not be silently counted as one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProposalStatus {
+    Ok,
+    TargetParseFailed,
+}
+
+/// One record per (group_id, target) proposal attempt, exported alongside
+/// (never derived from) the candidate JSONL -- a target with zero
+/// candidates, or a target whose SMILES failed to parse at all, still gets
+/// exactly one record here. A consumer builds its coverage denominator (how
+/// many groups exist) from this file plus labels, never by counting distinct
+/// `group_id`s that happen to appear in the candidate rows -- a group with
+/// zero candidates would otherwise silently vanish from that count.
+#[derive(Debug, Clone, Serialize)]
+pub struct TargetPoolRecord {
+    pub group_id: String,
+    pub target_id: String,
+    pub target_smiles: String,
+    pub candidate_count: usize,
+    pub proposal_status: ProposalStatus,
+}
+
+/// Build the record for a group whose proposal succeeded (`pool` may still
+/// have zero candidates -- that's a real, reportable coverage gap, not an
+/// error).
+pub fn target_pool_record_for_pool(pool: &CandidatePool) -> TargetPoolRecord {
+    TargetPoolRecord {
+        group_id: pool.group_id.clone(),
+        target_id: pool.target_id.clone(),
+        target_smiles: pool.target_smiles.clone(),
+        candidate_count: pool.candidates.len(),
+        proposal_status: ProposalStatus::Ok,
+    }
+}
+
+/// Build the record for a group whose proposal failed outright (e.g.
+/// `propose_one_step`'s target SMILES did not parse) -- there is no
+/// `CandidatePool` to draw a canonical `target_id` from, so the caller's
+/// original (uncanonicalized) requested SMILES is recorded in both
+/// `target_id` and `target_smiles` fields, and `candidate_count` is `0` with
+/// `proposal_status: TargetParseFailed` rather than being indistinguishable
+/// from a successful zero-candidate outcome.
+pub fn target_pool_record_for_failure(
+    group_id: &str,
+    requested_target_smiles: &str,
+) -> TargetPoolRecord {
+    TargetPoolRecord {
+        group_id: group_id.to_string(),
+        target_id: requested_target_smiles.to_string(),
+        target_smiles: requested_target_smiles.to_string(),
+        candidate_count: 0,
+        proposal_status: ProposalStatus::TargetParseFailed,
+    }
+}
+
+/// Write `records` as JSONL, one object per line -- same framing as
+/// [`write_jsonl`], kept as a separate function since the two files are
+/// written to different paths by a driver and must never be interleaved.
+pub fn write_target_pool_jsonl<W: Write>(
+    records: &[TargetPoolRecord],
+    mut writer: W,
+) -> anyhow::Result<()> {
+    for record in records {
+        serde_json::to_writer(&mut writer, record)?;
+        writer.write_all(b"\n")?;
+    }
+    Ok(())
 }
 
 /// Write `rows` as JSONL (one compact JSON object per line) to `writer`.
@@ -200,11 +278,100 @@ mod tests {
     use crate::chem_env::{default_rules, mol_from_smiles};
 
     #[test]
+    fn candidate_rows_carry_group_id_from_pool() {
+        let rules = default_rules();
+        let target = "CC(=O)c1ccccc1";
+        let target_mol = mol_from_smiles(target).unwrap();
+        let pool =
+            propose_one_step("rxn-example-42", target, &rules, &ProposalConfig::default()).unwrap();
+        let templates_by_id = index_rules_by_template_id(&rules);
+        let rows = candidate_rows_for_pool(&pool, &target_mol, &templates_by_id, None);
+        assert!(!rows.is_empty());
+        for row in &rows {
+            assert_eq!(row.group_id, "rxn-example-42");
+            assert_eq!(row.target_id, pool.target_id);
+        }
+    }
+
+    #[test]
+    fn target_pool_record_for_pool_reports_real_candidate_count() {
+        let rules = default_rules();
+        let target = "CC(=O)c1ccccc1";
+        let pool =
+            propose_one_step("rxn-example-1", target, &rules, &ProposalConfig::default()).unwrap();
+        let record = target_pool_record_for_pool(&pool);
+        assert_eq!(record.group_id, "rxn-example-1");
+        assert_eq!(record.target_id, pool.target_id);
+        assert_eq!(record.candidate_count, pool.candidates.len());
+        assert_eq!(record.proposal_status, ProposalStatus::Ok);
+    }
+
+    #[test]
+    fn target_pool_record_for_pool_still_emits_a_record_with_zero_candidates() {
+        // A target that genuinely has no one-step disconnections under this
+        // rule set is a real coverage gap, not an error -- it still gets
+        // exactly one record, with candidate_count == 0 and status Ok (not
+        // TargetParseFailed, which is reserved for parse failure).
+        let rules = vec![RetroRule {
+            name: "unreachable".to_string(),
+            template_id: "rule:unreachable".to_string(),
+            smirks: "[Xe:1]>>[Xe:1]".to_string(),
+            weight: 1.0,
+            required_elements: 0,
+        }];
+        let pool =
+            propose_one_step("rxn-example-2", "CCO", &rules, &ProposalConfig::default()).unwrap();
+        assert_eq!(pool.candidates.len(), 0);
+        let record = target_pool_record_for_pool(&pool);
+        assert_eq!(record.candidate_count, 0);
+        assert_eq!(record.proposal_status, ProposalStatus::Ok);
+    }
+
+    #[test]
+    fn target_pool_record_for_failure_is_distinguishable_from_a_real_zero_candidate_outcome() {
+        let record = target_pool_record_for_failure("rxn-example-3", "not-a-valid-smiles(((");
+        assert_eq!(record.group_id, "rxn-example-3");
+        assert_eq!(record.candidate_count, 0);
+        assert_eq!(record.proposal_status, ProposalStatus::TargetParseFailed);
+        assert_ne!(
+            record.proposal_status,
+            ProposalStatus::Ok,
+            "a parse failure must never be reported as a real zero-candidate outcome"
+        );
+    }
+
+    #[test]
+    fn write_target_pool_jsonl_is_one_valid_json_object_per_line() {
+        let records = vec![
+            TargetPoolRecord {
+                group_id: "g1".to_string(),
+                target_id: "t1".to_string(),
+                target_smiles: "t1".to_string(),
+                candidate_count: 3,
+                proposal_status: ProposalStatus::Ok,
+            },
+            target_pool_record_for_failure("g2", "bad-smiles"),
+        ];
+        let mut buf: Vec<u8> = Vec::new();
+        write_target_pool_jsonl(&records, &mut buf).unwrap();
+        let text = String::from_utf8(buf).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 2);
+        for line in &lines {
+            let parsed: serde_json::Value =
+                serde_json::from_str(line).expect("each line must be valid JSON");
+            assert!(parsed.is_object());
+        }
+        let second: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
+        assert_eq!(second["proposal_status"], "target_parse_failed");
+    }
+
+    #[test]
     fn candidate_rows_are_sorted_by_candidate_id() {
         let rules = default_rules();
         let target = "CC(=O)c1ccccc1";
         let target_mol = mol_from_smiles(target).unwrap();
-        let pool = propose_one_step(target, &rules, &ProposalConfig::default()).unwrap();
+        let pool = propose_one_step("group:1", target, &rules, &ProposalConfig::default()).unwrap();
         let templates_by_id = index_rules_by_template_id(&rules);
 
         let rows = candidate_rows_for_pool(&pool, &target_mol, &templates_by_id, None);
@@ -220,7 +387,7 @@ mod tests {
         let rules = default_rules();
         let target = "CC(=O)c1ccccc1";
         let target_mol = mol_from_smiles(target).unwrap();
-        let pool = propose_one_step(target, &rules, &ProposalConfig::default()).unwrap();
+        let pool = propose_one_step("group:1", target, &rules, &ProposalConfig::default()).unwrap();
         let templates_by_id = index_rules_by_template_id(&rules);
 
         let rows = candidate_rows_for_pool(&pool, &target_mol, &templates_by_id, None);
@@ -236,7 +403,7 @@ mod tests {
         let rules = default_rules();
         let target = "CC(=O)c1ccccc1";
         let target_mol = mol_from_smiles(target).unwrap();
-        let pool = propose_one_step(target, &rules, &ProposalConfig::default()).unwrap();
+        let pool = propose_one_step("group:1", target, &rules, &ProposalConfig::default()).unwrap();
         let templates_by_id = index_rules_by_template_id(&rules);
         let rows = candidate_rows_for_pool(&pool, &target_mol, &templates_by_id, None);
 
@@ -261,7 +428,8 @@ mod tests {
 
         let mut outputs = Vec::new();
         for _ in 0..2 {
-            let pool = propose_one_step(target, &rules, &ProposalConfig::default()).unwrap();
+            let pool =
+                propose_one_step("group:1", target, &rules, &ProposalConfig::default()).unwrap();
             let rows = candidate_rows_for_pool(&pool, &target_mol, &templates_by_id, None);
             let mut buf: Vec<u8> = Vec::new();
             write_jsonl(&rows, &mut buf).unwrap();
@@ -298,7 +466,7 @@ mod tests {
         let rules = default_rules();
         let target = "CC(=O)c1ccccc1";
         let target_mol = mol_from_smiles(target).unwrap();
-        let pool = propose_one_step(target, &rules, &ProposalConfig::default()).unwrap();
+        let pool = propose_one_step("group:1", target, &rules, &ProposalConfig::default()).unwrap();
         let templates_by_id = index_rules_by_template_id(&rules);
         let rows = candidate_rows_for_pool(&pool, &target_mol, &templates_by_id, None);
 

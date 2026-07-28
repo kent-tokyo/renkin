@@ -73,7 +73,9 @@ evaluation. See `src/candidate.rs`'s module doc for the full reasoning.
 two groups:
 
 - **Group 1** (`FEATURE_GROUP1_LEN = 14`, indices 0–13): structural
-  (`num_precursors`, heavy-atom counts, `atom_economy`), chemistry-integrity
+  (`num_precursors`, heavy-atom counts, `heavy_atom_retention_ratio` — a
+  heavy-atom-count ratio, not the MW-based chemistry "atom economy" reported
+  per route step elsewhere in RENKIN), chemistry-integrity
   (`net_charge_balanced`, `no_heavy_atom_gain`), and reaction-center /
   template-transformation features. Always attempted. `best_upstream_score`
   (index 13) is still group 1 but is legitimately `missing` under

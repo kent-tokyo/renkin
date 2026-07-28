@@ -183,7 +183,16 @@ pub struct ReactionCandidate {
     pub reranker_score: Option<f64>,
 }
 
+/// `group_id` is the caller-supplied dataset reaction/example identifier --
+/// one LightGBM ranking group. `target_id` is the canonical target
+/// structure, used only as the leakage-safe train/val/test split key. The
+/// same target structure can appear in multiple dataset examples (e.g. two
+/// different literature reactions producing the same product): those share
+/// `target_id` (same split) but must each get their own `group_id` (separate
+/// ranking groups) -- this struct keeps the two deliberately distinct so a
+/// caller can never conflate "the same molecule" with "the same example".
 pub struct CandidatePool {
+    pub group_id: String,
     pub target_id: String,
     pub target_smiles: String,
     pub candidates: Vec<ReactionCandidate>,
@@ -429,7 +438,11 @@ pub const FEATURE_NAMES_V1: &[&str] = &[
     "target_heavy_atom_count",
     "precursor_heavy_atom_count_sum",
     "precursor_heavy_atom_count_max",
-    "atom_economy",
+    // Not the chemistry "atom economy" (MW(product)/ΣMW(reagents), see
+    // `search.rs::RouteStep::atom_economy`) -- this is a heavy-atom-COUNT
+    // ratio, a cheaper, MW-free proxy. Named accordingly so the two are
+    // never confused in a feature-importance report or a doc.
+    "heavy_atom_retention_ratio",
     // -- chemistry-integrity (group 1) --
     "net_charge_balanced",
     "no_heavy_atom_gain",
@@ -894,7 +907,13 @@ fn merge_into_candidates(canonical_target: &str, raw: Vec<RawCandidate>) -> Vec<
 /// canonicalize+merge duplicate precursor-set outcomes. See module doc for
 /// the important caveat that different `ProposalMode`s produce different
 /// candidate *sets*, not just different orderings.
+///
+/// `group_id` is stamped onto the returned pool unchanged (see
+/// [`CandidatePool`]'s doc for why it's kept distinct from `target_id`) --
+/// this function never derives or validates it, since a dataset's grouping
+/// scheme is entirely the caller's concern.
 pub fn propose_one_step(
+    group_id: &str,
     target_smiles: &str,
     rules: &[RetroRule],
     config: &ProposalConfig,
@@ -907,6 +926,7 @@ pub fn propose_one_step(
     let candidates = merge_into_candidates(&canonical_target, raw);
 
     Ok(CandidatePool {
+        group_id: group_id.to_string(),
         target_id: canonical_target.clone(),
         target_smiles: canonical_target,
         candidates,
@@ -1321,10 +1341,29 @@ mod tests {
         let target = "CCO";
         let rules = vec![rule("noop", "[C:1]>>[C:1]")];
         let config = ProposalConfig::default();
-        let pool = propose_one_step(target, &rules, &config).unwrap();
+        let pool = propose_one_step("group:1", target, &rules, &config).unwrap();
         for c in &pool.candidates {
             assert_ne!(c.precursor_smiles, vec![pool.target_smiles.clone()]);
         }
+    }
+
+    #[test]
+    fn same_target_different_group_shares_target_id_not_group_id() {
+        // Two dataset examples (e.g. two different literature reactions)
+        // producing the same product molecule must share `target_id` (the
+        // leakage-safe split key) while keeping distinct `group_id`s (each
+        // its own LightGBM ranking group) -- this module never conflates
+        // "same molecule" with "same example".
+        let rules = default_rules();
+        let target = "CC(=O)c1ccccc1";
+        let config = ProposalConfig::default();
+        let pool_a = propose_one_step("rxn-example-001", target, &rules, &config).unwrap();
+        let pool_b = propose_one_step("rxn-example-002", target, &rules, &config).unwrap();
+
+        assert_eq!(pool_a.target_id, pool_b.target_id);
+        assert_ne!(pool_a.group_id, pool_b.group_id);
+        assert_eq!(pool_a.group_id, "rxn-example-001");
+        assert_eq!(pool_b.group_id, "rxn-example-002");
     }
 
     // ---- template transformation features ----
@@ -1414,7 +1453,7 @@ mod tests {
     }
 
     fn candidate_for(target: &str, rules: &[RetroRule], mode: ProposalMode) -> ReactionCandidate {
-        let pool = propose_one_step(target, rules, &ProposalConfig { mode }).unwrap();
+        let pool = propose_one_step("group:1", target, rules, &ProposalConfig { mode }).unwrap();
         pool.candidates
             .into_iter()
             .next()
@@ -1562,7 +1601,7 @@ mod tests {
             "target_heavy_atom_count",
             "precursor_heavy_atom_count_sum",
             "precursor_heavy_atom_count_max",
-            "atom_economy",
+            "heavy_atom_retention_ratio",
             "net_charge_balanced",
             "no_heavy_atom_gain",
         ] {

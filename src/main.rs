@@ -3,10 +3,11 @@
 use renkin::DEFAULT_BUILDING_BLOCKS;
 use renkin::chem_env;
 use renkin::display;
+use renkin::evidence_match;
 use renkin::search::{self, SearchConfig};
 
 use anyhow::{Context, Result, bail};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize)]
 struct Output {
@@ -33,6 +34,9 @@ fn main() -> Result<()> {
     }
     if args.get(1).map(|s| s.as_str()) == Some("template") {
         return run_template(&args[2..]);
+    }
+    if args.get(1).map(|s| s.as_str()) == Some("evidence") {
+        return run_evidence(&args[2..]);
     }
 
     let mut target: Option<String> = None;
@@ -520,6 +524,126 @@ fn run_template(args: &[String]) -> Result<()> {
             Ok(())
         }
     }
+}
+
+/// Returns the value following the first occurrence of `--name` in `args`,
+/// or `None` if the flag isn't present (or has no following value).
+fn flag_value<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
+    args.windows(2)
+        .find(|w| w[0] == name)
+        .map(|w| w[1].as_str())
+}
+
+fn run_evidence(args: &[String]) -> Result<()> {
+    let cmd = args.first().map(|s| s.as_str()).unwrap_or("help");
+    let rest = if args.len() > 1 {
+        &args[1..]
+    } else {
+        &[] as &[String]
+    };
+    match cmd {
+        "match" => evidence_match(rest),
+        "validate-sidecar" => evidence_validate_sidecar(rest),
+        _ => {
+            println!("Usage: renkin evidence <cmd> [args]");
+            println!(
+                "  match             --input <reactions.jsonl> [--templates <file.smi>] --output <matches.jsonl>"
+            );
+            println!(
+                "  validate-sidecar  --metadata <sidecar.json>  — revalidate an evidence sidecar via RENKIN's own loader"
+            );
+            Ok(())
+        }
+    }
+}
+
+/// One line of `renkin evidence match --input`: an external reaction record
+/// to batch-match against RENKIN's stable `template_id`s (see
+/// `renkin::evidence_match::match_reaction_to_templates`).
+#[derive(Deserialize)]
+struct EvidenceMatchInputRow {
+    record_id: String,
+    target_smiles: String,
+    #[serde(default)]
+    precursor_smiles: Vec<String>,
+}
+
+/// One line of `renkin evidence match --output`.
+#[derive(Serialize)]
+struct EvidenceMatchOutputRow {
+    record_id: String,
+    canonical_target: String,
+    canonical_precursors: Vec<String>,
+    matching_template_ids: Vec<String>,
+    status: evidence_match::TemplateMatchStatus,
+}
+
+/// Batch-matches every record in a JSONL file against RENKIN's stable
+/// `template_id`s. Input order is preserved in the output. A malformed JSON
+/// line is a hard error (whole process aborts, line number reported); a
+/// malformed SMILES within an otherwise-valid record instead yields
+/// `invalid_input` for that one record only. No network access. No progress
+/// output on stdout -- only the JSONL result goes to `--output`; diagnostics
+/// go to stderr via the returned `Result`'s error path.
+fn evidence_match(args: &[String]) -> Result<()> {
+    let input_path = flag_value(args, "--input")
+        .context("renkin evidence match: --input <reactions.jsonl> is required")?;
+    let output_path = flag_value(args, "--output")
+        .context("renkin evidence match: --output <matches.jsonl> is required")?;
+
+    let mut rules = chem_env::default_rules();
+    if let Some(path) = flag_value(args, "--templates") {
+        rules.extend(chem_env::load_rules_from_file(path));
+    }
+
+    let content = std::fs::read_to_string(input_path)
+        .with_context(|| format!("failed to read --input file {input_path}"))?;
+
+    let mut rows: Vec<EvidenceMatchInputRow> = Vec::new();
+    for (i, line) in content.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let row: EvidenceMatchInputRow = serde_json::from_str(line)
+            .with_context(|| format!("{input_path}:{}: malformed JSONL", i + 1))?;
+        rows.push(row);
+    }
+
+    let mut out = String::new();
+    for row in rows {
+        let result = evidence_match::match_reaction_to_templates(
+            &row.target_smiles,
+            &row.precursor_smiles,
+            &rules,
+        );
+        let output_row = EvidenceMatchOutputRow {
+            record_id: row.record_id,
+            canonical_target: result.target_smiles,
+            canonical_precursors: result.precursor_smiles,
+            matching_template_ids: result.matching_template_ids,
+            status: result.status,
+        };
+        out.push_str(&serde_json::to_string(&output_row)?);
+        out.push('\n');
+    }
+
+    std::fs::write(output_path, out)
+        .with_context(|| format!("failed to write --output file {output_path}"))?;
+
+    Ok(())
+}
+
+/// Revalidates a metadata sidecar file via RENKIN's own loader
+/// (`evidence::load_template_metadata`, which validates as part of loading).
+/// Exits with an error (non-zero status) if validation fails -- a sidecar
+/// that fails validation is never reported as success.
+fn evidence_validate_sidecar(args: &[String]) -> Result<()> {
+    let path = flag_value(args, "--metadata")
+        .context("renkin evidence validate-sidecar: --metadata <sidecar.json> is required")?;
+    renkin::evidence::load_template_metadata(path)
+        .with_context(|| format!("sidecar {path} failed validation"))?;
+    println!("OK: {path}");
+    Ok(())
 }
 
 /// Print `template_id`, current display name, SMIRKS, and weight for every
@@ -1175,4 +1299,153 @@ fn load_prices(path: &str) -> std::collections::HashMap<String, f64> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod evidence_cli_tests {
+    use super::*;
+
+    fn write_temp(name: &str, content: &str) -> String {
+        let path = std::env::temp_dir().join(name);
+        std::fs::write(&path, content).unwrap();
+        path.to_str().unwrap().to_string()
+    }
+
+    fn read_output_rows(path: &str) -> Vec<serde_json::Value> {
+        std::fs::read_to_string(path)
+            .unwrap()
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn evidence_match_preserves_jsonl_input_order() {
+        let input = write_temp(
+            "evidence_match_order_input.jsonl",
+            concat!(
+                r#"{"record_id": "zzz", "target_smiles": "CCO", "precursor_smiles": []}"#,
+                "\n",
+                r#"{"record_id": "aaa", "target_smiles": "CCO", "precursor_smiles": []}"#,
+                "\n",
+                r#"{"record_id": "mmm", "target_smiles": "CCO", "precursor_smiles": []}"#,
+                "\n",
+            ),
+        );
+        let output = std::env::temp_dir()
+            .join("evidence_match_order_output.jsonl")
+            .to_str()
+            .unwrap()
+            .to_string();
+
+        let args = vec![
+            "--input".to_string(),
+            input.clone(),
+            "--output".to_string(),
+            output.clone(),
+        ];
+        evidence_match(&args).unwrap();
+
+        let rows = read_output_rows(&output);
+        let ids: Vec<&str> = rows
+            .iter()
+            .map(|r| r["record_id"].as_str().unwrap())
+            .collect();
+        assert_eq!(ids, vec!["zzz", "aaa", "mmm"]);
+
+        std::fs::remove_file(&input).ok();
+        std::fs::remove_file(&output).ok();
+    }
+
+    #[test]
+    fn evidence_match_malformed_json_line_is_hard_error_with_line_number() {
+        let input = write_temp(
+            "evidence_match_malformed_json_input.jsonl",
+            concat!(
+                r#"{"record_id": "ok-1", "target_smiles": "CCO", "precursor_smiles": []}"#,
+                "\n",
+                "{ this is not valid json",
+                "\n",
+            ),
+        );
+        let output = std::env::temp_dir()
+            .join("evidence_match_malformed_json_output.jsonl")
+            .to_str()
+            .unwrap()
+            .to_string();
+
+        let args = vec![
+            "--input".to_string(),
+            input.clone(),
+            "--output".to_string(),
+            output.clone(),
+        ];
+        let err = evidence_match(&args).unwrap_err();
+        let message = format!("{err:#}");
+        assert!(
+            message.contains(":2:"),
+            "error should cite line 2: {message}"
+        );
+        assert!(!std::path::Path::new(&output).exists());
+
+        std::fs::remove_file(&input).ok();
+    }
+
+    #[test]
+    fn evidence_match_malformed_smiles_yields_invalid_input_without_aborting() {
+        let input = write_temp(
+            "evidence_match_malformed_smiles_input.jsonl",
+            concat!(
+                r#"{"record_id": "good", "target_smiles": "CC(=O)OCC", "precursor_smiles": ["CC(=O)O", "CCO"]}"#,
+                "\n",
+                r#"{"record_id": "bad-smiles", "target_smiles": "not(a smiles", "precursor_smiles": ["CCO"]}"#,
+                "\n",
+            ),
+        );
+        let output = std::env::temp_dir()
+            .join("evidence_match_malformed_smiles_output.jsonl")
+            .to_str()
+            .unwrap()
+            .to_string();
+
+        let args = vec![
+            "--input".to_string(),
+            input.clone(),
+            "--output".to_string(),
+            output.clone(),
+        ];
+        evidence_match(&args).unwrap();
+
+        let rows = read_output_rows(&output);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["record_id"], "good");
+        assert_eq!(rows[0]["status"], "unique");
+        assert_eq!(rows[1]["record_id"], "bad-smiles");
+        assert_eq!(rows[1]["status"], "invalid_input");
+
+        std::fs::remove_file(&input).ok();
+        std::fs::remove_file(&output).ok();
+    }
+
+    #[test]
+    fn evidence_validate_sidecar_ok_on_valid_file() {
+        let path = write_temp(
+            "evidence_validate_sidecar_valid.json",
+            r#"{"schema_version": 2, "templates": {}}"#,
+        );
+        let args = vec!["--metadata".to_string(), path.clone()];
+        assert!(evidence_validate_sidecar(&args).is_ok());
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn evidence_validate_sidecar_errs_on_invalid_file() {
+        let path = write_temp(
+            "evidence_validate_sidecar_invalid.json",
+            r#"{"schema_version": 99, "templates": {}}"#,
+        );
+        let args = vec!["--metadata".to_string(), path.clone()];
+        assert!(evidence_validate_sidecar(&args).is_err());
+        std::fs::remove_file(&path).ok();
+    }
 }

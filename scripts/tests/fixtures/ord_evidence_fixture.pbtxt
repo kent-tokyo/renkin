@@ -1,0 +1,64 @@
+dataset_id: "ord_dataset-0000000000000000000000000000000000000000000000000000fixture"
+reactions {
+  reaction_id: "ord-fixture-rxn-0001"
+  inputs {
+    key: "acid"
+    value {
+      components {
+        identifiers { type: SMILES value: "CC(=O)O" }
+        identifiers { type: NAME value: "acetic acid" }
+        reaction_role: REACTANT
+      }
+    }
+  }
+  inputs {
+    key: "alcohol"
+    value {
+      components {
+        identifiers { type: SMILES value: "CCO" }
+        identifiers { type: NAME value: "ethanol" }
+        reaction_role: REACTANT
+      }
+    }
+  }
+  inputs {
+    key: "catalyst"
+    value {
+      components {
+        identifiers { type: NAME value: "sulfuric acid" }
+        reaction_role: CATALYST
+      }
+    }
+  }
+  inputs {
+    key: "solvent"
+    value {
+      components {
+        identifiers { type: NAME value: "toluene" }
+        reaction_role: SOLVENT
+      }
+    }
+  }
+  conditions {
+    temperature {
+      setpoint { value: 78.0 units: CELSIUS }
+    }
+    pressure {
+      atmosphere { type: NITROGEN }
+    }
+  }
+  outcomes {
+    reaction_time { value: 2.0 units: HOUR }
+    products {
+      identifiers { type: SMILES value: "CC(=O)OCC" }
+      is_desired_product: true
+      measurements {
+        type: YIELD
+        percentage { value: 87.5 }
+      }
+    }
+  }
+  provenance {
+    doi: "https://doi.org/10.1000/renkin-fixture-example"
+  }
+}

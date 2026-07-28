@@ -8,6 +8,16 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **`renkin` CLI** — `renkin evidence match --input <reactions.jsonl> [--templates <file.smi>] --output <matches.jsonl>`: deterministic, exact-set batch matching of external reaction records against RENKIN's stable `template_id`s, reusing the same canonicalization and single-step retro application as route search / `evidence::match_example`. No fuzzy or similarity matching; a malformed SMILES yields `invalid_input` for that record only, a malformed JSONL line is a hard error with its line number, and `matching_template_ids` are always sorted ([#41](https://github.com/kent-tokyo/renkin/issues/41) phase 3A)
+- **`renkin` CLI** — `renkin evidence validate-sidecar --metadata <sidecar.json>`: revalidates a metadata sidecar via RENKIN's own loader, exiting non-zero on failure (used by `scripts/ord_evidence_audit.py` to guarantee an invalid sidecar is never reported as a successful conversion)
+- **`scripts/ord_evidence_audit.py`** — offline, network-free converter/auditor from a locally-downloaded [ORD](https://github.com/open-reaction-database/ord-data) corpus to a `schema_version: 2` evidence sidecar, plus an audit report and a reproducibility manifest (input hashes, RENKIN version/commit, dependency versions, exact CLI invocation). Every record is independently matched via `renkin evidence match` and only accepted on a **unique** template match, a single unambiguous yield candidate (or none), and provenance; anything else is excluded and counted under a named reason in the audit report rather than guessed at. Two runs on the same input produce byte-identical sidecar/report output. Dependencies pinned separately in `scripts/requirements-ord-evidence.txt` (`ord-schema`, Apache-2.0) — never added to the RENKIN runtime. See `scripts/README_ord_evidence.md` and [Reaction Evidence guide](docs/guides/reaction-evidence.md#importing-from-ord-open-reaction-database)
+
+### Notes
+- Yield basis imported from ORD is only ever `"conversion"` (ORD's own `outcome.conversion` field) or `"unknown"` — ORD's `YIELD` measurement type doesn't itself distinguish an isolated-weight yield from a calibrated-assay yield, so that distinction is never guessed from `uses_internal_standard`/`uses_authentic_standard`
+- `rule:cn_aliphatic_cleavage` / `rule:michael_retro` / `rule:co_aliphatic_cleavage` matches are counted in the audit report but excluded from the sidecar in this phase (generic single-bond-break rules; a unique exact-precursor match alone isn't yet trusted as sufficient evidence for them)
+- This is Phase 3A of [#41](https://github.com/kent-tokyo/renkin/issues/41): the import pipeline only. Automatic side-reaction prediction and yield prediction remain unimplemented; no real ORD corpus is bundled with RENKIN (only a hand-authored test fixture) — a real starter evidence pack is expected as a separate follow-up PR
+
 ## [0.19.0] — 2026-07-29
 
 ### Added

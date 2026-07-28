@@ -1,0 +1,13 @@
+# Dependencies for scripts/ord_evidence_audit.py ONLY -- never added to the
+# RENKIN runtime (Cargo.toml / pyproject.toml). Install into a separate venv:
+#
+#   python3 -m venv .venv-ord-evidence
+#   .venv-ord-evidence/bin/pip install -r scripts/requirements-ord-evidence.txt
+#
+# Versions/license verified against PyPI and
+# https://github.com/Open-Reaction-Database/ord-schema at the time this file
+# was written. ord-schema is Apache-2.0 (code); the reaction data it parses is
+# CC-BY-SA-4.0 (https://github.com/open-reaction-database/ord-data) -- see
+# docs/guides/reaction-evidence.md for why that's a separate license from
+# RENKIN's own MIT code.
+ord-schema==0.8.0

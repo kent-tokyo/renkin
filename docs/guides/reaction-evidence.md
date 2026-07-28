@@ -244,6 +244,90 @@ This is the single most important distinction on this page:
 There's no requirement to cover every template — the sidecar is additive, and
 uncovered templates behave exactly as they did before you supplied one.
 
+## Importing from ORD (Open Reaction Database)
+
+Hand-authoring a sidecar doesn't scale past a handful of templates. For a
+locally-downloaded [ORD](https://github.com/open-reaction-database/ord-data)
+corpus, two tools turn it into a `schema_version: 2` sidecar deterministically
+and auditably, without ever calling out to the network:
+
+- **`renkin evidence match`** (Rust CLI) — exact-set batch matching of
+  external `target_smiles`/`precursor_smiles` records against RENKIN's stable
+  `template_id`s, reusing the exact same canonicalization and single-step
+  retro application that route search and `--format explain` already use.
+  No fuzzy matching, no partial-structure or stereochemistry-blind
+  similarity — a rule counts as matching only if its retro-application
+  reproduces the input precursor set exactly. See `renkin evidence match
+  --help`-equivalent usage below.
+- **`scripts/ord_evidence_audit.py`** (Python, offline) — reads ORD `Dataset`
+  files you've already downloaded from `--ord-data <dir>`, shells out to
+  `renkin evidence match` for template matching, and emits a sidecar, an audit
+  report, and a reproducibility manifest. Requires `ord-schema` — install it
+  from `scripts/requirements-ord-evidence.txt`, a separate pin from RENKIN's
+  own runtime dependencies. See `scripts/README_ord_evidence.md` for full
+  usage, acceptance criteria, and field-mapping rules.
+
+```bash
+python scripts/ord_evidence_audit.py \
+  --ord-data /path/to/ord-data \
+  --renkin-bin target/release/renkin \
+  --templates data/templates_extracted_5000.smi \
+  --output-sidecar artifacts/ord_candidates.json \
+  --output-report artifacts/ord_audit.json \
+  --output-manifest artifacts/ord_manifest.json
+```
+
+**What this is not:**
+
+- **Not automatic literature search.** RENKIN never fetches, searches, or
+  scrapes anything — every input file is one you already have locally.
+- **Not yield or condition prediction.** A `reported_yield` imported this way
+  is exactly what the ORD record says, for that exact reaction — never a
+  number RENKIN computed or estimated. A template-only precedent is still not
+  a forecast for your target (see "Reported vs. Predicted" above).
+- **Not automatic side-reaction detection.** Undesired/side products present
+  in an ORD outcome are counted in the audit report (`with_non_desired_products`)
+  for future review — never turned into a `ReactionWarning` automatically.
+- **Not a guarantee that every unique match is safe evidence.** A record is
+  only written to the sidecar if RENKIN's matcher reports a *unique* template
+  match — ambiguous or no-match records are excluded and counted in the audit
+  report, never guessed at. Even a unique match is not enough by itself:
+  the importer also checks the matched `template_id` against an explicit,
+  reviewed export allowlist (`rule:ester_cleavage`, `rule:amide_cleavage`,
+  `rule:reductive_amination_retro`). Three generic single-bond-break rules
+  (`rule:cn_aliphatic_cleavage`, `rule:michael_retro`,
+  `rule:co_aliphatic_cleavage`) are **audited but never exported to the
+  sidecar** in this phase: a broad rule like these can cover chemically
+  distinct reaction contexts under one `template_id`, so a unique
+  exact-precursor match alone isn't yet trusted as sufficient evidence for
+  them. A unique match on *any other* template — another hand-crafted rule,
+  or any `smirks-sha256:*` extracted template — is likewise rejected
+  (`out_of_scope_template`): the allowlist is enforced explicitly, not
+  inferred from the absence of the three audit-only ids.
+- **Yield basis is conservative by construction.** ORD's `ProductMeasurement`
+  `YIELD` type does not itself distinguish an isolated-weight yield from a
+  calibrated-assay yield (the `uses_internal_standard`/`uses_authentic_standard`
+  flags describe quantification method, not that distinction) — RENKIN maps
+  it to `basis: "unknown"` rather than guessing, and keeps the underlying
+  measurement's provenance as a note instead. Only ORD's own explicit
+  `outcome.conversion` field maps to `basis: "conversion"`.
+- **ORD has no distinct "base" role.** Its `ReactionRoleType` enum has no
+  `BASE` value — `REAGENT`-role components surface under RENKIN's `reagents`
+  field, and `bases` is always empty for ORD-imported conditions. This isn't
+  guessed around by name-matching.
+
+**Licensing.** The importer code (`renkin evidence match`,
+`scripts/ord_evidence_audit.py`) is MIT, same as the rest of RENKIN. ORD
+reaction data itself is
+[CC-BY-SA-4.0](https://github.com/open-reaction-database/ord-data/blob/main/LICENSE).
+A generated sidecar or audit report is a derivative of whatever ORD data you
+fed it — it carries ORD-sourced SMILES, yields, conditions, and reference
+identifiers — so treat it as CC-BY-SA-4.0 with attribution, not as MIT. This
+repository does not (and will not, in this phase) bundle any real ORD corpus;
+only a small hand-authored test fixture is committed (see
+`scripts/tests/fixtures/README.md`). A curated, real starter evidence pack is
+expected to follow as a separate PR once an audit report has been reviewed.
+
 ## Next Steps
 
 - [Python retrosynthesis guide](python-retrosynthesis.md) / [Rust retrosynthesis guide](rust-retrosynthesis.md)

@@ -4,6 +4,7 @@ pub mod candidate;
 pub mod chem_env;
 pub mod display;
 pub mod evidence;
+pub mod evidence_match;
 pub mod pool_export;
 pub mod score;
 pub mod scorer;

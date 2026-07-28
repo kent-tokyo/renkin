@@ -214,6 +214,28 @@ pub enum ExampleMatch {
     TemplateOnly,
 }
 
+/// Canonicalizes one SMILES string via RENKIN's standard parse+canonicalize
+/// pipeline (`chem_env::mol_from_smiles`/`to_canonical`). Returns `None` if it
+/// fails to parse. Shared by `match_example` and the batch template matcher
+/// (`crate::evidence_match`) so authoring-time and route-display matching
+/// never diverge from each other.
+pub(crate) fn canonicalize(smiles: &str) -> Option<String> {
+    mol_from_smiles(smiles).ok().map(|m| to_canonical(&m))
+}
+
+/// Canonicalizes every SMILES in `smiles`, then sorts and dedups the result
+/// for order-independent set comparison. Returns `None` if any entry fails to
+/// parse.
+pub(crate) fn canonical_set(smiles: &[String]) -> Option<Vec<String>> {
+    let mut out = smiles
+        .iter()
+        .map(|s| canonicalize(s))
+        .collect::<Option<Vec<_>>>()?;
+    out.sort();
+    out.dedup();
+    Some(out)
+}
+
 /// Classifies `example` against a step's `target`/`precursors` SMILES.
 /// Comparison follows RENKIN's current canonical-SMILES behavior; no
 /// separate stereo-ignoring normalization is applied. No partial-structure
@@ -224,19 +246,6 @@ pub fn match_example(
     target: &str,
     precursors: &[String],
 ) -> ExampleMatch {
-    fn canonicalize(smiles: &str) -> Option<String> {
-        mol_from_smiles(smiles).ok().map(|m| to_canonical(&m))
-    }
-    fn canonical_set(smiles: &[String]) -> Option<Vec<String>> {
-        let mut out = smiles
-            .iter()
-            .map(|s| canonicalize(s))
-            .collect::<Option<Vec<_>>>()?;
-        out.sort();
-        out.dedup();
-        Some(out)
-    }
-
     let target_matches = matches!(
         (canonicalize(&example.target_smiles), canonicalize(target)),
         (Some(a), Some(b)) if a == b

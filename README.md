@@ -314,6 +314,20 @@ underneath (deduplicated when the same reference backs more than one part of
 an example). See [Reaction Evidence guide](docs/guides/reaction-evidence.md#substrate-specific-examples-schema_version-2)
 for full matching/validation semantics.
 
+**Importing evidence from ORD.** `renkin evidence match` (exact-set batch
+template matching, no fuzzy/similarity matching) and
+[`scripts/ord_evidence_audit.py`](scripts/README_ord_evidence.md) (offline,
+network-free) turn a locally-downloaded
+[Open Reaction Database](https://github.com/open-reaction-database/ord-data)
+corpus into a `schema_version: 2` sidecar — every accepted record is
+independently re-validated by RENKIN's own loader, and anything not uniquely
+matched, unambiguous, and provenanced is excluded and counted in an audit
+report rather than guessed at. RENKIN itself never fetches or searches the
+literature; reported yields are citations, not predictions. ORD's reaction
+data is CC-BY-SA-4.0, a different license from RENKIN's own MIT code — see
+[Reaction Evidence guide](docs/guides/reaction-evidence.md#importing-from-ord-open-reaction-database)
+for the full acceptance criteria and licensing split.
+
 ---
 
 ## Key Features
@@ -599,6 +613,7 @@ renkin/                          ← Cargo workspace root
 - [x] RETROSPECT-inspired offline candidate-reranking foundation — candidate proposal/selection separation, feature schema v1, manifest v2, leakage-safe train/val/test splitting, 7 deterministic baseline arms + trained-ranker arm, paired bootstrap + offline gate tooling ([#59](https://github.com/kent-tokyo/renkin/pull/59); **foundation only — no trained model or accuracy result yet, not wired into route search**)
 - [x] Stable `template_id` (`rule:<name>` / `smirks-sha256:<hex>`) + `--template-metadata` evidence sidecar + `renkin template ids` ([#41](https://github.com/kent-tokyo/renkin/issues/41) phase 1)
 - [x] Substrate-specific `examples` (`schema_version: 2`) — per-step exact-substrate vs. same-template-different-substrate resolution, surfaced in `--format explain` and as `match_kind` in JSON ([#41](https://github.com/kent-tokyo/renkin/issues/41) phase 2)
+- [x] Deterministic ORD (Open Reaction Database) evidence import — offline `renkin evidence match` exact-set batch template matcher + `scripts/ord_evidence_audit.py` audit/converter into `schema_version: 2` sidecars; no network access, no fuzzy matching, ambiguous/unprovenanced records excluded and counted in an audit report rather than guessed at ([#41](https://github.com/kent-tokyo/renkin/issues/41) phase 3A)
 - [x] `renkin-bench cascade` — multi-stage search (fast defaults → hard cases re-run deeper); only unsolved targets propagate to later stages. **78.0% → 95.9%** on USPTO-50k
 - [x] `renkin-bench --failure-taxonomy` — classify unsolved targets by cause (beam limit / depth limit / template gap / stock near-miss)
 - [x] Graph-based ester cleavage — BFS-leakage-free `R-C(=O)-O-R' → RCOOH + R'OH`

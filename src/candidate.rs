@@ -401,6 +401,223 @@ pub fn aggregate_transformation_features(
     }
 }
 
+/// Version 1 of the candidate feature schema. Every feature has a stable
+/// name and a fixed position in [`CandidateFeatures`]'s `values`/`missing`
+/// -- look up a position with [`feature_index`], never hardcode a raw index
+/// in a consumer, since a later schema version may add or reorder features
+/// under a new version number.
+///
+/// Two groups, split by leakage exposure -- this is the reason
+/// [`CandidateFeatures::missing`] exists, not an incidental detail:
+///
+/// - **Group 1** (`FEATURE_NAMES_V1[..FEATURE_GROUP1_LEN]`): structural,
+///   chemistry-integrity, and reaction-center features. Computable from
+///   (target, precursors, template) alone, so [`extract_features`] always
+///   attempts these regardless of what else the caller supplies.
+/// - **Group 2** (the remainder): availability (depends on a stock/building
+///   -block library) and template-frequency (depends on which train split
+///   a given template's count was observed in -- see
+///   [`CandidateSource::template_log_frequency`]'s doc). These stay
+///   `missing` until the caller supplies the corpus-dependent input
+///   (`stock`) they need; a pool exported before stock/split-freezing lands
+///   must never silently ship a leakage-contaminated or wrong-stock value
+///   as if it were real.
+pub const FEATURE_SCHEMA_VERSION: u32 = 1;
+
+pub const FEATURE_NAMES_V1: &[&str] = &[
+    // -- structural (group 1) --
+    "num_precursors",
+    "target_heavy_atom_count",
+    "precursor_heavy_atom_count_sum",
+    "precursor_heavy_atom_count_max",
+    "atom_economy",
+    // -- chemistry-integrity (group 1) --
+    "net_charge_balanced",
+    "no_heavy_atom_gain",
+    // -- reaction-center / provenance (group 1) --
+    "source_template_count",
+    "reaction_center_atom_count_min",
+    "reaction_center_atom_count_max",
+    "reaction_center_atom_count_mean",
+    "reaction_center_extractable_fraction",
+    "min_base_step_cost",
+    // Missing whenever no source has an upstream score -- always the case
+    // under ProposalMode::Exhaustive/BondIndexed (no scorer involved at
+    // all). This is a mode-dependent absence, not a leakage concern, so it
+    // stays group 1: unlike the stock/frequency features below, there is no
+    // "supply the missing input and it becomes available" story for it.
+    "best_upstream_score",
+    // -- availability (group 2 -- stock-dependent) --
+    "fraction_precursors_in_stock",
+    "all_precursors_in_stock",
+    // -- frequency (group 2 -- train-split-dependent) --
+    "max_template_log_frequency",
+    "mean_template_log_frequency",
+];
+
+/// Number of group-1 (always-attempted) features at the front of
+/// `FEATURE_NAMES_V1`. Everything from this index onward is group 2.
+pub const FEATURE_GROUP1_LEN: usize = 14;
+
+/// Stable index of a named feature within [`FEATURE_NAMES_V1`], or `None` if
+/// the name isn't in this schema version.
+pub fn feature_index(name: &str) -> Option<usize> {
+    FEATURE_NAMES_V1.iter().position(|&n| n == name)
+}
+
+fn heavy_atom_count_and_charge(mol: &Molecule) -> (u32, i64) {
+    let mut heavy = 0u32;
+    let mut charge = 0i64;
+    for (_, atom) in mol.atoms() {
+        if atom.element != chematic::core::Element::H {
+            heavy += 1;
+        }
+        charge += i64::from(atom.charge);
+    }
+    (heavy, charge)
+}
+
+/// Extract schema-v1 features for one merged candidate.
+///
+/// `target_mol` is the already-parsed target molecule (a caller building a
+/// pool already has it -- [`propose_one_step`] parses it once per target,
+/// not once per candidate).
+///
+/// `templates_by_id` looks up each source's [`RetroRule`] by `template_id`
+/// so [`template_transformation_features`] can be computed (it needs the
+/// rule's SMIRKS, which [`CandidateSource`] doesn't itself carry). Build it
+/// once per pool-export call with [`index_rules_by_template_id`], not once
+/// per candidate.
+///
+/// `stock` is optional: `None` means "no stock available for this
+/// extraction," and every stock-dependent (group 2) feature stays
+/// `missing`, never computed against an empty/wrong stock as if that were a
+/// real answer.
+pub fn extract_features(
+    candidate: &ReactionCandidate,
+    target_mol: &Molecule,
+    templates_by_id: &HashMap<String, &RetroRule>,
+    stock: Option<&crate::chem_env::ChemEnv>,
+) -> CandidateFeatures {
+    let n = FEATURE_NAMES_V1.len();
+    let mut values = vec![0.0f32; n];
+    let mut missing = vec![false; n];
+
+    // -- structural / chemistry-integrity --
+    values[0] = candidate.precursor_smiles.len() as f32;
+
+    let mut precursor_mols: Vec<Molecule> = Vec::with_capacity(candidate.precursor_smiles.len());
+    let mut reparse_failed = false;
+    for smi in &candidate.precursor_smiles {
+        match mol_from_smiles(smi) {
+            Ok(m) => precursor_mols.push(m),
+            Err(_) => reparse_failed = true,
+        }
+    }
+
+    if reparse_failed || precursor_mols.is_empty() {
+        // Every structural/chemistry-integrity feature past num_precursors
+        // depends on re-parsing every precursor SMILES back into a
+        // Molecule -- mark them missing rather than computing a partial
+        // aggregate over only the precursors that happened to re-parse.
+        for m in missing.iter_mut().take(7).skip(1) {
+            *m = true;
+        }
+    } else {
+        let (target_heavy, target_charge) = heavy_atom_count_and_charge(target_mol);
+        let per_precursor: Vec<(u32, i64)> = precursor_mols
+            .iter()
+            .map(heavy_atom_count_and_charge)
+            .collect();
+        let precursor_heavy_sum: u32 = per_precursor.iter().map(|(h, _)| h).sum();
+        let precursor_charge_sum: i64 = per_precursor.iter().map(|(_, c)| c).sum();
+        let precursor_heavy_max = per_precursor.iter().map(|(h, _)| *h).max().unwrap_or(0);
+
+        values[1] = target_heavy as f32;
+        values[2] = precursor_heavy_sum as f32;
+        values[3] = precursor_heavy_max as f32;
+        if precursor_heavy_sum > 0 {
+            values[4] = target_heavy as f32 / precursor_heavy_sum as f32;
+        } else {
+            missing[4] = true;
+        }
+        values[5] = if precursor_charge_sum == target_charge {
+            1.0
+        } else {
+            0.0
+        };
+        // "no_heavy_atom_gain": this is the RETRO direction -- the target is
+        // the forward reaction's product, so it must never have MORE heavy
+        // atoms than its precursors combined. precursor_heavy_sum >
+        // target_heavy is expected and common (reagents/leaving groups) and
+        // is not a violation.
+        values[6] = if precursor_heavy_sum >= target_heavy {
+            1.0
+        } else {
+            0.0
+        };
+    }
+
+    // -- reaction-center / provenance (group 1, always attempted) --
+    values[7] = candidate.source_template_count as f32;
+    let per_source_template_features: Vec<TemplateTransformationFeatures> = candidate
+        .sources
+        .iter()
+        .filter_map(|s| templates_by_id.get(&s.template_id).copied())
+        .map(template_transformation_features)
+        .collect();
+    let agg = aggregate_transformation_features(&per_source_template_features);
+    values[8] = agg.reaction_center_atom_count_min as f32;
+    values[9] = agg.reaction_center_atom_count_max as f32;
+    values[10] = agg.reaction_center_atom_count_mean;
+    values[11] = agg.reaction_center_extractable_fraction;
+    values[12] = candidate.min_base_step_cost as f32;
+    match candidate.best_upstream_score {
+        Some(s) => values[13] = s,
+        None => missing[13] = true,
+    }
+
+    // -- availability (group 2 -- stock-dependent) --
+    match stock {
+        Some(stock) => {
+            let in_stock: Vec<bool> = candidate
+                .precursor_smiles
+                .iter()
+                .map(|smi| stock.is_building_block_smiles(smi))
+                .collect();
+            let n_in_stock = in_stock.iter().filter(|b| **b).count();
+            values[14] = n_in_stock as f32 / in_stock.len().max(1) as f32;
+            values[15] = if in_stock.iter().all(|b| *b) {
+                1.0
+            } else {
+                0.0
+            };
+        }
+        None => {
+            missing[14] = true;
+            missing[15] = true;
+        }
+    }
+
+    // -- frequency (group 2 -- train-split-dependent) --
+    // `template_log_frequency` is populated from `RetroRule.weight` as
+    // computed over WHATEVER rule set the caller passed to
+    // `propose_one_step`, not necessarily a train-split-frozen recomputation
+    // -- always missing until split-aware recomputation lands, per
+    // `CandidateSource::template_log_frequency`'s doc.
+    missing[16] = true;
+    missing[17] = true;
+
+    CandidateFeatures { values, missing }
+}
+
+/// Build a `template_id -> &RetroRule` index once per pool-export call, for
+/// [`extract_features`] to look up each candidate source's rule by id
+/// without an O(rules) scan per source.
+pub fn index_rules_by_template_id(rules: &[RetroRule]) -> HashMap<String, &RetroRule> {
+    rules.iter().map(|r| (r.template_id.clone(), r)).collect()
+}
+
 /// Select the active rule set for one target under `mode`, mirroring
 /// `find_routes`' bond_idx / scorer fallback chains exactly for the modes
 /// that have a `find_routes` analog.
@@ -527,38 +744,66 @@ pub(crate) fn raw_propose(
     raw
 }
 
+/// Hashes a sequence of strings with an unambiguous, length-prefixed
+/// framing: the count, then each element as (length, bytes). A plain
+/// `.join(".")` is not safe here -- a canonical SMILES can itself contain a
+/// `.` (a disconnected salt/ion-pair fragment), so `["C.C", "N"]` and `["C",
+/// "C.N"]` would join to the identical string `"C.C.N"` despite being
+/// different precursor sets.
+fn hash_string_sequence(hasher: &mut Sha256, values: &[String]) {
+    hasher.update((values.len() as u64).to_be_bytes());
+    for value in values {
+        let bytes = value.as_bytes();
+        hasher.update((bytes.len() as u64).to_be_bytes());
+        hasher.update(bytes);
+    }
+}
+
+/// Candidate identity: SHA-256 over a domain separator
+/// (`renkin-retrospect-candidate-v1`, so a later framing revision can never
+/// silently collide with this one), the canonical target, an explicit
+/// section separator, then the sorted (not deduplicated -- see call site)
+/// precursor multiset.
+fn candidate_id_for(canonical_target: &str, precursor_smiles: &[String]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"renkin-retrospect-candidate-v1\0");
+    hash_string_sequence(&mut hasher, &[canonical_target.to_string()]);
+    hasher.update(b"\0precursors\0");
+    hash_string_sequence(&mut hasher, precursor_smiles);
+    format!("sha256:{:x}", hasher.finalize())
+}
+
 /// Canonicalize and merge raw proposals into candidate-pool entries.
 ///
-/// Candidate ID: `sha256(canonical_target + "\0" + canonical_precursors.join("."))`.
-/// Proposals whose sorted precursor list hashes the same are merged: every
-/// source's full provenance is kept in `sources`, `sources` is sorted
-/// deterministically (see `ReactionCandidate` doc) so the "representative"
-/// source is never ambiguous, and `best_*`/`min_*`/`max_*`/`mean_*`
-/// aggregates are computed over all sources -- no provenance is dropped in
-/// favor of "just the best one".
+/// Candidate ID: see [`candidate_id_for`]. Proposals whose sorted precursor
+/// list hashes the same are merged: every source's full provenance is kept
+/// in `sources`, `sources` is sorted deterministically (see
+/// `ReactionCandidate` doc) so the "representative" source is never
+/// ambiguous, and `best_*`/`min_*`/`max_*`/`mean_*` aggregates are computed
+/// over all sources -- no provenance is dropped in favor of "just the best
+/// one".
 fn merge_into_candidates(canonical_target: &str, raw: Vec<RawCandidate>) -> Vec<ReactionCandidate> {
     let mut order: Vec<String> = Vec::new();
     let mut precursors_by_id: HashMap<String, Vec<String>> = HashMap::new();
     let mut sources_by_id: HashMap<String, Vec<CandidateSource>> = HashMap::new();
 
     for proposal in raw {
+        // Sorted but NOT deduplicated: a symmetric target can split into two
+        // copies of the same fragment (e.g. bond-breaking down the middle
+        // of a symmetric molecule), and that multiplicity is real
+        // stoichiometry, not noise -- deduplicating would silently claim
+        // one equivalent reconstitutes the target when two are actually
+        // needed. This mirrors renkin-forward's product-multiset handling
+        // (`["CO","CO"]` and `["CO"]` are different candidates there for
+        // the same reason).
         let mut precursor_smiles: Vec<String> = proposal
             .precursors
             .iter()
             .map(|p| p.smiles.clone())
             .collect();
         precursor_smiles.sort_unstable();
-        precursor_smiles.dedup();
 
-        let candidate_id = {
-            let mut hasher = Sha256::new();
-            hasher.update(canonical_target.as_bytes());
-            hasher.update(b"\0");
-            hasher.update(precursor_smiles.join(".").as_bytes());
-            let digest = hasher.finalize();
-            let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
-            format!("sha256:{hex}")
-        };
+        let candidate_id = candidate_id_for(canonical_target, &precursor_smiles);
 
         let base_step_cost = step_cost(
             &proposal
@@ -922,6 +1167,47 @@ mod tests {
     }
 
     #[test]
+    fn candidate_id_join_ambiguity_is_resolved() {
+        // A naive `.join(".")` would make these two DIFFERENT precursor
+        // sequences collide: ["C.C", "N"].join(".") == "C.C.N"
+        //                    ["C", "C.N"].join(".") == "C.C.N"
+        let id_a = candidate_id_for("target", &["C.C".to_string(), "N".to_string()]);
+        let id_b = candidate_id_for("target", &["C".to_string(), "C.N".to_string()]);
+        assert_ne!(id_a, id_b, "join ambiguity must not collide");
+    }
+
+    #[test]
+    fn candidate_id_is_stable_sha256_prefixed() {
+        let id = candidate_id_for("target", &["CC".to_string()]);
+        assert!(id.starts_with("sha256:"));
+        assert_eq!(candidate_id_for("target", &["CC".to_string()]), id);
+    }
+
+    #[test]
+    fn duplicate_precursor_fragment_within_one_split_is_not_collapsed() {
+        // A symmetric target splitting into two copies of the same fragment
+        // is real stoichiometry (two equivalents needed to reconstitute the
+        // target), not noise -- merge_into_candidates must not silently
+        // collapse it to one.
+        let raw = vec![RawCandidate {
+            rule_name: "symmetric_split".to_string(),
+            template_id: "rule:symmetric_split".to_string(),
+            rule_weight: 1.0,
+            original_rank: 0,
+            upstream_score: None,
+            upstream_score_status: UpstreamScoreStatus::NotApplicable,
+            precursors: vec![precs("CC"), precs("CC")],
+        }];
+        let merged = merge_into_candidates("target", raw);
+        assert_eq!(merged.len(), 1);
+        assert_eq!(
+            merged[0].precursor_smiles,
+            vec!["CC".to_string(), "CC".to_string()],
+            "duplicate precursor fragment multiplicity must be preserved, not deduplicated"
+        );
+    }
+
+    #[test]
     fn duplicate_precursor_set_from_two_rules_merges_with_provenance_retained() {
         let raw = vec![
             RawCandidate {
@@ -1104,5 +1390,202 @@ mod tests {
 
         let empty_agg = aggregate_transformation_features(&[]);
         assert!(!empty_agg.reaction_center_atom_count_mean.is_nan());
+    }
+
+    // ---- feature schema v1 / extract_features ----
+
+    #[test]
+    fn feature_schema_v1_names_and_group_boundary_are_consistent() {
+        assert_eq!(FEATURE_NAMES_V1.len(), 18);
+        assert!(FEATURE_GROUP1_LEN < FEATURE_NAMES_V1.len());
+        assert_eq!(
+            FEATURE_NAMES_V1[FEATURE_GROUP1_LEN],
+            "fraction_precursors_in_stock"
+        );
+        assert_eq!(
+            feature_index("num_precursors"),
+            Some(0),
+            "feature_index must find a real schema-v1 name"
+        );
+        assert_eq!(
+            feature_index("not_a_real_feature"),
+            None,
+            "feature_index must return None for an unknown name"
+        );
+    }
+
+    fn candidate_for(target: &str, rules: &[RetroRule], mode: ProposalMode) -> ReactionCandidate {
+        let pool = propose_one_step(target, rules, &ProposalConfig { mode }).unwrap();
+        pool.candidates
+            .into_iter()
+            .next()
+            .expect("expected at least one candidate for this fixture")
+    }
+
+    #[test]
+    fn extract_features_group2_missing_without_stock() {
+        let rules = default_rules();
+        let target = "CC(=O)c1ccccc1";
+        let target_mol = mol_from_smiles(target).unwrap();
+        let candidate = candidate_for(target, &rules, ProposalMode::Exhaustive);
+        let templates_by_id = index_rules_by_template_id(&rules);
+
+        let features = extract_features(&candidate, &target_mol, &templates_by_id, None);
+        assert_eq!(features.values.len(), FEATURE_NAMES_V1.len());
+        assert_eq!(features.missing.len(), FEATURE_NAMES_V1.len());
+
+        for name in ["fraction_precursors_in_stock", "all_precursors_in_stock"] {
+            let i = feature_index(name).unwrap();
+            assert!(
+                features.missing[i],
+                "{name} must be missing without a stock"
+            );
+        }
+        for name in ["max_template_log_frequency", "mean_template_log_frequency"] {
+            let i = feature_index(name).unwrap();
+            assert!(
+                features.missing[i],
+                "{name} must always be missing until split-aware recomputation lands"
+            );
+        }
+        let best_upstream_i = feature_index("best_upstream_score").unwrap();
+        for (i, name) in FEATURE_NAMES_V1.iter().enumerate().take(FEATURE_GROUP1_LEN) {
+            if i == best_upstream_i {
+                // Exhaustive mode never attaches an upstream score (no
+                // scorer is used at all -- see UpstreamScoreStatus::
+                // NotApplicable), so this is genuinely absent, not a
+                // computation failure. Still group 1: its missingness has
+                // nothing to do with corpus/train-split leakage, unlike the
+                // stock/frequency features below.
+                assert!(
+                    features.missing[i],
+                    "best_upstream_score must be missing under Exhaustive mode (no scorer involved)"
+                );
+                continue;
+            }
+            assert!(
+                !features.missing[i],
+                "group-1 feature {i} ({name}) must be computed for a normal candidate"
+            );
+        }
+    }
+
+    #[test]
+    fn extract_features_availability_reflects_stock_membership() {
+        use crate::chem_env::ChemEnv;
+
+        let rules = default_rules();
+        let target = "CC(=O)c1ccccc1";
+        let target_mol = mol_from_smiles(target).unwrap();
+        let candidate = candidate_for(target, &rules, ProposalMode::Exhaustive);
+        let templates_by_id = index_rules_by_template_id(&rules);
+
+        // Every precursor of this candidate is in the stock.
+        let full_stock = ChemEnv::in_memory(
+            &candidate
+                .precursor_smiles
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>(),
+        );
+        let f_full = extract_features(&candidate, &target_mol, &templates_by_id, Some(&full_stock));
+        let all_i = feature_index("all_precursors_in_stock").unwrap();
+        let frac_i = feature_index("fraction_precursors_in_stock").unwrap();
+        assert!(!f_full.missing[all_i]);
+        assert_eq!(f_full.values[all_i], 1.0);
+        assert_eq!(f_full.values[frac_i], 1.0);
+
+        // An empty stock: nothing is available.
+        let empty_stock = ChemEnv::in_memory(&[]);
+        let f_empty = extract_features(
+            &candidate,
+            &target_mol,
+            &templates_by_id,
+            Some(&empty_stock),
+        );
+        assert!(!f_empty.missing[all_i]);
+        assert_eq!(f_empty.values[all_i], 0.0);
+        assert_eq!(f_empty.values[frac_i], 0.0);
+    }
+
+    #[test]
+    fn extract_features_no_heavy_atom_gain_and_charge_balance_hold_for_real_reaction() {
+        let rules = default_rules();
+        let target = "CC(=O)c1ccccc1";
+        let target_mol = mol_from_smiles(target).unwrap();
+        let candidate = candidate_for(target, &rules, ProposalMode::Exhaustive);
+        let templates_by_id = index_rules_by_template_id(&rules);
+
+        let features = extract_features(&candidate, &target_mol, &templates_by_id, None);
+        let no_gain_i = feature_index("no_heavy_atom_gain").unwrap();
+        let charge_i = feature_index("net_charge_balanced").unwrap();
+        assert_eq!(
+            features.values[no_gain_i], 1.0,
+            "a real retro disconnection must never gain heavy atoms in the target"
+        );
+        assert_eq!(
+            features.values[charge_i], 1.0,
+            "a real retro disconnection on a neutral target/precursors must be charge-balanced"
+        );
+    }
+
+    #[test]
+    fn extract_features_num_precursors_survives_reparse_failure() {
+        // A hand-built candidate with an unparseable precursor SMILES:
+        // num_precursors is computable from the string list alone, but every
+        // other structural/chemistry-integrity feature must be missing
+        // rather than silently computed over only the precursors that
+        // happened to re-parse.
+        let target = "CCO";
+        let target_mol = mol_from_smiles(target).unwrap();
+        let candidate = ReactionCandidate {
+            candidate_id: "sha256:fake".to_string(),
+            target_smiles: target.to_string(),
+            precursor_smiles: vec!["CC".to_string(), "not-a-valid-smiles(((".to_string()],
+            sources: vec![],
+            source_template_count: 0,
+            best_upstream_score: None,
+            best_upstream_rank: 0,
+            min_base_step_cost: 0.0,
+            max_template_frequency: None,
+            mean_template_frequency: None,
+            features: CandidateFeatures::default(),
+            reranker_score: None,
+        };
+        let templates_by_id: HashMap<String, &RetroRule> = HashMap::new();
+        let features = extract_features(&candidate, &target_mol, &templates_by_id, None);
+
+        let num_i = feature_index("num_precursors").unwrap();
+        assert!(!features.missing[num_i]);
+        assert_eq!(features.values[num_i], 2.0);
+
+        for name in [
+            "target_heavy_atom_count",
+            "precursor_heavy_atom_count_sum",
+            "precursor_heavy_atom_count_max",
+            "atom_economy",
+            "net_charge_balanced",
+            "no_heavy_atom_gain",
+        ] {
+            let i = feature_index(name).unwrap();
+            assert!(
+                features.missing[i],
+                "{name} must be missing on reparse failure"
+            );
+        }
+    }
+
+    #[test]
+    fn extract_features_is_deterministic_across_two_calls() {
+        let rules = default_rules();
+        let target = "CC(=O)c1ccccc1";
+        let target_mol = mol_from_smiles(target).unwrap();
+        let candidate = candidate_for(target, &rules, ProposalMode::Exhaustive);
+        let templates_by_id = index_rules_by_template_id(&rules);
+
+        let a = extract_features(&candidate, &target_mol, &templates_by_id, None);
+        let b = extract_features(&candidate, &target_mol, &templates_by_id, None);
+        assert_eq!(a.values, b.values);
+        assert_eq!(a.missing, b.missing);
     }
 }

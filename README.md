@@ -331,6 +331,7 @@ for full matching/validation semantics.
 | **Constraint DSL** | `--constraints constraints.json` — JSON-driven synthesis planning: element filters, step limits, confidence thresholds, preferred reaction families; enables LLM → RENKIN pipeline |
 | **Output formats** | `--format json` · `tree` · `mermaid` · `explain` (human-readable per-route analysis) · `compare` (side-by-side table) · `compare-json` · `pareto` |
 | **Failure diagnostics** | Zero-route JSON output includes `diagnostics` block with `likely_causes` and `suggestions` |
+| **Standalone forward prediction** | `renkin-forward predict --reactants <SMILES>...` enumerates and ranks forward reaction product candidates from reversed SMIRKS templates, independent of route search — see the [Forward Prediction guide](docs/guides/forward-prediction.md) |
 | **Forward validation** | `renkin-forward validate` verifies each step by applying templates forward; accepts `--route-json` or stdin |
 | **Plausibility report** | `renkin-bench --plausibility` — forward-validates best routes and reports composite plausibility score |
 | **PaRoutes benchmark** | `renkin-bench --input-format paroutes` for multi-step ground-truth evaluation with `depth_delta` and `route_diversity` |
@@ -362,6 +363,9 @@ for full matching/validation semantics.
 ```bash
 # Route cost scoring with commercial prices
 renkin -t "Cc1ccc(-c2ccccc2)cc1" --bb-prices data/prices.csv --format json
+
+# Standalone forward prediction — no route search involved
+renkin-forward predict --reactants "Oc1ccccc1C(=O)O" "CCO" --report --max-results 5
 
 # Forward validation — pipe find_routes output directly
 renkin -t "CC(=O)Oc1ccccc1C(=O)O" --format json | renkin-forward validate

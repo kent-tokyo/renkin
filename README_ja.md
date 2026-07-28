@@ -306,6 +306,7 @@ prediction」と明記されます。`conditions`／`reported_yield`／`warnings
 | **制約 DSL** | `--constraints constraints.json` — JSON駆動の合成計画：元素フィルタ・ステップ数制限・信頼度閾値・優先反応族；LLM → RENKIN パイプラインに対応 |
 | **出力フォーマット** | `--format json` · `tree` · `mermaid` · `explain`（ルートごとの人間可読解説）· `compare`（並列比較表）· `compare-json` · `pareto` |
 | **失敗時診断** | ルートが見つからない場合、JSON に `diagnostics` ブロック（`likely_causes` + `suggestions`）を付加 |
+| **単体順反応予測** | `renkin-forward predict --reactants <SMILES>...` — ルート検索とは独立に、反転したSMIRKSテンプレートから順反応生成物候補を列挙・ランキング — [Forward Prediction guide](docs/guides/forward-prediction.md)（英語）参照 |
 | **順方向検証** | `renkin-forward validate` で各ステップを順方向適用して検証；stdin パイプ対応 |
 | **妥当性レポート** | `renkin-bench --plausibility` — ベストルートを順方向検証し、複合妥当性スコアを算出 |
 | **PaRoutesベンチマーク** | `renkin-bench --input-format paroutes` でmulti-step ground-truth評価（`depth_delta`, `route_diversity`） |

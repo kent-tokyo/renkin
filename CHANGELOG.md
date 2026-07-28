@@ -8,6 +8,15 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **`renkin-forward` CLI** — `--report` flag on `predict` emits a full, versioned `ForwardPredictionReport` (`FORWARD_REPORT_SCHEMA_VERSION = 1`) with canonicalized reactants, merged candidates (full per-template source provenance retained, deterministic ranking), and structured stats/warnings; `--help`/`--version` for the binary and both subcommands; unknown options, missing option values, invalid `--max-results`, and `--max-results 0` are now hard errors instead of being silently ignored or defaulted ([#57](https://github.com/kent-tokyo/renkin/issues/57))
+- **`renkin-forward` lib** — `predict_products_detailed()`/`ForwardPredictConfig` alongside the existing `predict_products()` (kept as a backward-compatible thin wrapper, not deprecated): each independent `run_reactants` outcome is now kept as its own candidate instead of being flattened together with a template's other outcomes, product validation replaces a string heuristic with real canonicalization + round-trip re-parsing, no-op transformations (product multiset == reactant multiset) are rejected, and non-finite template weights are excluded rather than silently treated as equal
+- **`renkin-forward` lib** — `load_templates_strict()`: an explicitly-supplied `--templates` file that's missing, unreadable, or contains zero valid templates is now a hard error, not a silently-empty template corpus
+- **docs** — new [Forward Reaction Prediction guide](docs/guides/forward-prediction.md) documenting standalone `predict`, the detailed report schema, template inversion, ranking/merge semantics, error handling, limitations, and the Rust API; `crates/renkin-forward/README.md` added
+
+### Fixed
+- **`renkin-forward`** — `validate_route()`'s `verified` is now computed over the full, untruncated candidate set instead of an arbitrary `--max-results`-capped list, so a real match can no longer be hidden by the display cap
+
 ## [0.18.0] — 2026-07-26
 
 ### Added

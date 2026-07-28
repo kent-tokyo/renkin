@@ -5,6 +5,7 @@ edition = "2024"
 description = "Template-based forward reaction prediction — renkin workspace"
 repository = "https://github.com/kent-tokyo/renkin"
 license = "MIT"
+readme = "README.md"
 
 [[bin]]
 name = "renkin-forward"

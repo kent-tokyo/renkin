@@ -64,6 +64,7 @@ nav:
   - Guides:
     - Python Retrosynthesis: guides/python-retrosynthesis.md
     - Rust Retrosynthesis: guides/rust-retrosynthesis.md
+    - Forward Reaction Prediction: guides/forward-prediction.md
     - Reaction Evidence Metadata: guides/reaction-evidence.md
   - API Reference:
     - Rust API: api/rust.md

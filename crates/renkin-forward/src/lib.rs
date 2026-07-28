@@ -1030,6 +1030,153 @@ mod tests {
     }
 
     #[test]
+    fn canonicalize_outcome_preserves_product_multiplicity() {
+        // Two entries in one outcome that happen to be the SAME molecule
+        // must survive as two entries, not be deduplicated into one.
+        let a = mol_from_smiles("CO").unwrap();
+        let b = mol_from_smiles("CO").unwrap();
+        let products = canonicalize_outcome(&[a, b]).unwrap();
+        assert_eq!(products.len(), 2);
+        assert_eq!(products[0], products[1]);
+    }
+
+    #[test]
+    fn template_application_error_reported_as_warning_in_non_strict_mode() {
+        // A real default rule that requires exactly 1 reactant, applied to 2,
+        // fails inside run_reactants (ReactantCountMismatch) rather than at
+        // SMIRKS-reversal time.
+        let rules = renkin::chem_env::default_rules();
+        let bad_rule = rules
+            .iter()
+            .find(|r| r.name == "aryl_chloride_to_bromide")
+            .expect("expected aryl_chloride_to_bromide in default_rules()")
+            .clone();
+        let report = predict_products_detailed(
+            &["c1ccccc1Cl", "CCO"],
+            &[bad_rule],
+            &ForwardPredictConfig::default(),
+        )
+        .unwrap();
+        assert_eq!(report.stats.template_application_errors, 1);
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|w| w.code == "template_application_failed"),
+            "expected a template_application_failed warning, got {:?}",
+            report.warnings
+        );
+    }
+
+    #[test]
+    fn template_application_error_is_hard_error_in_strict_mode() {
+        let rules = renkin::chem_env::default_rules();
+        let bad_rule = rules
+            .iter()
+            .find(|r| r.name == "aryl_chloride_to_bromide")
+            .expect("expected aryl_chloride_to_bromide in default_rules()")
+            .clone();
+        let config = ForwardPredictConfig {
+            strict_template_errors: true,
+            ..Default::default()
+        };
+        assert!(predict_products_detailed(&["c1ccccc1Cl", "CCO"], &[bad_rule], &config).is_err());
+    }
+
+    #[test]
+    fn candidate_ranking_is_deterministic_across_score_source_count_and_id() {
+        // Three synthetic single-source candidates with distinct proposal
+        // scores must come back sorted strictly by score descending.
+        let mut high = synthetic_metathesis_rule();
+        high.name = "high_weight".to_string();
+        high.template_id = "rule:high_weight".to_string();
+        high.weight = 9.0;
+        let mut mid = synthetic_metathesis_rule();
+        mid.name = "mid_weight".to_string();
+        mid.template_id = "rule:mid_weight".to_string();
+        mid.weight = 4.0;
+        let mut low = synthetic_metathesis_rule();
+        low.name = "low_weight".to_string();
+        low.template_id = "rule:low_weight".to_string();
+        low.weight = 1.0;
+
+        let report = predict_products_detailed(
+            &["ClCC(Cl)CBr", "BrCC(Br)CCl"],
+            &[low, high, mid],
+            &ForwardPredictConfig {
+                max_results: usize::MAX,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        // Every candidate here is single-sourced from one of the 3 identical
+        // synthetic rules (same SMIRKS, different weights) applied to the
+        // same reactants, so they all converge into the SAME 3 candidates,
+        // each merging all 3 sources -- ranking must still be deterministic
+        // by proposal_score (== max source weight == 9.0 for all of them
+        // here since every candidate is reachable by all 3 rules), then by
+        // product multiset lexicographically as the tiebreaker.
+        let scores: Vec<f64> = report.candidates.iter().map(|c| c.proposal_score).collect();
+        for w in scores.windows(2) {
+            assert!(
+                w[0] >= w[1],
+                "candidates must be sorted score-descending: {scores:?}"
+            );
+        }
+        let products: Vec<&Vec<String>> = report.candidates.iter().map(|c| &c.products).collect();
+        let mut sorted_products = products.clone();
+        sorted_products.sort();
+        assert_eq!(
+            products, sorted_products,
+            "equal-score candidates must be ordered by product multiset lexicographically"
+        );
+    }
+
+    /// Compatibility regression: pins `validate_route`'s `verified` outcome
+    /// for a route step built on a real default rule
+    /// (`aryl_ether_retro`, salicylic acid + ethanol -> 2-ethoxybenzoic
+    /// acid), so this specific, previously-working case can never silently
+    /// flip during future refactors of the candidate/merge pipeline.
+    #[test]
+    fn validate_route_golden_fixture_verified_true() {
+        use renkin::search::ReactionStep;
+
+        let rules = renkin::chem_env::default_rules();
+        let step = ReactionStep {
+            rule: "aryl_ether_retro".to_string(),
+            template_id: "rule:aryl_ether_retro".to_string(),
+            target: "CCOc1ccccc1C(=O)O".to_string(),
+            precursors: vec!["Oc1ccccc1C(=O)O".to_string(), "CCO".to_string()],
+            conditions: None,
+            atom_economy: None,
+            step_confidence: 1.0,
+            procedure_hint: None,
+            reaction_family: None,
+            metadata_source: None,
+            metadata_scope: None,
+            evidence: None,
+        };
+        let route = Route {
+            steps: vec![step],
+            depth: 1,
+            score: 1.0,
+            building_blocks: vec!["Oc1ccccc1C(=O)O".to_string(), "CCO".to_string()],
+            confidence: 1.0,
+            convergency: 1.0,
+            success_probability: 1.0,
+            route_cost: 1.0,
+        };
+
+        let validations = validate_route(&route, &rules).unwrap();
+        assert_eq!(validations.len(), 1);
+        assert!(
+            validations[0].verified,
+            "expected aryl_ether_retro forward application to verify the target, got {:?}",
+            validations[0]
+        );
+    }
+
+    #[test]
     fn test_predict_products_does_not_panic() {
         let rules = renkin::chem_env::default_rules();
         // acetic acid + ethanol — ester_cleavage reverse may or may not match

@@ -111,7 +111,10 @@ loader both convert a missing feature to `NaN` rather than `0.0`.
 ```rust
 use renkin::candidate::{ProposalConfig, ProposalMode, index_rules_by_template_id, propose_one_step};
 use renkin::chem_env::{default_rules, mol_from_smiles};
-use renkin::pool_export::{build_manifest, candidate_rows_for_pool, write_jsonl};
+use renkin::pool_export::{
+    PoolProvenance, build_manifest, candidate_rows_for_pool, target_pool_record_for_pool,
+    write_jsonl, write_target_pool_jsonl,
+};
 
 let rules = default_rules();
 let target = "CC(=O)c1ccccc1";
@@ -119,12 +122,33 @@ let target_mol = mol_from_smiles(target)?;
 // `group_id` is the caller's dataset reaction/example id -- distinct from
 // the canonical `target_id` the pool derives internally (see below).
 let pool = propose_one_step("rxn-example-1", target, &rules, &ProposalConfig::default())?;
-let templates_by_id = index_rules_by_template_id(&rules);
+let templates_by_id = index_rules_by_template_id(&rules)?;
 
 let rows = candidate_rows_for_pool(&pool, &target_mol, &templates_by_id, /* stock */ None);
-write_jsonl(&rows, std::fs::File::create("pool.jsonl")?)?;
+let candidate_jsonl_sha256 = write_jsonl(&rows, std::fs::File::create("pool.jsonl")?)?;
 
-let manifest = build_manifest(&rows, /* target_count */ 1, &rules, &ProposalConfig::default().mode, None);
+let records = vec![target_pool_record_for_pool(&pool)];
+let target_group_index_sha256 =
+    write_target_pool_jsonl(&records, std::fs::File::create("pool.groups.jsonl")?)?;
+
+let manifest = build_manifest(
+    &rows,
+    &candidate_jsonl_sha256,
+    &records,
+    &target_group_index_sha256,
+    &rules,
+    &ProposalConfig::default().mode,
+    None,
+    PoolProvenance {
+        renkin_git_commit: "...".to_string(), // e.g. `git rev-parse HEAD` output
+        cargo_lock_sha256: "...".to_string(),
+        chematic_version: "...".to_string(),
+        target_input_sha256: "...".to_string(), // hash of the driver's own target-list input
+        stock_source: None,
+        embedded_fallback_used: false,
+        export_config: serde_json::json!({}),
+    },
+)?;
 std::fs::write("pool.manifest.json", serde_json::to_string_pretty(&manifest)?)?;
 ```
 
@@ -139,25 +163,51 @@ canonical target structure -- the leakage-safe split key; two rows can share
 contributing rule, duplicates of the same rule already merged),
 `feature_schema_version`, `feature_values`, `feature_missing`. Rows are
 sorted by `candidate_id` before export, so two runs over the same input
-produce byte-identical JSONL.
+produce byte-identical JSONL. `write_jsonl` hard-validates every row before
+writing anything (matching feature-vector lengths, no non-finite non-missing
+values, no duplicate `candidate_id` within one `group_id`, non-empty
+`precursor_smiles`/`sources`) and returns the SHA-256 digest of exactly the
+bytes it wrote.
 
 Alongside the candidate JSONL, `pool_export::target_pool_record_for_pool`
 (or `target_pool_record_for_failure` if `propose_one_step` returned `Err`)
 builds one `TargetPoolRecord` per (`group_id`, target) attempt --
 `group_id`, `target_id`, `target_smiles`, `candidate_count`,
 `proposal_status` (`Ok` or `TargetParseFailed`) -- written with
-`write_target_pool_jsonl`. This group index exists even for a target with
-zero candidates, so a consumer's coverage denominator can be built from it
-plus labels, never by counting which `group_id`s happen to appear in the
-candidate rows (a zero-candidate group would otherwise silently vanish).
+`write_target_pool_jsonl`, which (like `write_jsonl`) rejects a duplicate
+`group_id` and returns the digest of what it wrote. This group index exists
+even for a target with zero candidates, so a consumer's coverage denominator
+can be built from it plus labels, never by counting which `group_id`s happen
+to appear in the candidate rows (a zero-candidate group would otherwise
+silently vanish).
 
 The manifest (`PoolManifest`, `MANIFEST_SCHEMA_VERSION = 1`) records
-`feature_schema_version`, `feature_names`, `proposal_mode` (mode + `top_k`),
-`rules_content_hash` (order-independent SHA-256 over the rule set),
-`rules_count`, `stock_identity`/`stock_compound_count` (`None` if no stock
-was supplied), `target_count`, and `candidate_count` — enough for a
-downstream consumer to detect a mode/stock/rules mismatch instead of
-silently training on the wrong assumption.
+`feature_schema_version`, `feature_names`, `feature_schema_hash` (SHA-256
+over the version + names, so a same-length rename/reorder is still
+detectable), `proposal_mode` (mode + `top_k`, plus -- for
+`ScorerConditioned` -- `rules_offset`/`scorer_identity`/
+`scorer_model_sha256`/`scorer_status`), `rules_content_hash`
+(order-independent SHA-256 over the rule set, including each rule's `name`
+so a rename alone changes the hash), `rules_count`,
+`stock_identity`/`stock_compound_count`/`stock_content_sha256` (`None` if no
+stock was supplied -- `stock_content_sha256` hashes the stock's actual
+compound content, so a swap under an unchanged `stock_identity` label is
+still detectable), `target_count`/`group_count` (derived from, and
+cross-validated against, the target/group index -- never taken unchecked
+from caller input), `candidate_count`, `candidate_jsonl_sha256`/
+`target_group_index_sha256` (must be the digests `write_jsonl`/
+`write_target_pool_jsonl` actually returned, never independently
+recomputed), and `provenance` (`PoolProvenance`: `renkin_git_commit`,
+`cargo_lock_sha256`, `chematic_version`, `target_input_sha256`,
+`stock_source`, `embedded_fallback_used`, `export_config` -- all
+caller-supplied, since this crate has no way to derive git/build state or
+its caller's own driver input itself; `PoolProvenance::default()` produces
+obviously-placeholder values for local smoke tests, never anything that
+could pass for real provenance). `build_manifest` itself now returns
+`anyhow::Result<PoolManifest>`: it hard-validates that every `group_id` in
+`rows` has a consistent entry in the target/group index before building
+anything, so a mismatch between the two files is caught at manifest-build
+time, not discovered by a downstream loader.
 
 ## Training and evaluating a reranker
 
@@ -183,11 +233,25 @@ python3 scripts/train_reranker.py \
   --model-out model.txt --eval-out eval.json
 ```
 
+- `--manifest` is hard-validated before anything else runs (`validate_manifest`):
+  `manifest_schema_version`/`feature_schema_version` must match this
+  script's own constants, `feature_names` must exactly equal this script's
+  `FEATURE_NAMES_V1` mirror, `feature_schema_hash` must match this script's
+  recomputed hash (catching a Rust/Python schema drift a plain name/length
+  comparison could miss), and `candidate_jsonl_sha256`/
+  `target_group_index_sha256` must match the actual on-disk hashes of
+  `--pool`/`--groups` -- a manifest paired with the wrong file is a hard
+  error, not a warning.
 - `--groups` is the JSONL group index (`write_target_pool_jsonl` output,
   above) -- one record per (`group_id`, target) attempt, including
   zero-candidate and parse-failure groups. The set of groups to consider
   always comes from this file, never from which `group_id`s happen to
-  appear in `--pool`.
+  appear in `--pool`. Every `--pool` row is hard-validated against it
+  (`validate_pool_rows`): matching feature-vector lengths (never a silently
+  length-truncating `zip()`), non-finite values only where marked missing,
+  non-empty `precursor_smiles`/`sources`, no duplicate `candidate_id` within
+  one `group_id`, and `target_id`/`target_smiles` consistency with the
+  group index entry for that `group_id`.
 - `--labels` is JSONL, schema v1: `{"schema_version": 1, "group_id": ...,
   "target_id": ..., "correct_precursor_sets": [["...", "..."], ...]}` --
   multiple accepted correct precursor multisets per group are allowed, each

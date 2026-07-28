@@ -63,6 +63,7 @@ Usage:
 import argparse
 import hashlib
 import json
+import math
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -71,6 +72,202 @@ TRAIN_MAX_BUCKET = 70  # buckets [0, 70) -> train
 VAL_MAX_BUCKET = 85  # buckets [70, 85) -> val, [85, 100) -> test
 
 LABELS_SCHEMA_VERSION = 1
+MANIFEST_SCHEMA_VERSION = 1
+FEATURE_SCHEMA_VERSION = 1
+
+# Mirrors `renkin::candidate::FEATURE_NAMES_V1` (src/candidate.rs) exactly --
+# this script has no way to import that crate, so the schema is duplicated
+# here. `validate_manifest` cross-checks this list (and `feature_schema_hash`
+# below) against a real exported manifest, so a silent drift between the two
+# copies is caught at load time, not discovered as a mysteriously-wrong
+# feature column months later.
+FEATURE_NAMES_V1 = [
+    "num_precursors",
+    "target_heavy_atom_count",
+    "precursor_heavy_atom_count_sum",
+    "precursor_heavy_atom_count_max",
+    "heavy_atom_retention_ratio",
+    "net_charge_balanced",
+    "no_heavy_atom_gain",
+    "source_template_count",
+    "reaction_center_atom_count_min",
+    "reaction_center_atom_count_max",
+    "reaction_center_atom_count_mean",
+    "reaction_center_extractable_fraction",
+    "min_base_step_cost",
+    "best_upstream_score",
+    "fraction_precursors_in_stock",
+    "all_precursors_in_stock",
+    "max_template_log_frequency",
+    "mean_template_log_frequency",
+]
+
+
+def feature_schema_hash() -> str:
+    """Mirrors `renkin::candidate::feature_schema_hash` byte-for-byte (same
+    domain tag, same big-endian length-prefixed framing) -- see that
+    function's doc. If this Python copy and the Rust original ever silently
+    drift apart (a renamed/reordered/added feature on one side only), this
+    hash stops matching a manifest's `feature_schema_hash`, and
+    `validate_manifest` turns that into a load-time hard error instead of a
+    training run silently using the wrong column meanings.
+    """
+    h = hashlib.sha256()
+    h.update(b"renkin-retrospect-feature-schema-v1\0")
+    h.update(FEATURE_SCHEMA_VERSION.to_bytes(4, "big"))
+    h.update(len(FEATURE_NAMES_V1).to_bytes(8, "big"))
+    for name in FEATURE_NAMES_V1:
+        name_bytes = name.encode("utf-8")
+        h.update(len(name_bytes).to_bytes(8, "big"))
+        h.update(name_bytes)
+    return f"sha256:{h.hexdigest()}"
+
+
+def sha256_file(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return f"sha256:{h.hexdigest()}"
+
+
+def validate_manifest(manifest: dict, pool_path: str, groups_path: str) -> None:
+    """Hard-validate every manifest field this script depends on. A
+    manifest is a claim about what `--pool`/`--groups` actually are; every
+    field here is cross-checked against the real bytes/constants it claims
+    to describe -- never trusted at face value. Mirrors
+    `renkin::pool_export::build_manifest`'s own invariants (see that
+    function's doc) from the consuming side.
+    """
+    if manifest.get("manifest_schema_version") != MANIFEST_SCHEMA_VERSION:
+        raise ValueError(
+            f"manifest_schema_version={manifest.get('manifest_schema_version')!r}, "
+            f"expected {MANIFEST_SCHEMA_VERSION}"
+        )
+    if manifest.get("feature_schema_version") != FEATURE_SCHEMA_VERSION:
+        raise ValueError(
+            f"feature_schema_version={manifest.get('feature_schema_version')!r}, "
+            f"expected {FEATURE_SCHEMA_VERSION} -- this script's FEATURE_NAMES_V1 "
+            "mirror is only valid for that schema version"
+        )
+    if manifest.get("feature_names") != FEATURE_NAMES_V1:
+        raise ValueError(
+            "manifest.feature_names does not exactly match this script's "
+            "FEATURE_NAMES_V1 mirror -- refusing to train on a feature vector "
+            "whose column meaning this script can't guarantee"
+        )
+    expected_feature_hash = feature_schema_hash()
+    if manifest.get("feature_schema_hash") != expected_feature_hash:
+        raise ValueError(
+            f"manifest.feature_schema_hash={manifest.get('feature_schema_hash')!r} "
+            f"does not match this script's recomputed {expected_feature_hash!r} -- "
+            "the Rust and Python feature-schema mirrors have drifted apart"
+        )
+    proposal_mode = manifest.get("proposal_mode")
+    if not isinstance(proposal_mode, dict) or "mode" not in proposal_mode:
+        raise ValueError("manifest.proposal_mode is missing or malformed")
+    if not manifest.get("rules_content_hash"):
+        raise ValueError("manifest.rules_content_hash is missing")
+
+    expected_pool_hash = sha256_file(pool_path)
+    if manifest.get("candidate_jsonl_sha256") != expected_pool_hash:
+        raise ValueError(
+            f"manifest.candidate_jsonl_sha256={manifest.get('candidate_jsonl_sha256')!r} "
+            f"does not match --pool's actual hash {expected_pool_hash!r} -- this "
+            "manifest was not produced alongside this exact --pool file"
+        )
+    expected_groups_hash = sha256_file(groups_path)
+    if manifest.get("target_group_index_sha256") != expected_groups_hash:
+        raise ValueError(
+            "manifest.target_group_index_sha256="
+            f"{manifest.get('target_group_index_sha256')!r} does not match --groups's "
+            f"actual hash {expected_groups_hash!r} -- this manifest was not produced "
+            "alongside this exact --groups file"
+        )
+
+    if proposal_mode["mode"] == "scorer_conditioned" and proposal_mode.get("scorer_status") != "available":
+        raise ValueError(
+            "manifest.proposal_mode.scorer_status="
+            f"{proposal_mode.get('scorer_status')!r} for a scorer_conditioned pool -- "
+            "a pool exported from a failed/unavailable scorer must never be trained "
+            "on as if it were a real narrowed pool"
+        )
+
+    stock_identity_present = manifest.get("stock_identity") is not None
+    stock_hash_present = manifest.get("stock_content_sha256") is not None
+    if stock_identity_present != stock_hash_present:
+        raise ValueError(
+            "manifest.stock_identity and stock_content_sha256 must both be present "
+            "or both be absent (got stock_identity="
+            f"{manifest.get('stock_identity')!r}, "
+            f"stock_content_sha256={manifest.get('stock_content_sha256')!r}) -- "
+            "an inconsistent stock provenance pair is never trustworthy"
+        )
+
+
+def validate_pool_rows(pool_rows: list, group_records: list) -> None:
+    """Hard-validate every candidate row against the fixed feature schema
+    and the group index, before any row is used for labeling/training.
+    Mirrors `renkin::pool_export::validate_candidate_rows` /
+    `validate_rows_consistent_with_group_index` from the consuming side --
+    both sides reject the same malformed input, so a bad row can never
+    sneak past whichever side happens to validate more loosely.
+    """
+    target_id_by_group = {r["group_id"]: r["target_id"] for r in group_records}
+    target_smiles_by_group = {r["group_id"]: r["target_smiles"] for r in group_records}
+    seen_within_group: dict = {}
+
+    for row in pool_rows:
+        group_id = row["group_id"]
+        candidate_id = row["candidate_id"]
+
+        if row.get("feature_schema_version") != FEATURE_SCHEMA_VERSION:
+            raise ValueError(
+                f"candidate {candidate_id!r} has feature_schema_version="
+                f"{row.get('feature_schema_version')!r}, expected {FEATURE_SCHEMA_VERSION}"
+            )
+
+        values = row["feature_values"]
+        missing = row["feature_missing"]
+        if len(values) != len(FEATURE_NAMES_V1) or len(missing) != len(FEATURE_NAMES_V1):
+            raise ValueError(
+                f"candidate {candidate_id!r} has feature_values (len={len(values)}) / "
+                f"feature_missing (len={len(missing)}) that don't both match "
+                f"len(FEATURE_NAMES_V1)={len(FEATURE_NAMES_V1)} -- refusing to zip() "
+                "them together, which would silently truncate to the shorter one"
+            )
+        for i, (v, m) in enumerate(zip(values, missing)):
+            if not m and not math.isfinite(v):
+                raise ValueError(
+                    f"candidate {candidate_id!r} feature[{i}] "
+                    f"({FEATURE_NAMES_V1[i]!r}) is non-finite ({v!r}) but not marked missing"
+                )
+
+        if not row.get("precursor_smiles"):
+            raise ValueError(f"candidate {candidate_id!r} has an empty precursor_smiles list")
+        if not row.get("sources"):
+            raise ValueError(f"candidate {candidate_id!r} has an empty sources list")
+
+        if group_id not in target_id_by_group:
+            raise ValueError(
+                f"candidate {candidate_id!r}'s group_id {group_id!r} has no entry in --groups"
+            )
+        if row["target_id"] != target_id_by_group[group_id]:
+            raise ValueError(
+                f"group_id {group_id!r}: candidate row target_id {row['target_id']!r} "
+                f"does not match group index target_id {target_id_by_group[group_id]!r}"
+            )
+        if row.get("target_smiles") != target_smiles_by_group[group_id]:
+            raise ValueError(
+                f"group_id {group_id!r}: candidate row target_smiles "
+                f"{row.get('target_smiles')!r} does not match group index "
+                f"target_smiles {target_smiles_by_group[group_id]!r}"
+            )
+
+        seen = seen_within_group.setdefault(group_id, set())
+        if candidate_id in seen:
+            raise ValueError(f"duplicate candidate_id {candidate_id!r} within group_id {group_id!r}")
+        seen.add(candidate_id)
 
 
 def target_split_bucket(target_id: str) -> int:
@@ -238,10 +435,16 @@ def label_and_split_rows(
             )
         precursors = tuple(sorted(row["precursor_smiles"]))
         label = 1 if precursors in label_entry.correct_precursor_sets else 0
-        features = [
-            float("nan") if m else v
-            for v, m in zip(row["feature_values"], row["feature_missing"])
-        ]
+        values = row["feature_values"]
+        missing = row["feature_missing"]
+        if len(values) != len(missing):
+            raise ValueError(
+                f"candidate_id={row['candidate_id']!r}: feature_values (len="
+                f"{len(values)}) and feature_missing (len={len(missing)}) have "
+                "different lengths -- refusing to zip() them together, which "
+                "would silently truncate to the shorter one"
+            )
+        features = [float("nan") if m else v for v, m in zip(values, missing)]
         out.append(
             LabeledRow(
                 group_id=group_id,
@@ -506,6 +709,130 @@ def self_test() -> None:
 
     print("self-test: labels schema v1 (multi-set, duplicates, sortedness) OK", flush=True)
 
+    # -- feature_schema_hash is pinned against the Rust implementation --
+    # (see `feature_schema_hash_is_stable_and_pinned_for_cross_language_verification`
+    # in src/candidate.rs -- both literals were computed from the same
+    # algorithm and must be updated together on any intentional schema change).
+    assert feature_schema_hash() == (
+        "sha256:756404c59bbee9a65e194f92df3530e1b801028f333e01c67214917977061df1"
+    ), "feature_schema_hash() drifted from the pinned Rust-side value"
+
+    # -- validate_manifest: every field is cross-checked, not trusted --
+    with tempfile.TemporaryDirectory() as tmp:
+        pool_path = os.path.join(tmp, "pool.jsonl")
+        with open(pool_path, "w", encoding="utf-8") as f:
+            f.write('{"candidate_id": "c1"}\n')
+        groups_path = os.path.join(tmp, "groups.jsonl")
+        with open(groups_path, "w", encoding="utf-8") as f:
+            f.write('{"group_id": "g1"}\n')
+
+        def base_manifest() -> dict:
+            return {
+                "manifest_schema_version": MANIFEST_SCHEMA_VERSION,
+                "feature_schema_version": FEATURE_SCHEMA_VERSION,
+                "feature_names": list(FEATURE_NAMES_V1),
+                "feature_schema_hash": feature_schema_hash(),
+                "proposal_mode": {"mode": "exhaustive"},
+                "rules_content_hash": "sha256:deadbeef",
+                "candidate_jsonl_sha256": sha256_file(pool_path),
+                "target_group_index_sha256": sha256_file(groups_path),
+                "stock_identity": None,
+                "stock_content_sha256": None,
+            }
+
+        validate_manifest(base_manifest(), pool_path, groups_path)  # must not raise
+
+        bad_cases = [
+            {**base_manifest(), "manifest_schema_version": 999},
+            {**base_manifest(), "feature_schema_version": 999},
+            {**base_manifest(), "feature_names": ["wrong"]},
+            {**base_manifest(), "feature_schema_hash": "sha256:wrong"},
+            {**base_manifest(), "rules_content_hash": ""},
+            {**base_manifest(), "candidate_jsonl_sha256": "sha256:wrong"},
+            {**base_manifest(), "target_group_index_sha256": "sha256:wrong"},
+            {
+                **base_manifest(),
+                "proposal_mode": {"mode": "scorer_conditioned", "scorer_status": "inference_failed"},
+            },
+            {**base_manifest(), "stock_identity": "some/path.smi", "stock_content_sha256": None},
+        ]
+        for i, bad in enumerate(bad_cases):
+            try:
+                validate_manifest(bad, pool_path, groups_path)
+                raise AssertionError(f"bad_cases[{i}] should have been rejected: {bad}")
+            except ValueError:
+                pass
+
+    print("self-test: validate_manifest rejects every mismatched field OK", flush=True)
+
+    # -- validate_pool_rows: schema/group-index consistency, no silent zip() truncation --
+    good_groups = [
+        {"group_id": "g1", "target_id": "t1", "target_smiles": "CCO", "candidate_count": 1, "proposal_status": "ok"},
+    ]
+
+    def good_row(**overrides) -> dict:
+        row = {
+            "group_id": "g1",
+            "target_id": "t1",
+            "target_smiles": "CCO",
+            "candidate_id": "c1",
+            "precursor_smiles": ["CCO"],
+            "sources": [{"template_id": "rule:x"}],
+            "feature_schema_version": FEATURE_SCHEMA_VERSION,
+            "feature_values": [0.0] * len(FEATURE_NAMES_V1),
+            "feature_missing": [True] * len(FEATURE_NAMES_V1),
+        }
+        row.update(overrides)
+        return row
+
+    validate_pool_rows([good_row()], good_groups)  # must not raise
+
+    row_bad_lengths = good_row(feature_values=[0.0] * (len(FEATURE_NAMES_V1) - 1))
+    row_non_finite = good_row(
+        feature_values=[float("nan")] + [0.0] * (len(FEATURE_NAMES_V1) - 1),
+        feature_missing=[False] * len(FEATURE_NAMES_V1),
+    )
+    row_empty_precursors = good_row(precursor_smiles=[])
+    row_empty_sources = good_row(sources=[])
+    row_unknown_group = good_row(group_id="g-missing")
+    row_wrong_target_id = good_row(target_id="t-wrong")
+    row_wrong_target_smiles = good_row(target_smiles="CCN")
+
+    for label, bad_rows in [
+        ("mismatched feature_values/feature_missing length", [row_bad_lengths]),
+        ("non-finite non-missing feature value", [row_non_finite]),
+        ("empty precursor_smiles", [row_empty_precursors]),
+        ("empty sources", [row_empty_sources]),
+        ("group_id absent from --groups", [row_unknown_group]),
+        ("target_id inconsistent with group index", [row_wrong_target_id]),
+        ("target_smiles inconsistent with group index", [row_wrong_target_smiles]),
+        ("duplicate candidate_id within one group", [good_row(), good_row()]),
+    ]:
+        try:
+            validate_pool_rows(bad_rows, good_groups)
+            raise AssertionError(f"should have been rejected: {label}")
+        except ValueError:
+            pass
+
+    print("self-test: validate_pool_rows rejects every malformed row OK", flush=True)
+
+    try:
+        label_and_split_rows(
+            [{
+                "group_id": "g1", "target_id": "t1", "candidate_id": "c1",
+                "precursor_smiles": ["CCO"],
+                "feature_values": [0.0, 1.0],
+                "feature_missing": [False],  # deliberately shorter -- must not silently zip()-truncate
+            }],
+            {"g1": GroupLabel(target_id="t1", correct_precursor_sets=frozenset({("CCO",)}))},
+            [{"group_id": "g1", "target_id": "t1", "target_smiles": "CCO", "candidate_count": 1, "proposal_status": "ok"}],
+        )
+        raise AssertionError("mismatched feature_values/feature_missing lengths must be a hard error")
+    except ValueError:
+        pass
+
+    print("self-test: label_and_split_rows rejects mismatched feature-vector lengths OK", flush=True)
+
     # -- label assignment, unlabeled != negative, zero-candidate group coverage --
     pool_rows = [
         {
@@ -710,10 +1037,16 @@ def main() -> None:
         parser.error("--pool, --manifest, --groups, and --labels are all required unless --self-test is given")
 
     manifest = json.load(open(args.manifest, "r", encoding="utf-8"))
+    validate_manifest(manifest, args.pool, args.groups)
     from_export_schema = manifest.get("feature_schema_version")
-    print(f"Loaded manifest: feature_schema_version={from_export_schema}, "
-          f"proposal_mode={manifest.get('proposal_mode')}, "
-          f"rules_content_hash={manifest.get('rules_content_hash')}", flush=True)
+    print(
+        f"Loaded manifest (validated: schema/feature_names/feature_schema_hash/"
+        f"candidate_jsonl_sha256/target_group_index_sha256 all match): "
+        f"feature_schema_version={from_export_schema}, "
+        f"proposal_mode={manifest.get('proposal_mode')}, "
+        f"rules_content_hash={manifest.get('rules_content_hash')}",
+        flush=True,
+    )
     if manifest.get("proposal_mode", {}).get("mode") != "exhaustive":
         print(
             "WARNING: manifest.proposal_mode is not 'exhaustive' -- training a reranker "
@@ -725,6 +1058,7 @@ def main() -> None:
 
     pool_rows = load_jsonl(args.pool)
     group_records = load_jsonl(args.groups)
+    validate_pool_rows(pool_rows, group_records)
     labels = load_labels(args.labels)
     labeled, unlabeled_group_count = label_and_split_rows(
         pool_rows, labels, group_records, allow_unlabeled=args.allow_unlabeled

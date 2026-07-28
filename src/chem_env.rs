@@ -156,6 +156,25 @@ impl ChemEnv {
         }
         false
     }
+
+    /// Content hash over every canonical BB SMILES (sorted before hashing,
+    /// so it is order-independent) -- distinct from a caller-supplied
+    /// `stock_identity` label: a manifest that only records a label can't
+    /// tell a real stock swap apart from a re-labeled identical stock, or a
+    /// silently-truncated one under the same label. This hashes what's
+    /// actually IN the stock.
+    pub fn content_sha256(&self) -> String {
+        let mut sorted: Vec<&str> = self.canon_set.iter().map(String::as_str).collect();
+        sorted.sort_unstable();
+        let mut hasher = Sha256::new();
+        hasher.update(b"renkin-retrospect-stock-v1\0");
+        hasher.update((sorted.len() as u64).to_be_bytes());
+        for smi in sorted {
+            hasher.update((smi.len() as u64).to_be_bytes());
+            hasher.update(smi.as_bytes());
+        }
+        format!("sha256:{:x}", hasher.finalize())
+    }
 }
 
 pub fn mol_from_smiles(smiles: &str) -> Result<Molecule> {
@@ -1331,6 +1350,24 @@ mod tests {
 
     fn env_aspirin_bbs() -> ChemEnv {
         ChemEnv::in_memory(&["CC(=O)O", "Oc1ccccc1C(=O)O", "c1ccccc1C(=O)O", "C", "O"])
+    }
+
+    #[test]
+    fn content_sha256_is_order_independent_and_detects_content_change() {
+        let a = ChemEnv::in_memory(&["CCO", "CC(=O)O", "C"]);
+        let b = ChemEnv::in_memory(&["C", "CC(=O)O", "CCO"]);
+        assert_eq!(
+            a.content_sha256(),
+            b.content_sha256(),
+            "hashing must not depend on input order"
+        );
+
+        let c = ChemEnv::in_memory(&["CCO", "CC(=O)O"]);
+        assert_ne!(
+            a.content_sha256(),
+            c.content_sha256(),
+            "a different BB set must hash differently even under the same caller-supplied label"
+        );
     }
 
     #[test]

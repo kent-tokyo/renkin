@@ -599,6 +599,27 @@ pub fn feature_index(name: &str) -> Option<usize> {
     FEATURE_NAMES_V1.iter().position(|&n| n == name)
 }
 
+/// SHA-256 over `FEATURE_SCHEMA_VERSION` and the exact ordered
+/// `FEATURE_NAMES_V1` list, length-prefixed so no separator ambiguity is
+/// possible. A consumer (e.g. `scripts/train_reranker.py`, which mirrors
+/// this schema in Python since it has no way to import this crate) recomputes
+/// this hash from its own copy of the feature names and compares it against
+/// a pool manifest's `feature_schema_hash` -- if the two languages' feature
+/// lists ever silently drift apart, this is the check that catches it,
+/// rather than a length-only comparison that would miss a same-length
+/// reorder or rename.
+pub fn feature_schema_hash() -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"renkin-retrospect-feature-schema-v1\0");
+    hasher.update(FEATURE_SCHEMA_VERSION.to_be_bytes());
+    hasher.update((FEATURE_NAMES_V1.len() as u64).to_be_bytes());
+    for name in FEATURE_NAMES_V1 {
+        hasher.update((name.len() as u64).to_be_bytes());
+        hasher.update(name.as_bytes());
+    }
+    format!("sha256:{:x}", hasher.finalize())
+}
+
 fn heavy_atom_count_and_charge(mol: &Molecule) -> (u32, i64) {
     let mut heavy = 0u32;
     let mut charge = 0i64;
@@ -2092,6 +2113,26 @@ mod tests {
             feature_index("not_a_real_feature"),
             None,
             "feature_index must return None for an unknown name"
+        );
+    }
+
+    #[test]
+    fn feature_schema_hash_is_stable_and_pinned_for_cross_language_verification() {
+        let a = feature_schema_hash();
+        let b = feature_schema_hash();
+        assert_eq!(a, b, "the hash must be deterministic across calls");
+        assert!(a.starts_with("sha256:"));
+        // Pinned literal: `scripts/train_reranker.py` mirrors FEATURE_NAMES_V1
+        // and this exact hashing algorithm in Python (it has no way to
+        // import this crate). This fixed value was computed from the
+        // current FEATURE_NAMES_V1/FEATURE_SCHEMA_VERSION and cross-checked
+        // against the Python mirror at commit time -- if this assertion
+        // ever fails after an intentional feature-schema change, the
+        // Python-side literal in train_reranker.py's self-test must be
+        // updated to match, not just this one.
+        assert_eq!(
+            a,
+            "sha256:756404c59bbee9a65e194f92df3530e1b801028f333e01c67214917977061df1"
         );
     }
 

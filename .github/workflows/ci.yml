@@ -58,8 +58,8 @@ jobs:
           if grep -rE 'renkin = "0\.[0-9]\."' docs/; then
             echo "ERROR: stale renkin version in docs/" && exit 1
           fi
-          grep -q "version.*{${VER}}" README.md || \
-            { echo "ERROR: README citation not updated to $VER"; exit 1; }
+          grep -q "version: \"${VER}\"" CITATION.cff || \
+            { echo "ERROR: CITATION.cff version not updated to $VER"; exit 1; }
           echo "OK: all version references match $VER"
 
   python-smoke:

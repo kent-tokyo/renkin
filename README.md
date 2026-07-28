@@ -568,6 +568,8 @@ renkin/                          ← Cargo workspace root
 │   ├── score.rs                 # SA Score heuristic + step cost
 │   ├── search.rs                # A* / AND-OR tree engine + beam pruning
 │   ├── scorer.rs                # Phase B: tract-onnx NN template scorer
+│   ├── candidate.rs             # one-step candidate proposal (offline reranking foundation, not wired into search)
+│   ├── pool_export.rs           # candidate-pool JSONL + reproducibility-manifest export
 │   ├── python.rs                # PyO3 bindings (--features python)
 │   └── wasm.rs                  # wasm-bindgen bindings (cfg = wasm32)
 ├── crates/                      ← sibling crates
@@ -580,7 +582,9 @@ renkin/                          ← Cargo workspace root
 │   └── bench_chunks/                    # USPTO-50k per-chunk results
 ├── scripts/
 │   ├── extract_templates.py         # rdchiral template extraction pipeline
-│   └── run_benchmark_chunks.sh      # resumable chunked benchmark runner
+│   ├── run_benchmark_chunks.sh      # resumable chunked benchmark runner
+│   ├── train_reranker.py            # candidate reranker training/evaluation (dev tool, offline only — see docs/guides/reranker-candidate-pools.md)
+│   └── tests/                       # unittest suite for train_reranker.py
 ├── docs/                # MkDocs source → kent-tokyo.github.io/renkin/
 └── mkdocs.yml
 ```
@@ -591,6 +595,8 @@ renkin/                          ← Cargo workspace root
 
 ### Recently shipped
 
+- [x] `renkin-forward` CLI hardening — versioned `ForwardPredictionReport`, deterministic candidate IDs/merge/provenance, reactant-order-independent matching (up to 3 reactants), strict CLI/route-JSON validation
+- [x] RETROSPECT-inspired offline candidate-reranking foundation — candidate proposal/selection separation, feature schema v1, manifest v2, leakage-safe train/val/test splitting, 7 deterministic baseline arms + trained-ranker arm, paired bootstrap + offline gate tooling ([#59](https://github.com/kent-tokyo/renkin/pull/59); **foundation only — no trained model or accuracy result yet, not wired into route search**)
 - [x] Stable `template_id` (`rule:<name>` / `smirks-sha256:<hex>`) + `--template-metadata` evidence sidecar + `renkin template ids` ([#41](https://github.com/kent-tokyo/renkin/issues/41) phase 1)
 - [x] Substrate-specific `examples` (`schema_version: 2`) — per-step exact-substrate vs. same-template-different-substrate resolution, surfaced in `--format explain` and as `match_kind` in JSON ([#41](https://github.com/kent-tokyo/renkin/issues/41) phase 2)
 - [x] `renkin-bench cascade` — multi-stage search (fast defaults → hard cases re-run deeper); only unsolved targets propagate to later stages. **78.0% → 95.9%** on USPTO-50k
@@ -654,18 +660,10 @@ renkin/                          ← Cargo workspace root
 
 ## Citation
 
-If you use RENKIN in academic work, please cite:
-
-```bibtex
-@software{renkin2026,
-  author    = {kent-tokyo},
-  title     = {{RENKIN}: Retrosynthesis Engine for Knowledge-Informed Navigation},
-  year      = {2026},
-  url       = {https://github.com/kent-tokyo/renkin/releases/tag/v0.18.0},
-  version   = {0.18.0},
-  license   = {MIT}
-}
-```
+If you use RENKIN in academic work, please cite it — see [`CITATION.cff`](CITATION.cff)
+for the canonical, version-tracked citation record. GitHub's "Cite this
+repository" button (top of the repo page) reads it directly and can export
+APA or BibTeX on demand.
 
 ---
 

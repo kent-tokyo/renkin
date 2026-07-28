@@ -505,6 +505,8 @@ renkin/                          ← Cargo workspace ルート
 │   ├── score.rs                 # SA Score ヒューリスティック
 │   ├── search.rs                # A* / AND-OR 木探索エンジン
 │   ├── scorer.rs                # Phase B: tract-onnx NNテンプレートスコアラー
+│   ├── candidate.rs             # 1ステップ候補提案（オフラインリランキング基盤、探索へは未統合）
+│   ├── pool_export.rs           # 候補プール JSONL + 再現性マニフェストのエクスポート
 │   ├── python.rs                # PyO3 バインディング
 │   └── wasm.rs                  # wasm-bindgen バインディング
 ├── crates/                      ← 兄弟クレート
@@ -517,7 +519,9 @@ renkin/                          ← Cargo workspace ルート
 │   └── bench_chunks/                    # USPTO-50k チャンク別結果
 ├── scripts/
 │   ├── extract_templates.py         # rdchiral テンプレート抽出パイプライン
-│   └── run_benchmark_chunks.sh      # 再開可能チャンクベンチマーク
+│   ├── run_benchmark_chunks.sh      # 再開可能チャンクベンチマーク
+│   ├── train_reranker.py            # 候補リランカー訓練/評価（開発ツール、オフライン専用 — docs/guides/reranker-candidate-pools.md 参照）
+│   └── tests/                       # train_reranker.py の unittest スイート
 ├── docs/                # MkDocs ソース → kent-tokyo.github.io/renkin/
 └── mkdocs.yml
 ```
@@ -571,23 +575,17 @@ renkin/                          ← Cargo workspace ルート
 - [x] MCP サーバー拡張 — 6 ツール体制（`explain_route`・`find_pareto_routes`・`plan_with_constraints` 追加）
 - [x] 安定 `template_id`（`rule:<name>` / `smirks-sha256:<hex>`）+ `--template-metadata` evidence サイドカー + `renkin template ids`（[#41](https://github.com/kent-tokyo/renkin/issues/41) phase 1）
 - [x] 基質固有の `examples`（`schema_version: 2`）— ステップごとに「exact substrate match」か「同一テンプレート・別基質」かを解決し、`--format explain` に表示、JSONでは `match_kind` フィールドとして提供（[#41](https://github.com/kent-tokyo/renkin/issues/41) phase 2）
+- [x] `renkin-forward` CLI 強化 — バージョン管理された `ForwardPredictionReport`、決定的な候補ID/マージ/由来情報、reactant 順序に依存しないマッチング（最大3試薬）、厳格な CLI/route-JSON 検証
+- [x] RETROSPECT 着想のオフライン候補リランキング基盤 — candidate proposal/selection の分離、feature schema v1、manifest v2、leakage-safe な train/val/test スプリット、7つの決定的 baseline arm + 学習済み ranker arm、paired bootstrap + オフラインゲートツール（[#59](https://github.com/kent-tokyo/renkin/pull/59)；**基盤のみ — 学習済みモデルや精度結果はまだ無く、route search には未統合**）
 
 ---
 
 ## 引用
 
-学術論文で RENKIN を使用した場合は以下を引用してください：
-
-```bibtex
-@software{renkin2026,
-  author    = {kent-tokyo},
-  title     = {{RENKIN}: Retrosynthesis Engine for Knowledge-Informed Navigation},
-  year      = {2026},
-  url       = {https://github.com/kent-tokyo/renkin/releases/tag/v0.18.0},
-  version   = {0.18.0},
-  license   = {MIT}
-}
-```
+学術論文で RENKIN を使用した場合は、[`CITATION.cff`](CITATION.cff)（正式な
+バージョン管理付き引用レコード）を引用してください。GitHub の「Cite this
+repository」ボタン（リポジトリページ上部）がこのファイルを直接読み込み、
+APA / BibTeX 形式でのエクスポートに対応しています。
 
 ---
 

@@ -55,7 +55,7 @@ search itself would have narrowed the active rule set:
 |---|---|---|
 | `Exhaustive` | nothing — every rule is tried | offline-only, maximum-coverage pool for evaluating a reranker's own selection ability |
 | `BondIndexed { top_k }` | `--bond-index` retrieval | pool that matches bond-index-gated runtime search |
-| `ScorerConditioned { scores, top_k }` | an active NN template scorer | pool that matches scorer-gated runtime search, using caller-supplied scores |
+| `ScorerConditioned { input, top_k }` | an active NN template scorer | pool that matches scorer-gated runtime search, using a caller-supplied `ScorerConditionedInput` |
 
 **Different modes produce different candidate *sets*, not just different
 orderings of the same set.** A `ScorerConditioned` or `BondIndexed` pool has
@@ -65,6 +65,18 @@ selection, given everything to select from" — it does not by itself show
 that hooking the reranker into a scorer-gated runtime search would reproduce
 that improvement offline. That would need a separate `ScorerConditioned`
 evaluation. See `src/candidate.rs`'s module doc for the full reasoning.
+
+`ScorerConditionedInput` (deliberately not gated behind the `nn-scoring`
+feature -- this module never owns a `TemplateScorer`, so it only needs the
+*shape* of a scorer's output) carries `scores` (`(rule_index, raw_logit,
+rank)` per scored file template), `status`, `rules_offset` (hand-crafted
+rules are `[0, rules_offset)` by *position*, never by a rule-name prefix),
+`scorer_identity`, and `scorer_model_sha256`. `propose_one_step` fails
+closed (`Err`) when `status != Available`, and validates every scored entry
+(`rule_index` in bounds and non-duplicate, `rank` non-duplicate, `raw_logit`
+finite) before using it -- a scorer failure or a corrupted scores payload
+must never look identical to "the scorer succeeded and found nothing
+relevant".
 
 ## Feature schema v1
 
@@ -86,9 +98,9 @@ two groups:
   (`max_template_log_frequency`, `mean_template_log_frequency`). Availability
   features are `missing` unless a `ChemEnv` stock is supplied to
   `extract_features`. The frequency features are **always** `missing` for
-  now — `CandidateSource::template_log_frequency` is not yet train-split-frozen,
-  and treating it as a feature before that recomputation exists would be a
-  leakage risk, not a convenience.
+  now — `CandidateSource::template_log_frequency_raw` is not yet
+  train-split-frozen, and treating it as a feature before that recomputation
+  exists would be a leakage risk, not a convenience.
 
 `missing[i] == true` must be treated as missing, not zero, by every
 consumer — `pool_export`'s JSONL writer and `scripts/train_reranker.py`'s
@@ -104,7 +116,9 @@ use renkin::pool_export::{build_manifest, candidate_rows_for_pool, write_jsonl};
 let rules = default_rules();
 let target = "CC(=O)c1ccccc1";
 let target_mol = mol_from_smiles(target)?;
-let pool = propose_one_step(target, &rules, &ProposalConfig::default())?;
+// `group_id` is the caller's dataset reaction/example id -- distinct from
+// the canonical `target_id` the pool derives internally (see below).
+let pool = propose_one_step("rxn-example-1", target, &rules, &ProposalConfig::default())?;
 let templates_by_id = index_rules_by_template_id(&rules);
 
 let rows = candidate_rows_for_pool(&pool, &target_mol, &templates_by_id, /* stock */ None);
@@ -114,11 +128,28 @@ let manifest = build_manifest(&rows, /* target_count */ 1, &rules, &ProposalConf
 std::fs::write("pool.manifest.json", serde_json::to_string_pretty(&manifest)?)?;
 ```
 
-Each JSONL line is one `CandidateRow`: `target_id`, `target_smiles`,
+Each JSONL line is one `CandidateRow`: `group_id` (the caller-supplied
+dataset reaction/example id -- one LightGBM ranking group), `target_id` (the
+canonical target structure -- the leakage-safe split key; two rows can share
+`target_id` while having different `group_id`s), `target_smiles`,
 `candidate_id`, `precursor_smiles`, `source_template_count`,
-`best_upstream_rank`, `feature_schema_version`, `feature_values`,
-`feature_missing`. Rows are sorted by `candidate_id` before export, so two
-runs over the same input produce byte-identical JSONL.
+`best_upstream_rank`, `sources` (full per-rule provenance: `template_id`,
+`rule_name`, `original_rank`, `upstream_score`, `upstream_score_status`,
+`template_log_frequency_raw`, `base_step_cost` -- one entry per distinct
+contributing rule, duplicates of the same rule already merged),
+`feature_schema_version`, `feature_values`, `feature_missing`. Rows are
+sorted by `candidate_id` before export, so two runs over the same input
+produce byte-identical JSONL.
+
+Alongside the candidate JSONL, `pool_export::target_pool_record_for_pool`
+(or `target_pool_record_for_failure` if `propose_one_step` returned `Err`)
+builds one `TargetPoolRecord` per (`group_id`, target) attempt --
+`group_id`, `target_id`, `target_smiles`, `candidate_count`,
+`proposal_status` (`Ok` or `TargetParseFailed`) -- written with
+`write_target_pool_jsonl`. This group index exists even for a target with
+zero candidates, so a consumer's coverage denominator can be built from it
+plus labels, never by counting which `group_id`s happen to appear in the
+candidate rows (a zero-candidate group would otherwise silently vanish).
 
 The manifest (`PoolManifest`, `MANIFEST_SCHEMA_VERSION = 1`) records
 `feature_schema_version`, `feature_names`, `proposal_mode` (mode + `top_k`),
@@ -148,21 +179,41 @@ too small to mean anything about ranking quality.
 ```bash
 python3 scripts/train_reranker.py \
   --pool pool.jsonl --manifest pool.manifest.json \
-  --labels labels.jsonl \
+  --groups pool.groups.jsonl --labels labels.jsonl \
   --model-out model.txt --eval-out eval.json
 ```
 
-- `--labels` is JSONL of `{"target_id": ..., "correct_precursor_smiles": [...]}`.
-  A candidate is labeled positive iff its sorted `precursor_smiles` exactly
-  matches the labeled target's sorted correct set. A target absent from
-  `--labels` gets label 0 for all its candidates (not skipped).
-- Target-level train/val/test splitting is by a SHA-256 hash bucket of
-  `target_id` (0–100), never by candidate — so no candidate from a target
-  can leak across splits.
-- The evaluation report separates **coverage** (`targets_with_zero_positive_in_pool`
-  — a target with no positive candidate in its own pool, which no reranker
-  can fix) from **ranking quality** (`top1_hit_rate`, `mean_reciprocal_rank`,
-  computed only over targets that do have a positive candidate).
+- `--groups` is the JSONL group index (`write_target_pool_jsonl` output,
+  above) -- one record per (`group_id`, target) attempt, including
+  zero-candidate and parse-failure groups. The set of groups to consider
+  always comes from this file, never from which `group_id`s happen to
+  appear in `--pool`.
+- `--labels` is JSONL, schema v1: `{"schema_version": 1, "group_id": ...,
+  "target_id": ..., "correct_precursor_sets": [["...", "..."], ...]}` --
+  multiple accepted correct precursor multisets per group are allowed, each
+  supplied pre-sorted (matching the exporter's own convention; the script
+  hard-errors on an unsorted entry, an empty `correct_precursor_sets` list,
+  a non-v1 `schema_version`, or a duplicate `group_id` with conflicting
+  data). A candidate is labeled positive iff its sorted `precursor_smiles`
+  exactly matches any of its group's accepted sets.
+- A group present in `--groups` but absent from `--labels` is a **hard
+  error by default** -- never silently treated as "every candidate
+  negative". Pass `--allow-unlabeled` to exclude such groups from
+  training/evaluation instead; the excluded count is printed and reported
+  as `unlabeled_group_count`, kept separate from the zero-positive coverage
+  gap below.
+- Splitting is by `target_id` (SHA-256 hash bucket, 0–100), never by
+  `group_id` and never by candidate -- two groups sharing a `target_id`
+  (e.g. two literature reactions producing the same product) always land in
+  the same split. LightGBM's ranking "group" is `group_id`, so those two
+  groups still form separate ranking groups.
+- The evaluation report separates **coverage** (`groups_with_zero_positive_in_pool`
+  — a group with no positive candidate in its own pool, including one with
+  zero candidates at all, which no reranker can fix) from **ranking
+  quality** (`top1_hit_rate`, `mean_reciprocal_rank`, computed only over
+  groups that do have a positive candidate). Coverage counts (`target_count`,
+  `group_count`) are built from `--groups` + `--labels`, not inferred from
+  `--pool`.
 - If `manifest.proposal_mode.mode` isn't `"exhaustive"`, the script warns
   on stderr: training on a narrowed pool means the reranker never sees
   candidates outside that narrowing.

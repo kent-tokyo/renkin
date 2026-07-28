@@ -23,7 +23,8 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::candidate::{
-    CandidatePool, FEATURE_NAMES_V1, FEATURE_SCHEMA_VERSION, ProposalMode, extract_features,
+    CandidatePool, FEATURE_NAMES_V1, FEATURE_SCHEMA_VERSION, ProposalMode, UpstreamScoreStatus,
+    extract_features,
 };
 use crate::chem_env::{ChemEnv, Molecule, RetroRule};
 
@@ -57,6 +58,19 @@ impl ProposalModeSummary {
     }
 }
 
+/// One exported source's full provenance (one entry per distinct
+/// contributing rule -- see `candidate::merge_duplicate_sources`).
+#[derive(Debug, Clone, Serialize)]
+pub struct SourceRow {
+    pub template_id: String,
+    pub rule_name: String,
+    pub original_rank: usize,
+    pub upstream_score: Option<f32>,
+    pub upstream_score_status: UpstreamScoreStatus,
+    pub template_log_frequency_raw: Option<f32>,
+    pub base_step_cost: f64,
+}
+
 /// One exported candidate row (one JSONL line).
 #[derive(Debug, Clone, Serialize)]
 pub struct CandidateRow {
@@ -67,6 +81,7 @@ pub struct CandidateRow {
     pub precursor_smiles: Vec<String>,
     pub source_template_count: usize,
     pub best_upstream_rank: usize,
+    pub sources: Vec<SourceRow>,
     pub feature_schema_version: u32,
     pub feature_values: Vec<f32>,
     pub feature_missing: Vec<bool>,
@@ -94,6 +109,19 @@ pub fn candidate_rows_for_pool(
         .into_iter()
         .map(|c| {
             let features = extract_features(c, target_mol, templates_by_id, stock);
+            let sources = c
+                .sources
+                .iter()
+                .map(|s| SourceRow {
+                    template_id: s.template_id.clone(),
+                    rule_name: s.rule_name.clone(),
+                    original_rank: s.original_rank,
+                    upstream_score: s.upstream_score,
+                    upstream_score_status: s.upstream_score_status,
+                    template_log_frequency_raw: s.template_log_frequency_raw,
+                    base_step_cost: s.base_step_cost,
+                })
+                .collect();
             CandidateRow {
                 group_id: pool.group_id.clone(),
                 target_id: pool.target_id.clone(),
@@ -102,6 +130,7 @@ pub fn candidate_rows_for_pool(
                 precursor_smiles: c.precursor_smiles.clone(),
                 source_template_count: c.source_template_count,
                 best_upstream_rank: c.best_upstream_rank,
+                sources,
                 feature_schema_version: FEATURE_SCHEMA_VERSION,
                 feature_values: features.values,
                 feature_missing: features.missing,
@@ -395,6 +424,31 @@ mod tests {
             assert_eq!(row.feature_schema_version, FEATURE_SCHEMA_VERSION);
             assert_eq!(row.feature_values.len(), FEATURE_NAMES_V1.len());
             assert_eq!(row.feature_missing.len(), FEATURE_NAMES_V1.len());
+        }
+    }
+
+    #[test]
+    fn candidate_rows_export_full_source_provenance_including_scorer_status() {
+        let rules = default_rules();
+        let target = "CC(=O)c1ccccc1";
+        let target_mol = mol_from_smiles(target).unwrap();
+        let pool = propose_one_step("group:1", target, &rules, &ProposalConfig::default()).unwrap();
+        let templates_by_id = index_rules_by_template_id(&rules);
+
+        let rows = candidate_rows_for_pool(&pool, &target_mol, &templates_by_id, None);
+        assert!(!rows.is_empty());
+        for row in &rows {
+            assert_eq!(row.sources.len(), row.source_template_count);
+            for source in &row.sources {
+                assert!(!source.template_id.is_empty());
+                assert!(!source.rule_name.is_empty());
+                // Exhaustive mode: every source's scorer status must be
+                // exported and must be NotApplicable (no scorer involved).
+                assert_eq!(
+                    source.upstream_score_status,
+                    UpstreamScoreStatus::NotApplicable
+                );
+            }
         }
     }
 

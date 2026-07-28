@@ -44,6 +44,7 @@ use std::sync::{Mutex, OnceLock};
 
 #[cfg(not(target_arch = "wasm32"))]
 use rayon::prelude::*;
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::chem_env::{
@@ -51,17 +52,16 @@ use crate::chem_env::{
     to_canonical,
 };
 use crate::score::step_cost;
+#[cfg(test)]
 use crate::search::is_extracted_template;
-
-#[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
-pub use crate::scorer::nn::{TemplateScore, TemplateScoreOutput, TemplateScoreStatus};
 
 /// Why a `ScoredRuleRef`'s `upstream_score` is `Some`/`None`. Distinct from
 /// `TemplateScoreStatus` (a whole-scoring-call status): this is attached to
 /// *each rule*, since `Exhaustive`/`BondIndexed` modes and hand-crafted rules
 /// within `ScorerConditioned` mode never go through a scorer at all --
 /// that's a different situation from a scorer being configured and failing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum UpstreamScoreStatus {
     /// A real scorer output is attached.
     Available,
@@ -99,19 +99,54 @@ pub enum ProposalMode {
     /// rules for this target molecule. `top_k` is forwarded to `retrieve`
     /// unchanged (0 = no truncation, matching `find_routes`' own usage).
     BondIndexed { top_k: usize },
-    /// Mirrors an active NN template scorer. `scores` must be pre-computed
-    /// by the caller (e.g. via `TemplateScorer::score_templates`) -- this
-    /// module never owns a scorer, so it can't silently fail to configure
-    /// one. Hand-crafted rules (`!is_extracted_template`) are always
-    /// included regardless of `scores`, matching `TemplateScorer`'s own
-    /// `rules_offset` convention exactly.
+    /// Mirrors an active NN template scorer. `input` must be pre-computed
+    /// by the caller (e.g. from `TemplateScorer::score_templates`'s output)
+    /// -- this module never owns a scorer, so it can't silently fail to
+    /// configure one. Hand-crafted rules ([0, `input.rules_offset`)) are
+    /// always included regardless of `input.scores`, matching
+    /// `TemplateScorer`'s own `rules_offset` convention exactly --
+    /// classification is by POSITION in `rules`, never by rule-name prefix.
     ScorerConditioned {
-        #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
-        scores: Vec<TemplateScore>,
-        #[cfg(not(all(not(target_arch = "wasm32"), feature = "nn-scoring")))]
-        scores: Vec<(usize, f32, usize)>, // (rule_index, raw_logit, rank) -- scorer-independent shape
+        input: ScorerConditionedInput,
         top_k: usize,
     },
+}
+
+/// Caller-supplied scorer output for [`ProposalMode::ScorerConditioned`].
+/// Deliberately NOT gated behind the `nn-scoring` feature -- this module
+/// never owns a `TemplateScorer` (see module doc), so it only needs the
+/// *shape* of a scorer's output, not the scorer implementation itself. A
+/// caller with a real `TemplateScorer` (behind `nn-scoring`) converts its
+/// `TemplateScoreOutput` into this shape. Keeping one ungated shape (rather
+/// than the previous `#[cfg(...)]`-duplicated `scores` field) also means
+/// this mode's selection logic and its tests exercise exactly one code
+/// path regardless of which features are compiled in, instead of leaving
+/// whichever branch isn't the default-build's silently untested.
+#[derive(Debug, Clone)]
+pub struct ScorerConditionedInput {
+    /// (rule_index, raw_logit, rank) per scored file template. `rule_index`
+    /// is an absolute index into the `rules` slice passed to
+    /// `propose_one_step`. Empty unless `status ==
+    /// UpstreamScoreStatus::Available`.
+    pub scores: Vec<(usize, f32, usize)>,
+    /// Never `NotApplicable` here -- that variant means "no scorer was used
+    /// at all" (`Exhaustive`/`BondIndexed`), which does not describe a
+    /// caller that explicitly chose `ScorerConditioned` mode. A `status`
+    /// other than `Available` makes `propose_one_step` fail closed (return
+    /// `Err`) rather than silently narrowing to zero file templates as if
+    /// the scorer had succeeded with nothing relevant to offer.
+    pub status: UpstreamScoreStatus,
+    /// Count of rules at the start of `rules` that are hand-crafted and
+    /// always included, mirroring `TemplateScorer::rules_offset` exactly.
+    pub rules_offset: usize,
+    /// Free-form identity for the scorer that produced `scores` (e.g. a
+    /// model file path or name), so a pool manifest can tell two
+    /// scorer-conditioned pools apart even when both have `status:
+    /// Available`.
+    pub scorer_identity: String,
+    /// SHA-256 of the scorer model file's bytes, so a manifest can detect a
+    /// silently-swapped model between training and evaluation.
+    pub scorer_model_sha256: String,
 }
 
 pub struct ProposalConfig {
@@ -148,12 +183,17 @@ pub struct CandidateSource {
     pub rule_name: String,
     pub original_rank: usize,
     pub upstream_score: Option<f32>,
+    /// Why `upstream_score` is `Some`/`None` -- kept alongside the score
+    /// itself (not just on `ScoredRuleRef`, which is consumed before this
+    /// struct is built) so exported provenance can distinguish "no scorer
+    /// involved" from "a scorer was involved and produced this score".
+    pub upstream_score_status: UpstreamScoreStatus,
     /// `RetroRule.weight` (`ln(count+1)` for extracted templates, 1.0 for
-    /// hand-crafted rules). NOT train-split-frozen yet -- that requires
-    /// split-aware recomputation, added with the full feature schema/
-    /// training-pipeline commit. Do not treat this as a leakage-safe
-    /// feature on its own.
-    pub template_log_frequency: Option<f32>,
+    /// hand-crafted rules), named `_raw` because it is NOT train-split-frozen
+    /// yet -- that requires split-aware recomputation, added with the full
+    /// feature schema/training-pipeline commit. Do not treat this as a
+    /// leakage-safe feature on its own.
+    pub template_log_frequency_raw: Option<f32>,
     pub base_step_cost: f64,
 }
 
@@ -425,7 +465,7 @@ pub fn aggregate_transformation_features(
 /// - **Group 2** (the remainder): availability (depends on a stock/building
 ///   -block library) and template-frequency (depends on which train split
 ///   a given template's count was observed in -- see
-///   [`CandidateSource::template_log_frequency`]'s doc). These stay
+///   [`CandidateSource::template_log_frequency_raw`]'s doc). These stay
 ///   `missing` until the caller supplies the corpus-dependent input
 ///   (`stock`) they need; a pool exported before stock/split-freezing lands
 ///   must never silently ship a leakage-contaminated or wrong-stock value
@@ -612,11 +652,11 @@ pub fn extract_features(
     }
 
     // -- frequency (group 2 -- train-split-dependent) --
-    // `template_log_frequency` is populated from `RetroRule.weight` as
+    // `template_log_frequency_raw` is populated from `RetroRule.weight` as
     // computed over WHATEVER rule set the caller passed to
     // `propose_one_step`, not necessarily a train-split-frozen recomputation
     // -- always missing until split-aware recomputation lands, per
-    // `CandidateSource::template_log_frequency`'s doc.
+    // `CandidateSource::template_log_frequency_raw`'s doc.
     missing[16] = true;
     missing[17] = true;
 
@@ -633,13 +673,21 @@ pub fn index_rules_by_template_id(rules: &[RetroRule]) -> HashMap<String, &Retro
 /// Select the active rule set for one target under `mode`, mirroring
 /// `find_routes`' bond_idx / scorer fallback chains exactly for the modes
 /// that have a `find_routes` analog.
+///
+/// Fallible: `ScorerConditioned` fails closed (returns `Err`) when
+/// `input.status != Available` or `input.scores` contains any entry that
+/// fails validation (out-of-bounds/duplicate `rule_index`, duplicate
+/// `rank`, non-finite `raw_logit`) -- an invalid or failed scorer input
+/// must never silently produce a plausible-looking but wrong active-rule
+/// set, or look identical to "the scorer legitimately selected zero file
+/// templates".
 fn select_active_rules<'a>(
     target_mol: &Molecule,
     rules: &'a [RetroRule],
     mode: &ProposalMode,
-) -> Vec<ScoredRuleRef<'a>> {
+) -> anyhow::Result<Vec<ScoredRuleRef<'a>>> {
     match mode {
-        ProposalMode::Exhaustive => rules
+        ProposalMode::Exhaustive => Ok(rules
             .iter()
             .enumerate()
             .map(|(i, rule)| ScoredRuleRef {
@@ -648,10 +696,11 @@ fn select_active_rules<'a>(
                 upstream_score: None,
                 upstream_score_status: UpstreamScoreStatus::NotApplicable,
             })
-            .collect(),
+            .collect()),
         ProposalMode::BondIndexed { top_k } => {
             let idx = TemplateBondIndex::build(rules);
-            idx.retrieve(target_mol, *top_k, rules)
+            Ok(idx
+                .retrieve(target_mol, *top_k, rules)
                 .into_iter()
                 .enumerate()
                 .filter_map(|(rank, i)| {
@@ -662,44 +711,72 @@ fn select_active_rules<'a>(
                         upstream_score_status: UpstreamScoreStatus::NotApplicable,
                     })
                 })
-                .collect()
+                .collect())
         }
-        ProposalMode::ScorerConditioned { scores, top_k } => {
-            let mut result = Vec::new();
-            let mut rank = 0usize;
-            for rule in rules.iter().filter(|r| !is_extracted_template(&r.name)) {
-                result.push(ScoredRuleRef {
+        ProposalMode::ScorerConditioned { input, top_k } => {
+            if input.status != UpstreamScoreStatus::Available {
+                anyhow::bail!(
+                    "ScorerConditioned proposal mode requires a successful \
+                     scorer (status: Available), got {:?} -- failing closed \
+                     rather than silently narrowing to zero file templates \
+                     as if the scorer had succeeded",
+                    input.status
+                );
+            }
+            let offset = input.rules_offset.min(rules.len());
+            let mut result: Vec<ScoredRuleRef> = rules
+                .iter()
+                .enumerate()
+                .take(offset)
+                .map(|(i, rule)| ScoredRuleRef {
                     rule,
-                    source_rank: rank,
+                    source_rank: i,
                     upstream_score: None,
                     upstream_score_status: UpstreamScoreStatus::NotApplicable,
-                });
-                rank += 1;
+                })
+                .collect();
+
+            let mut seen_indices = std::collections::HashSet::new();
+            let mut seen_ranks = std::collections::HashSet::new();
+            for &(rule_index, raw_logit, rank) in &input.scores {
+                if rule_index < offset || rule_index >= rules.len() {
+                    anyhow::bail!(
+                        "ScorerConditioned scores entry has rule_index {rule_index} \
+                         out of bounds [{offset}, {})",
+                        rules.len()
+                    );
+                }
+                if !seen_indices.insert(rule_index) {
+                    anyhow::bail!(
+                        "ScorerConditioned scores contain duplicate rule_index {rule_index}"
+                    );
+                }
+                if !seen_ranks.insert(rank) {
+                    anyhow::bail!("ScorerConditioned scores contain duplicate rank {rank}");
+                }
+                if !raw_logit.is_finite() {
+                    anyhow::bail!(
+                        "ScorerConditioned scores entry for rule_index {rule_index} \
+                         has a non-finite raw_logit ({raw_logit})"
+                    );
+                }
             }
-            #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
-            let mut by_rank: Vec<&TemplateScore> = scores.iter().collect();
-            #[cfg(not(all(not(target_arch = "wasm32"), feature = "nn-scoring")))]
-            let mut by_rank: Vec<&(usize, f32, usize)> = scores.iter().collect();
-            #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
-            by_rank.sort_by_key(|s| s.rank);
-            #[cfg(not(all(not(target_arch = "wasm32"), feature = "nn-scoring")))]
+
+            let mut by_rank: Vec<&(usize, f32, usize)> = input.scores.iter().collect();
             by_rank.sort_by_key(|s| s.2);
-            for entry in by_rank.into_iter().take(*top_k) {
-                #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
-                let (rule_index, raw_logit) = (entry.rule_index, entry.raw_logit);
-                #[cfg(not(all(not(target_arch = "wasm32"), feature = "nn-scoring")))]
-                let (rule_index, raw_logit) = (entry.0, entry.1);
+            let mut rank_counter = offset;
+            for &(rule_index, raw_logit, _) in by_rank.into_iter().take(*top_k) {
                 if let Some(rule) = rules.get(rule_index) {
                     result.push(ScoredRuleRef {
                         rule,
-                        source_rank: rank,
+                        source_rank: rank_counter,
                         upstream_score: Some(raw_logit),
                         upstream_score_status: UpstreamScoreStatus::Available,
                     });
-                    rank += 1;
+                    rank_counter += 1;
                 }
             }
-            result
+            Ok(result)
         }
     }
 }
@@ -785,16 +862,87 @@ fn candidate_id_for(canonical_target: &str, precursor_smiles: &[String]) -> Stri
     format!("sha256:{:x}", hasher.finalize())
 }
 
+/// Merge sources that share `(template_id, rule_name)` within one
+/// candidate's `sources` into a single entry: the same rule can legitimately
+/// reach the same merged candidate through more than one distinct
+/// application (e.g. a symmetric rule matching at two equivalent sites of a
+/// symmetric molecule that happen to produce the identical sorted precursor
+/// set) -- without this, `source_template_count` would over-count how many
+/// *distinct* rules actually contributed.
+///
+/// `template_log_frequency_raw` and `upstream_score_status` are required to
+/// agree across duplicates of the same `(template_id, rule_name)` -- both
+/// are properties of the *rule*, not of a particular application, so by
+/// construction every application of one active rule within one
+/// `propose_one_step` call carries the same values. A mismatch means the
+/// input was already inconsistent (e.g. two different `RetroRule` entries
+/// sharing an id/name with different weights); this is a hard error rather
+/// than a silent pick of whichever value happened to be seen first.
+fn merge_duplicate_sources(sources: Vec<CandidateSource>) -> anyhow::Result<Vec<CandidateSource>> {
+    let mut order: Vec<(String, String)> = Vec::new();
+    let mut by_key: HashMap<(String, String), CandidateSource> = HashMap::new();
+
+    for s in sources {
+        let key = (s.template_id.clone(), s.rule_name.clone());
+        match by_key.get_mut(&key) {
+            None => {
+                order.push(key.clone());
+                by_key.insert(key, s);
+            }
+            Some(existing) => {
+                if existing.template_log_frequency_raw != s.template_log_frequency_raw {
+                    anyhow::bail!(
+                        "duplicate source (template_id={:?}, rule_name={:?}) reports \
+                         inconsistent template_log_frequency_raw ({:?} vs {:?}) for what \
+                         must be the same rule",
+                        key.0,
+                        key.1,
+                        existing.template_log_frequency_raw,
+                        s.template_log_frequency_raw
+                    );
+                }
+                if existing.upstream_score_status != s.upstream_score_status {
+                    anyhow::bail!(
+                        "duplicate source (template_id={:?}, rule_name={:?}) reports \
+                         inconsistent upstream_score_status ({:?} vs {:?}) for what must \
+                         be the same rule",
+                        key.0,
+                        key.1,
+                        existing.upstream_score_status,
+                        s.upstream_score_status
+                    );
+                }
+                existing.upstream_score = match (existing.upstream_score, s.upstream_score) {
+                    (Some(a), Some(b)) => Some(a.max(b)),
+                    (Some(a), None) | (None, Some(a)) => Some(a),
+                    (None, None) => None,
+                };
+                existing.original_rank = existing.original_rank.min(s.original_rank);
+                existing.base_step_cost = existing.base_step_cost.min(s.base_step_cost);
+            }
+        }
+    }
+
+    Ok(order
+        .into_iter()
+        .map(|key| by_key.remove(&key).expect("key was just inserted above"))
+        .collect())
+}
+
 /// Canonicalize and merge raw proposals into candidate-pool entries.
 ///
 /// Candidate ID: see [`candidate_id_for`]. Proposals whose sorted precursor
-/// list hashes the same are merged: every source's full provenance is kept
-/// in `sources`, `sources` is sorted deterministically (see
+/// list hashes the same are merged: every distinct-rule source's full
+/// provenance is kept in `sources` (see [`merge_duplicate_sources`] for
+/// same-rule duplicates), `sources` is sorted deterministically (see
 /// `ReactionCandidate` doc) so the "representative" source is never
 /// ambiguous, and `best_*`/`min_*`/`max_*`/`mean_*` aggregates are computed
 /// over all sources -- no provenance is dropped in favor of "just the best
 /// one".
-fn merge_into_candidates(canonical_target: &str, raw: Vec<RawCandidate>) -> Vec<ReactionCandidate> {
+fn merge_into_candidates(
+    canonical_target: &str,
+    raw: Vec<RawCandidate>,
+) -> anyhow::Result<Vec<ReactionCandidate>> {
     let mut order: Vec<String> = Vec::new();
     let mut precursors_by_id: HashMap<String, Vec<String>> = HashMap::new();
     let mut sources_by_id: HashMap<String, Vec<CandidateSource>> = HashMap::new();
@@ -830,7 +978,8 @@ fn merge_into_candidates(canonical_target: &str, raw: Vec<RawCandidate>) -> Vec<
             rule_name: proposal.rule_name,
             original_rank: proposal.original_rank,
             upstream_score: proposal.upstream_score,
-            template_log_frequency: Some(proposal.rule_weight as f32),
+            upstream_score_status: proposal.upstream_score_status,
+            template_log_frequency_raw: Some(proposal.rule_weight as f32),
             base_step_cost,
         };
 
@@ -843,9 +992,14 @@ fn merge_into_candidates(canonical_target: &str, raw: Vec<RawCandidate>) -> Vec<
 
     order
         .into_iter()
-        .filter_map(|id| {
-            let mut sources = sources_by_id.remove(&id)?;
-            let precursor_smiles = precursors_by_id.remove(&id)?;
+        .map(|id| {
+            let raw_sources = sources_by_id
+                .remove(&id)
+                .expect("id was just inserted above");
+            let precursor_smiles = precursors_by_id
+                .remove(&id)
+                .expect("id was just inserted above");
+            let mut sources = merge_duplicate_sources(raw_sources)?;
 
             sources.sort_by(|a, b| {
                 b.upstream_score
@@ -858,6 +1012,7 @@ fn merge_into_candidates(canonical_target: &str, raw: Vec<RawCandidate>) -> Vec<
                     )
                     .then(a.original_rank.cmp(&b.original_rank))
                     .then(a.template_id.cmp(&b.template_id))
+                    .then(a.rule_name.cmp(&b.rule_name))
             });
 
             let best_upstream_score = sources
@@ -866,14 +1021,29 @@ fn merge_into_candidates(canonical_target: &str, raw: Vec<RawCandidate>) -> Vec<
                 .fold(None, |acc: Option<f32>, v| {
                     Some(acc.map_or(v, |a| a.max(v)))
                 });
-            let best_upstream_rank = sources.iter().map(|s| s.original_rank).min().unwrap_or(0);
+            // The rank of whichever source achieved `best_upstream_score` --
+            // NOT the plain minimum rank across all sources, which could
+            // belong to a different, lower-scoring source. When no source
+            // has a score at all (Exhaustive/BondIndexed), there is no
+            // "best-scoring source" to correlate with, so this falls back to
+            // the plain minimum rank, matching this field's only meaning in
+            // that case.
+            let best_upstream_rank = match best_upstream_score {
+                Some(best) => sources
+                    .iter()
+                    .filter(|s| s.upstream_score == Some(best))
+                    .map(|s| s.original_rank)
+                    .min()
+                    .unwrap_or(0),
+                None => sources.iter().map(|s| s.original_rank).min().unwrap_or(0),
+            };
             let min_base_step_cost = sources
                 .iter()
                 .map(|s| s.base_step_cost)
                 .fold(f64::INFINITY, f64::min);
             let freqs: Vec<f32> = sources
                 .iter()
-                .filter_map(|s| s.template_log_frequency)
+                .filter_map(|s| s.template_log_frequency_raw)
                 .collect();
             let max_template_frequency = freqs.iter().copied().fold(None, |acc: Option<f32>, v| {
                 Some(acc.map_or(v, |a| a.max(v)))
@@ -884,7 +1054,7 @@ fn merge_into_candidates(canonical_target: &str, raw: Vec<RawCandidate>) -> Vec<
                 Some(freqs.iter().sum::<f32>() / freqs.len() as f32)
             };
 
-            Some(ReactionCandidate {
+            Ok(ReactionCandidate {
                 candidate_id: id,
                 target_smiles: canonical_target.to_string(),
                 precursor_smiles,
@@ -921,9 +1091,9 @@ pub fn propose_one_step(
     let target_mol = mol_from_smiles(target_smiles)?;
     let canonical_target = to_canonical(&target_mol);
 
-    let active_rules = select_active_rules(&target_mol, rules, &config.mode);
+    let active_rules = select_active_rules(&target_mol, rules, &config.mode)?;
     let raw = raw_propose(&target_mol, &canonical_target, &active_rules);
-    let candidates = merge_into_candidates(&canonical_target, raw);
+    let candidates = merge_into_candidates(&canonical_target, raw)?;
 
     Ok(CandidatePool {
         group_id: group_id.to_string(),
@@ -960,30 +1130,30 @@ mod tests {
 
     // ---- ProposalMode / selection ----
 
+    fn scorer_input(
+        scores: Vec<(usize, f32, usize)>,
+        rules_offset: usize,
+    ) -> ScorerConditionedInput {
+        ScorerConditionedInput {
+            scores,
+            status: UpstreamScoreStatus::Available,
+            rules_offset,
+            scorer_identity: "test-scorer".to_string(),
+            scorer_model_sha256: "sha256:test".to_string(),
+        }
+    }
+
     #[test]
     fn exhaustive_mode_tries_all_rules() {
         let rules = default_rules();
         let target = "CC(=O)c1ccccc1";
         let target_mol = mol_from_smiles(target).unwrap();
-        let active = select_active_rules(&target_mol, &rules, &ProposalMode::Exhaustive);
+        let active = select_active_rules(&target_mol, &rules, &ProposalMode::Exhaustive).unwrap();
         assert_eq!(active.len(), rules.len());
         for r in &active {
             assert_eq!(r.upstream_score_status, UpstreamScoreStatus::NotApplicable);
             assert!(r.upstream_score.is_none());
         }
-    }
-
-    #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
-    fn make_score(rule_index: usize, raw_logit: f32, rank: usize) -> TemplateScore {
-        TemplateScore {
-            rule_index,
-            raw_logit,
-            rank,
-        }
-    }
-    #[cfg(not(all(not(target_arch = "wasm32"), feature = "nn-scoring")))]
-    fn make_score(rule_index: usize, raw_logit: f32, rank: usize) -> (usize, f32, usize) {
-        (rule_index, raw_logit, rank)
     }
 
     #[test]
@@ -996,14 +1166,17 @@ mod tests {
 
         // Only file template index (n_handcrafted) scores highest; top_k=1.
         let scores = vec![
-            make_score(n_handcrafted, 0.9, 0),
-            make_score(n_handcrafted + 1, 0.5, 1),
-            make_score(n_handcrafted + 2, 0.1, 2),
+            (n_handcrafted, 0.9, 0),
+            (n_handcrafted + 1, 0.5, 1),
+            (n_handcrafted + 2, 0.1, 2),
         ];
-        let mode = ProposalMode::ScorerConditioned { scores, top_k: 1 };
+        let mode = ProposalMode::ScorerConditioned {
+            input: scorer_input(scores, n_handcrafted),
+            top_k: 1,
+        };
         let target = "CCCC";
         let target_mol = mol_from_smiles(target).unwrap();
-        let active = select_active_rules(&target_mol, &rules, &mode);
+        let active = select_active_rules(&target_mol, &rules, &mode).unwrap();
 
         // All hand-crafted rules + exactly 1 file template.
         assert_eq!(active.len(), n_handcrafted + 1);
@@ -1027,17 +1200,48 @@ mod tests {
         rules.push(extracted_rule(0, "[C:1][C:2]>>[C:1].[C:2]", 1.0));
 
         let mode_zero_k = ProposalMode::ScorerConditioned {
-            scores: vec![make_score(n_handcrafted, 0.9, 0)],
+            input: scorer_input(vec![(n_handcrafted, 0.9, 0)], n_handcrafted),
             top_k: 0, // no file templates selected at all
         };
         let target_mol = mol_from_smiles("CCCC").unwrap();
-        let active = select_active_rules(&target_mol, &rules, &mode_zero_k);
+        let active = select_active_rules(&target_mol, &rules, &mode_zero_k).unwrap();
         assert_eq!(
             active.len(),
             n_handcrafted,
             "hand-crafted rules must all still be present"
         );
         assert!(active.iter().all(|r| !is_extracted_template(&r.rule.name)));
+    }
+
+    #[test]
+    fn scorer_conditioned_classifies_by_rules_offset_position_not_name_prefix() {
+        // A "handcrafted-looking" rule name placed AFTER rules_offset must
+        // be treated as a scoreable file template (position rules), and a
+        // rule without the extracted_ prefix placed BEFORE rules_offset
+        // must still be treated as always-included hand-crafted -- name
+        // prefix must play no role in the classification.
+        let handcrafted = rule("totally_handcrafted", "[C:1][C:2]>>[C:1].[C:2]");
+        let file_template_with_plain_name = rule("not_prefixed_at_all", "[C:1][C:2]>>[C:1].[C:2]");
+        let rules = vec![handcrafted, file_template_with_plain_name];
+        let rules_offset = 1; // only index 0 is hand-crafted by position
+
+        let mode = ProposalMode::ScorerConditioned {
+            input: scorer_input(vec![(1, 0.5, 0)], rules_offset),
+            top_k: 1,
+        };
+        let target_mol = mol_from_smiles("CCCC").unwrap();
+        let active = select_active_rules(&target_mol, &rules, &mode).unwrap();
+        assert_eq!(
+            active.len(),
+            2,
+            "handcrafted-by-position + 1 scored file template"
+        );
+        let scored: Vec<&ScoredRuleRef> = active
+            .iter()
+            .filter(|r| r.upstream_score_status == UpstreamScoreStatus::Available)
+            .collect();
+        assert_eq!(scored.len(), 1);
+        assert_eq!(scored[0].rule.name, "not_prefixed_at_all");
     }
 
     #[test]
@@ -1051,18 +1255,20 @@ mod tests {
         let target = "CCCC";
         let target_mol = mol_from_smiles(target).unwrap();
 
-        let exhaustive = select_active_rules(&target_mol, &rules, &ProposalMode::Exhaustive);
+        let exhaustive =
+            select_active_rules(&target_mol, &rules, &ProposalMode::Exhaustive).unwrap();
         let conditioned = select_active_rules(
             &target_mol,
             &rules,
             &ProposalMode::ScorerConditioned {
-                scores: vec![
-                    make_score(n_handcrafted, 0.9, 0),
-                    make_score(n_handcrafted + 1, 0.1, 1),
-                ],
+                input: scorer_input(
+                    vec![(n_handcrafted, 0.9, 0), (n_handcrafted + 1, 0.1, 1)],
+                    n_handcrafted,
+                ),
                 top_k: 1,
             },
-        );
+        )
+        .unwrap();
         assert!(
             conditioned.len() < exhaustive.len(),
             "scorer-conditioned selection must be a strict subset here, not just reordered"
@@ -1073,7 +1279,7 @@ mod tests {
     fn original_rank_matches_within_mode_rank() {
         let rules = default_rules();
         let target_mol = mol_from_smiles("CC(=O)c1ccccc1").unwrap();
-        let active = select_active_rules(&target_mol, &rules, &ProposalMode::Exhaustive);
+        let active = select_active_rules(&target_mol, &rules, &ProposalMode::Exhaustive).unwrap();
         for (i, r) in active.iter().enumerate() {
             assert_eq!(r.source_rank, i);
         }
@@ -1086,7 +1292,7 @@ mod tests {
         // value in upstream_score -- upstream_score stays None.
         let rules = default_rules();
         let target_mol = mol_from_smiles("CC(=O)c1ccccc1").unwrap();
-        let active = select_active_rules(&target_mol, &rules, &ProposalMode::Exhaustive);
+        let active = select_active_rules(&target_mol, &rules, &ProposalMode::Exhaustive).unwrap();
         for r in &active {
             assert!(r.upstream_score.is_none());
             assert_eq!(r.upstream_score_status, UpstreamScoreStatus::NotApplicable);
@@ -1094,25 +1300,22 @@ mod tests {
     }
 
     #[test]
-    fn scorer_conditioned_with_no_scores_selects_only_handcrafted_no_frequency_substitution() {
-        // Simulates the caller receiving TemplateScoreOutput { scores: vec![],
-        // status: <failure> } from TemplateScorer::score_templates and
-        // passing that empty `scores` straight through -- ScorerConditioned
-        // must select exactly zero file templates in that case, never a
-        // frequency-ranked top-K (that would be a silent, undocumented
-        // fallback disguised as a successful narrowing), and never fall back
-        // to Exhaustive on its own initiative.
+    fn scorer_conditioned_with_empty_scores_but_available_status_selects_only_handcrafted() {
+        // A scorer that legitimately succeeded (status: Available) but
+        // found zero relevant file templates must select exactly the
+        // hand-crafted rules -- distinct from the failure case below, which
+        // must be a hard error rather than looking the same as this.
         let mut rules = default_rules();
         let n_handcrafted = rules.len();
         rules.push(extracted_rule(0, "[C:1][C:2]>>[C:1].[C:2]", 3.0));
         rules.push(extracted_rule(1, "[C:1][C:2]>>[C:1].[C:2]", 2.0));
 
         let mode = ProposalMode::ScorerConditioned {
-            scores: Vec::new(),
+            input: scorer_input(Vec::new(), n_handcrafted),
             top_k: 10,
         };
         let target_mol = mol_from_smiles("CCCC").unwrap();
-        let active = select_active_rules(&target_mol, &rules, &mode);
+        let active = select_active_rules(&target_mol, &rules, &mode).unwrap();
 
         assert_eq!(
             active.len(),
@@ -1123,6 +1326,144 @@ mod tests {
         assert!(
             active.iter().all(|r| r.upstream_score.is_none()),
             "no frequency-derived value may appear in upstream_score when the scorer produced no scores"
+        );
+    }
+
+    #[test]
+    fn scorer_conditioned_fails_closed_when_status_is_not_available() {
+        // A scorer FAILURE must never be silently indistinguishable from
+        // "the scorer succeeded and found nothing relevant" -- it must fail
+        // the whole proposal call instead of quietly narrowing to zero file
+        // templates as if that were a normal, successful outcome.
+        let rules = default_rules();
+        let n_handcrafted = rules.len();
+        for status in [
+            UpstreamScoreStatus::ModelNotConfigured,
+            UpstreamScoreStatus::TargetParseFailed,
+            UpstreamScoreStatus::InferenceFailed,
+            UpstreamScoreStatus::OutputShapeMismatch,
+        ] {
+            let mode = ProposalMode::ScorerConditioned {
+                input: ScorerConditionedInput {
+                    scores: Vec::new(),
+                    status,
+                    rules_offset: n_handcrafted,
+                    scorer_identity: "test-scorer".to_string(),
+                    scorer_model_sha256: "sha256:test".to_string(),
+                },
+                top_k: 10,
+            };
+            let target_mol = mol_from_smiles("CCCC").unwrap();
+            assert!(
+                select_active_rules(&target_mol, &rules, &mode).is_err(),
+                "status {status:?} must fail closed, not silently succeed with zero file templates"
+            );
+        }
+    }
+
+    #[test]
+    fn scorer_conditioned_rejects_out_of_bounds_rule_index() {
+        let rules = default_rules();
+        let n_handcrafted = rules.len();
+        let mode = ProposalMode::ScorerConditioned {
+            input: scorer_input(vec![(rules.len() + 5, 0.5, 0)], n_handcrafted),
+            top_k: 10,
+        };
+        let target_mol = mol_from_smiles("CCCC").unwrap();
+        assert!(select_active_rules(&target_mol, &rules, &mode).is_err());
+    }
+
+    #[test]
+    fn scorer_conditioned_rejects_rule_index_inside_handcrafted_prefix() {
+        let rules = default_rules();
+        let n_handcrafted = rules.len();
+        assert!(n_handcrafted > 0, "fixture assumption");
+        let mode = ProposalMode::ScorerConditioned {
+            input: scorer_input(vec![(0, 0.5, 0)], n_handcrafted),
+            top_k: 10,
+        };
+        let target_mol = mol_from_smiles("CCCC").unwrap();
+        assert!(
+            select_active_rules(&target_mol, &rules, &mode).is_err(),
+            "a scored rule_index inside [0, rules_offset) must be rejected"
+        );
+    }
+
+    #[test]
+    fn scorer_conditioned_rejects_duplicate_rule_index() {
+        let mut rules = default_rules();
+        let n_handcrafted = rules.len();
+        rules.push(extracted_rule(0, "[C:1][C:2]>>[C:1].[C:2]", 1.0));
+        let mode = ProposalMode::ScorerConditioned {
+            input: scorer_input(
+                vec![(n_handcrafted, 0.5, 0), (n_handcrafted, 0.6, 1)],
+                n_handcrafted,
+            ),
+            top_k: 10,
+        };
+        let target_mol = mol_from_smiles("CCCC").unwrap();
+        assert!(select_active_rules(&target_mol, &rules, &mode).is_err());
+    }
+
+    #[test]
+    fn scorer_conditioned_rejects_duplicate_rank() {
+        let mut rules = default_rules();
+        let n_handcrafted = rules.len();
+        rules.push(extracted_rule(0, "[C:1][C:2]>>[C:1].[C:2]", 1.0));
+        rules.push(extracted_rule(1, "[C:1][C:2]>>[C:1].[C:2]", 1.0));
+        let mode = ProposalMode::ScorerConditioned {
+            input: scorer_input(
+                vec![(n_handcrafted, 0.5, 0), (n_handcrafted + 1, 0.6, 0)],
+                n_handcrafted,
+            ),
+            top_k: 10,
+        };
+        let target_mol = mol_from_smiles("CCCC").unwrap();
+        assert!(select_active_rules(&target_mol, &rules, &mode).is_err());
+    }
+
+    #[test]
+    fn scorer_conditioned_rejects_non_finite_raw_logit() {
+        let mut rules = default_rules();
+        let n_handcrafted = rules.len();
+        rules.push(extracted_rule(0, "[C:1][C:2]>>[C:1].[C:2]", 1.0));
+        for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let mode = ProposalMode::ScorerConditioned {
+                input: scorer_input(vec![(n_handcrafted, bad, 0)], n_handcrafted),
+                top_k: 10,
+            };
+            let target_mol = mol_from_smiles("CCCC").unwrap();
+            assert!(
+                select_active_rules(&target_mol, &rules, &mode).is_err(),
+                "raw_logit {bad} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn scorer_conditioned_tie_break_is_rank_ascending() {
+        let mut rules = default_rules();
+        let n_handcrafted = rules.len();
+        rules.push(extracted_rule(0, "[C:1][C:2]>>[C:1].[C:2]", 1.0));
+        rules.push(extracted_rule(1, "[C:1][C:2]>>[C:1].[C:2]", 1.0));
+        let mode = ProposalMode::ScorerConditioned {
+            input: scorer_input(
+                vec![(n_handcrafted + 1, 0.1, 1), (n_handcrafted, 0.9, 0)],
+                n_handcrafted,
+            ),
+            top_k: 1,
+        };
+        let target_mol = mol_from_smiles("CCCC").unwrap();
+        let active = select_active_rules(&target_mol, &rules, &mode).unwrap();
+        let scored: Vec<&ScoredRuleRef> = active
+            .iter()
+            .filter(|r| r.upstream_score_status == UpstreamScoreStatus::Available)
+            .collect();
+        assert_eq!(scored.len(), 1);
+        assert_eq!(
+            scored[0].upstream_score,
+            Some(0.9),
+            "rank 0 (lowest rank) must be selected by top_k=1, not insertion order"
         );
     }
 
@@ -1154,7 +1495,8 @@ mod tests {
             }
         }
 
-        let active_rules = select_active_rules(&target_mol, &rules, &ProposalMode::Exhaustive);
+        let active_rules =
+            select_active_rules(&target_mol, &rules, &ProposalMode::Exhaustive).unwrap();
         let got = raw_propose(&target_mol, &canon_target, &active_rules);
         let mut got_pairs: Vec<(String, Vec<String>)> = got
             .into_iter()
@@ -1217,7 +1559,7 @@ mod tests {
             upstream_score_status: UpstreamScoreStatus::NotApplicable,
             precursors: vec![precs("CC"), precs("CC")],
         }];
-        let merged = merge_into_candidates("target", raw);
+        let merged = merge_into_candidates("target", raw).unwrap();
         assert_eq!(merged.len(), 1);
         assert_eq!(
             merged[0].precursor_smiles,
@@ -1248,7 +1590,7 @@ mod tests {
                 precursors: vec![precs("O"), precs("CC")], // same set, different order
             },
         ];
-        let merged = merge_into_candidates("target", raw);
+        let merged = merge_into_candidates("target", raw).unwrap();
         assert_eq!(
             merged.len(),
             1,
@@ -1264,6 +1606,75 @@ mod tests {
         let names: Vec<&str> = c.sources.iter().map(|s| s.rule_name.as_str()).collect();
         assert!(names.contains(&"rule_a"));
         assert!(names.contains(&"rule_b"));
+    }
+
+    #[test]
+    fn duplicate_same_template_outcomes_do_not_inflate_source_count() {
+        // The SAME (template_id, rule_name) reaching the same merged
+        // candidate twice (e.g. a symmetric rule matching two equivalent
+        // sites that happen to produce the identical sorted precursor set)
+        // must collapse into one source, not two -- `source_template_count`
+        // counts distinct contributing rules, not raw applications.
+        let raw = vec![
+            RawCandidate {
+                rule_name: "symmetric_rule".to_string(),
+                template_id: "rule:symmetric_rule".to_string(),
+                rule_weight: 1.0,
+                original_rank: 3,
+                upstream_score: Some(0.4),
+                upstream_score_status: UpstreamScoreStatus::Available,
+                precursors: vec![precs("CC"), precs("O")],
+            },
+            RawCandidate {
+                rule_name: "symmetric_rule".to_string(),
+                template_id: "rule:symmetric_rule".to_string(),
+                rule_weight: 1.0,
+                original_rank: 1,
+                upstream_score: Some(0.4),
+                upstream_score_status: UpstreamScoreStatus::Available,
+                precursors: vec![precs("O"), precs("CC")], // same set, different match site
+            },
+        ];
+        let merged = merge_into_candidates("target", raw).unwrap();
+        assert_eq!(merged.len(), 1);
+        assert_eq!(
+            merged[0].source_template_count, 1,
+            "two applications of the same rule must merge into one source"
+        );
+        assert_eq!(merged[0].sources.len(), 1);
+        assert_eq!(
+            merged[0].sources[0].original_rank, 1,
+            "merged source must keep the min original_rank across duplicates"
+        );
+    }
+
+    #[test]
+    fn duplicate_same_template_outcomes_reject_inconsistent_frequency() {
+        // Two applications of what claims to be the same (template_id,
+        // rule_name) but with different rule_weight (hence different
+        // template_log_frequency_raw) is an internally inconsistent input --
+        // a hard error, not a silent pick of one value.
+        let raw = vec![
+            RawCandidate {
+                rule_name: "r".to_string(),
+                template_id: "rule:r".to_string(),
+                rule_weight: 1.0,
+                original_rank: 0,
+                upstream_score: None,
+                upstream_score_status: UpstreamScoreStatus::NotApplicable,
+                precursors: vec![precs("CC")],
+            },
+            RawCandidate {
+                rule_name: "r".to_string(),
+                template_id: "rule:r".to_string(),
+                rule_weight: 2.0, // inconsistent with the first
+                original_rank: 1,
+                upstream_score: None,
+                upstream_score_status: UpstreamScoreStatus::NotApplicable,
+                precursors: vec![precs("CC")],
+            },
+        ];
+        assert!(merge_into_candidates("target", raw).is_err());
     }
 
     #[test]
@@ -1293,7 +1704,7 @@ mod tests {
         a.precursors = vec![precs("CC")];
         b.precursors = vec![precs("CC")];
 
-        let merged = merge_into_candidates("target", vec![a, b]);
+        let merged = merge_into_candidates("target", vec![a, b]).unwrap();
         assert_eq!(merged.len(), 1);
         assert_eq!(
             merged[0].best_upstream_score,
@@ -1305,6 +1716,42 @@ mod tests {
             "must keep the best (min) original_rank"
         );
         assert!(merged[0].min_base_step_cost.is_finite());
+    }
+
+    #[test]
+    fn best_upstream_rank_is_the_best_scoring_sources_rank_not_the_global_minimum() {
+        // rule_low_rank has the lowest original_rank (0) but a mediocre
+        // score; rule_best_score has a worse (higher) rank but the best
+        // score. best_upstream_rank must report rule_best_score's rank (2),
+        // NOT the global minimum rank (0) which belongs to a different,
+        // lower-scoring source.
+        let raw = vec![
+            RawCandidate {
+                rule_name: "rule_low_rank".to_string(),
+                template_id: "rule:rule_low_rank".to_string(),
+                rule_weight: 1.0,
+                original_rank: 0,
+                upstream_score: Some(0.1),
+                upstream_score_status: UpstreamScoreStatus::Available,
+                precursors: vec![precs("CC")],
+            },
+            RawCandidate {
+                rule_name: "rule_best_score".to_string(),
+                template_id: "rule:rule_best_score".to_string(),
+                rule_weight: 1.0,
+                original_rank: 2,
+                upstream_score: Some(0.9),
+                upstream_score_status: UpstreamScoreStatus::Available,
+                precursors: vec![precs("CC")],
+            },
+        ];
+        let merged = merge_into_candidates("target", raw).unwrap();
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].best_upstream_score, Some(0.9));
+        assert_eq!(
+            merged[0].best_upstream_rank, 2,
+            "must be the rank of the source that achieved best_upstream_score, not the global minimum rank (0)"
+        );
     }
 
     #[test]
@@ -1329,7 +1776,7 @@ mod tests {
                 precursors: vec![precs("CC")],
             },
         ];
-        let merged = merge_into_candidates("target", raw);
+        let merged = merge_into_candidates("target", raw).unwrap();
         assert_eq!(merged.len(), 1);
         // Tied on upstream_score and base_step_cost and original_rank -->
         // tie-break by template_id lexicographic: "a" before "z".

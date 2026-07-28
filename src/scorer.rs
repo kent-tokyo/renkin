@@ -50,9 +50,20 @@ pub mod nn {
     pub enum TemplateScoreStatus {
         Available,
         ModelNotConfigured,
+        /// The rule set passed to `score_templates` has zero file templates
+        /// at `[rules_offset, n_rules)` -- distinct from `ModelNotConfigured`
+        /// (which means no model was loaded at all): here a model IS
+        /// configured, there is simply nothing in this rule set for it to
+        /// score.
+        NoFileTemplates,
         TargetParseFailed,
         InferenceFailed,
         OutputShapeMismatch,
+        /// The model ran and returned an output of the right shape, but one
+        /// or more logits were non-finite (NaN/Inf) -- a corrupted or
+        /// numerically unstable model output must never be silently ranked
+        /// as if the values were meaningful.
+        NonFiniteOutput,
     }
 
     /// `scores` is empty unless `status == Available`. On `Available`, it
@@ -127,7 +138,7 @@ pub mod nn {
             let offset = self.rules_offset.min(n_rules);
             let n_file = n_rules - offset;
             if n_file == 0 {
-                return empty(TemplateScoreStatus::ModelNotConfigured);
+                return empty(TemplateScoreStatus::NoFileTemplates);
             }
 
             let Ok(mol) = mol_from_smiles(target_smiles) else {
@@ -146,12 +157,18 @@ pub mod nn {
                 Err(_) => return empty(TemplateScoreStatus::InferenceFailed),
             };
 
-            let raw_scores: Vec<f32> = match outputs[0].to_plain_array_view::<f32>() {
+            let Some(first_output) = outputs.first() else {
+                return empty(TemplateScoreStatus::OutputShapeMismatch);
+            };
+            let raw_scores: Vec<f32> = match first_output.to_plain_array_view::<f32>() {
                 Ok(v) => v.iter().copied().collect(),
                 Err(_) => return empty(TemplateScoreStatus::OutputShapeMismatch),
             };
             if raw_scores.len() != n_file {
                 return empty(TemplateScoreStatus::OutputShapeMismatch);
+            }
+            if raw_scores.iter().any(|v| !v.is_finite()) {
+                return empty(TemplateScoreStatus::NonFiniteOutput);
             }
 
             let mut order: Vec<usize> = (0..raw_scores.len()).collect();
@@ -159,6 +176,7 @@ pub mod nn {
                 raw_scores[b]
                     .partial_cmp(&raw_scores[a])
                     .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.cmp(&b))
             });
             let mut scores = vec![
                 TemplateScore {

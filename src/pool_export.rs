@@ -313,7 +313,7 @@ mod tests {
         let target_mol = mol_from_smiles(target).unwrap();
         let pool =
             propose_one_step("rxn-example-42", target, &rules, &ProposalConfig::default()).unwrap();
-        let templates_by_id = index_rules_by_template_id(&rules);
+        let templates_by_id = index_rules_by_template_id(&rules).unwrap();
         let rows = candidate_rows_for_pool(&pool, &target_mol, &templates_by_id, None);
         assert!(!rows.is_empty());
         for row in &rows {
@@ -401,7 +401,7 @@ mod tests {
         let target = "CC(=O)c1ccccc1";
         let target_mol = mol_from_smiles(target).unwrap();
         let pool = propose_one_step("group:1", target, &rules, &ProposalConfig::default()).unwrap();
-        let templates_by_id = index_rules_by_template_id(&rules);
+        let templates_by_id = index_rules_by_template_id(&rules).unwrap();
 
         let rows = candidate_rows_for_pool(&pool, &target_mol, &templates_by_id, None);
         assert!(!rows.is_empty());
@@ -417,7 +417,7 @@ mod tests {
         let target = "CC(=O)c1ccccc1";
         let target_mol = mol_from_smiles(target).unwrap();
         let pool = propose_one_step("group:1", target, &rules, &ProposalConfig::default()).unwrap();
-        let templates_by_id = index_rules_by_template_id(&rules);
+        let templates_by_id = index_rules_by_template_id(&rules).unwrap();
 
         let rows = candidate_rows_for_pool(&pool, &target_mol, &templates_by_id, None);
         for row in &rows {
@@ -433,7 +433,7 @@ mod tests {
         let target = "CC(=O)c1ccccc1";
         let target_mol = mol_from_smiles(target).unwrap();
         let pool = propose_one_step("group:1", target, &rules, &ProposalConfig::default()).unwrap();
-        let templates_by_id = index_rules_by_template_id(&rules);
+        let templates_by_id = index_rules_by_template_id(&rules).unwrap();
 
         let rows = candidate_rows_for_pool(&pool, &target_mol, &templates_by_id, None);
         assert!(!rows.is_empty());
@@ -458,7 +458,7 @@ mod tests {
         let target = "CC(=O)c1ccccc1";
         let target_mol = mol_from_smiles(target).unwrap();
         let pool = propose_one_step("group:1", target, &rules, &ProposalConfig::default()).unwrap();
-        let templates_by_id = index_rules_by_template_id(&rules);
+        let templates_by_id = index_rules_by_template_id(&rules).unwrap();
         let rows = candidate_rows_for_pool(&pool, &target_mol, &templates_by_id, None);
 
         let mut buf: Vec<u8> = Vec::new();
@@ -478,7 +478,7 @@ mod tests {
         let rules = default_rules();
         let target = "CC(=O)c1ccccc1";
         let target_mol = mol_from_smiles(target).unwrap();
-        let templates_by_id = index_rules_by_template_id(&rules);
+        let templates_by_id = index_rules_by_template_id(&rules).unwrap();
 
         let mut outputs = Vec::new();
         for _ in 0..2 {
@@ -521,7 +521,7 @@ mod tests {
         let target = "CC(=O)c1ccccc1";
         let target_mol = mol_from_smiles(target).unwrap();
         let pool = propose_one_step("group:1", target, &rules, &ProposalConfig::default()).unwrap();
-        let templates_by_id = index_rules_by_template_id(&rules);
+        let templates_by_id = index_rules_by_template_id(&rules).unwrap();
         let rows = candidate_rows_for_pool(&pool, &target_mol, &templates_by_id, None);
 
         let manifest = build_manifest(&rows, 1, &rules, &ProposalMode::Exhaustive, None);

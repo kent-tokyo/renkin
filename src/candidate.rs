@@ -263,83 +263,164 @@ pub struct TemplateTransformationFeatures {
     pub extractable: bool,
 }
 
-fn transformation_cache() -> &'static Mutex<HashMap<String, TemplateTransformationFeatures>> {
-    static CACHE: OnceLock<Mutex<HashMap<String, TemplateTransformationFeatures>>> =
+/// Keyed by `(template_id, sha256(smirks))`, not `template_id` alone --
+/// `template_id` is meant to be stable, but keying on it alone would let a
+/// caller that (incorrectly) reuses the same `template_id` for two
+/// different SMIRKS strings silently read back whichever one was cached
+/// first, across calls or even across parallel test threads sharing this
+/// process-global cache.
+type TransformationCacheKey = (String, String);
+
+fn transformation_cache()
+-> &'static Mutex<HashMap<TransformationCacheKey, TemplateTransformationFeatures>> {
+    static CACHE: OnceLock<Mutex<HashMap<TransformationCacheKey, TemplateTransformationFeatures>>> =
         OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// Bonds present with the same mapped-atom pair on both sides, but whose
-/// `BondOrder` differs -- invisible to `chematic::rxn::find_reaction_center`
-/// (it only compares bond *presence*, not order), so computed here as a
-/// small complementary pass over the same public `atom_map`/`bond_between`
-/// API `find_reaction_center` itself uses.
-fn count_changed_bond_orders(rxn: &chematic::rxn::Reaction) -> u32 {
-    use rustc_hash::FxHashMap;
+fn smirks_hash(smirks: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(smirks.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
 
-    let mut reactant_map: FxHashMap<u16, (usize, chematic::core::AtomIdx)> = FxHashMap::default();
-    for (mol_idx, mol) in rxn.reactants.iter().enumerate() {
+/// atom_map -> (mol_idx, atom_idx) for one side (reactants or products) of a
+/// `Reaction`. `duplicate` is true if the same atom_map number appears on
+/// more than one atom within this side -- an ambiguous mapping that must
+/// never be silently resolved to "whichever one was inserted last".
+struct AtomMapIndex {
+    by_map: rustc_hash::FxHashMap<u16, (usize, chematic::core::AtomIdx)>,
+    duplicate: bool,
+}
+
+fn index_atoms_by_map(mols: &[Molecule]) -> AtomMapIndex {
+    let mut by_map = rustc_hash::FxHashMap::default();
+    let mut duplicate = false;
+    for (mol_idx, mol) in mols.iter().enumerate() {
         for (atom_idx, atom) in mol.atoms() {
-            if let Some(map_num) = atom.atom_map {
-                reactant_map.insert(map_num, (mol_idx, atom_idx));
+            if let Some(map_num) = atom.atom_map
+                && by_map.insert(map_num, (mol_idx, atom_idx)).is_some()
+            {
+                duplicate = true;
             }
         }
     }
-    let mut product_map: FxHashMap<u16, (usize, chematic::core::AtomIdx)> = FxHashMap::default();
-    for (mol_idx, mol) in rxn.products.iter().enumerate() {
-        for (atom_idx, atom) in mol.atoms() {
-            if let Some(map_num) = atom.atom_map {
-                product_map.insert(map_num, (mol_idx, atom_idx));
-            }
-        }
-    }
+    AtomMapIndex { by_map, duplicate }
+}
 
-    let mut changed = 0u32;
-    let mut seen_pairs: std::collections::HashSet<(u16, u16)> = std::collections::HashSet::new();
-    for (&map_a, &(r_mol_idx, r_atom_idx)) in &reactant_map {
-        let r_mol = &rxn.reactants[r_mol_idx];
-        for (r_neighbor, r_bond_idx) in r_mol.neighbors(r_atom_idx) {
-            let Some(map_b) = r_mol.atom(r_neighbor).atom_map else {
+/// Bond key = (min, max) of the two endpoints' atom_map numbers -- globally
+/// unique across a multi-component side, unlike `chematic::core::AtomIdx`
+/// (which is only unique *within* one molecule; the same `AtomIdx(0)` can
+/// name a different atom in each precursor fragment). Only bonds where BOTH
+/// endpoints are mapped are included; a bond touching an unmapped atom isn't
+/// part of the mapped-skeleton diff.
+fn bond_orders_by_atom_map(
+    mols: &[Molecule],
+    index: &rustc_hash::FxHashMap<u16, (usize, chematic::core::AtomIdx)>,
+) -> rustc_hash::FxHashMap<(u16, u16), chematic::core::BondOrder> {
+    let mut bonds = rustc_hash::FxHashMap::default();
+    for (&map_a, &(mol_idx, atom_idx)) in index {
+        let mol = &mols[mol_idx];
+        for (neighbor_idx, bond_idx) in mol.neighbors(atom_idx) {
+            let Some(map_b) = mol.atom(neighbor_idx).atom_map else {
                 continue;
             };
             if map_b <= map_a {
-                continue;
+                continue; // visit each edge once, from its lower-numbered endpoint
             }
-            let pair = (map_a, map_b);
-            if !seen_pairs.insert(pair) {
-                continue;
+            bonds.insert((map_a, map_b), mol.bond(bond_idx).order);
+        }
+    }
+    bonds
+}
+
+/// A template's reaction-center diff, computed independently of
+/// `chematic::rxn::find_reaction_center` -- that function's `broken_bonds`/
+/// `formed_bonds`/`changed_atoms` are `AtomIdx` pairs scoped to a single
+/// molecule (reactant-side `AtomIdx`s and product-side `AtomIdx`s are
+/// different numbering spaces even in the single-component case, and a
+/// multi-component precursor side has yet another collision risk *within*
+/// that space: `AtomIdx(0)` in precursor fragment 0 is a different atom
+/// from `AtomIdx(0)` in precursor fragment 1). Pooling those into one
+/// `HashSet<AtomIdx>` (the previous implementation) would silently
+/// undercount `reaction_center_atom_count` for any multi-component SMIRKS --
+/// which is the common case for a disconnection template. Every quantity
+/// here is instead keyed by atom_map number, which is globally unique
+/// across the whole reaction by construction.
+#[derive(Debug, Clone, Copy, Default)]
+struct ReactionCenterDiff {
+    deleted_bond_count: u32,
+    added_bond_count: u32,
+    changed_bond_order_count: u32,
+    reaction_center_atom_count: u32,
+    extractable: bool,
+}
+
+fn compute_reaction_center(rxn: &chematic::rxn::Reaction) -> ReactionCenterDiff {
+    let reactant_index = index_atoms_by_map(&rxn.reactants);
+    let product_index = index_atoms_by_map(&rxn.products);
+    if reactant_index.by_map.is_empty() || reactant_index.duplicate || product_index.duplicate {
+        return ReactionCenterDiff::default();
+    }
+
+    let reactant_bonds = bond_orders_by_atom_map(&rxn.reactants, &reactant_index.by_map);
+    let product_bonds = bond_orders_by_atom_map(&rxn.products, &product_index.by_map);
+
+    let mut deleted = 0u32;
+    let mut changed_order = 0u32;
+    let mut center_maps: std::collections::HashSet<u16> = std::collections::HashSet::new();
+    for (&key, r_order) in &reactant_bonds {
+        match product_bonds.get(&key) {
+            None => {
+                deleted += 1;
+                center_maps.insert(key.0);
+                center_maps.insert(key.1);
             }
-            let Some((p_mol_idx_a, p_atom_idx_a)) = product_map.get(&map_a).copied() else {
-                continue;
-            };
-            let Some((p_mol_idx_b, p_atom_idx_b)) = product_map.get(&map_b).copied() else {
-                continue;
-            };
-            if p_mol_idx_a != p_mol_idx_b {
-                continue; // split apart -- that's a broken bond, not an order change
+            Some(p_order) if p_order != r_order => {
+                changed_order += 1;
+                center_maps.insert(key.0);
+                center_maps.insert(key.1);
             }
-            let p_mol = &rxn.products[p_mol_idx_a];
-            let Some((_, p_bond)) = p_mol.bond_between(p_atom_idx_a, p_atom_idx_b) else {
-                continue; // no longer bonded -- broken bond, handled by find_reaction_center
-            };
-            let r_bond = r_mol.bond(r_bond_idx);
-            if r_bond.order != p_bond.order {
-                changed += 1;
+            _ => {}
+        }
+    }
+    let mut added = 0u32;
+    for &key in product_bonds.keys() {
+        if !reactant_bonds.contains_key(&key) {
+            added += 1;
+            center_maps.insert(key.0);
+            center_maps.insert(key.1);
+        }
+    }
+
+    for (&map_num, &(r_mol_idx, r_atom_idx)) in &reactant_index.by_map {
+        if let Some(&(p_mol_idx, p_atom_idx)) = product_index.by_map.get(&map_num) {
+            let r_atom = rxn.reactants[r_mol_idx].atom(r_atom_idx);
+            let p_atom = rxn.products[p_mol_idx].atom(p_atom_idx);
+            if r_atom.element != p_atom.element
+                || r_atom.charge != p_atom.charge
+                || r_atom.aromatic != p_atom.aromatic
+            {
+                center_maps.insert(map_num);
             }
         }
     }
-    changed
+
+    ReactionCenterDiff {
+        deleted_bond_count: deleted,
+        added_bond_count: added,
+        changed_bond_order_count: changed_order,
+        reaction_center_atom_count: center_maps.len() as u32,
+        extractable: true,
+    }
 }
 
 /// Compute (and cache) template-level transformation features for one rule.
-/// Keyed by `template_id` (stable, content-derived for extracted templates
-/// per `template_id_for_smirks`).
+/// Keyed by `(template_id, sha256(smirks))` -- see
+/// [`TransformationCacheKey`]'s doc for why `template_id` alone isn't safe.
 pub fn template_transformation_features(rule: &RetroRule) -> TemplateTransformationFeatures {
-    if let Some(cached) = transformation_cache()
-        .lock()
-        .unwrap()
-        .get(&rule.template_id)
-    {
+    let cache_key = (rule.template_id.clone(), smirks_hash(&rule.smirks));
+    if let Some(cached) = transformation_cache().lock().unwrap().get(&cache_key) {
         return *cached;
     }
 
@@ -361,7 +442,6 @@ pub fn template_transformation_features(rule: &RetroRule) -> TemplateTransformat
                         ..Default::default()
                     }
                 } else {
-                    let center = chematic::rxn::find_reaction_center(&rxn);
                     let mapped_atom_count = rxn
                         .reactants
                         .iter()
@@ -374,24 +454,26 @@ pub fn template_transformation_features(rule: &RetroRule) -> TemplateTransformat
                         .flat_map(|m| m.atoms())
                         .filter(|(_, a)| a.atom_map.is_none())
                         .count() as u32;
-                    let changed_bond_order_count = count_changed_bond_orders(&rxn);
-                    let mut center_atoms: std::collections::HashSet<chematic::core::AtomIdx> =
-                        std::collections::HashSet::new();
-                    for &(a, b) in center.broken_bonds.iter().chain(center.formed_bonds.iter()) {
-                        center_atoms.insert(a);
-                        center_atoms.insert(b);
-                    }
-                    for &a in &center.changed_atoms {
-                        center_atoms.insert(a);
-                    }
-                    TemplateTransformationFeatures {
-                        mapped_atom_count,
-                        unmapped_atom_count,
-                        deleted_bond_count: center.broken_bonds.len() as u32,
-                        added_bond_count: center.formed_bonds.len() as u32,
-                        changed_bond_order_count,
-                        reaction_center_atom_count: center_atoms.len() as u32,
-                        extractable: true,
+                    let center = compute_reaction_center(&rxn);
+                    if !center.extractable {
+                        // Ambiguous duplicate atom_map numbers on one side --
+                        // never guess which occurrence was intended.
+                        TemplateTransformationFeatures {
+                            mapped_atom_count,
+                            unmapped_atom_count,
+                            extractable: false,
+                            ..Default::default()
+                        }
+                    } else {
+                        TemplateTransformationFeatures {
+                            mapped_atom_count,
+                            unmapped_atom_count,
+                            deleted_bond_count: center.deleted_bond_count,
+                            added_bond_count: center.added_bond_count,
+                            changed_bond_order_count: center.changed_bond_order_count,
+                            reaction_center_atom_count: center.reaction_center_atom_count,
+                            extractable: true,
+                        }
                     }
                 }
             }
@@ -405,7 +487,7 @@ pub fn template_transformation_features(rule: &RetroRule) -> TemplateTransformat
     transformation_cache()
         .lock()
         .unwrap()
-        .insert(rule.template_id.clone(), features);
+        .insert(cache_key, features);
     features
 }
 
@@ -666,8 +748,44 @@ pub fn extract_features(
 /// Build a `template_id -> &RetroRule` index once per pool-export call, for
 /// [`extract_features`] to look up each candidate source's rule by id
 /// without an O(rules) scan per source.
-pub fn index_rules_by_template_id(rules: &[RetroRule]) -> HashMap<String, &RetroRule> {
-    rules.iter().map(|r| (r.template_id.clone(), r)).collect()
+///
+/// Rejects a `template_id` that appears on two rules with different
+/// `name`/`smirks`/`weight`/`required_elements` -- a hard error, since
+/// `template_id` is meant to be a stable, unambiguous identity (see
+/// `RetroRule::template_id`'s doc); silently keeping "whichever rule was
+/// seen first" would let a caller's rule set be internally inconsistent
+/// without ever finding out. An exact duplicate (identical on every field)
+/// is tolerated, since it names the same rule twice, not two different
+/// ones.
+pub fn index_rules_by_template_id(
+    rules: &[RetroRule],
+) -> anyhow::Result<HashMap<String, &RetroRule>> {
+    let mut by_id: HashMap<String, &RetroRule> = HashMap::new();
+    for rule in rules {
+        if let Some(existing) = by_id.get(&rule.template_id) {
+            let conflicting = existing.name != rule.name
+                || existing.smirks != rule.smirks
+                || existing.weight != rule.weight
+                || existing.required_elements != rule.required_elements;
+            if conflicting {
+                anyhow::bail!(
+                    "template_id {:?} maps to two different rules: \
+                     {{name: {:?}, smirks: {:?}, weight: {}}} vs \
+                     {{name: {:?}, smirks: {:?}, weight: {}}}",
+                    rule.template_id,
+                    existing.name,
+                    existing.smirks,
+                    existing.weight,
+                    rule.name,
+                    rule.smirks,
+                    rule.weight
+                );
+            }
+            continue;
+        }
+        by_id.insert(rule.template_id.clone(), rule);
+    }
+    Ok(by_id)
 }
 
 /// Select the active rule set for one target under `mode`, mirroring
@@ -1856,6 +1974,84 @@ mod tests {
     }
 
     #[test]
+    fn multi_component_reaction_center_does_not_collide_on_local_atom_idx() {
+        // Two reactant molecules (map1-map2 bonded, map3-map4 bonded) become
+        // two DIFFERENT product molecules (map1-map3 newly bonded,
+        // map2-map4 newly bonded). Each product molecule's newly-formed
+        // bond sits at the same LOCAL AtomIdx pair (0, 1) as the other --
+        // pooling raw AtomIdx values across molecules (the previous
+        // implementation) would collapse these 4 distinct atoms down to 2.
+        // Keying by atom_map number must keep all 4 distinct.
+        let cross_rule = rule(
+            "synthetic_cross_metathesis",
+            "[C:1][C:2].[C:3][C:4]>>[C:1][C:3].[C:2][C:4]",
+        );
+        let f = template_transformation_features(&cross_rule);
+        assert!(f.extractable);
+        assert_eq!(f.deleted_bond_count, 2, "both original bonds are broken");
+        assert_eq!(f.added_bond_count, 2, "both new cross-bonds are formed");
+        assert_eq!(
+            f.reaction_center_atom_count, 4,
+            "all four atoms (map1..map4) participate in the reaction center -- \
+             a raw-AtomIdx collision would undercount this to 2"
+        );
+    }
+
+    #[test]
+    fn duplicate_atom_map_within_one_side_is_not_extractable() {
+        // The same atom_map number (1) appears on two different atoms on
+        // the reactant side -- an ambiguous mapping that must never be
+        // silently resolved to whichever occurrence was inserted last.
+        let ambiguous_rule = rule("ambiguous_duplicate_map", "[C:1][C:1]>>[C:1].[C:1]");
+        let f = template_transformation_features(&ambiguous_rule);
+        assert!(
+            !f.extractable,
+            "a duplicate atom_map number on one side must not be extractable"
+        );
+    }
+
+    #[test]
+    fn transformation_cache_does_not_collide_on_reused_template_id_with_different_smirks() {
+        // Two RetroRules sharing the same template_id but with different
+        // SMIRKS must never read back each other's cached features -- the
+        // cache key includes a SMIRKS hash precisely to prevent this.
+        let mut a = rule("shared_id", "[C:1][C:2]>>[C:1].[C:2]");
+        a.template_id = "rule:shared_id".to_string();
+        let mut b = rule("shared_id", "[C:1][C:2][C:3]>>[C:1].[C:2].[C:3]");
+        b.template_id = "rule:shared_id".to_string();
+
+        let fa = template_transformation_features(&a);
+        let fb = template_transformation_features(&b);
+        assert!(fa.extractable);
+        assert!(fb.extractable);
+        assert_ne!(
+            fa.mapped_atom_count, fb.mapped_atom_count,
+            "these two SMIRKS have a different mapped atom count -- if the cache \
+             collided on template_id alone, one of these would incorrectly read \
+             back the other's cached result"
+        );
+    }
+
+    #[test]
+    fn index_rules_by_template_id_rejects_conflicting_duplicate() {
+        let mut a = rule("dup", "[C:1]>>[C:1]");
+        a.template_id = "rule:dup".to_string();
+        let mut b = rule("dup", "[N:1]>>[N:1]"); // different smirks, same id
+        b.template_id = "rule:dup".to_string();
+        assert!(index_rules_by_template_id(&[a, b]).is_err());
+    }
+
+    #[test]
+    fn index_rules_by_template_id_tolerates_exact_duplicate() {
+        let mut a = rule("dup", "[C:1]>>[C:1]");
+        a.template_id = "rule:dup".to_string();
+        let b = a.clone();
+        let rules = [a, b];
+        let index = index_rules_by_template_id(&rules).unwrap();
+        assert_eq!(index.len(), 1);
+    }
+
+    #[test]
     fn aggregate_transformation_features_no_nan_or_inf() {
         let features = vec![
             TemplateTransformationFeatures {
@@ -1913,7 +2109,7 @@ mod tests {
         let target = "CC(=O)c1ccccc1";
         let target_mol = mol_from_smiles(target).unwrap();
         let candidate = candidate_for(target, &rules, ProposalMode::Exhaustive);
-        let templates_by_id = index_rules_by_template_id(&rules);
+        let templates_by_id = index_rules_by_template_id(&rules).unwrap();
 
         let features = extract_features(&candidate, &target_mol, &templates_by_id, None);
         assert_eq!(features.values.len(), FEATURE_NAMES_V1.len());
@@ -1963,7 +2159,7 @@ mod tests {
         let target = "CC(=O)c1ccccc1";
         let target_mol = mol_from_smiles(target).unwrap();
         let candidate = candidate_for(target, &rules, ProposalMode::Exhaustive);
-        let templates_by_id = index_rules_by_template_id(&rules);
+        let templates_by_id = index_rules_by_template_id(&rules).unwrap();
 
         // Every precursor of this candidate is in the stock.
         let full_stock = ChemEnv::in_memory(
@@ -1999,7 +2195,7 @@ mod tests {
         let target = "CC(=O)c1ccccc1";
         let target_mol = mol_from_smiles(target).unwrap();
         let candidate = candidate_for(target, &rules, ProposalMode::Exhaustive);
-        let templates_by_id = index_rules_by_template_id(&rules);
+        let templates_by_id = index_rules_by_template_id(&rules).unwrap();
 
         let features = extract_features(&candidate, &target_mol, &templates_by_id, None);
         let no_gain_i = feature_index("no_heavy_atom_gain").unwrap();
@@ -2066,7 +2262,7 @@ mod tests {
         let target = "CC(=O)c1ccccc1";
         let target_mol = mol_from_smiles(target).unwrap();
         let candidate = candidate_for(target, &rules, ProposalMode::Exhaustive);
-        let templates_by_id = index_rules_by_template_id(&rules);
+        let templates_by_id = index_rules_by_template_id(&rules).unwrap();
 
         let a = extract_features(&candidate, &target_mol, &templates_by_id, None);
         let b = extract_features(&candidate, &target_mol, &templates_by_id, None);

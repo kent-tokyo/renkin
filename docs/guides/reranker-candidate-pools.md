@@ -78,6 +78,18 @@ finite) before using it -- a scorer failure or a corrupted scores payload
 must never look identical to "the scorer succeeded and found nothing
 relevant".
 
+`propose_one_step` is a single-call convenience wrapper. For proposing
+candidates across **many** targets against the same `rules` set (e.g. a
+pool-generation run), build one `candidate::CandidateProposalContext`
+instead: `CandidateProposalContext::new(&rules, prepare_bond_index)` builds
+`BondIndexed`'s `TemplateBondIndex` once (it's a pure function of `rules`,
+never of the target), then `ctx.propose_one_step(group_id, target_smiles,
+&config)` reuses it per target instead of rebuilding it for every one.
+`prepare_bond_index` must be `true` for any call that uses
+`ProposalMode::BondIndexed` -- a context built with `false` that is then
+asked to run `BondIndexed` proposal returns `Err`, never a silent fallback
+to `Exhaustive`.
+
 ## Feature schema v1
 
 `extract_features` computes a fixed-length, named feature vector

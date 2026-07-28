@@ -824,6 +824,7 @@ fn select_active_rules<'a>(
     target_mol: &Molecule,
     rules: &'a [RetroRule],
     mode: &ProposalMode,
+    bond_index: Option<&TemplateBondIndex>,
 ) -> anyhow::Result<Vec<ScoredRuleRef<'a>>> {
     match mode {
         ProposalMode::Exhaustive => Ok(rules
@@ -837,7 +838,20 @@ fn select_active_rules<'a>(
             })
             .collect()),
         ProposalMode::BondIndexed { top_k } => {
-            let idx = TemplateBondIndex::build(rules);
+            // Never silently falls back to Exhaustive when no index was
+            // prepared -- see `CandidateProposalContext::new`'s doc. A
+            // caller that wants `BondIndexed` must explicitly request the
+            // index up front (`prepare_bond_index: true`), so a missing
+            // index is a caller bug, not a mode this function can recover
+            // from on its own.
+            let idx = bond_index.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "ProposalMode::BondIndexed requires a prepared TemplateBondIndex -- \
+                     construct CandidateProposalContext::new(rules, true), or use the \
+                     propose_one_step free function (which always prepares one for this \
+                     mode); this never silently falls back to Exhaustive"
+                )
+            })?;
             Ok(idx
                 .retrieve(target_mol, *top_k, rules)
                 .into_iter()
@@ -1211,35 +1225,104 @@ fn merge_into_candidates(
         .collect()
 }
 
-/// Deterministic one-step candidate proposal: parse `target_smiles`, select
-/// active rules per `config.mode`, apply every active rule, then
-/// canonicalize+merge duplicate precursor-set outcomes. See module doc for
-/// the important caveat that different `ProposalMode`s produce different
-/// candidate *sets*, not just different orderings.
-///
-/// `group_id` is stamped onto the returned pool unchanged (see
-/// [`CandidatePool`]'s doc for why it's kept distinct from `target_id`) --
-/// this function never derives or validates it, since a dataset's grouping
-/// scheme is entirely the caller's concern.
+/// Reusable context for repeated one-step candidate proposal against one
+/// fixed `rules` set across many targets. Exists because
+/// `ProposalMode::BondIndexed`'s `TemplateBondIndex` is a pure function of
+/// `rules` alone (never of the target molecule) -- building it fresh for
+/// every target in a multi-target pool-generation run is pure repeated
+/// work. A real pool exporter/driver should construct one
+/// `CandidateProposalContext` per rule set and call
+/// [`Self::propose_one_step`] once per target, instead of calling the
+/// free-standing [`propose_one_step`] function (which is now a
+/// single-call compatibility wrapper around exactly this context) in a
+/// loop.
+pub struct CandidateProposalContext<'a> {
+    rules: &'a [RetroRule],
+    bond_index: Option<TemplateBondIndex>,
+}
+
+impl<'a> CandidateProposalContext<'a> {
+    /// `prepare_bond_index: true` builds a `TemplateBondIndex` once, up
+    /// front, for reuse across every subsequent [`Self::propose_one_step`]
+    /// call -- pass `true` whenever any call against this context will use
+    /// `ProposalMode::BondIndexed`. Pass `false` for `Exhaustive`/
+    /// `ScorerConditioned`-only usage, so those modes never pay for an
+    /// index they'll never use. There is no lazy/implicit index-building
+    /// path: a context built with `false` that is then asked to run
+    /// `BondIndexed` proposal returns `Err` (see
+    /// [`Self::propose_one_step`]), never a silent fallback to
+    /// `Exhaustive`.
+    pub fn new(rules: &'a [RetroRule], prepare_bond_index: bool) -> Self {
+        Self {
+            rules,
+            bond_index: prepare_bond_index.then(|| TemplateBondIndex::build(rules)),
+        }
+    }
+
+    /// Deterministic one-step candidate proposal: parse `target_smiles`,
+    /// select active rules per `config.mode`, apply every active rule, then
+    /// canonicalize+merge duplicate precursor-set outcomes. See the module
+    /// doc for the important caveat that different `ProposalMode`s produce
+    /// different candidate *sets*, not just different orderings.
+    ///
+    /// `group_id` is stamped onto the returned pool unchanged (see
+    /// [`CandidatePool`]'s doc for why it's kept distinct from `target_id`)
+    /// -- this function never derives or validates it, since a dataset's
+    /// grouping scheme is entirely the caller's concern.
+    ///
+    /// Returns `Err` if `config.mode` is `ProposalMode::BondIndexed` but
+    /// this context was constructed with `prepare_bond_index: false` --
+    /// this never silently falls back to `Exhaustive` (a caller that wants
+    /// `BondIndexed` and forgot to request the index gets a hard error
+    /// naming the fix, not a quietly-different candidate set).
+    pub fn propose_one_step(
+        &self,
+        group_id: &str,
+        target_smiles: &str,
+        config: &ProposalConfig,
+    ) -> anyhow::Result<CandidatePool> {
+        let target_mol = mol_from_smiles(target_smiles)?;
+        let canonical_target = to_canonical(&target_mol);
+
+        let active_rules = select_active_rules(
+            &target_mol,
+            self.rules,
+            &config.mode,
+            self.bond_index.as_ref(),
+        )?;
+        let raw = raw_propose(&target_mol, &canonical_target, &active_rules);
+        let candidates = merge_into_candidates(&canonical_target, raw)?;
+
+        Ok(CandidatePool {
+            group_id: group_id.to_string(),
+            target_id: canonical_target.clone(),
+            target_smiles: canonical_target,
+            candidates,
+        })
+    }
+}
+
+/// Single-call compatibility wrapper around [`CandidateProposalContext`]:
+/// builds a context sized for exactly this one call (preparing a
+/// `TemplateBondIndex` iff `config.mode` is `BondIndexed`) and immediately
+/// uses it once. Existing single-target call sites need no changes. A
+/// caller proposing candidates for **many** targets against the same
+/// `rules` set should build one [`CandidateProposalContext`] instead and
+/// call [`CandidateProposalContext::propose_one_step`] per target, so the
+/// (target-independent) `TemplateBondIndex` is built once, not once per
+/// target.
 pub fn propose_one_step(
     group_id: &str,
     target_smiles: &str,
     rules: &[RetroRule],
     config: &ProposalConfig,
 ) -> anyhow::Result<CandidatePool> {
-    let target_mol = mol_from_smiles(target_smiles)?;
-    let canonical_target = to_canonical(&target_mol);
-
-    let active_rules = select_active_rules(&target_mol, rules, &config.mode)?;
-    let raw = raw_propose(&target_mol, &canonical_target, &active_rules);
-    let candidates = merge_into_candidates(&canonical_target, raw)?;
-
-    Ok(CandidatePool {
-        group_id: group_id.to_string(),
-        target_id: canonical_target.clone(),
-        target_smiles: canonical_target,
-        candidates,
-    })
+    let prepare_bond_index = matches!(config.mode, ProposalMode::BondIndexed { .. });
+    CandidateProposalContext::new(rules, prepare_bond_index).propose_one_step(
+        group_id,
+        target_smiles,
+        config,
+    )
 }
 
 #[cfg(test)]
@@ -1282,12 +1365,161 @@ mod tests {
         }
     }
 
+    // ---- CandidateProposalContext (BondIndexed index reuse) ----
+
+    #[test]
+    fn bond_index_is_built_once_and_reused_across_two_targets() {
+        let rules = default_rules();
+        let ctx = CandidateProposalContext::new(&rules, true);
+        let index_ptr_before = ctx
+            .bond_index
+            .as_ref()
+            .map(|idx| idx as *const TemplateBondIndex);
+        assert!(
+            index_ptr_before.is_some(),
+            "prepare_bond_index: true must build the index up front"
+        );
+
+        let config = ProposalConfig {
+            mode: ProposalMode::BondIndexed { top_k: 0 },
+        };
+        let _pool_a = ctx.propose_one_step("g1", "CCO", &config).unwrap();
+        let _pool_b = ctx.propose_one_step("g2", "c1ccccc1", &config).unwrap();
+
+        // `propose_one_step` takes `&self` (never `&mut self`) and
+        // `TemplateBondIndex` has no interior mutability, so this pointer
+        // comparison is a real proof the SAME instance served both calls,
+        // not merely that the two calls happened to produce equal indices.
+        let index_ptr_after = ctx
+            .bond_index
+            .as_ref()
+            .map(|idx| idx as *const TemplateBondIndex);
+        assert_eq!(
+            index_ptr_before, index_ptr_after,
+            "the same TemplateBondIndex instance must persist across both targets"
+        );
+    }
+
+    #[test]
+    fn bond_indexed_mode_without_a_prepared_index_is_a_hard_error() {
+        // Never a silent fallback to Exhaustive -- a caller that requests
+        // BondIndexed on a context built with prepare_bond_index: false
+        // must get an error naming the fix, not a quietly-different
+        // (Exhaustive) candidate set.
+        let rules = default_rules();
+        let ctx = CandidateProposalContext::new(&rules, false);
+        assert!(ctx.bond_index.is_none());
+        let config = ProposalConfig {
+            mode: ProposalMode::BondIndexed { top_k: 0 },
+        };
+        assert!(ctx.propose_one_step("g1", "CCO", &config).is_err());
+    }
+
+    #[test]
+    fn exhaustive_mode_does_not_need_a_bond_index() {
+        let rules = default_rules();
+        let ctx = CandidateProposalContext::new(&rules, false);
+        assert!(ctx.bond_index.is_none());
+        let pool = ctx
+            .propose_one_step("g1", "CCO", &ProposalConfig::default())
+            .unwrap();
+        assert!(!pool.candidates.is_empty());
+    }
+
+    #[test]
+    fn scorer_conditioned_mode_is_unaffected_by_context_index_preparation() {
+        // Whether or not the context happens to have a bond index prepared
+        // must not change ScorerConditioned's own selection logic (it never
+        // reads `bond_index` at all).
+        let mut rules = default_rules();
+        let n_handcrafted = rules.len();
+        rules.push(extracted_rule(0, "[C:1][C:2]>>[C:1].[C:2]", 1.0));
+        let config = ProposalConfig {
+            mode: ProposalMode::ScorerConditioned {
+                input: scorer_input(vec![(n_handcrafted, 0.9, 0)], n_handcrafted),
+                top_k: 1,
+            },
+        };
+
+        let without_index = CandidateProposalContext::new(&rules, false)
+            .propose_one_step("g1", "CCCC", &config)
+            .unwrap();
+        let with_index = CandidateProposalContext::new(&rules, true)
+            .propose_one_step("g1", "CCCC", &config)
+            .unwrap();
+
+        let mut without_ids: Vec<&str> = without_index
+            .candidates
+            .iter()
+            .map(|c| c.candidate_id.as_str())
+            .collect();
+        let mut with_ids: Vec<&str> = with_index
+            .candidates
+            .iter()
+            .map(|c| c.candidate_id.as_str())
+            .collect();
+        without_ids.sort();
+        with_ids.sort();
+        assert_eq!(without_ids, with_ids);
+    }
+
+    fn assert_context_api_matches_legacy_api(
+        rules: &[RetroRule],
+        target: &str,
+        config: &ProposalConfig,
+    ) {
+        let legacy_pool = propose_one_step("g1", target, rules, config).unwrap();
+        let context_pool = CandidateProposalContext::new(rules, true)
+            .propose_one_step("g1", target, config)
+            .unwrap();
+
+        let summarize = |pool: &CandidatePool| {
+            let mut summary: Vec<(String, Vec<String>)> = pool
+                .candidates
+                .iter()
+                .map(|c| {
+                    let mut rule_names: Vec<String> =
+                        c.sources.iter().map(|s| s.rule_name.clone()).collect();
+                    rule_names.sort();
+                    (c.candidate_id.clone(), rule_names)
+                })
+                .collect();
+            summary.sort_by(|a, b| a.0.cmp(&b.0));
+            summary
+        };
+        assert_eq!(
+            summarize(&legacy_pool),
+            summarize(&context_pool),
+            "the legacy single-call API and the context-reuse API must produce \
+             identical candidate IDs and source provenance for the same input"
+        );
+    }
+
+    #[test]
+    fn context_api_matches_legacy_api_for_bond_indexed_top_k_zero() {
+        let rules = default_rules();
+        let config = ProposalConfig {
+            mode: ProposalMode::BondIndexed { top_k: 0 },
+        };
+        assert_context_api_matches_legacy_api(&rules, "CC(=O)c1ccccc1", &config);
+    }
+
+    #[test]
+    fn context_api_matches_legacy_api_for_bond_indexed_top_k_positive() {
+        let rules = default_rules();
+        let config = ProposalConfig {
+            mode: ProposalMode::BondIndexed { top_k: 2 },
+        };
+        assert_context_api_matches_legacy_api(&rules, "CC(=O)c1ccccc1", &config);
+    }
+
     #[test]
     fn exhaustive_mode_tries_all_rules() {
         let rules = default_rules();
         let target = "CC(=O)c1ccccc1";
         let target_mol = mol_from_smiles(target).unwrap();
-        let active = select_active_rules(&target_mol, &rules, &ProposalMode::Exhaustive).unwrap();
+        let active =
+            select_active_rules(&target_mol, &rules, &ProposalMode::Exhaustive, None).unwrap();
         assert_eq!(active.len(), rules.len());
         for r in &active {
             assert_eq!(r.upstream_score_status, UpstreamScoreStatus::NotApplicable);
@@ -1315,7 +1547,7 @@ mod tests {
         };
         let target = "CCCC";
         let target_mol = mol_from_smiles(target).unwrap();
-        let active = select_active_rules(&target_mol, &rules, &mode).unwrap();
+        let active = select_active_rules(&target_mol, &rules, &mode, None).unwrap();
 
         // All hand-crafted rules + exactly 1 file template.
         assert_eq!(active.len(), n_handcrafted + 1);
@@ -1343,7 +1575,7 @@ mod tests {
             top_k: 0, // no file templates selected at all
         };
         let target_mol = mol_from_smiles("CCCC").unwrap();
-        let active = select_active_rules(&target_mol, &rules, &mode_zero_k).unwrap();
+        let active = select_active_rules(&target_mol, &rules, &mode_zero_k, None).unwrap();
         assert_eq!(
             active.len(),
             n_handcrafted,
@@ -1369,7 +1601,7 @@ mod tests {
             top_k: 1,
         };
         let target_mol = mol_from_smiles("CCCC").unwrap();
-        let active = select_active_rules(&target_mol, &rules, &mode).unwrap();
+        let active = select_active_rules(&target_mol, &rules, &mode, None).unwrap();
         assert_eq!(
             active.len(),
             2,
@@ -1395,7 +1627,7 @@ mod tests {
         let target_mol = mol_from_smiles(target).unwrap();
 
         let exhaustive =
-            select_active_rules(&target_mol, &rules, &ProposalMode::Exhaustive).unwrap();
+            select_active_rules(&target_mol, &rules, &ProposalMode::Exhaustive, None).unwrap();
         let conditioned = select_active_rules(
             &target_mol,
             &rules,
@@ -1406,6 +1638,7 @@ mod tests {
                 ),
                 top_k: 1,
             },
+            None,
         )
         .unwrap();
         assert!(
@@ -1418,7 +1651,8 @@ mod tests {
     fn original_rank_matches_within_mode_rank() {
         let rules = default_rules();
         let target_mol = mol_from_smiles("CC(=O)c1ccccc1").unwrap();
-        let active = select_active_rules(&target_mol, &rules, &ProposalMode::Exhaustive).unwrap();
+        let active =
+            select_active_rules(&target_mol, &rules, &ProposalMode::Exhaustive, None).unwrap();
         for (i, r) in active.iter().enumerate() {
             assert_eq!(r.source_rank, i);
         }
@@ -1431,7 +1665,8 @@ mod tests {
         // value in upstream_score -- upstream_score stays None.
         let rules = default_rules();
         let target_mol = mol_from_smiles("CC(=O)c1ccccc1").unwrap();
-        let active = select_active_rules(&target_mol, &rules, &ProposalMode::Exhaustive).unwrap();
+        let active =
+            select_active_rules(&target_mol, &rules, &ProposalMode::Exhaustive, None).unwrap();
         for r in &active {
             assert!(r.upstream_score.is_none());
             assert_eq!(r.upstream_score_status, UpstreamScoreStatus::NotApplicable);
@@ -1454,7 +1689,7 @@ mod tests {
             top_k: 10,
         };
         let target_mol = mol_from_smiles("CCCC").unwrap();
-        let active = select_active_rules(&target_mol, &rules, &mode).unwrap();
+        let active = select_active_rules(&target_mol, &rules, &mode, None).unwrap();
 
         assert_eq!(
             active.len(),
@@ -1494,7 +1729,7 @@ mod tests {
             };
             let target_mol = mol_from_smiles("CCCC").unwrap();
             assert!(
-                select_active_rules(&target_mol, &rules, &mode).is_err(),
+                select_active_rules(&target_mol, &rules, &mode, None).is_err(),
                 "status {status:?} must fail closed, not silently succeed with zero file templates"
             );
         }
@@ -1509,7 +1744,7 @@ mod tests {
             top_k: 10,
         };
         let target_mol = mol_from_smiles("CCCC").unwrap();
-        assert!(select_active_rules(&target_mol, &rules, &mode).is_err());
+        assert!(select_active_rules(&target_mol, &rules, &mode, None).is_err());
     }
 
     #[test]
@@ -1523,7 +1758,7 @@ mod tests {
         };
         let target_mol = mol_from_smiles("CCCC").unwrap();
         assert!(
-            select_active_rules(&target_mol, &rules, &mode).is_err(),
+            select_active_rules(&target_mol, &rules, &mode, None).is_err(),
             "a scored rule_index inside [0, rules_offset) must be rejected"
         );
     }
@@ -1541,7 +1776,7 @@ mod tests {
             top_k: 10,
         };
         let target_mol = mol_from_smiles("CCCC").unwrap();
-        assert!(select_active_rules(&target_mol, &rules, &mode).is_err());
+        assert!(select_active_rules(&target_mol, &rules, &mode, None).is_err());
     }
 
     #[test]
@@ -1558,7 +1793,7 @@ mod tests {
             top_k: 10,
         };
         let target_mol = mol_from_smiles("CCCC").unwrap();
-        assert!(select_active_rules(&target_mol, &rules, &mode).is_err());
+        assert!(select_active_rules(&target_mol, &rules, &mode, None).is_err());
     }
 
     #[test]
@@ -1573,7 +1808,7 @@ mod tests {
             };
             let target_mol = mol_from_smiles("CCCC").unwrap();
             assert!(
-                select_active_rules(&target_mol, &rules, &mode).is_err(),
+                select_active_rules(&target_mol, &rules, &mode, None).is_err(),
                 "raw_logit {bad} must be rejected"
             );
         }
@@ -1593,7 +1828,7 @@ mod tests {
             top_k: 1,
         };
         let target_mol = mol_from_smiles("CCCC").unwrap();
-        let active = select_active_rules(&target_mol, &rules, &mode).unwrap();
+        let active = select_active_rules(&target_mol, &rules, &mode, None).unwrap();
         let scored: Vec<&ScoredRuleRef> = active
             .iter()
             .filter(|r| r.upstream_score_status == UpstreamScoreStatus::Available)
@@ -1635,7 +1870,7 @@ mod tests {
         }
 
         let active_rules =
-            select_active_rules(&target_mol, &rules, &ProposalMode::Exhaustive).unwrap();
+            select_active_rules(&target_mol, &rules, &ProposalMode::Exhaustive, None).unwrap();
         let got = raw_propose(&target_mol, &canon_target, &active_rules);
         let mut got_pairs: Vec<(String, Vec<String>)> = got
             .into_iter()

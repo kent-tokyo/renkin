@@ -29,8 +29,7 @@
 //! select from"; it does NOT by itself demonstrate that hooking the
 //! reranker into the current NN-scorer-gated runtime search would reproduce
 //! that improvement -- that requires a separate `ScorerConditioned`
-//! evaluation (see the offline-evaluation docs, added alongside the
-//! training pipeline).
+//! evaluation (see `docs/guides/reranker-candidate-pools.md`).
 //!
 //! `find_routes` builds its own per-application step costs directly from
 //! [`RawCandidate`] (unmerged, one entry per rule application) and never

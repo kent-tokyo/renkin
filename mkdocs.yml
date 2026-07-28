@@ -66,6 +66,7 @@ nav:
     - Rust Retrosynthesis: guides/rust-retrosynthesis.md
     - Forward Reaction Prediction: guides/forward-prediction.md
     - Reaction Evidence Metadata: guides/reaction-evidence.md
+    - Candidate Pools and Reranker Training: guides/reranker-candidate-pools.md
   - API Reference:
     - Rust API: api/rust.md
     - Python API: api/python.md

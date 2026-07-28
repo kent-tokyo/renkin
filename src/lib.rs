@@ -1,8 +1,10 @@
 #![forbid(unsafe_code)]
 
+pub mod candidate;
 pub mod chem_env;
 pub mod display;
 pub mod evidence;
+pub mod pool_export;
 pub mod score;
 pub mod scorer;
 pub mod search;

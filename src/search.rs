@@ -3,15 +3,11 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use chematic::chem::{molecular_weight, sa_score};
-#[cfg(not(target_arch = "wasm32"))]
-use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
 use serde::Serialize;
 use smallvec::{SmallVec, smallvec};
 
-use crate::chem_env::{
-    ChemEnv, PrecursorMol, RetroRule, TemplateBondIndex, apply_retro, mol_from_smiles, to_canonical,
-};
+use crate::chem_env::{ChemEnv, RetroRule, TemplateBondIndex, mol_from_smiles, to_canonical};
 use crate::evidence::{EvidenceScope, MetadataSource, StepEvidence, TemplateMetadataEntry};
 use crate::score::{step_cost, template_bonus};
 
@@ -199,7 +195,7 @@ impl Ord for Node {
 /// Build a bitmask of atomic numbers present in a canonical SMILES string.
 /// Conservative: may over-report (false positives) but never under-reports (no false negatives).
 /// Used to skip rules whose required elements are absent from the target molecule.
-fn elem_mask_from_smiles(smiles: &str) -> u64 {
+pub(crate) fn elem_mask_from_smiles(smiles: &str) -> u64 {
     const TWO_CHAR: &[(&str, u64)] = &[
         ("Cl", 17),
         ("Br", 35),
@@ -390,7 +386,7 @@ fn reaction_family_for_rule(rule: &str) -> Option<&'static str> {
 /// extracted. (`RetroRule::template_id`'s `rule:`/`smirks-sha256:` prefix is
 /// also a reliable discriminator now, but this function's name-prefix check
 /// is kept as-is to avoid changing existing tagging behavior.)
-fn is_extracted_template(rule: &str) -> bool {
+pub(crate) fn is_extracted_template(rule: &str) -> bool {
     rule.starts_with("extracted_")
 }
 
@@ -814,8 +810,6 @@ pub fn find_routes(
             continue;
         };
 
-        let target_elem_mask: u64 = elem_mask_from_smiles(&target_smi);
-
         // Opt-D: look up the memoized expansion for this target molecule.
         // On cache miss: run apply_retro in parallel (native) / sequential (WASM),
         // filter invalid results, precompute net step cost, and store.
@@ -848,68 +842,47 @@ pub fn find_routes(
                 &ranked_rules
             };
 
-            #[cfg(not(target_arch = "wasm32"))]
-            let raw: Vec<(String, String, f64, Vec<PrecursorMol>)> = active_rules
-                .par_iter()
-                .copied()
-                .filter(|rule| {
-                    rule.required_elements == 0
-                        || (target_elem_mask & rule.required_elements == rule.required_elements)
-                })
-                .flat_map(|rule| {
-                    apply_retro(&target_mol, rule)
-                        .into_iter()
-                        .map(|precs| {
-                            (
-                                rule.name.to_string(),
-                                rule.template_id.clone(),
-                                rule.weight,
-                                precs,
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .collect();
-            #[cfg(target_arch = "wasm32")]
-            let raw: Vec<(String, String, f64, Vec<PrecursorMol>)> = active_rules
+            // Shared with the standalone `propose_one_step` candidate-pool API
+            // (`crate::candidate::raw_propose`) so route search and offline
+            // candidate generation apply the exact same rule-application
+            // logic -- this must stay a call, not a re-inlined copy.
+            // find_routes' own active-rule selection (above) is *not* a
+            // ProposalMode -- it has its own bond_idx/nn_rank/ranked_rules
+            // fallback chain, including per-node NN re-ranking that
+            // ProposalMode::ScorerConditioned deliberately does not
+            // reproduce (see candidate module doc) -- so these scores are
+            // marked NotApplicable rather than reusing UpstreamScoreStatus's
+            // Available variant, which is reserved for candidate-pool
+            // generation going through an explicit ProposalMode.
+            let scored_active_rules: Vec<crate::candidate::ScoredRuleRef<'_>> = active_rules
                 .iter()
-                .copied()
-                .filter(|rule| {
-                    rule.required_elements == 0
-                        || (target_elem_mask & rule.required_elements == rule.required_elements)
-                })
-                .flat_map(|rule| {
-                    apply_retro(&target_mol, rule)
-                        .into_iter()
-                        .map(|precs| {
-                            (
-                                rule.name.to_string(),
-                                rule.template_id.clone(),
-                                rule.weight,
-                                precs,
-                            )
-                        })
-                        .collect::<Vec<_>>()
+                .enumerate()
+                .map(|(rank, &rule)| crate::candidate::ScoredRuleRef {
+                    rule,
+                    source_rank: rank,
+                    upstream_score: None,
+                    upstream_score_status: crate::candidate::UpstreamScoreStatus::NotApplicable,
                 })
                 .collect();
+            let raw_proposals =
+                crate::candidate::raw_propose(&target_mol, &target_smi, &scored_active_rules);
 
-            let entries: Vec<RetroEntry> = raw
+            let entries: Vec<RetroEntry> = raw_proposals
                 .into_iter()
-                .filter(|(_, _, _, precs)| {
-                    !precs.is_empty() && !precs.iter().any(|p| p.smiles == target_smi)
-                })
-                .map(|(rule_name, template_id, rule_weight, precs)| {
+                .map(|p| {
                     let bonus = if let Some(ref prior) = config.reaction_prior {
-                        prior.prior(&rule_name, &target_smi)
+                        prior.prior(&p.rule_name, &target_smi)
                     } else {
-                        template_bonus(rule_weight, max_rule_weight)
+                        template_bonus(p.rule_weight, max_rule_weight)
                     };
                     let step_c =
-                        step_cost(&precs.iter().map(|p| &p.mol).collect::<Vec<_>>()) - bonus;
-                    let smiles_list: Vec<String> = precs.iter().map(|p| p.smiles.clone()).collect();
+                        step_cost(&p.precursors.iter().map(|pm| &pm.mol).collect::<Vec<_>>())
+                            - bonus;
+                    let smiles_list: Vec<String> =
+                        p.precursors.iter().map(|pm| pm.smiles.clone()).collect();
                     RetroEntry {
-                        rule_name,
-                        template_id,
+                        rule_name: p.rule_name,
+                        template_id: p.template_id,
                         step_cost: step_c,
                         precursor_smiles: smiles_list,
                     }
@@ -1113,6 +1086,7 @@ pub fn find_routes(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chem_env::apply_retro;
     use crate::chem_env::{ChemEnv, default_rules};
 
     fn aspirin_env() -> ChemEnv {

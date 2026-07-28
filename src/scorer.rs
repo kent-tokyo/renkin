@@ -76,6 +76,80 @@ pub mod nn {
         pub status: TemplateScoreStatus,
     }
 
+    /// ONNX-independent validation and ranking of raw scorer logits --
+    /// factored out of `TemplateScorer::score_templates` so this logic is
+    /// directly unit-testable without a real ONNX model (see this module's
+    /// `#[cfg(test)] mod tests`).
+    ///
+    /// `rules_offset` is deliberately NOT clamped to `n_rules`: a caller
+    /// passing a `rules_offset` larger than the actual rule count is a
+    /// config bug, and clamping it would make that bug indistinguishable
+    /// from a real zero-file-template rule set (`NoFileTemplates`) --
+    /// instead it's its own `OutputShapeMismatch` case.
+    ///
+    /// Rules: `n_file = n_rules - rules_offset`; `n_file == 0` ->
+    /// `NoFileTemplates`; `raw_scores.len() != n_file` ->
+    /// `OutputShapeMismatch`; any non-finite value -> `NonFiniteOutput`.
+    /// Otherwise, ranks by `raw_logit` descending, tie-breaking exact ties
+    /// by ascending absolute `rule_index` (`rules_offset + local index`);
+    /// `rank` is a 0-based dense rank over the scored (local) indices. The
+    /// returned `Vec<TemplateScore>` is stored by local (file-template)
+    /// index, not by rank -- `scores[i]` is the `TemplateScore` for the
+    /// `i`-th file template, matching `score_templates`'s pre-existing
+    /// contract.
+    fn validate_and_rank_logits(
+        raw_scores: &[f32],
+        rules_offset: usize,
+        n_rules: usize,
+    ) -> TemplateScoreOutput {
+        let empty = |status: TemplateScoreStatus| TemplateScoreOutput {
+            scores: Vec::new(),
+            status,
+        };
+
+        if rules_offset > n_rules {
+            return empty(TemplateScoreStatus::OutputShapeMismatch);
+        }
+        let n_file = n_rules - rules_offset;
+        if n_file == 0 {
+            return empty(TemplateScoreStatus::NoFileTemplates);
+        }
+        if raw_scores.len() != n_file {
+            return empty(TemplateScoreStatus::OutputShapeMismatch);
+        }
+        if raw_scores.iter().any(|v| !v.is_finite()) {
+            return empty(TemplateScoreStatus::NonFiniteOutput);
+        }
+
+        let mut order: Vec<usize> = (0..raw_scores.len()).collect();
+        order.sort_by(|&a, &b| {
+            raw_scores[b]
+                .partial_cmp(&raw_scores[a])
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.cmp(&b))
+        });
+        let mut scores = vec![
+            TemplateScore {
+                rule_index: 0,
+                raw_logit: 0.0,
+                rank: 0,
+            };
+            raw_scores.len()
+        ];
+        for (rank, i) in order.into_iter().enumerate() {
+            scores[i] = TemplateScore {
+                rule_index: rules_offset + i,
+                raw_logit: raw_scores[i],
+                rank,
+            };
+        }
+
+        TemplateScoreOutput {
+            scores,
+            status: TemplateScoreStatus::Available,
+        }
+    }
+
     /// Template relevance scorer backed by an ONNX model (Pure Rust inference).
     ///
     /// The model takes a 2048-bit Morgan fingerprint and outputs logits over
@@ -129,17 +203,18 @@ pub mod nn {
         /// crafted rules ([0, rules_offset)) are never scored (the model is
         /// only trained over the file-template distribution), so they never
         /// appear in `scores` regardless of status.
+        ///
+        /// Thin by design: (1) parse the target, (2) fingerprint it,
+        /// (3) run ONNX inference, (4) extract the first output as
+        /// `Vec<f32>`, (5) hand off to [`validate_and_rank_logits`] for
+        /// every ONNX-independent validation/ranking rule -- that split
+        /// lets the ranking logic be unit-tested directly, without a real
+        /// ONNX model.
         pub fn score_templates(&self, target_smiles: &str, n_rules: usize) -> TemplateScoreOutput {
             let empty = |status: TemplateScoreStatus| TemplateScoreOutput {
                 scores: Vec::new(),
                 status,
             };
-
-            let offset = self.rules_offset.min(n_rules);
-            let n_file = n_rules - offset;
-            if n_file == 0 {
-                return empty(TemplateScoreStatus::NoFileTemplates);
-            }
 
             let Ok(mol) = mol_from_smiles(target_smiles) else {
                 return empty(TemplateScoreStatus::TargetParseFailed);
@@ -164,40 +239,8 @@ pub mod nn {
                 Ok(v) => v.iter().copied().collect(),
                 Err(_) => return empty(TemplateScoreStatus::OutputShapeMismatch),
             };
-            if raw_scores.len() != n_file {
-                return empty(TemplateScoreStatus::OutputShapeMismatch);
-            }
-            if raw_scores.iter().any(|v| !v.is_finite()) {
-                return empty(TemplateScoreStatus::NonFiniteOutput);
-            }
 
-            let mut order: Vec<usize> = (0..raw_scores.len()).collect();
-            order.sort_by(|&a, &b| {
-                raw_scores[b]
-                    .partial_cmp(&raw_scores[a])
-                    .unwrap_or(std::cmp::Ordering::Equal)
-                    .then_with(|| a.cmp(&b))
-            });
-            let mut scores = vec![
-                TemplateScore {
-                    rule_index: 0,
-                    raw_logit: 0.0,
-                    rank: 0,
-                };
-                raw_scores.len()
-            ];
-            for (rank, i) in order.into_iter().enumerate() {
-                scores[i] = TemplateScore {
-                    rule_index: offset + i,
-                    raw_logit: raw_scores[i],
-                    rank,
-                };
-            }
-
-            TemplateScoreOutput {
-                scores,
-                status: TemplateScoreStatus::Available,
-            }
+            validate_and_rank_logits(&raw_scores, self.rules_offset, n_rules)
         }
 
         /// Return indices into `rules` (length `n_rules`) of the rules to try.
@@ -248,6 +291,124 @@ pub mod nn {
                 .into_iter()
                 .filter_map(|i| rules.get(i))
                 .collect()
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        fn score_at(output: &TemplateScoreOutput, rule_index: usize) -> TemplateScore {
+            output
+                .scores
+                .iter()
+                .find(|s| s.rule_index == rule_index)
+                .copied()
+                .unwrap_or_else(|| panic!("no TemplateScore for rule_index {rule_index}"))
+        }
+
+        #[test]
+        fn zero_file_templates() {
+            let out = validate_and_rank_logits(&[], 5, 5);
+            assert_eq!(out.status, TemplateScoreStatus::NoFileTemplates);
+            assert!(out.scores.is_empty());
+        }
+
+        #[test]
+        fn rules_offset_greater_than_n_rules() {
+            let out = validate_and_rank_logits(&[], 6, 5);
+            assert_eq!(out.status, TemplateScoreStatus::OutputShapeMismatch);
+            assert!(out.scores.is_empty());
+        }
+
+        #[test]
+        fn empty_output_when_one_file_template_expected() {
+            let out = validate_and_rank_logits(&[], 0, 1);
+            assert_eq!(out.status, TemplateScoreStatus::OutputShapeMismatch);
+        }
+
+        #[test]
+        fn output_length_too_short() {
+            let out = validate_and_rank_logits(&[0.1, 0.2], 0, 3);
+            assert_eq!(out.status, TemplateScoreStatus::OutputShapeMismatch);
+        }
+
+        #[test]
+        fn output_length_too_long() {
+            let out = validate_and_rank_logits(&[0.1, 0.2, 0.3, 0.4], 0, 3);
+            assert_eq!(out.status, TemplateScoreStatus::OutputShapeMismatch);
+        }
+
+        #[test]
+        fn rejects_nan() {
+            let out = validate_and_rank_logits(&[0.1, f32::NAN], 0, 2);
+            assert_eq!(out.status, TemplateScoreStatus::NonFiniteOutput);
+            assert!(out.scores.is_empty());
+        }
+
+        #[test]
+        fn rejects_positive_infinity() {
+            let out = validate_and_rank_logits(&[0.1, f32::INFINITY], 0, 2);
+            assert_eq!(out.status, TemplateScoreStatus::NonFiniteOutput);
+        }
+
+        #[test]
+        fn rejects_negative_infinity() {
+            let out = validate_and_rank_logits(&[0.1, f32::NEG_INFINITY], 0, 2);
+            assert_eq!(out.status, TemplateScoreStatus::NonFiniteOutput);
+        }
+
+        #[test]
+        fn finite_scores_rank_descending() {
+            let out = validate_and_rank_logits(&[0.1, 0.9, 0.5], 0, 3);
+            assert_eq!(out.status, TemplateScoreStatus::Available);
+            assert_eq!(score_at(&out, 1).rank, 0, "0.9 is the highest logit");
+            assert_eq!(score_at(&out, 2).rank, 1, "0.5 is the middle logit");
+            assert_eq!(score_at(&out, 0).rank, 2, "0.1 is the lowest logit");
+        }
+
+        #[test]
+        fn exact_ties_use_absolute_rule_index_ascending() {
+            // rule_index 11 and 12 (local indices 1 and 2, both offset by
+            // rules_offset=10) tie at raw_logit 0.9 -- the lower absolute
+            // rule_index (11) must rank ahead of the higher one (12).
+            let out = validate_and_rank_logits(&[0.5, 0.9, 0.9, -1.0], 10, 14);
+            assert_eq!(out.status, TemplateScoreStatus::Available);
+            assert_eq!(score_at(&out, 11).rank, 0);
+            assert_eq!(score_at(&out, 12).rank, 1);
+            assert_eq!(score_at(&out, 10).rank, 2);
+            assert_eq!(score_at(&out, 13).rank, 3);
+        }
+
+        #[test]
+        fn rules_offset_is_applied_to_rule_index() {
+            let out = validate_and_rank_logits(&[0.1, 0.2], 100, 102);
+            assert_eq!(out.status, TemplateScoreStatus::Available);
+            let rule_indices: std::collections::HashSet<usize> =
+                out.scores.iter().map(|s| s.rule_index).collect();
+            assert_eq!(rule_indices, std::collections::HashSet::from([100, 101]));
+        }
+
+        #[test]
+        fn all_equal_logits_are_deterministic() {
+            let out = validate_and_rank_logits(&[0.3, 0.3, 0.3], 0, 3);
+            assert_eq!(out.status, TemplateScoreStatus::Available);
+            assert_eq!(score_at(&out, 0).rank, 0);
+            assert_eq!(score_at(&out, 1).rank, 1);
+            assert_eq!(score_at(&out, 2).rank, 2);
+        }
+
+        #[test]
+        fn repeated_calls_are_identical() {
+            let raw_scores = [0.5, 0.9, 0.9, -1.0];
+            let a = validate_and_rank_logits(&raw_scores, 10, 14);
+            let b = validate_and_rank_logits(&raw_scores, 10, 14);
+            for rule_index in [10, 11, 12, 13] {
+                let sa = score_at(&a, rule_index);
+                let sb = score_at(&b, rule_index);
+                assert_eq!(sa.rank, sb.rank);
+                assert_eq!(sa.raw_logit, sb.raw_logit);
+            }
         }
     }
 }

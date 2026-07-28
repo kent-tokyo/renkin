@@ -418,6 +418,8 @@ renkin/                          ← Cargo workspace 根目录
 │   ├── score.rs                 # SA Score 启发函数 + 步骤代价
 │   ├── search.rs                # A* / AND-OR 树搜索引擎 + 束剪枝
 │   ├── scorer.rs                # Phase B：tract-onnx 神经网络模板评分器
+│   ├── candidate.rs             # 一步候选提案（离线重排序基础设施，尚未接入搜索）
+│   ├── pool_export.rs           # 候选池 JSONL + 可复现性 manifest 导出
 │   ├── python.rs                # PyO3 绑定（--features python）
 │   └── wasm.rs                  # wasm-bindgen 绑定（cfg = wasm32）
 ├── crates/                      ← 同级 crate
@@ -430,7 +432,9 @@ renkin/                          ← Cargo workspace 根目录
 │   └── bench_chunks/                    # USPTO-50k 按分块的结果
 ├── scripts/
 │   ├── extract_templates.py         # rdchiral 模板提取流水线
-│   └── run_benchmark_chunks.sh      # 可续跑的分块基准测试脚本
+│   ├── run_benchmark_chunks.sh      # 可续跑的分块基准测试脚本
+│   ├── train_reranker.py            # 候选重排序器训练/评估（开发工具，仅限离线 — 参见 docs/guides/reranker-candidate-pools.md）
+│   └── tests/                       # train_reranker.py 的 unittest 套件
 ├── docs/                # MkDocs 源文件 → kent-tokyo.github.io/renkin/
 └── mkdocs.yml
 ```
@@ -441,6 +445,8 @@ renkin/                          ← Cargo workspace 根目录
 
 ### 近期完成
 
+- [x] `renkin-forward` CLI 强化 — 带版本号的 `ForwardPredictionReport`、确定性候选ID/合并/来源信息、与 reactant 顺序无关的匹配（最多 3 个反应物）、严格的 CLI/route-JSON 校验
+- [x] 受 RETROSPECT 启发的离线候选重排序基础设施 — proposal/selection 分离、feature schema v1、manifest v2、leakage-safe 的 train/val/test 划分、7 个确定性 baseline arm + 训练模型 arm、paired bootstrap + 离线门控工具（[#59](https://github.com/kent-tokyo/renkin/pull/59)；**目前仅为基础设施 — 尚无训练好的模型或准确率结果，也尚未接入 route search**）
 - [x] 稳定的 `template_id`（`rule:<name>` / `smirks-sha256:<hex>`）+ `--template-metadata` evidence 附加文件 + `renkin template ids`（[#41](https://github.com/kent-tokyo/renkin/issues/41) phase 1）
 - [x] 针对特定底物的 `examples`（`schema_version: 2`）——按每个步骤解析为「精确底物匹配」或「同模板但底物不同」，在 `--format explain` 中展示，并在 JSON 中以 `match_kind` 字段体现（[#41](https://github.com/kent-tokyo/renkin/issues/41) phase 2）
 - [x] `renkin-bench cascade` — 多阶段搜索（先用较快的默认参数搜索，未解决的困难目标再用更深的参数重跑）；只有未解决的目标才会进入后续阶段。USPTO-50k 上 **78.0% → 95.9%**
@@ -504,18 +510,9 @@ renkin/                          ← Cargo workspace 根目录
 
 ## 引用
 
-若您在学术工作中使用 RENKIN，请引用：
-
-```bibtex
-@software{renkin2026,
-  author    = {kent-tokyo},
-  title     = {{RENKIN}: Retrosynthesis Engine for Knowledge-Informed Navigation},
-  year      = {2026},
-  url       = {https://github.com/kent-tokyo/renkin/releases/tag/v0.18.0},
-  version   = {0.18.0},
-  license   = {MIT}
-}
-```
+若您在学术工作中使用 RENKIN，请引用 [`CITATION.cff`](CITATION.cff)
+（正式的、随版本更新的引用记录）。GitHub 的 "Cite this repository" 按钮
+（位于仓库页面顶部）会直接读取该文件，并支持导出 APA 或 BibTeX 格式。
 
 ---
 

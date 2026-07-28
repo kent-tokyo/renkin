@@ -345,6 +345,7 @@ for the full acceptance criteria and licensing split.
 | **Constraint DSL** | `--constraints constraints.json` — JSON-driven synthesis planning: element filters, step limits, confidence thresholds, preferred reaction families; enables LLM → RENKIN pipeline |
 | **Output formats** | `--format json` · `tree` · `mermaid` · `explain` (human-readable per-route analysis) · `compare` (side-by-side table) · `compare-json` · `pareto` |
 | **Failure diagnostics** | Zero-route JSON output includes `diagnostics` block with `likely_causes` and `suggestions` |
+| **Standalone forward prediction** | `renkin-forward predict --reactants <SMILES>...` enumerates and ranks forward reaction product candidates from reversed SMIRKS templates, independent of route search — see the [Forward Prediction guide](docs/guides/forward-prediction.md) |
 | **Forward validation** | `renkin-forward validate` verifies each step by applying templates forward; accepts `--route-json` or stdin |
 | **Plausibility report** | `renkin-bench --plausibility` — forward-validates best routes and reports composite plausibility score |
 | **PaRoutes benchmark** | `renkin-bench --input-format paroutes` for multi-step ground-truth evaluation with `depth_delta` and `route_diversity` |
@@ -376,6 +377,9 @@ for the full acceptance criteria and licensing split.
 ```bash
 # Route cost scoring with commercial prices
 renkin -t "Cc1ccc(-c2ccccc2)cc1" --bb-prices data/prices.csv --format json
+
+# Standalone forward prediction — no route search involved
+renkin-forward predict --reactants "Oc1ccccc1C(=O)O" "CCO" --report --max-results 5
 
 # Forward validation — pipe find_routes output directly
 renkin -t "CC(=O)Oc1ccccc1C(=O)O" --format json | renkin-forward validate
@@ -578,6 +582,8 @@ renkin/                          ← Cargo workspace root
 │   ├── score.rs                 # SA Score heuristic + step cost
 │   ├── search.rs                # A* / AND-OR tree engine + beam pruning
 │   ├── scorer.rs                # Phase B: tract-onnx NN template scorer
+│   ├── candidate.rs             # one-step candidate proposal (offline reranking foundation, not wired into search)
+│   ├── pool_export.rs           # candidate-pool JSONL + reproducibility-manifest export
 │   ├── python.rs                # PyO3 bindings (--features python)
 │   └── wasm.rs                  # wasm-bindgen bindings (cfg = wasm32)
 ├── crates/                      ← sibling crates
@@ -590,7 +596,9 @@ renkin/                          ← Cargo workspace root
 │   └── bench_chunks/                    # USPTO-50k per-chunk results
 ├── scripts/
 │   ├── extract_templates.py         # rdchiral template extraction pipeline
-│   └── run_benchmark_chunks.sh      # resumable chunked benchmark runner
+│   ├── run_benchmark_chunks.sh      # resumable chunked benchmark runner
+│   ├── train_reranker.py            # candidate reranker training/evaluation (dev tool, offline only — see docs/guides/reranker-candidate-pools.md)
+│   └── tests/                       # unittest suite for train_reranker.py
 ├── docs/                # MkDocs source → kent-tokyo.github.io/renkin/
 └── mkdocs.yml
 ```
@@ -601,6 +609,8 @@ renkin/                          ← Cargo workspace root
 
 ### Recently shipped
 
+- [x] `renkin-forward` CLI hardening — versioned `ForwardPredictionReport`, deterministic candidate IDs/merge/provenance, reactant-order-independent matching (up to 3 reactants), strict CLI/route-JSON validation
+- [x] RETROSPECT-inspired offline candidate-reranking foundation — candidate proposal/selection separation, feature schema v1, manifest v2, leakage-safe train/val/test splitting, 7 deterministic baseline arms + trained-ranker arm, paired bootstrap + offline gate tooling ([#59](https://github.com/kent-tokyo/renkin/pull/59); **foundation only — no trained model or accuracy result yet, not wired into route search**)
 - [x] Stable `template_id` (`rule:<name>` / `smirks-sha256:<hex>`) + `--template-metadata` evidence sidecar + `renkin template ids` ([#41](https://github.com/kent-tokyo/renkin/issues/41) phase 1)
 - [x] Substrate-specific `examples` (`schema_version: 2`) — per-step exact-substrate vs. same-template-different-substrate resolution, surfaced in `--format explain` and as `match_kind` in JSON ([#41](https://github.com/kent-tokyo/renkin/issues/41) phase 2)
 - [x] Deterministic ORD (Open Reaction Database) evidence import — offline `renkin evidence match` exact-set batch template matcher + `scripts/ord_evidence_audit.py` audit/converter into `schema_version: 2` sidecars; no network access, no fuzzy matching, ambiguous/unprovenanced records excluded and counted in an audit report rather than guessed at ([#41](https://github.com/kent-tokyo/renkin/issues/41) phase 3A)
@@ -665,18 +675,10 @@ renkin/                          ← Cargo workspace root
 
 ## Citation
 
-If you use RENKIN in academic work, please cite:
-
-```bibtex
-@software{renkin2026,
-  author    = {kent-tokyo},
-  title     = {{RENKIN}: Retrosynthesis Engine for Knowledge-Informed Navigation},
-  year      = {2026},
-  url       = {https://github.com/kent-tokyo/renkin/releases/tag/v0.18.0},
-  version   = {0.18.0},
-  license   = {MIT}
-}
-```
+If you use RENKIN in academic work, please cite it — see [`CITATION.cff`](CITATION.cff)
+for the canonical, version-tracked citation record. GitHub's "Cite this
+repository" button (top of the repo page) reads it directly and can export
+APA or BibTeX on demand.
 
 ---
 

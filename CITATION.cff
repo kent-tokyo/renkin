@@ -4,8 +4,8 @@ title: "RENKIN: Retrosynthesis Engine for Knowledge-Informed Navigation"
 authors:
   - family-names: "Tanabe"
     given-names: "Kentaro"
-version: "0.18.0"
-date-released: "2026-07-26"
+version: "0.19.0"
+date-released: "2026-07-29"
 url: "https://github.com/kent-tokyo/renkin"
 repository-code: "https://github.com/kent-tokyo/renkin"
 license: MIT
@@ -16,3 +16,21 @@ keywords:
   - chemistry
   - computer-aided-synthesis-planning
   - drug-discovery
+references:
+  - type: article
+    title: "RETROSPECT: RETROsynthesis via Sequential Prediction, and Chemically Transformed-ranking"
+    authors:
+      - family-names: "Pappala"
+        given-names: "Raja Sekhar"
+      - family-names: "Sathyanarayana"
+        given-names: "Shreyas Vinaya"
+      - family-names: "Choudhary"
+        given-names: "Ronit Kumar"
+      - family-names: "Verma"
+        given-names: "Arjun"
+      - family-names: "Warrier"
+        given-names: "Deepak"
+    year: 2026
+    doi: "10.48550/arXiv.2606.07181"
+    url: "https://arxiv.org/abs/2606.07181"
+    scope: "Scientific inspiration for the optional candidate proposal/selection reranking pipeline (src/candidate.rs); independently implemented for RENKIN, not a reproduction of the authors' proposal model or reported benchmark."

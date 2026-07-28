@@ -48,59 +48,93 @@ renkin-forward predict --reactants "<SMILES>" "<SMILES>"... [--templates <path>]
 output is the legacy array of `{template, products, weight}` records; with
 `--report`, the output is a full [`ForwardPredictionReport`](#detailed-report-output).
 
-### Verified example: single, clean product
+### Verified example: order-independent candidate discovery
 
 Salicylic acid (`Oc1ccccc1C(=O)O`) and ethanol (`CCO`), forward-applied
-through `aryl_ether_retro` (a real, committed default rule), Williamson-ether
-combine the phenolic `-OH` with the alcohol to give 2-ethoxybenzoic acid.
-This was run twice against the release binary and the two runs were
-byte-identical:
+against the embedded default rules, match more than one template. An
+earlier version of this guide showed this same command returning a single
+candidate; that was a real gap this crate has since closed (see
+[Reactant-order independence](#reactant-order-independence) below), not a
+transcription error -- run against the current release binary, it returns
+5:
 
 ```bash
 renkin-forward predict --reactants "Oc1ccccc1C(=O)O" "CCO" --report --max-results 5
 ```
 
+`stats` from the actual output:
+
 ```json
 {
-  "schema_version": 1,
-  "reactants": [
-    { "input_smiles": "Oc1ccccc1C(=O)O", "canonical_smiles": "c1cccc(c1O)C(O)=O", "input_index": 0 },
-    { "input_smiles": "CCO", "canonical_smiles": "OCC", "input_index": 1 }
-  ],
-  "candidates": [
-    {
-      "candidate_id": "sha256:8322ea275031eb4aba247d469d105bc69c6204be6819792aac664dbba38af0c8",
-      "products": ["OC(c1c(cccc1)OCC)=O"],
-      "rank": 0,
-      "proposal_score": 1.0,
-      "sources": [
-        { "template_id": "rule:aryl_ether_retro", "rule_name": "aryl_ether_retro", "template_weight": 1.0, "source_rank": 6 }
-      ]
-    }
-  ],
-  "stats": {
-    "rules_loaded": 28, "smirks_rules": 21, "graph_rules_skipped": 7,
-    "templates_attempted": 21, "templates_matched": 1, "template_application_errors": 3,
-    "raw_outcomes": 1, "accepted_outcomes_before_merge": 1,
-    "invalid_outcomes_rejected": 0, "no_op_outcomes_rejected": 0,
-    "duplicate_candidates_merged": 0, "candidates_before_limit": 1,
-    "candidates_returned": 1, "truncated": false
-  },
-  "warnings": [
-    { "code": "template_application_failed", "template_id": "rule:aryl_chloride_to_bromide", "rule_name": "aryl_chloride_to_bromide", "message": "template \"rule:aryl_chloride_to_bromide\": run_reactants failed: ReactantCountMismatch { expected: 1, got: 2 }" },
-    { "code": "template_application_failed", "template_id": "rule:alcohol_oxidation_retro", "rule_name": "alcohol_oxidation_retro", "message": "..." },
-    { "code": "template_application_failed", "template_id": "rule:acyl_chloride_from_acid", "rule_name": "acyl_chloride_from_acid", "message": "..." }
+  "templates_matched": 2, "template_application_errors": 3,
+  "raw_outcomes": 5, "accepted_outcomes_before_merge": 5,
+  "invalid_outcomes_rejected": 0, "no_op_outcomes_rejected": 0,
+  "duplicate_candidates_merged": 0,
+  "candidates_before_limit": 5, "candidates_returned": 5, "truncated": false
+}
+```
+
+`candidates_before_limit == candidates_returned == 5` with `truncated:
+false` confirms this is the complete candidate set for these two reactants
+and the embedded default rules at `--max-results 5` -- not a
+`--max-results`-truncated subset. This says nothing about how good each
+candidate is: whether a given product is the chemically favored outcome,
+and where it ranks relative to the others, are separate questions from
+whether it was found at all. Order-independent matching exposes candidates
+that were previously missed when the reactants were supplied in a
+different order; it is not a claim about prediction accuracy.
+
+The top-ranked candidate:
+
+```json
+{
+  "candidate_id": "sha256:199c4a092b93651dd56083977a69ab612be7bd2007b198832c510a34fdc36cbd",
+  "products": ["O=C(c1ccccc1O)OCCO"],
+  "rank": 0,
+  "proposal_score": 1.0,
+  "sources": [
+    { "template_id": "rule:co_aliphatic_cleavage", "rule_name": "co_aliphatic_cleavage", "template_weight": 1.0, "source_rank": 16 }
   ]
 }
 ```
 
-The three warnings are expected and harmless: those three templates only
-accept a single reactant, and two reactants were supplied. Non-strict mode
-(the default) reports this and moves on instead of aborting the whole call.
+The remaining 4 candidates, and the 3 `template_application_failed`
+warnings (harmless -- those three templates only accept a single reactant,
+and two were supplied here; non-strict mode reports this and moves on
+instead of aborting the whole call), are omitted here for length. Run the
+command above to see the full report.
 
-This example is pinned as `validate_route_golden_fixture_verified_true` in
-`crates/renkin-forward/src/lib.rs`'s test suite, so it can never silently
-regress.
+This example (`validate_route_golden_fixture_verified_true` in
+`crates/renkin-forward/src/lib.rs`'s test suite) only pins that the target
+is *among* the candidates, not the candidate count -- the count is
+expected to change as matching coverage improves.
+
+#### Reactant-order independence
+
+`chematic::rxn::run_reactants` binds reactant slots to a SMIRKS template's
+components positionally; it does not itself try every possible assignment
+of the supplied molecules to those components. For up to 3 reactants,
+`predict_products_detailed` compensates by trying every distinct ordering
+of the caller's reactants and pooling the results (see
+[Limitations](#limitations) for the 3-reactant cap):
+
+- Every outcome from every ordering goes through the same canonicalization,
+  no-op rejection, and candidate-merge pipeline as a single-ordering call
+  (see [Ranking and duplicate merging](#ranking-and-duplicate-merging)).
+  Outcomes from different orderings that canonicalize to the same product
+  multiset merge into one candidate, retaining full template provenance
+  (`sources`) either way.
+- The caller's input order is unaffected: `reactants[].input_index` always
+  reflects the order the caller actually supplied, regardless of which
+  ordering(s) were tried against `run_reactants` internally.
+- `candidate_id` does not depend on reactant input order, since it hashes
+  the *sorted* canonical reactants.
+
+Confirmed empirically for the example above: running the same two
+reactants in reverse order (`CCO` first) returns identical `candidates`,
+`stats`, and `warnings` -- the only difference in the two JSON documents is
+`reactants[].input_index`/order, which reports each run's actual argument
+order in both directions, not a fixed canonical order.
 
 ## Detailed report output
 
@@ -278,12 +312,15 @@ let rule = RetroRule {
 };
 
 let result = predict_products(&["ClCC(Cl)CBr", "BrCC(Br)CCl"], &[rule], 10)?;
-// -> 3 candidates, not 4: chematic's run_reactants returns 4 raw outcomes
-//    for this reactant pair, but one of them reassigns each molecule's
+// -> 4 candidates, not 5: chematic's run_reactants binds reactant slots to
+//    SMIRKS components positionally (see Reactant-order independence
+//    above), so this pair's given order and its reverse each find a
+//    different set of raw outcomes -- 4 and 1 respectively, 5 total, tried
+//    and pooled internally. One of those 5 reassigns each molecule's
 //    halogens back to its own starting arrangement (a genuine no-op) and
-//    is correctly filtered. The other 3 outcomes' product pairs are all
-//    distinct, even though individual products repeat across pairs --
-//    exactly the information a naive flat_map would destroy.
+//    is correctly filtered, leaving 4 with all-distinct product pairs,
+//    even though individual products repeat across pairs -- exactly the
+//    information a naive flat_map would destroy.
 ```
 
 ## Reproducibility

@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use chematic::smiles::canonical_smiles;
-use renkin::chem_env::{RetroRule, mol_from_smiles};
+use renkin::chem_env::{Molecule, RetroRule, mol_from_smiles};
 use renkin::search::Route;
 use serde::Serialize;
 
@@ -38,24 +38,40 @@ fn reverse_smirks(smirks: &str) -> Option<String> {
     Some(format!("{rhs}>>{lhs}"))
 }
 
-/// Filter out chemically invalid SMILES fragments.
+/// Validate and canonicalize one reaction outcome's products.
 ///
-/// Rejects SMILES that contain aromatic atoms (lowercase c/n/o/s/p) without
-/// any ring-closure digits — a signature of BFS-leakage artifacts from
-/// chematic's run_reactants on certain templates.
-fn filter_valid_smiles(smiles_list: Vec<String>) -> Vec<String> {
-    smiles_list
-        .into_iter()
-        .filter(|s| {
-            let has_aromatic = s
-                .bytes()
-                .any(|b| matches!(b, b'c' | b'n' | b'o' | b's' | b'p'));
-            if !has_aromatic {
-                return true;
-            }
-            s.bytes().any(|b| b.is_ascii_digit())
-        })
-        .collect()
+/// `run_reactants` returns one `Vec<Molecule>` per independent reaction
+/// outcome; every molecule in that `Vec` must be kept together as a single
+/// candidate (see [`predict_products`] docs). This function decides whether
+/// that outcome, as a whole, is acceptable:
+///
+/// - Each product is canonicalized, then the canonical SMILES is re-parsed
+///   (round-trip check). If *any* product in the outcome fails this, the
+///   whole outcome is rejected — a partially-valid outcome is not "fixed" by
+///   dropping only the bad product, since that would silently change what
+///   reaction actually happened.
+/// - An outcome with zero products is rejected.
+/// - An outcome whose canonical product multiset equals the canonical
+///   reactant multiset (a no-op transformation) is rejected.
+///
+/// Ring-closure-digit string heuristics were deliberately removed: whether a
+/// SMILES has a ring-closure digit is not a general test of chemical
+/// validity. Round-tripping through the real parser is.
+fn validate_outcome(outcome: &[Molecule], reactant_canon: &[String]) -> Option<Vec<String>> {
+    if outcome.is_empty() {
+        return None;
+    }
+    let mut products = Vec::with_capacity(outcome.len());
+    for mol in outcome {
+        let canon = canonical_smiles(mol);
+        mol_from_smiles(&canon).ok()?;
+        products.push(canon);
+    }
+    products.sort_unstable();
+    if products == reactant_canon {
+        return None; // no-op transformation
+    }
+    Some(products)
 }
 
 /// Predict forward reaction products for a given set of reactants.
@@ -63,7 +79,15 @@ fn filter_valid_smiles(smiles_list: Vec<String>) -> Vec<String> {
 /// Only SMIRKS-based rules are used; graph-based rules (empty `smirks` field)
 /// are skipped because they have no reversible template string.
 ///
-/// Results are sorted by template weight descending and capped at `max_results`.
+/// `run_reactants` may return several independent reaction outcomes for one
+/// template (e.g. it matches the reactants in more than one way); each
+/// outcome becomes its own [`ForwardPrediction`] entry — outcomes are never
+/// flattened together, so `products` on a given entry always reflects one
+/// coherent set of products from one reaction event, and the same template
+/// name may legitimately appear more than once in the result.
+///
+/// Results are sorted by template weight descending and capped at
+/// `max_results` after outcomes have been separated.
 pub fn predict_products(
     reactants: &[&str],
     rules: &[RetroRule],
@@ -80,30 +104,28 @@ pub fn predict_products(
 
     let mol_refs: Vec<_> = reactant_mols.iter().collect();
 
-    let mut predictions: Vec<ForwardPrediction> = rules
-        .iter()
-        .filter(|r| !r.smirks.is_empty())
-        .filter_map(|rule| {
-            let fwd = reverse_smirks(&rule.smirks)?;
-            let outcomes = chematic::rxn::run_reactants(&fwd, &mol_refs).ok()?;
-            if outcomes.is_empty() {
-                return None;
-            }
-            let products: Vec<String> = outcomes
-                .into_iter()
-                .flat_map(|mols| mols.iter().map(canonical_smiles).collect::<Vec<_>>())
-                .collect();
-            let products = filter_valid_smiles(products);
-            if products.is_empty() {
-                return None;
-            }
-            Some(ForwardPrediction {
+    let mut reactant_canon: Vec<String> = reactant_mols.iter().map(canonical_smiles).collect();
+    reactant_canon.sort_unstable();
+
+    let mut predictions: Vec<ForwardPrediction> = Vec::new();
+    for rule in rules.iter().filter(|r| !r.smirks.is_empty()) {
+        let Some(fwd) = reverse_smirks(&rule.smirks) else {
+            continue;
+        };
+        let Ok(outcomes) = chematic::rxn::run_reactants(&fwd, &mol_refs) else {
+            continue;
+        };
+        for outcome in &outcomes {
+            let Some(products) = validate_outcome(outcome, &reactant_canon) else {
+                continue;
+            };
+            predictions.push(ForwardPrediction {
                 template: rule.name.clone(),
                 products,
                 weight: rule.weight,
-            })
-        })
-        .collect();
+            });
+        }
+    }
 
     predictions.sort_unstable_by(|a, b| {
         b.weight
@@ -158,11 +180,94 @@ mod tests {
     }
 
     #[test]
-    fn test_filter_valid_smiles() {
-        let valid = "CC(=O)O".to_string();
-        let invalid = "cccc".to_string(); // aromatic without ring closure
-        let result = filter_valid_smiles(vec![valid.clone(), invalid]);
-        assert_eq!(result, vec![valid]);
+    fn validate_outcome_rejects_empty_outcome() {
+        assert!(validate_outcome(&[], &[]).is_none());
+    }
+
+    #[test]
+    fn validate_outcome_rejects_no_op_transformation() {
+        let mol = mol_from_smiles("CCO").unwrap();
+        let reactant_canon = vec![canonical_smiles(&mol)];
+        assert!(validate_outcome(&[mol], &reactant_canon).is_none());
+    }
+
+    #[test]
+    fn validate_outcome_accepts_and_sorts_real_transformation() {
+        let a = mol_from_smiles("CCO").unwrap(); // ethanol
+        let b = mol_from_smiles("CC(=O)O").unwrap(); // acetic acid (different from reactants)
+        let reactant_canon = vec!["CN".to_string()]; // unrelated reactant, so this isn't a no-op
+        let products = validate_outcome(&[b, a], &reactant_canon).unwrap();
+        // sorted lexicographically regardless of input order
+        let mut expected = vec![
+            canonical_smiles(&mol_from_smiles("CCO").unwrap()),
+            canonical_smiles(&mol_from_smiles("CC(=O)O").unwrap()),
+        ];
+        expected.sort_unstable();
+        assert_eq!(products, expected);
+    }
+
+    /// Regression fixture for outcome separation, verified empirically against
+    /// a real `chematic::rxn::run_reactants` call (not hypothesized): a
+    /// hand-authored halide-metathesis SMIRKS applied to two dihalides with
+    /// non-equivalent halogen sites returns 4 independent raw outcomes, each
+    /// with 2 products. One of the 4 (the combination that reassigns each
+    /// molecule's halogens back to its own starting arrangement) is a genuine
+    /// no-op and is correctly filtered, leaving 3 -- confirmed by checking
+    /// each raw outcome's product pair against the reactants' canonical forms
+    /// directly (see the `main` probe this fixture was built from). The
+    /// surviving outcomes' product *pairings* differ even though individual
+    /// products repeat across them, which is exactly the information a flat
+    /// `flat_map` would destroy by merging everything into one
+    /// undifferentiated product bag.
+    #[test]
+    fn outcomes_are_never_flattened_together() {
+        // Retro-direction smirks (predict_products reverses this internally).
+        let retro_smirks = "[C:1][Br:4].[C:3][Cl:2]>>[C:1][Cl:2].[C:3][Br:4]";
+        let rule = RetroRule {
+            name: "synthetic_halide_metathesis".to_string(),
+            template_id: "rule:synthetic_halide_metathesis".to_string(),
+            smirks: retro_smirks.to_string(),
+            weight: 1.0,
+            required_elements: 0,
+        };
+        let result = predict_products(&["ClCC(Cl)CBr", "BrCC(Br)CCl"], &[rule], 10).unwrap();
+
+        assert_eq!(
+            result.len(),
+            3,
+            "expected 3 surviving outcomes (4 raw outcomes minus 1 genuine no-op), got {result:?}"
+        );
+        for entry in &result {
+            assert_eq!(
+                entry.products.len(),
+                2,
+                "each outcome from this fixture has exactly 2 products, got {entry:?}"
+            );
+        }
+
+        // The surviving outcomes' product pairs, as observed empirically --
+        // every pair is distinct even though individual products repeat
+        // across pairs, which is exactly what would be lost by flattening.
+        let mut pairs: Vec<Vec<String>> = result.iter().map(|p| p.products.clone()).collect();
+        pairs.sort();
+        pairs.dedup();
+        assert_eq!(
+            pairs.len(),
+            3,
+            "all 3 surviving outcomes must have distinct product pairings, got {pairs:?}"
+        );
+
+        // The no-op outcome (reactants' own canonical forms, paired back to
+        // each other) must never appear among the results.
+        let mut reactant_canon = vec![
+            canonical_smiles(&mol_from_smiles("ClCC(Cl)CBr").unwrap()),
+            canonical_smiles(&mol_from_smiles("BrCC(Br)CCl").unwrap()),
+        ];
+        reactant_canon.sort_unstable();
+        assert!(
+            !pairs.contains(&reactant_canon),
+            "the no-op outcome must be filtered, not returned as a candidate"
+        );
     }
 
     #[test]

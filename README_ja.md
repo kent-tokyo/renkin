@@ -592,6 +592,7 @@ renkin/                          ← Cargo workspace ルート
 - [x] 決定的なORD（Open Reaction Database）evidenceインポート — オフラインの `renkin evidence match`（exact-setバッチtemplate matcher）+ `scripts/ord_evidence_audit.py`（audit/converter）により `schema_version: 2` サイドカーへ変換。ネットワークアクセスなし、fuzzy matchingなし、ambiguous/provenance不明なrecordは推測せずaudit reportへ除外理由付きで記録（[#41](https://github.com/kent-tokyo/renkin/issues/41) phase 3A）
 - [x] `renkin-forward` CLI 強化 — バージョン管理された `ForwardPredictionReport`、決定的な候補ID/マージ/由来情報、reactant 順序に依存しないマッチング（最大3試薬）、厳格な CLI/route-JSON 検証
 - [x] RETROSPECT 着想のオフライン候補リランキング基盤 — candidate proposal/selection の分離、feature schema v1、manifest v2、leakage-safe な train/val/test スプリット、7つの決定的 baseline arm + 学習済み ranker arm、paired bootstrap + オフラインゲートツール（[#59](https://github.com/kent-tokyo/renkin/pull/59)；**基盤のみ — 学習済みモデルや精度結果はまだ無く、route search には未統合**）
+- [x] `apply_retro`/`run_reactants` 性能回帰の解消 — `chematic`をnarrowなgit pinから公開済み`0.8.0`（上流のautomorphism-orbit-pruned canonicalization、[chematic#193](https://github.com/kent-tokyo/chematic/pull/193)）へ移行。固定30-targetゲートで現行masterに対し同一セッション計測: total elapsed **34.7%**高速化、p95 **33.8%**高速化、最悪ケースターゲットは**42.2%**高速化（単発ではなく複数回の孤立計測で確認済み）。correctnessへの影響ゼロ（`apply_retro`呼び出し回数はバージョン間で完全一致）
 
 ---
 

@@ -445,8 +445,10 @@ renkin/                          ← Cargo workspace 根目录
 
 ### 近期完成
 
+- [x] `apply_retro`/`run_reactants` 性能回归修复 — `chematic` 从窄范围的 git-pin 修复迁移到已发布的 `0.8.0`（上游 automorphism-orbit-pruned canonicalization，[chematic#193](https://github.com/kent-tokyo/chematic/pull/193)）；在固定的 30-target 门控测试中、同一次会话内对当前 master 测得：总耗时快 **34.7%**，p95 快 **33.8%**，最差目标快 **42.2%**（通过多次独立重复测量确认，非单次结果）。正确性零变化（各版本间 `apply_retro` 调用次数完全一致）
 - [x] `renkin-forward` CLI 强化 — 带版本号的 `ForwardPredictionReport`、确定性候选ID/合并/来源信息、与 reactant 顺序无关的匹配（最多 3 个反应物）、严格的 CLI/route-JSON 校验
 - [x] 受 RETROSPECT 启发的离线候选重排序基础设施 — proposal/selection 分离、feature schema v1、manifest v2、leakage-safe 的 train/val/test 划分、7 个确定性 baseline arm + 训练模型 arm、paired bootstrap + 离线门控工具（[#59](https://github.com/kent-tokyo/renkin/pull/59)；**目前仅为基础设施 — 尚无训练好的模型或准确率结果，也尚未接入 route search**）
+- [x] 确定性的 ORD（Open Reaction Database）evidence 导入 — 离线的 `renkin evidence match`（exact-set 批量 template matcher）+ `scripts/ord_evidence_audit.py`（audit/converter）转换为 `schema_version: 2` 附加文件。无网络访问、无 fuzzy matching，存疑/来源不明的记录不会被猜测，而是记录在 audit report 中并注明排除原因（[#41](https://github.com/kent-tokyo/renkin/issues/41) phase 3A）
 - [x] 稳定的 `template_id`（`rule:<name>` / `smirks-sha256:<hex>`）+ `--template-metadata` evidence 附加文件 + `renkin template ids`（[#41](https://github.com/kent-tokyo/renkin/issues/41) phase 1）
 - [x] 针对特定底物的 `examples`（`schema_version: 2`）——按每个步骤解析为「精确底物匹配」或「同模板但底物不同」，在 `--format explain` 中展示，并在 JSON 中以 `match_kind` 字段体现（[#41](https://github.com/kent-tokyo/renkin/issues/41) phase 2）
 - [x] `renkin-bench cascade` — 多阶段搜索（先用较快的默认参数搜索，未解决的困难目标再用更深的参数重跑）；只有未解决的目标才会进入后续阶段。USPTO-50k 上 **78.0% → 95.9%**

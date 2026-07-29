@@ -2691,6 +2691,194 @@ mod tests {
     }
 
     #[test]
+    fn enumerate_cross_notation_partner_rows_converge_into_one_candidate() {
+        // Row 1 and row 2 spell the *identical* molecule (ethyl bromide) via
+        // genuinely different construction paths -- organic-subset vs
+        // bracket notation with a redundant explicit H count -- rather than
+        // literally duplicate SMILES text (already covered by
+        // `enumerate_different_partners_converging_on_same_products_merge_into_one_candidate`).
+        // Before chematic 0.8.1 (kent-tokyo/chematic#205/#206),
+        // `canonical_smiles` was not construction-path invariant for this
+        // exact shape (a bracket atom whose explicit H count is redundant
+        // with valence inference), so these two rows could canonicalize to
+        // different strings and the resulting candidates would not merge.
+        let partners = vec![partner(1, "CCBr"), partner(2, "CC[Br]")];
+        assert_eq!(
+            partners[0].canonical_smiles, partners[1].canonical_smiles,
+            "precondition: both notations must canonicalize identically"
+        );
+        let report = enumerate_products_detailed(
+            "CCCCCl",
+            Some(&partners),
+            &[synthetic_metathesis_rule()],
+            &ForwardEnumerationConfig::default(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            report.candidates.len(),
+            1,
+            "differently-spelled-but-identical partners must merge, got {:?}",
+            report.candidates
+        );
+        assert_eq!(report.stats.duplicate_candidates_merged, 1);
+        let sources = &report.candidates[0].sources;
+        assert_eq!(
+            sources.len(),
+            2,
+            "both partner rows must be retained as distinct sources"
+        );
+        let mut row_indices: Vec<usize> = sources
+            .iter()
+            .filter_map(|s| s.partner.as_ref().map(|p| p.row_index))
+            .collect();
+        row_indices.sort_unstable();
+        assert_eq!(row_indices, vec![1, 2]);
+    }
+
+    /// Retro SMIRKS (product>>reactants): an aromatic chloride decomposes
+    /// into an aromatic bromide plus sodium chloride. Forward direction
+    /// (after `reverse_smirks_validated`) is a genuine arity-2 template that
+    /// installs Cl onto an aromatic bromide using NaCl as the chloride
+    /// source, discarding the displaced Br (an unmapped leaving atom, same
+    /// pattern `synthetic_disconnected_rule` exercises for spectator
+    /// detection) -- empirically confirmed to actually run and to produce
+    /// the same single product `unary_halide_swap_rule` produces directly
+    /// from the same known reactant, letting the two independent template
+    /// paths (one unary, one binary) converge on one candidate.
+    fn synthetic_binary_halide_install_rule() -> RetroRule {
+        RetroRule {
+            name: "synthetic_binary_halide_install".to_string(),
+            template_id: "rule:synthetic_binary_halide_install".to_string(),
+            smirks: "[c:1][Cl:2]>>[c:1][Br].[Na][Cl:2]".to_string(),
+            weight: 1.0,
+            required_elements: 0,
+        }
+    }
+
+    #[test]
+    fn enumerate_unary_and_binary_template_paths_converge_to_one_candidate() {
+        let partners = vec![partner(1, "[Na]Cl")];
+        let report = enumerate_products_detailed(
+            "Brc1ccccc1",
+            Some(&partners),
+            &[
+                unary_halide_swap_rule(),
+                synthetic_binary_halide_install_rule(),
+            ],
+            &ForwardEnumerationConfig::default(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            report.candidates.len(),
+            1,
+            "unary and binary template paths reaching the same product must \
+             merge into one candidate, got {:?}",
+            report.candidates
+        );
+        let candidate = &report.candidates[0];
+        assert_eq!(
+            candidate.products,
+            vec![canonical_smiles(&mol_from_smiles("Clc1ccccc1").unwrap())],
+            "must match direct parsing of the same compound (construction-path invariance)"
+        );
+
+        // `candidate_id` is a pure function of (known reactant canonical
+        // SMILES, products) -- recomputing it independently proves it is
+        // identical regardless of which template path produced the merge.
+        let known_canon = canonical_smiles(&mol_from_smiles("Brc1ccccc1").unwrap());
+        assert_eq!(
+            candidate.candidate_id,
+            enumeration_candidate_id_for(&known_canon, &candidate.products)
+        );
+
+        assert_eq!(
+            candidate.sources.len(),
+            2,
+            "both the unary and binary template contributions must be retained, got {:?}",
+            candidate.sources
+        );
+        let mut template_ids: Vec<&str> = candidate
+            .sources
+            .iter()
+            .map(|s| s.template_id.as_str())
+            .collect();
+        template_ids.sort_unstable();
+        assert_eq!(
+            template_ids,
+            vec![
+                "rule:aryl_chloride_to_bromide",
+                "rule:synthetic_binary_halide_install"
+            ]
+        );
+        let unary_source = candidate
+            .sources
+            .iter()
+            .find(|s| s.template_id == "rule:aryl_chloride_to_bromide")
+            .unwrap();
+        assert!(unary_source.partner.is_none());
+        let binary_source = candidate
+            .sources
+            .iter()
+            .find(|s| s.template_id == "rule:synthetic_binary_halide_install")
+            .unwrap();
+        assert_eq!(binary_source.partner.as_ref().unwrap().row_index, 1);
+    }
+
+    #[test]
+    fn enumerate_unary_and_binary_convergence_is_byte_identical_across_runs() {
+        let partners = vec![partner(1, "[Na]Cl")];
+        let rules = [
+            unary_halide_swap_rule(),
+            synthetic_binary_halide_install_rule(),
+        ];
+        let a = enumerate_products_detailed(
+            "Brc1ccccc1",
+            Some(&partners),
+            &rules,
+            &ForwardEnumerationConfig::default(),
+        )
+        .unwrap();
+        let b = enumerate_products_detailed(
+            "Brc1ccccc1",
+            Some(&partners),
+            &rules,
+            &ForwardEnumerationConfig::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::to_string(&a).unwrap(),
+            serde_json::to_string(&b).unwrap()
+        );
+    }
+
+    #[test]
+    fn enumerate_no_op_rejection_is_independent_of_reactant_notation() {
+        // Same fixture as
+        // `enumerate_rejects_no_op_outcome_scoped_to_known_plus_partner_pair`,
+        // but written with a redundant-explicit-H bracket atom (`CC[Cl]`
+        // instead of `CCCl`) on the known reactant. Both spellings parse to
+        // the identical molecule; no-op detection must reject this exactly
+        // as it does for the organic-subset spelling, which only holds
+        // because chematic >=0.8.1 canonicalizes both notations identically
+        // (kent-tokyo/chematic#205/#206).
+        let partners = vec![partner(1, "CC[Br]")];
+        let report = enumerate_products_detailed(
+            "CC[Cl]",
+            Some(&partners),
+            &[synthetic_metathesis_rule()],
+            &ForwardEnumerationConfig::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.stats.raw_outcomes, 1);
+        assert_eq!(report.stats.no_op_outcomes_rejected, 1);
+        assert_eq!(report.stats.accepted_outcomes_before_merge, 0);
+        assert!(report.candidates.is_empty());
+    }
+
+    #[test]
     fn enumerate_source_dedupe_keys_on_template_slot_and_partner_row() {
         // Same rule, same slot, two different partner rows: sources must
         // stay distinct (not collapse the way `predict`'s

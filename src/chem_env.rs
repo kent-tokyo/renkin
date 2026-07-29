@@ -1,4 +1,6 @@
 use std::fs;
+#[cfg(feature = "perf-instrumentation")]
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -719,6 +721,33 @@ fn build_sub_molecule_with_oh(
     Some(builder.build())
 }
 
+#[cfg(feature = "perf-instrumentation")]
+static APPLY_RETRO_CALLS: AtomicU64 = AtomicU64::new(0);
+
+/// Total number of `apply_retro` calls made so far in this process, for the
+/// apply-retro-performance-regression gate. Only tracked when the
+/// `perf-instrumentation` feature is enabled (off by default; the default
+/// build path never touches this counter, so there's no shared-atomic
+/// contention on the `apply_retro` hot path in production).
+#[cfg(feature = "perf-instrumentation")]
+pub fn apply_retro_call_count() -> u64 {
+    APPLY_RETRO_CALLS.load(Ordering::Relaxed)
+}
+
+#[cfg(not(feature = "perf-instrumentation"))]
+pub fn apply_retro_call_count() -> u64 {
+    0
+}
+
+/// Reset the counter above (e.g. between gate segments/targets).
+#[cfg(feature = "perf-instrumentation")]
+pub fn reset_apply_retro_call_count() {
+    APPLY_RETRO_CALLS.store(0, Ordering::Relaxed);
+}
+
+#[cfg(not(feature = "perf-instrumentation"))]
+pub fn reset_apply_retro_call_count() {}
+
 /// Apply a single retro-rule to a molecule.
 /// Returns all possible precursor sets as (canonical_smiles, Molecule) pairs.
 ///
@@ -726,6 +755,8 @@ fn build_sub_molecule_with_oh(
 /// (keyed by `name`). SMIRKS rules use chematic's run_reactants; fragments are
 /// split on '.' in canonical SMILES and filtered for BFS-leakage artefacts.
 pub fn apply_retro(mol: &Molecule, rule: &RetroRule) -> Vec<Vec<PrecursorMol>> {
+    #[cfg(feature = "perf-instrumentation")]
+    APPLY_RETRO_CALLS.fetch_add(1, Ordering::Relaxed);
     if rule.smirks.is_empty() {
         return match rule.name.as_str() {
             "suzuki_retro" => biaryl_cleavage(mol),
@@ -1447,6 +1478,37 @@ mod tests {
         assert!(
             results.is_empty(),
             "free carboxylic acid should not be cleaved"
+        );
+    }
+
+    #[test]
+    #[cfg(not(feature = "perf-instrumentation"))]
+    fn apply_retro_call_count_is_zero_without_perf_instrumentation() {
+        let mol = mol_from_smiles("CC(=O)Oc1ccccc1C(=O)O").unwrap();
+        let rule = rr("ester_cleavage", "");
+        apply_retro(&mol, &rule);
+        assert_eq!(
+            apply_retro_call_count(),
+            0,
+            "without perf-instrumentation the counter must never move"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "perf-instrumentation")]
+    fn apply_retro_call_count_tracks_calls_with_perf_instrumentation() {
+        // Tests in this module run concurrently and share the same global
+        // counter, so this asserts a lower bound after our own known number
+        // of calls (>=), not exact equality -- other tests' calls landing in
+        // the same window can only push the count higher, never lower.
+        reset_apply_retro_call_count();
+        let mol = mol_from_smiles("CC(=O)Oc1ccccc1C(=O)O").unwrap();
+        let rule = rr("ester_cleavage", "");
+        apply_retro(&mol, &rule);
+        apply_retro(&mol, &rule);
+        assert!(
+            apply_retro_call_count() >= 2,
+            "two apply_retro calls after reset must be reflected in the counter"
         );
     }
 

@@ -38,6 +38,67 @@ fn sha256_file(path: &str) -> Result<String> {
     Ok(format!("{:x}", Sha256::digest(&bytes)))
 }
 
+/// The `[[package]]` fields this gate's provenance depends on, so a reader
+/// doesn't have to trust a loose "pin" string -- these come straight from
+/// Cargo.lock's own record of exactly what was resolved and downloaded.
+#[derive(Debug, Clone, PartialEq)]
+struct PackageMetadata {
+    version: String,
+    source: String,
+    checksum: String,
+}
+
+/// Extract the content between the first pair of double quotes on a line
+/// like `version = "0.8.0"`.
+fn extract_quoted(line: &str) -> Option<String> {
+    let start = line.find('"')? + 1;
+    let rest = &line[start..];
+    let end = rest.find('"')?;
+    Some(rest[..end].to_string())
+}
+
+/// Find the single `[[package]]` block for `name` in a Cargo.lock's text and
+/// return its `version`/`source`/`checksum` fields. Hard errors (rather than
+/// falling back to "unknown") if the package isn't found, appears more than
+/// once, or is missing any of the three fields -- a permanent regression
+/// gate must not silently keep measuring against an unrecorded dependency.
+fn parse_package_metadata(cargo_lock: &str, name: &str) -> Result<PackageMetadata> {
+    let mut found: Option<PackageMetadata> = None;
+    for block in cargo_lock.split("[[package]]").skip(1) {
+        let block_name = block
+            .lines()
+            .find(|l| l.trim_start().starts_with("name ="))
+            .and_then(extract_quoted);
+        if block_name.as_deref() != Some(name) {
+            continue;
+        }
+        if found.is_some() {
+            bail!("Cargo.lock has more than one [[package]] block for `{name}`");
+        }
+        let version = block
+            .lines()
+            .find(|l| l.trim_start().starts_with("version ="))
+            .and_then(extract_quoted)
+            .with_context(|| format!("[[package]] `{name}` is missing a version field"))?;
+        let source = block
+            .lines()
+            .find(|l| l.trim_start().starts_with("source ="))
+            .and_then(extract_quoted)
+            .with_context(|| format!("[[package]] `{name}` is missing a source field"))?;
+        let checksum = block
+            .lines()
+            .find(|l| l.trim_start().starts_with("checksum ="))
+            .and_then(extract_quoted)
+            .with_context(|| format!("[[package]] `{name}` is missing a checksum field"))?;
+        found = Some(PackageMetadata {
+            version,
+            source,
+            checksum,
+        });
+    }
+    found.with_context(|| format!("no [[package]] block found for `{name}` in Cargo.lock"))
+}
+
 #[cfg(feature = "perf-instrumentation")]
 fn run_reactants_calls_delta() -> u64 {
     chematic_rxn::perf_counters::snapshot().run_reactants_calls
@@ -53,6 +114,7 @@ fn reset_run_reactants_calls() {
 #[cfg(not(feature = "perf-instrumentation"))]
 fn reset_run_reactants_calls() {}
 
+#[derive(Debug, Clone, PartialEq)]
 struct Args {
     targets: String,
     templates: String,
@@ -63,8 +125,26 @@ struct Args {
     label: String,
 }
 
-fn parse_args() -> Result<Args> {
-    let raw: Vec<String> = std::env::args().collect();
+/// Parse a positive (non-zero) integer option value, hard-erroring with the
+/// option name and the exact bad value on anything else -- a reproducibility
+/// gate must not silently fall back to a default on a typo'd flag.
+fn parse_positive_int<T>(option: &str, raw: &[String], i: usize) -> Result<T>
+where
+    T: std::str::FromStr + PartialEq + Default,
+{
+    let value = raw
+        .get(i + 1)
+        .with_context(|| format!("--{option} requires a value"))?;
+    let parsed: T = value
+        .parse()
+        .map_err(|_| anyhow::anyhow!("invalid --{option} value {value:?}: expected an integer"))?;
+    if parsed == T::default() {
+        bail!("invalid --{option} value {value:?}: must be a positive integer, got 0");
+    }
+    Ok(parsed)
+}
+
+fn parse_args_from(raw: &[String]) -> Result<Args> {
     let mut a = Args {
         targets: String::new(),
         templates: String::new(),
@@ -78,31 +158,50 @@ fn parse_args() -> Result<Args> {
     while i < raw.len() {
         match raw[i].as_str() {
             "--targets" => {
-                a.targets = raw.get(i + 1).cloned().unwrap_or_default();
+                a.targets = raw
+                    .get(i + 1)
+                    .with_context(|| "--targets requires a value")?
+                    .clone();
                 i += 2;
             }
             "--templates" => {
-                a.templates = raw.get(i + 1).cloned().unwrap_or_default();
+                a.templates = raw
+                    .get(i + 1)
+                    .with_context(|| "--templates requires a value")?
+                    .clone();
                 i += 2;
             }
             "--stock" => {
-                a.stock = raw.get(i + 1).cloned().unwrap_or_default();
+                a.stock = raw
+                    .get(i + 1)
+                    .with_context(|| "--stock requires a value")?
+                    .clone();
                 i += 2;
             }
             "--depth" => {
-                a.depth = raw.get(i + 1).and_then(|s| s.parse().ok()).unwrap_or(5);
+                a.depth = parse_positive_int("depth", raw, i)?;
                 i += 2;
             }
             "--beam-width" => {
-                a.beam_width = raw.get(i + 1).and_then(|s| s.parse().ok()).unwrap_or(100);
+                a.beam_width = parse_positive_int("beam-width", raw, i)?;
                 i += 2;
             }
             "--warmup" => {
-                a.warmup = raw.get(i + 1).and_then(|s| s.parse().ok()).unwrap_or(1);
+                // --warmup 0 is explicitly allowed (skip the warmup pass
+                // entirely), unlike depth/beam-width which must be positive.
+                let value = raw
+                    .get(i + 1)
+                    .with_context(|| "--warmup requires a value")?;
+                a.warmup = value.parse().map_err(|_| {
+                    anyhow::anyhow!("invalid --warmup value {value:?}: expected an integer")
+                })?;
                 i += 2;
             }
             "--label" => {
-                a.label = raw.get(i + 1).cloned().unwrap_or_default();
+                a.label = raw
+                    .get(i + 1)
+                    .with_context(|| "--label requires a value")?
+                    .clone();
                 i += 2;
             }
             other => bail!("unknown argument: {other}"),
@@ -114,6 +213,10 @@ fn parse_args() -> Result<Args> {
     Ok(a)
 }
 
+fn parse_args() -> Result<Args> {
+    parse_args_from(&std::env::args().collect::<Vec<_>>())
+}
+
 fn main() -> Result<()> {
     let args = parse_args()?;
 
@@ -122,13 +225,7 @@ fn main() -> Result<()> {
     let stock_sha256 = sha256_file(&args.stock)?;
     let cargo_lock_sha256 = sha256_file(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.lock"))?;
     let cargo_lock = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.lock"))?;
-    let chematic_pin = cargo_lock
-        .lines()
-        .skip_while(|l| *l != "name = \"chematic\"")
-        .find(|l| l.starts_with("source ="))
-        .unwrap_or("source = \"unknown\"")
-        .trim()
-        .to_string();
+    let chematic_metadata = parse_package_metadata(&cargo_lock, "chematic")?;
 
     let env = ChemEnv::load(&args.stock)?;
     let stock_compound_count = env.bb_count();
@@ -241,7 +338,11 @@ fn main() -> Result<()> {
     let report = serde_json::json!({
         "label": args.label,
         "run_metadata": {
-            "chematic_pin": chematic_pin,
+            "chematic": {
+                "version": chematic_metadata.version,
+                "source": chematic_metadata.source,
+                "checksum": chematic_metadata.checksum,
+            },
             "cargo_lock_sha256": cargo_lock_sha256,
             "targets_file": args.targets,
             "targets_sha256": targets_sha256,
@@ -275,4 +376,244 @@ fn main() -> Result<()> {
 
     println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(v: &[&str]) -> Vec<String> {
+        std::iter::once("apply_retro_perf_gate".to_string())
+            .chain(v.iter().map(|s| s.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn valid_arguments() {
+        let a = parse_args_from(&args(&[
+            "--targets",
+            "t.smi",
+            "--templates",
+            "r.smi",
+            "--stock",
+            "s.smi",
+            "--depth",
+            "7",
+            "--beam-width",
+            "50",
+            "--warmup",
+            "2",
+            "--label",
+            "my-run",
+        ]))
+        .unwrap();
+        assert_eq!(a.targets, "t.smi");
+        assert_eq!(a.templates, "r.smi");
+        assert_eq!(a.stock, "s.smi");
+        assert_eq!(a.depth, 7);
+        assert_eq!(a.beam_width, 50);
+        assert_eq!(a.warmup, 2);
+        assert_eq!(a.label, "my-run");
+    }
+
+    #[test]
+    fn missing_targets_value() {
+        let err = parse_args_from(&args(&[
+            "--templates",
+            "r.smi",
+            "--stock",
+            "s.smi",
+            "--targets",
+        ]))
+        .unwrap_err();
+        assert!(err.to_string().contains("--targets requires a value"));
+    }
+
+    #[test]
+    fn invalid_depth() {
+        let err = parse_args_from(&args(&[
+            "--targets",
+            "t.smi",
+            "--templates",
+            "r.smi",
+            "--stock",
+            "s.smi",
+            "--depth",
+            "abc",
+        ]))
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("--depth"), "{msg}");
+        assert!(msg.contains("abc"), "{msg}");
+    }
+
+    #[test]
+    fn zero_depth() {
+        let err = parse_args_from(&args(&[
+            "--targets",
+            "t.smi",
+            "--templates",
+            "r.smi",
+            "--stock",
+            "s.smi",
+            "--depth",
+            "0",
+        ]))
+        .unwrap_err();
+        assert!(err.to_string().contains("--depth"));
+    }
+
+    #[test]
+    fn invalid_beam_width() {
+        let err = parse_args_from(&args(&[
+            "--targets",
+            "t.smi",
+            "--templates",
+            "r.smi",
+            "--stock",
+            "s.smi",
+            "--beam-width",
+            "wide",
+        ]))
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("--beam-width"), "{msg}");
+        assert!(msg.contains("wide"), "{msg}");
+    }
+
+    #[test]
+    fn zero_beam_width() {
+        let err = parse_args_from(&args(&[
+            "--targets",
+            "t.smi",
+            "--templates",
+            "r.smi",
+            "--stock",
+            "s.smi",
+            "--beam-width",
+            "0",
+        ]))
+        .unwrap_err();
+        assert!(err.to_string().contains("--beam-width"));
+    }
+
+    #[test]
+    fn invalid_warmup() {
+        let err = parse_args_from(&args(&[
+            "--targets",
+            "t.smi",
+            "--templates",
+            "r.smi",
+            "--stock",
+            "s.smi",
+            "--warmup",
+            "none",
+        ]))
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("--warmup"), "{msg}");
+        assert!(msg.contains("none"), "{msg}");
+    }
+
+    #[test]
+    fn zero_warmup_is_allowed() {
+        let a = parse_args_from(&args(&[
+            "--targets",
+            "t.smi",
+            "--templates",
+            "r.smi",
+            "--stock",
+            "s.smi",
+            "--warmup",
+            "0",
+        ]))
+        .unwrap();
+        assert_eq!(a.warmup, 0);
+    }
+
+    #[test]
+    fn unknown_argument() {
+        let err = parse_args_from(&args(&[
+            "--targets",
+            "t.smi",
+            "--templates",
+            "r.smi",
+            "--stock",
+            "s.smi",
+            "--bogus",
+        ]))
+        .unwrap_err();
+        assert!(err.to_string().contains("unknown argument: --bogus"));
+    }
+
+    const FIXTURE_LOCK: &str = r#"
+# This file is automatically @generated by Cargo.
+version = 4
+
+[[package]]
+name = "anyhow"
+version = "1.0.104"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "deadbeef"
+
+[[package]]
+name = "chematic"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "abc123"
+dependencies = [
+ "chematic-core",
+]
+
+[[package]]
+name = "chematic-core"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "def456"
+"#;
+
+    #[test]
+    fn package_metadata_extracts_chematic_fields() {
+        let m = parse_package_metadata(FIXTURE_LOCK, "chematic").unwrap();
+        assert_eq!(m.version, "0.8.0");
+        assert_eq!(
+            m.source,
+            "registry+https://github.com/rust-lang/crates.io-index"
+        );
+        assert_eq!(m.checksum, "abc123");
+    }
+
+    #[test]
+    fn package_metadata_does_not_match_prefixed_name() {
+        // "chematic-core" must not be mistaken for "chematic".
+        let m = parse_package_metadata(FIXTURE_LOCK, "chematic-core").unwrap();
+        assert_eq!(m.checksum, "def456");
+    }
+
+    #[test]
+    fn package_metadata_missing_package_is_hard_error() {
+        let err = parse_package_metadata(FIXTURE_LOCK, "does-not-exist").unwrap_err();
+        assert!(err.to_string().contains("does-not-exist"));
+    }
+
+    #[test]
+    fn package_metadata_missing_field_is_hard_error() {
+        let lock = r#"
+[[package]]
+name = "chematic"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+"#;
+        let err = parse_package_metadata(lock, "chematic").unwrap_err();
+        assert!(err.to_string().contains("checksum"));
+    }
+
+    #[test]
+    fn package_metadata_duplicate_block_is_hard_error() {
+        let lock = format!(
+            "{FIXTURE_LOCK}\n[[package]]\nname = \"chematic\"\nversion = \"0.8.0\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = \"other\"\n"
+        );
+        let err = parse_package_metadata(&lock, "chematic").unwrap_err();
+        assert!(err.to_string().contains("more than one"));
+    }
 }

@@ -1,4 +1,5 @@
 use std::fs;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -719,6 +720,20 @@ fn build_sub_molecule_with_oh(
     Some(builder.build())
 }
 
+static APPLY_RETRO_CALLS: AtomicU64 = AtomicU64::new(0);
+
+/// Total number of `apply_retro` calls made so far in this process, for
+/// performance-regression monitoring (e.g. the apply-retro-performance-regression
+/// gate). Cheap enough (one relaxed atomic increment per call) to leave always on.
+pub fn apply_retro_call_count() -> u64 {
+    APPLY_RETRO_CALLS.load(Ordering::Relaxed)
+}
+
+/// Reset the counter above (e.g. between gate segments/targets).
+pub fn reset_apply_retro_call_count() {
+    APPLY_RETRO_CALLS.store(0, Ordering::Relaxed);
+}
+
 /// Apply a single retro-rule to a molecule.
 /// Returns all possible precursor sets as (canonical_smiles, Molecule) pairs.
 ///
@@ -726,6 +741,7 @@ fn build_sub_molecule_with_oh(
 /// (keyed by `name`). SMIRKS rules use chematic's run_reactants; fragments are
 /// split on '.' in canonical SMILES and filtered for BFS-leakage artefacts.
 pub fn apply_retro(mol: &Molecule, rule: &RetroRule) -> Vec<Vec<PrecursorMol>> {
+    APPLY_RETRO_CALLS.fetch_add(1, Ordering::Relaxed);
     if rule.smirks.is_empty() {
         return match rule.name.as_str() {
             "suzuki_retro" => biaryl_cleavage(mol),

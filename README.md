@@ -609,6 +609,7 @@ renkin/                          ← Cargo workspace root
 
 ### Recently shipped
 
+- [x] `apply_retro`/`run_reactants` performance regression resolved — `chematic` moved from a narrow git-pinned fix to the published `0.8.0` release (upstream automorphism-orbit-pruned canonicalization, [chematic#193](https://github.com/kent-tokyo/chematic/pull/193)); on a fixed 30-target gate, measured in one session against current master: total elapsed **34.7%** faster, p95 **33.8%** faster, and the single worst-case target **42.2%** faster (confirmed via repeated isolated measurement, not a one-off run). Zero correctness change (`apply_retro` call counts identical across versions)
 - [x] `renkin-forward` CLI hardening — versioned `ForwardPredictionReport`, deterministic candidate IDs/merge/provenance, reactant-order-independent matching (up to 3 reactants), strict CLI/route-JSON validation
 - [x] RETROSPECT-inspired offline candidate-reranking foundation — candidate proposal/selection separation, feature schema v1, manifest v2, leakage-safe train/val/test splitting, 7 deterministic baseline arms + trained-ranker arm, paired bootstrap + offline gate tooling ([#59](https://github.com/kent-tokyo/renkin/pull/59); **foundation only — no trained model or accuracy result yet, not wired into route search**)
 - [x] Stable `template_id` (`rule:<name>` / `smirks-sha256:<hex>`) + `--template-metadata` evidence sidecar + `renkin template ids` ([#41](https://github.com/kent-tokyo/renkin/issues/41) phase 1)

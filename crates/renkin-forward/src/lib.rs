@@ -2586,15 +2586,12 @@ mod tests {
         .unwrap();
 
         assert_eq!(report.candidates.len(), 1);
-        // `chematic::smiles::canonical_smiles` is deterministic per call but
-        // not construction-path-invariant: a reaction-derived molecule and
-        // an independently-parsed molecule of the same compound can
-        // serialize differently (empirically confirmed against this exact
-        // rule/input), so the expected value is the directly-observed
-        // reaction output, not `canonical_smiles(&mol_from_smiles("Clc1ccccc1"))`.
+        // chematic >=0.8.1 (kent-tokyo/chematic#205/#206) unifies explicit-
+        // vs-implicit-hydrogen canonicalization, so the reaction-derived
+        // form now matches direct parsing of the same compound.
         assert_eq!(
             report.candidates[0].products,
-            vec!["c1c(cccc1)[Cl]".to_string()]
+            vec![canonical_smiles(&mol_from_smiles("Clc1ccccc1").unwrap())]
         );
         assert_eq!(report.candidates[0].sources.len(), 1);
         assert_eq!(report.candidates[0].sources[0].slot_index, 0);

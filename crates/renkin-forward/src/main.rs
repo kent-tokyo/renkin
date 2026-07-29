@@ -5,14 +5,16 @@
 /// Usage:
 ///   renkin-forward predict --reactants "CC(=O)O" "CCO" [--templates file.smi] [--max-results 5] [--report]
 ///   renkin-forward validate --route-json '{"steps":[...]}' [--templates file.smi]
+///   renkin-forward enumerate --reactant "CC(=O)O" [--partners partners.smi] [--templates file.smi]
 ///
 /// Output: JSON to stdout, nothing else. Template load summary, warnings,
 /// and diagnostics go to stderr.
 use anyhow::{Result, bail};
 use renkin::chem_env::default_rules;
 use renkin_forward::{
-    ForwardPredictConfig, ForwardPrediction, legacy_predictions_from_report, load_templates_strict,
-    predict_products_detailed,
+    ForwardEnumerationConfig, ForwardPredictConfig, ForwardPrediction, enumerate_products_detailed,
+    legacy_predictions_from_report, load_partners_strict, load_templates_strict,
+    predict_products_detailed, sha256_hex_of_file,
 };
 
 const TOP_LEVEL_HELP: &str = "renkin-forward — template-based forward reaction prediction\n\
@@ -20,10 +22,12 @@ const TOP_LEVEL_HELP: &str = "renkin-forward — template-based forward reaction
 Usage:\n  \
 renkin-forward predict --reactants <SMILES>... [--templates <path>] [--max-results N] [--report]\n  \
 renkin-forward validate --route-json <JSON> [--templates <path>] [--max-results N]\n  \
+renkin-forward enumerate --reactant <SMILES> [--partners <path>] [--templates <path>] [--max-results N]\n  \
 renkin-forward --help\n  \
 renkin-forward --version\n\
 \n\
-Run `renkin-forward predict --help` or `renkin-forward validate --help` for subcommand options.";
+Run `renkin-forward predict --help`, `renkin-forward validate --help`, or\n\
+`renkin-forward enumerate --help` for subcommand options.";
 
 const PREDICT_HELP: &str = "renkin-forward predict — forward-apply reversible SMIRKS templates to reactants\n\
 \n\
@@ -59,6 +63,30 @@ Options:\n  \
 --max-results N           Cap on displayed top_predictions per step (default 5, must be > 0);\n                            \
 `verified` itself is always computed over the full, untruncated candidate set.";
 
+const ENUMERATE_HELP: &str = "renkin-forward enumerate — discover forward products from one known reactant\n\
+\n\
+Usage:\n  \
+renkin-forward enumerate --reactant <SMILES> [--partners <path>] [--templates <path>]\n                          \
+[--max-results N] [--max-partners-per-template N] [--max-combinations N]\n\
+\n\
+Options:\n  \
+--reactant <SMILES>              The one known reactant (required)\n  \
+--partners <path>                Explicit partner SMILES library for binary-template slots.\n                                    \
+Required to enumerate any binary (two-reactant) template; omit for\n                                    \
+unary-template discovery only (hard error if the path is missing/\n                                    \
+unreadable/empty/all-malformed)\n  \
+--templates <path>                Additional SMIRKS template file (hard error if missing/unreadable/empty)\n  \
+--max-results N                   Maximum merged candidates returned. Must be > 0 (default 5)\n  \
+--max-partners-per-template N     Cap on partners tried per (template, slot). Must be > 0 (default 50)\n  \
+--max-combinations N              Global cap on (template, slot, partner) combinations attempted\n                                    \
+across the whole run. Must be > 0 (default 2000)\n\
+\n\
+Bounded, template-guided enumeration, not a generative predictor: unary templates apply directly;\n\
+binary templates try the known reactant in each compatible slot and search --partners for the\n\
+other. Templates needing 2+ missing partners are reported as unsupported, never silently skipped.\n\
+No conditions, catalyst, yield, or reaction-success probability -- proposal_score is a ranking\n\
+signal only. Output is a versioned ForwardEnumerationReport with full candidate provenance.";
+
 fn print_version() {
     println!(
         "renkin-forward {} (a sub-crate of the renkin workspace; this is NOT the renkin package version)",
@@ -66,22 +94,29 @@ fn print_version() {
     );
 }
 
-/// Parses `--max-results N`, requiring a well-formed positive integer.
-fn parse_max_results(raw: &str) -> Result<usize> {
+/// Parses a `--flag N` style option, requiring a well-formed positive
+/// integer. Shared by every numeric-limit flag (`--max-results`,
+/// `--max-partners-per-template`, `--max-combinations`) so each gets the
+/// same strict, named-in-the-error validation.
+fn parse_positive_usize(flag: &str, raw: &str) -> Result<usize> {
     let n: usize = raw.parse().map_err(|_| {
-        anyhow::anyhow!("invalid --max-results value {raw:?}: expected a positive integer")
+        anyhow::anyhow!("invalid {flag} value {raw:?}: expected a positive integer")
     })?;
     if n == 0 {
-        bail!("--max-results must be greater than 0, got 0");
+        bail!("{flag} must be greater than 0, got 0");
     }
     Ok(n)
 }
 
 struct ParsedArgs {
     reactants: Vec<String>,
+    reactant: Option<String>,
     route_json: Option<String>,
     templates_path: Option<String>,
+    partners_path: Option<String>,
     max_results: usize,
+    max_partners_per_template: usize,
+    max_combinations: usize,
     report: bool,
 }
 
@@ -94,9 +129,13 @@ struct ParsedArgs {
 /// itself an unknown-option hard error, not silently accepted or ignored.
 fn parse_args(subcommand: &str, args: &[String]) -> Result<ParsedArgs> {
     let mut reactants: Vec<String> = Vec::new();
+    let mut reactant: Option<String> = None;
     let mut route_json: Option<String> = None;
     let mut templates_path: Option<String> = None;
+    let mut partners_path: Option<String> = None;
     let mut max_results: usize = 5;
+    let mut max_partners_per_template: usize = 50;
+    let mut max_combinations: usize = 2000;
     let mut report = false;
 
     let mut i = 0;
@@ -114,6 +153,13 @@ fn parse_args(subcommand: &str, args: &[String]) -> Result<ParsedArgs> {
                 }
                 continue;
             }
+            "--reactant" if subcommand == "enumerate" => {
+                i += 1;
+                let v = args
+                    .get(i)
+                    .ok_or_else(|| anyhow::anyhow!("--reactant requires a value"))?;
+                reactant = Some(v.clone());
+            }
             "--route-json" if subcommand == "validate" => {
                 i += 1;
                 let v = args
@@ -128,12 +174,33 @@ fn parse_args(subcommand: &str, args: &[String]) -> Result<ParsedArgs> {
                     .ok_or_else(|| anyhow::anyhow!("--templates requires a value"))?;
                 templates_path = Some(v.clone());
             }
+            "--partners" if subcommand == "enumerate" => {
+                i += 1;
+                let v = args
+                    .get(i)
+                    .ok_or_else(|| anyhow::anyhow!("--partners requires a value"))?;
+                partners_path = Some(v.clone());
+            }
             "--max-results" => {
                 i += 1;
                 let v = args
                     .get(i)
                     .ok_or_else(|| anyhow::anyhow!("--max-results requires a value"))?;
-                max_results = parse_max_results(v)?;
+                max_results = parse_positive_usize("--max-results", v)?;
+            }
+            "--max-partners-per-template" if subcommand == "enumerate" => {
+                i += 1;
+                let v = args.get(i).ok_or_else(|| {
+                    anyhow::anyhow!("--max-partners-per-template requires a value")
+                })?;
+                max_partners_per_template = parse_positive_usize("--max-partners-per-template", v)?;
+            }
+            "--max-combinations" if subcommand == "enumerate" => {
+                i += 1;
+                let v = args
+                    .get(i)
+                    .ok_or_else(|| anyhow::anyhow!("--max-combinations requires a value"))?;
+                max_combinations = parse_positive_usize("--max-combinations", v)?;
             }
             "--report" if subcommand == "predict" => {
                 report = true;
@@ -144,6 +211,7 @@ fn parse_args(subcommand: &str, args: &[String]) -> Result<ParsedArgs> {
                     match subcommand {
                         "predict" => PREDICT_HELP,
                         "validate" => VALIDATE_HELP,
+                        "enumerate" => ENUMERATE_HELP,
                         _ => TOP_LEVEL_HELP,
                     }
                 );
@@ -156,9 +224,13 @@ fn parse_args(subcommand: &str, args: &[String]) -> Result<ParsedArgs> {
 
     Ok(ParsedArgs {
         reactants,
+        reactant,
         route_json,
         templates_path,
+        partners_path,
         max_results,
+        max_partners_per_template,
+        max_combinations,
         report,
     })
 }
@@ -239,9 +311,9 @@ fn main() -> Result<()> {
     }
 
     let subcommand = args[1].as_str();
-    if subcommand != "predict" && subcommand != "validate" {
+    if subcommand != "predict" && subcommand != "validate" && subcommand != "enumerate" {
         bail!(
-            "unknown subcommand {subcommand:?}. Use 'predict', 'validate', '--help', or '--version'."
+            "unknown subcommand {subcommand:?}. Use 'predict', 'validate', 'enumerate', '--help', or '--version'."
         );
     }
 
@@ -346,6 +418,53 @@ fn main() -> Result<()> {
                 }));
             }
             println!("{}", serde_json::to_string_pretty(&results)?);
+        }
+        "enumerate" => {
+            let reactant = parsed
+                .reactant
+                .as_deref()
+                .ok_or_else(|| anyhow::anyhow!("enumerate requires --reactant <SMILES>"))?;
+
+            let (partner_outcome, partners_file_sha256) = match parsed.partners_path.as_deref() {
+                Some(path) => {
+                    let outcome = load_partners_strict(path)?;
+                    if outcome.skipped_malformed > 0 {
+                        eprintln!(
+                            "warning[partner_lines_skipped_malformed]: {} line(s) in {path} \
+                             could not be parsed as SMILES and were skipped",
+                            outcome.skipped_malformed
+                        );
+                    }
+                    eprintln!(
+                        "Loaded {} partner record(s) from {path}",
+                        outcome.records.len()
+                    );
+                    (Some(outcome), Some(sha256_hex_of_file(path)?))
+                }
+                None => (None, None),
+            };
+            let templates_file_sha256 = match parsed.templates_path.as_deref() {
+                Some(path) => Some(sha256_hex_of_file(path)?),
+                None => None,
+            };
+
+            let config = ForwardEnumerationConfig {
+                max_results: parsed.max_results,
+                max_partners_per_template: parsed.max_partners_per_template,
+                max_combinations: parsed.max_combinations,
+                ..Default::default()
+            };
+            let partner_slice = partner_outcome.as_ref().map(|o| o.records.as_slice());
+            let mut report = enumerate_products_detailed(reactant, partner_slice, &rules, &config)?;
+            report.stats.templates_file_sha256 = templates_file_sha256;
+            report.stats.partners_file_sha256 = partners_file_sha256;
+            report.stats.partner_records_skipped_malformed =
+                partner_outcome.as_ref().map_or(0, |o| o.skipped_malformed);
+
+            for w in &report.warnings {
+                eprintln!("warning[{}]: {}", w.code, w.message);
+            }
+            println!("{}", serde_json::to_string_pretty(&report)?);
         }
         _ => unreachable!("validated above"),
     }

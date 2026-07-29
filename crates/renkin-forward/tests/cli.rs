@@ -374,3 +374,133 @@ fn validate_step_non_string_precursor_is_hard_error_not_silently_dropped() {
     assert!(stderr.contains("step 0"));
     assert!(stderr.contains("precursors"));
 }
+
+// -- enumerate ------------------------------------------------------------
+
+fn write_temp_partners(label: &str, content: &str) -> std::path::PathBuf {
+    let path = std::env::temp_dir().join(format!(
+        "renkin_forward_cli_test_{label}_{}_{:?}.smi",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    std::fs::write(&path, content).expect("failed to write temp partners file");
+    path
+}
+
+#[test]
+fn enumerate_help_succeeds() {
+    let out = run(&["enumerate", "--help"]);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("--reactant"));
+    assert!(stdout.contains("--partners"));
+}
+
+#[test]
+fn enumerate_requires_reactant_flag() {
+    let out = run(&["enumerate"]);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("--reactant"));
+}
+
+#[test]
+fn enumerate_unary_only_discovery_without_partners_succeeds() {
+    let out = run(&["enumerate", "--reactant", "Brc1ccccc1"]);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("stdout must be valid JSON");
+    assert_eq!(parsed["schema_version"], 1);
+    assert!(parsed["known_reactant"].is_object());
+    assert!(parsed["candidates"].is_array());
+    assert!(
+        parsed["stats"]["templates_binary_skipped_no_partners"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+}
+
+#[test]
+fn enumerate_missing_partners_file_is_hard_error() {
+    let out = run(&[
+        "enumerate",
+        "--reactant",
+        "CCCCCl",
+        "--partners",
+        "/nonexistent/path/does-not-exist.smi",
+    ]);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("does not exist") || stderr.contains("not accessible"));
+}
+
+#[test]
+fn enumerate_with_partners_file_end_to_end() {
+    let path = write_temp_partners("e2e", "CCBr\nCCCBr\n");
+    let out = run(&[
+        "enumerate",
+        "--reactant",
+        "CCCCCl",
+        "--partners",
+        path.to_str().unwrap(),
+    ]);
+    std::fs::remove_file(&path).ok();
+
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("stdout must be valid JSON");
+    assert_eq!(parsed["schema_version"], 1);
+    assert_eq!(parsed["stats"]["partners_scanned"], 2);
+    assert!(parsed["stats"]["partners_file_sha256"].is_string());
+    let candidates = parsed["candidates"].as_array().unwrap();
+    assert!(!candidates.is_empty());
+    assert!(candidates[0]["sources"][0]["partner"].is_object());
+}
+
+#[test]
+fn enumerate_two_identical_runs_are_byte_identical() {
+    let path = write_temp_partners("identical", "CCBr\nCCCBr\n");
+    let args = [
+        "enumerate",
+        "--reactant",
+        "CCCCCl",
+        "--partners",
+        path.to_str().unwrap(),
+    ];
+    let out1 = run(&args);
+    let out2 = run(&args);
+    std::fs::remove_file(&path).ok();
+    assert!(out1.status.success());
+    assert_eq!(out1.stdout, out2.stdout);
+}
+
+#[test]
+fn enumerate_rejects_predict_only_reactants_option() {
+    let out = run(&["enumerate", "--reactant", "CCO", "--reactants", "CCO"]);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("--reactants") || stderr.contains("unknown option"));
+}
+
+#[test]
+fn predict_rejects_enumerate_only_reactant_option() {
+    let out = run(&["predict", "--reactant", "CCO"]);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("--reactant") || stderr.contains("unknown option"));
+}
+
+#[test]
+fn enumerate_max_combinations_zero_is_hard_error() {
+    let out = run(&[
+        "enumerate",
+        "--reactant",
+        "CCCCCl",
+        "--max-combinations",
+        "0",
+    ]);
+    assert!(!out.status.success());
+}

@@ -461,6 +461,33 @@ fn enumerate_with_partners_file_end_to_end() {
 }
 
 #[test]
+fn enumerate_reports_bounded_malformed_partner_diagnostics() {
+    let path = write_temp_partners("malformed_diag", "CCBr\nnot(valid\nCCCBr\n");
+    let out = run(&[
+        "enumerate",
+        "--reactant",
+        "CCCCCl",
+        "--partners",
+        path.to_str().unwrap(),
+    ]);
+    std::fs::remove_file(&path).ok();
+
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("stdout must be valid JSON");
+    assert_eq!(parsed["stats"]["partner_records_skipped_malformed"], 1);
+    assert_eq!(parsed["stats"]["partner_diagnostics_returned"], 1);
+    assert_eq!(parsed["stats"]["partner_diagnostics_truncated"], false);
+    let warnings = parsed["partner_load_warnings"].as_array().unwrap();
+    assert_eq!(warnings.len(), 1);
+    assert_eq!(warnings[0]["row_index"], 2);
+    assert_eq!(warnings[0]["code"], "invalid_partner_smiles");
+    assert_eq!(warnings[0]["input"], "not(valid");
+    assert!(!warnings[0]["message"].as_str().unwrap().is_empty());
+}
+
+#[test]
 fn enumerate_two_identical_runs_are_byte_identical() {
     let path = write_temp_partners("identical", "CCBr\nCCCBr\n");
     let args = [

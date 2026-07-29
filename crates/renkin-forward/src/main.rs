@@ -460,6 +460,14 @@ fn main() -> Result<()> {
             report.stats.partners_file_sha256 = partners_file_sha256;
             report.stats.partner_records_skipped_malformed =
                 partner_outcome.as_ref().map_or(0, |o| o.skipped_malformed);
+            report.stats.partner_diagnostics_returned =
+                partner_outcome.as_ref().map_or(0, |o| o.diagnostics.len());
+            report.stats.partner_diagnostics_truncated = partner_outcome
+                .as_ref()
+                .is_some_and(|o| o.diagnostics_truncated);
+            if let Some(outcome) = partner_outcome {
+                report.partner_load_warnings = outcome.diagnostics;
+            }
 
             for w in &report.warnings {
                 eprintln!("warning[{}]: {}", w.code, w.message);

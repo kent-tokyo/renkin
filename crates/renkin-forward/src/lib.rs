@@ -863,6 +863,23 @@ pub struct PartnerRecord {
     pub canonical_smiles: String,
 }
 
+/// Maximum [`PartnerLoadWarning`] entries retained per [`PartnerLoadOutcome`]
+/// -- bounded so a partners file with many malformed lines can't inflate the
+/// enumeration report unboundedly. `skipped_malformed`/`diagnostics_truncated`
+/// always report the true totals even once this cap is hit.
+const MAX_PARTNER_LOAD_DIAGNOSTICS: usize = 20;
+
+/// One malformed line encountered while loading a `--partners` file.
+#[derive(Debug, Clone, Serialize)]
+pub struct PartnerLoadWarning {
+    /// 1-based physical line number, same numbering as [`PartnerRecord::row_index`].
+    pub row_index: usize,
+    pub code: String,
+    /// The raw SMILES-position token that failed to parse (not the whole line).
+    pub input: String,
+    pub message: String,
+}
+
 /// Outcome of loading a `--partners` file: valid records, plus a count of
 /// lines that failed to parse as SMILES. A malformed *line* is not a hard
 /// error by itself -- only a missing/unreadable file or a file with zero
@@ -870,7 +887,13 @@ pub struct PartnerRecord {
 #[derive(Debug, Clone, Default)]
 pub struct PartnerLoadOutcome {
     pub records: Vec<PartnerRecord>,
+    /// True total count of malformed lines -- never capped, unlike `diagnostics`.
     pub skipped_malformed: usize,
+    /// Up to [`MAX_PARTNER_LOAD_DIAGNOSTICS`] per-line diagnostics, in file order.
+    pub diagnostics: Vec<PartnerLoadWarning>,
+    /// True once `skipped_malformed` exceeds `diagnostics.len()` -- i.e. more
+    /// malformed lines existed than fit in the bounded `diagnostics` list.
+    pub diagnostics_truncated: bool,
 }
 
 /// Strict loader for an explicit `--partners` SMILES file.
@@ -889,6 +912,8 @@ pub fn load_partners_strict(path: &str) -> Result<PartnerLoadOutcome> {
 
     let mut records = Vec::new();
     let mut skipped_malformed = 0usize;
+    let mut diagnostics = Vec::new();
+    let mut diagnostics_truncated = false;
     for (line_idx, line) in content.lines().enumerate() {
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') {
@@ -906,7 +931,19 @@ pub fn load_partners_strict(path: &str) -> Result<PartnerLoadOutcome> {
                 input_smiles: smiles.to_string(),
                 canonical_smiles: canonical_smiles(&mol),
             }),
-            Err(_) => skipped_malformed += 1,
+            Err(e) => {
+                skipped_malformed += 1;
+                if diagnostics.len() < MAX_PARTNER_LOAD_DIAGNOSTICS {
+                    diagnostics.push(PartnerLoadWarning {
+                        row_index: line_idx + 1,
+                        code: "invalid_partner_smiles".to_string(),
+                        input: smiles.to_string(),
+                        message: e.to_string(),
+                    });
+                } else {
+                    diagnostics_truncated = true;
+                }
+            }
         }
     }
 
@@ -917,6 +954,8 @@ pub fn load_partners_strict(path: &str) -> Result<PartnerLoadOutcome> {
     Ok(PartnerLoadOutcome {
         records,
         skipped_malformed,
+        diagnostics,
+        diagnostics_truncated,
     })
 }
 
@@ -1037,16 +1076,28 @@ pub struct ForwardEnumerationStats {
     /// Arity >= 3: always counted here and reported unsupported via a
     /// warning, never silently skipped.
     pub templates_unsupported_arity: usize,
-    /// Count of (template, slot) pairs that produced >=1 accepted outcome
-    /// among attempted combinations. Since this PR has no partner-side
-    /// pre-filter, this is a byproduct of combinations actually attempted,
-    /// not an independent structural pre-check: if `--partners` is omitted,
-    /// or no partner in the file happens to match a given binary slot, that
-    /// slot's match status is simply undetermined and not counted here.
-    pub known_reactant_slot_matches: usize,
+    /// Count of (template, known-reactant slot) assignments for which at
+    /// least one attempted unary/binary application produced an accepted
+    /// outcome. Not a substructure-match count: since this PR has no
+    /// partner-side pre-filter, this is a byproduct of combinations
+    /// actually attempted, not an independent structural pre-check -- if
+    /// `--partners` is omitted, or no partner in the file happens to
+    /// produce an accepted outcome for a given binary slot, that slot is
+    /// simply not counted here (its match status is undetermined, not
+    /// zero).
+    pub slot_assignments_with_accepted_outcome: usize,
     pub partners_scanned: usize,
     pub partners_matched: usize,
+    /// True total count of malformed partner-file lines (never capped).
     pub partner_records_skipped_malformed: usize,
+    /// Count of per-line diagnostics actually retained in
+    /// `ForwardEnumerationReport::partner_load_warnings` (capped at
+    /// [`MAX_PARTNER_LOAD_DIAGNOSTICS`]).
+    pub partner_diagnostics_returned: usize,
+    /// True when `partner_records_skipped_malformed` exceeds
+    /// `partner_diagnostics_returned` -- more malformed lines existed than
+    /// were retained as diagnostics.
+    pub partner_diagnostics_truncated: bool,
     pub combinations_attempted: usize,
     pub raw_outcomes: usize,
     pub accepted_outcomes_before_merge: usize,
@@ -1077,6 +1128,12 @@ pub struct ForwardEnumerationReport {
     pub candidates: Vec<ForwardEnumerationCandidate>,
     pub stats: ForwardEnumerationStats,
     pub warnings: Vec<ForwardWarning>,
+    /// Bounded per-line diagnostics for malformed `--partners` lines (see
+    /// [`MAX_PARTNER_LOAD_DIAGNOSTICS`]); empty when `--partners` was
+    /// omitted or every line parsed cleanly. Cross-check against
+    /// `stats.partner_records_skipped_malformed`/`partner_diagnostics_truncated`
+    /// for the true total when this list was capped.
+    pub partner_load_warnings: Vec<PartnerLoadWarning>,
 }
 
 /// Candidate identity for enumeration: SHA-256 over a domain separator
@@ -1099,7 +1156,7 @@ fn enumeration_candidate_id_for(known_reactant_canon: &str, products: &[String])
 /// `run_reactants`, folding every accepted outcome into `candidates` and
 /// every diagnostic into `warnings`/`stats`. Returns whether at least one
 /// outcome was accepted (used by the caller to track
-/// `stats.known_reactant_slot_matches`/`stats.partners_matched`).
+/// `stats.slot_assignments_with_accepted_outcome`/`stats.partners_matched`).
 #[allow(clippy::too_many_arguments)]
 fn apply_combination(
     fwd_smirks: &str,
@@ -1372,7 +1429,7 @@ pub fn enumerate_products_detailed(
                     &mut candidates,
                 );
                 if matched {
-                    stats.known_reactant_slot_matches += 1;
+                    stats.slot_assignments_with_accepted_outcome += 1;
                 }
             }
             2 => {
@@ -1436,7 +1493,7 @@ pub fn enumerate_products_detailed(
                         }
                     }
                     if slot_matched {
-                        stats.known_reactant_slot_matches += 1;
+                        stats.slot_assignments_with_accepted_outcome += 1;
                     }
                 }
             }
@@ -1524,6 +1581,9 @@ pub fn enumerate_products_detailed(
         candidates: built,
         stats,
         warnings,
+        // Populated by the caller from `PartnerLoadOutcome` -- this function
+        // only receives already-loaded `PartnerRecord`s, not raw file lines.
+        partner_load_warnings: Vec::new(),
     })
 }
 
@@ -2540,7 +2600,7 @@ mod tests {
         assert_eq!(report.candidates[0].sources[0].slot_index, 0);
         assert!(report.candidates[0].sources[0].partner.is_none());
         assert_eq!(report.stats.templates_unary, 1);
-        assert_eq!(report.stats.known_reactant_slot_matches, 1);
+        assert_eq!(report.stats.slot_assignments_with_accepted_outcome, 1);
     }
 
     #[test]
@@ -2960,6 +3020,34 @@ mod tests {
 
         assert_eq!(outcome.records.len(), 2);
         assert_eq!(outcome.skipped_malformed, 1);
+        assert_eq!(outcome.diagnostics.len(), 1);
+        assert_eq!(outcome.diagnostics[0].row_index, 2);
+        assert_eq!(outcome.diagnostics[0].code, "invalid_partner_smiles");
+        assert_eq!(outcome.diagnostics[0].input, "not(a");
+        assert!(!outcome.diagnostics[0].message.is_empty());
+        assert!(!outcome.diagnostics_truncated);
+    }
+
+    #[test]
+    fn load_partners_strict_caps_diagnostics_but_not_the_true_count() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!(
+            "renkin_forward_test_partners_many_malformed_{}.smi",
+            std::process::id()
+        ));
+        let mut content = String::from("CCBr\n");
+        for _ in 0..(MAX_PARTNER_LOAD_DIAGNOSTICS + 5) {
+            content.push_str("not(valid\n");
+        }
+        std::fs::write(&path, &content).unwrap();
+
+        let outcome = load_partners_strict(path.to_str().unwrap()).unwrap();
+        std::fs::remove_file(&path).ok();
+
+        assert_eq!(outcome.records.len(), 1);
+        assert_eq!(outcome.skipped_malformed, MAX_PARTNER_LOAD_DIAGNOSTICS + 5);
+        assert_eq!(outcome.diagnostics.len(), MAX_PARTNER_LOAD_DIAGNOSTICS);
+        assert!(outcome.diagnostics_truncated);
     }
 
     #[test]

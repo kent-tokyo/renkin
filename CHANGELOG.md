@@ -8,6 +8,9 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **`renkin-forward` CLI** — `renkin-forward enumerate --reactant <SMILES> [--partners <path>] [--templates <path>] [--max-results N] [--max-partners-per-template N] [--max-combinations N]`: bounded, template-guided forward enumeration foundation for a single known reactant, distinct from `predict` (which requires the caller to supply every reactant). Unary templates apply directly; binary (two-reactant) templates try the known reactant in each compatible LHS slot and search an explicit `--partners` SMILES library for the other slot — never an implicit or embedded corpus. Templates requiring two or more missing partners are always counted and reported as unsupported (`templates_unsupported_arity`), never silently skipped. A known-reactant slot whose atom-map numbers share no overlap with any product (a structural spectator) is skipped before ever calling `run_reactants`. Output is a new, separately-versioned `ForwardEnumerationReport` (`FORWARD_ENUMERATION_REPORT_SCHEMA_VERSION`) with full per-candidate provenance (template, slot, partner row/label), deterministic ranking (`proposal_score` is a ranking signal only, never a probability), and structured stats/warnings/truncation reporting; `ForwardPredictionReport`/`predict`/`validate` are unchanged ([#64](https://github.com/kent-tokyo/renkin/issues/64), follow-up to [#57](https://github.com/kent-tokyo/renkin/issues/57)). Phase 1 foundation only: no partner-side pre-filter (every attempted combination calls `run_reactants` directly, bounded by `--max-partners-per-template`/`--max-combinations`), no large-library benchmark.
+
 ## [0.20.0] — 2026-07-29
 
 ### Added

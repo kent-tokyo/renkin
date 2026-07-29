@@ -76,19 +76,15 @@ nn-scoring = ["dep:tract-onnx", "chematic/fp"]
 perf-instrumentation = ["dep:chematic-rxn"]
 
 [dependencies]
-# Pinned to a specific chematic commit (not the crates.io 0.6.0 release) to pick up
-# an upstream fix for the apply_retro/run_reactants performance regression: chematic
-# 0.4.25->0.4.30 introduced a redundant canonical_smiles() rewrite, fixed in
-# 97c87e3 (https://github.com/kent-tokyo/chematic/commit/97c87e36951ae4b316bb893d434292f41ba65968).
-# This is a partial fix (~13.4% total elapsed per chematic's own measurement) --
-# the larger combinatorial cost on highly symmetric molecules is unfixed upstream,
-# tracked at https://github.com/kent-tokyo/chematic/pull/193 (draft, unmerged).
-# Not yet published to crates.io as of this pin (latest release: 0.7.0).
-chematic = { git = "https://github.com/kent-tokyo/chematic.git", rev = "97c87e36951ae4b316bb893d434292f41ba65968", features = ["smiles", "chem", "smarts", "rxn"] }
-# Same repo/rev as `chematic` above (required: they must resolve to the same
-# chematic-core/etc. instance). Only for perf_counters -- normal builds reach
-# run_reactants via the chematic facade, not this direct dependency.
-chematic-rxn = { git = "https://github.com/kent-tokyo/chematic.git", rev = "97c87e36951ae4b316bb893d434292f41ba65968", features = ["perf-instrumentation"], optional = true }
+# chematic 0.8.0 includes the automorphism-orbit-pruned canonical_smiles() fix
+# (chematic#193, https://github.com/kent-tokyo/chematic/pull/193, merged as
+# 3e45f55) which resolves the apply_retro/run_reactants combinatorial
+# regression this crate previously worked around with a git-pinned commit.
+chematic = { version = "0.8", features = ["smiles", "chem", "smarts", "rxn"] }
+# Same registry release as `chematic` above (required: they must resolve to the
+# same chematic-core/etc. instance). Only for perf_counters -- normal builds
+# reach run_reactants via the chematic facade, not this direct dependency.
+chematic-rxn = { version = "0.8", features = ["perf-instrumentation"], optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"

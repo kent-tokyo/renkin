@@ -1762,6 +1762,178 @@ mod tests {
     }
 
     #[test]
+    fn reactant_input_order_converges_to_the_same_merged_hint() {
+        let r = rule("aryl_amination", "[c:1][N;H1,H2:2]>>[c:1][Br].[N;H1,H2:2]");
+        let a = generate_retrieval_hints(
+            &["Brc1ccccc1", "NCC"],
+            std::slice::from_ref(&r),
+            &default_report_config(),
+        )
+        .unwrap();
+        let b = generate_retrieval_hints(
+            &["NCC", "Brc1ccccc1"],
+            std::slice::from_ref(&r),
+            &default_report_config(),
+        )
+        .unwrap();
+        assert_eq!(a.hints.len(), 1);
+        assert_eq!(b.hints.len(), 1);
+        assert_eq!(
+            a.hints[0].hint_id, b.hints[0].hint_id,
+            "the same underlying assignment must converge to the same hint_id \
+             regardless of which order the known reactants were supplied in"
+        );
+    }
+
+    #[test]
+    fn input_index_provenance_tracks_this_calls_own_argument_order() {
+        let r = rule("aryl_amination", "[c:1][N;H1,H2:2]>>[c:1][Br].[N;H1,H2:2]");
+        let forward = generate_retrieval_hints(
+            &["Brc1ccccc1", "NCC"],
+            std::slice::from_ref(&r),
+            &default_report_config(),
+        )
+        .unwrap();
+        let known_assignments = &forward.hints[0].known_assignments;
+        let aryl_input_index = known_assignments
+            .iter()
+            .find(|ka| ka.slot_index == 0)
+            .unwrap()
+            .input_index;
+        let amine_input_index = known_assignments
+            .iter()
+            .find(|ka| ka.slot_index == 1)
+            .unwrap()
+            .input_index;
+        assert_eq!(
+            aryl_input_index, 0,
+            "Brc1ccccc1 was argument 0 in this call"
+        );
+        assert_eq!(amine_input_index, 1, "NCC was argument 1 in this call");
+
+        let reversed =
+            generate_retrieval_hints(&["NCC", "Brc1ccccc1"], &[r], &default_report_config())
+                .unwrap();
+        let known_assignments_reversed = &reversed.hints[0].known_assignments;
+        let amine_input_index_reversed = known_assignments_reversed
+            .iter()
+            .find(|ka| ka.slot_index == 1)
+            .unwrap()
+            .input_index;
+        assert_eq!(
+            amine_input_index_reversed, 0,
+            "NCC was argument 0 in this second call -- input_index reflects THIS call's order"
+        );
+    }
+
+    #[test]
+    fn duplicate_smiles_known_reactants_are_assigned_injectively_to_distinct_slots() {
+        // Two rows of the identical SMILES are still two distinct known
+        // reactants (distinct input_index) and must land on two distinct
+        // slots, never both on the same one.
+        let r = rule("symmetric_binary", "[C:1][C:2]>>[C:1][Br].[C:2][Br]");
+        let report =
+            generate_retrieval_hints(&["CCBr", "CCBr"], &[r], &default_report_config()).unwrap();
+        assert_eq!(report.hints.len(), 1);
+        let assignments = &report.hints[0].known_assignments;
+        assert_eq!(assignments.len(), 2);
+        let slots: BTreeSet<usize> = assignments.iter().map(|a| a.slot_index).collect();
+        assert_eq!(
+            slots.len(),
+            2,
+            "both duplicate-SMILES known reactants must occupy distinct slots, got {assignments:?}"
+        );
+        let input_indices: BTreeSet<usize> = assignments.iter().map(|a| a.input_index).collect();
+        assert_eq!(input_indices, BTreeSet::from([0, 1]));
+    }
+
+    #[test]
+    fn assignment_cap_is_deterministic_across_repeated_runs() {
+        let r = rule("symmetric_binary", "[C:1][C:2]>>[C:1][Br].[C:2][Br]");
+        let capped_config = HintGenerationConfig {
+            max_hints: 50,
+            max_matches_per_slot: 50,
+            max_assignments_per_template: 1,
+        };
+        let a =
+            generate_retrieval_hints(&["CCBr", "CBr"], std::slice::from_ref(&r), &capped_config)
+                .unwrap();
+        let b =
+            generate_retrieval_hints(&["CCBr", "CBr"], std::slice::from_ref(&r), &capped_config)
+                .unwrap();
+        assert_eq!(
+            serde_json::to_string(&a).unwrap(),
+            serde_json::to_string(&b).unwrap(),
+            "an assignment-capped run must still be byte-identical across repeats"
+        );
+    }
+
+    #[test]
+    fn hitting_max_assignments_per_template_is_flagged_not_silently_treated_as_no_match() {
+        let r = rule("symmetric_binary", "[C:1][C:2]>>[C:1][Br].[C:2][Br]");
+        let capped_config = HintGenerationConfig {
+            max_hints: 50,
+            max_matches_per_slot: 50,
+            max_assignments_per_template: 1,
+        };
+        let report = generate_retrieval_hints(&["CCBr", "CBr"], &[r], &capped_config).unwrap();
+        assert!(
+            !report.hints.is_empty(),
+            "a capped assignment enumeration must still return the assignments found \
+             before the cap, never silently zero"
+        );
+        assert!(
+            report.stats.templates_with_assignments_truncated >= 1,
+            "the cap must be explicitly flagged in stats, not silently absorbed"
+        );
+    }
+
+    #[test]
+    fn match_sites_order_is_stable_across_repeated_runs() {
+        let r = rule("halide_swap", "[c:1][Cl]>>[c:1][Br]");
+        let known = "Brc1cc(Br)cc(Br)c1"; // three symmetric bromine sites
+        let a =
+            generate_retrieval_hints(&[known], std::slice::from_ref(&r), &default_report_config())
+                .unwrap();
+        let b =
+            generate_retrieval_hints(&[known], std::slice::from_ref(&r), &default_report_config())
+                .unwrap();
+        let sites_a = &a.hints[0].known_assignments[0].match_sites;
+        let sites_b = &b.hints[0].known_assignments[0].match_sites;
+        assert_eq!(sites_a.len(), 3);
+        for (site_a, site_b) in sites_a.iter().zip(sites_b.iter()) {
+            assert_eq!(
+                site_a.target_atom_indices, site_b.target_atom_indices,
+                "match_sites must appear in the same order across repeated runs, \
+                 not merely contain the same set"
+            );
+        }
+    }
+
+    #[test]
+    fn max_hints_is_applied_after_merge_not_before() {
+        // Two differently-named templates converge on the same retrieval
+        // signature (same merged hint). With max_hints=1, this must NOT be
+        // reported as capped -- there is exactly one hint after merging,
+        // even though there were two hints before merging.
+        let r1 = rule("halide_swap_v1", "[c:1][Cl]>>[c:1][Br]");
+        let r2 = rule("halide_swap_v2", "[c:1][Cl]>>[c:1][Br]");
+        let config = HintGenerationConfig {
+            max_hints: 1,
+            max_matches_per_slot: 50,
+            max_assignments_per_template: 100,
+        };
+        let report = generate_retrieval_hints(&["Brc1ccccc1"], &[r1, r2], &config).unwrap();
+        assert_eq!(report.stats.hints_before_merge, 2);
+        assert_eq!(report.stats.duplicate_hints_merged, 1);
+        assert_eq!(report.hints.len(), 1);
+        assert!(
+            !report.stats.hints_capped,
+            "max_hints must be applied to the post-merge count, not the pre-merge count"
+        );
+    }
+
+    #[test]
     fn isotope_and_charge_constraints_are_retained_in_required_features() {
         let r = rule("isotope_charge_probe", "[c:1][C:2]>>[c:1][Br].[13C;+1:2]");
         let template = parse_hint_template(&r).unwrap();

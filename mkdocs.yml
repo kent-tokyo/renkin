@@ -67,6 +67,7 @@ nav:
     - Forward Reaction Prediction: guides/forward-prediction.md
     - Forward Enumeration: guides/forward-enumeration.md
     - Forward Retrieval Hints: guides/forward-retrieval-hints.md
+    - Forward-Prediction Benchmark: guides/forward-benchmark.md
     - Reaction Evidence Metadata: guides/reaction-evidence.md
     - Candidate Pools and Reranker Training: guides/reranker-candidate-pools.md
   - API Reference:

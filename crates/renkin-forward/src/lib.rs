@@ -13,6 +13,8 @@ use renkin::search::Route;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
+pub mod bench;
+
 /// Schema version of [`ForwardPredictionReport`]. Bump whenever a field is
 /// added, removed, or its meaning changes, so downstream JSON consumers can
 /// detect incompatible changes instead of silently misreading a report.
@@ -295,7 +297,7 @@ fn atom_charge_imbalance_diagnostic(
 /// `"C.C.N"` despite being different sequences. Length-prefixing makes the
 /// encoding injective: the original sequence can always be reconstructed
 /// from the byte stream, so two different sequences can never produce it.
-fn hash_string_sequence(hasher: &mut Sha256, values: &[String]) {
+pub(crate) fn hash_string_sequence(hasher: &mut Sha256, values: &[String]) {
     hasher.update((values.len() as u64).to_be_bytes());
     for value in values {
         let bytes = value.as_bytes();

@@ -222,7 +222,19 @@ renkin-forward benchmark \
 large; it is never printed to stdout). `--output-report` is optional — if
 omitted, the report is printed to stdout instead (this subcommand's only
 stdout output). See `renkin-forward benchmark --help` for every flag,
-including `--template-source`/`--templates`.
+including `--template-source`/`--templates`/`--strict`.
+
+`--strict` turns every counted-and-continued data-quality issue (malformed
+corpus JSON, wrong schema version, an unparseable SMILES, empty reactants/
+accepted products, a conflicting `group_key`/`reaction_id`, a per-row
+prediction failure, `proposal_status: capped_unknown`, or incomplete
+reproducibility provenance) into a whole-run hard error instead — for a
+formal/reportable benchmark run where any of those would silently make the
+numbers meaningless. It never fails on a legitimate proposal/ranking/stereo
+miss or a genuinely empty candidate pool — those are real outcomes. Off by
+default: without it, every one of these issues still lands in
+`corpus_stats`/`corpus_warnings`/`diagnostics`/per-row fields, nothing is
+ever silently dropped either way.
 
 ### Row schema (one row per reaction, `FORWARD_BENCH_REPORT_SCHEMA_VERSION = 2`)
 
@@ -233,7 +245,7 @@ including `--template-source`/`--templates`.
 | `reaction_class` | Pass-through from the corpus, or `null`. |
 | `reactants_canonical`, `accepted_products_canonical` | Canonicalized inputs, exactly as matched against. |
 | `num_reactants` | `reactants_canonical.len()`. |
-| `num_products` | `accepted_products_canonical[0].len()` — the primary accepted answer's product count (a reaction with several accepted outcomes of different arity still gets one well-defined count). |
+| `accepted_product_count_min`, `accepted_product_count_max`, `accepted_product_count_mixed` | Min/max accepted-product count across every entry in `accepted_products_canonical`, and whether they differ — replaces a single `num_products` field, which could only describe the first accepted outcome's arity and silently misrepresented a reaction with several accepted outcomes of different arity. Independent of the outer list's order or its C4 dedup. |
 | `has_stereochemistry` | Auto-detected from `@`/`/`/`\` in any canonical reactant/accepted-product SMILES — never trusted from corpus metadata, since it is fully derivable. |
 | `candidate_count`, `raw_outcomes` | Final merged-candidate count, and total `run_reactants` outcomes attempted before validity/no-op filtering or merging (the denominator `invalid_product_rate`/`no_op_rate` are computed against). |
 | `correct_candidate_present`, `best_correct_rank` | Stereochemistry-aware presence/best rank (0-based). |
@@ -245,15 +257,33 @@ including `--template-source`/`--templates`.
 | `invalid_candidate_count`, `no_op_candidate_count` | From the underlying `ForwardStats` (`invalid_outcomes_rejected`/`no_op_outcomes_rejected`). |
 | `application_warning_count`, `application_error_count`, `templates_attempted`, `templates_matched`, `graph_rules_skipped`, `rules_loaded` | From the underlying prediction report (`ForwardStats`) — `graph_rules_skipped` (empty-`smirks` rules, never counted as a parse failure) and `templates_matched` (a subset of `templates_attempted` that had at least one slot match) are per-row, not just summed in the report header. |
 | `elapsed_ms` | Wall-clock time for this reaction's one `predict_products_detailed` call. **Not deterministic across runs** — see below. |
-| `failure_reason` | One of `hit_top1`, `hit_top5`, `hit_top10`, `hit_beyond_10`, `correct_absent_empty_pool`, `correct_absent_nonempty_pool`, `input_invalid`, `prediction_error`. Deliberately coarse: classifying *why* a template failed to apply (missing forward SMIRKS, atom-mapping mismatch, stereochemistry mismatch, …) is Phase 2 territory, not this harness. |
+| `failure_reason` | One of `hit_top1`, `hit_top5`, `hit_top10`, `hit_beyond_10`, `correct_absent_empty_pool`, `correct_absent_nonempty_pool`, `input_invalid`, `prediction_error`. Deliberately coarse (Phase 1 legacy shape) and now *derived* from the four orthogonal fields below (`derive_failure_reason`), so the two representations can never disagree — see `failure_reason_is_uniquely_derivable_from_orthogonal_statuses`. Classifying *why* a template failed to apply (missing forward SMIRKS, atom-mapping mismatch, stereochemistry mismatch, …) is still Phase 2 territory, not this harness. |
+| `input_status` | `valid` or `invalid` — whether this row's input canonicalized at all. `invalid` iff `failure_reason == input_invalid`. |
+| `proposal_status` | `covered` (a correct candidate is present in the pool), `missed_empty_pool`, `missed_nonempty_pool`, `capped_unknown` (the pool was truncated before absence could be confirmed — wired for correctness but unreachable with this harness's own `max_results: usize::MAX` predict config), `error` (prediction itself failed), or `not_attempted` (input invalid). Orthogonal to `ranking_status`: every `covered` row has a concrete `ranking_status`, every other row has `not_applicable`. |
+| `ranking_status` | `top1`/`top5`/`top10`/`beyond10` when `proposal_status == covered`, else `not_applicable`. |
+| `stereo_status` | `exact_hit`, `stereo_only_hit` ("constitution right, stereochemistry wrong"), `no_hit`, `unsupported`, or `not_applicable` (prediction never attempted). Mirrors `stereochemistry_aware_hit`/`stereochemistry_ignored_outcome` as an orthogonal-status view; `unsupported` is never silently collapsed to `no_hit`. |
 | `provenance` | Full `RunProvenance` (see "Reproducibility provenance" below) — duplicated onto every row (not just the report header) so a single row, taken out of context, still fully describes what produced it. |
+
+A constructor-level check (`check_status_consistency`) rejects any row whose
+`input_status`/`proposal_status`/`ranking_status`/`stereo_status`/
+`best_correct_rank` contradict each other — every row this harness emits
+passes it; the four status fields are trustworthy on their own without
+cross-referencing `failure_reason`.
 
 ### Aggregate metrics
 
 Computed once overall, once per split (`train`/`val`/`test`), and once per
-breakdown bucket (`reaction_class`, `num_reactants`, `num_products`,
-`stereochemistry_presence`, `template_source`, `candidate_pool_size`,
-`failure_reason`):
+breakdown bucket (`reaction_class`, `num_reactants`,
+`accepted_product_arity`, `stereochemistry_presence`, `template_source`,
+`candidate_pool_size`, `failure_reason`, `input_status`, `proposal_status`,
+`ranking_status`, `stereo_status`):
+
+`accepted_product_arity` buckets are `"1"`/`"2"`/`"3+"` when every accepted
+outcome for a reaction has the same product count, `"mixed:{min}-{max}"`
+(each end bucketed the same way, e.g. `"mixed:1-2"`, `"mixed:1-3+"`) when
+they don't, and `"<missing>"` for a row with no accepted-products info at
+all (an `input_invalid` row) — replaces the old `num_products` breakdown,
+which could only bucket by the first accepted outcome's arity.
 
 - `valid_input_rate` — valid rows (a real candidate pool was attempted) /
   total rows.
@@ -307,6 +337,41 @@ beyond `renkin_forward_version`/`template_source`/`rules_file_sha256`:
 | `config_sha256` | SHA-256 over the deterministic run configuration (`template_source`, `split_protocol_version`, `train_max_bucket`, `val_max_bucket`). Deliberately excludes `corpus_path` (a filesystem path, not corpus content — `corpus_sha256` already captures content identity). |
 | `reproducibility_sha256` | SHA-256 over every row's serialized fields, in `source_line` order, with `elapsed_ms` stripped from each row first — scoped to `rows` only, not the full report, since `overall`/`by_split`/`breakdowns` are pure deterministic functions of `rows` with no hidden per-run state. Two independent runs over the same corpus/rules/`template_source` must produce an identical value; see `tests/bench.rs::benchmark_is_deterministic_modulo_timing_fields`. |
 | `reproducibility_excludes` | Published list (`["elapsed_ms", "latency_ms", "binary_sha256", "corpus_path"]`) documenting the full "reproducible modulo what" contract. Only `elapsed_ms` is actually stripped by `reproducibility_sha256` itself; the other three never appear inside a row in the first place — this field exists so the contract doesn't have to be inferred from reading the hash function's source. |
+
+### Diagnostic counts
+
+The top-level report's `diagnostics` block gives report-wide totals without
+requiring a reader to re-sum `rows.jsonl` themselves. Every field is
+transcribed from an already-computed source (never independently
+re-derived), named in its own doc comment:
+
+| Field | Source |
+|---|---|
+| `warning_counts_by_code` | `corpus_warnings[].code`, counted. |
+| `template_application_errors`, `graph_rules_skipped`, `templates_attempted`, `templates_matched` | Row-wise sum of the identically-named `BenchRow` field. |
+| `invalid_outcomes_rejected`, `no_op_outcomes_rejected` | Transcribed from `overall.invalid_outcomes_rejected`/`overall.no_op_outcomes_rejected` (the same values `invalid_product_rate`/`no_op_rate`'s numerators already use). |
+| `raw_outcomes` | Transcribed from `overall.n_raw_outcomes`. |
+| `template_parse_rejections_by_reason` | Always an empty map in this harness: `load_rules_for_source` rejects the whole rule set on any single rule's parse failure (a hard error before any row is computed), so a completed run has zero *partial* template-parse rejections by construction. A non-empty map would require `ForwardStats`/rule loading to grow a genuine per-rule rejection-reason breakdown first. |
+
+### `--strict`
+
+Off by default. When passed, every one of the following becomes a
+whole-run hard error instead of a counted-and-continued data-quality issue:
+malformed corpus JSON, wrong schema version, an unparseable reactant/
+product SMILES, empty reactants/accepted products, a conflicting explicit
+`group_key` or reused `reaction_id`, a per-row prediction failure
+(`proposal_status: error`), `proposal_status: capped_unknown`, or a missing
+`binary_sha256` (incomplete reproducibility provenance). Template load/
+manifest/provenance failure (e.g. `train-extracted`, an unreadable
+`--templates` file) is already an unconditional hard error regardless of
+`--strict`.
+
+`--strict` deliberately does **not** fail on a legitimate proposal miss,
+ranking miss, stereo mismatch, or a genuinely empty candidate pool — those
+are real benchmark outcomes, not data-quality problems. Non-strict mode
+never silently drops anything either: every one of the conditions above
+still lands in `corpus_stats`/`corpus_warnings`/`diagnostics`/per-row
+fields regardless of the flag.
 
 ### Fixture corpus
 

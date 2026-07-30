@@ -229,6 +229,40 @@ fn benchmark_fixture_corpus_counts_and_failure_reasons_match_expectations() {
     assert_eq!(corpus_stats["reactions_loaded"], 9);
     assert_eq!(corpus_stats["warnings_truncated"], false);
 
+    // C7: report-level diagnostics transcribed from corpus_warnings/rows,
+    // not re-derived independently -- must agree with corpus_stats above.
+    let diagnostics = &report["diagnostics"];
+    assert_eq!(diagnostics["warning_counts_by_code"]["malformed_json"], 1);
+    assert_eq!(
+        diagnostics["warning_counts_by_code"]["unparseable_smiles"],
+        1
+    );
+    assert!(diagnostics["template_parse_rejections_by_reason"].is_object());
+    assert_eq!(
+        diagnostics["template_parse_rejections_by_reason"]
+            .as_object()
+            .unwrap()
+            .len(),
+        0
+    );
+
+    // C6/C7: new breakdown dimensions are present alongside the pre-existing
+    // ones (num_products was replaced by accepted_product_arity).
+    let breakdowns = report["breakdowns"].as_object().unwrap();
+    assert!(breakdowns.contains_key("accepted_product_arity"));
+    assert!(!breakdowns.contains_key("num_products"));
+    for dim in [
+        "input_status",
+        "proposal_status",
+        "ranking_status",
+        "stereo_status",
+    ] {
+        assert!(
+            breakdowns.contains_key(dim),
+            "missing breakdown dimension {dim}"
+        );
+    }
+
     let rows = read_rows(&rows_path);
     assert_eq!(rows.len(), 10);
 
@@ -251,6 +285,30 @@ fn benchmark_fixture_corpus_counts_and_failure_reasons_match_expectations() {
     expected.insert("input-invalid-bad-smiles", "input_invalid");
     assert_eq!(expected.len(), 10);
 
+    // C7: the orthogonal (input_status, proposal_status, ranking_status)
+    // triple expected for each legacy failure_reason -- hand-derived from
+    // `derive_failure_reason`'s own mapping table, so this is a genuine
+    // cross-check that the two representations agree on real harness
+    // output, not just in the unit-level round-trip test.
+    let expected_statuses: BTreeMap<&str, (&str, &str, &str)> = BTreeMap::from([
+        ("hit_top1", ("valid", "covered", "top1")),
+        ("hit_top5", ("valid", "covered", "top5")),
+        ("hit_top10", ("valid", "covered", "top10")),
+        ("hit_beyond_10", ("valid", "covered", "beyond10")),
+        (
+            "correct_absent_nonempty_pool",
+            ("valid", "missed_nonempty_pool", "not_applicable"),
+        ),
+        (
+            "correct_absent_empty_pool",
+            ("valid", "missed_empty_pool", "not_applicable"),
+        ),
+        (
+            "input_invalid",
+            ("invalid", "not_attempted", "not_applicable"),
+        ),
+    ]);
+
     for row in &rows {
         let reaction_id = row["reaction_id"].as_str().unwrap();
         let expected_reason = expected
@@ -259,6 +317,23 @@ fn benchmark_fixture_corpus_counts_and_failure_reasons_match_expectations() {
         assert_eq!(
             row["failure_reason"].as_str().unwrap(),
             *expected_reason,
+            "reaction_id={reaction_id}"
+        );
+
+        let (exp_input, exp_proposal, exp_ranking) = expected_statuses[*expected_reason];
+        assert_eq!(
+            row["input_status"].as_str().unwrap(),
+            exp_input,
+            "reaction_id={reaction_id}"
+        );
+        assert_eq!(
+            row["proposal_status"].as_str().unwrap(),
+            exp_proposal,
+            "reaction_id={reaction_id}"
+        );
+        assert_eq!(
+            row["ranking_status"].as_str().unwrap(),
+            exp_ranking,
             "reaction_id={reaction_id}"
         );
     }
@@ -347,6 +422,77 @@ fn benchmark_is_deterministic_modulo_timing_fields() {
         report_a, report_b,
         "report must be byte-identical modulo elapsed_ms/latency_ms"
     );
+}
+
+#[test]
+fn benchmark_strict_hard_errors_on_a_corpus_with_known_data_quality_issues() {
+    // The shared fixture corpus has a known malformed_json=1 line and a
+    // known unparseable_smiles=1 line (see the non-strict test above,
+    // which asserts those exact counts) -- `--strict` must turn both into a
+    // whole-run hard error instead of a counted-and-continued warning.
+    let rows_path = temp_path("rows-strict-fail.jsonl");
+    let out = run(&[
+        "benchmark",
+        "--corpus",
+        &fixture_corpus_path(),
+        "--output-rows",
+        &rows_path,
+        "--strict",
+    ]);
+    assert!(
+        !out.status.success(),
+        "--strict must hard-error on this corpus's known data-quality issues"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("--strict"), "stderr: {stderr}");
+    assert!(stderr.contains("malformed JSON"), "stderr: {stderr}");
+    assert!(stderr.contains("unparseable"), "stderr: {stderr}");
+}
+
+#[test]
+fn benchmark_strict_succeeds_on_a_clean_corpus_with_only_legitimate_outcomes() {
+    // A corpus with zero data-quality issues (only a real, legitimately
+    // predictable reaction) must NOT fail under --strict -- a legitimate
+    // hit/miss is a real benchmark outcome, not a data-quality problem.
+    let corpus_path = temp_path("clean-corpus.jsonl");
+    std::fs::write(
+        &corpus_path,
+        r#"{"schema_version": 1, "reaction_id": "clean-hit-top1", "reactants": ["Oc1ccccc1C(=O)O", "CCO"], "accepted_products": [["C(COc1ccccc1C(=O)O)O"]], "reaction_class": "ester_formation"}
+"#,
+    )
+    .unwrap();
+    let rows_path = temp_path("rows-strict-ok.jsonl");
+    let report_path = temp_path("report-strict-ok.json");
+
+    let out = run(&[
+        "benchmark",
+        "--corpus",
+        &corpus_path,
+        "--output-rows",
+        &rows_path,
+        "--output-report",
+        &report_path,
+        "--strict",
+    ]);
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let rows = read_rows(&rows_path);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["proposal_status"], "covered");
+    assert_eq!(rows[0]["ranking_status"], "top1");
+    assert_eq!(rows[0]["input_status"], "valid");
+}
+
+#[test]
+fn benchmark_help_mentions_strict() {
+    let out = run(&["benchmark", "--help"]);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("--strict"), "stdout: {stdout}");
 }
 
 #[test]

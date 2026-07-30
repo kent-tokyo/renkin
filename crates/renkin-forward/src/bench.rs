@@ -474,9 +474,10 @@ pub fn load_corpus(path: &str) -> CorpusLoadResult {
         // multiset (e.g. the same answer listed twice in the corpus, or two
         // spellings that happen to converge) must not count as two distinct
         // ground-truth outcomes -- that would inflate NDCG@10's ideal DCG
-        // and double-count `num_products`'s corpus-level source. Dedup the
-        // OUTER list only; multiplicity WITHIN one accepted product multiset
-        // is untouched (each entry is already its own sorted `Vec<String>`).
+        // and double-count `accepted_product_count_min`/`_max`'s source.
+        // Dedup the OUTER list only; multiplicity WITHIN one accepted
+        // product multiset is untouched (each entry is already its own
+        // sorted `Vec<String>`).
         accepted_products_canonical.dedup();
 
         let identity = reaction_identity_hash(&reactants_canonical, &accepted_products_canonical);
@@ -831,6 +832,299 @@ impl FailureReason {
     }
 }
 
+/// Whether a row's input (reactants/accepted products) canonicalized at all.
+/// Orthogonal to [`ProposalStatus`]/[`RankingStatus`]/[`StereoStatus`] below:
+/// this alone answers "did we even attempt prediction", the others answer
+/// "how did the attempt go".
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InputStatus {
+    Valid,
+    Invalid,
+}
+
+impl InputStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Valid => "valid",
+            Self::Invalid => "invalid",
+        }
+    }
+}
+
+/// Whether a correct candidate was present in the pool -- independent of
+/// where it ranked (see [`RankingStatus`]) and independent of stereochemistry
+/// (see [`StereoStatus`]). Unlike [`FailureReason`] (which conflates "did we
+/// find it" with "how well ranked" into one flat enum), this and
+/// `RankingStatus` are orthogonal: every `Covered` row has a concrete
+/// `RankingStatus`, every non-`Covered` row has `RankingStatus::NotApplicable`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProposalStatus {
+    /// A correct candidate is present somewhere in the pool.
+    Covered,
+    /// No correct candidate, and the pool itself was empty.
+    MissedEmptyPool,
+    /// No correct candidate found, but the pool was non-empty.
+    MissedNonemptyPool,
+    /// The candidate pool was truncated (`ForwardStats::truncated`) before a
+    /// correct candidate was confirmed absent -- absence can't be asserted
+    /// when candidates past the cap were never examined. Wired for
+    /// correctness but unreachable with this harness's own predict config
+    /// (`max_results: usize::MAX` never truncates); kept as a real state
+    /// rather than silently folded into `MissedNonemptyPool`, since a future
+    /// caller that lowers `max_results` would otherwise get a silently wrong
+    /// "confirmed absent" claim.
+    CappedUnknown,
+    /// The prediction call itself failed (see [`FailureReason::PredictionError`]).
+    Error,
+    /// Prediction was never attempted (input invalid -- see [`InputStatus::Invalid`]).
+    NotAttempted,
+}
+
+impl ProposalStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Covered => "covered",
+            Self::MissedEmptyPool => "missed_empty_pool",
+            Self::MissedNonemptyPool => "missed_nonempty_pool",
+            Self::CappedUnknown => "capped_unknown",
+            Self::Error => "error",
+            Self::NotAttempted => "not_attempted",
+        }
+    }
+}
+
+fn proposal_status_for(
+    correct_candidate_present: bool,
+    candidate_count: usize,
+    truncated: bool,
+) -> ProposalStatus {
+    if correct_candidate_present {
+        ProposalStatus::Covered
+    } else if truncated {
+        ProposalStatus::CappedUnknown
+    } else if candidate_count == 0 {
+        ProposalStatus::MissedEmptyPool
+    } else {
+        ProposalStatus::MissedNonemptyPool
+    }
+}
+
+/// Where the best correct candidate ranked -- `NotApplicable` whenever
+/// `proposal_status != Covered` (there is nothing to rank). See
+/// [`ProposalStatus`]'s doc comment for the orthogonality contract.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RankingStatus {
+    Top1,
+    Top5,
+    Top10,
+    Beyond10,
+    NotApplicable,
+}
+
+impl RankingStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Top1 => "top1",
+            Self::Top5 => "top5",
+            Self::Top10 => "top10",
+            Self::Beyond10 => "beyond10",
+            Self::NotApplicable => "not_applicable",
+        }
+    }
+}
+
+fn ranking_status_for(
+    proposal_status: ProposalStatus,
+    best_correct_rank: Option<usize>,
+) -> RankingStatus {
+    match (proposal_status, best_correct_rank) {
+        (ProposalStatus::Covered, Some(rank)) if rank < 1 => RankingStatus::Top1,
+        (ProposalStatus::Covered, Some(rank)) if rank < 5 => RankingStatus::Top5,
+        (ProposalStatus::Covered, Some(rank)) if rank < 10 => RankingStatus::Top10,
+        (ProposalStatus::Covered, Some(_)) => RankingStatus::Beyond10,
+        _ => RankingStatus::NotApplicable,
+    }
+}
+
+/// Stereochemistry comparison outcome, orthogonal to `ranking_status`/
+/// `proposal_status` -- `NotApplicable` whenever prediction was never
+/// attempted; otherwise mirrors [`StereoIgnoredOutcome`] plus the exact-hit
+/// case. `Unsupported` is never silently collapsed to `NoHit`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StereoStatus {
+    /// Correct under the stereochemistry-AWARE comparison (implies correct
+    /// under the ignored comparison too).
+    ExactHit,
+    /// Correct only once stereochemistry is ignored -- "constitution right,
+    /// stereochemistry wrong".
+    StereoOnlyHit,
+    NoHit,
+    Unsupported,
+    NotApplicable,
+}
+
+impl StereoStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ExactHit => "exact_hit",
+            Self::StereoOnlyHit => "stereo_only_hit",
+            Self::NoHit => "no_hit",
+            Self::Unsupported => "unsupported",
+            Self::NotApplicable => "not_applicable",
+        }
+    }
+}
+
+fn stereo_status_for(
+    is_attempt: bool,
+    stereochemistry_aware_hit: bool,
+    stereochemistry_ignored_outcome: StereoIgnoredOutcome,
+) -> StereoStatus {
+    if !is_attempt {
+        return StereoStatus::NotApplicable;
+    }
+    if stereochemistry_aware_hit {
+        return StereoStatus::ExactHit;
+    }
+    match stereochemistry_ignored_outcome {
+        StereoIgnoredOutcome::Hit => StereoStatus::StereoOnlyHit,
+        StereoIgnoredOutcome::NoHit => StereoStatus::NoHit,
+        StereoIgnoredOutcome::Unsupported => StereoStatus::Unsupported,
+    }
+}
+
+/// Derives the legacy coarse [`FailureReason`] from the four orthogonal
+/// status fields -- the single source of truth `compute_row`/`invalid_row`
+/// call, so the two representations can never disagree (see
+/// `failure_reason_is_uniquely_derivable_from_orthogonal_statuses`).
+/// `FailureReason` predates `ProposalStatus::CappedUnknown` and has no
+/// equivalent state for it; mapped to the closest legacy bucket
+/// (`CorrectAbsentNonemptyPool`) since it's unreachable in practice anyway
+/// (see [`ProposalStatus::CappedUnknown`]).
+fn derive_failure_reason(
+    input_status: InputStatus,
+    proposal_status: ProposalStatus,
+    ranking_status: RankingStatus,
+) -> FailureReason {
+    if input_status == InputStatus::Invalid {
+        return FailureReason::InputInvalid;
+    }
+    match proposal_status {
+        ProposalStatus::Error => FailureReason::PredictionError,
+        ProposalStatus::Covered => match ranking_status {
+            RankingStatus::Top1 => FailureReason::HitTop1,
+            RankingStatus::Top5 => FailureReason::HitTop5,
+            RankingStatus::Top10 => FailureReason::HitTop10,
+            RankingStatus::Beyond10 | RankingStatus::NotApplicable => FailureReason::HitBeyond10,
+        },
+        ProposalStatus::MissedEmptyPool => FailureReason::CorrectAbsentEmptyPool,
+        ProposalStatus::MissedNonemptyPool | ProposalStatus::CappedUnknown => {
+            FailureReason::CorrectAbsentNonemptyPool
+        }
+        ProposalStatus::NotAttempted => FailureReason::InputInvalid,
+    }
+}
+
+/// Rejects a [`BenchRow`] whose four orthogonal status fields contradict each
+/// other or `best_correct_rank` -- called by every `BenchRow` constructor
+/// (`invalid_row`, `compute_row`). Since both constructors derive every
+/// status field from the same handful of underlying values, this should
+/// never actually fire; it exists as a real hard-error guard rather than a
+/// silently-trusted invariant, per the audit's explicit request.
+fn check_status_consistency(row: &BenchRow) -> Result<()> {
+    if row.input_status == InputStatus::Invalid
+        && (row.proposal_status != ProposalStatus::NotAttempted
+            || row.ranking_status != RankingStatus::NotApplicable
+            || row.stereo_status != StereoStatus::NotApplicable)
+    {
+        bail!(
+            "inconsistent BenchRow {:?}: input_status=invalid requires proposal_status= \
+             not_attempted, ranking_status=not_applicable, stereo_status=not_applicable; got \
+             {:?}/{:?}/{:?}",
+            row.reaction_id,
+            row.proposal_status,
+            row.ranking_status,
+            row.stereo_status
+        );
+    }
+    let covered = row.proposal_status == ProposalStatus::Covered;
+    let has_rank_status = row.ranking_status != RankingStatus::NotApplicable;
+    if covered != has_rank_status {
+        bail!(
+            "inconsistent BenchRow {:?}: proposal_status=covered must have a concrete \
+             ranking_status and vice versa; got {:?}/{:?}",
+            row.reaction_id,
+            row.proposal_status,
+            row.ranking_status
+        );
+    }
+    if covered != row.best_correct_rank.is_some() {
+        bail!(
+            "inconsistent BenchRow {:?}: proposal_status=covered must agree with \
+             best_correct_rank.is_some(); got {:?}/{:?}",
+            row.reaction_id,
+            row.proposal_status,
+            row.best_correct_rank
+        );
+    }
+    if row.proposal_status == ProposalStatus::Error
+        && row.stereo_status != StereoStatus::NotApplicable
+    {
+        bail!(
+            "inconsistent BenchRow {:?}: proposal_status=error must have \
+             stereo_status=not_applicable; got {:?}",
+            row.reaction_id,
+            row.stereo_status
+        );
+    }
+    Ok(())
+}
+
+/// Min/max/mixed accepted-product arity across every entry in
+/// `accepted_products_canonical` -- independent of the outer list's order
+/// (min/max over a multiset don't care about order), and independent of
+/// outer-list dedup (already applied in `load_corpus` -- see C4). `(0, 0,
+/// false)` for an empty slice (only [`InvalidReactionAttempt`] rows ever
+/// have one; see [`product_arity_bucket`]'s `"<missing>"` handling).
+fn accepted_product_arity(accepted_products_canonical: &[Vec<String>]) -> (usize, usize, bool) {
+    let lens = accepted_products_canonical.iter().map(Vec::len);
+    let min = lens.clone().min().unwrap_or(0);
+    let max = lens.max().unwrap_or(0);
+    (min, max, min != max)
+}
+
+fn arity_bucket_label(n: usize) -> String {
+    match n {
+        1 => "1".to_string(),
+        2 => "2".to_string(),
+        _ => "3+".to_string(),
+    }
+}
+
+/// Breakdown bucket key for a row's accepted-product arity: `"1"`/`"2"`/
+/// `"3+"` when every accepted outcome has the same product count, `"mixed:
+/// {min}-{max}"` (each end bucketed the same way) when they differ, and
+/// `"<missing>"` for a row with no accepted-products info at all (an
+/// [`InvalidReactionAttempt`] row).
+fn product_arity_bucket(row: &BenchRow) -> String {
+    if row.accepted_products_canonical.is_empty() {
+        return "<missing>".to_string();
+    }
+    if row.accepted_product_count_mixed {
+        format!(
+            "mixed:{}-{}",
+            arity_bucket_label(row.accepted_product_count_min),
+            arity_bucket_label(row.accepted_product_count_max)
+        )
+    } else {
+        arity_bucket_label(row.accepted_product_count_max)
+    }
+}
+
 /// Per-row provenance -- deliberately duplicated onto every row (not just
 /// the report header) so a single row, taken out of context, still fully
 /// describes what produced it. Exact chematic-version/rule-set provenance
@@ -866,11 +1160,19 @@ pub struct BenchRow {
     pub reactants_canonical: Vec<String>,
     pub accepted_products_canonical: Vec<Vec<String>>,
     pub num_reactants: usize,
-    /// Product count of `accepted_products_canonical[0]` (the primary
-    /// accepted answer) -- see module docs for why a reaction with several
-    /// accepted outcomes of different arity still gets one well-defined
-    /// count.
-    pub num_products: usize,
+    /// Smallest accepted-product count across every entry in
+    /// `accepted_products_canonical` -- see [`accepted_product_arity`].
+    pub accepted_product_count_min: usize,
+    /// Largest accepted-product count across every entry in
+    /// `accepted_products_canonical`.
+    pub accepted_product_count_max: usize,
+    /// `accepted_product_count_min != accepted_product_count_max` -- true
+    /// when this reaction's accepted outcomes don't all have the same
+    /// product count (e.g. a 1-product outcome and a 2-product outcome both
+    /// accepted). Independent of `accepted_products_canonical`'s outer-list
+    /// order (min/max don't care about order) and independent of the C4
+    /// outer-list dedup already applied when this reaction was loaded.
+    pub accepted_product_count_mixed: bool,
     pub has_stereochemistry: bool,
     pub candidate_count: usize,
     /// Total raw `run_reactants` outcomes attempted for this reaction
@@ -925,11 +1227,22 @@ pub struct BenchRow {
     /// expected to vary between otherwise-identical runs.
     pub elapsed_ms: f64,
     pub failure_reason: FailureReason,
+    /// Whether this row's input canonicalized at all -- see [`InputStatus`].
+    pub input_status: InputStatus,
+    /// Whether a correct candidate was present in the pool -- see
+    /// [`ProposalStatus`]. Orthogonal to `ranking_status`.
+    pub proposal_status: ProposalStatus,
+    /// Where the best correct candidate ranked -- see [`RankingStatus`].
+    /// `NotApplicable` iff `proposal_status != Covered`.
+    pub ranking_status: RankingStatus,
+    /// Stereochemistry comparison outcome -- see [`StereoStatus`].
+    /// `NotApplicable` iff prediction was never attempted.
+    pub stereo_status: StereoStatus,
     pub provenance: RowProvenance,
 }
 
-fn invalid_row(attempt: &InvalidReactionAttempt, provenance: &RowProvenance) -> BenchRow {
-    BenchRow {
+fn invalid_row(attempt: &InvalidReactionAttempt, provenance: &RowProvenance) -> Result<BenchRow> {
+    let row = BenchRow {
         reaction_id: attempt.reaction_id.clone(),
         source_line: attempt.source_line,
         // A group key (and therefore a split) cannot be computed reliably
@@ -942,7 +1255,9 @@ fn invalid_row(attempt: &InvalidReactionAttempt, provenance: &RowProvenance) -> 
         reactants_canonical: Vec::new(),
         accepted_products_canonical: Vec::new(),
         num_reactants: 0,
-        num_products: 0,
+        accepted_product_count_min: 0,
+        accepted_product_count_max: 0,
+        accepted_product_count_mixed: false,
         has_stereochemistry: false,
         candidate_count: 0,
         raw_outcomes: 0,
@@ -965,15 +1280,21 @@ fn invalid_row(attempt: &InvalidReactionAttempt, provenance: &RowProvenance) -> 
         rules_loaded: 0,
         elapsed_ms: 0.0,
         failure_reason: FailureReason::InputInvalid,
+        input_status: InputStatus::Invalid,
+        proposal_status: ProposalStatus::NotAttempted,
+        ranking_status: RankingStatus::NotApplicable,
+        stereo_status: StereoStatus::NotApplicable,
         provenance: provenance.clone(),
-    }
+    };
+    check_status_consistency(&row)?;
+    Ok(row)
 }
 
 fn compute_row(
     reaction: &BenchReaction,
     rules: &[RetroRule],
     provenance: &RowProvenance,
-) -> BenchRow {
+) -> Result<BenchRow> {
     // The corpus's own reactant text, in the corpus's own order -- NOT
     // `reactants_canonical` (see that field's docs on `BenchReaction`: a
     // pre-canonicalized, pre-sorted rewrite can change candidate
@@ -995,16 +1316,14 @@ fn compute_row(
     let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
 
     let num_reactants = reaction.reactants_canonical.len();
-    let num_products = reaction
-        .accepted_products_canonical
-        .first()
-        .map_or(0, Vec::len);
+    let (accepted_product_count_min, accepted_product_count_max, accepted_product_count_mixed) =
+        accepted_product_arity(&reaction.accepted_products_canonical);
     let split = split_for_group(&reaction.group_key).to_string();
 
     let report = match predict_result {
         Ok(r) => r,
         Err(_) => {
-            return BenchRow {
+            let row = BenchRow {
                 reaction_id: reaction.reaction_id.clone(),
                 source_line: reaction.source_line,
                 split,
@@ -1014,7 +1333,9 @@ fn compute_row(
                 reactants_canonical: reaction.reactants_canonical.clone(),
                 accepted_products_canonical: reaction.accepted_products_canonical.clone(),
                 num_reactants,
-                num_products,
+                accepted_product_count_min,
+                accepted_product_count_max,
+                accepted_product_count_mixed,
                 has_stereochemistry: reaction.has_stereochemistry,
                 candidate_count: 0,
                 raw_outcomes: 0,
@@ -1037,8 +1358,14 @@ fn compute_row(
                 rules_loaded: rules.len(),
                 elapsed_ms,
                 failure_reason: FailureReason::PredictionError,
+                input_status: InputStatus::Valid,
+                proposal_status: ProposalStatus::Error,
+                ranking_status: RankingStatus::NotApplicable,
+                stereo_status: StereoStatus::NotApplicable,
                 provenance: provenance.clone(),
             };
+            check_status_consistency(&row)?;
+            return Ok(row);
         }
     };
 
@@ -1106,21 +1433,16 @@ fn compute_row(
         StereoIgnoredOutcome::NoHit
     };
 
-    let failure_reason = if top1_hit {
-        FailureReason::HitTop1
-    } else if top5_hit {
-        FailureReason::HitTop5
-    } else if top10_hit {
-        FailureReason::HitTop10
-    } else if correct_candidate_present {
-        FailureReason::HitBeyond10
-    } else if candidate_count == 0 {
-        FailureReason::CorrectAbsentEmptyPool
-    } else {
-        FailureReason::CorrectAbsentNonemptyPool
-    };
+    let proposal_status = proposal_status_for(
+        correct_candidate_present,
+        candidate_count,
+        report.stats.truncated,
+    );
+    let ranking_status = ranking_status_for(proposal_status, best_aware_rank);
+    let stereo_status = stereo_status_for(true, top10_hit, stereochemistry_ignored_outcome);
+    let failure_reason = derive_failure_reason(InputStatus::Valid, proposal_status, ranking_status);
 
-    BenchRow {
+    let row = BenchRow {
         reaction_id: reaction.reaction_id.clone(),
         source_line: reaction.source_line,
         split,
@@ -1130,7 +1452,9 @@ fn compute_row(
         reactants_canonical: reaction.reactants_canonical.clone(),
         accepted_products_canonical: reaction.accepted_products_canonical.clone(),
         num_reactants,
-        num_products,
+        accepted_product_count_min,
+        accepted_product_count_max,
+        accepted_product_count_mixed,
         has_stereochemistry: reaction.has_stereochemistry,
         candidate_count,
         raw_outcomes: report.stats.raw_outcomes,
@@ -1153,8 +1477,14 @@ fn compute_row(
         rules_loaded: report.stats.rules_loaded,
         elapsed_ms,
         failure_reason,
+        input_status: InputStatus::Valid,
+        proposal_status,
+        ranking_status,
+        stereo_status,
         provenance: provenance.clone(),
-    }
+    };
+    check_status_consistency(&row)?;
+    Ok(row)
 }
 
 // ---------------------------------------------------------------------
@@ -1313,9 +1643,17 @@ pub struct BenchAggregate {
     /// `invalid_product_rate`/`no_op_rate` below, so a reader never has to
     /// re-derive it from `rows.jsonl` to know what either rate is "out of".
     pub n_raw_outcomes: usize,
-    /// `sum(invalid_candidate_count) / n_raw_outcomes` over valid rows.
+    /// `sum(invalid_candidate_count)` over valid rows -- the raw count behind
+    /// `invalid_product_rate` below (the top-level report's
+    /// `DiagnosticCounts` transcribes this value rather than re-summing rows
+    /// independently).
+    pub invalid_outcomes_rejected: usize,
+    /// `sum(no_op_candidate_count)` over valid rows -- see
+    /// `invalid_outcomes_rejected`.
+    pub no_op_outcomes_rejected: usize,
+    /// `invalid_outcomes_rejected / n_raw_outcomes` over valid rows.
     pub invalid_product_rate: Option<f64>,
-    /// `sum(no_op_candidate_count) / n_raw_outcomes` over valid rows.
+    /// `no_op_outcomes_rejected / n_raw_outcomes` over valid rows.
     pub no_op_rate: Option<f64>,
     pub candidate_count_distribution: Option<PercentileStats>,
     pub latency_ms: Option<PercentileStats>,
@@ -1366,6 +1704,8 @@ fn aggregate(rows: &[&BenchRow]) -> BenchAggregate {
         conditional,
         end_to_end,
         n_raw_outcomes: raw_outcomes_total,
+        invalid_outcomes_rejected: invalid_total,
+        no_op_outcomes_rejected: no_op_total,
         invalid_product_rate,
         no_op_rate,
         candidate_count_distribution,
@@ -1467,12 +1807,72 @@ pub struct RunProvenance {
     pub reproducibility_excludes: Vec<String>,
 }
 
+/// Report-level diagnostic totals, transcribed from already-computed sources
+/// rather than re-derived independently (see each field's doc comment for
+/// its exact source) -- so this struct can never silently disagree with the
+/// numbers it's built from.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct DiagnosticCounts {
+    /// Corpus-load warning counts keyed by [`CorpusLoadWarning::code`] --
+    /// transcribed directly from `corpus_warnings`.
+    pub warning_counts_by_code: BTreeMap<String, usize>,
+    /// Row-wise sum of `BenchRow::application_error_count`.
+    pub template_application_errors: usize,
+    /// Transcribed from `overall.invalid_outcomes_rejected` (the same value
+    /// `invalid_product_rate`'s numerator already uses).
+    pub invalid_outcomes_rejected: usize,
+    /// Transcribed from `overall.no_op_outcomes_rejected`.
+    pub no_op_outcomes_rejected: usize,
+    /// Always empty in this harness: `load_templates_strict`/
+    /// `load_rules_for_source` reject the whole rule set on any single
+    /// rule's parse failure (a hard error before any row is computed), so a
+    /// run that completes at all has zero PARTIAL template-parse rejections
+    /// by construction. A non-empty map would require `ForwardStats`/rule
+    /// loading to grow a genuine per-rule rejection-reason breakdown first
+    /// -- not invented here (same reasoning as C1's `train-extracted` hard
+    /// error: an honest empty map beats a populated-looking one with no
+    /// real data behind it).
+    pub template_parse_rejections_by_reason: BTreeMap<String, usize>,
+    /// Row-wise sum of `BenchRow::graph_rules_skipped`.
+    pub graph_rules_skipped: usize,
+    /// Row-wise sum of `BenchRow::templates_attempted`.
+    pub templates_attempted: usize,
+    /// Row-wise sum of `BenchRow::templates_matched`.
+    pub templates_matched: usize,
+    /// Transcribed from `overall.n_raw_outcomes` (already the row-wise sum
+    /// of `BenchRow::raw_outcomes` over valid rows).
+    pub raw_outcomes: usize,
+}
+
+fn diagnostic_counts(
+    rows: &[BenchRow],
+    corpus_warnings: &[CorpusLoadWarning],
+    overall: &BenchAggregate,
+) -> DiagnosticCounts {
+    let mut warning_counts_by_code: BTreeMap<String, usize> = BTreeMap::new();
+    for w in corpus_warnings {
+        *warning_counts_by_code.entry(w.code.clone()).or_insert(0) += 1;
+    }
+    DiagnosticCounts {
+        warning_counts_by_code,
+        template_application_errors: rows.iter().map(|r| r.application_error_count).sum(),
+        invalid_outcomes_rejected: overall.invalid_outcomes_rejected,
+        no_op_outcomes_rejected: overall.no_op_outcomes_rejected,
+        template_parse_rejections_by_reason: BTreeMap::new(),
+        graph_rules_skipped: rows.iter().map(|r| r.graph_rules_skipped).sum(),
+        templates_attempted: rows.iter().map(|r| r.templates_attempted).sum(),
+        templates_matched: rows.iter().map(|r| r.templates_matched).sum(),
+        raw_outcomes: overall.n_raw_outcomes,
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct BenchReport {
     pub schema_version: u32,
     pub provenance: RunProvenance,
     pub corpus_stats: CorpusLoadStats,
     pub corpus_warnings: Vec<CorpusLoadWarning>,
+    pub diagnostics: DiagnosticCounts,
     /// All rows, all splits combined.
     pub overall: BenchAggregate,
     /// Keyed `"train"`/`"val"`/`"test"` -- a row with `split == "unknown"`
@@ -1480,8 +1880,9 @@ pub struct BenchReport {
     /// counted in `overall` but not in any of these three.
     pub by_split: BTreeMap<String, BenchAggregate>,
     /// Keyed by dimension name: `reaction_class`, `num_reactants`,
-    /// `num_products`, `stereochemistry_presence`, `template_source`,
-    /// `candidate_pool_size`, `failure_reason`.
+    /// `accepted_product_arity`, `stereochemistry_presence`,
+    /// `template_source`, `candidate_pool_size`, `failure_reason`,
+    /// `input_status`, `proposal_status`, `ranking_status`, `stereo_status`.
     pub breakdowns: BTreeMap<String, Vec<BenchBreakdownBucket>>,
 }
 
@@ -1590,11 +1991,30 @@ fn reproducibility_hash(rows: &[BenchRow]) -> String {
 /// the corpus, load exactly one rule set for `template_source`, predict and
 /// score every reaction, then aggregate. Never panics on malformed corpus
 /// content -- only a missing/unreadable corpus file, a missing/invalid
-/// `--templates` file, or an invalid `template_source` name is a hard error.
+/// `--templates` file, an invalid `template_source` name, or (when `strict`)
+/// one of the conditions named in [`run_benchmark`]'s `strict` parameter doc
+/// is a hard error.
+///
+/// `strict`: when true, promotes every one of the following from a
+/// counted-and-continued data-quality issue to a whole-run hard error:
+/// malformed corpus JSON, wrong corpus schema version, an unparseable
+/// reactant/product, empty reactants/accepted products, a conflicting
+/// explicit `group_key` or reused `reaction_id`, a per-row prediction
+/// failure, `proposal_status = capped_unknown`, or a missing
+/// `binary_sha256` (incomplete reproducibility provenance). Template load/
+/// manifest/provenance failure is already an unconditional hard error (see
+/// [`load_rules_for_source`]) -- `strict` doesn't change that. Deliberately
+/// does NOT fail on a legitimate proposal miss, ranking miss, stereo
+/// mismatch, or a genuinely empty candidate pool -- those are real
+/// benchmark outcomes, not data-quality problems. In non-strict mode (the
+/// default), every one of these still lands in `corpus_stats`/
+/// `corpus_warnings`/`diagnostics`/per-row fields -- nothing is ever
+/// silently dropped regardless of `strict`.
 pub fn run_benchmark(
     corpus_path: &str,
     template_source: TemplateSource,
     templates_path: Option<&str>,
+    strict: bool,
 ) -> Result<BenchOutcome> {
     let (reactions, invalid_attempts, corpus_stats, corpus_warnings) = load_corpus(corpus_path)?;
     let corpus_sha256 = sha256_hex_of_file(corpus_path)?;
@@ -1608,10 +2028,10 @@ pub fn run_benchmark(
 
     let mut rows: Vec<BenchRow> = Vec::with_capacity(reactions.len() + invalid_attempts.len());
     for reaction in &reactions {
-        rows.push(compute_row(reaction, &rules, &row_provenance));
+        rows.push(compute_row(reaction, &rules, &row_provenance)?);
     }
     for attempt in &invalid_attempts {
-        rows.push(invalid_row(attempt, &row_provenance));
+        rows.push(invalid_row(attempt, &row_provenance)?);
     }
     // Deterministic row order independent of the two loops above: by
     // source_line, so output never depends on internal push order.
@@ -1664,8 +2084,8 @@ pub fn run_benchmark(
         breakdown_by(rows.iter(), |r| r.num_reactants.to_string()),
     );
     breakdowns.insert(
-        "num_products".to_string(),
-        breakdown_by(rows.iter(), |r| r.num_products.to_string()),
+        "accepted_product_arity".to_string(),
+        breakdown_by(rows.iter(), product_arity_bucket),
     );
     breakdowns.insert(
         "stereochemistry_presence".to_string(),
@@ -1693,12 +2113,102 @@ pub fn run_benchmark(
             |r| pool_size_bucket(r.candidate_count),
         ),
     );
+    breakdowns.insert(
+        "input_status".to_string(),
+        breakdown_by(rows.iter(), |r| r.input_status.as_str().to_string()),
+    );
+    breakdowns.insert(
+        "proposal_status".to_string(),
+        breakdown_by(rows.iter(), |r| r.proposal_status.as_str().to_string()),
+    );
+    breakdowns.insert(
+        "ranking_status".to_string(),
+        breakdown_by(rows.iter(), |r| r.ranking_status.as_str().to_string()),
+    );
+    breakdowns.insert(
+        "stereo_status".to_string(),
+        breakdown_by(rows.iter(), |r| r.stereo_status.as_str().to_string()),
+    );
+
+    let diagnostics = diagnostic_counts(&rows, &corpus_warnings, &overall);
+
+    if strict {
+        let mut violations: Vec<String> = Vec::new();
+        if corpus_stats.malformed_json > 0 {
+            violations.push(format!(
+                "{} corpus line(s) with malformed JSON",
+                corpus_stats.malformed_json
+            ));
+        }
+        if corpus_stats.wrong_schema_version > 0 {
+            violations.push(format!(
+                "{} corpus line(s) with the wrong schema_version",
+                corpus_stats.wrong_schema_version
+            ));
+        }
+        if corpus_stats.unparseable_smiles > 0 {
+            violations.push(format!(
+                "{} corpus line(s) with an unparseable reactant/product SMILES",
+                corpus_stats.unparseable_smiles
+            ));
+        }
+        if corpus_stats.empty_reactants_or_products > 0 {
+            violations.push(format!(
+                "{} corpus line(s) with empty reactants/accepted products",
+                corpus_stats.empty_reactants_or_products
+            ));
+        }
+        if corpus_stats.conflicting_group_keys > 0 {
+            violations.push(format!(
+                "{} reaction(s) with a conflicting explicit group_key",
+                corpus_stats.conflicting_group_keys
+            ));
+        }
+        if corpus_stats.conflicting_reaction_ids > 0 {
+            violations.push(format!(
+                "{} reaction(s) with a reused reaction_id for different chemistry",
+                corpus_stats.conflicting_reaction_ids
+            ));
+        }
+        let prediction_errors = rows
+            .iter()
+            .filter(|r| r.proposal_status == ProposalStatus::Error)
+            .count();
+        if prediction_errors > 0 {
+            violations.push(format!(
+                "{prediction_errors} row(s) where prediction itself failed"
+            ));
+        }
+        let capped_unknown = rows
+            .iter()
+            .filter(|r| r.proposal_status == ProposalStatus::CappedUnknown)
+            .count();
+        if capped_unknown > 0 {
+            violations.push(format!(
+                "{capped_unknown} row(s) where the candidate cap left correctness unknown"
+            ));
+        }
+        if run_provenance.binary_sha256.is_none() {
+            violations.push(
+                "binary_sha256 could not be computed (incomplete reproducibility provenance)"
+                    .to_string(),
+            );
+        }
+        if !violations.is_empty() {
+            bail!(
+                "--strict: benchmark run failed {} check(s):\n- {}",
+                violations.len(),
+                violations.join("\n- ")
+            );
+        }
+    }
 
     let report = BenchReport {
         schema_version: FORWARD_BENCH_REPORT_SCHEMA_VERSION,
         provenance: run_provenance,
         corpus_stats,
         corpus_warnings,
+        diagnostics,
         overall,
         by_split,
         breakdowns,
@@ -1792,7 +2302,7 @@ mod tests {
         let mut same_chemistry_different_timing = base.clone();
         same_chemistry_different_timing.elapsed_ms = base.elapsed_ms + 500.0;
         assert_eq!(
-            reproducibility_hash(&[base.clone()]),
+            reproducibility_hash(std::slice::from_ref(&base)),
             reproducibility_hash(&[same_chemistry_different_timing]),
             "elapsed_ms alone must not change the reproducibility hash"
         );
@@ -2184,7 +2694,7 @@ not json at all
             has_stereochemistry: true,
         };
 
-        let row = compute_row(&reaction, &rules, &provenance);
+        let row = compute_row(&reaction, &rules, &provenance).unwrap();
         assert_eq!(row.best_correct_rank, Some(5));
     }
 
@@ -2194,7 +2704,21 @@ not json at all
             template_source: "embedded".to_string(),
             rules_file_sha256: None,
         };
-        BenchRow {
+        let accepted_products_canonical: Vec<Vec<String>> = (0..accepted_count)
+            .map(|i| vec![format!("dummy-{i}")])
+            .collect();
+        let (accepted_product_count_min, accepted_product_count_max, accepted_product_count_mixed) =
+            accepted_product_arity(&accepted_products_canonical);
+        let correct_candidate_present = !correct_ranks_top10.is_empty();
+        let best_correct_rank = correct_ranks_top10.first().copied();
+        let candidate_count = 10;
+        let proposal_status =
+            proposal_status_for(correct_candidate_present, candidate_count, false);
+        let ranking_status = ranking_status_for(proposal_status, best_correct_rank);
+        let stereo_status = stereo_status_for(true, false, StereoIgnoredOutcome::NoHit);
+        let failure_reason =
+            derive_failure_reason(InputStatus::Valid, proposal_status, ranking_status);
+        let row = BenchRow {
             reaction_id: "r".to_string(),
             source_line: 1,
             split: "train".to_string(),
@@ -2202,16 +2726,16 @@ not json at all
             reaction_class: None,
             reactants_original: vec![],
             reactants_canonical: vec![],
-            accepted_products_canonical: (0..accepted_count)
-                .map(|i| vec![format!("dummy-{i}")])
-                .collect(),
+            accepted_products_canonical,
             num_reactants: 1,
-            num_products: 1,
+            accepted_product_count_min,
+            accepted_product_count_max,
+            accepted_product_count_mixed,
             has_stereochemistry: false,
-            candidate_count: 10,
+            candidate_count,
             raw_outcomes: 10,
-            correct_candidate_present: !correct_ranks_top10.is_empty(),
-            best_correct_rank: correct_ranks_top10.first().copied(),
+            correct_candidate_present,
+            best_correct_rank,
             correct_ranks_top10,
             best_correct_rank_stereo_ignored: None,
             top1_hit: false,
@@ -2228,9 +2752,15 @@ not json at all
             graph_rules_skipped: 0,
             rules_loaded: 1,
             elapsed_ms: 1.0,
-            failure_reason: FailureReason::HitTop1,
+            failure_reason,
+            input_status: InputStatus::Valid,
+            proposal_status,
+            ranking_status,
+            stereo_status,
             provenance,
-        }
+        };
+        check_status_consistency(&row).expect("ndcg_probe_row must build a consistent BenchRow");
+        row
     }
 
     /// A ranking that surfaces BOTH accepted outcomes in the top 2 must
@@ -2273,52 +2803,69 @@ not json at all
             template_source: "embedded".to_string(),
             rules_file_sha256: None,
         };
-        let mk = |rank: Option<usize>, candidate_count: usize| BenchRow {
-            reaction_id: "r".to_string(),
-            source_line: 1,
-            split: "train".to_string(),
-            leakage_group_id: Some("g".to_string()),
-            reaction_class: None,
-            reactants_original: vec![],
-            reactants_canonical: vec![],
-            // A valid row (this fixture is never `input_invalid`) always has
-            // at least one accepted product multiset -- `ndcg_at_10`'s ideal
-            // DCG divides by this count, so it must not be empty.
-            accepted_products_canonical: vec![vec!["dummy".to_string()]],
-            num_reactants: 1,
-            num_products: 1,
-            has_stereochemistry: false,
-            candidate_count,
-            raw_outcomes: candidate_count,
-            correct_candidate_present: rank.is_some(),
-            best_correct_rank: rank,
-            correct_ranks_top10: rank.filter(|&r| r < 10).into_iter().collect(),
-            best_correct_rank_stereo_ignored: rank,
-            top1_hit: rank == Some(0),
-            top5_hit: rank.is_some_and(|r| r < 5),
-            top10_hit: rank.is_some_and(|r| r < 10),
-            stereochemistry_aware_hit: rank.is_some_and(|r| r < 10),
-            stereochemistry_ignored_outcome: if rank.is_some_and(|r| r < 10) {
+        let mk = |rank: Option<usize>, candidate_count: usize| {
+            let correct_candidate_present = rank.is_some();
+            let stereochemistry_ignored_outcome = if rank.is_some_and(|r| r < 10) {
                 StereoIgnoredOutcome::Hit
             } else {
                 StereoIgnoredOutcome::NoHit
-            },
-            invalid_candidate_count: 0,
-            no_op_candidate_count: 0,
-            application_warning_count: 0,
-            application_error_count: 0,
-            templates_attempted: 1,
-            templates_matched: 1,
-            graph_rules_skipped: 0,
-            rules_loaded: 1,
-            elapsed_ms: 1.0,
-            failure_reason: match rank {
-                Some(0) => FailureReason::HitTop1,
-                Some(_) => FailureReason::HitBeyond10,
-                None if candidate_count == 0 => FailureReason::CorrectAbsentEmptyPool,
-                None => FailureReason::CorrectAbsentNonemptyPool,
-            },
-            provenance: provenance.clone(),
+            };
+            let proposal_status =
+                proposal_status_for(correct_candidate_present, candidate_count, false);
+            let ranking_status = ranking_status_for(proposal_status, rank);
+            let stereo_status = stereo_status_for(
+                true,
+                rank.is_some_and(|r| r < 10),
+                stereochemistry_ignored_outcome,
+            );
+            let failure_reason =
+                derive_failure_reason(InputStatus::Valid, proposal_status, ranking_status);
+            let row = BenchRow {
+                reaction_id: "r".to_string(),
+                source_line: 1,
+                split: "train".to_string(),
+                leakage_group_id: Some("g".to_string()),
+                reaction_class: None,
+                reactants_original: vec![],
+                reactants_canonical: vec![],
+                // A valid row (this fixture is never `input_invalid`) always has
+                // at least one accepted product multiset -- `ndcg_at_10`'s ideal
+                // DCG divides by this count, so it must not be empty.
+                accepted_products_canonical: vec![vec!["dummy".to_string()]],
+                num_reactants: 1,
+                accepted_product_count_min: 1,
+                accepted_product_count_max: 1,
+                accepted_product_count_mixed: false,
+                has_stereochemistry: false,
+                candidate_count,
+                raw_outcomes: candidate_count,
+                correct_candidate_present,
+                best_correct_rank: rank,
+                correct_ranks_top10: rank.filter(|&r| r < 10).into_iter().collect(),
+                best_correct_rank_stereo_ignored: rank,
+                top1_hit: rank == Some(0),
+                top5_hit: rank.is_some_and(|r| r < 5),
+                top10_hit: rank.is_some_and(|r| r < 10),
+                stereochemistry_aware_hit: rank.is_some_and(|r| r < 10),
+                stereochemistry_ignored_outcome,
+                invalid_candidate_count: 0,
+                no_op_candidate_count: 0,
+                application_warning_count: 0,
+                application_error_count: 0,
+                templates_attempted: 1,
+                templates_matched: 1,
+                graph_rules_skipped: 0,
+                rules_loaded: 1,
+                elapsed_ms: 1.0,
+                failure_reason,
+                input_status: InputStatus::Valid,
+                proposal_status,
+                ranking_status,
+                stereo_status,
+                provenance: provenance.clone(),
+            };
+            check_status_consistency(&row).expect("mk() must build a consistent BenchRow");
+            row
         };
         // 2 hits at rank 0, 1 miss with a nonempty pool, 1 miss with an
         // empty pool -- 4 rows total, 3 with a correct candidate present...
@@ -2334,5 +2881,246 @@ not json at all
         assert_eq!(agg.conditional.top1_hit_rate, Some(1.0)); // both present rows are rank 0
         assert_eq!(agg.end_to_end.n, 4);
         assert_eq!(agg.end_to_end.top1_hit_rate, Some(0.5)); // 2 of 4 rows overall
+    }
+
+    #[test]
+    fn accepted_product_arity_single_outcome() {
+        let (min, max, mixed) = accepted_product_arity(&[vec!["a".to_string()]]);
+        assert_eq!((min, max, mixed), (1, 1, false));
+    }
+
+    #[test]
+    fn accepted_product_arity_multiple_outcomes_same_arity() {
+        let (min, max, mixed) = accepted_product_arity(&[
+            vec!["a".to_string(), "b".to_string()],
+            vec!["c".to_string(), "d".to_string()],
+        ]);
+        assert_eq!((min, max, mixed), (2, 2, false));
+    }
+
+    #[test]
+    fn accepted_product_arity_multiple_outcomes_different_arity() {
+        let (min, max, mixed) = accepted_product_arity(&[
+            vec!["a".to_string()],
+            vec!["b".to_string(), "c".to_string()],
+        ]);
+        assert_eq!((min, max, mixed), (1, 2, true));
+    }
+
+    #[test]
+    fn accepted_product_arity_is_independent_of_outer_list_order() {
+        let forward = vec![
+            vec!["a".to_string()],
+            vec!["b".to_string(), "c".to_string()],
+            vec!["d".to_string(), "e".to_string(), "f".to_string()],
+        ];
+        let mut reversed = forward.clone();
+        reversed.reverse();
+        assert_eq!(
+            accepted_product_arity(&forward),
+            accepted_product_arity(&reversed)
+        );
+    }
+
+    #[test]
+    fn accepted_product_arity_empty_is_zero_zero_false() {
+        // Only an InvalidReactionAttempt row (no accepted-products info at
+        // all) ever has an empty slice -- see `product_arity_bucket`'s
+        // "<missing>" handling.
+        assert_eq!(accepted_product_arity(&[]), (0, 0, false));
+    }
+
+    #[test]
+    fn product_arity_bucket_labels() {
+        let row = ndcg_probe_row(1, vec![0]);
+
+        let mut single = row.clone();
+        single.accepted_products_canonical = vec![vec!["a".to_string()]];
+        single.accepted_product_count_min = 1;
+        single.accepted_product_count_max = 1;
+        single.accepted_product_count_mixed = false;
+        assert_eq!(product_arity_bucket(&single), "1");
+
+        let mut triple_plus = single.clone();
+        triple_plus.accepted_product_count_min = 4;
+        triple_plus.accepted_product_count_max = 4;
+        assert_eq!(product_arity_bucket(&triple_plus), "3+");
+
+        let mut mixed = single.clone();
+        mixed.accepted_product_count_min = 1;
+        mixed.accepted_product_count_max = 2;
+        mixed.accepted_product_count_mixed = true;
+        assert_eq!(product_arity_bucket(&mixed), "mixed:1-2");
+
+        let mut mixed_big = mixed.clone();
+        mixed_big.accepted_product_count_max = 5;
+        assert_eq!(product_arity_bucket(&mixed_big), "mixed:1-3+");
+
+        let mut missing = single.clone();
+        missing.accepted_products_canonical = Vec::new();
+        assert_eq!(product_arity_bucket(&missing), "<missing>");
+    }
+
+    #[test]
+    fn duplicate_accepted_product_dedup_preserves_within_multiset_multiplicity_for_arity() {
+        // Regression guard tying C4's outer-list dedup to C6's arity fields:
+        // a 2-product outcome listed twice must dedupe to ONE accepted
+        // outcome of arity 2, not silently collapse multiplicity within
+        // that outcome itself.
+        let dir = std::env::temp_dir().join(format!(
+            "renkin-forward-bench-dup-arity-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("corpus.jsonl");
+        let content = r#"
+{"schema_version": 1, "reaction_id": "dup-two-product", "reactants": ["CCO"], "accepted_products": [["CC=O", "O"], ["C(C)=O", "O"]]}
+"#;
+        std::fs::write(&path, content).unwrap();
+
+        let (reactions, _invalid, _stats, _warnings) = load_corpus(path.to_str().unwrap()).unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+
+        assert_eq!(reactions.len(), 1);
+        assert_eq!(reactions[0].accepted_products_canonical.len(), 1);
+        assert_eq!(reactions[0].accepted_products_canonical[0].len(), 2);
+        let (min, max, mixed) = accepted_product_arity(&reactions[0].accepted_products_canonical);
+        assert_eq!((min, max, mixed), (2, 2, false));
+    }
+
+    #[test]
+    fn derive_failure_reason_is_uniquely_derivable_from_orthogonal_statuses() {
+        let cases = [
+            (
+                InputStatus::Invalid,
+                ProposalStatus::NotAttempted,
+                RankingStatus::NotApplicable,
+                FailureReason::InputInvalid,
+            ),
+            (
+                InputStatus::Valid,
+                ProposalStatus::Error,
+                RankingStatus::NotApplicable,
+                FailureReason::PredictionError,
+            ),
+            (
+                InputStatus::Valid,
+                ProposalStatus::Covered,
+                RankingStatus::Top1,
+                FailureReason::HitTop1,
+            ),
+            (
+                InputStatus::Valid,
+                ProposalStatus::Covered,
+                RankingStatus::Top5,
+                FailureReason::HitTop5,
+            ),
+            (
+                InputStatus::Valid,
+                ProposalStatus::Covered,
+                RankingStatus::Top10,
+                FailureReason::HitTop10,
+            ),
+            (
+                InputStatus::Valid,
+                ProposalStatus::Covered,
+                RankingStatus::Beyond10,
+                FailureReason::HitBeyond10,
+            ),
+            (
+                InputStatus::Valid,
+                ProposalStatus::MissedEmptyPool,
+                RankingStatus::NotApplicable,
+                FailureReason::CorrectAbsentEmptyPool,
+            ),
+            (
+                InputStatus::Valid,
+                ProposalStatus::MissedNonemptyPool,
+                RankingStatus::NotApplicable,
+                FailureReason::CorrectAbsentNonemptyPool,
+            ),
+        ];
+        for (input_status, proposal_status, ranking_status, expected) in cases {
+            assert_eq!(
+                derive_failure_reason(input_status, proposal_status, ranking_status),
+                expected,
+                "input_status={input_status:?} proposal_status={proposal_status:?} \
+                 ranking_status={ranking_status:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn proposal_status_and_ranking_status_are_orthogonal_to_stereo_status() {
+        // A row with proposal_status=covered/ranking_status=top1 can still
+        // have any stereo_status -- ranking and stereochemistry are
+        // independent dimensions.
+        let correct_candidate_present = true;
+        let proposal_status = proposal_status_for(correct_candidate_present, 3, false);
+        let ranking_status = ranking_status_for(proposal_status, Some(0));
+        assert_eq!(proposal_status, ProposalStatus::Covered);
+        assert_eq!(ranking_status, RankingStatus::Top1);
+
+        for (aware_hit, ignored_outcome, expected) in [
+            (true, StereoIgnoredOutcome::Hit, StereoStatus::ExactHit),
+            (
+                false,
+                StereoIgnoredOutcome::Hit,
+                StereoStatus::StereoOnlyHit,
+            ),
+            (false, StereoIgnoredOutcome::NoHit, StereoStatus::NoHit),
+            (
+                false,
+                StereoIgnoredOutcome::Unsupported,
+                StereoStatus::Unsupported,
+            ),
+        ] {
+            assert_eq!(
+                stereo_status_for(true, aware_hit, ignored_outcome),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn check_status_consistency_rejects_input_invalid_with_a_ranked_proposal() {
+        let mut row = ndcg_probe_row(1, vec![0]);
+        row.input_status = InputStatus::Invalid;
+        // proposal_status/ranking_status/stereo_status still say "covered,
+        // top1" -- contradicts input_status=invalid.
+        assert!(check_status_consistency(&row).is_err());
+    }
+
+    #[test]
+    fn check_status_consistency_rejects_covered_without_a_rank() {
+        let mut row = ndcg_probe_row(1, vec![0]);
+        row.ranking_status = RankingStatus::NotApplicable;
+        assert!(check_status_consistency(&row).is_err());
+    }
+
+    #[test]
+    fn check_status_consistency_rejects_covered_disagreeing_with_best_correct_rank() {
+        let mut row = ndcg_probe_row(1, vec![]);
+        // proposal_status/ranking_status still say "covered, top1" from the
+        // helper's own construction path is bypassed here -- force the
+        // mismatch directly.
+        row.proposal_status = ProposalStatus::Covered;
+        row.ranking_status = RankingStatus::Top1;
+        assert!(row.best_correct_rank.is_none());
+        assert!(check_status_consistency(&row).is_err());
+    }
+
+    #[test]
+    fn check_status_consistency_accepts_every_fixture_this_module_builds() {
+        // Cross-status-consistency sweep: every fixture-building helper in
+        // this test module must produce a self-consistent BenchRow.
+        for row in [
+            ndcg_probe_row(1, vec![0]),
+            ndcg_probe_row(2, vec![0, 1]),
+            ndcg_probe_row(2, vec![1]),
+            ndcg_probe_row(0, vec![]),
+        ] {
+            check_status_consistency(&row).unwrap();
+        }
     }
 }

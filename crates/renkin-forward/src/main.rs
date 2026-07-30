@@ -124,7 +124,7 @@ const BENCHMARK_HELP: &str = "renkin-forward benchmark — deterministic forward
 \n\
 Usage:\n  \
 renkin-forward benchmark --corpus <path> --output-rows <path> [--output-report <path>]\n                            \
-[--template-source embedded|file|train-extracted] [--templates <path>]\n\
+[--template-source embedded|file|train-extracted] [--templates <path>] [--strict]\n\
 \n\
 Options:\n  \
 --corpus <path>            JSONL benchmark corpus, one reaction per line (required; see\n                               \
@@ -143,7 +143,15 @@ cannot verify that claim, see the guide.\n                               \
 not implemented until a reranker exists (issue #61 Phase 3/4) -- rejected\n                               \
 here, not silently downgraded to another mode.\n  \
 --templates <path>         Required when --template-source is 'file' or 'train-extracted';\n                               \
-hard error if given under 'embedded' (see docs)\n\
+hard error if given under 'embedded' (see docs)\n  \
+--strict                   Hard-error the whole run on any data-quality issue: malformed\n                               \
+corpus JSON, wrong schema version, unparseable SMILES, empty reactants/accepted\n                               \
+products, a conflicting group_key/reaction_id, a per-row prediction failure,\n                               \
+proposal_status=capped_unknown, or incomplete reproducibility provenance. Never\n                               \
+fails on a legitimate miss (proposal, ranking, or stereo) or a genuinely empty\n                               \
+candidate pool -- those are real outcomes, not data-quality problems. Off by\n                               \
+default: non-strict mode always counts every issue in corpus_stats/corpus_warnings/\n                               \
+diagnostics/per-row fields instead of failing the run.\n\
 \n\
 Deterministic and leakage-safe: every reaction is split train/val/test by a SHA-256 hash of\n\
 its canonical reactant multiset (or an explicit corpus-supplied group_key), never by the\n\
@@ -189,6 +197,7 @@ struct ParsedArgs {
     output_rows_path: Option<String>,
     output_report_path: Option<String>,
     template_source: String,
+    strict: bool,
 }
 
 /// Strict argument parser shared by `predict`/`validate`: unknown options,
@@ -216,6 +225,7 @@ fn parse_args(subcommand: &str, args: &[String]) -> Result<ParsedArgs> {
     let mut output_rows_path: Option<String> = None;
     let mut output_report_path: Option<String> = None;
     let mut template_source = "embedded".to_string();
+    let mut strict = false;
 
     let mut i = 0;
     while i < args.len() {
@@ -334,6 +344,9 @@ fn parse_args(subcommand: &str, args: &[String]) -> Result<ParsedArgs> {
                     .ok_or_else(|| anyhow::anyhow!("--template-source requires a value"))?;
                 template_source = v.clone();
             }
+            "--strict" if subcommand == "benchmark" => {
+                strict = true;
+            }
             "--help" | "-h" => {
                 println!(
                     "{}",
@@ -370,6 +383,7 @@ fn parse_args(subcommand: &str, args: &[String]) -> Result<ParsedArgs> {
         output_rows_path,
         output_report_path,
         template_source,
+        strict,
     })
 }
 
@@ -447,6 +461,7 @@ fn run_benchmark_subcommand(parsed: &ParsedArgs) -> Result<()> {
         corpus_path,
         template_source,
         parsed.templates_path.as_deref(),
+        parsed.strict,
     )?;
 
     let mut rows_jsonl = String::new();

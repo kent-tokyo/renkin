@@ -246,7 +246,7 @@ including `--template-source`/`--templates`.
 | `application_warning_count`, `application_error_count`, `templates_attempted`, `templates_matched`, `graph_rules_skipped`, `rules_loaded` | From the underlying prediction report (`ForwardStats`) — `graph_rules_skipped` (empty-`smirks` rules, never counted as a parse failure) and `templates_matched` (a subset of `templates_attempted` that had at least one slot match) are per-row, not just summed in the report header. |
 | `elapsed_ms` | Wall-clock time for this reaction's one `predict_products_detailed` call. **Not deterministic across runs** — see below. |
 | `failure_reason` | One of `hit_top1`, `hit_top5`, `hit_top10`, `hit_beyond_10`, `correct_absent_empty_pool`, `correct_absent_nonempty_pool`, `input_invalid`, `prediction_error`. Deliberately coarse: classifying *why* a template failed to apply (missing forward SMIRKS, atom-mapping mismatch, stereochemistry mismatch, …) is Phase 2 territory, not this harness. |
-| `provenance` | `{renkin_forward_version, template_source, rules_file_sha256}` — duplicated onto every row (not just the report header) so a single row, taken out of context, still fully describes what produced it. |
+| `provenance` | Full `RunProvenance` (see "Reproducibility provenance" below) — duplicated onto every row (not just the report header) so a single row, taken out of context, still fully describes what produced it. |
 
 ### Aggregate metrics
 
@@ -292,6 +292,21 @@ Every other field — including all of `candidate_count_distribution` (which
 is over *counts*, not timings) — is stable. See
 `tests/bench.rs::benchmark_is_deterministic_modulo_timing_fields` for the
 enforced check.
+
+### Reproducibility provenance
+
+Every report's `provenance` block (also duplicated onto every row) carries,
+beyond `renkin_forward_version`/`template_source`/`rules_file_sha256`:
+
+| Field | Meaning |
+|---|---|
+| `rules_content_sha256` | SHA-256 over the sorted `(template_id, smirks)` pairs of the rule set actually loaded — populated for every `template_source`, including `embedded` (`rules_file_sha256` is `null` there, since there's no file to hash). Two runs with a different rule *file* but identical rule *content* hash identically here. |
+| `split_protocol_version` | Versions the split algorithm itself (bucket cutoffs, hash scheme) — separate from `FORWARD_BENCH_REPORT_SCHEMA_VERSION`, so a future change to how train/val/test buckets are assigned can be detected independently of a schema change. |
+| `binary_sha256` | SHA-256 of the currently-running `renkin-forward` executable's own bytes, best-effort (`null` if `std::env::current_exe()` or the read fails). **Deliberately excluded from `reproducibility_sha256`** — Rust builds are not bit-reproducible even from identical source, so including it would make every independently-built binary report a spurious mismatch. |
+| `cargo_lock_sha256` | SHA-256 of the workspace `Cargo.lock`, embedded at compile time (`include_str!`) rather than read at runtime — an installed or copied binary has no reliable relative path back to the source tree. |
+| `config_sha256` | SHA-256 over the deterministic run configuration (`template_source`, `split_protocol_version`, `train_max_bucket`, `val_max_bucket`). Deliberately excludes `corpus_path` (a filesystem path, not corpus content — `corpus_sha256` already captures content identity). |
+| `reproducibility_sha256` | SHA-256 over every row's serialized fields, in `source_line` order, with `elapsed_ms` stripped from each row first — scoped to `rows` only, not the full report, since `overall`/`by_split`/`breakdowns` are pure deterministic functions of `rows` with no hidden per-run state. Two independent runs over the same corpus/rules/`template_source` must produce an identical value; see `tests/bench.rs::benchmark_is_deterministic_modulo_timing_fields`. |
+| `reproducibility_excludes` | Published list (`["elapsed_ms", "latency_ms", "binary_sha256", "corpus_path"]`) documenting the full "reproducible modulo what" contract. Only `elapsed_ms` is actually stripped by `reproducibility_sha256` itself; the other three never appear inside a row in the first place — this field exists so the contract doesn't have to be inferred from reading the hash function's source. |
 
 ### Fixture corpus
 

@@ -61,6 +61,13 @@ pub const FORWARD_BENCH_REPORT_SCHEMA_VERSION: u32 = 2;
 pub const TRAIN_MAX_BUCKET: u32 = 70;
 pub const VAL_MAX_BUCKET: u32 = 85;
 
+/// Version of the split ALGORITHM itself (bucket cutoffs + hash scheme
+/// above), not of the schema. Bump only if `split_bucket`/`split_for_group`
+/// or the cutoffs change -- a `--template-manifest` (once it exists, see
+/// `TemplateSource::TrainExtracted`) can then assert it was built against a
+/// compatible split protocol.
+pub const SPLIT_PROTOCOL_VERSION: u32 = 1;
+
 /// Cap on detailed [`CorpusLoadWarning`] entries retained, so a badly
 /// malformed corpus file can't inflate the report unboundedly.
 /// `CorpusLoadStats`'s counters always report the true totals regardless
@@ -1408,12 +1415,56 @@ fn pool_size_bucket(n: usize) -> String {
 pub struct RunProvenance {
     pub renkin_forward_version: String,
     pub template_source: String,
+    /// SHA-256 of the raw `--templates` file bytes -- `None` for `embedded`,
+    /// where there is no file to hash (see `rules_content_sha256` for a
+    /// mode-independent alternative).
     pub rules_file_sha256: Option<String>,
+    /// SHA-256 over the canonical (`template_id`, `smirks`) sequence of the
+    /// actually-loaded rule set, sorted for order-independence -- populated
+    /// for EVERY `template_source` including `embedded`, unlike
+    /// `rules_file_sha256`. Catches "the embedded default rule set changed
+    /// between runs" (a rebuild against a different `renkin` version), which
+    /// `rules_file_sha256: None` cannot.
+    pub rules_content_sha256: String,
     pub rules_loaded: usize,
     pub corpus_path: String,
     pub corpus_sha256: String,
     pub train_max_bucket: u32,
     pub val_max_bucket: u32,
+    pub split_protocol_version: u32,
+    /// SHA-256 of the currently-running executable's own file on disk.
+    /// `None` if `std::env::current_exe()` or reading it failed (never a
+    /// hard error for the run). NOT part of `reproducibility_sha256` --
+    /// Rust builds are not bit-reproducible, so rebuilding from identical
+    /// source still changes this value; folding it into the reproducibility
+    /// hash would make "same source, same corpus" register as different.
+    pub binary_sha256: Option<String>,
+    /// SHA-256 of the workspace `Cargo.lock` at compile time -- pins the
+    /// entire resolved dependency graph (including chematic's exact
+    /// version/source/checksum) as one number, cheaper and more reliable
+    /// than hand-parsing individual package entries out of it.
+    pub cargo_lock_sha256: String,
+    /// SHA-256 over this run's own deterministic configuration (currently:
+    /// `template_source`, `split_protocol_version`, `train_max_bucket`,
+    /// `val_max_bucket`) -- deliberately EXCLUDES `corpus_path`, a
+    /// filesystem path that can differ across machines/invocations even for
+    /// byte-identical corpus *content* (`corpus_sha256` already captures
+    /// content identity).
+    pub config_sha256: String,
+    /// SHA-256 over every row's fields EXCEPT `elapsed_ms` (see
+    /// `reproducibility_excludes`), in `source_line` order. Two runs on the
+    /// same corpus/rules/`--template-source` MUST produce the same value --
+    /// `tests/bench.rs::benchmark_is_deterministic_modulo_timing_fields`
+    /// asserts this directly.
+    pub reproducibility_sha256: String,
+    /// Field names never covered by `reproducibility_sha256` (wherever they
+    /// appear in a row or in this provenance block), because they are
+    /// expected to vary between two otherwise-identical runs (`elapsed_ms`,
+    /// `latency_ms`) or because folding them in would make bit-identical
+    /// rebuilds of the same source register as non-reproducible
+    /// (`binary_sha256`) or make the same corpus content register as
+    /// non-reproducible across machines (`corpus_path`).
+    pub reproducibility_excludes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1437,6 +1488,102 @@ pub struct BenchReport {
 pub struct BenchOutcome {
     pub rows: Vec<BenchRow>,
     pub report: BenchReport,
+}
+
+/// SHA-256 over the canonical (`template_id`, `smirks`) sequence of `rules`,
+/// sorted first so file/embedded declaration order never affects the
+/// result. Populated for every `TemplateSource`, unlike `rules_file_sha256`
+/// (which only exists for `File`/`TrainExtracted`).
+fn rules_content_hash(rules: &[RetroRule]) -> String {
+    let mut pairs: Vec<String> = rules
+        .iter()
+        .map(|r| format!("{}\0{}", r.template_id, r.smirks))
+        .collect();
+    pairs.sort_unstable();
+    let mut hasher = Sha256::new();
+    hasher.update(b"renkin-forward-bench-rules-content-v1\0");
+    hash_string_sequence(&mut hasher, &pairs);
+    format!("{:x}", hasher.finalize())
+}
+
+/// SHA-256 of the currently-running executable's own bytes on disk. `None`
+/// (never a hard error) if the current executable's path or contents can't
+/// be read.
+fn binary_sha256() -> Option<String> {
+    let path = std::env::current_exe().ok()?;
+    let bytes = std::fs::read(path).ok()?;
+    let mut hasher = Sha256::new();
+    hasher.update(&bytes);
+    Some(format!("{:x}", hasher.finalize()))
+}
+
+/// SHA-256 of the workspace `Cargo.lock` at compile time -- pins the entire
+/// resolved dependency graph (chematic's exact version/source/checksum
+/// included) as one number. Embedded via `include_str!` rather than a
+/// runtime read: an installed/copied binary has no reliable relative path
+/// back to the source tree's `Cargo.lock`, but the compiled-in content is
+/// always available. (`renkin-forward` has a `path`-only dependency on the
+/// workspace root and is not independently packaged -- confirmed via
+/// `cargo package -p renkin-forward`, which already fails for that reason
+/// today -- so this reaching outside the crate directory does not affect
+/// publishing.)
+fn cargo_lock_sha256() -> String {
+    const CARGO_LOCK: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../Cargo.lock"));
+    let mut hasher = Sha256::new();
+    hasher.update(CARGO_LOCK.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+/// SHA-256 over this run's own deterministic configuration values --
+/// deliberately excludes any filesystem path (see `RunProvenance::
+/// config_sha256`'s doc comment).
+fn config_hash(template_source: &str, train_max_bucket: u32, val_max_bucket: u32) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"renkin-forward-bench-config-v1\0");
+    hash_string_sequence(&mut hasher, &[template_source.to_string()]);
+    hasher.update(train_max_bucket.to_be_bytes());
+    hasher.update(val_max_bucket.to_be_bytes());
+    hasher.update(SPLIT_PROTOCOL_VERSION.to_be_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+/// Field names published as `RunProvenance::reproducibility_excludes` --
+/// every one a reader should expect to legitimately differ between two
+/// otherwise-identical runs (`elapsed_ms`/`latency_ms`: real wall-clock
+/// timing; `binary_sha256`: Rust builds aren't bit-reproducible;
+/// `corpus_path`: a filesystem path, not corpus content). Only `elapsed_ms`
+/// is actually stripped by `reproducibility_hash` below -- the other three
+/// never appear inside a `BenchRow` in the first place (they live in
+/// `RunProvenance`/`BenchAggregate`, outside this hash's scope), so listing
+/// them here is purely documentation of the wider "reproducible modulo
+/// what" contract, not something this specific hash needs to strip.
+const REPRODUCIBILITY_EXCLUDES: &[&str] =
+    &["elapsed_ms", "latency_ms", "binary_sha256", "corpus_path"];
+
+/// SHA-256 over every row's fields except `elapsed_ms`, in the rows'
+/// existing (already source_line-sorted) order. Deliberately scoped to rows
+/// only, not the full report: `overall`/`by_split`/`breakdowns` are pure,
+/// deterministic functions of `rows` (no hidden per-run state), so hashing
+/// rows alone already implies the whole report is reproducible -- and
+/// avoids the self-reference problem of hashing a `BenchReport` that would
+/// need to contain this very hash. Two runs against the same corpus/rules/
+/// `--template-source` must produce byte-identical rows modulo `elapsed_ms`
+/// (see `docs/guides/forward-benchmark.md`'s "Determinism" section) --
+/// `tests/bench.rs::benchmark_is_deterministic_modulo_timing_fields`
+/// asserts this hash matches across two independent runs directly.
+fn reproducibility_hash(rows: &[BenchRow]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"renkin-forward-bench-reproducibility-v1\0");
+    for row in rows {
+        let mut value = serde_json::to_value(row).expect("BenchRow always serializes");
+        if let Some(obj) = value.as_object_mut() {
+            obj.remove("elapsed_ms");
+        }
+        let bytes = serde_json::to_vec(&value).expect("serde_json::Value always serializes");
+        hasher.update((bytes.len() as u64).to_be_bytes());
+        hasher.update(&bytes);
+    }
+    format!("{:x}", hasher.finalize())
 }
 
 /// Runs the full Phase 1 harness end to end: load + canonicalize + dedupe
@@ -1474,11 +1621,21 @@ pub fn run_benchmark(
         renkin_forward_version: env!("CARGO_PKG_VERSION").to_string(),
         template_source: template_source.as_str().to_string(),
         rules_file_sha256,
+        rules_content_sha256: rules_content_hash(&rules),
         rules_loaded: rules.len(),
         corpus_path: corpus_path.to_string(),
         corpus_sha256,
         train_max_bucket: TRAIN_MAX_BUCKET,
         val_max_bucket: VAL_MAX_BUCKET,
+        split_protocol_version: SPLIT_PROTOCOL_VERSION,
+        binary_sha256: binary_sha256(),
+        cargo_lock_sha256: cargo_lock_sha256(),
+        config_sha256: config_hash(template_source.as_str(), TRAIN_MAX_BUCKET, VAL_MAX_BUCKET),
+        reproducibility_sha256: reproducibility_hash(&rows),
+        reproducibility_excludes: REPRODUCIBILITY_EXCLUDES
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
     };
 
     let all_refs: Vec<&BenchRow> = rows.iter().collect();
@@ -1579,6 +1736,74 @@ mod tests {
             }
         }
         assert_eq!(seen, HashSet::from(["train", "val", "test"]));
+    }
+
+    fn probe_rule(name: &str, smirks: &str) -> RetroRule {
+        RetroRule {
+            name: name.to_string(),
+            template_id: format!("rule:{name}"),
+            smirks: smirks.to_string(),
+            weight: 1.0,
+            required_elements: 0,
+        }
+    }
+
+    #[test]
+    fn rules_content_hash_differs_for_different_rule_sets_and_is_order_independent() {
+        let a = [probe_rule("swap", "[c:1][Cl]>>[c:1][Br]")];
+        let b = [probe_rule("swap", "[c:1][F]>>[c:1][Br]")];
+        assert_ne!(rules_content_hash(&a), rules_content_hash(&b));
+
+        let c = [
+            probe_rule("swap", "[c:1][Cl]>>[c:1][Br]"),
+            probe_rule("other", "[C:1][O]>>[C:1][N]"),
+        ];
+        let d = [
+            probe_rule("other", "[C:1][O]>>[C:1][N]"),
+            probe_rule("swap", "[c:1][Cl]>>[c:1][Br]"),
+        ];
+        assert_eq!(
+            rules_content_hash(&c),
+            rules_content_hash(&d),
+            "declaration order must not affect the hash"
+        );
+    }
+
+    #[test]
+    fn config_hash_differs_by_template_source_only() {
+        let a = config_hash("embedded", TRAIN_MAX_BUCKET, VAL_MAX_BUCKET);
+        let b = config_hash("file", TRAIN_MAX_BUCKET, VAL_MAX_BUCKET);
+        assert_ne!(a, b);
+        assert_eq!(a, config_hash("embedded", TRAIN_MAX_BUCKET, VAL_MAX_BUCKET));
+    }
+
+    #[test]
+    fn cargo_lock_sha256_is_stable_and_looks_like_a_sha256_hex_digest() {
+        let a = cargo_lock_sha256();
+        let b = cargo_lock_sha256();
+        assert_eq!(a, b);
+        assert_eq!(a.len(), 64);
+        assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn reproducibility_hash_ignores_elapsed_ms_but_reacts_to_other_row_content() {
+        let base = ndcg_probe_row(1, vec![0]);
+        let mut same_chemistry_different_timing = base.clone();
+        same_chemistry_different_timing.elapsed_ms = base.elapsed_ms + 500.0;
+        assert_eq!(
+            reproducibility_hash(&[base.clone()]),
+            reproducibility_hash(&[same_chemistry_different_timing]),
+            "elapsed_ms alone must not change the reproducibility hash"
+        );
+
+        let mut different_chemistry = base.clone();
+        different_chemistry.best_correct_rank = Some(3);
+        assert_ne!(
+            reproducibility_hash(&[base]),
+            reproducibility_hash(&[different_chemistry]),
+            "a genuinely different row must change the reproducibility hash"
+        );
     }
 
     #[test]

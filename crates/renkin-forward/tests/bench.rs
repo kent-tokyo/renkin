@@ -330,6 +330,17 @@ fn benchmark_is_deterministic_modulo_timing_fields() {
         serde_json::from_str(&std::fs::read_to_string(&report_path_a).unwrap()).unwrap();
     let mut report_b: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&report_path_b).unwrap()).unwrap();
+    // Assert this BEFORE stripping timing fields: `reproducibility_sha256`
+    // is defined to already exclude elapsed_ms/latency_ms/binary_sha256
+    // itself (see `REPRODUCIBILITY_EXCLUDES`), so it must match across two
+    // runs without needing `strip_timing`'s help -- that's what makes the
+    // field meaningful rather than decorative.
+    assert_eq!(
+        report_a["provenance"]["reproducibility_sha256"],
+        report_b["provenance"]["reproducibility_sha256"],
+        "reproducibility_sha256 must match across two independent runs of \
+         the same corpus/rules/template_source"
+    );
     strip_timing(&mut report_a);
     strip_timing(&mut report_b);
     assert_eq!(

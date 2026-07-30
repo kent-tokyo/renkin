@@ -1,0 +1,208 @@
+"""Deterministic target sampling for the Issue #66 open-source planner comparison.
+
+Freezes a single, reproducible ordering over `data/uspto50k_test.smi` so that
+the 100-target feasibility sample, the 500-target future validation sample,
+and the full corpus are *prefixes of one sorted list* -- never three
+independently-derived samples that merely happen to agree.
+
+Canonicalization uses RDKit (not chematic) so the same neutral, tool-agnostic
+canonicalizer used by the post-hoc validator (`compare_validation.py`) also
+defines sample membership -- one canonicalizer, one place it can disagree
+with a tool's own SMILES dialect, not two.
+
+Usage:
+    .venv-compare-66/bin/python scripts/compare_sampling.py \
+        --corpus data/uspto50k_test.smi \
+        --output-manifest data/comparison/sample_manifest.json \
+        --output-list data/comparison/sample_full_sorted.jsonl
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import sys
+from dataclasses import dataclass, field
+
+try:
+    from rdkit import Chem, RDLogger
+
+    RDLogger.DisableLog("rdApp.*")
+    HAVE_RDKIT = True
+except ImportError:  # pragma: no cover -- exercised by scripts/tests without the dep installed
+    HAVE_RDKIT = False
+
+PROTOCOL_VERSION = "renkin-issue66-sample-v1"
+
+
+def canonical_smiles(raw_smiles: str) -> str | None:
+    if not HAVE_RDKIT:
+        raise RuntimeError(
+            "rdkit is required (pip install -r scripts/requirements-compare-66.txt)"
+        )
+    mol = Chem.MolFromSmiles(raw_smiles)
+    if mol is None:
+        return None
+    return Chem.MolToSmiles(mol, canonical=True)
+
+
+def sample_key(canonical: str) -> str:
+    h = hashlib.sha256()
+    h.update(f"{PROTOCOL_VERSION}|".encode("utf-8"))
+    h.update(canonical.encode("utf-8"))
+    return h.hexdigest()
+
+
+def sha256_file(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def sha256_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+@dataclass
+class CandidateLine:
+    line_number: int
+    raw_smiles: str
+
+
+@dataclass
+class SampleBuildResult:
+    manifest: dict
+    ordered_rows: list[dict] = field(default_factory=list)
+
+
+def load_candidate_lines(corpus_path: str) -> tuple[list[CandidateLine], int, int]:
+    """Returns (candidate_lines, total_lines, comment_or_blank_lines)."""
+    candidates: list[CandidateLine] = []
+    total_lines = 0
+    comment_or_blank = 0
+    with open(corpus_path, "r", encoding="utf-8") as f:
+        for line_number, raw_line in enumerate(f, start=1):
+            total_lines += 1
+            stripped = raw_line.strip()
+            if not stripped or stripped.startswith("#"):
+                comment_or_blank += 1
+                continue
+            # Format: "<SMILES>\t<reaction_class>" -- first whitespace token is SMILES.
+            raw_smiles = stripped.split()[0]
+            candidates.append(CandidateLine(line_number=line_number, raw_smiles=raw_smiles))
+    return candidates, total_lines, comment_or_blank
+
+
+def build_sample(corpus_path: str) -> SampleBuildResult:
+    candidates, total_lines, comment_or_blank = load_candidate_lines(corpus_path)
+
+    unparseable: list[dict] = []
+    # canonical_smiles -> list of (line_number, raw_smiles), insertion order
+    groups: dict[str, list[CandidateLine]] = {}
+    for c in candidates:
+        canon = canonical_smiles(c.raw_smiles)
+        if canon is None:
+            unparseable.append({"line_number": c.line_number, "raw_smiles": c.raw_smiles})
+            continue
+        groups.setdefault(canon, []).append(c)
+
+    duplicate_detail = []
+    kept: list[tuple[str, int]] = []  # (canonical_smiles, kept_line_number)
+    for canon, entries in groups.items():
+        entries_sorted = sorted(entries, key=lambda c: c.line_number)
+        keeper = entries_sorted[0]
+        kept.append((canon, keeper.line_number))
+        if len(entries_sorted) > 1:
+            duplicate_detail.append(
+                {
+                    "canonical_smiles": canon,
+                    "raw_line_numbers": [e.line_number for e in entries_sorted],
+                    "kept_line_number": keeper.line_number,
+                }
+            )
+    duplicate_detail.sort(key=lambda d: d["kept_line_number"])
+
+    # Single sort, by (sample_key, canonical_smiles) for a deterministic tie-break.
+    keyed = [(sample_key(canon), canon, line_no) for canon, line_no in kept]
+    keyed.sort(key=lambda t: (t[0], t[1]))
+
+    ordered_rows = []
+    for rank, (key, canon, line_no) in enumerate(keyed):
+        ordered_rows.append(
+            {
+                "sample_rank": rank,
+                "target_id": f"uspto50k_test#L{line_no}",
+                "canonical_smiles": canon,
+                "source_line_number": line_no,
+                "sample_key": key,
+            }
+        )
+
+    ordered_list_text = "\n".join(json.dumps(row, sort_keys=True) for row in ordered_rows) + "\n"
+
+    manifest = {
+        "protocol_version": PROTOCOL_VERSION,
+        "source_file": corpus_path,
+        "source_file_sha256": sha256_file(corpus_path),
+        "canonicalizer": "rdkit",
+        "canonicalizer_version": Chem.rdBase.rdkitVersion,
+        "raw_lines_total": total_lines,
+        "comment_or_blank_lines": comment_or_blank,
+        "raw_candidate_lines": len(candidates),
+        "unparseable_count": len(unparseable),
+        "unparseable_lines": unparseable,
+        "canonical_duplicate_groups": len(duplicate_detail),
+        "canonical_duplicate_detail": duplicate_detail,
+        "unique_canonical_targets": len(ordered_rows),
+        "hash_function": 'SHA-256("renkin-issue66-sample-v1|" + canonical_smiles), lowercase hex',
+        "tie_break": "ascending canonical SMILES string on sample_key collision",
+        "sample_100_size": min(100, len(ordered_rows)),
+        "sample_500_size": min(500, len(ordered_rows)),
+        "sample_full_size": len(ordered_rows),
+        "ordered_list_sha256": sha256_text(ordered_list_text),
+    }
+    return SampleBuildResult(manifest=manifest, ordered_rows=ordered_rows)
+
+
+def load_sample(list_path: str, n: int | None = None) -> list[dict]:
+    """Loads the frozen ordered list and returns the first `n` rows (or all).
+
+    This is the ONLY way downstream code should obtain sample_100/sample_500 --
+    both are prefixes of the same file, never independently recomputed.
+    """
+    rows = []
+    with open(list_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                rows.append(json.loads(line))
+    rows.sort(key=lambda r: r["sample_rank"])
+    return rows if n is None else rows[:n]
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--corpus", default="data/uspto50k_test.smi")
+    parser.add_argument("--output-manifest", default="data/comparison/sample_manifest.json")
+    parser.add_argument("--output-list", default="data/comparison/sample_full_sorted.jsonl")
+    args = parser.parse_args(argv)
+
+    result = build_sample(args.corpus)
+
+    with open(args.output_list, "w", encoding="utf-8") as f:
+        for row in result.ordered_rows:
+            f.write(json.dumps(row, sort_keys=True) + "\n")
+
+    with open(args.output_manifest, "w", encoding="utf-8") as f:
+        json.dump(result.manifest, f, indent=2, sort_keys=True)
+        f.write("\n")
+
+    print(json.dumps(result.manifest, indent=2, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

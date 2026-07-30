@@ -1,0 +1,15 @@
+{
+  "mcnemar": {
+    "aizynthfinder_matched_only": 0,
+    "p_value": 1.52587890625e-05,
+    "renkin_only": 17
+  },
+  "n_pairs": 100,
+  "route_found_rate_diff_renkin_minus_aizynthfinder_matched_stock": {
+    "ci_high": 0.24999999999999997,
+    "ci_low": 0.1,
+    "n_iterations": 10000,
+    "observed": 0.16999999999999998,
+    "seed": 1066
+  }
+}

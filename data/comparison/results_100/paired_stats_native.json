@@ -1,0 +1,21 @@
+{
+  "both_solved_n": 18,
+  "mcnemar": {
+    "aizynthfinder_only": 48,
+    "p_value": 1.9674928353197174e-11,
+    "renkin_only": 3
+  },
+  "n_pairs": 100,
+  "route_found_rate_diff_renkin_minus_aizynthfinder": {
+    "ci_high": -0.34,
+    "ci_low": -0.5599999999999999,
+    "n_iterations": 10000,
+    "observed": -0.45000000000000007,
+    "seed": 1066
+  },
+  "total_elapsed_ms_diff_renkin_minus_aizynthfinder_both_solved": {
+    "ci_high": -9101.955949102477,
+    "ci_low": -10770.02732182801,
+    "observed": -9971.225321774707
+  }
+}

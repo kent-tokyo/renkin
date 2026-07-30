@@ -1,0 +1,34 @@
+{
+  "extra_after_roundtrip": [
+    "VZCYOOQTPOCHFL-UHFFFAOYSA-N"
+  ],
+  "extra_after_roundtrip_count": 1,
+  "genuine_extra_count": 0,
+  "genuine_missing_count": 0,
+  "missing_after_roundtrip": [
+    "VZCYOOQTPOCHFL-OWOJBTEDSA-N"
+  ],
+  "missing_after_roundtrip_count": 1,
+  "output_hdf5_path": "data/comparison/renkin_bb_402.hdf5",
+  "output_hdf5_sha256": "95870d03777b628434e0a4fdc9b3153d1a4841ed3702c29aaaf5726e273210a6",
+  "readback_unique_inchikey_count": 393,
+  "roundtrip_identity_confirmed": false,
+  "roundtrip_identity_confirmed_modulo_stereo_layer": true,
+  "source_conversion_failures": [
+    "c1csc[nH]1",
+    "Brc1ccc(N+](=O)[O-])cc1",
+    "Brc1cncc1",
+    "Clc1ccc(N+](=O)[O-])cc1",
+    "OB(O)c1ccc(N+](=O)[O-])cc1",
+    "Cc1csc[nH]1",
+    "c1ncs[nH]1",
+    "c1cco[nH]1",
+    "O=S(=O)(Cl)c1csc(=N)n1"
+  ],
+  "source_conversion_failures_count": 9,
+  "source_file": "data/building_blocks.smi",
+  "source_file_sha256": "6fb4550dbc29480427ef4331dc492f0f66a315776b32bf1a6ab7057c6f1521dd",
+  "source_raw_count": 449,
+  "source_unique_inchikey_count": 393,
+  "stereo_layer_only_mismatch_count": 1
+}

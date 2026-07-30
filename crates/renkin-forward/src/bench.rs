@@ -114,11 +114,23 @@ pub struct CorpusLoadStats {
     pub empty_reactants_or_products: usize,
     pub duplicate_records_merged: usize,
     /// Two rows sharing a reaction identity each supplied a different
-    /// non-empty explicit `group_key` -- a corpus data-quality problem, not
-    /// a load error. The first-encountered explicit key is kept
-    /// deterministically (see the `conflicting_explicit_group_key` warning
-    /// for both values); never silently picked without a trace.
+    /// non-empty explicit `group_key` -- an unresolvable corpus data-quality
+    /// problem: neither value can be trusted over the other, so guessing
+    /// (even deterministically) would silently risk a leakage-safety
+    /// violation. The affected reaction is REJECTED (moved out of the
+    /// returned reactions into an `InvalidReactionAttempt` with reason
+    /// `"conflicting_group_key"`), never kept under either candidate key.
+    /// See the `conflicting_explicit_group_key` warning for both values.
     pub conflicting_group_keys: usize,
+    /// The same corpus `reaction_id` was used for two rows that canonicalize
+    /// to a DIFFERENT reaction identity (different reactants and/or accepted
+    /// products) -- a corpus integrity problem distinct from the identity-
+    /// level duplicate-merge above. The later row is rejected (`reason`
+    /// `"conflicting_reaction_id"`), never silently accepted as if
+    /// `reaction_id` were a reliable per-reaction key (it is documented as
+    /// NOT used for identity/splitting precisely because corpora can't be
+    /// trusted to keep it unique).
+    pub conflicting_reaction_ids: usize,
     pub reactions_loaded: usize,
     /// True once rejections exceed [`MAX_CORPUS_LOAD_WARNINGS`] -- the
     /// counters above always hold the true totals regardless.
@@ -307,6 +319,18 @@ pub fn load_corpus(path: &str) -> CorpusLoadResult {
     // because an EARLIER, bare duplicate happened to be dedup-retained
     // first (see `duplicate_group_key_independent_of_row_order`).
     let mut explicit_group_key: HashMap<String, String> = HashMap::new();
+    // Tracks the first-seen reaction identity for each corpus `reaction_id`
+    // -- `reaction_id` is documented as not used for identity/splitting
+    // precisely because corpora can't be trusted to keep it unique; a LATER
+    // row reusing an already-seen `reaction_id` for a DIFFERENT identity is
+    // a corpus integrity problem, rejected rather than silently accepted.
+    let mut reaction_id_identity: HashMap<String, String> = HashMap::new();
+    // Identities whose duplicate rows carried conflicting explicit
+    // `group_key` values -- collected during the loop, then the whole
+    // reaction is excluded from the returned `reactions` in a final pass
+    // (see after the loop): neither candidate key can be trusted.
+    let mut conflicted_identities: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
 
     let push_warning = |stats: &mut CorpusLoadStats,
                         warnings: &mut Vec<CorpusLoadWarning>,
@@ -439,9 +463,47 @@ pub fn load_corpus(path: &str) -> CorpusLoadResult {
 
         reactants_canonical.sort_unstable();
         accepted_products_canonical.sort();
+        // Two accepted-product entries that canonicalize to the identical
+        // multiset (e.g. the same answer listed twice in the corpus, or two
+        // spellings that happen to converge) must not count as two distinct
+        // ground-truth outcomes -- that would inflate NDCG@10's ideal DCG
+        // and double-count `num_products`'s corpus-level source. Dedup the
+        // OUTER list only; multiplicity WITHIN one accepted product multiset
+        // is untouched (each entry is already its own sorted `Vec<String>`).
+        accepted_products_canonical.dedup();
 
         let identity = reaction_identity_hash(&reactants_canonical, &accepted_products_canonical);
         let row_explicit_key = row.group_key.filter(|k| !k.is_empty());
+
+        // `reaction_id` reused for a genuinely different reaction (different
+        // reactants and/or accepted products) is a corpus integrity problem
+        // -- reject this row rather than silently accepting a non-unique ID.
+        if let Some(prior_identity) = reaction_id_identity.get(&row.reaction_id) {
+            if *prior_identity != identity {
+                stats.conflicting_reaction_ids += 1;
+                push_warning(
+                    &mut stats,
+                    &mut warnings,
+                    CorpusLoadWarning {
+                        line_number,
+                        code: "conflicting_reaction_id".to_string(),
+                        message: format!(
+                            "reaction_id {:?} was already used for a different reaction \
+                             (different reactants/accepted products); rejecting this row",
+                            row.reaction_id
+                        ),
+                    },
+                );
+                invalid.push(InvalidReactionAttempt {
+                    reaction_id: row.reaction_id,
+                    source_line: line_number,
+                    reason: "conflicting_reaction_id".to_string(),
+                });
+                continue;
+            }
+        } else {
+            reaction_id_identity.insert(row.reaction_id.clone(), identity.clone());
+        }
 
         if let Some(&existing_idx) = seen_identity.get(&identity) {
             stats.duplicate_records_merged += 1;
@@ -449,6 +511,7 @@ pub fn load_corpus(path: &str) -> CorpusLoadResult {
                 match explicit_group_key.get(&identity) {
                     Some(kept) if *kept != new_key => {
                         stats.conflicting_group_keys += 1;
+                        conflicted_identities.insert(identity.clone());
                         push_warning(
                             &mut stats,
                             &mut warnings,
@@ -457,7 +520,8 @@ pub fn load_corpus(path: &str) -> CorpusLoadResult {
                                 code: "conflicting_explicit_group_key".to_string(),
                                 message: format!(
                                     "reaction {:?} has conflicting explicit group_key values \
-                                     across duplicate rows: kept {kept:?}, ignored {new_key:?}",
+                                     across duplicate rows ({kept:?} vs {new_key:?}); rejecting \
+                                     the whole reaction rather than guessing which is correct",
                                     reactions[existing_idx].reaction_id
                                 ),
                             },
@@ -499,6 +563,31 @@ pub fn load_corpus(path: &str) -> CorpusLoadResult {
             group_key,
             has_stereochemistry,
         });
+    }
+
+    // Reject every reaction whose duplicate rows carried conflicting
+    // explicit `group_key` values, rather than silently keeping whichever
+    // key happened to be seen first -- moved out of `reactions` into
+    // `invalid` here, once identity->index lookups from `seen_identity` are
+    // stable (no more insertions happen after the loop above).
+    if !conflicted_identities.is_empty() {
+        let conflicted_indices: std::collections::HashSet<usize> = conflicted_identities
+            .iter()
+            .filter_map(|identity| seen_identity.get(identity).copied())
+            .collect();
+        let mut kept = Vec::with_capacity(reactions.len());
+        for (i, reaction) in reactions.into_iter().enumerate() {
+            if conflicted_indices.contains(&i) {
+                invalid.push(InvalidReactionAttempt {
+                    reaction_id: reaction.reaction_id,
+                    source_line: reaction.source_line,
+                    reason: "conflicting_group_key".to_string(),
+                });
+            } else {
+                kept.push(reaction);
+            }
+        }
+        reactions = kept;
     }
 
     stats.reactions_loaded = reactions.len();
@@ -569,7 +658,7 @@ pub fn load_rules_for_source(
             }
             Ok((default_rules(), None))
         }
-        TemplateSource::File | TemplateSource::TrainExtracted => {
+        TemplateSource::File => {
             let path = templates_path.ok_or_else(|| {
                 anyhow::anyhow!(
                     "--template-source {:?} requires --templates <path>",
@@ -579,6 +668,25 @@ pub fn load_rules_for_source(
             let rules = load_templates_strict(path)?;
             let sha = sha256_hex_of_file(path)?;
             Ok((rules, Some(sha)))
+        }
+        // ponytail: a manifest (templates_sha256 + source_corpus_sha256 +
+        // split_protocol_version + included_split == "train", hard-
+        // validated here) is the real unblock condition -- add
+        // --template-manifest <path> and validate it before loading, then
+        // this arm can load the file same as File mode above.
+        TemplateSource::TrainExtracted => {
+            bail!(
+                "--template-source train-extracted is not usable yet: this harness has no way \
+                 to verify that a --templates file was actually extracted from the train split \
+                 only -- it would load the file exactly like --template-source file and merely \
+                 stamp a different provenance label, which is a label, not a verified guarantee. \
+                 Use --template-source file if you accept responsibility for that split \
+                 boundary yourself (and inspect the per-split metric breakdown for suspiciously \
+                 strong val/test results, which would be the only signal of a mislabeled file). \
+                 A future version will accept --template-manifest <path> attesting \
+                 {{templates_sha256, source_corpus_sha256, split_protocol_version, \
+                 included_split: \"train\"}} and hard-validate it before loading."
+            );
         }
     }
 }
@@ -764,6 +872,17 @@ pub struct BenchRow {
     pub raw_outcomes: usize,
     pub correct_candidate_present: bool,
     pub best_correct_rank: Option<usize>,
+    /// Every rank (0-based, ascending, `< 10`) whose candidate matches ANY
+    /// entry in `accepted_products_canonical` -- not just the best one.
+    /// `accepted_products_canonical` allows more than one correct outcome
+    /// (e.g. competing literature reports), so a ranking that surfaces two
+    /// of three accepted outcomes in the top 10 deserves more NDCG@10
+    /// credit than one that surfaces only one; `best_correct_rank` alone
+    /// can't express that. Used only for `ndcg_at_10`'s multi-positive
+    /// binary-relevance computation -- `best_correct_rank`/`top1_hit`/
+    /// `top5_hit`/`top10_hit`/mean/median rank are unaffected and still
+    /// derived from the single best rank.
+    pub correct_ranks_top10: Vec<usize>,
     /// Best rank under the stereochemistry-ignored comparison (see
     /// [`stereo_ignored_canonical`]) -- always `<= best_correct_rank` when
     /// both are present, since the ignored comparison is strictly looser.
@@ -822,6 +941,7 @@ fn invalid_row(attempt: &InvalidReactionAttempt, provenance: &RowProvenance) -> 
         raw_outcomes: 0,
         correct_candidate_present: false,
         best_correct_rank: None,
+        correct_ranks_top10: Vec::new(),
         best_correct_rank_stereo_ignored: None,
         top1_hit: false,
         top5_hit: false,
@@ -893,6 +1013,7 @@ fn compute_row(
                 raw_outcomes: 0,
                 correct_candidate_present: false,
                 best_correct_rank: None,
+                correct_ranks_top10: Vec::new(),
                 best_correct_rank_stereo_ignored: None,
                 top1_hit: false,
                 top5_hit: false,
@@ -927,13 +1048,18 @@ fn compute_row(
 
     let mut best_aware_rank: Option<usize> = None;
     let mut best_ignored_rank: Option<usize> = None;
+    let mut correct_ranks_top10: Vec<usize> = Vec::new();
     for candidate in &report.candidates {
-        if best_aware_rank.is_none()
-            && reaction
-                .accepted_products_canonical
-                .contains(&candidate.products)
+        if reaction
+            .accepted_products_canonical
+            .contains(&candidate.products)
         {
-            best_aware_rank = Some(candidate.rank);
+            if best_aware_rank.is_none() {
+                best_aware_rank = Some(candidate.rank);
+            }
+            if candidate.rank < 10 {
+                correct_ranks_top10.push(candidate.rank);
+            }
         }
         if !stereo_ignored_unsupported && best_ignored_rank.is_none() {
             match stereo_ignored_set(&candidate.products) {
@@ -948,10 +1074,14 @@ fn compute_row(
                 None => stereo_ignored_unsupported = true,
             }
         }
-        if best_aware_rank.is_some() && (best_ignored_rank.is_some() || stereo_ignored_unsupported)
+        // Candidates are already rank-ordered ascending. Once past rank 9,
+        // no further candidate can add to `correct_ranks_top10`; safe to
+        // stop once both the aware and ignored dimensions are also
+        // resolved (nothing later can improve either).
+        if candidate.rank >= 10
+            && best_aware_rank.is_some()
+            && (best_ignored_rank.is_some() || stereo_ignored_unsupported)
         {
-            // Candidates are already rank-ordered ascending; nothing later
-            // can improve either dimension once both are resolved.
             break;
         }
     }
@@ -999,6 +1129,7 @@ fn compute_row(
         raw_outcomes: report.stats.raw_outcomes,
         correct_candidate_present,
         best_correct_rank: best_aware_rank,
+        correct_ranks_top10,
         best_correct_rank_stereo_ignored: best_ignored_rank,
         top1_hit,
         top5_hit,
@@ -1063,16 +1194,15 @@ pub struct HitRateMetrics {
     pub top5_hit_rate: Option<f64>,
     pub top10_hit_rate: Option<f64>,
     pub mrr: Option<f64>,
-    /// Single-relevant-item NDCG@10 (ideal DCG = 1.0, i.e. exactly one
-    /// accepted product multiset expected at rank 0).
-    ///
-    /// ponytail: this does not implement full graded relevance across every
-    /// candidate that happens to match one of several accepted outcomes
-    /// (`scripts/train_reranker.py`'s NDCG does, since a labeled group can
-    /// have several positives). Issue #61 asks for one NDCG@10 number, not
-    /// multi-outcome credit assignment, so only the best-ranked accepted
-    /// outcome contributes here. Upgrade if multi-outcome credit assignment
-    /// becomes a real question.
+    /// Multi-positive, binary-relevance NDCG@10: every candidate (up to
+    /// rank 9) matching ANY entry in `accepted_products_canonical` counts
+    /// as relevant, not just the single best-ranked one -- the schema
+    /// allows more than one accepted outcome (e.g. competing literature
+    /// reports), so a ranking surfacing two of three accepted outcomes in
+    /// the top 10 gets more credit than one surfacing only one. Ideal DCG
+    /// is computed against `min(10, accepted_products_canonical.len())`,
+    /// i.e. the true number of distinct accepted outcomes for that row
+    /// (after outer-list dedup), not assumed to always be exactly 1.
     pub ndcg_at_10: Option<f64>,
     pub mean_best_correct_rank: Option<f64>,
     pub median_best_correct_rank: Option<f64>,
@@ -1097,9 +1227,25 @@ fn hit_rate_metrics(rows: &[&BenchRow], with_rank_summary: bool) -> HitRateMetri
         / n_f;
     let ndcg_at_10 = rows
         .iter()
-        .map(|r| match r.best_correct_rank {
-            Some(rank) if rank < 10 => 1.0 / (rank as f64 + 2.0).log2(),
-            _ => 0.0,
+        .map(|r| {
+            let ideal_count = r.accepted_products_canonical.len().min(10);
+            if ideal_count == 0 {
+                // Never true for a row that reached `hit_rate_metrics`
+                // (only valid, successfully-predicted rows do, and those
+                // always carry >= 1 accepted product) -- guarded anyway
+                // rather than dividing by zero if that invariant ever
+                // breaks.
+                return 0.0;
+            }
+            let dcg: f64 = r
+                .correct_ranks_top10
+                .iter()
+                .map(|&rank| 1.0 / (rank as f64 + 2.0).log2())
+                .sum();
+            let idcg: f64 = (0..ideal_count)
+                .map(|i| 1.0 / (i as f64 + 2.0).log2())
+                .sum();
+            dcg / idcg
         })
         .sum::<f64>()
         / n_f;
@@ -1544,6 +1690,20 @@ mod tests {
         assert!(err.to_string().contains("--templates"));
     }
 
+    /// `train-extracted` is a recognized mode name (the frozen Phase 0
+    /// protocol names it), but until a manifest can verify the train-only
+    /// boundary, loading it exactly like `file` would silently accept an
+    /// unverified split-safety claim. Must hard error, not fall through to
+    /// `File`'s loading behavior with a different label stamped on top.
+    #[test]
+    fn load_rules_for_source_train_extracted_is_a_hard_error_without_a_manifest() {
+        let err = load_rules_for_source(TemplateSource::TrainExtracted, Some("some/path.smi"))
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("train-extracted"));
+        assert!(msg.contains("manifest"));
+    }
+
     #[test]
     fn load_corpus_counts_every_rejection_category_and_dedupes() {
         let dir =
@@ -1615,6 +1775,40 @@ not json at all
     }
 
     #[test]
+    fn duplicate_accepted_product_entries_are_deduped_in_the_outer_list() {
+        // Regression guard: a row's own `accepted_products` listing the same
+        // multiset twice (verbatim, or under two SMILES spellings that
+        // canonicalize identically) must not count as two distinct
+        // ground-truth outcomes -- that would inflate `ndcg_at_10`'s ideal
+        // DCG and double-count this reaction's accepted-outcome count.
+        // Multiplicity WITHIN one accepted product multiset must still be
+        // preserved (untouched by this dedup, which only applies to the
+        // outer list).
+        let dir = std::env::temp_dir().join(format!(
+            "renkin-forward-bench-dup-accepted-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("corpus.jsonl");
+        let content = r#"
+{"schema_version": 1, "reaction_id": "dup-accepted", "reactants": ["CCO"], "accepted_products": [["CC=O"], ["CC=O"], ["C(C)=O"]]}
+"#;
+        std::fs::write(&path, content).unwrap();
+
+        let (reactions, _invalid, _stats, _warnings) = load_corpus(path.to_str().unwrap()).unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+
+        assert_eq!(reactions.len(), 1);
+        assert_eq!(
+            reactions[0].accepted_products_canonical.len(),
+            1,
+            "all 3 accepted-products entries canonicalize to the same multiset \
+             and must dedupe to 1: {:?}",
+            reactions[0].accepted_products_canonical
+        );
+    }
+
+    #[test]
     fn duplicate_group_key_independent_of_row_order() {
         // Regression guard: an independent audit found that dedup-by-identity
         // happened BEFORE group-key resolution, keeping only the
@@ -1662,6 +1856,77 @@ not json at all
     }
 
     #[test]
+    fn genuinely_conflicting_explicit_group_keys_reject_the_whole_reaction() {
+        // Unlike the same-key-different-order case above, two duplicate
+        // rows with two DIFFERENT non-empty explicit group_key values can't
+        // be resolved by picking one -- neither is more trustworthy than
+        // the other, and guessing risks a real leakage-safety violation.
+        // The whole reaction must be rejected, not silently kept under
+        // either candidate key.
+        let dir = std::env::temp_dir().join(format!(
+            "renkin-forward-bench-conflicting-group-key-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("corpus.jsonl");
+        let content = r#"
+{"schema_version": 1, "reaction_id": "a", "reactants": ["CCO"], "accepted_products": [["CC=O"]], "group_key": "patent-family-1"}
+{"schema_version": 1, "reaction_id": "b", "reactants": ["CCO"], "accepted_products": [["CC=O"]], "group_key": "patent-family-2"}
+"#;
+        std::fs::write(&path, content).unwrap();
+
+        let (reactions, invalid, stats, _warnings) = load_corpus(path.to_str().unwrap()).unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+
+        assert_eq!(
+            reactions.len(),
+            0,
+            "the conflicted reaction must not appear in the returned reactions"
+        );
+        assert_eq!(stats.conflicting_group_keys, 1);
+        assert_eq!(stats.reactions_loaded, 0);
+        assert!(
+            invalid.iter().any(|a| a.reason == "conflicting_group_key"),
+            "must be reported as an InvalidReactionAttempt, not silently dropped: {invalid:?}"
+        );
+    }
+
+    #[test]
+    fn reused_reaction_id_for_a_different_reaction_is_rejected() {
+        // `reaction_id` is documented as not used for identity/splitting
+        // precisely because corpora can't be trusted to keep it unique --
+        // reusing it for a genuinely different reaction must reject the
+        // later row, not silently accept a non-unique key.
+        let dir = std::env::temp_dir().join(format!(
+            "renkin-forward-bench-conflicting-reaction-id-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("corpus.jsonl");
+        let content = r#"
+{"schema_version": 1, "reaction_id": "dup-id", "reactants": ["CCO"], "accepted_products": [["CC=O"]]}
+{"schema_version": 1, "reaction_id": "dup-id", "reactants": ["CC(C)O"], "accepted_products": [["CC(C)=O"]]}
+"#;
+        std::fs::write(&path, content).unwrap();
+
+        let (reactions, invalid, stats, _warnings) = load_corpus(path.to_str().unwrap()).unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+
+        assert_eq!(
+            reactions.len(),
+            1,
+            "the first-seen reaction under this reaction_id is kept"
+        );
+        assert_eq!(stats.conflicting_reaction_ids, 1);
+        assert!(
+            invalid
+                .iter()
+                .any(|a| a.reason == "conflicting_reaction_id"),
+            "the second, conflicting row must be reported, not silently dropped: {invalid:?}"
+        );
+    }
+
+    #[test]
     fn compute_row_predicts_from_reactants_original_not_reactants_canonical() {
         // Regression guard: compute_row must feed `reactants_original` (the
         // corpus's own text/order, matching what a direct `predict` CLI
@@ -1698,6 +1963,84 @@ not json at all
         assert_eq!(row.best_correct_rank, Some(5));
     }
 
+    fn ndcg_probe_row(accepted_count: usize, correct_ranks_top10: Vec<usize>) -> BenchRow {
+        let provenance = RowProvenance {
+            renkin_forward_version: "test".to_string(),
+            template_source: "embedded".to_string(),
+            rules_file_sha256: None,
+        };
+        BenchRow {
+            reaction_id: "r".to_string(),
+            source_line: 1,
+            split: "train".to_string(),
+            leakage_group_id: Some("g".to_string()),
+            reaction_class: None,
+            reactants_original: vec![],
+            reactants_canonical: vec![],
+            accepted_products_canonical: (0..accepted_count)
+                .map(|i| vec![format!("dummy-{i}")])
+                .collect(),
+            num_reactants: 1,
+            num_products: 1,
+            has_stereochemistry: false,
+            candidate_count: 10,
+            raw_outcomes: 10,
+            correct_candidate_present: !correct_ranks_top10.is_empty(),
+            best_correct_rank: correct_ranks_top10.first().copied(),
+            correct_ranks_top10,
+            best_correct_rank_stereo_ignored: None,
+            top1_hit: false,
+            top5_hit: false,
+            top10_hit: false,
+            stereochemistry_aware_hit: false,
+            stereochemistry_ignored_outcome: StereoIgnoredOutcome::NoHit,
+            invalid_candidate_count: 0,
+            no_op_candidate_count: 0,
+            application_warning_count: 0,
+            application_error_count: 0,
+            templates_attempted: 1,
+            templates_matched: 1,
+            graph_rules_skipped: 0,
+            rules_loaded: 1,
+            elapsed_ms: 1.0,
+            failure_reason: FailureReason::HitTop1,
+            provenance,
+        }
+    }
+
+    /// A ranking that surfaces BOTH accepted outcomes in the top 2 must
+    /// score the same as a perfect single-outcome ranking (NDCG = 1.0):
+    /// DCG matches IDCG exactly when every ideal slot is filled.
+    #[test]
+    fn ndcg_at_10_is_perfect_when_every_accepted_outcome_is_found_at_the_top() {
+        let row = ndcg_probe_row(2, vec![0, 1]);
+        let rows = [&row];
+        let metrics = hit_rate_metrics(&rows, false);
+        assert!((metrics.ndcg_at_10.unwrap() - 1.0).abs() < 1e-9);
+    }
+
+    /// Regression for the single-relevant-item bug: with 2 accepted
+    /// outcomes but only 1 found (at rank 1), single-relevant-item NDCG
+    /// would have reported `1/log2(3) ~= 0.631` (assuming exactly one
+    /// outcome was ever possible). The correct multi-positive NDCG divides
+    /// by the true ideal DCG for 2 accepted outcomes, giving a lower,
+    /// honestly-worse score for a ranking that only found half the ground
+    /// truth.
+    #[test]
+    fn ndcg_at_10_scores_lower_when_only_some_accepted_outcomes_are_found() {
+        let row = ndcg_probe_row(2, vec![1]);
+        let rows = [&row];
+        let metrics = hit_rate_metrics(&rows, false);
+        let dcg = 1.0 / (1.0f64 + 2.0).log2();
+        let idcg = 1.0 / 2.0f64.log2() + 1.0 / 3.0f64.log2();
+        let expected = dcg / idcg;
+        assert!((metrics.ndcg_at_10.unwrap() - expected).abs() < 1e-9);
+        assert!(
+            expected < 1.0 / 3.0f64.log2(),
+            "must score lower than the old single-relevant-item formula would have"
+        );
+    }
+
     #[test]
     fn aggregate_computes_conditional_and_end_to_end_separately() {
         let provenance = RowProvenance {
@@ -1713,7 +2056,10 @@ not json at all
             reaction_class: None,
             reactants_original: vec![],
             reactants_canonical: vec![],
-            accepted_products_canonical: vec![],
+            // A valid row (this fixture is never `input_invalid`) always has
+            // at least one accepted product multiset -- `ndcg_at_10`'s ideal
+            // DCG divides by this count, so it must not be empty.
+            accepted_products_canonical: vec![vec!["dummy".to_string()]],
             num_reactants: 1,
             num_products: 1,
             has_stereochemistry: false,
@@ -1721,6 +2067,7 @@ not json at all
             raw_outcomes: candidate_count,
             correct_candidate_present: rank.is_some(),
             best_correct_rank: rank,
+            correct_ranks_top10: rank.filter(|&r| r < 10).into_iter().collect(),
             best_correct_rank_stereo_ignored: rank,
             top1_hit: rank == Some(0),
             top5_hit: rank.is_some_and(|r| r < 5),

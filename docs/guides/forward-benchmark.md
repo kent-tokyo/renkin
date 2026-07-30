@@ -51,7 +51,7 @@ JSONL: one JSON object per line, one line per raw reaction record.
 | `schema_version` | integer | yes | Must equal `1`. A different value is counted (`wrong_schema_version`) and rejected, never guessed at. |
 | `reaction_id` | string | yes | The corpus's own identifier (e.g. a USPTO/ORD/patent record ID). Not used for identity or splitting — see below. |
 | `reactants` | array of SMILES strings | yes, non-empty | The true reactants for this outcome. Reagents should be separated out by the corpus *preparation* step where the source dataset permits it — this harness canonicalizes and matches whatever it is given, it does not itself classify reactant vs. reagent. |
-| `accepted_products` | array of arrays of SMILES strings | yes, non-empty, every inner array non-empty | One or more accepted correct product multisets for this reaction. More than one entry means more than one reported/acceptable outcome is correct (e.g. competing literature reports) — a candidate matching *any* entry counts as correct. |
+| `accepted_products` | array of arrays of SMILES strings | yes, non-empty, every inner array non-empty | One or more accepted correct product multisets for this reaction. More than one entry means more than one reported/acceptable outcome is correct (e.g. competing literature reports) — a candidate matching *any* entry counts as correct. Two entries that canonicalize to the identical multiset are deduped (outer list only — multiplicity *within* one multiset is preserved), so a repeated entry never inflates `ndcg_at_10`'s ideal DCG or `num_products`'s corpus-level source. |
 | `reaction_class` | string | no | Free-form label, used only for the `reaction_class` breakdown dimension. |
 | `group_key` | string | no | Explicit patent-family/chronological grouping key (see "Leakage prevention" below). Omit to use the deterministic reactant-hash fallback. |
 
@@ -70,6 +70,14 @@ dropped:
   `failure_reason: "input_invalid"` and every other field null/zero/empty —
   see "Row schema" below.
 - `duplicate_records_merged` — see "Reaction identity" next.
+- `conflicting_reaction_ids` — the corpus's own `reaction_id` was reused for
+  a row that canonicalizes to a genuinely different reaction (different
+  reactants and/or accepted products). `reaction_id` is documented above as
+  never used for identity/splitting precisely because corpora can't be
+  trusted to keep it unique; the later row becomes an `input_invalid` output
+  row rather than silently accepted under a non-unique key.
+- `conflicting_group_keys` — see "Reaction identity" next: this rejects the
+  whole reaction, not just one row.
 
 ### Reaction identity vs. group key — never conflated
 
@@ -89,7 +97,12 @@ are never used for each other's purpose:
   Two reactions that share reactants but report *different* accepted
   products (a genuinely ambiguous/multi-outcome reaction) still land in the
   same split; splitting them apart would leak the reactants' identity
-  across train/val/test.
+  across train/val/test. If two duplicate rows for the SAME reaction
+  identity supply two DIFFERENT non-empty explicit `group_key` values,
+  neither can be trusted over the other — the whole reaction is rejected
+  (`conflicting_group_keys`, `InvalidReactionAttempt` reason
+  `"conflicting_group_key"`) rather than silently keeping whichever value
+  was seen first.
 
 ### Leakage-safe splitting
 
@@ -132,15 +145,17 @@ until Phase 3/4):
    explicit file must not be silently diluted by the embedded set either. A
    stray `--templates` under the default `embedded` source is a hard error,
    not a silently-ignored flag.
-3. **`train-extracted`** — mechanically identical to `file`: the rule file
-   is used exactly as given. The only difference is the label recorded in
-   `provenance.template_source`. **This harness cannot verify that the
-   file's templates were actually extracted from the train split only** —
-   that is the responsibility of whatever produced the file (a future
-   Phase 2 extraction tool). Mislabeling a val/test-derived template set as
-   `train-extracted` would not be caught here; it would show up as
-   suspiciously strong val/test metrics, which is exactly why per-split
-   breakdown is a required report field.
+3. **`train-extracted`** — recognized by the frozen protocol, but **rejected
+   as a hard error in this PR**. Loading it exactly like `file` and merely
+   stamping a different provenance label would be a claim, not a verified
+   guarantee: this harness has no way to check that the given `--templates`
+   file was actually extracted from the train split only. Use
+   `--template-source file` if you accept responsibility for that split
+   boundary yourself. A future version will require `--template-manifest
+   <path>` attesting `{templates_sha256, source_corpus_sha256,
+   split_protocol_version, included_split: "train"}`, hard-validated before
+   the file loads — until then, `train-extracted` stays blocked rather than
+   silently trusting an unverifiable label.
 4. **`scorer-conditioned`** — named by the frozen protocol so the mode
    space is documented in full, but rejected with a clear error naming
    Phase 3/4 if requested. Not silently downgraded to another mode.
@@ -222,6 +237,7 @@ including `--template-source`/`--templates`.
 | `has_stereochemistry` | Auto-detected from `@`/`/`/`\` in any canonical reactant/accepted-product SMILES — never trusted from corpus metadata, since it is fully derivable. |
 | `candidate_count`, `raw_outcomes` | Final merged-candidate count, and total `run_reactants` outcomes attempted before validity/no-op filtering or merging (the denominator `invalid_product_rate`/`no_op_rate` are computed against). |
 | `correct_candidate_present`, `best_correct_rank` | Stereochemistry-aware presence/best rank (0-based). |
+| `correct_ranks_top10` | Every rank (0-based, `< 10`) whose candidate matches ANY `accepted_products_canonical` entry, not just the best one — feeds `ndcg_at_10`'s multi-positive credit assignment. `best_correct_rank`/`top1_hit`/`top5_hit`/`top10_hit`/mean/median rank are unaffected and still derived from the single best rank alone. |
 | `best_correct_rank_stereo_ignored` | Best rank under the loosened comparison, present only when the outcome below is `hit` — always `<= best_correct_rank` when both are present. |
 | `top1_hit`, `top5_hit`, `top10_hit` | `best_correct_rank < 1/5/10`. |
 | `stereochemistry_aware_hit` | Identical to `top10_hit`, reported under its own name so it sits directly next to `stereochemistry_ignored_outcome` for a same-row before/after read. |
@@ -251,12 +267,14 @@ breakdown bucket (`reaction_class`, `num_reactants`, `num_products`,
   `mean_best_correct_rank`/`median_best_correct_rank` (undefined,
   meaninglessly, for `end_to_end`, since a miss has no rank).
 
-  <!-- ponytail: single-relevant-item NDCG@10 -->
-  `ndcg_at_10` uses the single-relevant-item convention (ideal DCG = 1.0,
-  i.e. exactly one accepted product multiset expected at rank 0), not full
-  graded relevance across every candidate that happens to match one of
-  several accepted outcomes. Issue #61 asks for one NDCG@10 number, not
-  multi-outcome credit assignment.
+  `ndcg_at_10` is multi-positive, binary-relevance NDCG@10: every candidate
+  (up to rank 9) matching ANY entry in `accepted_products_canonical`
+  counts as relevant, not just the single best-ranked one. Ideal DCG is
+  computed against `min(10, accepted_products_canonical.len())` — the true
+  number of distinct accepted outcomes for that row (after outer-list
+  dedup) — rather than always assuming exactly one. A ranking that
+  surfaces two of three accepted outcomes in the top 10 scores higher than
+  one that surfaces only one, and lower than one that finds all three.
 - `n_raw_outcomes` — summed `raw_outcomes` over valid rows: the explicit
   denominator for both rates below, reported directly rather than left for
   a reader to re-derive from `rows.jsonl`.

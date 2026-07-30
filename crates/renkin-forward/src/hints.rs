@@ -469,9 +469,20 @@ pub struct HintRequiredFeatures {
     /// choice as a simultaneous requirement. An `OR` across values of the
     /// *same* primitive kind (e.g. `[N;H1,H2]`, `[N,O]`) is still
     /// considered completely summarized -- multiple `required_elements`/
-    /// `hydrogen_constraints` entries already mean "any of these". In every
-    /// case, `query_smarts` on the enclosing type remains the authoritative
-    /// representation; this struct is always auxiliary.
+    /// `hydrogen_constraints` entries already mean "any of these".
+    ///
+    /// Also `false` whenever the slot's query spans more than one atom
+    /// (`query.atoms.len() > 1`) or has any bond at all (`!query.bonds
+    /// .is_empty()`): every field above is a flat, atom-order-independent
+    /// union/merge across the whole slot, so it cannot represent *which*
+    /// atom carries *which* constraint, nor the bond topology connecting
+    /// them. `[N:1][O:2]` (two bonded atoms, one N one O) and `[N,O:1]`
+    /// (one atom that is N-or-O) produce recognizably different summaries
+    /// only by accident of what happens to disagree; a multi-atom slot
+    /// with no per-field disagreement would otherwise look identical to a
+    /// single, fully-known atom. In every case, `query_smarts` on the
+    /// enclosing type remains the authoritative representation; this
+    /// struct is always auxiliary.
     pub summary_complete: bool,
 }
 
@@ -487,8 +498,11 @@ pub struct HintBondChange {
     pub left_map: u16,
     pub right_map: u16,
     /// `"single"`/`"double"`/`"triple"`/`"aromatic"`/`"any"`/`"ring"`/
-    /// `"up"`/`"down"`, or `"complex"` for a compound AND/OR/NOT bond query
-    /// this describer does not attempt to flatten.
+    /// `"up"`/`"down"`, `"complex"` for a compound AND/OR/NOT bond query
+    /// this describer does not attempt to flatten, or
+    /// `"directional_unspecified"` for an `"up"`/`"down"` bond whose
+    /// orientation could not be trusted (see `mapped_bond_signature`) --
+    /// never a possibly-wrong `"up"`/`"down"` in that case.
     pub order: String,
 }
 
@@ -499,10 +513,20 @@ pub struct HintTransformation {
     pub bonds_order_changed: Vec<HintBondChange>,
 }
 
-/// `basis` is always one of `"rule_name"` or `"derived_bond_delta"` --
-/// never a numeric confidence, and never a named-reaction guess (e.g.
-/// "Buchwald-Hartwig") unless trusted template metadata provides it, which
-/// `RetroRule` does not currently carry.
+/// `basis` is one of `"rule_name"`, `"derived_bond_delta"`, or
+/// `"ambiguous_across_sources"` -- never a numeric confidence, and never a
+/// named-reaction guess (e.g. "Buchwald-Hartwig") unless trusted template
+/// metadata provides it, which `RetroRule` does not currently carry.
+///
+/// `"ambiguous_across_sources"` (`label` = `"mixed"`) is set when two
+/// differently-named templates merge into the same hint (same retrieval
+/// signature) but disagree on `"rule_name"`-basis label -- e.g. two rules
+/// named differently that happen to produce the same bond delta/slot
+/// structure for a multi-bond-change template. Rather than silently
+/// keeping whichever source happened to be inserted first, both are
+/// represented as unresolved. `"derived_bond_delta"`-basis labels cannot
+/// disagree this way: they're derived purely from the (identical, since
+/// part of the merge key) bond delta, not from either source's name.
 #[derive(Debug, Clone, Serialize)]
 pub struct HintReactionFamily {
     pub label: String,
@@ -902,6 +926,13 @@ fn extract_required_features(query: &QueryMolecule) -> HintRequiredFeatures {
     {
         summary_complete = false;
     }
+    // A slot spanning more than one atom, or with any bond between its
+    // atoms, has topology (which atom carries which constraint, and how
+    // the atoms connect) that a flat per-field union/merge cannot
+    // represent -- see the `summary_complete` doc comment.
+    if query.atoms.len() > 1 || !query.bonds.is_empty() {
+        summary_complete = false;
+    }
 
     let mut hydrogen_constraints = Vec::new();
     if let Some(s) = format_hcount_constraint("H", &hcounts) {
@@ -943,30 +974,53 @@ fn describe_bond_order(q: &BondQuery) -> String {
     }
 }
 
-/// `(atom_map_a, atom_map_b)` (sorted low-to-high) -> bond query, over every
-/// mapped bond across all components on one side of a reversed template.
+/// Like [`describe_bond_order`], but fails closed on a directional
+/// `Up`/`Down` bond whose orientation isn't trusted (see
+/// [`mapped_bond_signature`]): reports `"directional_unspecified"` rather
+/// than a possibly-wrong `"up"`/`"down"`. Every other bond kind is
+/// unaffected by `orientation_trusted`.
+fn describe_bond_order_for_hint(q: &BondQuery, orientation_trusted: bool) -> String {
+    if !orientation_trusted
+        && matches!(
+            q,
+            BondQuery::Primitive(BondPrimitive::Up) | BondQuery::Primitive(BondPrimitive::Down)
+        )
+    {
+        return "directional_unspecified".to_string();
+    }
+    describe_bond_order(q)
+}
+
+/// `(atom_map_a, atom_map_b)` (sorted low-to-high) -> (bond query,
+/// orientation_trusted), over every mapped bond across all components on
+/// one side of a reversed template.
 ///
-/// ponytail: sorting the key doesn't renormalize a directional
-/// `BondPrimitive::Up`/`Down` query (`/`/`\`, e.g. E/Z stereo-bond markers)
-/// to match -- if the smaller atom-map number was the second atom in the
-/// original bond, the reported `order` in `HintBondChange` could describe
-/// the direction relative to the wrong left/right atom. Directional bonds
-/// are rare in retro-template corpora and `query_smarts`/`product_query_smarts`
-/// (never this derived field) remain the authoritative representation, so
-/// this is left as a known limitation rather than speculatively "corrected"
-/// without a confirmed-correct reference semantics to fix it against.
-/// Upgrade path: track whether the sort swapped atom1/atom2 and invert
-/// Up<->Down accordingly, with a test built on a confirmed real directional
-/// SMARTS fixture.
-fn mapped_bond_signature(components: &[QuerySlot]) -> BTreeMap<(u16, u16), BondQuery> {
+/// Sorting the key doesn't renormalize a directional `BondPrimitive::Up`/
+/// `Down` query (`/`/`\`, e.g. E/Z stereo-bond markers) to match: if the
+/// smaller atom-map number was the second atom in the original bond, the
+/// direction is relative to the wrong left/right atom after sorting.
+/// `orientation_trusted` is `false` exactly when that swap happened on a
+/// directional bond, so callers can fail closed (never emit a possibly-
+/// wrong "up"/"down") instead of speculatively inverting it without a
+/// confirmed-correct reference semantics to invert against --
+/// `query_smarts`/`product_query_smarts` remain the authoritative
+/// representation regardless.
+fn mapped_bond_signature(components: &[QuerySlot]) -> BTreeMap<(u16, u16), (BondQuery, bool)> {
     let mut sig = BTreeMap::new();
     for comp in components {
         for bond in &comp.query.bonds {
             let a = comp.query.atoms[bond.atom1].atom_map;
             let b = comp.query.atoms[bond.atom2].atom_map;
             if let (Some(a), Some(b)) = (a, b) {
-                let key = if a <= b { (a, b) } else { (b, a) };
-                sig.insert(key, bond.query.clone());
+                let swapped = a > b;
+                let key = if swapped { (b, a) } else { (a, b) };
+                let is_directional = matches!(
+                    bond.query,
+                    BondQuery::Primitive(BondPrimitive::Up)
+                        | BondQuery::Primitive(BondPrimitive::Down)
+                );
+                let orientation_trusted = !(swapped && is_directional);
+                sig.insert(key, (bond.query.clone(), orientation_trusted));
             }
         }
     }
@@ -974,9 +1028,9 @@ fn mapped_bond_signature(components: &[QuerySlot]) -> BTreeMap<(u16, u16), BondQ
 }
 
 struct BondDelta {
-    formed: Vec<(u16, u16, BondQuery)>,
-    broken: Vec<(u16, u16, BondQuery)>,
-    order_changed: Vec<(u16, u16, BondQuery)>,
+    formed: Vec<(u16, u16, BondQuery, bool)>,
+    broken: Vec<(u16, u16, BondQuery, bool)>,
+    order_changed: Vec<(u16, u16, BondQuery, bool)>,
 }
 
 /// Compare mapped bonds present on the forward-LHS (reactant) side against
@@ -988,16 +1042,16 @@ fn compute_bond_delta(lhs_components: &[QuerySlot], rhs_components: &[QuerySlot]
     let mut formed = Vec::new();
     let mut broken = Vec::new();
     let mut order_changed = Vec::new();
-    for (k, v) in &rhs {
+    for (k, (v, trusted)) in &rhs {
         match lhs.get(k) {
-            None => formed.push((k.0, k.1, v.clone())),
-            Some(old) if old != v => order_changed.push((k.0, k.1, v.clone())),
+            None => formed.push((k.0, k.1, v.clone(), *trusted)),
+            Some((old, _)) if old != v => order_changed.push((k.0, k.1, v.clone(), *trusted)),
             _ => {}
         }
     }
-    for (k, v) in &lhs {
+    for (k, (v, trusted)) in &lhs {
         if !rhs.contains_key(k) {
-            broken.push((k.0, k.1, v.clone()));
+            broken.push((k.0, k.1, v.clone(), *trusted));
         }
     }
     BondDelta {
@@ -1030,7 +1084,7 @@ fn derive_reaction_family(
     delta: &BondDelta,
 ) -> HintReactionFamily {
     if delta.formed.len() == 1 && delta.broken.is_empty() {
-        let (a, b, _) = &delta.formed[0];
+        let (a, b, _, _) = &delta.formed[0];
         let elem_a = element_for_atom_map(lhs_components, *a);
         let elem_b = element_for_atom_map(lhs_components, *b);
         if let (Some(elem_a), Some(elem_b)) = (elem_a, elem_b) {
@@ -1043,7 +1097,7 @@ fn derive_reaction_family(
         }
     }
     if delta.broken.len() == 1 && delta.formed.is_empty() {
-        let (a, b, _) = &delta.broken[0];
+        let (a, b, _, _) = &delta.broken[0];
         let elem_a = element_for_atom_map(lhs_components, *a);
         let elem_b = element_for_atom_map(lhs_components, *b);
         if let (Some(elem_a), Some(elem_b)) = (elem_a, elem_b) {
@@ -1082,19 +1136,13 @@ fn hint_merge_key(
     let mut bond_strs: Vec<String> = delta
         .formed
         .iter()
-        .map(|(a, b, q)| format!("+{a}-{b}:{}", describe_bond_order(q)))
-        .chain(
-            delta
-                .broken
-                .iter()
-                .map(|(a, b, q)| format!("-{a}-{b}:{}", describe_bond_order(q))),
-        )
-        .chain(
-            delta
-                .order_changed
-                .iter()
-                .map(|(a, b, q)| format!("~{a}-{b}:{}", describe_bond_order(q))),
-        )
+        .map(|(a, b, q, trusted)| format!("+{a}-{b}:{}", describe_bond_order_for_hint(q, *trusted)))
+        .chain(delta.broken.iter().map(|(a, b, q, trusted)| {
+            format!("-{a}-{b}:{}", describe_bond_order_for_hint(q, *trusted))
+        }))
+        .chain(delta.order_changed.iter().map(|(a, b, q, trusted)| {
+            format!("~{a}-{b}:{}", describe_bond_order_for_hint(q, *trusted))
+        }))
         .collect();
     bond_strs.sort();
     hasher.update(b"\0bonds\0");
@@ -1189,28 +1237,28 @@ fn build_hint(template: &ParsedHintTemplate, assignment: &SlotAssignment) -> Ret
         bonds_formed: delta
             .formed
             .iter()
-            .map(|(a, b, q)| HintBondChange {
+            .map(|(a, b, q, trusted)| HintBondChange {
                 left_map: *a,
                 right_map: *b,
-                order: describe_bond_order(q),
+                order: describe_bond_order_for_hint(q, *trusted),
             })
             .collect(),
         bonds_broken: delta
             .broken
             .iter()
-            .map(|(a, b, q)| HintBondChange {
+            .map(|(a, b, q, trusted)| HintBondChange {
                 left_map: *a,
                 right_map: *b,
-                order: describe_bond_order(q),
+                order: describe_bond_order_for_hint(q, *trusted),
             })
             .collect(),
         bonds_order_changed: delta
             .order_changed
             .iter()
-            .map(|(a, b, q)| HintBondChange {
+            .map(|(a, b, q, trusted)| HintBondChange {
                 left_map: *a,
                 right_map: *b,
-                order: describe_bond_order(q),
+                order: describe_bond_order_for_hint(q, *trusted),
             })
             .collect(),
     };
@@ -1331,6 +1379,15 @@ pub fn generate_retrieval_hints(
                 Entry::Occupied(mut existing) => {
                     stats.duplicate_hints_merged += 1;
                     let existing = existing.get_mut();
+                    if existing.reaction_family.label != hint.reaction_family.label {
+                        existing.reaction_family = HintReactionFamily {
+                            label: "mixed".to_string(),
+                            basis: "ambiguous_across_sources".to_string(),
+                        };
+                    }
+                    existing.search_terms.extend(hint.search_terms);
+                    existing.search_terms.sort();
+                    existing.search_terms.dedup();
                     existing.sources.extend(hint.sources);
                     existing
                         .sources
@@ -1644,6 +1701,27 @@ mod tests {
         assert_eq!(
             template_ids,
             vec!["rule:halide_swap_v1", "rule:halide_swap_v2"]
+        );
+        // A c-Cl bond breaking AND a c-Br bond forming (a substitution, not
+        // a single isolated bond change) falls back to rule_name-basis
+        // labeling -- the two differently-named rules disagree, so this
+        // must be reported as ambiguous, not silently the first-seen name.
+        assert_eq!(
+            report.hints[0].reaction_family.basis,
+            "ambiguous_across_sources"
+        );
+        assert_eq!(report.hints[0].reaction_family.label, "mixed");
+        // search_terms is the union of both sources' terms, not just the
+        // first-inserted source's.
+        assert!(
+            report.hints[0]
+                .search_terms
+                .contains(&"halide swap v1".to_string())
+        );
+        assert!(
+            report.hints[0]
+                .search_terms
+                .contains(&"halide swap v2".to_string())
         );
     }
 
@@ -2053,6 +2131,58 @@ mod tests {
         );
     }
 
+    /// A 2-atom, 1-bond missing-partner slot where every scalar field
+    /// agrees across the two atoms (no `merge_cross_atom_scalar` conflict)
+    /// must STILL be `summary_complete = false` -- distinct from the
+    /// disagreement case above. The flat field summary cannot tell a
+    /// reader that this is two bonded atoms (`[N:2][O:3]`, N-O bonded) and
+    /// not, say, a single N-or-O atom -- that structural information is
+    /// not captured by any field here, so claiming completeness would
+    /// overclaim regardless of whether the fields happen to agree.
+    #[test]
+    fn multi_atom_slot_with_no_field_conflict_is_still_summary_incomplete() {
+        let r = rule("bonded_partner_probe", "[c:1][C:2]>>[c:1][Br].[N:2][O:3]");
+        let template = parse_hint_template(&r).unwrap();
+        let missing_slot = &template.lhs_slots[1];
+        assert_eq!(
+            missing_slot.query.atoms.len(),
+            2,
+            "fixture must have 2 atoms"
+        );
+        assert!(
+            !missing_slot.query.bonds.is_empty(),
+            "fixture must have a bond between the 2 atoms"
+        );
+        let features = extract_required_features(&missing_slot.query);
+        assert_eq!(
+            features.charge, None,
+            "neither atom constrains charge -- no conflict on this field"
+        );
+        assert_eq!(
+            features.required_elements,
+            vec!["N".to_string(), "O".to_string()],
+            "each atom's own element requirement still unions safely"
+        );
+        assert!(
+            !features.summary_complete,
+            "topology (2 bonded atoms) is lost by the flat summary even with zero field conflicts"
+        );
+    }
+
+    /// A genuinely single-atom slot (no multi-atom topology to lose) with
+    /// zero field conflicts remains `summary_complete = true` -- the new
+    /// multi-atom guard must not over-fire on the common single-atom case.
+    #[test]
+    fn single_atom_slot_remains_summary_complete() {
+        let r = rule("single_atom_probe", "[c:1][C:2]>>[c:1][Br].[N:2]");
+        let template = parse_hint_template(&r).unwrap();
+        let missing_slot = &template.lhs_slots[1];
+        assert_eq!(missing_slot.query.atoms.len(), 1);
+        assert!(missing_slot.query.bonds.is_empty());
+        let features = extract_required_features(&missing_slot.query);
+        assert!(features.summary_complete);
+    }
+
     /// Parses a single-atom SMARTS fragment and extracts features from its
     /// one atom, for concise feature-extraction fixture tests.
     fn features_of(atom_smarts: &str) -> HintRequiredFeatures {
@@ -2164,6 +2294,46 @@ mod tests {
             Box::new(BondQuery::Primitive(BondPrimitive::Double)),
         );
         assert_eq!(describe_bond_order(&compound), "complex");
+    }
+
+    /// Real directional-SMARTS fixture (confirmed via the chematic-smarts
+    /// parser: `/` -> `BondPrimitive::Up`, `\` -> `BondPrimitive::Down`).
+    /// When the atom carrying the *larger* atom-map number is written
+    /// first, `mapped_bond_signature`'s low-to-high key sort swaps
+    /// atom1/atom2 relative to how the bond was written, so the direction
+    /// can no longer be trusted; `describe_bond_order_for_hint` must fail
+    /// closed to `"directional_unspecified"` rather than emit a possibly-
+    /// wrong `"up"`/`"down"`.
+    #[test]
+    fn directional_bond_fails_closed_when_atom_map_order_is_swapped_by_sort() {
+        let swapped = smarts::parse_smarts("[C:2]/[CH:1]").unwrap();
+        let sig = mapped_bond_signature(&[QuerySlot {
+            index: 0,
+            source_smarts: String::new(),
+            query: swapped,
+        }]);
+        let (q, trusted) = sig.get(&(1, 2)).expect("bond between maps 1 and 2");
+        assert!(
+            !trusted,
+            "atom map 2 written before atom map 1 -- sort swapped the pair"
+        );
+        assert_eq!(
+            describe_bond_order_for_hint(q, *trusted),
+            "directional_unspecified"
+        );
+
+        let not_swapped = smarts::parse_smarts("[CH:1]/[C:2]").unwrap();
+        let sig2 = mapped_bond_signature(&[QuerySlot {
+            index: 0,
+            source_smarts: String::new(),
+            query: not_swapped,
+        }]);
+        let (q2, trusted2) = sig2.get(&(1, 2)).expect("bond between maps 1 and 2");
+        assert!(
+            *trusted2,
+            "atom map 1 written before atom map 2 -- no swap, direction is trustworthy"
+        );
+        assert_eq!(describe_bond_order_for_hint(q2, *trusted2), "up");
     }
 
     #[test]

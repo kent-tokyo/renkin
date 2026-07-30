@@ -169,16 +169,35 @@ the constraint. Two safeguards keep this honest:
   than arbitrarily picking one branch's value). An `OR` across values of
   the *same* property (`[N,O]`, `[N;H1,H2]`) is still fully summarized —
   `required_elements: ["N", "O"]` / `hydrogen_constraints: ["H1 or H2"]`
-  already mean "any of these."
-- **`reaction_family.basis`**: always `"derived_bond_delta"` (computed
-  purely from which mapped bonds appear/disappear between the reactant and
-  product sides) or `"rule_name"` (a readable fallback derived from the
-  template's own name) — never an inferred named reaction like
-  "Buchwald-Hartwig" unless the template's own metadata said so (RENKIN's
-  `RetroRule` doesn't currently carry that kind of curated metadata at all).
-  `search_terms` are always derived from these two fields plus
-  `missing_partners`, and are explicitly auxiliary — don't search a patent
+  already mean "any of these." It is *also* `false` whenever a missing
+  partner's query spans more than one atom or has any bond at all: every
+  field above is a flat union/merge across the whole slot, so it cannot
+  represent which atom carries which constraint or how the atoms connect
+  — `[N:1][O:2]` (two bonded atoms) and `[N,O:1]` (one N-or-O atom) would
+  otherwise look identical whenever their per-field values happen to
+  agree. `query_smarts` is unaffected either way and remains authoritative.
+- **`reaction_family.basis`**: `"derived_bond_delta"` (computed purely from
+  which mapped bonds appear/disappear between the reactant and product
+  sides), `"rule_name"` (a readable fallback derived from the template's
+  own name), or `"ambiguous_across_sources"` (`label` = `"mixed"`) — never
+  an inferred named reaction like "Buchwald-Hartwig" unless the template's
+  own metadata said so (RENKIN's `RetroRule` doesn't currently carry that
+  kind of curated metadata at all). `"ambiguous_across_sources"` shows up
+  when two differently-named templates merge into the same hint (same
+  retrieval signature) but disagree on a `"rule_name"`-basis label; rather
+  than silently keeping whichever template happened to be processed first,
+  both are represented as unresolved. `search_terms` are the union of
+  every merged source's own search terms (not just the first source's),
+  derived from `reaction_family`/`missing_partners` plus each source's
+  `rule_name`, and are explicitly auxiliary — don't search a patent
   database on `search_terms` alone without also checking `query_smarts`.
+- **`transformation.bonds_*[].order`**: `"directional_unspecified"` for an
+  `up`/`down` (`/`/`\`, E/Z-style) bond whose orientation could not be
+  trusted — internally, bonds are keyed by atom-map number sorted
+  low-to-high, which can swap which atom was originally "first" for a
+  directional bond; rather than guess, or worse, report a direction that
+  may be backwards, this is surfaced explicitly rather than silently
+  emitting a possibly-wrong `"up"`/`"down"`.
 
 ## Match sites and attachment points
 

@@ -805,6 +805,34 @@ fn format_hcount_constraint(prefix: &str, values: &BTreeSet<u8>) -> Option<Strin
     Some(joined)
 }
 
+/// Merges one atom's contribution to a cross-atom scalar summary field.
+/// Two atoms *agreeing* on a dimension (or only one of them constraining it
+/// at all) is safe to keep; two atoms independently requiring *different*
+/// values for the same dimension can't be honestly collapsed into one field
+/// (unlike an `OR`'s branches, these are simultaneous requirements on
+/// distinct atoms, not alternative interpretations of one atom) -- so once a
+/// conflict is seen the field is cleared and stays cleared, and the caller
+/// must mark the summary incomplete.
+fn merge_cross_atom_scalar<T: PartialEq + Copy>(
+    current: Option<T>,
+    conflict: &mut bool,
+    incoming: Option<T>,
+) -> Option<T> {
+    if *conflict {
+        return None;
+    }
+    match (current, incoming) {
+        (Some(x), Some(y)) if x == y => Some(x),
+        (Some(_), Some(_)) => {
+            *conflict = true;
+            None
+        }
+        (None, Some(y)) => Some(y),
+        (Some(x), None) => Some(x),
+        (None, None) => None,
+    }
+}
+
 /// Merge feature constraints across every atom in a (missing-partner) slot's
 /// query into one best-effort summary. `query_smarts` on the caller's
 /// [`HintMissingPartner`] remains the authoritative representation; this is
@@ -825,22 +853,35 @@ fn extract_required_features(query: &QueryMolecule) -> HintRequiredFeatures {
     let mut chirality = None;
     let mut summary_complete = true;
 
+    let (mut aromatic_conflict, mut charge_conflict, mut degree_conflict) = (false, false, false);
+    let (mut ring_membership_conflict, mut ring_count_conflict) = (false, false);
+    let (mut valence_conflict, mut hybridization_conflict) = (false, false);
+    let (mut isotope_conflict, mut chirality_conflict) = (false, false);
+
     for atom in &query.atoms {
         let mut acc = AtomFeatureAccumulator::default();
         walk_atom_query(&atom.query, &mut acc);
         required_elements.extend(acc.required_elements);
         excluded_elements.extend(acc.excluded_elements);
-        aromatic = aromatic.or(acc.aromatic);
-        charge = charge.or(acc.charge);
+        aromatic = merge_cross_atom_scalar(aromatic, &mut aromatic_conflict, acc.aromatic);
+        charge = merge_cross_atom_scalar(charge, &mut charge_conflict, acc.charge);
         hcounts.extend(acc.hcounts);
         implicit_hcounts.extend(acc.implicit_hcounts);
-        degree = degree.or(acc.degree);
-        ring_membership = ring_membership.or(acc.ring_membership);
-        ring_count = ring_count.or(acc.ring_count);
-        valence = valence.or(acc.valence);
-        hybridization = hybridization.or(acc.hybridization);
-        isotope = isotope.or(acc.isotope);
-        chirality = chirality.or(acc.chirality);
+        degree = merge_cross_atom_scalar(degree, &mut degree_conflict, acc.degree);
+        ring_membership = merge_cross_atom_scalar(
+            ring_membership,
+            &mut ring_membership_conflict,
+            acc.ring_membership,
+        );
+        ring_count = merge_cross_atom_scalar(ring_count, &mut ring_count_conflict, acc.ring_count);
+        valence = merge_cross_atom_scalar(valence, &mut valence_conflict, acc.valence);
+        hybridization = merge_cross_atom_scalar(
+            hybridization,
+            &mut hybridization_conflict,
+            acc.hybridization,
+        );
+        isotope = merge_cross_atom_scalar(isotope, &mut isotope_conflict, acc.isotope);
+        chirality = merge_cross_atom_scalar(chirality, &mut chirality_conflict, acc.chirality);
         // `has_not` alone does NOT make an atom incomplete: a NOT over a
         // single element (`[!#6]`) is fully captured by
         // `excluded_elements`. Only a NOT/OR/recursive combination this
@@ -848,6 +889,18 @@ fn extract_required_features(query: &QueryMolecule) -> HintRequiredFeatures {
         if acc.has_recursive || acc.has_unsummarized_primitive || acc.has_mixed_family_or {
             summary_complete = false;
         }
+    }
+    if aromatic_conflict
+        || charge_conflict
+        || degree_conflict
+        || ring_membership_conflict
+        || ring_count_conflict
+        || valence_conflict
+        || hybridization_conflict
+        || isotope_conflict
+        || chirality_conflict
+    {
+        summary_complete = false;
     }
 
     let mut hydrogen_constraints = Vec::new();
@@ -892,6 +945,19 @@ fn describe_bond_order(q: &BondQuery) -> String {
 
 /// `(atom_map_a, atom_map_b)` (sorted low-to-high) -> bond query, over every
 /// mapped bond across all components on one side of a reversed template.
+///
+/// ponytail: sorting the key doesn't renormalize a directional
+/// `BondPrimitive::Up`/`Down` query (`/`/`\`, e.g. E/Z stereo-bond markers)
+/// to match -- if the smaller atom-map number was the second atom in the
+/// original bond, the reported `order` in `HintBondChange` could describe
+/// the direction relative to the wrong left/right atom. Directional bonds
+/// are rare in retro-template corpora and `query_smarts`/`product_query_smarts`
+/// (never this derived field) remain the authoritative representation, so
+/// this is left as a known limitation rather than speculatively "corrected"
+/// without a confirmed-correct reference semantics to fix it against.
+/// Upgrade path: track whether the sort swapped atom1/atom2 and invert
+/// Up<->Down accordingly, with a test built on a confirmed real directional
+/// SMARTS fixture.
 fn mapped_bond_signature(components: &[QuerySlot]) -> BTreeMap<(u16, u16), BondQuery> {
     let mut sig = BTreeMap::new();
     for comp in components {
@@ -1738,10 +1804,12 @@ mod tests {
             "/../../data/templates_extracted.smi"
         );
         let rules = renkin::chem_env::load_rules_from_file(path);
-        assert!(
-            rules.len() > 400,
-            "sanity check that the real extracted corpus loaded, got {} rules",
-            rules.len()
+        assert_eq!(
+            rules.len(),
+            500,
+            "extracted corpus size drifted -- reconcile with the matching \
+             lib.rs::reverse_smirks_validated_extracted_templates_accept_reject_partition_is_stable \
+             assertion and the PR body's accept/reject table before changing this number"
         );
         let mut rejected = 0usize;
         for rule in &rules {
@@ -1950,6 +2018,41 @@ mod tests {
         assert!(features.summary_complete);
     }
 
+    /// Two DIFFERENT atoms in the same multi-atom missing-partner slot each
+    /// independently constraining the same scalar dimension to different
+    /// values (here: charge +1 on one atom, -1 on the other) is not the same
+    /// situation as an `OR`'s alternative branches -- it's two simultaneous
+    /// requirements on distinct atoms that cannot be honestly collapsed into
+    /// one field value. Regression for a bug where cross-atom merging used
+    /// `Option::or`, so the first atom's value silently won and
+    /// `summary_complete` stayed `true`.
+    #[test]
+    fn cross_atom_disagreement_on_a_scalar_field_clears_it_and_flags_incomplete() {
+        let r = rule(
+            "conflicting_charge_probe",
+            "[c:1][C:2]>>[c:1][Br].[C;+1:2][N;-1:3]",
+        );
+        let template = parse_hint_template(&r).unwrap();
+        let missing_slot = &template.lhs_slots[1];
+        assert_eq!(
+            missing_slot.query.atoms.len(),
+            2,
+            "fixture must have 2 atoms"
+        );
+        let features = extract_required_features(&missing_slot.query);
+        assert_eq!(
+            features.charge, None,
+            "atoms 2 and 3 disagree on charge (+1 vs -1); must not arbitrarily pick one"
+        );
+        assert!(!features.summary_complete);
+        // Non-conflicting fields (elements from each distinct atom) still
+        // union safely -- only the disagreeing scalar dimension is cleared.
+        assert_eq!(
+            features.required_elements,
+            vec!["C".to_string(), "N".to_string()]
+        );
+    }
+
     /// Parses a single-atom SMARTS fragment and extracts features from its
     /// one atom, for concise feature-extraction fixture tests.
     fn features_of(atom_smarts: &str) -> HintRequiredFeatures {
@@ -1986,6 +2089,18 @@ mod tests {
             f.summary_complete,
             "a clean single-element NOT is fully captured by excluded_elements"
         );
+    }
+
+    #[test]
+    fn chirality_constraint_is_retained_in_required_features() {
+        let f = features_of("[C@H]");
+        assert_eq!(f.required_elements, vec!["C".to_string()]);
+        assert_eq!(f.chirality, Some(1), "`@` is CCW, encoded as chirality 1");
+        assert!(f.summary_complete);
+
+        let f2 = features_of("[C@@H]");
+        assert_eq!(f2.chirality, Some(2), "`@@` is CW, encoded as chirality 2");
+        assert!(f2.summary_complete);
     }
 
     #[test]

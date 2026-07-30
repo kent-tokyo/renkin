@@ -17,11 +17,14 @@
 //! - arity-3 templates: `enumerate` doesn't apply arity>=2-missing-partner
 //!   templates at all (reported unsupported), so there is no concrete
 //!   success to cross-check against; this is a hints-only structural test.
-//! - isotope/stereochemistry constraints: covered at the feature-extraction
-//!   level by `hints.rs`'s own unit tests
+//! - isotope constraints: covered at the feature-extraction level by
+//!   `hints.rs`'s own unit test
 //!   (`isotope_and_charge_constraints_are_retained_in_required_features`),
-//!   not re-verified here through a full concrete `run_reactants` pass in
-//!   this round.
+//!   not re-verified here through a full concrete `run_reactants` pass.
+//!   Stereochemistry/chirality constraints ARE covered here, concretely,
+//!   by `oracle_chiral_partner_constraint` below (plus a feature-extraction
+//!   unit test in `hints.rs`,
+//!   `chirality_constraint_is_retained_in_required_features`).
 //!
 //! The amine fixtures use `[NH2:2]` rather than a `[N;H1,H2:2]`-style
 //! multi-condition OR: an earlier draft used the latter and both amine
@@ -281,5 +284,30 @@ fn oracle_charged_partner_constraint() {
         hints.hints[0].missing_partners[0].required_features.charge,
         Some(1),
         "the charge constraint on the missing partner slot must be retained"
+    );
+}
+
+#[test]
+fn oracle_chiral_partner_constraint() {
+    let r = rule(
+        "chiral_amination",
+        "[c:1][NH:2][C@H:3](C)CC>>[c:1][Br].[NH2:2][C@H:3](C)CC",
+    );
+    let partners = vec![partner_record(1, "CC[C@@H](C)N")];
+    let concrete = enumerate_products_detailed(
+        "Brc1ccccc1",
+        Some(&partners),
+        std::slice::from_ref(&r),
+        &ForwardEnumerationConfig::default(),
+    )
+    .unwrap();
+    let hints = generate_retrieval_hints(&["Brc1ccccc1"], &[r], &hints_config()).unwrap();
+    assert_every_concrete_success_is_covered(&concrete, &hints);
+    assert_eq!(
+        hints.hints[0].missing_partners[0]
+            .required_features
+            .chirality,
+        Some(1),
+        "the chirality constraint on the missing partner slot must be retained"
     );
 }

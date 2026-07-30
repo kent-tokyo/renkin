@@ -531,3 +531,117 @@ fn enumerate_max_combinations_zero_is_hard_error() {
     ]);
     assert!(!out.status.success());
 }
+
+#[test]
+fn hints_help_succeeds() {
+    let out = run(&["hints", "--help"]);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("--reactants"));
+    assert!(stdout.contains("--max-hints"));
+}
+
+#[test]
+fn hints_requires_reactants_flag() {
+    let out = run(&["hints"]);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("--reactants"));
+}
+
+#[test]
+fn hints_default_run_against_embedded_rules_succeeds() {
+    let out = run(&["hints", "--reactants", "Brc1ccccc1"]);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("stdout must be valid JSON");
+    assert_eq!(parsed["schema_version"], 1);
+    assert!(parsed["known_reactants"].is_array());
+    assert!(parsed["hints"].is_array());
+    assert!(parsed["stats"]["templates_inspected"].as_u64().unwrap() > 0);
+    // The core partner-free guarantee, checked at the process level: no
+    // concrete-product-shaped field ever appears in real JSON output.
+    assert!(!stdout.contains("product_smiles"));
+    assert!(!stdout.contains("predicted_product"));
+}
+
+#[test]
+fn hints_accepts_multiple_known_reactants() {
+    let out = run(&["hints", "--reactants", "Brc1ccccc1", "NCC"]);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("stdout must be valid JSON");
+    let reactants = parsed["known_reactants"].as_array().unwrap();
+    assert_eq!(reactants.len(), 2);
+}
+
+#[test]
+fn hints_max_hints_zero_is_hard_error() {
+    let out = run(&["hints", "--reactants", "Brc1ccccc1", "--max-hints", "0"]);
+    assert!(!out.status.success());
+}
+
+#[test]
+fn hints_max_matches_per_slot_zero_is_hard_error() {
+    let out = run(&[
+        "hints",
+        "--reactants",
+        "Brc1ccccc1",
+        "--max-matches-per-slot",
+        "0",
+    ]);
+    assert!(!out.status.success());
+}
+
+#[test]
+fn hints_max_assignments_per_template_zero_is_hard_error() {
+    let out = run(&[
+        "hints",
+        "--reactants",
+        "Brc1ccccc1",
+        "--max-assignments-per-template",
+        "0",
+    ]);
+    assert!(!out.status.success());
+}
+
+#[test]
+fn hints_missing_templates_file_is_hard_error() {
+    let out = run(&[
+        "hints",
+        "--reactants",
+        "Brc1ccccc1",
+        "--templates",
+        "/nonexistent/path/does-not-exist.smi",
+    ]);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("does not exist") || stderr.contains("not accessible"));
+}
+
+#[test]
+fn hints_rejects_enumerate_only_reactant_option() {
+    let out = run(&["hints", "--reactant", "CCO"]);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("--reactant") || stderr.contains("unknown option"));
+}
+
+#[test]
+fn predict_rejects_hints_only_max_hints_option() {
+    let out = run(&["predict", "--reactants", "CCO", "--max-hints", "5"]);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("--max-hints") || stderr.contains("unknown option"));
+}
+
+#[test]
+fn hints_two_identical_runs_are_byte_identical() {
+    let args = ["hints", "--reactants", "Brc1ccccc1", "NCC"];
+    let out1 = run(&args);
+    let out2 = run(&args);
+    assert!(out1.status.success());
+    assert_eq!(out1.stdout, out2.stdout);
+}

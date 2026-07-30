@@ -321,6 +321,8 @@ CC-BY-SA-4.0であり、RENKIN本体コードのMITとは別ライセンスで�
 | **出力フォーマット** | `--format json` · `tree` · `mermaid` · `explain`（ルートごとの人間可読解説）· `compare`（並列比較表）· `compare-json` · `pareto` |
 | **失敗時診断** | ルートが見つからない場合、JSON に `diagnostics` ブロック（`likely_causes` + `suggestions`）を付加 |
 | **単体順反応予測** | `renkin-forward predict --reactants <SMILES>...` — ルート検索とは独立に、反転したSMIRKSテンプレートから順反応生成物候補を列挙・ランキング — [Forward Prediction guide](docs/guides/forward-prediction.md)（英語）参照 |
+| **単一既知反応物からの順反応列挙** | `renkin-forward enumerate --reactant <SMILES> --partners <path>` — 既知反応物1つと明示的なpartnerライブラリ（RENKIN自身のretro stockは使わない）から具体的な生成物を発見 — [Forward Enumeration guide](docs/guides/forward-enumeration.md)（英語）参照 |
+| **partner不要の検索用ヒント** | `renkin-forward hints --reactants <SMILES>...` — partner入力は一切なし：マッチしたテンプレートslot、不足partnerのSMARTS、結合デルタを特許・データベース検索向けに報告（具体的な生成物は出さない）— [Forward Retrieval Hints guide](docs/guides/forward-retrieval-hints.md)（英語）参照。`predict` / `enumerate` / `hints` の比較表: [table](docs/guides/forward-retrieval-hints.md#predict--enumerate--hints-at-a-glance) |
 | **順方向検証** | `renkin-forward validate` で各ステップを順方向適用して検証；stdin パイプ対応 |
 | **妥当性レポート** | `renkin-bench --plausibility` — ベストルートを順方向検証し、複合妥当性スコアを算出 |
 | **PaRoutesベンチマーク** | `renkin-bench --input-format paroutes` でmulti-step ground-truth評価（`depth_delta`, `route_diversity`） |

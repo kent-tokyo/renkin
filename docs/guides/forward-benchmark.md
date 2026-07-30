@@ -32,6 +32,16 @@ This repository does not, and will not in this phase, commit or bundle a
 real benchmark corpus. `renkin-forward benchmark --corpus <path>` takes a
 local file path; nothing is fetched, scraped, or downloaded.
 
+**The redistribution question doesn't stop at the input.** `--output-rows`
+carries the corpus's own `reaction_id` and raw, un-canonicalized
+`reactants_original` text verbatim onto every row, alongside the
+canonicalized/derived fields — this is what makes a single row
+self-describing (see "Row schema" below), but it also means the output is
+not a strictly-derived summary. Before sharing or publishing benchmark
+output produced from a restricted corpus, confirm your redistribution
+rights cover the identifiers and reactant text you supplied, not just the
+report's aggregate metrics.
+
 ### Corpus schema (`FORWARD_BENCH_CORPUS_SCHEMA_VERSION = 1`)
 
 JSONL: one JSON object per line, one line per raw reaction record.
@@ -160,19 +170,27 @@ canonicalization and are compared exactly for the stereochemistry-aware
 dimension.
 
 For the stereochemistry-*ignored* dimension, the flattened form is produced
-by stripping the four stereo-marker characters from the canonical SMILES
-text, then re-parsing and re-canonicalizing the result. This is a
-**textual** heuristic, not a structural chirality/bond-direction clear over
-chematic's `Atom::chirality`/bond-direction APIs.
+**structurally**: every atom's chirality is reset and every E/Z directional
+bond is normalized to a plain single bond, via chematic's public
+`MoleculeBuilder` API (rebuilding the molecule atom-by-atom and bond-by-bond
+with those two adjustments, then re-canonicalizing) — not a text-level
+strip of `@`/`@@`/`/`/`\` characters. A textual strip was tried first and
+rejected: `canonical_smiles` decides bracket-vs-organic-subset notation at
+canonicalization time (an atom needing brackets only for its now-removed
+atom-map or stereo marker no longer needs them once cleared *before*
+canonicalizing), so stripping the already-generated *text* left a redundant
+bracket behind (`[C]`/`[OH]`) instead of collapsing to the true canonical
+spelling (`C`/`O`) — silently comparing against a non-canonical string. This
+was caught empirically while fixing a related leakage bug in the atom-map
+handling below, and is exactly the failure mode a structural clear avoids.
 
-<!-- ponytail: textual strip-then-reparse, not a structural clear -->
-It was verified empirically (see `bench::tests::stereo_ignored_canonical_collapses_tetrahedral_and_ez`)
-to collapse both tetrahedral and E/Z markers to the identical canonical form
-produced by canonicalizing the achiral molecule directly, for every case
-checked. If the stripped text ever fails to re-parse (not observed, but not
-proven impossible for some exotic SMILES), the comparison falls back to the
-stereo-aware string — a widening comparison silently not widening is safer
-than an unrelated whole-row error.
+If clearing stereochemistry from an already-canonical SMILES ever fails to
+re-parse (not observed, but not assumed impossible), the comparison for
+that whole row reports `stereochemistry_ignored_outcome: "unsupported"` —
+**never** a silent fallback to the stereochemistry-aware string, which
+would fabricate a "no worse than aware" result the harness never actually
+computed. See `bench::tests::stereo_ignored_canonical_collapses_tetrahedral_and_ez`
+and `stereo_ignored_canonical_never_falls_back_to_the_stereo_aware_string`.
 
 ## Phase 1 — the harness
 
@@ -191,11 +209,12 @@ omitted, the report is printed to stdout instead (this subcommand's only
 stdout output). See `renkin-forward benchmark --help` for every flag,
 including `--template-source`/`--templates`.
 
-### Row schema (one row per reaction, `FORWARD_BENCH_REPORT_SCHEMA_VERSION = 1`)
+### Row schema (one row per reaction, `FORWARD_BENCH_REPORT_SCHEMA_VERSION = 2`)
 
 | Field | Meaning |
 |---|---|
 | `reaction_id`, `source_line`, `split` | Identity and leakage-safe split. |
+| `leakage_group_id` | The group key `split` was actually derived from (explicit corpus `group_key`, or the deterministic reactant-hash fallback) — `null` only for `input_invalid` rows, where reactants never canonicalized and no group key could ever be computed (a `prediction_error` row still has one: its reactants canonicalized fine, prediction itself just failed). Carried onto every row so the leakage-safety guarantee is auditable from `rows.jsonl` alone. |
 | `reaction_class` | Pass-through from the corpus, or `null`. |
 | `reactants_canonical`, `accepted_products_canonical` | Canonicalized inputs, exactly as matched against. |
 | `num_reactants` | `reactants_canonical.len()`. |
@@ -203,12 +222,12 @@ including `--template-source`/`--templates`.
 | `has_stereochemistry` | Auto-detected from `@`/`/`/`\` in any canonical reactant/accepted-product SMILES — never trusted from corpus metadata, since it is fully derivable. |
 | `candidate_count`, `raw_outcomes` | Final merged-candidate count, and total `run_reactants` outcomes attempted before validity/no-op filtering or merging (the denominator `invalid_product_rate`/`no_op_rate` are computed against). |
 | `correct_candidate_present`, `best_correct_rank` | Stereochemistry-aware presence/best rank (0-based). |
-| `best_correct_rank_stereo_ignored` | Best rank under the loosened comparison — always `<= best_correct_rank` when both are present. |
+| `best_correct_rank_stereo_ignored` | Best rank under the loosened comparison, present only when the outcome below is `hit` — always `<= best_correct_rank` when both are present. |
 | `top1_hit`, `top5_hit`, `top10_hit` | `best_correct_rank < 1/5/10`. |
-| `stereochemistry_aware_hit` | Identical to `top10_hit`, reported under its own name so it sits directly next to `stereochemistry_ignored_hit` for a same-row before/after read. |
-| `stereochemistry_ignored_hit` | `best_correct_rank_stereo_ignored < 10`. **`true` while `stereochemistry_aware_hit` is `false` is the diagnostic signal for "constitution right, stereochemistry wrong."** |
+| `stereochemistry_aware_hit` | Identical to `top10_hit`, reported under its own name so it sits directly next to `stereochemistry_ignored_outcome` for a same-row before/after read. |
+| `stereochemistry_ignored_outcome` | One of `hit`, `no_hit`, or `unsupported` (a tri-state, not a plain bool, so an uncomputable comparison is never conflated with a clean miss — see "Stereochemistry comparison" above). **`hit` while `stereochemistry_aware_hit` is `false` is the diagnostic signal for "constitution right, stereochemistry wrong."** |
 | `invalid_candidate_count`, `no_op_candidate_count` | From the underlying `ForwardStats` (`invalid_outcomes_rejected`/`no_op_outcomes_rejected`). |
-| `application_warning_count`, `application_error_count`, `templates_attempted`, `rules_loaded` | From the underlying prediction report. |
+| `application_warning_count`, `application_error_count`, `templates_attempted`, `templates_matched`, `graph_rules_skipped`, `rules_loaded` | From the underlying prediction report (`ForwardStats`) — `graph_rules_skipped` (empty-`smirks` rules, never counted as a parse failure) and `templates_matched` (a subset of `templates_attempted` that had at least one slot match) are per-row, not just summed in the report header. |
 | `elapsed_ms` | Wall-clock time for this reaction's one `predict_products_detailed` call. **Not deterministic across runs** — see below. |
 | `failure_reason` | One of `hit_top1`, `hit_top5`, `hit_top10`, `hit_beyond_10`, `correct_absent_empty_pool`, `correct_absent_nonempty_pool`, `input_invalid`, `prediction_error`. Deliberately coarse: classifying *why* a template failed to apply (missing forward SMIRKS, atom-mapping mismatch, stereochemistry mismatch, …) is Phase 2 territory, not this harness. |
 | `provenance` | `{renkin_forward_version, template_source, rules_file_sha256}` — duplicated onto every row (not just the report header) so a single row, taken out of context, still fully describes what produced it. |
@@ -238,8 +257,11 @@ breakdown bucket (`reaction_class`, `num_reactants`, `num_products`,
   graded relevance across every candidate that happens to match one of
   several accepted outcomes. Issue #61 asks for one NDCG@10 number, not
   multi-outcome credit assignment.
+- `n_raw_outcomes` — summed `raw_outcomes` over valid rows: the explicit
+  denominator for both rates below, reported directly rather than left for
+  a reader to re-derive from `rows.jsonl`.
 - `invalid_product_rate`, `no_op_rate` — summed `invalid_candidate_count`/
-  `no_op_candidate_count` over summed `raw_outcomes`, across valid rows.
+  `no_op_candidate_count` divided by `n_raw_outcomes`, across valid rows.
 - `candidate_count_distribution`, `latency_ms` — `{min, p50, p90, p95, max,
   mean}`, nearest-rank percentiles.
 

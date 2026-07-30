@@ -29,7 +29,7 @@
 //! Rust and Python cannot share a constant across the language boundary. If
 //! either changes, change both, and update both docs.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 
 use anyhow::{Result, bail};
 use chematic::smiles::canonical_smiles;
@@ -45,8 +45,12 @@ use crate::{
 /// Schema version of one corpus input line. Bump whenever a field is added,
 /// removed, or its meaning changes.
 pub const FORWARD_BENCH_CORPUS_SCHEMA_VERSION: u32 = 1;
-/// Schema version of [`BenchRow`]/[`BenchReport`].
-pub const FORWARD_BENCH_REPORT_SCHEMA_VERSION: u32 = 1;
+/// Schema version of [`BenchRow`]/[`BenchReport`]. Bumped to 2:
+/// `stereochemistry_ignored_hit: bool` became
+/// `stereochemistry_ignored_outcome: StereoIgnoredOutcome` (an explicit
+/// `Unsupported` state replaces a silent bool-`false` for the case where
+/// the comparison couldn't be computed at all -- see that type's docs).
+pub const FORWARD_BENCH_REPORT_SCHEMA_VERSION: u32 = 2;
 
 /// Deterministic split-bucket cutoffs: buckets `[0, TRAIN_MAX_BUCKET)` ->
 /// train, `[TRAIN_MAX_BUCKET, VAL_MAX_BUCKET)` -> val, the rest -> test.
@@ -109,6 +113,12 @@ pub struct CorpusLoadStats {
     pub unparseable_smiles: usize,
     pub empty_reactants_or_products: usize,
     pub duplicate_records_merged: usize,
+    /// Two rows sharing a reaction identity each supplied a different
+    /// non-empty explicit `group_key` -- a corpus data-quality problem, not
+    /// a load error. The first-encountered explicit key is kept
+    /// deterministically (see the `conflicting_explicit_group_key` warning
+    /// for both values); never silently picked without a trace.
+    pub conflicting_group_keys: usize,
     pub reactions_loaded: usize,
     /// True once rejections exceed [`MAX_CORPUS_LOAD_WARNINGS`] -- the
     /// counters above always hold the true totals regardless.
@@ -218,12 +228,52 @@ pub fn split_for_group(group_key: &str) -> &'static str {
     }
 }
 
+/// Clears every atom's reaction atom-map number on a parsed molecule,
+/// rebuilt via the public [`chematic::core::MoleculeBuilder`] API (there is
+/// no in-place mutator for `Atom::atom_map` on `Molecule` itself). Atom and
+/// bond order is preserved exactly (same indices in, same indices out), so
+/// the `copy_*_from` convenience methods can carry over stereo groups,
+/// stereo neighbor order, and bond directions verbatim -- this must NOT be
+/// done by editing the canonical SMILES *text*: `canonical_smiles` decides
+/// bracket-vs-organic-subset notation based on whether an atom needs
+/// brackets at canonicalization time (atom_map present being one such
+/// reason), so stripping only the `:<digits>` substring from already-
+/// generated text leaves a redundant, non-canonical `[C]`/`[OH]`-style
+/// bracket behind instead of collapsing to `C`/`O` -- silently producing a
+/// DIFFERENT canonical string than the same molecule parsed without atom
+/// maps in the first place (verified empirically while diagnosing this).
+///
+/// Without this, two corpus rows encoding the literal same reaction but
+/// with different atom-map numbering would get different
+/// `reaction_identity_hash`/`group_key` values, defeating dedup and
+/// leakage-safe splitting.
+fn clear_atom_maps(mol: &chematic::core::Molecule) -> chematic::core::Molecule {
+    let mut builder = chematic::core::MoleculeBuilder::new();
+    for (_, atom) in mol.atoms() {
+        let mut a = atom.clone();
+        a.atom_map = None;
+        builder.add_atom(a);
+    }
+    for (_, bond) in mol.bonds() {
+        let _ = builder.add_bond(bond.atom1, bond.atom2, bond.order);
+    }
+    builder.copy_stereo_groups_from(mol);
+    builder.copy_stereo_from(mol);
+    builder.copy_bond_directions_from(mol);
+    builder.build()
+}
+
 /// Canonicalizes one SMILES, returning `None` (not an error) on failure --
 /// callers decide how a single bad SMILES affects the enclosing record.
+/// Clears any reaction atom-map annotation before canonicalizing (see
+/// [`clear_atom_maps`]) -- this is corpus-side canonicalization only, used
+/// for reaction identity, group-key derivation, and comparison against real
+/// (always map-free) candidate products, never for `reactants_original`
+/// (what's actually fed to `predict_products_detailed`).
 fn try_canonicalize(smiles: &str) -> Option<String> {
     mol_from_smiles(smiles)
         .ok()
-        .map(|mol| canonical_smiles(&mol))
+        .map(|mol| canonical_smiles(&clear_atom_maps(&mol)))
 }
 
 /// Return type of [`load_corpus`]: loaded reactions, invalid-but-attributable
@@ -250,7 +300,13 @@ pub fn load_corpus(path: &str) -> CorpusLoadResult {
     let mut warnings: Vec<CorpusLoadWarning> = Vec::new();
     let mut reactions: Vec<BenchReaction> = Vec::new();
     let mut invalid: Vec<InvalidReactionAttempt> = Vec::new();
-    let mut seen_identity: HashSet<String> = HashSet::new();
+    let mut seen_identity: HashMap<String, usize> = HashMap::new();
+    // Tracks, per reaction identity, the explicit (non-empty, corpus-
+    // supplied) `group_key` seen so far, if any -- so a LATER duplicate row
+    // that happens to carry the explicit key isn't silently ignored just
+    // because an EARLIER, bare duplicate happened to be dedup-retained
+    // first (see `duplicate_group_key_independent_of_row_order`).
+    let mut explicit_group_key: HashMap<String, String> = HashMap::new();
 
     let push_warning = |stats: &mut CorpusLoadStats,
                         warnings: &mut Vec<CorpusLoadWarning>,
@@ -385,20 +441,54 @@ pub fn load_corpus(path: &str) -> CorpusLoadResult {
         accepted_products_canonical.sort();
 
         let identity = reaction_identity_hash(&reactants_canonical, &accepted_products_canonical);
-        if !seen_identity.insert(identity) {
+        let row_explicit_key = row.group_key.filter(|k| !k.is_empty());
+
+        if let Some(&existing_idx) = seen_identity.get(&identity) {
             stats.duplicate_records_merged += 1;
+            if let Some(new_key) = row_explicit_key {
+                match explicit_group_key.get(&identity) {
+                    Some(kept) if *kept != new_key => {
+                        stats.conflicting_group_keys += 1;
+                        push_warning(
+                            &mut stats,
+                            &mut warnings,
+                            CorpusLoadWarning {
+                                line_number,
+                                code: "conflicting_explicit_group_key".to_string(),
+                                message: format!(
+                                    "reaction {:?} has conflicting explicit group_key values \
+                                     across duplicate rows: kept {kept:?}, ignored {new_key:?}",
+                                    reactions[existing_idx].reaction_id
+                                ),
+                            },
+                        );
+                    }
+                    Some(_) => {}
+                    None => {
+                        // First explicit key seen for this identity: promote
+                        // it onto the already-retained reaction, regardless
+                        // of which occurrence happened to be dedup-retained.
+                        explicit_group_key.insert(identity.clone(), new_key.clone());
+                        reactions[existing_idx].group_key = new_key;
+                    }
+                }
+            }
             continue;
         }
 
-        let group_key = row
-            .group_key
-            .filter(|k| !k.is_empty())
-            .unwrap_or_else(|| fallback_group_key(&reactants_canonical));
+        let group_key = match row_explicit_key.clone() {
+            Some(k) => {
+                explicit_group_key.insert(identity.clone(), k.clone());
+                k
+            }
+            None => fallback_group_key(&reactants_canonical),
+        };
         let has_stereochemistry = reactants_canonical
             .iter()
             .chain(accepted_products_canonical.iter().flatten())
             .any(|s| s.contains('@') || s.contains('/') || s.contains('\\'));
 
+        seen_identity.insert(identity, reactions.len());
         reactions.push(BenchReaction {
             reaction_id: row.reaction_id,
             source_line: line_number,
@@ -497,48 +587,81 @@ pub fn load_rules_for_source(
 // Stereochemistry-ignored comparison
 // ---------------------------------------------------------------------
 
-/// Strips OpenSMILES stereo markers (`@`, `@@` via repeated `@`, `/`, `\`)
-/// at the text level. These four characters have no other meaning in
-/// SMILES, so removing them is always syntactically safe; whether the
-/// *result* is still valid/canonical is checked separately by re-parsing
-/// (see [`stereo_ignored_canonical`]).
-fn strip_stereo_markers(smiles: &str) -> String {
-    smiles
-        .chars()
-        .filter(|&c| c != '@' && c != '/' && c != '\\')
-        .collect()
+/// Structurally clears chirality and E/Z bond-direction stereo information
+/// from a molecule, rebuilt via the public `chematic::core::MoleculeBuilder`
+/// API (mirrors [`clear_atom_maps`]). Every atom's `chirality` is reset to
+/// `Chirality::None`; every directional (`Up`/`Down`, i.e. `/`/`\`) bond is
+/// normalized to `Single`. Unlike `clear_atom_maps`, enhanced stereo groups,
+/// the SMILES stereo-neighbor order, and the auxiliary bond-direction map
+/// are deliberately NOT copied over from the source molecule -- carrying
+/// any of those forward would silently reintroduce the stereochemistry this
+/// function exists to remove.
+fn clear_stereochemistry(mol: &chematic::core::Molecule) -> chematic::core::Molecule {
+    let mut builder = chematic::core::MoleculeBuilder::new();
+    for (_, atom) in mol.atoms() {
+        let mut a = atom.clone();
+        a.chirality = chematic::core::Chirality::None;
+        builder.add_atom(a);
+    }
+    for (_, bond) in mol.bonds() {
+        let order = match bond.order {
+            chematic::core::BondOrder::Up | chematic::core::BondOrder::Down => {
+                chematic::core::BondOrder::Single
+            }
+            other => other,
+        };
+        let _ = builder.add_bond(bond.atom1, bond.atom2, order);
+    }
+    builder.build()
 }
 
 /// Best-effort stereo-flattened canonical form used only for the
-/// "stereochemistry-ignored" comparison dimension.
+/// "stereochemistry-ignored" comparison dimension. Structural (via
+/// [`clear_stereochemistry`]), not a text strip-then-reparse -- verified
+/// empirically (see this module's tests) to collapse both tetrahedral
+/// (`@`/`@@`) and double-bond (`/`/`\`) stereo markers to the same
+/// canonical form as the equivalent achiral input.
 ///
-/// ponytail: this is a textual strip-then-reparse-then-recanonicalize, not a
-/// structural chirality-clearing operation over chematic's `Atom::chirality`/
-/// bond-direction APIs. Verified empirically (see this module's tests) to
-/// collapse both tetrahedral (`@`/`@@`) and double-bond (`/`/`\`) stereo
-/// markers to the same canonical form as the equivalent achiral input, for
-/// every case checked. Ceiling: if the stripped text fails to re-parse (not
-/// observed in testing, but not proven impossible for an exotic SMILES),
-/// this falls back to the stereo-aware canonical string itself rather than
-/// erroring -- a widening comparison silently not widening is safer than an
-/// unrelated whole-reaction error. Upgrade to a structural
-/// chirality/bond-direction clear if this heuristic is ever shown to
-/// misclassify a real case.
-fn stereo_ignored_canonical(canonical: &str) -> String {
-    let stripped = strip_stereo_markers(canonical);
-    match mol_from_smiles(&stripped) {
-        Ok(mol) => canonical_smiles(&mol),
-        Err(_) => canonical.to_string(),
-    }
+/// `s` is always an already-canonical SMILES string produced earlier in
+/// this module, so re-parsing it should never fail in practice; `None` is
+/// still returned rather than assumed-impossible, so a caller can mark the
+/// whole comparison [`StereoIgnoredOutcome::Unsupported`] instead of
+/// silently falling back to the stereo-aware value on the one input that
+/// somehow doesn't re-parse.
+fn stereo_ignored_canonical(s: &str) -> Option<String> {
+    let mol = mol_from_smiles(s).ok()?;
+    Some(canonical_smiles(&clear_stereochemistry(&mol)))
 }
 
-fn stereo_ignored_set(products: &[String]) -> Vec<String> {
-    let mut out: Vec<String> = products
-        .iter()
-        .map(|s| stereo_ignored_canonical(s))
-        .collect();
+/// Stereo-ignored form of a whole accepted-product (or candidate-product)
+/// multiset, sorted. `None` (not a silent fallback to the stereo-aware
+/// form) if any member fails to convert.
+fn stereo_ignored_set(products: &[String]) -> Option<Vec<String>> {
+    let mut out = Vec::with_capacity(products.len());
+    for s in products {
+        out.push(stereo_ignored_canonical(s)?);
+    }
     out.sort_unstable();
-    out
+    Some(out)
+}
+
+/// Outcome of the stereochemistry-ignored comparison dimension for one row.
+/// A dedicated tri-state, not a `bool`: collapsing "no hit" and "couldn't
+/// compute this at all" into the same `false` would silently misreport an
+/// unsupported case as a clean miss.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StereoIgnoredOutcome {
+    /// A correct candidate was found within the top-10 under the
+    /// stereochemistry-ignored comparison.
+    Hit,
+    /// The comparison was computed successfully; no correct candidate was
+    /// found within the top-10.
+    NoHit,
+    /// At least one accepted-product or candidate-product SMILES for this
+    /// reaction could not be converted by [`stereo_ignored_canonical`] --
+    /// never silently reported as a hit or a miss.
+    Unsupported,
 }
 
 // ---------------------------------------------------------------------
@@ -614,6 +737,13 @@ pub struct BenchRow {
     /// 1-based physical line number in the corpus file.
     pub source_line: usize,
     pub split: String,
+    /// The group key `split` was derived from (see [`split_for_group`]) --
+    /// `None` only for [`InvalidReactionAttempt`] rows, where no group key
+    /// could ever be computed (see `split`'s own `"unknown"` sentinel).
+    /// Carried onto every row (not just used internally to compute `split`)
+    /// so the leakage-safety guarantee is auditable from `rows.jsonl` alone,
+    /// without cross-referencing the raw corpus file.
+    pub leakage_group_id: Option<String>,
     pub reaction_class: Option<String>,
     /// The corpus's own reactant text/order -- what was actually passed to
     /// `predict_products_detailed` (see [`BenchReaction::reactants_original`]).
@@ -643,18 +773,24 @@ pub struct BenchRow {
     pub top10_hit: bool,
     /// `best_correct_rank < 10` under the exact (stereochemistry-aware)
     /// comparison -- identical to `top10_hit`, reported under its own name
-    /// so it sits directly next to `stereochemistry_ignored_hit` for a
+    /// so it sits directly next to `stereochemistry_ignored_outcome` for a
     /// same-row before/after comparison.
     pub stereochemistry_aware_hit: bool,
-    /// `best_correct_rank_stereo_ignored < 10`. `true` while
-    /// `stereochemistry_aware_hit` is `false` is the diagnostic signal for
-    /// "constitution right, stereochemistry wrong".
-    pub stereochemistry_ignored_hit: bool,
+    /// `Hit` while `stereochemistry_aware_hit` is `false` is the diagnostic
+    /// signal for "constitution right, stereochemistry wrong". See
+    /// [`StereoIgnoredOutcome`] for why this isn't a plain `bool`.
+    pub stereochemistry_ignored_outcome: StereoIgnoredOutcome,
     pub invalid_candidate_count: usize,
     pub no_op_candidate_count: usize,
     pub application_warning_count: usize,
     pub application_error_count: usize,
     pub templates_attempted: usize,
+    /// From the underlying `ForwardStats` -- templates that had at least one
+    /// slot match against a reactant (a subset of `templates_attempted`).
+    pub templates_matched: usize,
+    /// From the underlying `ForwardStats` -- graph-based rules (empty
+    /// `smirks`) skipped, never counted as a parse failure.
+    pub graph_rules_skipped: usize,
     pub rules_loaded: usize,
     /// Wall-clock time for the one `predict_products_detailed` call this row
     /// required. NOT part of this harness's determinism guarantee -- see
@@ -674,6 +810,7 @@ fn invalid_row(attempt: &InvalidReactionAttempt, provenance: &RowProvenance) -> 
         // once the reactants themselves failed to canonicalize -- "unknown"
         // is excluded from every split-based aggregate (see `aggregate`).
         split: "unknown".to_string(),
+        leakage_group_id: None,
         reaction_class: None,
         reactants_original: Vec::new(),
         reactants_canonical: Vec::new(),
@@ -690,12 +827,14 @@ fn invalid_row(attempt: &InvalidReactionAttempt, provenance: &RowProvenance) -> 
         top5_hit: false,
         top10_hit: false,
         stereochemistry_aware_hit: false,
-        stereochemistry_ignored_hit: false,
+        stereochemistry_ignored_outcome: StereoIgnoredOutcome::NoHit,
         invalid_candidate_count: 0,
         no_op_candidate_count: 0,
         application_warning_count: 0,
         application_error_count: 0,
         templates_attempted: 0,
+        templates_matched: 0,
+        graph_rules_skipped: 0,
         rules_loaded: 0,
         elapsed_ms: 0.0,
         failure_reason: FailureReason::InputInvalid,
@@ -742,6 +881,7 @@ fn compute_row(
                 reaction_id: reaction.reaction_id.clone(),
                 source_line: reaction.source_line,
                 split,
+                leakage_group_id: Some(reaction.group_key.clone()),
                 reaction_class: reaction.reaction_class.clone(),
                 reactants_original: reaction.reactants_original.clone(),
                 reactants_canonical: reaction.reactants_canonical.clone(),
@@ -758,12 +898,14 @@ fn compute_row(
                 top5_hit: false,
                 top10_hit: false,
                 stereochemistry_aware_hit: false,
-                stereochemistry_ignored_hit: false,
+                stereochemistry_ignored_outcome: StereoIgnoredOutcome::NoHit,
                 invalid_candidate_count: 0,
                 no_op_candidate_count: 0,
                 application_warning_count: 0,
                 application_error_count: 0,
                 templates_attempted: 0,
+                templates_matched: 0,
+                graph_rules_skipped: 0,
                 rules_loaded: rules.len(),
                 elapsed_ms,
                 failure_reason: FailureReason::PredictionError,
@@ -772,11 +914,16 @@ fn compute_row(
         }
     };
 
-    let accepted_ignored: Vec<Vec<String>> = reaction
+    // `None` (not a silent fallback) if any accepted product fails to
+    // convert -- the whole ignored-comparison dimension becomes
+    // `Unsupported` rather than mis-measuring against a partial ground
+    // truth.
+    let accepted_ignored: Option<Vec<Vec<String>>> = reaction
         .accepted_products_canonical
         .iter()
         .map(|set| stereo_ignored_set(set))
         .collect();
+    let mut stereo_ignored_unsupported = accepted_ignored.is_none();
 
     let mut best_aware_rank: Option<usize> = None;
     let mut best_ignored_rank: Option<usize> = None;
@@ -788,15 +935,23 @@ fn compute_row(
         {
             best_aware_rank = Some(candidate.rank);
         }
-        if best_ignored_rank.is_none() {
-            let candidate_ignored = stereo_ignored_set(&candidate.products);
-            if accepted_ignored.contains(&candidate_ignored) {
-                best_ignored_rank = Some(candidate.rank);
+        if !stereo_ignored_unsupported && best_ignored_rank.is_none() {
+            match stereo_ignored_set(&candidate.products) {
+                Some(candidate_ignored) => {
+                    if accepted_ignored
+                        .as_ref()
+                        .is_some_and(|sets| sets.contains(&candidate_ignored))
+                    {
+                        best_ignored_rank = Some(candidate.rank);
+                    }
+                }
+                None => stereo_ignored_unsupported = true,
             }
         }
-        if best_aware_rank.is_some() && best_ignored_rank.is_some() {
+        if best_aware_rank.is_some() && (best_ignored_rank.is_some() || stereo_ignored_unsupported)
+        {
             // Candidates are already rank-ordered ascending; nothing later
-            // can improve either rank once both are found.
+            // can improve either dimension once both are resolved.
             break;
         }
     }
@@ -806,7 +961,13 @@ fn compute_row(
     let top1_hit = best_aware_rank == Some(0);
     let top5_hit = best_aware_rank.is_some_and(|r| r < 5);
     let top10_hit = best_aware_rank.is_some_and(|r| r < 10);
-    let stereochemistry_ignored_hit = best_ignored_rank.is_some_and(|r| r < 10);
+    let stereochemistry_ignored_outcome = if stereo_ignored_unsupported {
+        StereoIgnoredOutcome::Unsupported
+    } else if best_ignored_rank.is_some_and(|r| r < 10) {
+        StereoIgnoredOutcome::Hit
+    } else {
+        StereoIgnoredOutcome::NoHit
+    };
 
     let failure_reason = if top1_hit {
         FailureReason::HitTop1
@@ -826,6 +987,7 @@ fn compute_row(
         reaction_id: reaction.reaction_id.clone(),
         source_line: reaction.source_line,
         split,
+        leakage_group_id: Some(reaction.group_key.clone()),
         reaction_class: reaction.reaction_class.clone(),
         reactants_original: reaction.reactants_original.clone(),
         reactants_canonical: reaction.reactants_canonical.clone(),
@@ -842,12 +1004,14 @@ fn compute_row(
         top5_hit,
         top10_hit,
         stereochemistry_aware_hit: top10_hit,
-        stereochemistry_ignored_hit,
+        stereochemistry_ignored_outcome,
         invalid_candidate_count: report.stats.invalid_outcomes_rejected,
         no_op_candidate_count: report.stats.no_op_outcomes_rejected,
         application_warning_count: report.warnings.len(),
         application_error_count: report.stats.template_application_errors,
         templates_attempted: report.stats.templates_attempted,
+        templates_matched: report.stats.templates_matched,
+        graph_rules_skipped: report.stats.graph_rules_skipped,
         rules_loaded: report.stats.rules_loaded,
         elapsed_ms,
         failure_reason,
@@ -992,9 +1156,13 @@ pub struct BenchAggregate {
     pub proposal_coverage: Option<f64>,
     pub conditional: HitRateMetrics,
     pub end_to_end: HitRateMetrics,
-    /// `sum(invalid_candidate_count) / sum(raw_outcomes)` over valid rows.
+    /// `sum(raw_outcomes)` over valid rows -- the explicit denominator for
+    /// `invalid_product_rate`/`no_op_rate` below, so a reader never has to
+    /// re-derive it from `rows.jsonl` to know what either rate is "out of".
+    pub n_raw_outcomes: usize,
+    /// `sum(invalid_candidate_count) / n_raw_outcomes` over valid rows.
     pub invalid_product_rate: Option<f64>,
-    /// `sum(no_op_candidate_count) / sum(raw_outcomes)` over valid rows.
+    /// `sum(no_op_candidate_count) / n_raw_outcomes` over valid rows.
     pub no_op_rate: Option<f64>,
     pub candidate_count_distribution: Option<PercentileStats>,
     pub latency_ms: Option<PercentileStats>,
@@ -1044,6 +1212,7 @@ fn aggregate(rows: &[&BenchRow]) -> BenchAggregate {
         proposal_coverage,
         conditional,
         end_to_end,
+        n_raw_outcomes: raw_outcomes_total,
         invalid_product_rate,
         no_op_rate,
         candidate_count_distribution,
@@ -1179,9 +1348,12 @@ pub fn run_benchmark(
     breakdowns.insert(
         "reaction_class".to_string(),
         breakdown_by(rows.iter(), |r| {
+            // "<missing>" (not "unknown") -- a real corpus-supplied
+            // reaction_class value of literally "unknown" must not collide
+            // with "no reaction_class was given at all".
             r.reaction_class
                 .clone()
-                .unwrap_or_else(|| "unknown".to_string())
+                .unwrap_or_else(|| "<missing>".to_string())
         }),
     );
     breakdowns.insert(
@@ -1235,6 +1407,7 @@ pub fn run_benchmark(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
 
     #[test]
     fn split_bucket_is_deterministic_and_in_range() {
@@ -1267,14 +1440,39 @@ mod tests {
         let achiral_amino_acid = try_canonicalize("CC(N)C(=O)O").unwrap();
         for stereo in ["C[C@H](N)C(=O)O", "C[C@@H](N)C(=O)O"] {
             let canon = try_canonicalize(stereo).unwrap();
-            assert_eq!(stereo_ignored_canonical(&canon), achiral_amino_acid);
+            assert_eq!(
+                stereo_ignored_canonical(&canon).as_deref(),
+                Some(achiral_amino_acid.as_str())
+            );
         }
 
         let achiral_butene = try_canonicalize("CC=CC").unwrap();
         for stereo in ["C/C=C/C", "C/C=C\\C"] {
             let canon = try_canonicalize(stereo).unwrap();
-            assert_eq!(stereo_ignored_canonical(&canon), achiral_butene);
+            assert_eq!(
+                stereo_ignored_canonical(&canon).as_deref(),
+                Some(achiral_butene.as_str())
+            );
         }
+    }
+
+    #[test]
+    fn stereo_ignored_canonical_never_falls_back_to_the_stereo_aware_string() {
+        // Regression guard: an independent audit found the previous
+        // text-strip-then-reparse implementation fell back to the
+        // stereo-AWARE canonical string on any reparse failure, which would
+        // silently make `stereochemistry_ignored_outcome` an artifact of
+        // that fallback rather than an honest comparison. The structural
+        // implementation has no such fallback path -- confirm the isotope/
+        // charge-preserving case still round-trips correctly (a case where
+        // a naive fallback would be tempting to reach for).
+        let canon = try_canonicalize("[13C@H](N)(C)C(=O)O").unwrap();
+        let ignored = stereo_ignored_canonical(&canon).unwrap();
+        assert!(ignored.contains("13C"), "isotope must survive: {ignored}");
+        assert!(
+            !ignored.contains('@'),
+            "chirality must be cleared: {ignored}"
+        );
     }
 
     #[test]
@@ -1376,6 +1574,94 @@ not json at all
     }
 
     #[test]
+    fn atom_map_numbering_does_not_change_group_key_or_identity() {
+        // Regression guard: an independent audit found that atom-map numbers
+        // (`:1`, `:2`, ...) survive `canonical_smiles` unchanged, so two
+        // corpus rows encoding the literal same reaction but with different
+        // atom-map numbering previously got DIFFERENT `reaction_identity_hash`
+        // (not deduped) and different `group_key` (different splits) --
+        // silently defeating the leakage-safety guarantee this module exists
+        // to provide.
+        let dir = std::env::temp_dir().join(format!(
+            "renkin-forward-bench-atom-map-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("corpus.jsonl");
+        let content = r#"
+{"schema_version": 1, "reaction_id": "unmapped", "reactants": ["Oc1ccccc1C(=O)O", "CCO"], "accepted_products": [["CCOC(=O)c1ccccc1O"]]}
+{"schema_version": 1, "reaction_id": "mapped-1", "reactants": ["[OH:1]c1ccccc1[C:2](=[O:3])[OH:4]", "[CH3:5][CH2:6][OH:7]"], "accepted_products": [["CCOC(=O)c1ccccc1O"]]}
+{"schema_version": 1, "reaction_id": "mapped-2", "reactants": ["[OH:21]c1ccccc1[C:22](=[O:23])[OH:24]", "[CH3:25][CH2:26][OH:27]"], "accepted_products": [["CCOC(=O)c1ccccc1O"]]}
+"#;
+        std::fs::write(&path, content).unwrap();
+
+        let (reactions, _invalid, stats, _warnings) = load_corpus(path.to_str().unwrap()).unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+
+        assert_eq!(
+            stats.duplicate_records_merged, 2,
+            "all 3 rows encode the same reaction and must dedupe to 1"
+        );
+        assert_eq!(reactions.len(), 1);
+        assert!(
+            !reactions[0]
+                .reactants_canonical
+                .iter()
+                .any(|s| s.contains(':')),
+            "canonical reactant SMILES must never carry a surviving atom-map \
+             annotation: {:?}",
+            reactions[0].reactants_canonical
+        );
+    }
+
+    #[test]
+    fn duplicate_group_key_independent_of_row_order() {
+        // Regression guard: an independent audit found that dedup-by-identity
+        // happened BEFORE group-key resolution, keeping only the
+        // first-encountered occurrence's group_key -- so whether an explicit
+        // corpus-supplied group_key won over the deterministic fallback
+        // depended on file row order, not on the metadata itself.
+        let dir = std::env::temp_dir().join(format!(
+            "renkin-forward-bench-group-key-order-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let bare_first = r#"
+{"schema_version": 1, "reaction_id": "bare", "reactants": ["CCO"], "accepted_products": [["CC=O"]]}
+{"schema_version": 1, "reaction_id": "keyed", "reactants": ["CCO"], "accepted_products": [["CC=O"]], "group_key": "explicit-patent-family-1"}
+"#;
+        let keyed_first = r#"
+{"schema_version": 1, "reaction_id": "keyed", "reactants": ["CCO"], "accepted_products": [["CC=O"]], "group_key": "explicit-patent-family-1"}
+{"schema_version": 1, "reaction_id": "bare", "reactants": ["CCO"], "accepted_products": [["CC=O"]]}
+"#;
+
+        let path_a = dir.join("bare_first.jsonl");
+        std::fs::write(&path_a, bare_first).unwrap();
+        let (reactions_a, _invalid, _stats, _warnings) =
+            load_corpus(path_a.to_str().unwrap()).unwrap();
+
+        let path_b = dir.join("keyed_first.jsonl");
+        std::fs::write(&path_b, keyed_first).unwrap();
+        let (reactions_b, _invalid, _stats, _warnings) =
+            load_corpus(path_b.to_str().unwrap()).unwrap();
+
+        std::fs::remove_dir_all(&dir).ok();
+
+        assert_eq!(reactions_a.len(), 1);
+        assert_eq!(reactions_b.len(), 1);
+        assert_eq!(
+            reactions_a[0].group_key, "explicit-patent-family-1",
+            "the explicit group_key must win regardless of which row it \
+             appeared on first"
+        );
+        assert_eq!(
+            reactions_a[0].group_key, reactions_b[0].group_key,
+            "group_key must be independent of row order"
+        );
+    }
+
+    #[test]
     fn compute_row_predicts_from_reactants_original_not_reactants_canonical() {
         // Regression guard: compute_row must feed `reactants_original` (the
         // corpus's own text/order, matching what a direct `predict` CLI
@@ -1423,6 +1709,7 @@ not json at all
             reaction_id: "r".to_string(),
             source_line: 1,
             split: "train".to_string(),
+            leakage_group_id: Some("g".to_string()),
             reaction_class: None,
             reactants_original: vec![],
             reactants_canonical: vec![],
@@ -1439,12 +1726,18 @@ not json at all
             top5_hit: rank.is_some_and(|r| r < 5),
             top10_hit: rank.is_some_and(|r| r < 10),
             stereochemistry_aware_hit: rank.is_some_and(|r| r < 10),
-            stereochemistry_ignored_hit: rank.is_some_and(|r| r < 10),
+            stereochemistry_ignored_outcome: if rank.is_some_and(|r| r < 10) {
+                StereoIgnoredOutcome::Hit
+            } else {
+                StereoIgnoredOutcome::NoHit
+            },
             invalid_candidate_count: 0,
             no_op_candidate_count: 0,
             application_warning_count: 0,
             application_error_count: 0,
             templates_attempted: 1,
+            templates_matched: 1,
+            graph_rules_skipped: 0,
             rules_loaded: 1,
             elapsed_ms: 1.0,
             failure_reason: match rank {

@@ -273,7 +273,7 @@ fn benchmark_fixture_corpus_counts_and_failure_reasons_match_expectations() {
         .unwrap();
     assert_eq!(mismatch_row["correct_candidate_present"], false);
     assert_eq!(mismatch_row["stereochemistry_aware_hit"], false);
-    assert_eq!(mismatch_row["stereochemistry_ignored_hit"], true);
+    assert_eq!(mismatch_row["stereochemistry_ignored_outcome"], "hit");
     assert!(mismatch_row["best_correct_rank_stereo_ignored"].is_number());
 
     // Split assignment is deterministic and every row lands somewhere
@@ -357,6 +357,6 @@ fn benchmark_without_output_report_prints_report_json_to_stdout_only() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     let parsed: serde_json::Value =
         serde_json::from_str(&stdout).expect("stdout must be valid JSON");
-    assert_eq!(parsed["schema_version"], 1);
+    assert_eq!(parsed["schema_version"], 2);
     assert!(parsed["overall"].is_object());
 }

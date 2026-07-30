@@ -443,21 +443,35 @@ pub struct HintKnownAssignment {
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct HintRequiredFeatures {
     pub required_elements: Vec<String>,
+    /// Elements excluded by a `NOT` over a single element primitive (e.g.
+    /// `[!#6]` -> `["C"]`) -- an explicit negative constraint, not folded
+    /// into `required_elements`.
+    pub excluded_elements: Vec<String>,
     pub aromatic: Option<bool>,
     pub charge: Option<i8>,
     pub hydrogen_constraints: Vec<String>,
     pub degree: Option<u8>,
     pub ring_membership: Option<bool>,
+    /// `[RN]` -- number of SSSR rings containing the atom (`R0` = acyclic).
+    /// Distinct from `ring_membership` (`[R]`/`[!R]`, "in any ring or not").
+    pub ring_count: Option<u8>,
     pub valence: Option<u8>,
     pub hybridization: Option<u8>,
     pub isotope: Option<u16>,
     pub chirality: Option<u8>,
-    /// `false` when any atom in this slot's query contains a `NOT` or
-    /// recursive `$(...)` condition that this best-effort walker does not
-    /// attempt to flatten into the fields above. An `OR` across values of
-    /// the *same* primitive kind (e.g. `[N;H1,H2]`) is still considered
-    /// completely summarized -- multiple `required_elements`/
-    /// `hydrogen_constraints` entries already mean "any of these".
+    /// `false` when any atom in this slot's query contains: a recursive
+    /// `$(...)` condition; a `NOT` over anything other than a single
+    /// element (a bare `[!#6]`-style exclusion is fully captured by
+    /// `excluded_elements` and does NOT make this `false`); or an `OR`
+    /// combining primitives of genuinely different kinds (e.g. `[c,C]` --
+    /// aromatic vs. aliphatic, or `[N,+1]` -- element vs. charge), since
+    /// folding such alternatives into these fields would misrepresent a
+    /// choice as a simultaneous requirement. An `OR` across values of the
+    /// *same* primitive kind (e.g. `[N;H1,H2]`, `[N,O]`) is still
+    /// considered completely summarized -- multiple `required_elements`/
+    /// `hydrogen_constraints` entries already mean "any of these". In every
+    /// case, `query_smarts` on the enclosing type remains the authoritative
+    /// representation; this struct is always auxiliary.
     pub summary_complete: bool,
 }
 
@@ -565,12 +579,14 @@ pub struct ForwardRetrievalHintReport {
 #[derive(Debug, Clone, Default)]
 struct AtomFeatureAccumulator {
     required_elements: BTreeSet<String>,
+    excluded_elements: BTreeSet<String>,
     aromatic: Option<bool>,
     charge: Option<i8>,
     hcounts: BTreeSet<u8>,
     implicit_hcounts: BTreeSet<u8>,
     degree: Option<u8>,
     ring_membership: Option<bool>,
+    ring_count: Option<u8>,
     valence: Option<u8>,
     hybridization: Option<u8>,
     isotope: Option<u16>,
@@ -580,20 +596,159 @@ struct AtomFeatureAccumulator {
     /// A primitive kind this walker doesn't yet fold into a dedicated field
     /// (ring size/bond-count/total-connectivity queries) was present.
     has_unsummarized_primitive: bool,
+    /// An `OR`'s branches disagreed on some scalar dimension (e.g. `[c,C]`:
+    /// one branch is aromatic, the other isn't), or a branch contained
+    /// NOT/recursive content -- either way that dimension represents
+    /// alternative interpretations of the atom, not a simultaneous
+    /// requirement, so it's left unset rather than arbitrarily committing
+    /// to one branch's value.
+    has_mixed_family_or: bool,
+}
+
+/// Whether `q` contains a `NOT` or recursive `$(...)` anywhere -- used to
+/// decide if an OR branch is safe to walk normally even when
+/// same-family, since a nested NOT/recursive still makes that branch
+/// incompletely summarizable.
+fn contains_not_or_recursive(q: &AtomQuery) -> bool {
+    match q {
+        AtomQuery::Primitive(AtomPrimitive::Recursive(_)) => true,
+        AtomQuery::Primitive(_) => false,
+        AtomQuery::And(a, b) | AtomQuery::Or(a, b) => {
+            contains_not_or_recursive(a) || contains_not_or_recursive(b)
+        }
+        AtomQuery::Not(_) => true,
+    }
+}
+
+/// Sets `has_not`/`has_recursive` flags for everything under `q` without
+/// touching any value field -- used for the branches of a mixed-family OR,
+/// which must not contribute to `required_elements`/etc. but whose
+/// incompleteness (NOT/recursive content) must still be reflected in
+/// `summary_complete`.
+fn mark_incompleteness_flags_only(q: &AtomQuery, acc: &mut AtomFeatureAccumulator) {
+    match q {
+        AtomQuery::Primitive(AtomPrimitive::Recursive(_)) => acc.has_recursive = true,
+        AtomQuery::Primitive(_) => {}
+        AtomQuery::And(a, b) | AtomQuery::Or(a, b) => {
+            mark_incompleteness_flags_only(a, acc);
+            mark_incompleteness_flags_only(b, acc);
+        }
+        AtomQuery::Not(inner) => {
+            acc.has_not = true;
+            mark_incompleteness_flags_only(inner, acc);
+        }
+    }
 }
 
 fn walk_atom_query(q: &AtomQuery, acc: &mut AtomFeatureAccumulator) {
     match q {
         AtomQuery::Primitive(p) => apply_atom_primitive(p, acc),
-        AtomQuery::And(a, b) | AtomQuery::Or(a, b) => {
+        AtomQuery::And(a, b) => {
             walk_atom_query(a, acc);
             walk_atom_query(b, acc);
         }
-        AtomQuery::Not(inner) => {
-            acc.has_not = true;
-            walk_atom_query(inner, acc);
-        }
+        AtomQuery::Or(a, b) => walk_or(a, b, acc),
+        AtomQuery::Not(inner) => walk_not(inner, acc),
     }
+}
+
+/// An `OR`'s two branches are each walked independently into their own
+/// accumulator, then merged into the shared one:
+///
+/// - Multi-valued (set) fields (`required_elements`, `excluded_elements`,
+///   `hcounts`, `implicit_hcounts`) are always safe to union -- a set
+///   already means "any of these", exactly what OR expresses.
+/// - Single-valued fields (`aromatic`, `charge`, `degree`, ...) are only
+///   kept when *both* branches agree on the same value (e.g. `[N,O]`:
+///   both branches happen to be non-aromatic, so `aromatic = Some(false)`
+///   is genuinely true regardless of which branch matches). When branches
+///   disagree (e.g. `[c,C]` -- aromatic vs. aliphatic carbon, both
+///   equally valid interpretations), that field is left unset rather than
+///   arbitrarily committing to one branch's value, and `has_mixed_family_or`
+///   marks the atom incomplete.
+///
+/// A branch containing `NOT`/recursive `$(...)` is never walked for values
+/// at all (only its incompleteness flags propagate) -- a negated or
+/// recursive alternative can't be safely reduced to a positive value to
+/// compare for agreement.
+fn walk_or(a: &AtomQuery, b: &AtomQuery, acc: &mut AtomFeatureAccumulator) {
+    if contains_not_or_recursive(a) || contains_not_or_recursive(b) {
+        acc.has_mixed_family_or = true;
+        mark_incompleteness_flags_only(a, acc);
+        mark_incompleteness_flags_only(b, acc);
+        return;
+    }
+
+    let mut acc_a = AtomFeatureAccumulator::default();
+    walk_atom_query(a, &mut acc_a);
+    let mut acc_b = AtomFeatureAccumulator::default();
+    walk_atom_query(b, &mut acc_b);
+
+    acc.required_elements
+        .extend(acc_a.required_elements.iter().cloned());
+    acc.required_elements
+        .extend(acc_b.required_elements.iter().cloned());
+    acc.excluded_elements
+        .extend(acc_a.excluded_elements.iter().cloned());
+    acc.excluded_elements
+        .extend(acc_b.excluded_elements.iter().cloned());
+    acc.hcounts.extend(acc_a.hcounts.iter().copied());
+    acc.hcounts.extend(acc_b.hcounts.iter().copied());
+    acc.implicit_hcounts
+        .extend(acc_a.implicit_hcounts.iter().copied());
+    acc.implicit_hcounts
+        .extend(acc_b.implicit_hcounts.iter().copied());
+
+    macro_rules! merge_scalar {
+        ($field:ident) => {
+            match (acc_a.$field, acc_b.$field) {
+                (Some(x), Some(y)) if x == y => acc.$field = acc.$field.or(Some(x)),
+                (None, None) => {}
+                _ => acc.has_mixed_family_or = true,
+            }
+        };
+    }
+    merge_scalar!(aromatic);
+    merge_scalar!(charge);
+    merge_scalar!(degree);
+    merge_scalar!(ring_membership);
+    merge_scalar!(ring_count);
+    merge_scalar!(valence);
+    merge_scalar!(hybridization);
+    merge_scalar!(isotope);
+    merge_scalar!(chirality);
+
+    acc.has_not = acc.has_not || acc_a.has_not || acc_b.has_not;
+    acc.has_recursive = acc.has_recursive || acc_a.has_recursive || acc_b.has_recursive;
+    acc.has_unsummarized_primitive = acc.has_unsummarized_primitive
+        || acc_a.has_unsummarized_primitive
+        || acc_b.has_unsummarized_primitive;
+    acc.has_mixed_family_or =
+        acc.has_mixed_family_or || acc_a.has_mixed_family_or || acc_b.has_mixed_family_or;
+}
+
+/// A `NOT` over a single element primitive is represented explicitly as an
+/// exclusion (`excluded_elements`); any other NOT content (compound
+/// expressions, non-element primitives) can't be safely reduced to a
+/// positive field value, so it's left out of every field and flags the
+/// atom incomplete instead.
+fn walk_not(inner: &AtomQuery, acc: &mut AtomFeatureAccumulator) {
+    acc.has_not = true;
+    match inner {
+        AtomQuery::Primitive(AtomPrimitive::AtomicNum(n)) => {
+            if let Some(sym) = Element::from_atomic_number(*n) {
+                acc.excluded_elements.insert(sym.symbol().to_string());
+                return;
+            }
+        }
+        AtomQuery::Primitive(AtomPrimitive::Symbol(s)) => {
+            acc.excluded_elements.insert(s.clone());
+            return;
+        }
+        _ => {}
+    }
+    mark_incompleteness_flags_only(inner, acc);
+    acc.has_unsummarized_primitive = true;
 }
 
 fn apply_atom_primitive(p: &AtomPrimitive, acc: &mut AtomFeatureAccumulator) {
@@ -628,8 +783,8 @@ fn apply_atom_primitive(p: &AtomPrimitive, acc: &mut AtomFeatureAccumulator) {
         AtomPrimitive::RingSize(_)
         | AtomPrimitive::MinRingSize(_)
         | AtomPrimitive::RingBondCount(_)
-        | AtomPrimitive::RingCount(_)
         | AtomPrimitive::TotalConnectivity(_) => acc.has_unsummarized_primitive = true,
+        AtomPrimitive::RingCount(n) => acc.ring_count = Some(*n),
     }
 }
 
@@ -651,12 +806,14 @@ fn format_hcount_constraint(prefix: &str, values: &BTreeSet<u8>) -> Option<Strin
 /// auxiliary.
 fn extract_required_features(query: &QueryMolecule) -> HintRequiredFeatures {
     let mut required_elements = BTreeSet::new();
+    let mut excluded_elements = BTreeSet::new();
     let mut aromatic = None;
     let mut charge = None;
     let mut hcounts = BTreeSet::new();
     let mut implicit_hcounts = BTreeSet::new();
     let mut degree = None;
     let mut ring_membership = None;
+    let mut ring_count = None;
     let mut valence = None;
     let mut hybridization = None;
     let mut isotope = None;
@@ -667,17 +824,23 @@ fn extract_required_features(query: &QueryMolecule) -> HintRequiredFeatures {
         let mut acc = AtomFeatureAccumulator::default();
         walk_atom_query(&atom.query, &mut acc);
         required_elements.extend(acc.required_elements);
+        excluded_elements.extend(acc.excluded_elements);
         aromatic = aromatic.or(acc.aromatic);
         charge = charge.or(acc.charge);
         hcounts.extend(acc.hcounts);
         implicit_hcounts.extend(acc.implicit_hcounts);
         degree = degree.or(acc.degree);
         ring_membership = ring_membership.or(acc.ring_membership);
+        ring_count = ring_count.or(acc.ring_count);
         valence = valence.or(acc.valence);
         hybridization = hybridization.or(acc.hybridization);
         isotope = isotope.or(acc.isotope);
         chirality = chirality.or(acc.chirality);
-        if acc.has_not || acc.has_recursive || acc.has_unsummarized_primitive {
+        // `has_not` alone does NOT make an atom incomplete: a NOT over a
+        // single element (`[!#6]`) is fully captured by
+        // `excluded_elements`. Only a NOT/OR/recursive combination this
+        // walker couldn't safely reduce to a field value does.
+        if acc.has_recursive || acc.has_unsummarized_primitive || acc.has_mixed_family_or {
             summary_complete = false;
         }
     }
@@ -692,11 +855,13 @@ fn extract_required_features(query: &QueryMolecule) -> HintRequiredFeatures {
 
     HintRequiredFeatures {
         required_elements: required_elements.into_iter().collect(),
+        excluded_elements: excluded_elements.into_iter().collect(),
         aromatic,
         charge,
         hydrogen_constraints,
         degree,
         ring_membership,
+        ring_count,
         valence,
         hybridization,
         isotope,
@@ -1452,6 +1617,138 @@ mod tests {
         assert_eq!(report.hints.len(), 1);
     }
 
+    // Regression audit companion to lib.rs's
+    // `reverse_smirks_validated_still_rejects_*` fixtures: `hints` deliberately
+    // ACCEPTS what `predict`/`enumerate` reject, via its own shape-only
+    // reversal + `parse_smarts`-per-component validation. `reverse_smirks_shape_only`
+    // itself only checks `>>` structure, so it also accepts things that fail
+    // later at the per-component `parse_smarts` stage (unbalanced bracket,
+    // invalid atom-map token) -- both stages are exercised here.
+    #[test]
+    fn reverse_smirks_shape_only_accepts_multi_condition_smarts() {
+        assert!(reverse_smirks_shape_only("[c:1][N;H1,H2:2]>>[c:1][Br].[N;H1,H2:2]").is_ok());
+    }
+
+    #[test]
+    fn parse_hint_template_accepts_multi_condition_smarts() {
+        let r = rule("aryl_amination", "[c:1][N;H1,H2:2]>>[c:1][Br].[N;H1,H2:2]");
+        assert!(parse_hint_template(&r).is_ok());
+    }
+
+    #[test]
+    fn parse_hint_template_accepts_recursive_smarts() {
+        let r = rule("recursive_probe", "[c:1][C:2]>>[c:1][Br].[C;$(C=O):2]");
+        assert!(parse_hint_template(&r).is_ok());
+    }
+
+    #[test]
+    fn parse_hint_template_rejects_unbalanced_bracket_at_component_stage() {
+        // reverse_smirks_shape_only accepts the `>>` shape; the failure
+        // surfaces one stage later, at per-component parse_smarts.
+        let r = rule("bad_bracket", "[c:1][N:2>>[c:1].[N:2]");
+        assert!(reverse_smirks_shape_only(&r.smirks).is_ok());
+        let err = parse_hint_template(&r).unwrap_err();
+        assert!(matches!(
+            err,
+            TemplateParseError::RhsComponentUnparseable { .. }
+        ));
+    }
+
+    #[test]
+    fn parse_hint_template_rejects_invalid_atom_map_token_at_component_stage() {
+        let r = rule("bad_atom_map", "[c:1][N:xyz]>>[c:1].[N:xyz]");
+        assert!(reverse_smirks_shape_only(&r.smirks).is_ok());
+        let err = parse_hint_template(&r).unwrap_err();
+        assert!(matches!(
+            err,
+            TemplateParseError::LhsComponentUnparseable { .. }
+        ));
+    }
+
+    #[test]
+    fn parse_hint_template_rejects_malformed_arrow_and_empty_sides() {
+        assert!(matches!(
+            parse_hint_template(&rule("zero_arrows", "[C:1][C:2]")).unwrap_err(),
+            TemplateParseError::ReversalFailed(_)
+        ));
+        assert!(matches!(
+            parse_hint_template(&rule("multi_arrows", "[C:1]>>[C:2]>>[C:3]")).unwrap_err(),
+            TemplateParseError::ReversalFailed(_)
+        ));
+        assert!(matches!(
+            parse_hint_template(&rule("empty_lhs", ">>[C:1]")).unwrap_err(),
+            TemplateParseError::ReversalFailed(_)
+        ));
+        assert!(matches!(
+            parse_hint_template(&rule("empty_rhs", "[C:1]>>")).unwrap_err(),
+            TemplateParseError::ReversalFailed(_)
+        ));
+    }
+
+    /// Snapshot-style regression guard mirroring lib.rs's
+    /// `reverse_smirks_validated_default_rules_accept_reject_partition_is_stable`:
+    /// locks in hints' own (more permissive) accept/reject partition over
+    /// the real embedded default-rule corpus, so a future change to either
+    /// validator's strictness is caught rather than silently drifting.
+    #[test]
+    fn parse_hint_template_default_rules_accept_reject_partition_is_stable() {
+        let rules = renkin::chem_env::default_rules();
+        let mut smirks_based = 0usize;
+        let mut graph_based = 0usize;
+        let mut accepted = 0usize;
+        let mut rejected = 0usize;
+        for rule in &rules {
+            if rule.smirks.is_empty() {
+                graph_based += 1;
+                continue;
+            }
+            smirks_based += 1;
+            match parse_hint_template(rule) {
+                Ok(_) => accepted += 1,
+                Err(_) => rejected += 1,
+            }
+        }
+        assert_eq!(graph_based, 7);
+        assert_eq!(smirks_based, rules.len() - 7);
+        assert_eq!(
+            rejected, 0,
+            "every SMIRKS-backed default rule must be statically parseable by hints \
+             (it accepts everything predict/enumerate does, plus more)"
+        );
+        assert_eq!(accepted, smirks_based);
+    }
+
+    /// Extracted-corpus companion to
+    /// `parse_hint_template_default_rules_accept_reject_partition_is_stable`
+    /// (and lib.rs's `reverse_smirks_validated_extracted_templates_...`
+    /// audit): every one of the ~500 USPTO-derived extracted templates must
+    /// be statically analyzable by `hints`, since it validates via
+    /// `parse_smarts` (the correct grammar), a strict superset of what
+    /// `predict`/`enumerate`'s `parse_reaction`-based check accepts.
+    #[test]
+    fn parse_hint_template_extracted_templates_accept_reject_partition_is_stable() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../data/templates_extracted.smi"
+        );
+        let rules = renkin::chem_env::load_rules_from_file(path);
+        assert!(
+            rules.len() > 400,
+            "sanity check that the real extracted corpus loaded, got {} rules",
+            rules.len()
+        );
+        let mut rejected = 0usize;
+        for rule in &rules {
+            if parse_hint_template(rule).is_err() {
+                rejected += 1;
+            }
+        }
+        assert_eq!(
+            rejected, 0,
+            "every extracted template must be statically parseable by hints"
+        );
+    }
+
     #[test]
     fn repeated_run_produces_byte_identical_report_json() {
         let r = rule("aryl_amination", "[c:1][N;H1,H2:2]>>[c:1][Br].[N;H1,H2:2]");
@@ -1473,6 +1770,107 @@ mod tests {
         assert_eq!(features.isotope, Some(13));
         assert_eq!(features.charge, Some(1));
         assert!(features.summary_complete);
+    }
+
+    /// Parses a single-atom SMARTS fragment and extracts features from its
+    /// one atom, for concise feature-extraction fixture tests.
+    fn features_of(atom_smarts: &str) -> HintRequiredFeatures {
+        let query = smarts::parse_smarts(atom_smarts).unwrap();
+        assert_eq!(
+            query.atoms.len(),
+            1,
+            "fixture must be a single-atom SMARTS: {atom_smarts:?}"
+        );
+        extract_required_features(&query)
+    }
+
+    #[test]
+    fn same_family_element_or_flattens_to_required_elements() {
+        let f = features_of("[N,O]");
+        assert_eq!(f.required_elements, vec!["N".to_string(), "O".to_string()]);
+        assert!(f.summary_complete);
+    }
+
+    #[test]
+    fn same_family_hcount_or_under_and_flattens_cleanly() {
+        let f = features_of("[N;H1,H2]");
+        assert_eq!(f.required_elements, vec!["N".to_string()]);
+        assert_eq!(f.hydrogen_constraints, vec!["H1 or H2".to_string()]);
+        assert!(f.summary_complete);
+    }
+
+    #[test]
+    fn not_over_single_element_becomes_explicit_exclusion() {
+        let f = features_of("[!#6]");
+        assert!(f.required_elements.is_empty());
+        assert_eq!(f.excluded_elements, vec!["C".to_string()]);
+        assert!(
+            f.summary_complete,
+            "a clean single-element NOT is fully captured by excluded_elements"
+        );
+    }
+
+    #[test]
+    fn mixed_family_recursive_or_is_not_flattened() {
+        // Two entirely different candidate interpretations of the atom
+        // (N-with-H1 vs. negatively-charged-O) wrapped in recursive SMARTS
+        // on each OR branch -- must not fabricate a combined
+        // required_elements/hydrogen_constraints/charge summary.
+        let f = features_of("[$([N;H1]),$([O-])]");
+        assert!(f.required_elements.is_empty());
+        assert!(f.excluded_elements.is_empty());
+        assert!(f.hydrogen_constraints.is_empty());
+        assert_eq!(f.charge, None);
+        assert!(!f.summary_complete);
+    }
+
+    #[test]
+    fn and_of_element_or_and_ring_constraint_flattens_cleanly() {
+        // AND(OR(C, N), R0): "(C or N) and belongs to zero SSSR rings" --
+        // R0 parses as RingCount(0) (empirically verified), not
+        // RingMembership -- element OR is same-family (safe), combined via
+        // AND with an unrelated ring-count constraint (also safe); both
+        // fields can be populated together.
+        let f = features_of("[C,N;R0]");
+        assert_eq!(f.required_elements, vec!["C".to_string(), "N".to_string()]);
+        assert_eq!(f.ring_count, Some(0));
+        assert!(f.summary_complete);
+    }
+
+    #[test]
+    fn aromatic_aliphatic_or_is_not_flattened_into_a_single_aromatic_value() {
+        // [c,C]: aromatic-C OR aliphatic-C. Both branches agree on element
+        // (C) but disagree on aromaticity -- a mixed-family OR (element +
+        // aromatic families both present). Must not arbitrarily commit to
+        // aromatic=true or aromatic=false, since either is a valid
+        // interpretation depending on which OR-branch matches.
+        let f = features_of("[c,C]");
+        assert_eq!(
+            f.aromatic, None,
+            "aromaticity must stay unconstrained, not arbitrarily pick one OR-branch's value"
+        );
+        assert!(!f.summary_complete);
+    }
+
+    #[test]
+    fn nested_not_plus_recursive_smarts_stays_incomplete() {
+        let f = features_of("[!$(C=O)]");
+        assert!(f.required_elements.is_empty());
+        assert!(f.excluded_elements.is_empty());
+        assert!(!f.summary_complete);
+    }
+
+    #[test]
+    fn bond_or_and_any_bond_are_never_misrepresented_as_a_single_type() {
+        // Any-bond (`~`) and a compound bond OR/AND/NOT must never be
+        // described as one of the concrete single/double/triple/aromatic
+        // labels -- that would silently narrow an ambiguous constraint.
+        assert_eq!(describe_bond_order(&BondQuery::Any), "any");
+        let compound = BondQuery::Or(
+            Box::new(BondQuery::Primitive(BondPrimitive::Single)),
+            Box::new(BondQuery::Primitive(BondPrimitive::Double)),
+        );
+        assert_eq!(describe_bond_order(&compound), "complex");
     }
 
     #[test]

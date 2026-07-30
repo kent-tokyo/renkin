@@ -1612,6 +1612,130 @@ mod tests {
         assert!(reverse_smirks_validated("[C:1]>>").is_err());
     }
 
+    // Regression audit for `hints::reverse_smirks_shape_only` extraction
+    // (see hints.rs's own doc comment): `predict`/`enumerate`'s accept/reject
+    // partition via `reverse_smirks_validated` must be byte-for-byte
+    // unchanged by that refactor, since its only change was moving the
+    // shape check into a shared function -- the subsequent
+    // `chematic::rxn::parse_reaction` sanity gate is still applied exactly
+    // as before for these callers. These fixtures lock in the CURRENT
+    // (deliberately more restrictive than `hints`) behavior.
+    #[test]
+    fn reverse_smirks_validated_still_rejects_multi_condition_smarts() {
+        // Legitimate SMARTS logical-OR (`;`/`,`), but not valid SMILES --
+        // `parse_reaction`'s `parse_smiles` call rejects it. This is the
+        // exact fixture that motivated `hints` to bypass this gate; predict/
+        // enumerate's own behavior toward it is unchanged and intentional.
+        assert!(reverse_smirks_validated("[c:1][N;H1,H2:2]>>[c:1][Br].[N;H1,H2:2]").is_err());
+    }
+
+    #[test]
+    fn reverse_smirks_validated_still_rejects_recursive_smarts() {
+        assert!(reverse_smirks_validated("[c:1][C:2]>>[c:1][Br].[C;$(C=O):2]").is_err());
+    }
+
+    #[test]
+    fn reverse_smirks_validated_rejects_unbalanced_bracket() {
+        assert!(reverse_smirks_validated("[c:1][N:2>>[c:1].[N:2]").is_err());
+    }
+
+    #[test]
+    fn reverse_smirks_validated_rejects_invalid_atom_map_token() {
+        assert!(reverse_smirks_validated("[c:1][N:xyz]>>[c:1].[N:xyz]").is_err());
+    }
+
+    #[test]
+    fn reverse_smirks_validated_accepts_well_formed_ordinary_smirks_unchanged() {
+        // Sanity anchor: plain, unremarkable templates (the vast majority of
+        // this crate's default/extracted rules) must still be accepted --
+        // the refactor must not have narrowed acceptance for the common case.
+        assert!(reverse_smirks_validated("[c:1][Cl]>>[c:1][Br]").is_ok());
+        assert!(reverse_smirks_validated("[c:1][N:2]>>[c:1].[N:2]").is_ok());
+    }
+
+    /// Snapshot-style regression guard: locks in the exact accept/reject
+    /// partition of `reverse_smirks_validated` over the real embedded
+    /// default-rule corpus. A pure extract-method refactor (moving the
+    /// shape-only check into `hints::reverse_smirks_shape_only`) must not
+    /// change this count. If this test's expected numbers ever need to
+    /// change, that is itself the signal to double check nothing regressed.
+    #[test]
+    fn reverse_smirks_validated_default_rules_accept_reject_partition_is_stable() {
+        let rules = renkin::chem_env::default_rules();
+        let mut smirks_based = 0usize;
+        let mut graph_based = 0usize;
+        let mut accepted = 0usize;
+        let mut rejected = 0usize;
+        for rule in &rules {
+            if rule.smirks.is_empty() {
+                graph_based += 1;
+                continue;
+            }
+            smirks_based += 1;
+            match reverse_smirks_validated(&rule.smirks) {
+                Ok(_) => accepted += 1,
+                Err(_) => rejected += 1,
+            }
+        }
+        assert_eq!(graph_based, 7, "graph-based default rule count changed");
+        assert_eq!(smirks_based, rules.len() - 7);
+        assert_eq!(
+            rejected, 0,
+            "every SMIRKS-backed default rule must remain accepted by predict/enumerate's validator"
+        );
+        assert_eq!(accepted, smirks_based);
+    }
+
+    /// Same audit as
+    /// `reverse_smirks_validated_default_rules_accept_reject_partition_is_stable`,
+    /// extended to the full extracted-template corpus (the workspace-root
+    /// `data/templates_extracted.smi` file, ~500 USPTO-derived templates) --
+    /// the larger, more chemically-varied corpus this audit is meant to
+    /// protect. `load_rules_from_file` already pre-filters on the product
+    /// side at load time, but never validates the precursor
+    /// (forward-LHS) side, so this is not a redundant check.
+    #[test]
+    fn reverse_smirks_validated_extracted_templates_accept_reject_partition_is_stable() {
+        // NOTE (regression-audit finding, verified against `git diff master`
+        // to confirm the refactor is a pure extract-method with no logic
+        // change): 217/500 extracted templates are rejected by
+        // `reverse_smirks_validated` -- this is PRE-EXISTING behavior on
+        // `master`, unrelated to the `hints`-motivated refactor.
+        // `load_rules_from_file` only pre-validates the product side at
+        // load time; its own precursor (forward-LHS) side is exercised here
+        // for the first time and many extracted USPTO templates use
+        // multi-condition SMARTS (`;`/`,`) on that side, which
+        // `parse_reaction`'s `parse_smiles`-based check has always rejected.
+        // This test locks in the current count as a stability baseline, not
+        // as an assertion that it's ideal -- a real fix belongs to #61
+        // (forward-prediction proposal-coverage work), not this PR.
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../data/templates_extracted.smi"
+        );
+        let rules = renkin::chem_env::load_rules_from_file(path);
+        assert_eq!(
+            rules.len(),
+            500,
+            "extracted-template corpus size changed -- update this test's baseline intentionally"
+        );
+        let mut rejected = 0usize;
+        let mut accepted = 0usize;
+        for rule in &rules {
+            match reverse_smirks_validated(&rule.smirks) {
+                Ok(_) => accepted += 1,
+                Err(_) => rejected += 1,
+            }
+        }
+        assert_eq!(
+            (accepted, rejected),
+            (283, 217),
+            "predict/enumerate's accept/reject partition over the extracted corpus changed -- \
+             if this is a deliberate loosening/tightening of reverse_smirks_validated, update \
+             this baseline with an explanation; if unintended, it's a real regression"
+        );
+    }
+
     #[test]
     fn canonicalize_outcome_rejects_empty_outcome() {
         assert!(canonicalize_outcome(&[]).is_err());

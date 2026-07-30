@@ -837,6 +837,756 @@ pub fn validate_route(route: &Route, rules: &[RetroRule]) -> Result<Vec<StepVali
     Ok(validations)
 }
 
+/// SHA-256 hex digest of a file's raw bytes, for provenance recording (e.g.
+/// [`ForwardEnumerationStats::templates_file_sha256`]/`partners_file_sha256`).
+pub fn sha256_hex_of_file(path: &str) -> Result<String> {
+    let bytes =
+        std::fs::read(path).with_context(|| format!("failed to read {path:?} for hashing"))?;
+    let mut hasher = Sha256::new();
+    hasher.update(&bytes);
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+/// One row of an explicit `--partners` SMILES library, used by
+/// [`enumerate_products_detailed`] to fill the missing reactant slot of a
+/// binary forward template.
+#[derive(Debug, Clone, Serialize)]
+pub struct PartnerRecord {
+    /// 1-based physical line number in the partners file -- always present,
+    /// unambiguous, and independent of `label` (which may be missing or
+    /// repeated).
+    pub row_index: usize,
+    /// Optional second whitespace-delimited token on the line (e.g. a
+    /// human-readable name), present only when the file supplies one.
+    pub label: Option<String>,
+    pub input_smiles: String,
+    pub canonical_smiles: String,
+}
+
+/// Maximum [`PartnerLoadWarning`] entries retained per [`PartnerLoadOutcome`]
+/// -- bounded so a partners file with many malformed lines can't inflate the
+/// enumeration report unboundedly. `skipped_malformed`/`diagnostics_truncated`
+/// always report the true totals even once this cap is hit.
+const MAX_PARTNER_LOAD_DIAGNOSTICS: usize = 20;
+
+/// One malformed line encountered while loading a `--partners` file.
+#[derive(Debug, Clone, Serialize)]
+pub struct PartnerLoadWarning {
+    /// 1-based physical line number, same numbering as [`PartnerRecord::row_index`].
+    pub row_index: usize,
+    pub code: String,
+    /// The raw SMILES-position token that failed to parse (not the whole line).
+    pub input: String,
+    pub message: String,
+}
+
+/// Outcome of loading a `--partners` file: valid records, plus a count of
+/// lines that failed to parse as SMILES. A malformed *line* is not a hard
+/// error by itself -- only a missing/unreadable file or a file with zero
+/// valid records is (see [`load_partners_strict`]).
+#[derive(Debug, Clone, Default)]
+pub struct PartnerLoadOutcome {
+    pub records: Vec<PartnerRecord>,
+    /// True total count of malformed lines -- never capped, unlike `diagnostics`.
+    pub skipped_malformed: usize,
+    /// Up to [`MAX_PARTNER_LOAD_DIAGNOSTICS`] per-line diagnostics, in file order.
+    pub diagnostics: Vec<PartnerLoadWarning>,
+    /// True once `skipped_malformed` exceeds `diagnostics.len()` -- i.e. more
+    /// malformed lines existed than fit in the bounded `diagnostics` list.
+    pub diagnostics_truncated: bool,
+}
+
+/// Strict loader for an explicit `--partners` SMILES file.
+///
+/// Same line shape as `data/building_blocks.smi` (`#`-prefixed and blank
+/// lines skipped, first whitespace-delimited token is SMILES, optional
+/// second token retained as `label`), but unlike
+/// `renkin::chem_env::ChemEnv::load` this never deduplicates by canonical
+/// SMILES: partner multiplicity and row identity must be preserved (two
+/// lines with the same SMILES are two distinct partners).
+pub fn load_partners_strict(path: &str) -> Result<PartnerLoadOutcome> {
+    std::fs::metadata(path)
+        .with_context(|| format!("partners file {path:?} does not exist or is not accessible"))?;
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("partners file {path:?} could not be read"))?;
+
+    let mut records = Vec::new();
+    let mut skipped_malformed = 0usize;
+    let mut diagnostics = Vec::new();
+    let mut diagnostics_truncated = false;
+    for (line_idx, line) in content.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let mut tokens = trimmed.split_whitespace();
+        let Some(smiles) = tokens.next() else {
+            continue;
+        };
+        let label = tokens.next().map(|s| s.to_string());
+        match mol_from_smiles(smiles) {
+            Ok(mol) => records.push(PartnerRecord {
+                row_index: line_idx + 1,
+                label,
+                input_smiles: smiles.to_string(),
+                canonical_smiles: canonical_smiles(&mol),
+            }),
+            Err(e) => {
+                skipped_malformed += 1;
+                if diagnostics.len() < MAX_PARTNER_LOAD_DIAGNOSTICS {
+                    diagnostics.push(PartnerLoadWarning {
+                        row_index: line_idx + 1,
+                        code: "invalid_partner_smiles".to_string(),
+                        input: smiles.to_string(),
+                        message: e.to_string(),
+                    });
+                } else {
+                    diagnostics_truncated = true;
+                }
+            }
+        }
+    }
+
+    if records.is_empty() {
+        bail!("partners file {path:?} contains zero valid partner records");
+    }
+
+    Ok(PartnerLoadOutcome {
+        records,
+        skipped_malformed,
+        diagnostics,
+        diagnostics_truncated,
+    })
+}
+
+/// For a forward-direction reaction, determines for each left-hand-side
+/// (reactant) component whether any of its atom-map numbers appear anywhere
+/// among the right-hand-side (product) components' atom-map numbers.
+///
+/// `chematic::rxn::run_reactants`'s outcomes carry no atom-map information
+/// (every output atom has its map cleared), so whether a molecule bound to a
+/// given LHS slot could ever contribute an atom to the product cannot be
+/// read off a real outcome after the fact -- it must be decided from the
+/// template itself: a slot whose atom-map numbers share zero overlap with
+/// the union of every RHS atom-map number can never contribute an atom to
+/// any outcome, for any molecule bound to it, independent of which real
+/// molecule is tried there.
+fn contributing_lhs_slots(reaction: &chematic::rxn::Reaction) -> Vec<bool> {
+    let product_maps: std::collections::HashSet<u16> = reaction
+        .products
+        .iter()
+        .flat_map(|p| p.atoms())
+        .filter_map(|(_, atom)| atom.atom_map)
+        .collect();
+    reaction
+        .reactants
+        .iter()
+        .map(|component| {
+            component
+                .atoms()
+                .any(|(_, atom)| atom.atom_map.is_some_and(|m| product_maps.contains(&m)))
+        })
+        .collect()
+}
+
+/// Schema version of [`ForwardEnumerationReport`]. Wholly separate from
+/// [`FORWARD_REPORT_SCHEMA_VERSION`] -- bumping one never implies anything
+/// about the other.
+pub const FORWARD_ENUMERATION_REPORT_SCHEMA_VERSION: u32 = 1;
+
+/// Configuration for [`enumerate_products_detailed`].
+#[derive(Debug, Clone)]
+pub struct ForwardEnumerationConfig {
+    pub max_results: usize,
+    /// Cap on partners tried per (template, slot) pair.
+    pub max_partners_per_template: usize,
+    /// Global cap on (template, slot, partner) combinations attempted across
+    /// the whole call, independent of `max_partners_per_template`.
+    pub max_combinations: usize,
+    pub strict_template_errors: bool,
+    pub reject_no_op: bool,
+}
+
+impl Default for ForwardEnumerationConfig {
+    fn default() -> Self {
+        Self {
+            max_results: 5,
+            max_partners_per_template: 50,
+            max_combinations: 2000,
+            strict_template_errors: false,
+            reject_no_op: true,
+        }
+    }
+}
+
+/// Reference to the partner that filled the "other" slot of a binary match.
+#[derive(Debug, Clone, Serialize)]
+pub struct ForwardEnumerationPartnerRef {
+    pub row_index: usize,
+    pub label: Option<String>,
+    pub canonical_smiles: String,
+}
+
+/// One rule application (at a specific slot, with a specific partner if any)
+/// that contributed to a [`ForwardEnumerationCandidate`].
+#[derive(Debug, Clone, Serialize)]
+pub struct ForwardEnumerationSource {
+    pub template_id: String,
+    pub rule_name: String,
+    pub template_weight: f64,
+    pub source_rank: usize,
+    /// 0-based LHS slot the known reactant was bound to (always 0 for a
+    /// unary template).
+    pub slot_index: usize,
+    /// `None` for a unary template (no partner needed).
+    pub partner: Option<ForwardEnumerationPartnerRef>,
+}
+
+/// A merged forward-enumeration candidate: one canonical product multiset,
+/// with every contributing (template, slot, partner) retained.
+#[derive(Debug, Clone, Serialize)]
+pub struct ForwardEnumerationCandidate {
+    /// `sha256:<hex>` of the known reactant's canonical SMILES and the
+    /// sorted canonical product multiset -- deliberately excludes the
+    /// partner, so different partners converging on the same products merge
+    /// into one candidate (see [`ForwardEnumerationSource`] for per-partner
+    /// provenance).
+    pub candidate_id: String,
+    pub products: Vec<String>,
+    pub rank: usize,
+    /// Ranking signal only -- the maximum contributing source's template
+    /// weight. This is NOT a calibrated probability of reaction success.
+    pub proposal_score: f64,
+    pub sources: Vec<ForwardEnumerationSource>,
+}
+
+/// Structured, deterministic accounting of one
+/// [`enumerate_products_detailed`] call.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ForwardEnumerationStats {
+    pub rules_loaded: usize,
+    pub smirks_rules: usize,
+    pub graph_rules_skipped: usize,
+    pub templates_inspected: usize,
+    pub templates_unary: usize,
+    /// Arity-2 templates with a partners file given and at least one
+    /// contributing slot -- i.e. actually attempted, not merely eligible.
+    pub templates_binary_supported: usize,
+    pub templates_binary_skipped_no_partners: usize,
+    /// Arity >= 3: always counted here and reported unsupported via a
+    /// warning, never silently skipped.
+    pub templates_unsupported_arity: usize,
+    /// Count of (template, known-reactant slot) assignments for which at
+    /// least one attempted unary/binary application produced an accepted
+    /// outcome. Not a substructure-match count: since this PR has no
+    /// partner-side pre-filter, this is a byproduct of combinations
+    /// actually attempted, not an independent structural pre-check -- if
+    /// `--partners` is omitted, or no partner in the file happens to
+    /// produce an accepted outcome for a given binary slot, that slot is
+    /// simply not counted here (its match status is undetermined, not
+    /// zero).
+    pub slot_assignments_with_accepted_outcome: usize,
+    pub partners_scanned: usize,
+    pub partners_matched: usize,
+    /// True total count of malformed partner-file lines (never capped).
+    pub partner_records_skipped_malformed: usize,
+    /// Count of per-line diagnostics actually retained in
+    /// `ForwardEnumerationReport::partner_load_warnings` (capped at
+    /// [`MAX_PARTNER_LOAD_DIAGNOSTICS`]).
+    pub partner_diagnostics_returned: usize,
+    /// True when `partner_records_skipped_malformed` exceeds
+    /// `partner_diagnostics_returned` -- more malformed lines existed than
+    /// were retained as diagnostics.
+    pub partner_diagnostics_truncated: bool,
+    pub combinations_attempted: usize,
+    pub raw_outcomes: usize,
+    pub accepted_outcomes_before_merge: usize,
+    pub invalid_outcomes_rejected: usize,
+    pub no_op_outcomes_rejected: usize,
+    /// (template, slot) assignments skipped before ever calling
+    /// `run_reactants`, because the slot's atom-map numbers share no overlap
+    /// with any product's -- counted separately from `raw_outcomes`.
+    pub spectator_slot_skips: usize,
+    pub duplicate_candidates_merged: usize,
+    pub candidates_before_limit: usize,
+    pub candidates_returned: usize,
+    pub partners_per_template_capped: bool,
+    pub combinations_capped: bool,
+    pub results_capped: bool,
+    /// OR of `partners_per_template_capped`, `combinations_capped`, `results_capped`.
+    pub truncated: bool,
+    pub templates_file_sha256: Option<String>,
+    pub partners_file_sha256: Option<String>,
+}
+
+/// A versioned, fully-detailed single-known-reactant forward-enumeration
+/// result. See [`FORWARD_ENUMERATION_REPORT_SCHEMA_VERSION`].
+#[derive(Debug, Clone, Serialize)]
+pub struct ForwardEnumerationReport {
+    pub schema_version: u32,
+    pub known_reactant: ForwardReactant,
+    pub candidates: Vec<ForwardEnumerationCandidate>,
+    pub stats: ForwardEnumerationStats,
+    pub warnings: Vec<ForwardWarning>,
+    /// Bounded per-line diagnostics for malformed `--partners` lines (see
+    /// [`MAX_PARTNER_LOAD_DIAGNOSTICS`]); empty when `--partners` was
+    /// omitted or every line parsed cleanly. Cross-check against
+    /// `stats.partner_records_skipped_malformed`/`partner_diagnostics_truncated`
+    /// for the true total when this list was capped.
+    pub partner_load_warnings: Vec<PartnerLoadWarning>,
+}
+
+/// Candidate identity for enumeration: SHA-256 over a domain separator
+/// distinct from [`candidate_id_for`]'s (so the two hash schemes can never
+/// collide), the known reactant's canonical SMILES, an explicit section
+/// separator, then the sorted canonical product multiset
+/// ([`hash_string_sequence`]). Deliberately excludes the partner -- see
+/// [`ForwardEnumerationCandidate::candidate_id`].
+fn enumeration_candidate_id_for(known_reactant_canon: &str, products: &[String]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"renkin-forward-enumeration-candidate-v1\0");
+    hasher.update((known_reactant_canon.len() as u64).to_be_bytes());
+    hasher.update(known_reactant_canon.as_bytes());
+    hasher.update(b"\0products\0");
+    hash_string_sequence(&mut hasher, products);
+    format!("sha256:{:x}", hasher.finalize())
+}
+
+/// Applies one (template, slot, optional-partner) combination via
+/// `run_reactants`, folding every accepted outcome into `candidates` and
+/// every diagnostic into `warnings`/`stats`. Returns whether at least one
+/// outcome was accepted (used by the caller to track
+/// `stats.slot_assignments_with_accepted_outcome`/`stats.partners_matched`).
+#[allow(clippy::too_many_arguments)]
+fn apply_combination(
+    fwd_smirks: &str,
+    ordering: &[&Molecule],
+    known_canon: &str,
+    rule: &RetroRule,
+    source_rank: usize,
+    slot_index: usize,
+    partner: Option<&PartnerRecord>,
+    config: &ForwardEnumerationConfig,
+    stats: &mut ForwardEnumerationStats,
+    warnings: &mut Vec<ForwardWarning>,
+    candidates: &mut BTreeMap<String, (Vec<String>, Vec<ForwardEnumerationSource>)>,
+) -> bool {
+    let mut matched = false;
+    let other_canon = partner.map(|p| p.canonical_smiles.as_str());
+
+    match chematic::rxn::run_reactants(fwd_smirks, ordering) {
+        Ok(outcomes) => {
+            for outcome in &outcomes {
+                stats.raw_outcomes += 1;
+
+                let products = match canonicalize_outcome(outcome) {
+                    Ok(p) => p,
+                    Err(code) => {
+                        stats.invalid_outcomes_rejected += 1;
+                        warnings.push(ForwardWarning {
+                            code: code.to_string(),
+                            template_id: Some(rule.template_id.clone()),
+                            rule_name: Some(rule.name.clone()),
+                            message: format!("outcome rejected: {code}"),
+                        });
+                        continue;
+                    }
+                };
+
+                if config.reject_no_op {
+                    let mut reactant_set: Vec<String> = match other_canon {
+                        Some(o) => vec![known_canon.to_string(), o.to_string()],
+                        None => vec![known_canon.to_string()],
+                    };
+                    reactant_set.sort_unstable();
+                    if products == reactant_set {
+                        stats.no_op_outcomes_rejected += 1;
+                        continue;
+                    }
+                }
+
+                if let Some(msg) = atom_charge_imbalance_diagnostic(ordering, outcome) {
+                    warnings.push(ForwardWarning {
+                        code: "atom_balance_diagnostic".to_string(),
+                        template_id: Some(rule.template_id.clone()),
+                        rule_name: Some(rule.name.clone()),
+                        message: msg,
+                    });
+                }
+
+                stats.accepted_outcomes_before_merge += 1;
+                matched = true;
+
+                let candidate_id = enumeration_candidate_id_for(known_canon, &products);
+                let partner_ref = partner.map(|p| ForwardEnumerationPartnerRef {
+                    row_index: p.row_index,
+                    label: p.label.clone(),
+                    canonical_smiles: p.canonical_smiles.clone(),
+                });
+                let source = ForwardEnumerationSource {
+                    template_id: rule.template_id.clone(),
+                    rule_name: rule.name.clone(),
+                    template_weight: rule.weight,
+                    source_rank,
+                    slot_index,
+                    partner: partner_ref,
+                };
+
+                match candidates.entry(candidate_id) {
+                    Entry::Vacant(e) => {
+                        e.insert((products, vec![source]));
+                    }
+                    Entry::Occupied(mut e) => {
+                        stats.duplicate_candidates_merged += 1;
+                        let (existing_products, sources) = e.get_mut();
+                        debug_assert_eq!(
+                            existing_products, &products,
+                            "candidate_id collision: different product multisets hashed to the same ID"
+                        );
+                        let dup = sources.iter_mut().find(|s| {
+                            s.template_id == source.template_id
+                                && s.rule_name == source.rule_name
+                                && s.slot_index == source.slot_index
+                                && s.partner.as_ref().map(|p| p.row_index)
+                                    == source.partner.as_ref().map(|p| p.row_index)
+                        });
+                        match dup {
+                            Some(existing) => {
+                                existing.source_rank = existing.source_rank.min(source.source_rank);
+                            }
+                            None => sources.push(source),
+                        }
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            warnings.push(ForwardWarning {
+                code: "combination_application_failed".to_string(),
+                template_id: Some(rule.template_id.clone()),
+                rule_name: Some(rule.name.clone()),
+                message: format!("run_reactants failed: {e:?}"),
+            });
+        }
+    }
+    matched
+}
+
+/// Enumerate forward reaction products reachable from a single known
+/// reactant, with full candidate provenance, deterministic ranking, and
+/// structured stats/warnings.
+///
+/// Bounded, template-guided enumeration -- not an open-ended generative
+/// predictor. Unary templates apply directly. Binary (two-reactant)
+/// templates try the known reactant in each compatible LHS slot and search
+/// `partners` for the other slot; `partners` may be omitted, in which case
+/// binary templates are skipped (counted + warned), not attempted with an
+/// invented partner. Templates requiring two or more missing partners are
+/// always counted and reported as unsupported, never silently skipped.
+pub fn enumerate_products_detailed(
+    known_reactant: &str,
+    partners: Option<&[PartnerRecord]>,
+    rules: &[RetroRule],
+    config: &ForwardEnumerationConfig,
+) -> Result<ForwardEnumerationReport> {
+    if config.max_results == 0 {
+        bail!("max_results must be greater than 0");
+    }
+    if config.max_partners_per_template == 0 {
+        bail!("max_partners_per_template must be greater than 0");
+    }
+    if config.max_combinations == 0 {
+        bail!("max_combinations must be greater than 0");
+    }
+
+    let known_mol = mol_from_smiles(known_reactant)
+        .with_context(|| format!("known reactant {known_reactant:?} failed to parse"))?;
+    let known_canon = canonical_smiles(&known_mol);
+    let known_reactant_report = ForwardReactant {
+        input_smiles: known_reactant.to_string(),
+        canonical_smiles: known_canon.clone(),
+        input_index: 0,
+    };
+
+    let partner_records: &[PartnerRecord] = partners.unwrap_or(&[]);
+    let mut partner_mols: Vec<Molecule> = Vec::with_capacity(partner_records.len());
+    for record in partner_records {
+        let mol = mol_from_smiles(&record.canonical_smiles).with_context(|| {
+            format!(
+                "partner row {} ({:?}) failed to re-parse from its own canonical SMILES",
+                record.row_index, record.canonical_smiles
+            )
+        })?;
+        partner_mols.push(mol);
+    }
+
+    let mut stats = ForwardEnumerationStats {
+        rules_loaded: rules.len(),
+        partners_scanned: partner_records.len(),
+        ..Default::default()
+    };
+    let mut warnings: Vec<ForwardWarning> = Vec::new();
+    let mut candidates: BTreeMap<String, (Vec<String>, Vec<ForwardEnumerationSource>)> =
+        BTreeMap::new();
+    let mut matched_partner_rows: std::collections::HashSet<usize> =
+        std::collections::HashSet::new();
+
+    'templates: for (source_rank, rule) in rules.iter().enumerate() {
+        if rule.smirks.is_empty() {
+            stats.graph_rules_skipped += 1;
+            continue;
+        }
+        stats.smirks_rules += 1;
+
+        if !rule.weight.is_finite() {
+            let msg = format!(
+                "template {:?} has a non-finite weight ({}), excluded from consideration",
+                rule.template_id, rule.weight
+            );
+            if config.strict_template_errors {
+                bail!(msg);
+            }
+            warnings.push(ForwardWarning {
+                code: "invalid_template_weight".to_string(),
+                template_id: Some(rule.template_id.clone()),
+                rule_name: Some(rule.name.clone()),
+                message: msg,
+            });
+            continue;
+        }
+
+        stats.templates_inspected += 1;
+
+        let fwd = match reverse_smirks_validated(&rule.smirks) {
+            Ok(s) => s,
+            Err(reason) => {
+                let msg = format!("template {:?}: {reason}", rule.template_id);
+                if config.strict_template_errors {
+                    bail!(msg);
+                }
+                warnings.push(ForwardWarning {
+                    code: "invalid_forward_smirks".to_string(),
+                    template_id: Some(rule.template_id.clone()),
+                    rule_name: Some(rule.name.clone()),
+                    message: msg,
+                });
+                continue;
+            }
+        };
+
+        // Re-parses `fwd` (already validated once inside
+        // `reverse_smirks_validated`) to get structural access to per-slot
+        // atom maps for arity detection and spectator-slot analysis --
+        // cheap for a short SMIRKS string, and this is the only place in
+        // the crate that needs the parsed `Reaction` shape rather than just
+        // knowing it parses.
+        let reaction = match chematic::rxn::parse_reaction(&fwd) {
+            Ok(r) => r,
+            Err(e) => {
+                let msg = format!(
+                    "template {:?}: forward SMIRKS failed to re-parse for arity/slot analysis: {e:?}",
+                    rule.template_id
+                );
+                if config.strict_template_errors {
+                    bail!(msg);
+                }
+                warnings.push(ForwardWarning {
+                    code: "invalid_forward_smirks".to_string(),
+                    template_id: Some(rule.template_id.clone()),
+                    rule_name: Some(rule.name.clone()),
+                    message: msg,
+                });
+                continue;
+            }
+        };
+
+        let arity = reaction.reactants.len();
+        let contributing = contributing_lhs_slots(&reaction);
+
+        match arity {
+            1 => {
+                stats.templates_unary += 1;
+                if !contributing[0] {
+                    stats.spectator_slot_skips += 1;
+                    continue;
+                }
+                if stats.combinations_attempted >= config.max_combinations {
+                    stats.combinations_capped = true;
+                    break 'templates;
+                }
+                stats.combinations_attempted += 1;
+                let matched = apply_combination(
+                    &fwd,
+                    &[&known_mol],
+                    &known_canon,
+                    rule,
+                    source_rank,
+                    0,
+                    None,
+                    config,
+                    &mut stats,
+                    &mut warnings,
+                    &mut candidates,
+                );
+                if matched {
+                    stats.slot_assignments_with_accepted_outcome += 1;
+                }
+            }
+            2 => {
+                if partner_records.is_empty() {
+                    stats.templates_binary_skipped_no_partners += 1;
+                    warnings.push(ForwardWarning {
+                        code: "binary_template_skipped_no_partners".to_string(),
+                        template_id: Some(rule.template_id.clone()),
+                        rule_name: Some(rule.name.clone()),
+                        message: "binary template requires --partners to enumerate its \
+                                  missing reactant slot"
+                            .to_string(),
+                    });
+                    continue;
+                }
+                if contributing.iter().any(|&c| c) {
+                    stats.templates_binary_supported += 1;
+                }
+
+                for (slot_index, &is_contributing) in contributing.iter().enumerate() {
+                    if !is_contributing {
+                        stats.spectator_slot_skips += 1;
+                        continue;
+                    }
+                    let mut slot_matched = false;
+                    for (tried, (partner, partner_mol)) in
+                        partner_records.iter().zip(partner_mols.iter()).enumerate()
+                    {
+                        if tried >= config.max_partners_per_template {
+                            stats.partners_per_template_capped = true;
+                            break;
+                        }
+                        if stats.combinations_attempted >= config.max_combinations {
+                            stats.combinations_capped = true;
+                            break 'templates;
+                        }
+                        stats.combinations_attempted += 1;
+
+                        let ordering: [&Molecule; 2] = if slot_index == 0 {
+                            [&known_mol, partner_mol]
+                        } else {
+                            [partner_mol, &known_mol]
+                        };
+
+                        let matched = apply_combination(
+                            &fwd,
+                            &ordering,
+                            &known_canon,
+                            rule,
+                            source_rank,
+                            slot_index,
+                            Some(partner),
+                            config,
+                            &mut stats,
+                            &mut warnings,
+                            &mut candidates,
+                        );
+                        if matched {
+                            slot_matched = true;
+                            matched_partner_rows.insert(partner.row_index);
+                        }
+                    }
+                    if slot_matched {
+                        stats.slot_assignments_with_accepted_outcome += 1;
+                    }
+                }
+            }
+            _ => {
+                stats.templates_unsupported_arity += 1;
+                warnings.push(ForwardWarning {
+                    code: "template_arity_unsupported".to_string(),
+                    template_id: Some(rule.template_id.clone()),
+                    rule_name: Some(rule.name.clone()),
+                    message: format!(
+                        "template requires {arity} reactant slots; enumerate currently supports \
+                         at most one missing partner (arity <= 2), reported as unsupported \
+                         rather than silently skipped"
+                    ),
+                });
+            }
+        }
+    }
+
+    stats.partners_matched = matched_partner_rows.len();
+    stats.candidates_before_limit = candidates.len();
+
+    let mut built: Vec<ForwardEnumerationCandidate> = candidates
+        .into_iter()
+        .map(|(candidate_id, (products, mut sources))| {
+            sources.sort_by(|a, b| {
+                b.template_weight
+                    .total_cmp(&a.template_weight)
+                    .then_with(|| a.template_id.cmp(&b.template_id))
+                    .then_with(|| a.rule_name.cmp(&b.rule_name))
+                    .then_with(|| a.slot_index.cmp(&b.slot_index))
+                    .then_with(|| {
+                        a.partner
+                            .as_ref()
+                            .map(|p| p.row_index)
+                            .cmp(&b.partner.as_ref().map(|p| p.row_index))
+                    })
+            });
+            let proposal_score = sources
+                .iter()
+                .map(|s| s.template_weight)
+                .fold(f64::NEG_INFINITY, f64::max);
+            ForwardEnumerationCandidate {
+                candidate_id,
+                products,
+                rank: 0,
+                proposal_score,
+                sources,
+            }
+        })
+        .collect();
+
+    built.sort_by(|a, b| {
+        b.proposal_score
+            .total_cmp(&a.proposal_score)
+            .then_with(|| b.sources.len().cmp(&a.sources.len()))
+            .then_with(|| a.products.cmp(&b.products))
+            .then_with(|| a.candidate_id.cmp(&b.candidate_id))
+    });
+
+    let results_capped = built.len() > config.max_results;
+    built.truncate(config.max_results);
+    for (i, c) in built.iter_mut().enumerate() {
+        c.rank = i;
+    }
+
+    stats.candidates_returned = built.len();
+    stats.results_capped = results_capped;
+    stats.truncated =
+        stats.partners_per_template_capped || stats.combinations_capped || stats.results_capped;
+
+    let mut seen_warnings = std::collections::HashSet::new();
+    warnings.retain(|w| {
+        seen_warnings.insert((
+            w.code.clone(),
+            w.template_id.clone(),
+            w.rule_name.clone(),
+            w.message.clone(),
+        ))
+    });
+
+    Ok(ForwardEnumerationReport {
+        schema_version: FORWARD_ENUMERATION_REPORT_SCHEMA_VERSION,
+        known_reactant: known_reactant_report,
+        candidates: built,
+        stats,
+        warnings,
+        // Populated by the caller from `PartnerLoadOutcome` -- this function
+        // only receives already-loaded `PartnerRecord`s, not raw file lines.
+        partner_load_warnings: Vec::new(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1722,5 +2472,785 @@ mod tests {
             let v = validate_route(route, &rules).unwrap();
             assert!(!v.is_empty());
         }
+    }
+
+    // -- enumerate_products_detailed ------------------------------------
+
+    /// Real default rule (`renkin::chem_env::default_rules`'s
+    /// `aryl_chloride_to_bromide`), reversed forward SMIRKS is
+    /// `[c:1][Br]>>[c:1][Cl]` -- a genuine arity-1 (unary) forward
+    /// template, empirically confirmed to actually swap the halogen (not a
+    /// no-op) rather than assumed from the SMIRKS text alone.
+    fn unary_halide_swap_rule() -> RetroRule {
+        RetroRule {
+            name: "aryl_chloride_to_bromide".to_string(),
+            template_id: "rule:aryl_chloride_to_bromide".to_string(),
+            smirks: "[c:1][Cl]>>[c:1][Br]".to_string(),
+            weight: 1.0,
+            required_elements: 0,
+        }
+    }
+
+    /// Purely synthetic rule whose forward product atom-map numbers ({8, 9})
+    /// share zero overlap with its single forward reactant slot's atom-map
+    /// numbers ({1, 2}) -- i.e. the reactant is a structural spectator: it
+    /// can match the LHS pattern, but the "product" is built from entirely
+    /// different mapped atoms with no atom actually carried over. Used only
+    /// to exercise `contributing_lhs_slots`/spectator-skip logic; not
+    /// meant to represent a real reaction.
+    fn synthetic_disconnected_rule() -> RetroRule {
+        RetroRule {
+            name: "synthetic_disconnected".to_string(),
+            template_id: "rule:synthetic_disconnected".to_string(),
+            smirks: "[C:9]=[O:8]>>[C:1][Cl:2]".to_string(),
+            weight: 1.0,
+            required_elements: 0,
+        }
+    }
+
+    /// Purely synthetic arity-3 rule (three separate single-carbon forward
+    /// reactant slots), used only to exercise the "unsupported arity"
+    /// counting/warning path -- never actually applied via `run_reactants`.
+    fn synthetic_triple_rule() -> RetroRule {
+        RetroRule {
+            name: "synthetic_triple".to_string(),
+            template_id: "rule:synthetic_triple".to_string(),
+            smirks: "[C:1][C:2][C:3]>>[C:1].[C:2].[C:3]".to_string(),
+            weight: 1.0,
+            required_elements: 0,
+        }
+    }
+
+    fn partner(row_index: usize, smiles: &str) -> PartnerRecord {
+        let mol = mol_from_smiles(smiles).unwrap();
+        PartnerRecord {
+            row_index,
+            label: None,
+            input_smiles: smiles.to_string(),
+            canonical_smiles: canonical_smiles(&mol),
+        }
+    }
+
+    #[test]
+    fn contributing_lhs_slots_detects_both_slots_contributing() {
+        let fwd = reverse_smirks_validated(&synthetic_metathesis_rule().smirks).unwrap();
+        let reaction = chematic::rxn::parse_reaction(&fwd).unwrap();
+        assert_eq!(contributing_lhs_slots(&reaction), vec![true, true]);
+    }
+
+    #[test]
+    fn contributing_lhs_slots_detects_spectator_slot() {
+        let fwd = reverse_smirks_validated(&synthetic_disconnected_rule().smirks).unwrap();
+        let reaction = chematic::rxn::parse_reaction(&fwd).unwrap();
+        assert_eq!(contributing_lhs_slots(&reaction), vec![false]);
+    }
+
+    #[test]
+    fn arity_detection_unary_binary_and_unsupported_via_parse_reaction() {
+        let unary = reverse_smirks_validated(&unary_halide_swap_rule().smirks).unwrap();
+        assert_eq!(
+            chematic::rxn::parse_reaction(&unary)
+                .unwrap()
+                .reactants
+                .len(),
+            1
+        );
+
+        let binary = reverse_smirks_validated(&synthetic_metathesis_rule().smirks).unwrap();
+        assert_eq!(
+            chematic::rxn::parse_reaction(&binary)
+                .unwrap()
+                .reactants
+                .len(),
+            2
+        );
+
+        let triple = reverse_smirks_validated(&synthetic_triple_rule().smirks).unwrap();
+        assert_eq!(
+            chematic::rxn::parse_reaction(&triple)
+                .unwrap()
+                .reactants
+                .len(),
+            3
+        );
+    }
+
+    #[test]
+    fn enumerate_unary_template_applies_directly_to_known_reactant() {
+        let report = enumerate_products_detailed(
+            "Brc1ccccc1",
+            None,
+            &[unary_halide_swap_rule()],
+            &ForwardEnumerationConfig::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.candidates.len(), 1);
+        // chematic >=0.8.1 (kent-tokyo/chematic#205/#206) unifies explicit-
+        // vs-implicit-hydrogen canonicalization, so the reaction-derived
+        // form now matches direct parsing of the same compound.
+        assert_eq!(
+            report.candidates[0].products,
+            vec![canonical_smiles(&mol_from_smiles("Clc1ccccc1").unwrap())]
+        );
+        assert_eq!(report.candidates[0].sources.len(), 1);
+        assert_eq!(report.candidates[0].sources[0].slot_index, 0);
+        assert!(report.candidates[0].sources[0].partner.is_none());
+        assert_eq!(report.stats.templates_unary, 1);
+        assert_eq!(report.stats.slot_assignments_with_accepted_outcome, 1);
+    }
+
+    #[test]
+    fn enumerate_binary_template_known_reactant_matches_either_slot() {
+        // Same fixture as `outcomes_are_never_flattened_together`, already
+        // empirically verified there: 5 raw outcomes across both reactant
+        // orderings, 1 genuine no-op, 4 surviving candidates.
+        let partners = vec![partner(1, "BrCC(Br)CCl")];
+        let report = enumerate_products_detailed(
+            "ClCC(Cl)CBr",
+            Some(&partners),
+            &[synthetic_metathesis_rule()],
+            &ForwardEnumerationConfig {
+                max_results: usize::MAX,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(report.stats.raw_outcomes, 5);
+        assert_eq!(report.stats.no_op_outcomes_rejected, 1);
+        assert_eq!(report.candidates.len(), 4);
+        for c in &report.candidates {
+            assert_eq!(c.products.len(), 2);
+        }
+        assert!(
+            [0, 1].iter().all(|slot| report
+                .candidates
+                .iter()
+                .any(|c| c.sources.iter().any(|s| s.slot_index == *slot))),
+            "known reactant must have been tried in both slots"
+        );
+    }
+
+    #[test]
+    fn enumerate_multiple_partners_produce_distinct_candidates() {
+        let partners = vec![partner(1, "CCBr"), partner(2, "CCCBr")];
+        let report = enumerate_products_detailed(
+            "CCCCCl",
+            Some(&partners),
+            &[synthetic_metathesis_rule()],
+            &ForwardEnumerationConfig::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.candidates.len(), 2);
+        let mut product_sets: Vec<Vec<String>> = report
+            .candidates
+            .iter()
+            .map(|c| c.products.clone())
+            .collect();
+        product_sets.sort();
+        product_sets.dedup();
+        assert_eq!(
+            product_sets.len(),
+            2,
+            "both partners must yield distinct products"
+        );
+        assert_eq!(report.stats.no_op_outcomes_rejected, 0);
+        assert_eq!(report.stats.partners_matched, 2);
+    }
+
+    #[test]
+    fn enumerate_different_partners_converging_on_same_products_merge_into_one_candidate() {
+        // Two partner rows with the identical SMILES must merge into one
+        // candidate but retain two distinct sources (regression test for
+        // candidate identity excluding the partner).
+        let partners = vec![partner(1, "CCBr"), partner(2, "CCBr")];
+        let report = enumerate_products_detailed(
+            "CCCCCl",
+            Some(&partners),
+            &[synthetic_metathesis_rule()],
+            &ForwardEnumerationConfig::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.candidates.len(), 1);
+        assert_eq!(report.stats.duplicate_candidates_merged, 1);
+        let sources = &report.candidates[0].sources;
+        assert_eq!(
+            sources.len(),
+            2,
+            "both partner rows must be retained as distinct sources"
+        );
+        let mut row_indices: Vec<usize> = sources
+            .iter()
+            .filter_map(|s| s.partner.as_ref().map(|p| p.row_index))
+            .collect();
+        row_indices.sort_unstable();
+        assert_eq!(row_indices, vec![1, 2]);
+    }
+
+    #[test]
+    fn enumerate_cross_notation_partner_rows_converge_into_one_candidate() {
+        // Row 1 and row 2 spell the *identical* molecule (ethyl bromide) via
+        // genuinely different construction paths -- organic-subset vs
+        // bracket notation with a redundant explicit H count -- rather than
+        // literally duplicate SMILES text (already covered by
+        // `enumerate_different_partners_converging_on_same_products_merge_into_one_candidate`).
+        // Before chematic 0.8.1 (kent-tokyo/chematic#205/#206),
+        // `canonical_smiles` was not construction-path invariant for this
+        // exact shape (a bracket atom whose explicit H count is redundant
+        // with valence inference), so these two rows could canonicalize to
+        // different strings and the resulting candidates would not merge.
+        let partners = vec![partner(1, "CCBr"), partner(2, "CC[Br]")];
+        assert_eq!(
+            partners[0].canonical_smiles, partners[1].canonical_smiles,
+            "precondition: both notations must canonicalize identically"
+        );
+        let report = enumerate_products_detailed(
+            "CCCCCl",
+            Some(&partners),
+            &[synthetic_metathesis_rule()],
+            &ForwardEnumerationConfig::default(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            report.candidates.len(),
+            1,
+            "differently-spelled-but-identical partners must merge, got {:?}",
+            report.candidates
+        );
+        assert_eq!(report.stats.duplicate_candidates_merged, 1);
+        let sources = &report.candidates[0].sources;
+        assert_eq!(
+            sources.len(),
+            2,
+            "both partner rows must be retained as distinct sources"
+        );
+        let mut row_indices: Vec<usize> = sources
+            .iter()
+            .filter_map(|s| s.partner.as_ref().map(|p| p.row_index))
+            .collect();
+        row_indices.sort_unstable();
+        assert_eq!(row_indices, vec![1, 2]);
+    }
+
+    /// Retro SMIRKS (product>>reactants): an aromatic chloride decomposes
+    /// into an aromatic bromide plus sodium chloride. Forward direction
+    /// (after `reverse_smirks_validated`) is a genuine arity-2 template that
+    /// installs Cl onto an aromatic bromide using NaCl as the chloride
+    /// source, discarding the displaced Br (an unmapped leaving atom, same
+    /// pattern `synthetic_disconnected_rule` exercises for spectator
+    /// detection) -- empirically confirmed to actually run and to produce
+    /// the same single product `unary_halide_swap_rule` produces directly
+    /// from the same known reactant, letting the two independent template
+    /// paths (one unary, one binary) converge on one candidate.
+    fn synthetic_binary_halide_install_rule() -> RetroRule {
+        RetroRule {
+            name: "synthetic_binary_halide_install".to_string(),
+            template_id: "rule:synthetic_binary_halide_install".to_string(),
+            smirks: "[c:1][Cl:2]>>[c:1][Br].[Na][Cl:2]".to_string(),
+            weight: 1.0,
+            required_elements: 0,
+        }
+    }
+
+    #[test]
+    fn enumerate_unary_and_binary_template_paths_converge_to_one_candidate() {
+        let partners = vec![partner(1, "[Na]Cl")];
+        let report = enumerate_products_detailed(
+            "Brc1ccccc1",
+            Some(&partners),
+            &[
+                unary_halide_swap_rule(),
+                synthetic_binary_halide_install_rule(),
+            ],
+            &ForwardEnumerationConfig::default(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            report.candidates.len(),
+            1,
+            "unary and binary template paths reaching the same product must \
+             merge into one candidate, got {:?}",
+            report.candidates
+        );
+        let candidate = &report.candidates[0];
+        assert_eq!(
+            candidate.products,
+            vec![canonical_smiles(&mol_from_smiles("Clc1ccccc1").unwrap())],
+            "must match direct parsing of the same compound (construction-path invariance)"
+        );
+
+        // `candidate_id` is a pure function of (known reactant canonical
+        // SMILES, products) -- recomputing it independently proves it is
+        // identical regardless of which template path produced the merge.
+        let known_canon = canonical_smiles(&mol_from_smiles("Brc1ccccc1").unwrap());
+        assert_eq!(
+            candidate.candidate_id,
+            enumeration_candidate_id_for(&known_canon, &candidate.products)
+        );
+
+        assert_eq!(
+            candidate.sources.len(),
+            2,
+            "both the unary and binary template contributions must be retained, got {:?}",
+            candidate.sources
+        );
+        let mut template_ids: Vec<&str> = candidate
+            .sources
+            .iter()
+            .map(|s| s.template_id.as_str())
+            .collect();
+        template_ids.sort_unstable();
+        assert_eq!(
+            template_ids,
+            vec![
+                "rule:aryl_chloride_to_bromide",
+                "rule:synthetic_binary_halide_install"
+            ]
+        );
+        let unary_source = candidate
+            .sources
+            .iter()
+            .find(|s| s.template_id == "rule:aryl_chloride_to_bromide")
+            .unwrap();
+        assert!(unary_source.partner.is_none());
+        let binary_source = candidate
+            .sources
+            .iter()
+            .find(|s| s.template_id == "rule:synthetic_binary_halide_install")
+            .unwrap();
+        assert_eq!(binary_source.partner.as_ref().unwrap().row_index, 1);
+    }
+
+    #[test]
+    fn enumerate_unary_and_binary_convergence_is_byte_identical_across_runs() {
+        let partners = vec![partner(1, "[Na]Cl")];
+        let rules = [
+            unary_halide_swap_rule(),
+            synthetic_binary_halide_install_rule(),
+        ];
+        let a = enumerate_products_detailed(
+            "Brc1ccccc1",
+            Some(&partners),
+            &rules,
+            &ForwardEnumerationConfig::default(),
+        )
+        .unwrap();
+        let b = enumerate_products_detailed(
+            "Brc1ccccc1",
+            Some(&partners),
+            &rules,
+            &ForwardEnumerationConfig::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::to_string(&a).unwrap(),
+            serde_json::to_string(&b).unwrap()
+        );
+    }
+
+    #[test]
+    fn enumerate_no_op_rejection_is_independent_of_reactant_notation() {
+        // Same fixture as
+        // `enumerate_rejects_no_op_outcome_scoped_to_known_plus_partner_pair`,
+        // but written with a redundant-explicit-H bracket atom (`CC[Cl]`
+        // instead of `CCCl`) on the known reactant. Both spellings parse to
+        // the identical molecule; no-op detection must reject this exactly
+        // as it does for the organic-subset spelling, which only holds
+        // because chematic >=0.8.1 canonicalizes both notations identically
+        // (kent-tokyo/chematic#205/#206).
+        let partners = vec![partner(1, "CC[Br]")];
+        let report = enumerate_products_detailed(
+            "CC[Cl]",
+            Some(&partners),
+            &[synthetic_metathesis_rule()],
+            &ForwardEnumerationConfig::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.stats.raw_outcomes, 1);
+        assert_eq!(report.stats.no_op_outcomes_rejected, 1);
+        assert_eq!(report.stats.accepted_outcomes_before_merge, 0);
+        assert!(report.candidates.is_empty());
+    }
+
+    #[test]
+    fn enumerate_source_dedupe_keys_on_template_slot_and_partner_row() {
+        // Same rule, same slot, two different partner rows: sources must
+        // stay distinct (not collapse the way `predict`'s
+        // (template_id, rule_name)-only dedupe key would).
+        let partners = vec![partner(7, "CCBr"), partner(8, "CCBr")];
+        let report = enumerate_products_detailed(
+            "CCCCCl",
+            Some(&partners),
+            &[synthetic_metathesis_rule()],
+            &ForwardEnumerationConfig::default(),
+        )
+        .unwrap();
+        assert_eq!(report.candidates[0].sources.len(), 2);
+    }
+
+    #[test]
+    fn enumerate_rejects_no_op_outcome_scoped_to_known_plus_partner_pair() {
+        let partners = vec![partner(1, "CCBr")];
+        let report = enumerate_products_detailed(
+            "CCCl",
+            Some(&partners),
+            &[synthetic_metathesis_rule()],
+            &ForwardEnumerationConfig::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.stats.raw_outcomes, 1);
+        assert_eq!(report.stats.no_op_outcomes_rejected, 1);
+        assert_eq!(report.stats.accepted_outcomes_before_merge, 0);
+        assert!(report.candidates.is_empty());
+    }
+
+    #[test]
+    fn enumerate_rejects_spectator_only_known_reactant_match() {
+        let report = enumerate_products_detailed(
+            "CCCl",
+            None,
+            &[synthetic_disconnected_rule()],
+            &ForwardEnumerationConfig::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.stats.templates_unary, 1);
+        assert_eq!(report.stats.spectator_slot_skips, 1);
+        assert_eq!(report.stats.combinations_attempted, 0);
+        assert!(report.candidates.is_empty());
+    }
+
+    #[test]
+    fn enumerate_arity_3_plus_reported_unsupported_not_silently_skipped() {
+        let report = enumerate_products_detailed(
+            "C",
+            None,
+            &[synthetic_triple_rule()],
+            &ForwardEnumerationConfig::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.stats.templates_unsupported_arity, 1);
+        assert_eq!(report.stats.combinations_attempted, 0);
+        assert!(report.candidates.is_empty());
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|w| w.code == "template_arity_unsupported")
+        );
+    }
+
+    #[test]
+    fn enumerate_binary_template_skipped_without_partners_file() {
+        let report = enumerate_products_detailed(
+            "ClCC(Cl)CBr",
+            None,
+            &[synthetic_metathesis_rule()],
+            &ForwardEnumerationConfig::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.stats.templates_binary_skipped_no_partners, 1);
+        assert_eq!(report.stats.templates_binary_supported, 0);
+        assert!(report.candidates.is_empty());
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|w| w.code == "binary_template_skipped_no_partners")
+        );
+    }
+
+    #[test]
+    fn enumerate_max_partners_per_template_caps_and_warns() {
+        let partners: Vec<PartnerRecord> = (1..=5).map(|i| partner(i, "CCBr")).collect();
+        let report = enumerate_products_detailed(
+            "CCCCCl",
+            Some(&partners),
+            &[synthetic_metathesis_rule()],
+            &ForwardEnumerationConfig {
+                max_partners_per_template: 2,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert!(report.stats.partners_per_template_capped);
+        assert!(report.stats.truncated);
+        // 2 contributing slots x 2 partners tried each = 4 combinations.
+        assert_eq!(report.stats.combinations_attempted, 4);
+    }
+
+    #[test]
+    fn enumerate_max_combinations_caps_globally_and_warns() {
+        let partners: Vec<PartnerRecord> = (1..=5).map(|i| partner(i, "CCBr")).collect();
+        let report = enumerate_products_detailed(
+            "CCCCCl",
+            Some(&partners),
+            &[synthetic_metathesis_rule()],
+            &ForwardEnumerationConfig {
+                max_combinations: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert!(report.stats.combinations_capped);
+        assert!(report.stats.truncated);
+        assert_eq!(report.stats.combinations_attempted, 1);
+    }
+
+    #[test]
+    fn enumerate_max_results_applied_after_merge_not_before() {
+        let partners = vec![partner(1, "CCBr"), partner(2, "CCCBr")];
+        let full = enumerate_products_detailed(
+            "CCCCCl",
+            Some(&partners),
+            &[synthetic_metathesis_rule()],
+            &ForwardEnumerationConfig {
+                max_results: usize::MAX,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(full.candidates.len(), 2);
+        assert!(!full.stats.truncated);
+
+        let capped = enumerate_products_detailed(
+            "CCCCCl",
+            Some(&partners),
+            &[synthetic_metathesis_rule()],
+            &ForwardEnumerationConfig {
+                max_results: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(capped.candidates.len(), 1);
+        assert!(capped.stats.results_capped);
+        assert!(capped.stats.truncated);
+    }
+
+    #[test]
+    fn enumerate_candidate_ranking_is_deterministic() {
+        let partners = vec![partner(1, "CCBr"), partner(2, "CCCBr")];
+        let a = enumerate_products_detailed(
+            "CCCCCl",
+            Some(&partners),
+            &[synthetic_metathesis_rule()],
+            &ForwardEnumerationConfig::default(),
+        )
+        .unwrap();
+        let b = enumerate_products_detailed(
+            "CCCCCl",
+            Some(&partners),
+            &[synthetic_metathesis_rule()],
+            &ForwardEnumerationConfig::default(),
+        )
+        .unwrap();
+        let ids_a: Vec<String> = a
+            .candidates
+            .iter()
+            .map(|c| c.candidate_id.clone())
+            .collect();
+        let ids_b: Vec<String> = b
+            .candidates
+            .iter()
+            .map(|c| c.candidate_id.clone())
+            .collect();
+        assert_eq!(ids_a, ids_b);
+        for (i, c) in a.candidates.iter().enumerate() {
+            assert_eq!(c.rank, i);
+        }
+    }
+
+    #[test]
+    fn enumerate_stats_accounting_invariants_hold() {
+        let partners = vec![partner(1, "CCBr"), partner(2, "CCCBr")];
+        let report = enumerate_products_detailed(
+            "CCCCCl",
+            Some(&partners),
+            &[synthetic_metathesis_rule(), unary_halide_swap_rule()],
+            &ForwardEnumerationConfig::default(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            report.stats.raw_outcomes,
+            report.stats.accepted_outcomes_before_merge
+                + report.stats.invalid_outcomes_rejected
+                + report.stats.no_op_outcomes_rejected
+        );
+        assert_eq!(
+            report.stats.accepted_outcomes_before_merge - report.stats.duplicate_candidates_merged,
+            report.stats.candidates_before_limit
+        );
+    }
+
+    #[test]
+    fn enumerate_same_input_produces_byte_identical_report_json() {
+        let partners = vec![partner(1, "CCBr"), partner(2, "CCCBr")];
+        let a = enumerate_products_detailed(
+            "CCCCCl",
+            Some(&partners),
+            &[synthetic_metathesis_rule()],
+            &ForwardEnumerationConfig::default(),
+        )
+        .unwrap();
+        let b = enumerate_products_detailed(
+            "CCCCCl",
+            Some(&partners),
+            &[synthetic_metathesis_rule()],
+            &ForwardEnumerationConfig::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::to_string(&a).unwrap(),
+            serde_json::to_string(&b).unwrap()
+        );
+    }
+
+    #[test]
+    fn enumerate_zero_max_results_is_invalid_argument() {
+        let err = enumerate_products_detailed(
+            "CCCCCl",
+            None,
+            &[unary_halide_swap_rule()],
+            &ForwardEnumerationConfig {
+                max_results: 0,
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("max_results"));
+    }
+
+    #[test]
+    fn enumerate_zero_max_combinations_is_invalid_argument() {
+        let err = enumerate_products_detailed(
+            "CCCCCl",
+            None,
+            &[unary_halide_swap_rule()],
+            &ForwardEnumerationConfig {
+                max_combinations: 0,
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("max_combinations"));
+    }
+
+    // -- partner loading -------------------------------------------------
+
+    #[test]
+    fn partner_record_parses_row_index_and_optional_label() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!(
+            "renkin_forward_test_partners_{}.smi",
+            std::process::id()
+        ));
+        std::fs::write(&path, "# comment\n\nCCO ethanol\nCCBr\n").unwrap();
+
+        let outcome = load_partners_strict(path.to_str().unwrap()).unwrap();
+        std::fs::remove_file(&path).ok();
+
+        assert_eq!(outcome.records.len(), 2);
+        assert_eq!(outcome.records[0].row_index, 3);
+        assert_eq!(outcome.records[0].label.as_deref(), Some("ethanol"));
+        assert_eq!(outcome.records[1].row_index, 4);
+        assert_eq!(outcome.records[1].label, None);
+        assert_eq!(outcome.skipped_malformed, 0);
+    }
+
+    #[test]
+    fn partner_record_duplicate_smiles_rows_both_retained() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!(
+            "renkin_forward_test_partners_dup_{}.smi",
+            std::process::id()
+        ));
+        std::fs::write(&path, "CCBr\nCCBr\n").unwrap();
+
+        let outcome = load_partners_strict(path.to_str().unwrap()).unwrap();
+        std::fs::remove_file(&path).ok();
+
+        assert_eq!(outcome.records.len(), 2);
+        assert_eq!(outcome.records[0].row_index, 1);
+        assert_eq!(outcome.records[1].row_index, 2);
+        assert_eq!(
+            outcome.records[0].canonical_smiles,
+            outcome.records[1].canonical_smiles
+        );
+    }
+
+    #[test]
+    fn load_partners_strict_skips_malformed_lines_and_counts_them() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!(
+            "renkin_forward_test_partners_malformed_{}.smi",
+            std::process::id()
+        ));
+        std::fs::write(&path, "CCBr\nnot(a smiles\nCCO\n").unwrap();
+
+        let outcome = load_partners_strict(path.to_str().unwrap()).unwrap();
+        std::fs::remove_file(&path).ok();
+
+        assert_eq!(outcome.records.len(), 2);
+        assert_eq!(outcome.skipped_malformed, 1);
+        assert_eq!(outcome.diagnostics.len(), 1);
+        assert_eq!(outcome.diagnostics[0].row_index, 2);
+        assert_eq!(outcome.diagnostics[0].code, "invalid_partner_smiles");
+        assert_eq!(outcome.diagnostics[0].input, "not(a");
+        assert!(!outcome.diagnostics[0].message.is_empty());
+        assert!(!outcome.diagnostics_truncated);
+    }
+
+    #[test]
+    fn load_partners_strict_caps_diagnostics_but_not_the_true_count() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!(
+            "renkin_forward_test_partners_many_malformed_{}.smi",
+            std::process::id()
+        ));
+        let mut content = String::from("CCBr\n");
+        for _ in 0..(MAX_PARTNER_LOAD_DIAGNOSTICS + 5) {
+            content.push_str("not(valid\n");
+        }
+        std::fs::write(&path, &content).unwrap();
+
+        let outcome = load_partners_strict(path.to_str().unwrap()).unwrap();
+        std::fs::remove_file(&path).ok();
+
+        assert_eq!(outcome.records.len(), 1);
+        assert_eq!(outcome.skipped_malformed, MAX_PARTNER_LOAD_DIAGNOSTICS + 5);
+        assert_eq!(outcome.diagnostics.len(), MAX_PARTNER_LOAD_DIAGNOSTICS);
+        assert!(outcome.diagnostics_truncated);
+    }
+
+    #[test]
+    fn load_partners_strict_hard_errors_on_missing_file() {
+        assert!(load_partners_strict("/nonexistent/renkin_forward_partners.smi").is_err());
+    }
+
+    #[test]
+    fn load_partners_strict_hard_errors_on_zero_valid_records() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!(
+            "renkin_forward_test_partners_empty_{}.smi",
+            std::process::id()
+        ));
+        std::fs::write(&path, "# only comments\n\n").unwrap();
+
+        let result = load_partners_strict(path.to_str().unwrap());
+        std::fs::remove_file(&path).ok();
+        assert!(result.is_err());
     }
 }

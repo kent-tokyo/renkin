@@ -6,11 +6,13 @@
 ///   renkin-forward predict --reactants "CC(=O)O" "CCO" [--templates file.smi] [--max-results 5] [--report]
 ///   renkin-forward validate --route-json '{"steps":[...]}' [--templates file.smi]
 ///   renkin-forward enumerate --reactant "CC(=O)O" [--partners partners.smi] [--templates file.smi]
+///   renkin-forward hints --reactants "Brc1ccccc1" [--templates file.smi] [--max-hints 50]
 ///
 /// Output: JSON to stdout, nothing else. Template load summary, warnings,
 /// and diagnostics go to stderr.
 use anyhow::{Result, bail};
 use renkin::chem_env::default_rules;
+use renkin_forward::hints::{HintGenerationConfig, generate_retrieval_hints};
 use renkin_forward::{
     ForwardEnumerationConfig, ForwardPredictConfig, ForwardPrediction, enumerate_products_detailed,
     legacy_predictions_from_report, load_partners_strict, load_templates_strict,
@@ -23,11 +25,13 @@ Usage:\n  \
 renkin-forward predict --reactants <SMILES>... [--templates <path>] [--max-results N] [--report]\n  \
 renkin-forward validate --route-json <JSON> [--templates <path>] [--max-results N]\n  \
 renkin-forward enumerate --reactant <SMILES> [--partners <path>] [--templates <path>] [--max-results N]\n  \
+renkin-forward hints --reactants <SMILES>... [--templates <path>] [--max-hints N]\n  \
 renkin-forward --help\n  \
 renkin-forward --version\n\
 \n\
-Run `renkin-forward predict --help`, `renkin-forward validate --help`, or\n\
-`renkin-forward enumerate --help` for subcommand options.";
+Run `renkin-forward predict --help`, `renkin-forward validate --help`,\n\
+`renkin-forward enumerate --help`, or `renkin-forward hints --help` for\n\
+subcommand options.";
 
 const PREDICT_HELP: &str = "renkin-forward predict — forward-apply reversible SMIRKS templates to reactants\n\
 \n\
@@ -87,6 +91,28 @@ other. Templates needing 2+ missing partners are reported as unsupported, never 
 No conditions, catalyst, yield, or reaction-success probability -- proposal_score is a ranking\n\
 signal only. Output is a versioned ForwardEnumerationReport with full candidate provenance.";
 
+const HINTS_HELP: &str = "renkin-forward hints — partner-free forward retrieval hints from known reactants\n\
+\n\
+Usage:\n  \
+renkin-forward hints --reactants <SMILES>... [--templates <path>]\n                       \
+[--max-hints N] [--max-matches-per-slot N] [--max-assignments-per-template N]\n\
+\n\
+Options:\n  \
+--reactants <SMILES>...           One or more known reactants (required)\n  \
+--templates <path>                Additional SMIRKS template file (hard error if missing/unreadable/empty)\n  \
+--max-hints N                     Maximum merged hints returned. Must be > 0 (default 50)\n  \
+--max-matches-per-slot N          Cap on reported match sites per (template, slot). Must be > 0 (default 20)\n  \
+--max-assignments-per-template N  Cap on injective known-reactant/slot assignments enumerated\n                                    \
+per template. Must be > 0 (default 200)\n\
+\n\
+Static, partner-free template analysis for search/retrieval, not a generative predictor:\n\
+never calls run_reactants and never invents partner molecules. Reports, per compatible\n\
+template, which slot(s) the known reactant(s) occupy, the exact SMARTS query for every\n\
+still-missing partner slot, the bond-forming/breaking delta, and a query pattern (never a\n\
+concrete SMILES) for the product. No conditions, catalyst, yield, or reaction-success\n\
+probability, and no claim that a hint corresponds to a real, literature-verified reaction.\n\
+Output is a versioned ForwardRetrievalHintReport.";
+
 fn print_version() {
     println!(
         "renkin-forward {} (a sub-crate of the renkin workspace; this is NOT the renkin package version)",
@@ -117,6 +143,9 @@ struct ParsedArgs {
     max_results: usize,
     max_partners_per_template: usize,
     max_combinations: usize,
+    max_hints: usize,
+    max_matches_per_slot: usize,
+    max_assignments_per_template: usize,
     report: bool,
 }
 
@@ -136,12 +165,16 @@ fn parse_args(subcommand: &str, args: &[String]) -> Result<ParsedArgs> {
     let mut max_results: usize = 5;
     let mut max_partners_per_template: usize = 50;
     let mut max_combinations: usize = 2000;
+    let hints_defaults = HintGenerationConfig::default();
+    let mut max_hints: usize = hints_defaults.max_hints;
+    let mut max_matches_per_slot: usize = hints_defaults.max_matches_per_slot;
+    let mut max_assignments_per_template: usize = hints_defaults.max_assignments_per_template;
     let mut report = false;
 
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
-            "--reactants" if subcommand == "predict" => {
+            "--reactants" if subcommand == "predict" || subcommand == "hints" => {
                 i += 1;
                 let start = i;
                 while i < args.len() && !args[i].starts_with("--") {
@@ -202,6 +235,28 @@ fn parse_args(subcommand: &str, args: &[String]) -> Result<ParsedArgs> {
                     .ok_or_else(|| anyhow::anyhow!("--max-combinations requires a value"))?;
                 max_combinations = parse_positive_usize("--max-combinations", v)?;
             }
+            "--max-hints" if subcommand == "hints" => {
+                i += 1;
+                let v = args
+                    .get(i)
+                    .ok_or_else(|| anyhow::anyhow!("--max-hints requires a value"))?;
+                max_hints = parse_positive_usize("--max-hints", v)?;
+            }
+            "--max-matches-per-slot" if subcommand == "hints" => {
+                i += 1;
+                let v = args
+                    .get(i)
+                    .ok_or_else(|| anyhow::anyhow!("--max-matches-per-slot requires a value"))?;
+                max_matches_per_slot = parse_positive_usize("--max-matches-per-slot", v)?;
+            }
+            "--max-assignments-per-template" if subcommand == "hints" => {
+                i += 1;
+                let v = args.get(i).ok_or_else(|| {
+                    anyhow::anyhow!("--max-assignments-per-template requires a value")
+                })?;
+                max_assignments_per_template =
+                    parse_positive_usize("--max-assignments-per-template", v)?;
+            }
             "--report" if subcommand == "predict" => {
                 report = true;
             }
@@ -212,6 +267,7 @@ fn parse_args(subcommand: &str, args: &[String]) -> Result<ParsedArgs> {
                         "predict" => PREDICT_HELP,
                         "validate" => VALIDATE_HELP,
                         "enumerate" => ENUMERATE_HELP,
+                        "hints" => HINTS_HELP,
                         _ => TOP_LEVEL_HELP,
                     }
                 );
@@ -231,6 +287,9 @@ fn parse_args(subcommand: &str, args: &[String]) -> Result<ParsedArgs> {
         max_results,
         max_partners_per_template,
         max_combinations,
+        max_hints,
+        max_matches_per_slot,
+        max_assignments_per_template,
         report,
     })
 }
@@ -311,9 +370,9 @@ fn main() -> Result<()> {
     }
 
     let subcommand = args[1].as_str();
-    if subcommand != "predict" && subcommand != "validate" && subcommand != "enumerate" {
+    if !["predict", "validate", "enumerate", "hints"].contains(&subcommand) {
         bail!(
-            "unknown subcommand {subcommand:?}. Use 'predict', 'validate', 'enumerate', '--help', or '--version'."
+            "unknown subcommand {subcommand:?}. Use 'predict', 'validate', 'enumerate', 'hints', '--help', or '--version'."
         );
     }
 
@@ -472,6 +531,19 @@ fn main() -> Result<()> {
             for w in &report.warnings {
                 eprintln!("warning[{}]: {}", w.code, w.message);
             }
+            println!("{}", serde_json::to_string_pretty(&report)?);
+        }
+        "hints" => {
+            if parsed.reactants.is_empty() {
+                bail!("hints requires --reactants <SMILES>...");
+            }
+            let refs: Vec<&str> = parsed.reactants.iter().map(|s| s.as_str()).collect();
+            let config = HintGenerationConfig {
+                max_hints: parsed.max_hints,
+                max_matches_per_slot: parsed.max_matches_per_slot,
+                max_assignments_per_template: parsed.max_assignments_per_template,
+            };
+            let report = generate_retrieval_hints(&refs, &rules, &config)?;
             println!("{}", serde_json::to_string_pretty(&report)?);
         }
         _ => unreachable!("validated above"),

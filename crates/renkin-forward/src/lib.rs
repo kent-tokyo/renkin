@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 
+pub mod hints;
+
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 
@@ -178,22 +180,7 @@ pub struct ForwardPredictionReport {
 /// reaction parser -- this catches malformed atom-mapping/bracket syntax
 /// that a plain string swap cannot.
 fn reverse_smirks_validated(smirks: &str) -> std::result::Result<String, String> {
-    let parts: Vec<&str> = smirks.split(">>").collect();
-    if parts.len() != 2 {
-        return Err(format!(
-            "expected exactly one '>>' separator, found {}",
-            parts.len().saturating_sub(1)
-        ));
-    }
-    let lhs = parts[0].trim();
-    let rhs = parts[1].trim();
-    if lhs.is_empty() {
-        return Err("left-hand side is empty".to_string());
-    }
-    if rhs.is_empty() {
-        return Err("right-hand side is empty".to_string());
-    }
-    let fwd = format!("{rhs}>>{lhs}");
+    let fwd = hints::reverse_smirks_shape_only(smirks)?;
     if let Err(e) = chematic::rxn::parse_reaction(&fwd) {
         return Err(format!(
             "forward SMIRKS failed to parse as a reaction: {e:?}"

@@ -991,6 +991,7 @@ dependencies = [
  "anyhow",
  "chematic",
  "renkin",
+ "rustc-hash",
  "serde",
  "serde_json",
  "sha2",

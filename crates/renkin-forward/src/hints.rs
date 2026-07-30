@@ -554,6 +554,11 @@ pub struct ForwardRetrievalHintStats {
     /// SMARTS parsing -- always counted, the template is simply skipped,
     /// never a hard error for the whole report.
     pub template_parse_failed: usize,
+    /// Sum of top-level forward-LHS + forward-RHS SMARTS components
+    /// (`chematic::smarts::parse_smarts` calls) across every successfully
+    /// parsed template -- the real per-template cost driver for the
+    /// matching work below.
+    pub smarts_components_parsed: usize,
     pub assignments_generated: usize,
     /// Templates for which `--max-assignments-per-template` cut off the
     /// full permutation space.
@@ -1244,6 +1249,7 @@ pub fn generate_retrieval_hints(
                 continue;
             }
         };
+        stats.smarts_components_parsed += template.lhs_slots.len() + template.rhs_components.len();
 
         let (assignments, truncated) =
             enumerate_slot_assignments(&template, &known_reactants, &match_config);

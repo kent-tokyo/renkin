@@ -93,7 +93,7 @@ impl ChemEnv {
 
         for smiles in iter {
             let Ok(mol) = parse(&smiles) else { continue };
-            let canon = canonical_smiles(&standardize(&mol, &STANDARDIZE_OPTS));
+            let canon = canonical_stock_identity(&mol);
             if !canon_set.insert(canon) {
                 continue; // duplicate
             }
@@ -126,8 +126,7 @@ impl ChemEnv {
     /// used to build `canon_set`, then does an O(1) canonical-SMILES lookup.
     /// No subgraph/substructure matching — a partial match is not membership.
     pub fn is_building_block(&self, mol: &Molecule) -> bool {
-        let canon = canonical_smiles(&standardize(mol, &STANDARDIZE_OPTS));
-        self.canon_set.contains(&canon)
+        self.canon_set.contains(&canonical_stock_identity(mol))
     }
 
     /// Content hash over every canonical BB SMILES (sorted before hashing,
@@ -165,6 +164,28 @@ static STANDARDIZE_OPTS: StandardizeOptions = StandardizeOptions {
     largest_fragment_only: false,
     zwitterion_handling: ZwitterionHandling::Keep,
 };
+
+/// The single, shared stock-identity policy: standardize (see
+/// `STANDARDIZE_OPTS`'s doc comment for exactly what that does and doesn't
+/// fold together), then canonicalize. This is the *only* function that
+/// decides "what counts as the same molecule for stock-membership
+/// purposes" — `ChemEnv::is_building_block`/`from_smiles_iter` and any
+/// other consumer that needs an independent stock-identity check (e.g. the
+/// Synthesizability Kernel, `src/synthesizability/signals.rs`) must call
+/// this rather than hand-duplicating `STANDARDIZE_OPTS`, so the policy can
+/// only ever drift by being changed here.
+pub(crate) fn canonical_stock_identity(mol: &Molecule) -> String {
+    canonical_smiles(&standardize(mol, &STANDARDIZE_OPTS))
+}
+
+/// Parses `smiles` and applies [`canonical_stock_identity`]. `Err` if the
+/// SMILES doesn't parse -- callers that need to distinguish "doesn't parse"
+/// from "parses but isn't a stock hit" should match on the `Result` rather
+/// than collapsing both to `false`/`None`.
+pub(crate) fn canonical_stock_identity_from_smiles(smiles: &str) -> Result<String> {
+    let mol = parse(smiles).with_context(|| format!("Failed to parse SMILES: {smiles}"))?;
+    Ok(canonical_stock_identity(&mol))
+}
 
 // ── Graph-based Ar-Ar bond cleavage (Suzuki retro) ─────────────────────────
 //

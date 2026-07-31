@@ -7,7 +7,10 @@ use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
 use serde::Serialize;
 use smallvec::{SmallVec, smallvec};
 
-use crate::chem_env::{ChemEnv, RetroRule, TemplateBondIndex, mol_from_smiles, to_canonical};
+use crate::chem_env::{
+    ChemEnv, RetroRule, TemplateBondIndex, canonical_stock_identity_from_smiles, mol_from_smiles,
+    to_canonical,
+};
 use crate::evidence::{EvidenceScope, MetadataSource, StepEvidence, TemplateMetadataEntry};
 use crate::score::{step_cost, template_bonus};
 
@@ -252,10 +255,11 @@ fn is_bb(smiles: &str, env: &ChemEnv) -> bool {
     if env.is_building_block_smiles(smiles) {
         return true;
     }
-    // Slow path: re-parse and re-standardize. Exact identity only (no
-    // subgraph matching) — see ChemEnv::is_building_block.
-    mol_from_smiles(smiles)
-        .map(|mol| env.is_building_block(&mol))
+    // Slow path: re-parse and re-standardize under the same shared
+    // stock-identity policy `ChemEnv` itself uses. Exact identity only (no
+    // subgraph matching) — see `chem_env::canonical_stock_identity`.
+    canonical_stock_identity_from_smiles(smiles)
+        .map(|canon| env.is_building_block_smiles(&canon))
         .unwrap_or(false)
 }
 

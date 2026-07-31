@@ -443,13 +443,34 @@ fn check_route_structure(
     // leaf (`building_blocks`) or the target of some other step in this
     // same route -- otherwise the route's graph doesn't actually connect,
     // independent of any single step's chemistry.
-    let leaves: HashSet<&str> = route.building_blocks.iter().map(String::as_str).collect();
-    let targets: HashSet<&str> = route.steps.iter().map(|s| s.target.as_str()).collect();
+    //
+    // Compared by canonicalized identity (`provenance::canonicalize_or_raw`),
+    // never raw string equality: the same molecule can legitimately be
+    // spelled differently across steps/leaves in a hand-built or
+    // externally-composed `Route` (this function's own unparseable check,
+    // two blocks above, already re-canonicalizes for exactly this reason --
+    // comparing raw strings here would spuriously flag a chemically
+    // connected route as `RouteGraphInconsistent` whenever two equivalent
+    // SMILES notations of the same molecule don't happen to match
+    // byte-for-byte).
+    let leaves: HashSet<String> = route
+        .building_blocks
+        .iter()
+        .map(|s| provenance::canonicalize_or_raw(s))
+        .collect();
+    let targets: HashSet<String> = route
+        .steps
+        .iter()
+        .map(|s| provenance::canonicalize_or_raw(&s.target))
+        .collect();
     let disconnected = route
         .steps
         .iter()
         .flat_map(|s| s.precursors.iter())
-        .any(|p| !leaves.contains(p.as_str()) && !targets.contains(p.as_str()));
+        .any(|p| {
+            let canon = provenance::canonicalize_or_raw(p);
+            !leaves.contains(&canon) && !targets.contains(&canon)
+        });
     if disconnected {
         hard_failures.push(HardFailure::RouteGraphInconsistent);
     }
@@ -965,6 +986,53 @@ mod tests {
             result.route_assessments[0]
                 .hard_failures
                 .contains(&HardFailure::RouteGraphInconsistent)
+        );
+    }
+
+    #[test]
+    fn route_graph_connectivity_uses_canonical_identity_not_raw_string_equality() {
+        // Independent-reviewer-found regression: the same molecule
+        // (phenylacetaldehyde) spelled two different ways across steps --
+        // step 0's precursor and step 1's target are the identical
+        // molecule but not the identical string. A raw-string connectivity
+        // check would spuriously flag this as RouteGraphInconsistent even
+        // though the route genuinely connects. Not reachable through
+        // today's `find_routes` (which always threads the exact same
+        // string forward), but a real correctness requirement for
+        // `assess_routes`'s own documented contract of taking any
+        // already-produced `Route`, hand-built or externally composed.
+        let rules: Vec<RetroRule> = vec![];
+        let routes = vec![route(
+            vec![
+                step(
+                    "rule:x",
+                    "rule:x",
+                    "CC(=O)c1ccc(cc1)CC=O", // some earlier target
+                    &["c1ccc(cc1)CC=O"],    // phenylacetaldehyde, notation A
+                ),
+                step(
+                    "rule:y",
+                    "rule:y",
+                    "O=CCc1ccccc1", // phenylacetaldehyde, notation B -- same molecule
+                    &["CC=O"],
+                ),
+            ],
+            &["CC=O"],
+        )];
+        let ctx = empty_context(&rules);
+        let result = assess_routes(
+            "CC(=O)c1ccc(cc1)CC=O",
+            &routes,
+            &ctx,
+            &SynthesizabilityConfig::conservative(),
+        )
+        .unwrap();
+        assert!(
+            !result.route_assessments[0]
+                .hard_failures
+                .contains(&HardFailure::RouteGraphInconsistent),
+            "hard_failures should not contain RouteGraphInconsistent: {:?}",
+            result.route_assessments[0].hard_failures
         );
     }
 

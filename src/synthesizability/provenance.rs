@@ -87,7 +87,7 @@ pub(crate) fn try_canonicalize(smiles: &str) -> Option<String> {
 /// the parse failure itself is recorded separately, as a hard failure, by
 /// `assessment.rs`'s own (re-)parse pass, not by making this function
 /// fallible.
-fn canonicalize_or_raw(smiles: &str) -> String {
+pub(crate) fn canonicalize_or_raw(smiles: &str) -> String {
     try_canonicalize(smiles).unwrap_or_else(|| smiles.to_string())
 }
 

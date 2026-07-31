@@ -69,6 +69,13 @@ fn tag_of<T: Serialize>(value: &T) -> String {
 /// route-step SMILES too, rather than trusting `search::Route`'s strings
 /// are already canonical. Returns `None` on parse failure; `assessment.rs`
 /// uses that to populate `HardFailure::RouteStructureUnparseable`.
+///
+/// Like the stock-identity check (design doc §4.2, §11 limitation 3),
+/// `route_id`'s stability across two otherwise-identical runs rests on
+/// `chematic::smiles::canonical_smiles` (via `chem_env::to_canonical`)
+/// being construction-path-invariant -- documented as true of chematic
+/// ≥0.8.1 in `CHANGELOG.md`, a pinned assumption this module does not
+/// independently re-verify.
 pub(crate) fn try_canonicalize(smiles: &str) -> Option<String> {
     chem_env::mol_from_smiles(smiles)
         .ok()
@@ -287,7 +294,10 @@ mod tests {
         a.reagent_omission_template_allowlist = vec!["x".to_string(), "y".to_string()];
         let mut b = base_config();
         b.reagent_omission_template_allowlist = vec!["y".to_string(), "x".to_string()];
-        assert_eq!(compute_assessment_config_hash(&a), compute_assessment_config_hash(&b));
+        assert_eq!(
+            compute_assessment_config_hash(&a),
+            compute_assessment_config_hash(&b)
+        );
     }
 
     #[test]
@@ -306,7 +316,10 @@ mod tests {
         a.max_routes_to_assess = 5;
         let mut b = base_config();
         b.max_routes_to_assess = 6;
-        assert_ne!(compute_assessment_config_hash(&a), compute_assessment_config_hash(&b));
+        assert_ne!(
+            compute_assessment_config_hash(&a),
+            compute_assessment_config_hash(&b)
+        );
     }
 
     fn step(template_id: &str, target: &str, precursors: &[&str]) -> ReactionStep {

@@ -17,8 +17,8 @@ use crate::search::Route;
 use crate::synthesizability::schema::{
     AccountingFailurePolicy, AssessmentProvenance, AssessmentStatus, EvidencePolicy,
     ForwardValidationPolicy, ForwardValidationStatus, HardFailure, RouteAssessment,
-    StockTerminationStatus, SynthesizabilityAssessment, SynthesizabilityConfig,
-    SynthesizabilityConfigSummary, SYNTHESIZABILITY_SCHEMA_VERSION, ValidationGap,
+    SYNTHESIZABILITY_SCHEMA_VERSION, StockTerminationStatus, SynthesizabilityAssessment,
+    SynthesizabilityConfig, SynthesizabilityConfigSummary, ValidationGap,
 };
 use crate::synthesizability::{element_accounting, provenance, signals};
 use crate::validation::StepValidationStatus;
@@ -524,9 +524,8 @@ fn assess_element_accounting(
                     hard_failures.push(HardFailure::UnaccountedTargetElement { step_index });
                 }
                 AccountingFailurePolicy::ValidationGap => {
-                    validation_gaps.push(ValidationGap::UnaccountedTargetElementNotEnforced {
-                        step_index,
-                    });
+                    validation_gaps
+                        .push(ValidationGap::UnaccountedTargetElementNotEnforced { step_index });
                 }
             }
         }
@@ -553,10 +552,6 @@ fn assess_forward_validation(
 
     let status = signals::rollup_forward_validation(per_step, route.steps.len());
 
-    if config.forward_validation_policy == ForwardValidationPolicy::Ignore {
-        return status;
-    }
-
     let invalid_step_indices = |steps: &[StepValidationStatus]| -> Vec<usize> {
         steps
             .iter()
@@ -575,7 +570,7 @@ fn assess_forward_validation(
     };
 
     match config.forward_validation_policy {
-        ForwardValidationPolicy::Ignore => unreachable!("handled above"),
+        ForwardValidationPolicy::Ignore => {}
         ForwardValidationPolicy::RequireAllValid => match status {
             ForwardValidationStatus::AllEvaluatedStepsValid => {}
             ForwardValidationStatus::OneOrMoreStepsInvalid => {
@@ -652,13 +647,16 @@ fn cmp_route_assessments(a: &RouteAssessment, b: &RouteAssessment) -> std::cmp::
         .len()
         .cmp(&b.hard_failures.len())
         .then_with(|| a.validation_gaps.len().cmp(&b.validation_gaps.len()))
-        .then_with(|| stock_rank(a.stock_termination_status).cmp(&stock_rank(b.stock_termination_status)))
+        .then_with(|| {
+            stock_rank(a.stock_termination_status).cmp(&stock_rank(b.stock_termination_status))
+        })
         .then_with(|| {
             accounting_rank(a.target_element_accounting_status)
                 .cmp(&accounting_rank(b.target_element_accounting_status))
         })
         .then_with(|| {
-            forward_rank(a.forward_validation_status).cmp(&forward_rank(b.forward_validation_status))
+            forward_rank(a.forward_validation_status)
+                .cmp(&forward_rank(b.forward_validation_status))
         })
         .then_with(|| {
             b.evidence_coverage
@@ -786,7 +784,10 @@ mod tests {
     #[test]
     fn forward_validation_length_mismatch_is_evaluation_error() {
         let rules: Vec<RetroRule> = vec![];
-        let routes = vec![route(vec![step("rule:x", "rule:x", "CCO", &["CC=O"])], &["CC=O"])];
+        let routes = vec![route(
+            vec![step("rule:x", "rule:x", "CCO", &["CC=O"])],
+            &["CC=O"],
+        )];
         let fv: Vec<Option<Vec<StepValidationStatus>>> = vec![]; // length 0 != routes.len() == 1
         let ctx = AssessmentContext {
             forward_validation: Some(&fv),
@@ -805,7 +806,10 @@ mod tests {
     #[test]
     fn clean_route_with_verified_stock_is_route_supported() {
         let rules: Vec<RetroRule> = vec![];
-        let routes = vec![route(vec![step("rule:x", "rule:x", "CCO", &["CC=O"])], &["CC=O"])];
+        let routes = vec![route(
+            vec![step("rule:x", "rule:x", "CCO", &["CC=O"])],
+            &["CC=O"],
+        )];
         let stock = vec!["CC=O".to_string()];
         let ctx = AssessmentContext {
             stock: Some(&stock),
@@ -827,7 +831,10 @@ mod tests {
     #[test]
     fn unsupplied_stock_is_a_gap_not_a_hard_failure() {
         let rules: Vec<RetroRule> = vec![];
-        let routes = vec![route(vec![step("rule:x", "rule:x", "CCO", &["CC=O"])], &["CC=O"])];
+        let routes = vec![route(
+            vec![step("rule:x", "rule:x", "CCO", &["CC=O"])],
+            &["CC=O"],
+        )];
         let ctx = empty_context(&rules); // stock: None
         let result = assess_routes(
             "CCO",
@@ -836,7 +843,10 @@ mod tests {
             &SynthesizabilityConfig::conservative(),
         )
         .unwrap();
-        assert_eq!(result.status, AssessmentStatus::RouteSupportedWithValidationGaps);
+        assert_eq!(
+            result.status,
+            AssessmentStatus::RouteSupportedWithValidationGaps
+        );
         let selected = result.selected_route.unwrap();
         assert!(selected.hard_failures.is_empty());
         assert!(
@@ -849,7 +859,10 @@ mod tests {
     #[test]
     fn stock_mismatch_is_a_hard_failure() {
         let rules: Vec<RetroRule> = vec![];
-        let routes = vec![route(vec![step("rule:x", "rule:x", "CCO", &["CC=O"])], &["CC=O"])];
+        let routes = vec![route(
+            vec![step("rule:x", "rule:x", "CCO", &["CC=O"])],
+            &["CC=O"],
+        )];
         let stock = vec!["completely-different-leaf".to_string()];
         let ctx = AssessmentContext {
             stock: Some(&stock),
@@ -865,17 +878,19 @@ mod tests {
         assert_eq!(result.status, AssessmentStatus::RoutesFoundButRejected);
         assert!(result.selected_route.is_none());
         assert!(
-            result.route_assessments[0]
-                .hard_failures
-                .iter()
-                .any(|hf| matches!(hf, HardFailure::StockTerminalMismatch { leaf } if leaf == "CC=O"))
+            result.route_assessments[0].hard_failures.iter().any(
+                |hf| matches!(hf, HardFailure::StockTerminalMismatch { leaf } if leaf == "CC=O")
+            )
         );
     }
 
     #[test]
     fn disabling_stock_requirement_skips_the_check_entirely() {
         let rules: Vec<RetroRule> = vec![];
-        let routes = vec![route(vec![step("rule:x", "rule:x", "CCO", &["CC=O"])], &["CC=O"])];
+        let routes = vec![route(
+            vec![step("rule:x", "rule:x", "CCO", &["CC=O"])],
+            &["CC=O"],
+        )];
         let ctx = empty_context(&rules); // stock: None
         let mut config = SynthesizabilityConfig::conservative();
         config.require_verified_stock_terminal = false;
@@ -976,7 +991,10 @@ mod tests {
             &SynthesizabilityConfig::conservative(),
         )
         .unwrap();
-        assert_eq!(result.status, AssessmentStatus::RouteSupportedWithValidationGaps);
+        assert_eq!(
+            result.status,
+            AssessmentStatus::RouteSupportedWithValidationGaps
+        );
         let selected = result.selected_route.unwrap();
         assert!(selected.hard_failures.is_empty());
         assert!(selected.validation_gaps.iter().any(|g| matches!(
@@ -1012,7 +1030,10 @@ mod tests {
             &SynthesizabilityConfig::conservative(),
         )
         .unwrap();
-        assert_eq!(conservative.status, AssessmentStatus::RoutesFoundButRejected);
+        assert_eq!(
+            conservative.status,
+            AssessmentStatus::RoutesFoundButRejected
+        );
         assert!(
             conservative.route_assessments[0]
                 .hard_failures
@@ -1020,13 +1041,8 @@ mod tests {
                 .any(|hf| matches!(hf, HardFailure::UnaccountedTargetElement { step_index: 0 }))
         );
 
-        let diagnostic = assess_routes(
-            "CCO",
-            &routes,
-            &ctx,
-            &SynthesizabilityConfig::diagnostic(),
-        )
-        .unwrap();
+        let diagnostic =
+            assess_routes("CCO", &routes, &ctx, &SynthesizabilityConfig::diagnostic()).unwrap();
         assert_eq!(
             diagnostic.status,
             AssessmentStatus::RouteSupportedWithValidationGaps
@@ -1035,7 +1051,10 @@ mod tests {
             diagnostic.route_assessments[0]
                 .validation_gaps
                 .iter()
-                .any(|g| matches!(g, ValidationGap::UnaccountedTargetElementNotEnforced { step_index: 0 }))
+                .any(|g| matches!(
+                    g,
+                    ValidationGap::UnaccountedTargetElementNotEnforced { step_index: 0 }
+                ))
         );
     }
 
@@ -1120,6 +1139,11 @@ mod tests {
         config.max_routes_to_assess = 1;
         let result = assess_routes("CCO", &routes, &ctx, &config).unwrap();
         assert_eq!(result.route_assessments.len(), 1);
-        assert!(result.warnings.iter().any(|w| w.contains("max_routes_to_assess")));
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.contains("max_routes_to_assess"))
+        );
     }
 }

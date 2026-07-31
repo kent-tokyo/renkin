@@ -291,6 +291,20 @@ Any `Invalid` → `OneOrMoreStepsInvalid`. Otherwise (some `Valid`, some
 inconsistent input (e.g. wrong step count for the route) → `ValidatorError`
 — a kernel-side integrity error, not a chemistry judgment.
 
+Post-review fix: under `ForwardValidationPolicy::RequireAllValid` specifically,
+a per-route `ValidatorError` previously only produced a warning inside
+`assess_one_route`, so a route with a structurally broken validator input
+could still reach `RouteSupported`. `assess_routes()` now checks, before
+assessing any route, whether any route's own per-step slice length matches
+that route's own step count; a mismatch under `RequireAllValid` escalates
+the whole assessment to `AssessmentStatus::EvaluationError` (mirroring the
+existing across-routes length check, §4.1 #2, one level deeper) rather than
+letting it slip through as a per-route warning. Under `Ignore`/
+`RequireNoInvalid`, `ValidatorError` remains intentionally tolerated —
+neither validator's reliability has been measured yet, so this fix is
+scoped to `RequireAllValid` only, where the caller has explicitly asked
+this kernel to enforce forward validation.
+
 ### 4.4 Evidence coverage — direct reuse of `src/evidence.rs`
 
 ```rust

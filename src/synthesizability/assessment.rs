@@ -164,6 +164,49 @@ pub fn assess_routes(
         ));
     }
 
+    // 2.5. Kernel-integrity invariant, one level deeper than #2: under
+    // `ForwardValidationPolicy::RequireAllValid`, a route's own per-step
+    // forward-validation slice must match that route's own step count.
+    // A mismatch here is `ForwardValidationStatus::ValidatorError` (design
+    // doc §4.3) -- the same "caller's input has the wrong shape" class of
+    // problem as #2, just discovered per-route instead of across routes.
+    // Under `RequireAllValid` specifically (the caller asked this kernel to
+    // actually enforce forward validation), this must not silently
+    // downgrade to a per-route warning that still lets the route reach
+    // `RouteSupported` -- checked before assessing any route so it never
+    // has to un-do a route's already-computed status. Under `Ignore`/
+    // `RequireNoInvalid`, a `ValidatorError` is intentionally tolerated
+    // (design doc §4.3/§4.7 -- neither validator's reliability has been
+    // measured yet), so this check is scoped to `RequireAllValid` only.
+    if config.forward_validation_policy == ForwardValidationPolicy::RequireAllValid
+        && let Some(fv) = context.forward_validation
+    {
+        let mismatched_route = routes.iter().zip(fv.iter()).position(|(route, per_step)| {
+            per_step
+                .as_ref()
+                .is_some_and(|steps| steps.len() != route.steps.len())
+        });
+        if let Some(route_index) = mismatched_route {
+            warnings.push(format!(
+                "route {route_index}'s forward-validation slice does not match its own step count -- RequireAllValid cannot be enforced for this assessment"
+            ));
+            return Ok(early_assessment(
+                target,
+                AssessmentStatus::EvaluationError,
+                Some(canonical_target),
+                rules_count,
+                rules_hash,
+                stock_count,
+                stock_hash,
+                stock_input_status,
+                context,
+                assessment_config_hash,
+                config_used,
+                warnings,
+            ));
+        }
+    }
+
     // 3. Zero routes supplied (design doc §4.1 #3, §3: with today's
     // `find_routes`, always the correct classification -- see design doc).
     if routes.is_empty() {
@@ -700,8 +743,15 @@ fn assess_forward_validation(
                 }
             }
             ForwardValidationStatus::ValidatorError => {
+                // `assess_routes()`'s own per-route length check (§4.1 #2.5)
+                // already short-circuits the whole assessment to
+                // `EvaluationError` before any route reaches this function
+                // under `RequireAllValid` -- reaching here means that guard
+                // was bypassed (e.g. a future direct call to
+                // `assess_one_route`), not a chemistry judgment. Kept as a
+                // defensive warning rather than a silent no-op.
                 route_warnings.push(
-                    "forward-validation input was structurally inconsistent with this route (e.g. wrong step count); RequireAllValid could not be enforced".to_string(),
+                    "forward-validation input was structurally inconsistent with this route (e.g. wrong step count); RequireAllValid could not be enforced -- this should be unreachable, the assessment-level guard should have caught it first".to_string(),
                 );
             }
         },
@@ -911,6 +961,67 @@ mod tests {
         )
         .expect("length mismatch must surface as a status, not an Err");
         assert_eq!(result.status, AssessmentStatus::EvaluationError);
+    }
+
+    #[test]
+    fn per_route_validator_error_escalates_under_require_all_valid() {
+        // The route itself has 1 step, but its own forward-validation slice
+        // has 2 entries -- ForwardValidationStatus::ValidatorError. Under
+        // RequireAllValid this must not silently downgrade to a warning
+        // that still lets the route reach RouteSupported.
+        let rules: Vec<RetroRule> = vec![];
+        let routes = vec![route(
+            vec![step("rule:x", "rule:x", "CCO", &["CC=O"])],
+            &["CC=O"],
+        )];
+        let fv: Vec<Option<Vec<StepValidationStatus>>> = vec![Some(vec![
+            StepValidationStatus::Valid,
+            StepValidationStatus::Valid,
+        ])];
+        let ctx = AssessmentContext {
+            forward_validation: Some(&fv),
+            ..empty_context(&rules)
+        };
+        let config = SynthesizabilityConfig {
+            forward_validation_policy: ForwardValidationPolicy::RequireAllValid,
+            ..SynthesizabilityConfig::conservative()
+        };
+        let result = assess_routes("CCO", &routes, &ctx, &config)
+            .expect("per-route length mismatch must surface as a status, not an Err");
+        assert_eq!(result.status, AssessmentStatus::EvaluationError);
+        assert!(result.route_assessments.is_empty());
+    }
+
+    #[test]
+    fn per_route_validator_error_tolerated_under_ignore_policy() {
+        // Same structurally-inconsistent input as above, but under the
+        // default Ignore policy -- ValidatorError is intentionally
+        // tolerated (design doc §4.3/§4.7), so this must not escalate.
+        let rules: Vec<RetroRule> = vec![];
+        let routes = vec![route(
+            vec![step("rule:x", "rule:x", "CCO", &["CC=O"])],
+            &["CC=O"],
+        )];
+        let fv: Vec<Option<Vec<StepValidationStatus>>> = vec![Some(vec![
+            StepValidationStatus::Valid,
+            StepValidationStatus::Valid,
+        ])];
+        let ctx = AssessmentContext {
+            forward_validation: Some(&fv),
+            ..empty_context(&rules)
+        };
+        let result = assess_routes(
+            "CCO",
+            &routes,
+            &ctx,
+            &SynthesizabilityConfig::conservative(),
+        )
+        .expect("must not Err");
+        assert_ne!(result.status, AssessmentStatus::EvaluationError);
+        assert_eq!(
+            result.route_assessments[0].forward_validation_status,
+            ForwardValidationStatus::ValidatorError
+        );
     }
 
     #[test]

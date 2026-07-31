@@ -122,3 +122,62 @@ necessarily traverses to reach the leaves it correctly reports.
 **Conclusion**: the step-extraction logic genuinely evaluates every step.
 The 66/66 `accounted` rate for AiZynthFinder is not an artifact of a
 shallow or first/last-only check.
+
+## Addendum (2026-08-01) — post-Issue-#71-fix re-measurement
+
+Part 1 above describes RENKIN's original 21-solved-route measurement,
+before Issue #71's fix (PR #74, merged `de6a6d4`) removed the
+`ChemEnv::is_building_block` VF2 subgraph-isomorphism fallback this audit
+identified as the root cause of the 3 stock-check failures. Re-measuring
+against the fixed binary drops RENKIN's native `route_found_rate` from
+21/100 to **16/100** (see `aggregate_report.md`'s header note for the full
+before/after). Part 1's table above is **not** re-run in place — it stays
+as a historical record of the pre-fix state — this addendum instead
+documents what actually changed.
+
+Of the original 21 solved routes, 5 no longer produce a solved route at all,
+and 1 produces a different route than before:
+
+| `target_id` | Pre-fix classification | Post-fix outcome |
+|---|---|---|
+| `uspto50k_test#L679` | stock-fail (known VF2 false positive, `C=C/C/C=C`) | **not found** |
+| `uspto50k_test#L1640` | stock-fail (known VF2 false positive, `O=C/C(=O)O`) | **not found** |
+| `uspto50k_test#L4575` | stock-fail (known VF2 false positive, `c1ccc(cc1)CC=O`) | **still found, different route**: depth 3→4, now `all_leaves_in_configured_stock=true` (the false-positive leaf is gone) but `target_element_accounting_status=unaccounted_target_element` — the search now returns a real, deeper, stock-valid route that happens to fail the accounting check instead |
+| `uspto50k_test#L3400` | accounting-fail (`boc_deprotection_retro`) | **not found** |
+| `uspto50k_test#L4092` | clean (`true`/`accounted`) | **not found** |
+| `uspto50k_test#L626` | clean (`true`/`accounted`) | **not found** |
+
+The first 3 rows are exactly the 3 targets this audit's "3 common-stock-fail
+targets" section identified and traced to the VF2 fallback — their
+disappearance/change is the expected, predicted effect of the fix. `L3400`
+was one of the 4 accounting-fail targets (`boc_deprotection_retro`); it no
+longer produces any route.
+
+**`L4092` and `L626` are new to this list and their mechanism is not
+established.** Both were classified `true`/`accounted` in Part 1 — i.e.
+their *reported* route's own leaves were genuinely in stock even before the
+fix, by this audit's own per-leaf check. Removing the VF2 fallback should
+only make stock membership *stricter*, so it is not obvious why a route
+whose final leaves were already confirmed genuine would stop being
+discoverable at all under an unchanged depth=5/beam=100 search budget. No
+root cause is claimed here — establishing one would mean instrumenting the
+search itself (closer to Issue #72-adjacent work than a re-measurement),
+which this round does not do. Flagged for follow-up, not fixed here, same
+disposition as `L984`'s `extracted_9` defect above.
+
+Net effect on the "3 stock-fail" / "4 accounting-fail" partition from Part
+1: the stock-fail bucket is now **empty** (0/16, down from 3/21) — every
+route RENKIN now reports solved also passes independent stock
+re-verification, closing the exact gap this fix targeted. The
+accounting-fail bucket is still 4, but its membership changed: `L2263`,
+`L984`, and `L4259` remain (same systemic/handcrafted-template causes
+described above); `L3400` dropped out (route no longer found); `L4575`
+joined it (via its new alternate route, not its old one).
+
+A boundary-case timeout also differs between the two post-fix arms run for
+this addendum: `uspto50k_test#L3345` timed out in the native-mode run,
+`uspto50k_test#L4422` timed out in the shared-stock run (each completes
+normally, unsolved, in the other arm). Neither is a stock/accounting-related
+finding — both are consistent with running on shared, non-dedicated
+hardware — and neither changes any headline rate, since a timeout counts as
+not-found the same as a completed-but-unsolved run.

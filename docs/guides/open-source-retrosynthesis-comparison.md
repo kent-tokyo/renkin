@@ -355,7 +355,8 @@ and lives alongside every generated report, not only here.
 ## Paired statistics (n=100: descriptive only)
 
 Since both tools run on the identical target sample, every comparison is
-**paired**. `scripts/compare_stats.py` implements:
+**paired**. `scripts/compare_paired_report.py` joins the two tools' rows on
+`target_id` and drives `scripts/compare_stats.py`, which implements:
 
 - Paired bootstrap (resampling whole target-pairs, never each tool's
   results independently) for route-found-rate, latency, and memory
@@ -524,6 +525,20 @@ cp data/comparison/shared_stock/shared_stock.hdf5 \
     --tool aizynthfinder --comparison-mode shared_stock --sample-size 100 \
     --output-rows data/comparison/results_100/aizynthfinder_shared_stock.jsonl \
     --output-aggregate data/comparison/results_100/aizynthfinder_shared_stock_aggregate.json
+
+# 6. Paired statistics (bootstrap + McNemar) and per-target join table,
+#    per mode -- joins the two tools' rows from step 5 on target_id
+.venv-compare-66/bin/python scripts/compare_paired_report.py --mode native \
+    --renkin-rows data/comparison/results_100/renkin_native.jsonl \
+    --aizynthfinder-rows data/comparison/results_100/aizynthfinder_native.jsonl \
+    --output-stats data/comparison/results_100/paired_stats_native.json \
+    --output-table data/comparison/results_100/paired_table_native.json
+
+.venv-compare-66/bin/python scripts/compare_paired_report.py --mode shared_stock \
+    --renkin-rows data/comparison/results_100/renkin_shared_stock.jsonl \
+    --aizynthfinder-rows data/comparison/results_100/aizynthfinder_shared_stock.jsonl \
+    --output-stats data/comparison/results_100/paired_stats_shared_stock.json \
+    --output-table data/comparison/results_100/paired_table_shared_stock.json
 ```
 
 ## Interpretation rules (summary)

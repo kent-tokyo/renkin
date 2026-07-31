@@ -356,6 +356,7 @@ fn assess_one_route(
 
     let stock_termination_status = assess_stock_termination(
         route,
+        canonical_target,
         config,
         canonicalized_stock,
         &mut hard_failures,
@@ -429,12 +430,13 @@ fn check_route_structure(
         // A zero-step route (`search::find_routes` produces one when the
         // target itself is already a stock hit -- `search.rs`'s
         // `collect_path(None)` case) is a legal route, not an
-        // inconsistency. `Route::building_blocks` is empty in this case
-        // too (`extract_building_blocks` has no steps to scan), so the
-        // stock-termination check below is vacuous for it; flagged here
-        // rather than silently unnoticed.
+        // inconsistency. `assess_stock_termination` independently
+        // re-verifies the canonical target itself against the configured
+        // stock for exactly this shape (rather than trusting
+        // `Route::building_blocks`, which is empty here and would
+        // otherwise make the check vacuous) -- see that function.
         route_warnings.push(
-            "Route has zero steps (the target itself was classified as a stock hit by search); stock-termination verification for this route is vacuous.".to_string(),
+            "Route has zero steps (the target itself was classified as a stock hit by search); the canonical target itself is independently re-verified against the configured stock in its place.".to_string(),
         );
         return;
     }
@@ -484,6 +486,7 @@ fn check_route_structure(
 /// used for every other §4.7-gated dimension in this file).
 fn assess_stock_termination(
     route: &Route,
+    canonical_target: &str,
     config: &SynthesizabilityConfig,
     canonicalized_stock: &signals::CanonicalizedStock,
     hard_failures: &mut Vec<HardFailure>,
@@ -494,7 +497,21 @@ fn assess_stock_termination(
         return StockTerminationStatus::StockCheckNotPerformed;
     }
 
-    let result = signals::check_stock_termination(&route.building_blocks, canonicalized_stock);
+    // A zero-step route's implicit claim (`search.rs`'s depth-0 case) is
+    // "the target itself is already a stock hit" -- but `route.building_blocks`
+    // is empty for this route shape (`extract_building_blocks` has no
+    // steps to scan), so checking it directly would be vacuously true
+    // without ever verifying anything, undermining this kernel's whole
+    // "independently re-verify, never trust the tool's own classification"
+    // premise (design doc §4.2). Check the canonical target itself in that
+    // case instead of the (empty) leaf list.
+    let leaves_to_check: Vec<String> = if route.steps.is_empty() {
+        vec![canonical_target.to_string()]
+    } else {
+        route.building_blocks.clone()
+    };
+
+    let result = signals::check_stock_termination(&leaves_to_check, canonicalized_stock);
     match result.status {
         StockTerminationStatus::AllLeavesVerifiedInConfiguredStock => {}
         StockTerminationStatus::OneOrMoreLeavesNotInStock
@@ -1072,6 +1089,65 @@ mod tests {
         .unwrap();
         assert!(result.route_assessments[0].hard_failures.is_empty());
         assert!(!result.route_assessments[0].warnings.is_empty());
+    }
+
+    #[test]
+    fn zero_step_route_verifies_the_target_itself_against_stock_when_present() {
+        // building_blocks is empty for a zero-step route, so checking it
+        // directly would vacuously "succeed" without ever consulting the
+        // configured stock. The canonical target must be checked in its
+        // place -- regression for the depth=0 stock re-verification fix.
+        let rules: Vec<RetroRule> = vec![];
+        let routes = vec![route(vec![], &[])];
+        let stock = vec!["CCO".to_string()];
+        let ctx = AssessmentContext {
+            stock: Some(&stock),
+            ..empty_context(&rules)
+        };
+        let result = assess_routes(
+            "CCO",
+            &routes,
+            &ctx,
+            &SynthesizabilityConfig::conservative(),
+        )
+        .unwrap();
+        assert_eq!(
+            result.route_assessments[0].stock_termination_status,
+            StockTerminationStatus::AllLeavesVerifiedInConfiguredStock
+        );
+        assert_eq!(result.status, AssessmentStatus::RouteSupported);
+    }
+
+    #[test]
+    fn zero_step_route_target_not_in_stock_is_a_hard_failure_not_vacuous_success() {
+        let rules: Vec<RetroRule> = vec![];
+        let routes = vec![route(vec![], &[])];
+        // A valid, parseable, but different molecule from the target --
+        // before this fix, the empty `building_blocks` list would make the
+        // stock check vacuously pass regardless of what's configured here.
+        let stock = vec!["c1ccccc1".to_string()];
+        let ctx = AssessmentContext {
+            stock: Some(&stock),
+            ..empty_context(&rules)
+        };
+        let result = assess_routes(
+            "CCO",
+            &routes,
+            &ctx,
+            &SynthesizabilityConfig::conservative(),
+        )
+        .unwrap();
+        assert_eq!(
+            result.route_assessments[0].stock_termination_status,
+            StockTerminationStatus::OneOrMoreLeavesNotInStock
+        );
+        assert!(
+            result.route_assessments[0]
+                .hard_failures
+                .iter()
+                .any(|hf| matches!(hf, HardFailure::StockTerminalMismatch { .. }))
+        );
+        assert_eq!(result.status, AssessmentStatus::RoutesFoundButRejected);
     }
 
     #[test]

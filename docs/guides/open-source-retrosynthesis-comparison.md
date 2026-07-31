@@ -37,24 +37,27 @@ counts, and evaluation setups differ significantly across the systems it
 lists, and the cited AiZynthFinder/Retro\*/ASKCOS numbers come from their
 own original publications, not a common run. That table is **not rewritten
 by this work** — replacing it is deferred to a future PR, after a formal
-500- or 4,907-target measurement using the infrastructure documented here.
+500- or 4,903-target measurement using the infrastructure documented here.
 This page's own 100-target results (below) are a separate, new, narrower
 measurement: same targets, same hardware, same timeout, run by this
 project, for RENKIN and AiZynthFinder only.
 
 ## Three measurement arms
 
-| Arm | RENKIN stock | RENKIN templates | AiZynthFinder stock | AiZynthFinder policy | What it isolates |
+| Arm | RENKIN stock | RENKIN templates | AiZynthFinder stock | AiZynthFinder policy | Framing |
 |---|---|---|---|---|---|
-| **A — native** | `data/building_blocks.smi` (402 unique) | `data/templates_extracted_500.smi` (500 templates) | official public ZINC stock (MIT, via Figshare) | official public USPTO ONNX model (CC BY 4.0, via Zenodo) | "what a user gets from each project's own recommended public configuration" — a comparison of full public distributions, **not** an engine-only comparison |
-| **B — matched-stock** | same 402 compounds | **unchanged** | the *same* 402 compounds, converted via `smiles2stock` | **unchanged** (official public model) | stock/building-block coverage as one isolated variable — deliberately does **not** unify templates/models, since forcing a common template set would replace each tool's native proposal mechanism with an artifact of the conversion, not a fair comparison of either tool's engine |
-| **C — RENKIN refreshed baseline** | 402 compounds | 500 templates | — | — | a fresh RENKIN-only measurement on current `master`, explicitly **not** conflated with the historical "corrected baseline" (986/756/43 out of 4,907, frozen to commit `e20dc8c`, renkin 0.15.5, chematic 0.4.25) |
+| **A — native** | `data/building_blocks.smi` (402 unique) | `data/templates_extracted_500.smi` (500 templates) | official public ZINC stock (MIT, via Figshare) | official public USPTO ONNX model (CC BY 4.0, via Zenodo) | "what a user gets from each project's own recommended public configuration" — a comparison of full public distributions, **not** an engine-only comparison. AiZynthFinder's result on this sample was highly sensitive to the configured stock (see Arm B). |
+| **B — shared-stock** | the shared 393-compound stock (`data/comparison/shared_stock/shared_stock.smi`) | **unchanged** | the SAME shared 393-compound stock, written directly as an HDF5 InChIKey table (`scripts/compare_shared_stock.py`) — a guaranteed zero-diff identity, not a `smiles2stock` conversion (see "Provenance") | **unchanged** (official public model) | The shared-stock arm does **not** isolate search-engine quality: policy calibration, search budgets, template/model sources, and internal stock-matching semantics (e.g. RENKIN's VF2 fallback — see `data/comparison/results_100/per_target_audit.md`) remain different between the two tools. Its primary metric is the common **`route_to_shared_stock` rate** (post-hoc, independently re-verified for both tools identically) — tool-native `route_found` is reported alongside as a secondary/informational field only, and a tool-native "solved" route that fails the independent check never counts toward the primary numerator. |
+| **C — RENKIN vendored-500** | 402 compounds | 500 templates | — | — | RENKIN is measured under the reproducible vendored-500-template configuration on current `master`, explicitly **not** the historical 5,000-template "corrected baseline" (986/756/43 out of 4,907, frozen to commit `e20dc8c`, renkin 0.15.5, chematic 0.4.25) — the two are different corpora/configurations and must never be compared as if refreshing the same number. |
 
-Arm C is necessary because RENKIN's own `CHANGELOG.md` states the
-post-`e20dc8c` 4,907-target remeasurement "remains not run" — the historical
-numbers are over 100 commits and a chematic major-version bump old. This
-100-target round is RENKIN's first fresh measurement since that gap was
-identified, at a smaller sample.
+Arm C exists because RENKIN's own `CHANGELOG.md` states the post-`e20dc8c`
+4,907-target remeasurement "remains not run" against the historical
+5,000-template configuration — the historical numbers are over 100 commits
+and a chematic major-version bump old, and were produced against a larger,
+differently-sourced template set. This 100-target round is a fresh,
+independent RENKIN measurement under today's vendored-500-template
+configuration; it is not a "refresh" of the historical number and the two
+must be read as separate measurements, not compared directly.
 
 A full "engine-only" comparison (same stock **and** same templates/policy)
 is not attempted: AiZynthFinder's policy is a trained neural model, not a
@@ -96,7 +99,7 @@ rule, corpus/list SHA-256 sums) and `data/comparison/sample_full_sorted.jsonl`
 `source_line_number`, `sample_key` per row).
 
 **This round only runs the 100-target feasibility sample.** The 500- and
-4,907-target rounds are explicitly not started — see "500/full run gate"
+4,903-target rounds are explicitly not started — see "500/full run gate"
 below.
 
 ## Canonicalizer choice
@@ -188,26 +191,52 @@ this was the one open question flagged during feasibility research, and it
 resolved cleanly in favor of using AiZynthFinder's default public
 configuration for Arm A.
 
-**Matched-stock conversion, confirmed empirically (`scripts/compare_matched_stock.py`):**
-AiZynthFinder's default HDF5 stock format keys molecules by **InChIKey**,
-not SMILES (confirmed by inspecting the converted file directly — a single
-`inchi_key` column, read via `pandas.read_hdf(path, "table")`). Converting
-`data/building_blocks.smi`'s 449 non-comment lines via `smiles2stock` yields
-393 unique compounds (9 lines fail InChIKey conversion — the same 9 SMILES
-syntax/aromaticity issues an independent RDKit re-parse already flagged,
-see "Known gaps"). The round-trip identity check (computed with the
-*container's* RDKit on both sides, not the host venv's, after an initial
-run showed a spurious mismatch traced to a host/container RDKit version
-difference) found exactly one residual, fully-diagnosed mismatch: fumaric
-acid (`OC(=O)/C=C/C(=O)O`) round-trips to a stereo-bearing InChIKey via
-direct RDKit conversion but to the flat (no-stereo-layer) InChIKey via
-`smiles2stock`'s own internal pipeline — the same compound, present in the
-stock either way, keyed differently. This is a live instance of the
-documented stereochemistry-notation ceiling (see "What this validation does
-not claim"), not a lost compound or a conversion bug — the check passes
-`roundtrip_identity_confirmed_modulo_stereo_layer`, and would only hard-fail
-on a mismatch whose *skeleton* (non-stereo) InChIKey block has no
-counterpart on the other side.
+**Shared-stock construction (`scripts/compare_shared_stock.py`), a guaranteed
+zero-diff identity, not a lossy conversion:** AiZynthFinder's default HDF5
+stock format keys molecules by **InChIKey**, not SMILES (its
+`InMemoryInchiKeyQuery` loader reads a single `inchi_key` column via
+`pandas.read_hdf(path, "table")` — confirmed by reading the installed
+package's source directly, and by inspecting a converted file). An earlier
+version of this arm converted `data/building_blocks.smi` through
+`smiles2stock`'s own SMILES-reading pipeline, which silently dropped
+directional (E/Z) bond stereo for at least one compound (fumaric acid),
+leaving a residual, unexplainable round-trip mismatch
+(`roundtrip_identity_confirmed=false`) that was never an acceptable basis
+for a "shared stock" claim. This arm now **bypasses `smiles2stock`
+entirely**: every line of `data/building_blocks.smi` is parsed directly with
+RDKit (`Chem.MolFromSmiles`) inside the AiZynthFinder container, its InChIKey
+computed via `Chem.MolToInchiKey` — the *exact same call* AiZynthFinder's own
+`Molecule.inchi_key` property makes on its search candidates at runtime
+(confirmed by reading `aizynthfinder.chem.mol` source inside the container)
+— and the resulting `{inchi_key}` table is written directly to HDF5, with
+no separate "conversion" step left to disagree with AiZynthFinder's own
+runtime lookup. **Policy** (recorded in
+`data/comparison/shared_stock/shared_stock_manifest.json`): shared-stock
+identity is RDKit's `MolToInchiKey` of the parsed source SMILES, stereo/
+isotope/charge exactly as present in the source line — no stripping, no
+"modulo X" exception. Fumaric acid's stereo-bearing InChIKey
+(`...{}-OWOJBTEDSA-N` rather than the flat key `smiles2stock` produced) is
+now correctly preserved, by construction rather than by exception. Before
+building the full stock, this bypass approach was validated on a toy
+4-compound hand-built HDF5 (aniline, acetic anhydride, acetic acid, acetyl
+chloride) against the real container and the real `aizynthcli`: it
+correctly loaded the hand-built file (`Compounds in stock: 4`) and solved
+acetanilide via exactly the expected two-precursor route, both leaves
+correctly flagged `in_stock=true`.
+
+Of the 449 non-comment source lines, 9 remain excluded because RDKit itself
+cannot parse them (3 unambiguous SMILES syntax errors in the checked-in
+file, 6 aromaticity/kekulization-ambiguous heterocycles RENKIN's own parser
+accepts — see "Known gaps"; this is a file-content defect, not a chemistry
+limitation the shared set legitimately can't represent), and 47 further
+lines collapse into an already-seen InChIKey (duplicate compounds under
+different notations) — leaving **393 unique compounds**, written to both
+`data/comparison/shared_stock/shared_stock.smi` (fed to RENKIN as
+`--building-blocks`) and `data/comparison/shared_stock/shared_stock.hdf5`
+(fed to AiZynthFinder). A read-back check (write the HDF5, then read it back
+inside the same container) confirms zero missing/extra keys —
+`roundtrip_identity_confirmed=true`, verifying HDF5 serialization fidelity
+only, since there is no separate conversion step left to verify.
 
 ## Common schema: `PlannerComparisonRow` v1
 
@@ -222,7 +251,7 @@ dataclass; highlights:
   name, and a source-grep deny-list scan of the schema-defining files.
 - Tool-native fields (`route_found`, `tool_reported_route_count`) and
   harness-computed post-hoc fields (`route_tree_parseable`,
-  `all_leaves_in_configured_stock`, `common_mass_conservation_status`) are
+  `all_leaves_in_configured_stock`, `target_element_accounting_status`) are
   **always kept separate** — see "Semantic firewall".
 - Everything tool-specific (RENKIN's `atom_balanced`/`nodes_expanded`/etc.,
   AiZynthFinder's `iterations`/`time_limit_s`/etc.) lives in a `tool_specific`
@@ -246,30 +275,33 @@ Applied identically to both tools' normalized routes (`scripts/compare_validatio
   independently parseable, no residual self-loops.
 - **`all_leaves_in_configured_stock`** — exact canonical-SMILES match
   against the stock **actually configured for that row's comparison_mode**
-  (native or matched_stock) — never assumed to be RENKIN's 402 by default.
+  (native or shared_stock) — never assumed to be RENKIN's 402 by default.
   A leaf the tool itself flags as unresolved (`is_stock_leaf=false`) is
   recorded separately from a leaf the tool *claims* is in stock but the
   harness's independent lookup misses (`leaf_claimed_stock_not_matched`) —
   conflating those two would hide a real adapter/tool discrepancy inside an
   honest "incomplete route" case.
-- **`common_mass_conservation_status`** — a **directional, per-element**
-  heavy-atom check: for every step, the target's count of each element must
-  not exceed the sum over all precursors (precursors may legitimately carry
-  *more* atoms — the excess is an untracked forward-reaction byproduct, like
-  water in an esterification). This is stricter than RENKIN's own internal
+- **`target_element_accounting_status`** — a **directional, per-element**
+  heavy-atom check, NOT exact mass conservation: for every step, the
+  target's count of each element must not exceed the sum over all
+  precursors (precursors may legitimately carry *more* atoms — the excess is
+  an untracked forward-reaction byproduct, like water in an esterification).
+  Status is one of `accounted` / `unaccounted_target_element` /
+  `not_evaluable`. This is stricter than RENKIN's own internal
   molecular-weight-based check: e.g. "chlorobenzene from bromobenzene" would
   *pass* RENKIN's own MW inequality (bromobenzene is heavier) but correctly
-  fails this check (no precursor accounts for the product's chlorine). This
-  is by design, and means RENKIN's own routes can legitimately score worse
-  on this common check than on RENKIN's own internal diagnostic — the two
-  are different checks with different tolerances and must never be shown
-  as if they were the same number.
+  reports `unaccounted_target_element` here (no precursor accounts for the
+  product's chlorine). This is by design, and means RENKIN's own routes can
+  legitimately score worse on this common check than on RENKIN's own
+  internal diagnostic — the two are different checks with different
+  tolerances and must never be shown as if they were the same number.
 
 ### What this validation does not claim
 
-> Atom-balanced (`common_mass_conservation_status`) means the route's
-> heavy-atom bookkeeping is internally consistent under a simple per-element
-> inequality check — it is not validated against real reaction feasibility,
+> Target-element-accounted (`target_element_accounting_status=accounted`)
+> means the route's heavy-atom bookkeeping is internally consistent under a
+> simple, one-directional per-element inequality check — it is NOT exact
+> mass conservation, is not validated against real reaction feasibility,
 > mechanism, or literature precedent, and must never be read as
 > "chemically correct" or "chemically valid". All-leaves-in-configured-stock
 > is an exact canonical-SMILES string match against the stock actually
@@ -290,21 +322,33 @@ and lives alongside every generated report, not only here.
 ## Semantic firewall
 
 - Tool-native "solved"/"route_found" and this harness's post-hoc "accepted"
-  (structurally valid, stock-grounded, mass-conserving) are always separate
-  metrics.
+  (structurally valid, stock-grounded, target-element-accounted) are always
+  separate metrics.
 - RENKIN's own internal validator is never used to grade AiZynthFinder's
   routes, and nothing from AiZynthFinder's stack grades RENKIN's routes —
   each tool is judged only by (a) its own self-report, (b) the identical
   common checks above, or (c) human review (not performed in this round).
-- **Latency comparison firewall**: RENKIN's search budget is combinatorial
-  (depth × beam — an unsolved target can terminate quickly once the beam is
-  exhausted); AiZynthFinder's is temporal (`time_limit` — an unsolved target
-  burns close to the full configured budget by construction). Any
-  "N× faster" claim computed over *all* targets (solved and unsolved) would
-  measure the two budget definitions against each other, not the two search
-  engines. **Only solved-target latency is reported as a comparative
-  latency number**; all-target latency is reported only side-by-side with
-  both tools' literal budget parameters spelled out.
+- **Latency comparison firewall — no cross-tool inference-latency
+  comparison is made in this round.** RENKIN's search budget is
+  combinatorial (depth × beam — an unsolved target can terminate quickly
+  once the beam is exhausted); AiZynthFinder's is temporal (`time_limit` —
+  an unsolved target burns close to the full configured budget by
+  construction), so an "N× faster" claim over *all* targets would measure
+  the two budget definitions against each other, not the two search
+  engines. Beyond that: every AiZynthFinder measurement in this round is a
+  **cold-start** per-target Docker container invocation (container startup
+  plus policy-model/stock load on every single target, the same per-target
+  process-spawn cost the RENKIN adapter also pays, but AiZynthFinder's
+  model/stock load is far heavier) — there is no persistent-worker or
+  warm-latency arm in this round to separate `initialization_ms` from
+  per-target `planning_ms`. `total_elapsed_ms` (both tools, all rows) and
+  the `solved_only_total_elapsed_ms_percentiles` aggregate field are
+  reported **only as raw, disclosed deployment-cost numbers, per tool, side
+  by side with both tools' literal budget parameters** — never narrated as
+  a comparative inference-latency claim, and never described as "licensed
+  for direct comparison." A genuine warm-latency arm (separating
+  `initialization_ms`, `planning_ms`, `cold_start_ms`, and throughput) is
+  explicitly deferred to a future round.
 - No route-accuracy or "RENKIN is better/worse" claim is licensed by any
   number in this document or its artifacts.
 
@@ -326,7 +370,7 @@ Since both tools run on the identical target sample, every comparison is
 **At n=100, every number here is explicitly descriptive.** Wide confidence
 intervals are expected and are shown, not narrated away — no
 "statistically significant" claim is made at this sample size. The same
-code runs unchanged at n=500/4,907 once those rounds are approved.
+code runs unchanged at n=500/4,903 once those rounds are approved.
 
 ## RENKIN-specific diagnostics (`tool_specific.renkin`)
 
@@ -372,8 +416,8 @@ and independently re-check per row this round. For `comparison_mode=native`,
 `all_leaves_in_configured_stock` reflects the tool's own per-leaf `in_stock`
 claim, with an explicit `adapter_warning`
 (`native_stock_trusted_not_independently_verified`) on every such row so
-this is never silently conflated with matched-stock mode's genuine
-independent re-verification (402 compounds, small enough to canonicalize
+this is never silently conflated with shared-stock mode's genuine
+independent re-verification (393 compounds, small enough to canonicalize
 directly, same mechanism as the RENKIN adapter's own stock-leaf check).
 
 ## Known gaps (disclosed, not fixed in this round)
@@ -389,35 +433,49 @@ directly, same mechanism as the RENKIN adapter's own stock-leaf check).
   documented as CC-BY-SA-4.0) — treat it as a research-use academic
   artifact derived from public US patent text, not an unambiguously
   OSI-licensed dataset.
-- An independent RDKit re-parse of `data/building_blocks.smi` finds 393-394
-  unique canonical/InChIKey structures / 9 parse (or InChIKey-conversion)
-  failures — confirmed twice independently, once via a direct RDKit
-  re-parse and again via `smiles2stock`'s own InChIKey pipeline during the
-  matched-stock conversion (see "Provenance" above) — versus RENKIN's own
-  loader's reported 402 unique / 3 parse failures. A parser-dependent
-  ~8-9-compound gap (3 are unambiguous SMILES syntax errors in the
-  checked-in file; 6 are heterocycle entries RDKit rejects on aromaticity/
-  kekulization grounds that RENKIN's own parser currently accepts). This
-  affects the stock file's data quality, not this comparison's sampling —
-  worth a follow-up look, out of scope here.
+- An independent RDKit re-parse of `data/building_blocks.smi` finds 393
+  unique canonical/InChIKey structures / 9 parse failures — confirmed via
+  the shared-stock construction (see "Provenance" above), which excludes
+  the same 9 lines RDKit itself cannot parse — versus RENKIN's own loader's
+  reported 402 unique / 3 parse failures. A parser-dependent ~8-9-compound
+  gap (3 are unambiguous SMILES syntax errors in the checked-in file; 6 are
+  heterocycle entries RDKit rejects on aromaticity/kekulization grounds
+  that RENKIN's own parser currently accepts). This affects the stock
+  file's data quality, not this comparison's sampling — worth a follow-up
+  look, out of scope here. This is also why the shared-stock arm (393
+  compounds) and RENKIN's native arm (402 compounds) are necessarily
+  different-sized stocks — the shared arm is the intersection RDKit can
+  independently verify, not RENKIN's full native list.
+- The cross-tool 100/500/4,903-target sample (deduped by canonical SMILES,
+  4 duplicate groups removed from the 4,907 raw `data/uspto50k_test.smi`
+  rows) is a **different denominator** from RENKIN's historical
+  986/756/43-out-of-**4,907** "corrected baseline" (frozen to commit
+  `e20dc8c`). The two must never be compared directly — a rate computed
+  against 4,903 targets is not commensurate with one computed against the
+  original, non-deduped 4,907-row corpus.
 
 ## 500/full run gate
 
 **Not started.** Per explicit standing instruction, this round stops after
-the 100-target feasibility measurement. Before a 500- or 4,907-target run
+the 100-target feasibility measurement. Before a 500- or 4,903-target run
 could proceed, all of the following must hold, and a human must explicitly
 decide to proceed after reviewing the 100-target results:
 
 - the 100-target feasibility results are reviewed and judged worth scaling;
 - AiZynthFinder's repeat-run variance (given no documented seed control) is
-  characterized, at least on a subsample, before larger-N numbers are
-  treated as stable;
+  characterized on at least 3 independent repetitions of the 100-target
+  sample, in both native and shared-stock modes, before larger-N numbers
+  are treated as stable — a single-run result must never be the basis for
+  a paired comparison at any scale (this round's shared-stock arm is
+  itself still a single run per tool; see the per-run repeatability note
+  in "Common post-hoc validation" and the PR discussion for what remains
+  outstanding);
 - the known gaps above (corpus provenance, building-block parser
   discrepancy) are either resolved or explicitly re-disclosed at the larger
   scale;
 - compute/time budget for a much larger sequential sweep is confirmed
   (this Mac's Docker VM allocation and shared, non-dedicated hardware were
-  adequate for 100 targets run sequentially; 500 or 4,907 is a materially
+  adequate for 100 targets run sequentially; 500 or 4,903 is a materially
   larger commitment).
 
 ## Reproduction
@@ -440,8 +498,11 @@ docker build --platform linux/arm64 -f docker/aizynthfinder.Dockerfile \
 docker run --rm -v "$(pwd)/data/comparison/aizynthfinder_public_data:/public" \
     renkin-compare-66/aizynthfinder:4.4.1 download_public_data /public
 
-# 4. Matched-stock conversion (Arm B only)
-.venv-compare-66/bin/python scripts/compare_matched_stock.py
+# 4. Shared-stock construction (Arm B only) -- zero-diff by construction,
+#    written directly to both a RENKIN-format .smi and an AiZynthFinder HDF5
+.venv-compare-66/bin/python scripts/compare_shared_stock.py
+cp data/comparison/shared_stock/shared_stock.hdf5 \
+    data/comparison/aizynthfinder_public_data/shared_stock.hdf5
 
 # 5. Run the 100-target feasibility sample, per tool per mode
 .venv-compare-66/bin/python scripts/compare_run.py \
@@ -455,19 +516,33 @@ docker run --rm -v "$(pwd)/data/comparison/aizynthfinder_public_data:/public" \
     --output-aggregate data/comparison/results_100/aizynthfinder_native_aggregate.json
 
 .venv-compare-66/bin/python scripts/compare_run.py \
-    --tool aizynthfinder --comparison-mode matched_stock --sample-size 100 \
-    --output-rows data/comparison/results_100/aizynthfinder_matched_stock.jsonl \
-    --output-aggregate data/comparison/results_100/aizynthfinder_matched_stock_aggregate.json
+    --tool renkin --comparison-mode shared_stock --sample-size 100 \
+    --output-rows data/comparison/results_100/renkin_shared_stock.jsonl \
+    --output-aggregate data/comparison/results_100/renkin_shared_stock_aggregate.json
+
+.venv-compare-66/bin/python scripts/compare_run.py \
+    --tool aizynthfinder --comparison-mode shared_stock --sample-size 100 \
+    --output-rows data/comparison/results_100/aizynthfinder_shared_stock.jsonl \
+    --output-aggregate data/comparison/results_100/aizynthfinder_shared_stock_aggregate.json
 ```
 
 ## Interpretation rules (summary)
 
 1. Never merge tool-native "solved" with post-hoc "accepted".
-2. Never call a mass-balance pass "chemically correct".
+2. Never call a `target_element_accounting_status=accounted` route
+   "chemically correct" — it is a directional per-element inequality, not
+   exact mass conservation, and not a chemistry-correctness judgment.
 3. Never treat all-target latency (mixing combinatorial and temporal search
-   budgets) as a comparative speed claim.
+   budgets) as a comparative speed claim, and never describe solved-only
+   latency as licensed for direct cross-tool inference-latency comparison —
+   see "Latency comparison firewall".
 4. Never use RENKIN's validator to judge AiZynthFinder's output or vice
    versa.
-5. Never claim statistical significance from the n=100 round.
-6. Never treat this document, or any number in it, as a superiority claim
+5. Never claim statistical significance from the n=100 round, and never
+   treat a single AiZynthFinder run as sufficient evidence for a paired
+   comparison given its undocumented search-seed behavior.
+6. Never compare the 4,903-target cross-tool corpus against the historical
+   4,907-row RENKIN-only "corrected baseline" as if they were the same
+   denominator.
+7. Never treat this document, or any number in it, as a superiority claim
    for RENKIN, AiZynthFinder, or any tool.

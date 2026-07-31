@@ -31,11 +31,11 @@ form of this gate.
 
 | Condition | Result |
 |---|---|
-| Adapter parses the route tree correctly (has-route target) | **PASS** — `route_tree_parseable=true`, `reaction_steps_parseable=true`, `all_leaves_in_configured_stock=true`, `common_mass_conservation_status=balanced` |
+| Adapter parses the route tree correctly (has-route target) | **PASS** — `route_tree_parseable=true`, `reaction_steps_parseable=true`, `all_leaves_in_configured_stock=true`, `target_element_accounting_status=accounted` |
 | No-route target handled without a route tree | **PASS** — `route_found=false`, `route_tree_parseable=null` (no tree to parse), `tool_specific.renkin` diagnostics populated (`nodes_expanded`, `max_depth_reached`, etc.) |
 | Timeout is enforced | **PASS** — artificially tiny deadline (0.0005s, 1.0s grace) → `run_status=timeout`; observed wall-clock (~2.26s) matches the SIGTERM→grace→SIGKILL path, not the tool's own (nonexistent) internal budget |
 | Crash converts to a structured status | **PASS** — invalid `--building-blocks` path → `run_status=crashed`, stderr captured verbatim in `adapter_warnings` (`renkin_nonzero_exit`), no uncaught exception propagated |
-| Stock-leaf validation works | **PASS** — verified both the full-stock case (`all_leaves_in_configured_stock=true`) and a deliberately incomplete `matched_stock`-style stock (`["CCO"]` only) correctly reports `all_leaves_in_configured_stock=false` |
+| Stock-leaf validation works | **PASS** — verified both the full-stock case (`all_leaves_in_configured_stock=true`) and a deliberately incomplete `shared_stock`-style stock (`["CCO"]` only) correctly reports `all_leaves_in_configured_stock=false` |
 | Repeating the same input twice gives consistent status + normalized route hash | **PASS** — RENKIN is fully deterministic (no RNG/seed); two independent runs of the has-route target produced byte-identical `run_status` and `normalized_route_sha256` |
 
 ## AiZynthFinder — pass/fail conditions
@@ -79,7 +79,7 @@ reading `parsed["data"][0]` defensively, and (b) setting `route_found =
 record["is_solved"]`, never `len(trees) > 0`. Re-verified after the fix:
 aspirin (`CC(=O)Oc1ccccc1C(=O)O`), acetanilide, N-methylacetanilide, methyl
 benzoate, and benzamide all now correctly report `route_found=true` with
-fully-parseable, mass-balanced routes.
+fully-parseable, target-element-accounted routes.
 
 **Bug 2 — native mode's "configured stock" was wrongly RENKIN's 402
 compounds, not AiZynthFinder's real ~17.4M-compound ZINC stock.**
@@ -95,35 +95,40 @@ interprets as "trust the tool's own per-leaf `in_stock` claim instead of an
 independent check this round can't practically run at that scale" — with an
 explicit `adapter_warning`
 (`native_stock_trusted_not_independently_verified`) on every native-mode
-row so this is never silently conflated with matched-stock mode's genuine
-independent re-verification (402 compounds, small enough to canonicalize
+row so this is never silently conflated with shared-stock mode's genuine
+independent re-verification (393 compounds, small enough to canonicalize
 and check directly, same as the RENKIN adapter's own stock-leaf check).
 
-## Matched-stock conversion round-trip (Arm B smoke check)
+## Shared-stock construction round-trip (Arm B smoke check)
 
-`scripts/compare_matched_stock.py` converts `data/building_blocks.smi`'s
-449 non-comment lines to an AiZynthFinder HDF5 stock via `smiles2stock`.
+**Superseded approach, historical note:** an earlier version of this arm
+converted `data/building_blocks.smi` to an AiZynthFinder HDF5 stock via
+`smiles2stock`, which silently dropped directional (E/Z) bond stereo for
+fumaric acid and left `roundtrip_identity_confirmed=false` — accepted at
+the time via a `roundtrip_identity_confirmed_modulo_stereo_layer` exception,
+which is not an acceptable basis for a "shared stock" claim. This has been
+replaced entirely; see `scripts/compare_shared_stock.py` and the comparison
+guide's "Provenance" section for the current construction.
+
+`scripts/compare_shared_stock.py` parses `data/building_blocks.smi`'s 449
+non-comment lines directly with RDKit and writes the resulting InChIKey
+table straight to HDF5 — bypassing `smiles2stock`'s own reader entirely.
 Confirmed empirically:
 
 - AiZynthFinder's default HDF5 stock format keys molecules by **InChIKey**,
-  not SMILES (discovered by inspecting the converted file directly — read
-  via `pandas.read_hdf(path, "table")`, not `pandas.HDFStore.get()`, which
-  raises `NoSuchNodeError` against this file's on-disk layout).
-- 393 unique compounds converted; 9 lines fail InChIKey conversion — the
-  same 9 SMILES issues an independent RDKit re-parse of the building-blocks
-  file already flagged (3 unambiguous syntax errors, 6 aromaticity/
-  kekulization-ambiguous heterocycles — see the comparison guide's "Known
-  gaps").
-- The round-trip identity check (source InChIKeys vs. the stock's own
-  InChIKeys, both computed with the *container's* RDKit to eliminate a
-  host/container RDKit-version confound found during debugging) found
-  exactly one residual mismatch: fumaric acid (`OC(=O)/C=C/C(=O)O`)
-  round-trips to a stereo-bearing InChIKey via direct RDKit conversion but
-  to the flat InChIKey via `smiles2stock`'s own pipeline — a disclosed
-  stereochemistry-notation ceiling (the compound IS in the stock, just
-  keyed by a differently-stereo-perceived InChIKey), not a lost compound.
-  `roundtrip_identity_confirmed_modulo_stereo_layer=true`; the check would
-  only hard-fail on a mismatch with no same-skeleton counterpart.
+  not SMILES, and its `InMemoryInchiKeyQuery` loader reads a hand-built
+  HDF5 (no `smiles2stock`-specific structure required) with zero special
+  handling — validated on a toy 4-compound stock against the real container
+  and a real target (acetanilide) before building the full stock.
+- 393 unique compounds; 9 source lines excluded because RDKit itself cannot
+  parse them (3 unambiguous syntax errors, 6 aromaticity/kekulization-
+  ambiguous heterocycles — see the comparison guide's "Known gaps"); 47
+  further lines collapse into an already-seen InChIKey (duplicates).
+- The read-back check (write the HDF5, read it back inside the same
+  container) found **zero** missing/extra keys —
+  `roundtrip_identity_confirmed=true`, with no exception needed: fumaric
+  acid (`OC(=O)/C=C/C(=O)O`) now correctly keeps its stereo-bearing InChIKey
+  because there is no separate lossy conversion step left to flatten it.
 
 The AiZynthFinder native-mode 100-target run is executed in the same pass
 as this smoke gate, not as a separate throwaway exercise — the smoke-gate

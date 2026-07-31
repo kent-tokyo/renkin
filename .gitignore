@@ -68,9 +68,10 @@ data/corpora/_*
 # stock, CC BY 4.0 models -- but still large binaries, reproducible via
 # `download_public_data`; only their SHA-256 + provenance are committed).
 data/comparison/aizynthfinder_public_data/
-# Matched-stock HDF5 conversion output (regenerable via
-# scripts/compare_matched_stock.py; its manifest/hash is committed).
+# Shared-stock HDF5 (regenerable via scripts/compare_shared_stock.py; its
+# manifest/hash and the source .smi list it was built from ARE committed).
 data/comparison/*.hdf5
+data/comparison/shared_stock/*.hdf5
 # Raw per-target adapter stderr logs for the 100-target feasibility round --
 # progress noise, not a deliverable (the JSONL rows, aggregate JSON, and
 # aggregate Markdown reports next to them ARE committed).

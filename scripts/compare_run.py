@@ -34,9 +34,12 @@ def load_stock(path: str) -> list[str]:
 
 
 def run_renkin(args, sample: list[dict]) -> list:
+    building_blocks_path = (
+        args.shared_stock_smi if args.comparison_mode == "shared_stock" else args.building_blocks
+    )
     config = renkin_adapter.RenkinConfig(
         binary_path=args.renkin_binary,
-        building_blocks_path=args.building_blocks,
+        building_blocks_path=building_blocks_path,
         templates_path=args.templates,
         depth=args.depth,
         beam_width=args.beam_width,
@@ -45,9 +48,7 @@ def run_renkin(args, sample: list[dict]) -> list:
         grace_s=args.grace_s,
     )
     tool_version = renkin_adapter.resolve_tool_version(args.repo_root)
-    configured_stock = load_stock(
-        args.matched_stock_smi if args.comparison_mode == "matched_stock" else args.building_blocks
-    )
+    configured_stock = load_stock(building_blocks_path)
     configuration_id = f"renkin-{args.comparison_mode}-d{args.depth}-b{args.beam_width}"
 
     rows = []
@@ -75,7 +76,7 @@ def run_aizynthfinder(args, sample: list[dict]) -> list:
     import compare_aizynthfinder_adapter as aizynth_adapter
 
     config_filename = (
-        "config_matched_stock.yml" if args.comparison_mode == "matched_stock" else "config.yml"
+        "config_shared_stock.yml" if args.comparison_mode == "shared_stock" else "config.yml"
     )
     config = aizynth_adapter.AizynthfinderConfig(
         image=args.aizynthfinder_image,
@@ -85,12 +86,12 @@ def run_aizynthfinder(args, sample: list[dict]) -> list:
         grace_s=args.grace_s,
     )
     # Native mode's real stock is AiZynthFinder's ~17.4M-compound public
-    # ZINC stock, not RENKIN's 402-compound list -- passing an empty list
-    # signals the adapter to trust the tool's own per-leaf claim instead of
-    # an independent re-verification it can't practically run at that
-    # scale (see compare_aizynthfinder_adapter.py's native-mode fallback).
+    # ZINC stock, not the shared stock -- passing an empty list signals the
+    # adapter to trust the tool's own per-leaf claim instead of an
+    # independent re-verification it can't practically run at that scale
+    # (see compare_aizynthfinder_adapter.py's native-mode fallback).
     configured_stock = (
-        load_stock(args.matched_stock_smi) if args.comparison_mode == "matched_stock" else []
+        load_stock(args.shared_stock_smi) if args.comparison_mode == "shared_stock" else []
     )
     configuration_id = f"aizynthfinder-{args.comparison_mode}"
 
@@ -120,13 +121,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--sample-list", default="data/comparison/sample_full_sorted.jsonl")
     parser.add_argument("--sample-size", type=int, default=100)
     parser.add_argument("--tool", choices=["renkin", "aizynthfinder"], required=True)
-    parser.add_argument("--comparison-mode", choices=["native", "matched_stock"], default="native")
+    parser.add_argument("--comparison-mode", choices=["native", "shared_stock"], default="native")
     parser.add_argument("--output-rows", required=True)
     parser.add_argument("--output-aggregate")
     parser.add_argument("--repo-root", default=".")
     parser.add_argument("--renkin-binary", default="target/release/renkin")
     parser.add_argument("--building-blocks", default="data/building_blocks.smi")
-    parser.add_argument("--matched-stock-smi", default="data/building_blocks.smi")
+    parser.add_argument(
+        "--shared-stock-smi", default="data/comparison/shared_stock/shared_stock.smi"
+    )
     parser.add_argument("--templates", default="data/templates_extracted_500.smi")
     parser.add_argument("--depth", type=int, default=5)
     parser.add_argument("--beam-width", type=int, default=100)

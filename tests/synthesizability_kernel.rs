@@ -767,7 +767,12 @@ fn route_order_independence_selected_route_and_full_assessment_list_match() {
         stock: Some(&stock),
         ..empty_context(&rules)
     };
-    let config = SynthesizabilityConfig::conservative();
+    // include_all_route_diagnostics: true -- this test is about the *full*
+    // route_assessments list staying order-independent, not just the
+    // selected route (which conservative()'s default single-route output
+    // would trivially satisfy regardless of ordering).
+    let mut config = SynthesizabilityConfig::conservative();
+    config.include_all_route_diagnostics = true;
 
     let forward =
         assess_routes("CCO", &[clean.clone(), mismatched.clone()], &ctx, &config).unwrap();
@@ -866,7 +871,11 @@ fn byte_identical_inputs_produce_byte_identical_json() {
         embedded_fallback_used: Some(false),
         ..empty_context(&rules)
     };
-    let config = SynthesizabilityConfig::conservative();
+    // include_all_route_diagnostics: true -- this test wants to see both
+    // routes' full diagnostics (see the comment above), not just the
+    // selected one.
+    let mut config = SynthesizabilityConfig::conservative();
+    config.include_all_route_diagnostics = true;
 
     let result_a = assess_routes("CCOC(=O)c1ccccc1", &routes, &ctx, &config).unwrap();
     let result_b = assess_routes("CCOC(=O)c1ccccc1", &routes, &ctx, &config).unwrap();
@@ -1187,6 +1196,9 @@ fn max_routes_to_assess_truncates_to_the_best_route_regardless_of_input_order() 
         ..empty_context(&rules)
     };
     let mut config = SynthesizabilityConfig::conservative();
+    // Exercise max_routes_to_assess's own truncation, not
+    // include_all_route_diagnostics' default single-route cap.
+    config.include_all_route_diagnostics = true;
     config.max_routes_to_assess = 1;
 
     // Worse (broken) route supplied FIRST in caller order.

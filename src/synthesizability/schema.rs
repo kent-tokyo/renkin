@@ -632,13 +632,17 @@ pub struct SynthesizabilityAssessment {
     /// a truncated view of what was actually assessed -- see
     /// `route_assessments_returned_count`/`route_assessments_truncated`.
     pub route_assessments: Vec<RouteAssessment>,
-    /// `routes.len()` as supplied to `assess_routes()`. `0` whenever the
-    /// call short-circuited before assessing anything
-    /// (`InvalidTarget`/`EvaluationError`/`NoRouteFoundWithinBudget`).
+    /// `routes.len()` as supplied to `assess_routes()` -- always the true
+    /// input count, even on an early short-circuit
+    /// (`InvalidTarget`/`EvaluationError`/`NoRouteFoundWithinBudget`): those
+    /// paths still know how many routes were passed in, they just never got
+    /// assessed. See `routes_assessed_count` for the count that *is* `0` in
+    /// that case.
     pub routes_supplied_count: usize,
     /// Number of routes actually assessed (i.e. the length of the full,
     /// sorted route-quality list §4.8 produces, before any output
-    /// truncation). Equals `routes_supplied_count` with today's
+    /// truncation). `0` on every early short-circuit above. Equals
+    /// `routes_supplied_count` with today's
     /// `assess_routes()` (every supplied route is always assessed), kept as
     /// its own field so a future partial-assessment budget wouldn't need a
     /// schema break to report the distinction.

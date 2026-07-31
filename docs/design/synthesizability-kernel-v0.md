@@ -397,8 +397,8 @@ pub struct SynthesizabilityAssessment {
     pub status: AssessmentStatus,
     pub selected_route: Option<RouteAssessment>,
     pub route_assessments: Vec<RouteAssessment>, // deterministic order, see §6 -- may be a truncated view, see below
-    pub routes_supplied_count: usize,       // routes.len() as supplied; 0 on an early short-circuit
-    pub routes_assessed_count: usize,       // routes actually assessed (== routes_supplied_count today; a distinct field for a future partial-budget assessment)
+    pub routes_supplied_count: usize,       // routes.len() as supplied; always the true input count, even on an early short-circuit
+    pub routes_assessed_count: usize,       // routes actually assessed; 0 on an early short-circuit, else == routes_supplied_count today (a distinct field for a future partial-budget assessment)
     pub route_assessments_returned_count: usize, // route_assessments.len() after output-shaping
     pub route_assessments_truncated: bool,  // true iff returned_count < assessed_count
     pub provenance: AssessmentProvenance,
@@ -690,3 +690,13 @@ Every fixture in the original spec's list, plus:
    two-plus equivalents of it, nothing in `element_accounting.rs` or
    `signals.rs` catches that — heavy-atom sums only check element
    totals, not per-species quantities needed.
+7. A zero-step route's element-accounting status is `NotEvaluable`
+   (nothing to atom-balance with no reaction steps), which -- unlike the
+   analogous "required check couldn't run" case for forward validation
+   under `RequireAllValid` (`ValidationGap::ForwardValidationNotRun`) --
+   contributes neither a hard failure nor a validation gap under
+   `require_target_element_accounting: true`. Found by the independent
+   reviewer pass during the PR #75 fix-up round: arguably correct (no
+   steps means nothing to check), but it's an asymmetry with this same
+   round's zero-step stock re-verification fix (§4.2), worth a deliberate
+   maintainer decision rather than silently living with the inconsistency.

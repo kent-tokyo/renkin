@@ -5,10 +5,15 @@
 //! *cannot* be synthesized, and never an uncalibrated score.
 //!
 //! This module is a stable single entry point regardless of how many files
-//! get added under it (`schema.rs` today; `signals.rs`,
-//! `element_accounting.rs`, `assessment.rs`, `provenance.rs` land here in
-//! follow-up PRs per the design doc's per-agent file ownership, §7).
+//! live under it, per the design doc's per-agent file ownership (§7):
+//! `schema.rs` (types), `signals.rs`/`element_accounting.rs` (pure signal
+//! extraction), `assessment.rs`/`provenance.rs` (policy + hashing).
 
+mod assessment;
+mod element_accounting;
+mod provenance;
 mod schema;
+mod signals;
 
+pub use assessment::{AssessmentContext, assess_routes};
 pub use schema::*;

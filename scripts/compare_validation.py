@@ -34,15 +34,18 @@ except ImportError:  # pragma: no cover
 
 LEAF_CLAIMED_STOCK_NOT_MATCHED = "leaf_claimed_stock_not_matched"
 LEAF_UNRESOLVED = "leaf_unresolved"
-ELEMENT_IMBALANCE = "element_imbalance"
+UNACCOUNTED_TARGET_ELEMENT = "unaccounted_target_element"
 CHARGE_IMBALANCE = "charge_imbalance"  # informational only, never gates
 STEREO_CENTER_COUNT_MISMATCH = "stereo_center_count_mismatch"  # informational only
 DUPLICATE_ROUTE_WITHIN_TARGET = "duplicate_route_within_target"  # informational, target-level
 
 CAVEAT_TEXT = (
-    "Atom-balanced (common_mass_conservation_status) means the route's heavy-atom "
-    "bookkeeping is internally consistent under a simple per-element inequality check -- "
-    "it is not validated against real reaction feasibility, mechanism, or literature "
+    "Target-element-accounted (target_element_accounting_status) means that, for every "
+    "step, the target's heavy-atom count per element does not exceed the sum over all "
+    "precursors -- a directional atom-accounting inequality, not exact mass conservation "
+    "(precursors may legitimately carry MORE atoms than the target; that excess is an "
+    "untracked byproduct, not a failure). "
+    "It is not validated against real reaction feasibility, mechanism, or literature "
     "precedent, and must never be read as \"chemically correct\" or \"chemically valid\". "
     "All-leaves-in-configured-stock is an exact canonical-SMILES string match against the "
     "stock actually configured for that run; it does not account for tautomers, and does "
@@ -166,21 +169,23 @@ def check_reaction_steps_parseable(graph: RouteGraph) -> tuple[bool, list[str]]:
     return ok, warnings
 
 
-def check_mass_conservation(graph: RouteGraph) -> tuple[str, list[str]]:
+def check_target_element_accounting(graph: RouteGraph) -> tuple[str, list[str]]:
     """Directional per-element check: for every step, target's heavy-atom
     count per element must be <= the SUM over all precursors (precursors may
     legitimately carry MORE atoms -- the excess is an untracked byproduct;
     the target must never have atoms the precursor pool can't account for).
 
-    Returns (status, warning_codes) where status in
-    {"balanced", "imbalanced", "not_evaluable"}.
+    This is NOT exact mass conservation -- it is a one-directional inequality
+    that only ever flags a target with MORE of an element than its precursors
+    can supply. Returns (status, warning_codes) where status in
+    {"accounted", "unaccounted_target_element", "not_evaluable"}.
     """
     warnings: list[str] = []
     any_evaluated = False
-    imbalanced = False
+    unaccounted = False
 
     def walk(node: RouteNode) -> None:
-        nonlocal any_evaluated, imbalanced
+        nonlocal any_evaluated, unaccounted
         if not node.children:
             return
         target_counts = _heavy_atom_counts(node.canonical_smiles)
@@ -198,8 +203,8 @@ def check_mass_conservation(graph: RouteGraph) -> tuple[str, list[str]]:
                 el for el, n in target_counts.items() if n > precursor_counts.get(el, 0)
             ]
             if elements_in_excess:
-                imbalanced = True
-                warnings.append(ELEMENT_IMBALANCE)
+                unaccounted = True
+                warnings.append(UNACCOUNTED_TARGET_ELEMENT)
 
             target_charge = _net_charge(node.canonical_smiles)
             precursor_charge = sum(
@@ -222,4 +227,4 @@ def check_mass_conservation(graph: RouteGraph) -> tuple[str, list[str]]:
 
     if not any_evaluated:
         return "not_evaluable", warnings
-    return ("imbalanced" if imbalanced else "balanced"), warnings
+    return ("unaccounted_target_element" if unaccounted else "accounted"), warnings

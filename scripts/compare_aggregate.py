@@ -56,9 +56,9 @@ def compute_aggregate(rows: list) -> dict:
             **_rate(sum(1 for r in all_sampled if r.run_status == "invalid_input"), n_all),
             "denominator_kind": "all_sampled",
         },
-        "mass_conserved_route_rate": {
+        "target_elements_accounted_route_rate": {
             **_rate(
-                sum(1 for r in all_sampled if r.common_mass_conservation_status == "balanced"),
+                sum(1 for r in all_sampled if r.target_element_accounting_status == "accounted"),
                 n_all,
             ),
             "denominator_kind": "all_sampled",

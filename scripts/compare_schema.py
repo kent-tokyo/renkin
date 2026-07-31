@@ -21,7 +21,7 @@ SCHEMA_VERSION = "1.0"
 # Closed set -- exact equality is asserted in tests, not just "these are present".
 VALID_TOOLS = frozenset({"renkin", "aizynthfinder"})
 
-VALID_COMPARISON_MODES = frozenset({"native", "matched_stock"})
+VALID_COMPARISON_MODES = frozenset({"native", "shared_stock"})
 
 VALID_RUN_STATUSES = frozenset(
     {"completed", "timeout", "crashed", "invalid_input", "setup_error"}
@@ -39,7 +39,7 @@ _TREE_DEPENDENT_FIELDS = (
     "best_route_leaf_count",
     "all_leaves_in_configured_stock",
     "reaction_steps_parseable",
-    "common_mass_conservation_status",
+    "target_element_accounting_status",
     "normalized_route_sha256",
 )
 
@@ -93,7 +93,7 @@ class PlannerComparisonRow:
     all_leaves_in_configured_stock: bool | None = None
     route_tree_parseable: bool | None = None
     reaction_steps_parseable: bool | None = None
-    common_mass_conservation_status: str | None = None  # "balanced"|"imbalanced"|"not_evaluable"
+    target_element_accounting_status: str | None = None  # "accounted"|"unaccounted_target_element"|"not_evaluable"
 
     common_validation_warnings: list = field(default_factory=list)
     adapter_warnings: list = field(default_factory=list)

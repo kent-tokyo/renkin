@@ -38,8 +38,8 @@ from compare_route_graph import count_leaves, normalize_renkin_route, normalized
 from compare_schema import PlannerComparisonRow
 from compare_validation import (
     build_stock_set,
-    check_mass_conservation,
     check_reaction_steps_parseable,
+    check_target_element_accounting,
     validate_stock_leaves,
 )
 
@@ -238,10 +238,10 @@ def run_one_target(
     stock_result = validate_stock_leaves(graph, stock_set)
     row_kwargs["all_leaves_in_configured_stock"] = stock_result.all_leaves_in_configured_stock
 
-    mass_status, mass_warnings = check_mass_conservation(graph)
-    row_kwargs["common_mass_conservation_status"] = mass_status
+    accounting_status, accounting_warnings = check_target_element_accounting(graph)
+    row_kwargs["target_element_accounting_status"] = accounting_status
 
-    row_kwargs["common_validation_warnings"] = list(step_warnings) + list(mass_warnings)
+    row_kwargs["common_validation_warnings"] = list(step_warnings) + list(accounting_warnings)
 
     return PlannerComparisonRow(**row_kwargs)
 

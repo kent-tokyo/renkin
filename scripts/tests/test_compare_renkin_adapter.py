@@ -57,7 +57,7 @@ class TestRenkinAdapterSmoke(unittest.TestCase):
         self.assertTrue(row.route_tree_parseable)
         self.assertTrue(row.reaction_steps_parseable)
         self.assertTrue(row.all_leaves_in_configured_stock)
-        self.assertEqual(row.common_mass_conservation_status, "balanced")
+        self.assertEqual(row.target_element_accounting_status, "accounted")
         self.assertIsNotNone(row.normalized_route_sha256)
         self.assertIsNotNone(row.raw_output_sha256)
         self.assertGreater(row.total_elapsed_ms, 0)
@@ -118,12 +118,12 @@ class TestRenkinAdapterSmoke(unittest.TestCase):
         self.assertEqual(row1.run_status, row2.run_status)
         self.assertEqual(row1.normalized_route_sha256, row2.normalized_route_sha256)
 
-    def test_malformed_stock_leaf_when_matched_stock_missing_entries(self):
-        # A matched_stock-style run where the configured stock doesn't
+    def test_malformed_stock_leaf_when_shared_stock_missing_entries(self):
+        # A shared_stock-style run where the configured stock doesn't
         # actually cover a leaf the route needs -- all_leaves_in_configured_stock
         # must go false, not silently pass.
         row = adapter.run_one_target(
-            ASPIRIN, "smoke#partial_stock", 0, self.base_config, "matched_stock", "cfg2",
+            ASPIRIN, "smoke#partial_stock", 0, self.base_config, "shared_stock", "cfg2",
             self.version, ["CCO"],  # deliberately missing salicylic acid / acetic anhydride
         )
         self.assertTrue(row.route_found)

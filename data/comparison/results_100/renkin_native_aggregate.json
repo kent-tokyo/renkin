@@ -39,12 +39,6 @@
     "n_numerator": 0,
     "value": 0.0
   },
-  "mass_conserved_route_rate": {
-    "denominator_kind": "all_sampled",
-    "n_denominator": 100,
-    "n_numerator": 17,
-    "value": 0.17
-  },
   "n_all_sampled": 100,
   "peak_rss_bytes_percentiles": {
     "denominator_kind": "measured_runs",
@@ -90,6 +84,12 @@
     "n": 21,
     "p50": 495.79691601684317,
     "p95": 2903.440833033528
+  },
+  "target_elements_accounted_route_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 100,
+    "n_numerator": 17,
+    "value": 0.17
   },
   "time_to_first_route_ms_percentiles": {
     "denominator_kind": "route_found_runs",

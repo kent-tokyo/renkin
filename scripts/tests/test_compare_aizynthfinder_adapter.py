@@ -73,7 +73,7 @@ class TestAizynthfinderAdapterRealContainer(unittest.TestCase):
         self.assertTrue(row.route_found)
         self.assertTrue(row.route_tree_parseable)
         self.assertTrue(row.reaction_steps_parseable)
-        self.assertIn(row.common_mass_conservation_status, ("balanced", "imbalanced"))
+        self.assertIn(row.target_element_accounting_status, ("accounted", "unaccounted_target_element"))
         self.assertIsNotNone(row.normalized_route_sha256)
 
     def test_native_mode_trusts_tool_stock_claim_with_disclosed_warning(self):

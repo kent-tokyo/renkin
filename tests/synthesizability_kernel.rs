@@ -1187,14 +1187,14 @@ fn aryl_amine_retro_accounting_failure_is_a_hard_failure_not_allowlisted_per_iss
 }
 
 // ---------------------------------------------------------------------
-// Additional: max_routes_to_assess truncates the *sorted* (best-first)
+// Additional: max_route_diagnostics truncates the *sorted* (best-first)
 // list, not the caller-supplied order -- independent fixture from
-// assessment.rs's own max_routes_to_assess_truncation_never_drops_the_
+// assessment.rs's own max_route_diagnostics_truncation_never_drops_the_
 // best_route test.
 // ---------------------------------------------------------------------
 
 #[test]
-fn max_routes_to_assess_truncates_to_the_best_route_regardless_of_input_order() {
+fn max_route_diagnostics_truncates_to_the_best_route_regardless_of_input_order() {
     let rules = no_rules();
     let worse = route(
         vec![step("rule:x", "rule:x", "CCO", &["CC=O", "CCN"])],
@@ -1207,10 +1207,10 @@ fn max_routes_to_assess_truncates_to_the_best_route_regardless_of_input_order() 
         ..empty_context(&rules)
     };
     let mut config = SynthesizabilityConfig::conservative();
-    // Exercise max_routes_to_assess's own truncation, not
+    // Exercise max_route_diagnostics's own truncation, not
     // include_all_route_diagnostics' default single-route cap.
     config.include_all_route_diagnostics = true;
-    config.max_routes_to_assess = 1;
+    config.max_route_diagnostics = 1;
 
     // Worse (broken) route supplied FIRST in caller order.
     let result = assess_routes("CCO", &[worse, better], &ctx, &config).unwrap();
@@ -1226,7 +1226,7 @@ fn max_routes_to_assess_truncates_to_the_best_route_regardless_of_input_order() 
         result
             .warnings
             .iter()
-            .any(|w| w.contains("max_routes_to_assess"))
+            .any(|w| w.contains("max_route_diagnostics"))
     );
 }
 
@@ -1344,7 +1344,7 @@ fn full_provenance_smoke_test_every_field_populated_for_a_normal_run() {
         cfg.require_target_element_accounting,
         config.require_target_element_accounting
     );
-    assert_eq!(cfg.max_routes_to_assess, config.max_routes_to_assess);
+    assert_eq!(cfg.max_route_diagnostics, config.max_route_diagnostics);
     assert_eq!(
         cfg.reagent_omission_template_allowlist,
         config.reagent_omission_template_allowlist

@@ -396,7 +396,11 @@ pub struct SynthesizabilityAssessment {
     pub canonical_target: Option<String>, // None only if InvalidTarget
     pub status: AssessmentStatus,
     pub selected_route: Option<RouteAssessment>,
-    pub route_assessments: Vec<RouteAssessment>, // deterministic order, see §6
+    pub route_assessments: Vec<RouteAssessment>, // deterministic order, see §6 -- may be a truncated view, see below
+    pub routes_supplied_count: usize,       // routes.len() as supplied; 0 on an early short-circuit
+    pub routes_assessed_count: usize,       // routes actually assessed (== routes_supplied_count today; a distinct field for a future partial-budget assessment)
+    pub route_assessments_returned_count: usize, // route_assessments.len() after output-shaping
+    pub route_assessments_truncated: bool,  // true iff returned_count < assessed_count
     pub provenance: AssessmentProvenance,
     pub config_used: SynthesizabilityConfigSummary, // echoes the config, for audit
     pub warnings: Vec<String>,
@@ -460,7 +464,7 @@ pub struct SynthesizabilityConfig {
     pub forward_validation_policy: ForwardValidationPolicy, // Ignore | RequireAllValid | RequireNoInvalid
     pub evidence_policy: EvidencePolicy,                     // Ignore | RequireAnyEvidence | RequireExactSubstrate
     pub reagent_omission_template_allowlist: Vec<String>,
-    pub max_routes_to_assess: usize,
+    pub max_route_diagnostics: usize,       // post-review rename from max_routes_to_assess -- it only ever bounded *output* size (see §4.1 #5-#7), never how many routes were actually assessed; the old name implied otherwise. Safe to rename: schema v1 was still unreleased.
     pub include_all_route_diagnostics: bool,
 }
 

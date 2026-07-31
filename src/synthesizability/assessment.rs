@@ -83,7 +83,7 @@ pub fn assess_routes(
         evidence_policy: config.evidence_policy,
         reagent_omission_template_allowlist: config.reagent_omission_template_allowlist.clone(),
         accounting_failure_policy: config.accounting_failure_policy,
-        max_routes_to_assess: config.max_routes_to_assess,
+        max_route_diagnostics: config.max_route_diagnostics,
         include_all_route_diagnostics: config.include_all_route_diagnostics,
     };
 
@@ -103,6 +103,7 @@ pub fn assess_routes(
                 stock_count,
                 stock_hash,
                 stock_input_status,
+                routes.len(),
                 context,
                 assessment_config_hash,
                 config_used,
@@ -130,6 +131,7 @@ pub fn assess_routes(
             stock_count,
             stock_hash,
             stock_input_status,
+            routes.len(),
             context,
             assessment_config_hash,
             config_used,
@@ -157,6 +159,7 @@ pub fn assess_routes(
             stock_count,
             stock_hash,
             stock_input_status,
+            routes.len(),
             context,
             assessment_config_hash,
             config_used,
@@ -199,6 +202,7 @@ pub fn assess_routes(
                 stock_count,
                 stock_hash,
                 stock_input_status,
+                routes.len(),
                 context,
                 assessment_config_hash,
                 config_used,
@@ -219,6 +223,7 @@ pub fn assess_routes(
             stock_count,
             stock_hash,
             stock_input_status,
+            routes.len(),
             context,
             assessment_config_hash,
             config_used,
@@ -232,7 +237,7 @@ pub fn assess_routes(
     // desync that indexing or, worse, silently drop the genuinely best
     // route in favor of a worse one that merely appeared earlier in
     // `routes`, defeating the point of §4.8's quality sort below).
-    // `max_routes_to_assess` instead bounds the *output* list, applied
+    // `max_route_diagnostics` instead bounds the *output* list, applied
     // after sorting, so it only ever trims the long tail.
     let mut route_assessments: Vec<RouteAssessment> = Vec::with_capacity(routes.len());
     for (idx, route) in routes.iter().enumerate() {
@@ -250,10 +255,10 @@ pub fn assess_routes(
     route_assessments.sort_by(cmp_route_assessments);
 
     // §4.1 #5-#7: status + selection are computed from the FULL sorted
-    // list, *before* any output-shaping below. `max_routes_to_assess`/
+    // list, *before* any output-shaping below. `max_route_diagnostics`/
     // `include_all_route_diagnostics` are display/output-size knobs only
     // -- they must never change the verdict itself (e.g. setting
-    // `max_routes_to_assess: 0` must not turn a genuinely clean route into
+    // `max_route_diagnostics: 0` must not turn a genuinely clean route into
     // `RoutesFoundButRejected` just because it can't be shown).
     let (status, selected_route) = match route_assessments.first() {
         Some(best) if best.hard_failures.is_empty() => {
@@ -279,7 +284,7 @@ pub fn assess_routes(
 
     // Now shape the *output* list. `include_all_route_diagnostics == true`
     // returns every assessed route (sorted, truncated to
-    // `max_routes_to_assess`); `false` (the `conservative()`/`diagnostic()`
+    // `max_route_diagnostics`); `false` (the `conservative()`/`diagnostic()`
     // default) returns only the single best-ranked route -- note this is
     // `route_assessments.first()`, not `selected_route`: even when every
     // route was rejected (`status == RoutesFoundButRejected`,
@@ -287,30 +292,32 @@ pub fn assess_routes(
     // came closest and *why* it was rejected, or `include_all_route_diagnostics:
     // false` would silently hide all diagnostic detail on every rejected
     // assessment -- exactly the kind of "auditable" failure this kernel
-    // exists to prevent. `max_routes_to_assess: 0` still means "show
+    // exists to prevent. `max_route_diagnostics: 0` still means "show
     // nothing" in either case, for consistency.
     let total_assessed = route_assessments.len();
     let route_assessments: Vec<RouteAssessment> = if config.include_all_route_diagnostics {
         let mut out = route_assessments;
-        if total_assessed > config.max_routes_to_assess {
+        if total_assessed > config.max_route_diagnostics {
             warnings.push(format!(
-                "Computed assessments for all {total_assessed} supplied routes; output truncated to the top {} by §4.8 quality ordering (max_routes_to_assess)",
-                config.max_routes_to_assess
+                "Computed assessments for all {total_assessed} supplied routes; output truncated to the top {} by §4.8 quality ordering (max_route_diagnostics)",
+                config.max_route_diagnostics
             ));
-            out.truncate(config.max_routes_to_assess);
+            out.truncate(config.max_route_diagnostics);
         }
         out
     } else {
         match route_assessments.first() {
-            Some(r) if config.max_routes_to_assess > 0 => vec![r.clone()],
+            Some(r) if config.max_route_diagnostics > 0 => vec![r.clone()],
             _ => Vec::new(),
         }
     };
-    if config.max_routes_to_assess == 0 {
+    if config.max_route_diagnostics == 0 {
         warnings.push(
-            "max_routes_to_assess is 0; no route can appear in the output even though routes were supplied and assessed".to_string(),
+            "max_route_diagnostics is 0; no route can appear in the output even though routes were supplied and assessed".to_string(),
         );
     }
+    let route_assessments_returned_count = route_assessments.len();
+    let route_assessments_truncated = route_assessments_returned_count < total_assessed;
 
     Ok(SynthesizabilityAssessment {
         schema_version: SYNTHESIZABILITY_SCHEMA_VERSION,
@@ -319,6 +326,10 @@ pub fn assess_routes(
         status,
         selected_route,
         route_assessments,
+        routes_supplied_count: routes.len(),
+        routes_assessed_count: total_assessed,
+        route_assessments_returned_count,
+        route_assessments_truncated,
         provenance: AssessmentProvenance {
             renkin_version: env!("CARGO_PKG_VERSION").to_string(),
             assessment_schema_version: SYNTHESIZABILITY_SCHEMA_VERSION,
@@ -359,6 +370,7 @@ fn early_assessment(
     stock_count: usize,
     stock_hash: String,
     stock_input_status: crate::synthesizability::schema::StockInputStatus,
+    routes_supplied_count: usize,
     context: &AssessmentContext,
     assessment_config_hash: String,
     config_used: SynthesizabilityConfigSummary,
@@ -384,6 +396,10 @@ fn early_assessment(
         status,
         selected_route: None,
         route_assessments,
+        routes_supplied_count,
+        routes_assessed_count: 0,
+        route_assessments_returned_count: 0,
+        route_assessments_truncated: false,
         provenance: AssessmentProvenance {
             renkin_version: env!("CARGO_PKG_VERSION").to_string(),
             assessment_schema_version: SYNTHESIZABILITY_SCHEMA_VERSION,
@@ -1519,7 +1535,7 @@ mod tests {
     }
 
     #[test]
-    fn max_routes_to_assess_truncates_and_warns() {
+    fn max_route_diagnostics_truncates_and_warns() {
         let rules: Vec<RetroRule> = vec![];
         let routes = vec![
             route(vec![step("rule:x", "rule:x", "CCO", &["CC=O"])], &["CC=O"]),
@@ -1531,24 +1547,83 @@ mod tests {
             ..empty_context(&rules)
         };
         let mut config = SynthesizabilityConfig::conservative();
-        // Exercise max_routes_to_assess's own truncation, not
+        // Exercise max_route_diagnostics's own truncation, not
         // include_all_route_diagnostics' default single-route cap (which
         // would make `route_assessments.len() == 1` trivially true
-        // regardless of max_routes_to_assess).
+        // regardless of max_route_diagnostics).
         config.include_all_route_diagnostics = true;
-        config.max_routes_to_assess = 1;
+        config.max_route_diagnostics = 1;
         let result = assess_routes("CCO", &routes, &ctx, &config).unwrap();
         assert_eq!(result.route_assessments.len(), 1);
         assert!(
             result
                 .warnings
                 .iter()
-                .any(|w| w.contains("max_routes_to_assess"))
+                .any(|w| w.contains("max_route_diagnostics"))
         );
+        assert_eq!(result.routes_supplied_count, 2);
+        assert_eq!(result.routes_assessed_count, 2);
+        assert_eq!(result.route_assessments_returned_count, 1);
+        assert!(result.route_assessments_truncated);
     }
 
     #[test]
-    fn max_routes_to_assess_truncation_never_drops_the_best_route() {
+    fn audit_counts_agree_with_output_when_nothing_is_truncated() {
+        let rules: Vec<RetroRule> = vec![];
+        let routes = vec![route(
+            vec![step("rule:x", "rule:x", "CCO", &["CC=O"])],
+            &["CC=O"],
+        )];
+        let stock = vec!["CC=O".to_string()];
+        let ctx = AssessmentContext {
+            stock: Some(&stock),
+            ..empty_context(&rules)
+        };
+        let result = assess_routes(
+            "CCO",
+            &routes,
+            &ctx,
+            &SynthesizabilityConfig::conservative(),
+        )
+        .unwrap();
+        assert_eq!(result.routes_supplied_count, 1);
+        assert_eq!(result.routes_assessed_count, 1);
+        assert_eq!(result.route_assessments_returned_count, 1);
+        assert!(!result.route_assessments_truncated);
+    }
+
+    #[test]
+    fn audit_counts_reflect_supplied_routes_even_on_early_short_circuit() {
+        // NoRouteFoundWithinBudget: zero routes supplied, none assessed.
+        let rules: Vec<RetroRule> = vec![];
+        let ctx = empty_context(&rules);
+        let result = assess_routes("CCO", &[], &ctx, &SynthesizabilityConfig::conservative())
+            .expect("must not Err");
+        assert_eq!(result.routes_supplied_count, 0);
+        assert_eq!(result.routes_assessed_count, 0);
+        assert_eq!(result.route_assessments_returned_count, 0);
+        assert!(!result.route_assessments_truncated);
+
+        // InvalidTarget: one route supplied, but short-circuits before
+        // assessing it -- routes_supplied_count still reflects the input.
+        let routes = vec![route(
+            vec![step("rule:x", "rule:x", "CCO", &["CC=O"])],
+            &["CC=O"],
+        )];
+        let result2 = assess_routes(
+            "not-a-smiles(((",
+            &routes,
+            &ctx,
+            &SynthesizabilityConfig::conservative(),
+        )
+        .expect("must not Err");
+        assert_eq!(result2.status, AssessmentStatus::InvalidTarget);
+        assert_eq!(result2.routes_supplied_count, 1);
+        assert_eq!(result2.routes_assessed_count, 0);
+    }
+
+    #[test]
+    fn max_route_diagnostics_truncation_never_drops_the_best_route() {
         // The genuinely clean route is supplied SECOND (i.e. later in
         // caller order than a route with a stock mismatch). Truncation must
         // happen after §4.8 sorting, not on the caller-supplied order --
@@ -1571,7 +1646,7 @@ mod tests {
         };
         let mut config = SynthesizabilityConfig::conservative();
         config.include_all_route_diagnostics = true;
-        config.max_routes_to_assess = 1;
+        config.max_route_diagnostics = 1;
         let result = assess_routes("CCO", &routes, &ctx, &config).unwrap();
         assert_eq!(result.route_assessments.len(), 1);
         let survivor = &result.route_assessments[0];
@@ -1584,7 +1659,7 @@ mod tests {
     }
 
     #[test]
-    fn max_routes_to_assess_zero_never_changes_the_verdict() {
+    fn max_route_diagnostics_zero_never_changes_the_verdict() {
         // A pure output-size knob must never flip a genuinely clean,
         // fully-supported route's verdict just because it can't be shown.
         let rules: Vec<RetroRule> = vec![];
@@ -1598,12 +1673,12 @@ mod tests {
             ..empty_context(&rules)
         };
         let mut config = SynthesizabilityConfig::conservative();
-        config.max_routes_to_assess = 0;
+        config.max_route_diagnostics = 0;
         let result = assess_routes("CCO", &routes, &ctx, &config).unwrap();
         assert_eq!(
             result.status,
             AssessmentStatus::RouteSupported,
-            "max_routes_to_assess=0 must not turn a clean route into RoutesFoundButRejected"
+            "max_route_diagnostics=0 must not turn a clean route into RoutesFoundButRejected"
         );
         assert!(result.selected_route.is_some());
         assert!(result.route_assessments.is_empty());
@@ -1611,7 +1686,7 @@ mod tests {
             result
                 .warnings
                 .iter()
-                .any(|w| w.contains("max_routes_to_assess is 0"))
+                .any(|w| w.contains("max_route_diagnostics is 0"))
         );
     }
 

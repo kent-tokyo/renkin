@@ -470,15 +470,15 @@ pub struct SynthesizabilityConfig {
     /// distinguishes `conservative()` from `diagnostic()`; every other
     /// field is identical between the two constructors.
     pub accounting_failure_policy: AccountingFailurePolicy,
-    pub max_routes_to_assess: usize,
+    pub max_route_diagnostics: usize,
     pub include_all_route_diagnostics: bool,
 }
 
-/// Default value of [`SynthesizabilityConfig::max_routes_to_assess`] for
+/// Default value of [`SynthesizabilityConfig::max_route_diagnostics`] for
 /// both `conservative()` and `diagnostic()`. Not specified numerically by
 /// the design doc; chosen as a reasonable, documented default rather than
 /// left as an undocumented magic number at each call site.
-const DEFAULT_MAX_ROUTES_TO_ASSESS: usize = 10;
+const DEFAULT_MAX_ROUTE_DIAGNOSTICS: usize = 10;
 
 impl SynthesizabilityConfig {
     /// The default allowlist for `reagent_omission_template_allowlist`:
@@ -506,7 +506,7 @@ impl SynthesizabilityConfig {
             evidence_policy: EvidencePolicy::Ignore,
             reagent_omission_template_allowlist: Self::default_reagent_omission_allowlist(),
             accounting_failure_policy: AccountingFailurePolicy::HardFailure,
-            max_routes_to_assess: DEFAULT_MAX_ROUTES_TO_ASSESS,
+            max_route_diagnostics: DEFAULT_MAX_ROUTE_DIAGNOSTICS,
             include_all_route_diagnostics: false,
         }
     }
@@ -540,7 +540,7 @@ pub struct SynthesizabilityConfigSummary {
     pub evidence_policy: EvidencePolicy,
     pub reagent_omission_template_allowlist: Vec<String>,
     pub accounting_failure_policy: AccountingFailurePolicy,
-    pub max_routes_to_assess: usize,
+    pub max_route_diagnostics: usize,
     pub include_all_route_diagnostics: bool,
 }
 
@@ -628,8 +628,32 @@ pub struct SynthesizabilityAssessment {
     /// `{RouteSupported, RouteSupportedWithValidationGaps}`). `None` if no
     /// route qualifies, even when `route_assessments` is non-empty.
     pub selected_route: Option<RouteAssessment>,
-    /// Every assessed route, in deterministic order (design doc §6).
+    /// Every assessed route, in deterministic order (design doc §6). May be
+    /// a truncated view of what was actually assessed -- see
+    /// `route_assessments_returned_count`/`route_assessments_truncated`.
     pub route_assessments: Vec<RouteAssessment>,
+    /// `routes.len()` as supplied to `assess_routes()`. `0` whenever the
+    /// call short-circuited before assessing anything
+    /// (`InvalidTarget`/`EvaluationError`/`NoRouteFoundWithinBudget`).
+    pub routes_supplied_count: usize,
+    /// Number of routes actually assessed (i.e. the length of the full,
+    /// sorted route-quality list §4.8 produces, before any output
+    /// truncation). Equals `routes_supplied_count` with today's
+    /// `assess_routes()` (every supplied route is always assessed), kept as
+    /// its own field so a future partial-assessment budget wouldn't need a
+    /// schema break to report the distinction.
+    pub routes_assessed_count: usize,
+    /// `route_assessments.len()` -- the number of route diagnostics actually
+    /// present in this output, after `include_all_route_diagnostics`/
+    /// `max_route_diagnostics` output-shaping.
+    pub route_assessments_returned_count: usize,
+    /// `true` iff `route_assessments_returned_count < routes_assessed_count`
+    /// -- i.e. some assessed routes' diagnostics were left out of this
+    /// output. Never implies any of those routes were rejected; it only
+    /// means they aren't shown here (see design doc §4.8/§4.1 on
+    /// `max_route_diagnostics` being a pure output-size knob, never a
+    /// verdict input).
+    pub route_assessments_truncated: bool,
     pub provenance: AssessmentProvenance,
     /// Echo of the `SynthesizabilityConfig` used to produce this
     /// assessment, for self-describing audit output.
@@ -760,6 +784,10 @@ mod tests {
             status: AssessmentStatus::RouteSupportedWithValidationGaps,
             selected_route: Some(route.clone()),
             route_assessments: vec![route],
+            routes_supplied_count: 1,
+            routes_assessed_count: 1,
+            route_assessments_returned_count: 1,
+            route_assessments_truncated: false,
             provenance: AssessmentProvenance {
                 renkin_version: "0.0.0-test".to_string(),
                 assessment_schema_version: SYNTHESIZABILITY_SCHEMA_VERSION,
@@ -787,7 +815,7 @@ mod tests {
                     "rule:boc_deprotection_retro".to_string(),
                 ],
                 accounting_failure_policy: AccountingFailurePolicy::HardFailure,
-                max_routes_to_assess: 10,
+                max_route_diagnostics: 10,
                 include_all_route_diagnostics: false,
             },
             warnings: vec![],

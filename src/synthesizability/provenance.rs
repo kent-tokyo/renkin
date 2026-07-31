@@ -139,7 +139,7 @@ pub(crate) fn compute_assessment_config_hash(config: &SynthesizabilityConfig) ->
     hash_str(&mut hasher, &tag_of(&config.evidence_policy));
     hash_string_seq(&mut hasher, &allowlist);
     hash_str(&mut hasher, &tag_of(&config.accounting_failure_policy));
-    hash_usize(&mut hasher, config.max_routes_to_assess);
+    hash_usize(&mut hasher, config.max_route_diagnostics);
     hash_bool(&mut hasher, config.include_all_route_diagnostics);
     format!("sha256:{:x}", hasher.finalize())
 }
@@ -311,11 +311,11 @@ mod tests {
     }
 
     #[test]
-    fn config_hash_changes_with_max_routes_to_assess() {
+    fn config_hash_changes_with_max_route_diagnostics() {
         let mut a = base_config();
-        a.max_routes_to_assess = 5;
+        a.max_route_diagnostics = 5;
         let mut b = base_config();
-        b.max_routes_to_assess = 6;
+        b.max_route_diagnostics = 6;
         assert_ne!(
             compute_assessment_config_hash(&a),
             compute_assessment_config_hash(&b)

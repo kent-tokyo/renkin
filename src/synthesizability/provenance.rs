@@ -113,7 +113,7 @@ pub(crate) fn compute_rules_hash(rules: &[RetroRule]) -> String {
         hash_str(&mut hasher, template_id);
         hash_str(&mut hasher, smirks);
     }
-    format!("sha256:{:x}", hasher.finalize())
+    format!("sha256:{}", crate::sha256_hex(hasher.finalize()))
 }
 
 // ---------------------------------------------------------------------
@@ -141,7 +141,7 @@ pub(crate) fn compute_assessment_config_hash(config: &SynthesizabilityConfig) ->
     hash_str(&mut hasher, &tag_of(&config.accounting_failure_policy));
     hash_usize(&mut hasher, config.max_route_diagnostics);
     hash_bool(&mut hasher, config.include_all_route_diagnostics);
-    format!("sha256:{:x}", hasher.finalize())
+    format!("sha256:{}", crate::sha256_hex(hasher.finalize()))
 }
 
 // ---------------------------------------------------------------------
@@ -182,7 +182,7 @@ pub(crate) fn compute_route_id(canonical_target: &str, route: &Route) -> String 
         hash_str(&mut hasher, target);
         hash_string_seq(&mut hasher, precursors);
     }
-    format!("sha256:{:x}", hasher.finalize())
+    format!("sha256:{}", crate::sha256_hex(hasher.finalize()))
 }
 
 // ---------------------------------------------------------------------
@@ -239,7 +239,7 @@ pub(crate) fn compute_reproducibility_hash(
             hash_str(&mut hasher, &tag_of(vg));
         }
     }
-    format!("sha256:{:x}", hasher.finalize())
+    format!("sha256:{}", crate::sha256_hex(hasher.finalize()))
 }
 
 #[cfg(test)]

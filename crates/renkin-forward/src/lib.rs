@@ -316,7 +316,7 @@ fn candidate_id_for(reactant_canon: &[String], products: &[String]) -> String {
     hash_string_sequence(&mut hasher, reactant_canon);
     hasher.update(b"\0products\0");
     hash_string_sequence(&mut hasher, products);
-    format!("sha256:{:x}", hasher.finalize())
+    format!("sha256:{}", renkin::sha256_hex(hasher.finalize()))
 }
 
 /// `chematic::rxn::run_reactants` binds `reactants[i]` to the i-th
@@ -831,7 +831,7 @@ pub fn sha256_hex_of_file(path: &str) -> Result<String> {
         std::fs::read(path).with_context(|| format!("failed to read {path:?} for hashing"))?;
     let mut hasher = Sha256::new();
     hasher.update(&bytes);
-    Ok(format!("{:x}", hasher.finalize()))
+    Ok(renkin::sha256_hex(hasher.finalize()))
 }
 
 /// One row of an explicit `--partners` SMILES library, used by
@@ -1136,7 +1136,7 @@ fn enumeration_candidate_id_for(known_reactant_canon: &str, products: &[String])
     hasher.update(known_reactant_canon.as_bytes());
     hasher.update(b"\0products\0");
     hash_string_sequence(&mut hasher, products);
-    format!("sha256:{:x}", hasher.finalize())
+    format!("sha256:{}", renkin::sha256_hex(hasher.finalize()))
 }
 
 /// Applies one (template, slot, optional-partner) combination via

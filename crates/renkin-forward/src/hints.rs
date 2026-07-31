@@ -1153,7 +1153,7 @@ fn hint_merge_key(
     hasher.update(b"\0products\0");
     hash_string_sequence(&mut hasher, &prods);
 
-    format!("sha256:{:x}", hasher.finalize())
+    format!("sha256:{}", renkin::sha256_hex(hasher.finalize()))
 }
 
 // ---------------------------------------------------------------------------

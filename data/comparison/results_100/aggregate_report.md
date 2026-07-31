@@ -22,6 +22,25 @@ at the end of this report. See
 `docs/guides/open-source-retrosynthesis-comparison.md` for the full
 semantic-firewall rules governing how to read every field here.
 
+**Re-measured 2026-08-01 against post-Issue-#71-fix RENKIN** (PR #74, merged
+`de6a6d4`): the `ChemEnv::is_building_block` VF2 subgraph-isomorphism
+fallback described as a known defect below has been removed; stock
+membership is now exact-identity-only. Only the **RENKIN-side** rows in this
+report were re-run (`renkin_native.jsonl`/`renkin_shared_stock.jsonl` and
+their aggregates, plus both paired-stats/paired-table files); AiZynthFinder's
+rows are unchanged from the original run (unaffected by a RENKIN-internal
+fix). `route_found_rate` moves from 21/100 to **16/100** — this is the
+expected, direct consequence of the fix, not a regression: 5 of the original
+21 solved routes relied on the false-positive fallback and are no longer
+found at all (2 as a direct consequence of their known false-positive leaf,
+1 finds a real alternate route instead, 2 more lose their route through a
+mechanism this round did not establish — see the dated addendum in
+`per_target_audit.md`). The 3-route gap between `route_found_rate` and the
+independently-verified `route_to_configured_stock_rate` that this report
+originally flagged (21 vs 18) is now **closed** (16 vs 16) — every route
+RENKIN itself now reports solved also passes independent re-verification,
+which is exactly what the fix was for.
+
 ## RENKIN — native (Arm A / Arm C vendored-500 configuration)
 
 Config: `renkin` CLI, depth=5, beam-width=100, max-routes=1,
@@ -33,20 +52,20 @@ timeout 150s (never triggered). `renkin_native.jsonl` (100 rows),
 
 | Metric | Value | Denominator |
 |---|---|---|
-| `route_found_rate` | **21/100 = 0.21** | all_sampled |
-| `route_to_configured_stock_rate` (harness-independent all-leaves-in-stock) | 18/100 = 0.18 | all_sampled |
-| `route_tree_parseable_rate` | 21/21 = 1.00 | route_found_runs |
-| `reaction_steps_parseable_rate` | 21/21 = 1.00 | parseable_routes |
-| `target_elements_accounted_route_rate` (common, directional per-element check — NOT exact mass conservation) | 17/100 = 0.17 (17/21 of solved routes) | all_sampled |
-| `common_structural_warning_rate` | 7/100 = 0.07 | all_sampled |
-| `timeout_rate` / `crash_rate` / `setup_error_rate` / `invalid_input_rate` | 0.0 / 0.0 / 0.0 / 0.0 | all_sampled |
-| `total_elapsed_ms` p50 / p95 / max | 4,313 / 26,997 / 31,824 ms | measured_runs (all 100 — no native timeout exists, so every run contributes real elapsed time even when unsolved) |
-| `solved_only_total_elapsed_ms` p50 / p95 / max | 496 / 2,903 / 6,840 ms | route_found_runs — deployment-cost figure only, see "Latency firewall" note below |
-| `peak_rss_bytes` (`usr_bin_time_v`, exact per-target) p50 / p95 / max | 9.9 MB / 17.1 MB / 18.5 MB | measured_runs |
-| `best_route_depth` p50 / max | 3 / 5 | route_found_runs (n=21) |
-| `best_route_step_count` p50 / max | 3 / 5 | route_found_runs (n=21) |
-| `best_route_leaf_count` p50 / max | 3 / 6 | parseable_routes (n=21) |
-| Total sweep wall-clock | 695.75 s (~11.6 min) for 100 sequential targets | — |
+| `route_found_rate` | **16/100 = 0.16** | all_sampled |
+| `route_to_configured_stock_rate` (harness-independent all-leaves-in-stock) | 16/100 = 0.16 | all_sampled |
+| `route_tree_parseable_rate` | 16/16 = 1.00 | route_found_runs |
+| `reaction_steps_parseable_rate` | 16/16 = 1.00 | parseable_routes |
+| `target_elements_accounted_route_rate` (common, directional per-element check — NOT exact mass conservation) | 12/100 = 0.12 (12/16 of solved routes) | all_sampled |
+| `common_structural_warning_rate` | 5/100 = 0.05 | all_sampled |
+| `timeout_rate` / `crash_rate` / `setup_error_rate` / `invalid_input_rate` | 0.01 / 0.0 / 0.0 / 0.0 | all_sampled — the one timeout is a boundary case on shared, non-dedicated hardware (see note below the shared-stock table); it does not affect `route_found_rate` (a timeout counts as not-found either way) |
+| `total_elapsed_ms` p50 / p95 / max | 10,784 / 86,804 / 150,010 ms | measured_runs (includes the one timeout, capped at the 150s external limit) |
+| `solved_only_total_elapsed_ms` p50 / p95 / max | 1,222 / 18,859 / 18,859 ms | route_found_runs — deployment-cost figure only, see "Latency firewall" note below |
+| `peak_rss_bytes` (`usr_bin_time_v`, exact per-target) p50 / p95 / max | 9.2 MB / 15.5 MB / 16.8 MB | measured_runs |
+| `best_route_depth` p50 / max | 3 / 5 | route_found_runs (n=16) |
+| `best_route_step_count` p50 / max | 3 / 5 | route_found_runs (n=16) |
+| `best_route_leaf_count` p50 / max | 3 / 6 | parseable_routes (n=16) |
+| Total sweep wall-clock | 2,339.41 s (~39.0 min) for 100 sequential targets | — |
 
 This same native RENKIN configuration is also this round's Arm C
 measurement (vendored-500-template configuration on current `master`). It
@@ -58,18 +77,21 @@ the other.
 
 Reproduction: `data/comparison/results_100/renkin_native.jsonl` +
 `renkin_native_aggregate.json`. Note `target_elements_accounted_route_rate`
-(17/100) is meaningfully lower than `route_found_rate` (21/100) — 4 of
-RENKIN's own 21 solved routes fail the harness's stricter, directional,
+(12/100) is meaningfully lower than `route_found_rate` (16/100) — 4 of
+RENKIN's own 16 solved routes fail the harness's stricter, directional,
 per-element accounting check even though RENKIN itself reports them
 solved. This is expected and by design (see `target_element_accounting_status`
 in the comparison guide) — it is **not**, by itself, evidence of a RENKIN
 defect: the harness's check is stricter than RENKIN's own internal
-MW-based inequality. A per-target audit of these exact 4 failures (plus the
-3 stock-check failures) with named root causes is in
+MW-based inequality. A per-target audit of these exact 4 failures, and of
+the (now zero) stock-check failures, with named root causes is in
 `data/comparison/results_100/per_target_audit.md` — 3 of the 4 trace to a
 disclosed, systemic property of RENKIN's handcrafted protecting-group
 templates (they don't model the second reagent), and 1 to a specific
-extracted-template quality issue flagged for follow-up.
+extracted-template quality issue flagged for follow-up. **This 4-route
+accounting-fail set is not the same 4 targets as the original 21-route
+measurement** — see the dated addendum in `per_target_audit.md` for the
+post-fix composition change.
 
 ## AiZynthFinder — native (Arm A)
 
@@ -152,26 +174,33 @@ each).
 
 | Metric | RENKIN shared-stock | AiZynthFinder shared-stock | Denominator |
 |---|---|---|---|
-| `route_found_rate` (tool-native, secondary) | 21/100 = 0.21 | 4/100 = 0.04 | all_sampled |
-| **`route_to_shared_stock` rate (primary)** | **18/100 = 0.18** | **4/100 = 0.04** | all_sampled — independently re-verified against the real 393-compound shared stock for both tools |
-| `route_tree_parseable_rate` | 21/21 = 1.00 | 4/4 = 1.00 | route_found_runs |
-| `reaction_steps_parseable_rate` | 21/21 = 1.00 | 4/4 = 1.00 | parseable_routes |
-| `target_elements_accounted_route_rate` | 17/100 = 0.17 | 4/100 = 0.04 | all_sampled |
-| `common_structural_warning_rate` | 7/100 = 0.07 | 0/100 = 0.00 | all_sampled |
-| `timeout_rate` / `crash_rate` / `setup_error_rate` / `invalid_input_rate` | all 0.0 | all 0.0 | all_sampled |
-| `total_elapsed_ms` p50 / p95 / max | 6,552 / 44,817 / 58,306 ms | 14,486 / 20,431 / 22,880 ms | measured_runs — deployment-cost figures only, not a cross-tool comparison, see "Latency firewall" |
-| `peak_rss_bytes` p50 / p95 / max | 9.5 MB / 16.3 MB / 17.6 MB | 562 MB / 641 MB / 831 MB | measured_runs (AiZynthFinder's is dramatically lower than its native arm's ~4 GB — the 393-compound stock is a few hundred KB vs. ZINC's ~650 MB, tracking stock size, not a leak) |
-| Total sweep wall-clock | 1,143.09 s (~19.1 min) | 1,584.62 s (~26.4 min) | shared, non-dedicated hardware — see note below |
+| `route_found_rate` (tool-native, secondary) | 16/100 = 0.16 | 4/100 = 0.04 | all_sampled |
+| **`route_to_shared_stock` rate (primary)** | **16/100 = 0.16** | **4/100 = 0.04** | all_sampled — independently re-verified against the real 393-compound shared stock for both tools |
+| `route_tree_parseable_rate` | 16/16 = 1.00 | 4/4 = 1.00 | route_found_runs |
+| `reaction_steps_parseable_rate` | 16/16 = 1.00 | 4/4 = 1.00 | parseable_routes |
+| `target_elements_accounted_route_rate` | 12/100 = 0.12 | 4/100 = 0.04 | all_sampled |
+| `common_structural_warning_rate` | 5/100 = 0.05 | 0/100 = 0.00 | all_sampled |
+| `timeout_rate` / `crash_rate` / `setup_error_rate` / `invalid_input_rate` | 0.01 / 0.0 / 0.0 / 0.0 | all 0.0 | all_sampled — RENKIN's one timeout is a different target than the native arm's (see note below); it does not change `route_found_rate` |
+| `total_elapsed_ms` p50 / p95 / max | 11,336 / 87,129 / 150,006 ms | 14,486 / 20,431 / 22,880 ms | measured_runs — deployment-cost figures only, not a cross-tool comparison, see "Latency firewall" |
+| `peak_rss_bytes` p50 / p95 / max | 9.2 MB / 16.3 MB / 17.8 MB | 562 MB / 641 MB / 831 MB | measured_runs (AiZynthFinder's is dramatically lower than its native arm's ~4 GB — the 393-compound stock is a few hundred KB vs. ZINC's ~650 MB, tracking stock size, not a leak) |
+| Total sweep wall-clock | 2,389.92 s (~39.8 min) | 1,584.62 s (~26.4 min) | shared, non-dedicated hardware — see note below |
 
-RENKIN's shared-stock numbers (21/18/17) are **identical** to its native-arm
+RENKIN's shared-stock numbers (16/16/12) are **identical** to its native-arm
 numbers — expected, since the shared stock (393 compounds) differs from
 RENKIN's native stock (402 compounds) only by the 9 entries RDKit itself
 cannot parse, none of which this 100-target sample's solved routes needed
 as a leaf. This is a useful consistency check: switching RENKIN onto the
-shared stock did not silently change its behavior.
+shared stock did not silently change its behavior. **This identity holds at
+the rate/aggregate level, not row-for-row**: the two runs are genuinely
+independent executions (not a cached/reused result) — the one boundary-case
+timeout in each arm lands on a *different* target (`uspto50k_test#L3345` in
+native, `uspto50k_test#L4422` in shared-stock; each completes without
+timing out in the other arm), consistent with running on shared,
+non-dedicated hardware. Neither timeout changes any headline rate, since a
+timeout counts as not-found the same as a completed-but-unsolved run.
 
-RENKIN's shared-stock total sweep wall-clock (1,143s) is noticeably higher
-than its native arm's (696s) despite an uncontended, sequential run; this
+RENKIN's shared-stock total sweep wall-clock (2,390s) is noticeably higher
+than its native arm's (2,339s) despite an uncontended, sequential run; this
 machine is explicitly shared/non-dedicated hardware (see "Hardware and run
 conditions" in the comparison guide), and an earlier attempt at this same
 run was contaminated by a real methodological mistake — RENKIN and
@@ -191,8 +220,14 @@ Both tools now draw from the *identical, zero-diff* 393-compound stock.
 
 | Comparison | Observed (RENKIN − AiZynthFinder) | 95% CI | McNemar (RENKIN-only / AiZynthFinder-only) |
 |---|---|---|---|
-| **`route_to_shared_stock` rate difference (primary)** | **+0.14** | [+0.07, +0.22] | 15 / 1; p ≈ 5.2×10⁻⁴ |
-| Tool-native `route_found` rate difference (secondary, informational) | +0.17 | [+0.10, +0.25] | 17 / 0; p ≈ 1.5×10⁻⁵ |
+| **`route_to_shared_stock` rate difference (primary)** | **+0.12** | [+0.05, +0.19] | 13 / 1; p ≈ 1.8×10⁻³ |
+| Tool-native `route_found` rate difference (secondary, informational) | +0.12 | [+0.05, +0.19] | 13 / 1; p ≈ 1.8×10⁻³ |
+
+The primary and secondary rows are now **identical** — a direct consequence
+of the fix: every one of RENKIN's 16 tool-native "solved" routes on this
+arm also passes the independent `route_to_shared_stock` re-verification, so
+there is no longer a gap between what RENKIN reports and what the harness
+independently confirms (pre-fix, the two rows differed: +0.14 vs +0.17).
 
 AiZynthFinder's result on this sample was highly sensitive to the
 configured stock: its native-mode `route_found_rate` (66%, ~17.4M-compound
@@ -215,27 +250,33 @@ and a trained USPTO neural expansion policy. No claim that either tool's
 *search engine* is better is made or supported by this comparison — see the
 frozen protocol's Arm A definition and semantic firewall.**
 
-From `scripts/compare_stats.py` (`data/comparison/results_100/paired_stats_native.json`,
+From `scripts/compare_paired_report.py` (`data/comparison/results_100/paired_stats_native.json`,
 `paired_table_native.json`; 10,000 bootstrap iterations, fixed seed 1066):
 
 | Comparison | Observed (RENKIN − AiZynthFinder) | 95% CI |
 |---|---|---|
-| `route_found_rate` difference | −0.45 | [−0.56, −0.34] |
-| McNemar (discordant pairs) | RENKIN-only solved: 3; AiZynthFinder-only solved: 48; p ≈ 2×10⁻¹¹ | reference statistic only, not a substitute for the CI above |
-| `total_elapsed_ms` difference, **both-solved pairs only** (n=18) | −9,971 ms | [−10,770, −9,102] |
+| `route_found_rate` difference | −0.50 | [−0.60, −0.40] |
+| McNemar (discordant pairs) | RENKIN-only solved: 1; AiZynthFinder-only solved: 51; p ≈ 2.4×10⁻¹⁴ | reference statistic only, not a substitute for the CI above |
+| `total_elapsed_ms` difference, **both-solved pairs only** (n=15) | −7,715 ms | [−10,098, −4,805] |
 
-**Reading this honestly:** under each project's own recommended public
-configuration, AiZynthFinder's `is_solved` rate is higher than RENKIN's
-`route_found` rate on this 100-target sample, and the gap is large relative
-to the width of its bootstrap CI at this sample size. This is a real,
-paired, descriptive finding — not fabricated, and not narrated away — but
-it is a finding about **two full public distributions**, each combining a
-search engine with a very differently-scoped stock and template/policy
-source, not a controlled test of either tool's underlying search algorithm.
+**Reading this honestly:** the gap widened, in RENKIN's disfavor, from the
+original measurement (−0.45 → −0.50; RENKIN-only-solved discordant pairs
+dropped from 3 to 1). This is the expected, direct cost of removing a
+false-positive stock check — some of the 21 routes RENKIN previously
+reported as solved were never real, and reporting fewer, but trustworthy,
+solved routes is the intended outcome of the fix, not a new problem. Under
+each project's own recommended public configuration, AiZynthFinder's
+`is_solved` rate is higher than RENKIN's `route_found` rate on this
+100-target sample, and the gap is large relative to the width of its
+bootstrap CI at this sample size. This is a real, paired, descriptive
+finding — not fabricated, and not narrated away — but it is a finding about
+**two full public distributions**, each combining a search engine with a
+very differently-scoped stock and template/policy source, not a controlled
+test of either tool's underlying search algorithm.
 AiZynthFinder's result on this sample was highly sensitive to the
 configured stock (see the shared-stock arm above): restricting it to the
 same 393-compound stock RENKIN uses collapses its solve rate from 66% to
-4%, the reverse direction from this native-mode comparison. The 18 targets
+4%, the reverse direction from this native-mode comparison. The 15 targets
 both tools solved show RENKIN with substantially lower wall-clock latency
 per target — but this is reported only as a disclosed deployment-cost
 figure, not a licensed inference-latency comparison (see "Latency

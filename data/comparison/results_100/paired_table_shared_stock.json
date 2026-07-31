@@ -183,9 +183,9 @@
     "aizynthfinder_route_found": true,
     "aizynthfinder_route_to_shared_stock": true,
     "aizynthfinder_target_element_accounting_status": "accounted",
-    "renkin_route_found": true,
+    "renkin_route_found": false,
     "renkin_route_to_shared_stock": false,
-    "renkin_target_element_accounting_status": "accounted",
+    "renkin_target_element_accounting_status": null,
     "target_id": "uspto50k_test#L1640"
   },
   {
@@ -435,9 +435,9 @@
     "aizynthfinder_route_found": false,
     "aizynthfinder_route_to_shared_stock": false,
     "aizynthfinder_target_element_accounting_status": null,
-    "renkin_route_found": true,
-    "renkin_route_to_shared_stock": true,
-    "renkin_target_element_accounting_status": "unaccounted_target_element",
+    "renkin_route_found": false,
+    "renkin_route_to_shared_stock": false,
+    "renkin_target_element_accounting_status": null,
     "target_id": "uspto50k_test#L3400"
   },
   {
@@ -624,9 +624,9 @@
     "aizynthfinder_route_found": false,
     "aizynthfinder_route_to_shared_stock": false,
     "aizynthfinder_target_element_accounting_status": null,
-    "renkin_route_found": true,
-    "renkin_route_to_shared_stock": true,
-    "renkin_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_route_to_shared_stock": false,
+    "renkin_target_element_accounting_status": null,
     "target_id": "uspto50k_test#L4092"
   },
   {
@@ -696,7 +696,7 @@
     "aizynthfinder_route_found": false,
     "aizynthfinder_route_to_shared_stock": false,
     "aizynthfinder_target_element_accounting_status": null,
-    "renkin_route_found": false,
+    "renkin_route_found": null,
     "renkin_route_to_shared_stock": false,
     "renkin_target_element_accounting_status": null,
     "target_id": "uspto50k_test#L4422"
@@ -724,8 +724,8 @@
     "aizynthfinder_route_to_shared_stock": false,
     "aizynthfinder_target_element_accounting_status": null,
     "renkin_route_found": true,
-    "renkin_route_to_shared_stock": false,
-    "renkin_target_element_accounting_status": "accounted",
+    "renkin_route_to_shared_stock": true,
+    "renkin_target_element_accounting_status": "unaccounted_target_element",
     "target_id": "uspto50k_test#L4575"
   },
   {
@@ -813,9 +813,9 @@
     "aizynthfinder_route_found": false,
     "aizynthfinder_route_to_shared_stock": false,
     "aizynthfinder_target_element_accounting_status": null,
-    "renkin_route_found": true,
-    "renkin_route_to_shared_stock": true,
-    "renkin_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_route_to_shared_stock": false,
+    "renkin_target_element_accounting_status": null,
     "target_id": "uspto50k_test#L626"
   },
   {
@@ -840,9 +840,9 @@
     "aizynthfinder_route_found": false,
     "aizynthfinder_route_to_shared_stock": false,
     "aizynthfinder_target_element_accounting_status": null,
-    "renkin_route_found": true,
+    "renkin_route_found": false,
     "renkin_route_to_shared_stock": false,
-    "renkin_target_element_accounting_status": "accounted",
+    "renkin_target_element_accounting_status": null,
     "target_id": "uspto50k_test#L679"
   },
   {

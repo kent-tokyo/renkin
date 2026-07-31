@@ -58,7 +58,7 @@ fn stock_content_hash(canonical_set: &HashSet<String>) -> String {
         hasher.update((smi.len() as u64).to_be_bytes());
         hasher.update(smi.as_bytes());
     }
-    format!("sha256:{:x}", hasher.finalize())
+    format!("sha256:{}", crate::sha256_hex(hasher.finalize()))
 }
 
 /// Result of canonicalizing a supplied stock list under the shared

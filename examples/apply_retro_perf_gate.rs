@@ -35,7 +35,7 @@ use sha2::{Digest, Sha256};
 
 fn sha256_file(path: &str) -> Result<String> {
     let bytes = std::fs::read(path).with_context(|| format!("reading {path}"))?;
-    Ok(format!("{:x}", Sha256::digest(&bytes)))
+    Ok(renkin::sha256_hex(Sha256::digest(&bytes)))
 }
 
 /// The `[[package]]` fields this gate's provenance depends on, so a reader

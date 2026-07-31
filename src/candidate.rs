@@ -281,7 +281,7 @@ fn transformation_cache()
 fn smirks_hash(smirks: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(smirks.as_bytes());
-    format!("{:x}", hasher.finalize())
+    crate::sha256_hex(hasher.finalize())
 }
 
 /// atom_map -> (mol_idx, atom_idx) for one side (reactants or products) of a
@@ -617,7 +617,7 @@ pub fn feature_schema_hash() -> String {
         hasher.update((name.len() as u64).to_be_bytes());
         hasher.update(name.as_bytes());
     }
-    format!("sha256:{:x}", hasher.finalize())
+    format!("sha256:{}", crate::sha256_hex(hasher.finalize()))
 }
 
 fn heavy_atom_count_and_charge(mol: &Molecule) -> (u32, i64) {
@@ -1012,7 +1012,7 @@ fn candidate_id_for(canonical_target: &str, precursor_smiles: &[String]) -> Stri
     hash_string_sequence(&mut hasher, &[canonical_target.to_string()]);
     hasher.update(b"\0precursors\0");
     hash_string_sequence(&mut hasher, precursor_smiles);
-    format!("sha256:{:x}", hasher.finalize())
+    format!("sha256:{}", crate::sha256_hex(hasher.finalize()))
 }
 
 /// Merge sources that share `(template_id, rule_name)` within one

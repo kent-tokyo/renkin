@@ -429,7 +429,7 @@ pub fn write_target_pool_jsonl<W: Write>(
         writer.write_all(&line)?;
         writer.write_all(b"\n")?;
     }
-    Ok(format!("sha256:{:x}", hasher.finalize()))
+    Ok(format!("sha256:{}", crate::sha256_hex(hasher.finalize())))
 }
 
 /// Write `rows` as JSONL (one compact JSON object per line) to `writer`.
@@ -447,7 +447,7 @@ pub fn write_jsonl<W: Write>(rows: &[CandidateRow], mut writer: W) -> anyhow::Re
         writer.write_all(&line)?;
         writer.write_all(b"\n")?;
     }
-    Ok(format!("sha256:{:x}", hasher.finalize()))
+    Ok(format!("sha256:{}", crate::sha256_hex(hasher.finalize())))
 }
 
 /// Content hash over a rules set: sorted by `template_id`, each rule framed
@@ -481,7 +481,7 @@ pub fn rules_content_hash(rules: &[RetroRule]) -> String {
         hasher.update(rule.weight.to_bits().to_be_bytes());
         hasher.update(rule.required_elements.to_be_bytes());
     }
-    format!("sha256:{:x}", hasher.finalize())
+    format!("sha256:{}", crate::sha256_hex(hasher.finalize()))
 }
 
 /// Provenance this crate has no way to derive itself -- git/build state,
@@ -1302,7 +1302,7 @@ mod tests {
         let returned_hash = write_jsonl(&rows, &mut buf).unwrap();
         let mut hasher = Sha256::new();
         hasher.update(&buf);
-        let recomputed = format!("sha256:{:x}", hasher.finalize());
+        let recomputed = format!("sha256:{}", crate::sha256_hex(hasher.finalize()));
         assert_eq!(returned_hash, recomputed);
     }
 }

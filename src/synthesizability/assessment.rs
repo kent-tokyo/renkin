@@ -29,6 +29,11 @@ use crate::validation::StepValidationStatus;
 /// computed in-crate, wasm32 constraint).
 pub struct AssessmentContext<'a> {
     pub stock: Option<&'a [String]>,
+    /// Caller-supplied label for where `stock` came from (a file path,
+    /// `"embedded"`, etc.) -- echoed verbatim into
+    /// `AssessmentProvenance::stock_source`. `None` means the caller did
+    /// not say, never a silent default guess.
+    pub stock_source: Option<String>,
     pub template_metadata_hash: Option<String>,
     pub search_config_summary: Option<String>,
     pub git_commit: Option<String>,
@@ -148,25 +153,16 @@ pub fn assess_routes(
         ));
     }
 
-    // Truncate to `max_routes_to_assess` (a prefix, so indices into
-    // `context.forward_validation` stay aligned with the kept routes).
-    let assess_count = routes.len().min(config.max_routes_to_assess);
-    if assess_count < routes.len() {
-        warnings.push(format!(
-            "Assessed only the first {assess_count} of {} supplied routes (max_routes_to_assess = {})",
-            routes.len(),
-            config.max_routes_to_assess
-        ));
-    }
-    if assess_count == 0 {
-        warnings.push(
-            "max_routes_to_assess truncated every supplied route away; zero routes were actually assessed".to_string(),
-        );
-    }
-    let assessed_routes = &routes[..assess_count];
-
-    let mut route_assessments: Vec<RouteAssessment> = Vec::with_capacity(assessed_routes.len());
-    for (idx, route) in assessed_routes.iter().enumerate() {
+    // Every supplied route is assessed -- `context.forward_validation` (if
+    // supplied) is indexed against the *original* `routes` order, so
+    // truncation must never happen before assessment (it would either
+    // desync that indexing or, worse, silently drop the genuinely best
+    // route in favor of a worse one that merely appeared earlier in
+    // `routes`, defeating the point of §4.8's quality sort below).
+    // `max_routes_to_assess` instead bounds the *output* list, applied
+    // after sorting, so it only ever trims the long tail.
+    let mut route_assessments: Vec<RouteAssessment> = Vec::with_capacity(routes.len());
+    for (idx, route) in routes.iter().enumerate() {
         route_assessments.push(assess_one_route(
             idx,
             route,
@@ -179,6 +175,23 @@ pub fn assess_routes(
 
     // §4.8: lexicographic sort, best route first.
     route_assessments.sort_by(cmp_route_assessments);
+
+    // Truncate the *sorted* output to `max_routes_to_assess` -- the best
+    // route (now first) is never at risk of being cut for being late in
+    // the caller-supplied order.
+    let total_assessed = route_assessments.len();
+    if total_assessed > config.max_routes_to_assess {
+        warnings.push(format!(
+            "Computed assessments for all {total_assessed} supplied routes; output truncated to the top {} by §4.8 quality ordering (max_routes_to_assess)",
+            config.max_routes_to_assess
+        ));
+        route_assessments.truncate(config.max_routes_to_assess);
+    }
+    if config.max_routes_to_assess == 0 {
+        warnings.push(
+            "max_routes_to_assess is 0; no route can appear in the output even though routes were supplied and assessed".to_string(),
+        );
+    }
 
     // §4.1 #5-#7: status + selection, both read off the now-sorted list's
     // first entry (guaranteed to hold the minimum `hard_failures.len()`
@@ -218,9 +231,7 @@ pub fn assess_routes(
             rules_hash,
             stock_count,
             stock_hash,
-            // `AssessmentContext` carries no caller-supplied stock-source
-            // label field today -- see this agent's final report.
-            stock_source: None,
+            stock_source: context.stock_source.clone(),
             template_metadata_hash: context.template_metadata_hash.clone(),
             search_config_summary: context.search_config_summary.clone(),
             assessment_config_hash,
@@ -283,7 +294,7 @@ fn early_assessment(
             rules_hash,
             stock_count,
             stock_hash,
-            stock_source: None,
+            stock_source: context.stock_source.clone(),
             template_metadata_hash: context.template_metadata_hash.clone(),
             search_config_summary: context.search_config_summary.clone(),
             assessment_config_hash,
@@ -745,6 +756,7 @@ mod tests {
     fn empty_context<'a>(rules: &'a [RetroRule]) -> AssessmentContext<'a> {
         AssessmentContext {
             stock: None,
+            stock_source: None,
             template_metadata_hash: None,
             search_config_summary: None,
             git_commit: None,
@@ -863,7 +875,11 @@ mod tests {
             vec![step("rule:x", "rule:x", "CCO", &["CC=O"])],
             &["CC=O"],
         )];
-        let stock = vec!["completely-different-leaf".to_string()];
+        // A valid, parseable SMILES that is simply a different molecule
+        // from "CC=O" -- not an invalid/non-SMILES placeholder, which
+        // canonicalize_stock would instead reject as unparseable
+        // (count == 0 -> StockNotSupplied, not a real mismatch).
+        let stock = vec!["c1ccccc1".to_string()];
         let ctx = AssessmentContext {
             stock: Some(&stock),
             ..empty_context(&rules)
@@ -972,20 +988,22 @@ mod tests {
         let rules: Vec<RetroRule> = vec![];
         let routes = vec![route(
             vec![step(
-                "STUB_ACCOUNTING_FAIL",
+                "boc_deprotection_retro",
                 "rule:boc_deprotection_retro",
-                "CCO",
-                &["CC=O"],
+                // Genuine per-element violation, not a stubbed trigger: the
+                // target's Br has no precursor source at all.
+                "Brc1ccccc1",
+                &["c1ccccc1"],
             )],
-            &["CC=O"],
+            &["c1ccccc1"],
         )];
-        let stock = vec!["CC=O".to_string()];
+        let stock = vec!["c1ccccc1".to_string()];
         let ctx = AssessmentContext {
             stock: Some(&stock),
             ..empty_context(&rules)
         };
         let result = assess_routes(
-            "CCO",
+            "Brc1ccccc1",
             &routes,
             &ctx,
             &SynthesizabilityConfig::conservative(),
@@ -1010,21 +1028,24 @@ mod tests {
         let rules: Vec<RetroRule> = vec![];
         let routes = vec![route(
             vec![step(
-                "STUB_ACCOUNTING_FAIL",
+                "some_other_rule",
                 "rule:some_other_rule",
-                "CCO",
-                &["CC=O"],
+                // Not on the default reagent-omission allowlist, and a
+                // genuine per-element violation (target's Br has no
+                // precursor source), not a stubbed trigger.
+                "Brc1ccccc1",
+                &["c1ccccc1"],
             )],
-            &["CC=O"],
+            &["c1ccccc1"],
         )];
-        let stock = vec!["CC=O".to_string()];
+        let stock = vec!["c1ccccc1".to_string()];
         let ctx = AssessmentContext {
             stock: Some(&stock),
             ..empty_context(&rules)
         };
 
         let conservative = assess_routes(
-            "CCO",
+            "Brc1ccccc1",
             &routes,
             &ctx,
             &SynthesizabilityConfig::conservative(),
@@ -1041,8 +1062,13 @@ mod tests {
                 .any(|hf| matches!(hf, HardFailure::UnaccountedTargetElement { step_index: 0 }))
         );
 
-        let diagnostic =
-            assess_routes("CCO", &routes, &ctx, &SynthesizabilityConfig::diagnostic()).unwrap();
+        let diagnostic = assess_routes(
+            "Brc1ccccc1",
+            &routes,
+            &ctx,
+            &SynthesizabilityConfig::diagnostic(),
+        )
+        .unwrap();
         assert_eq!(
             diagnostic.status,
             AssessmentStatus::RouteSupportedWithValidationGaps
@@ -1063,21 +1089,24 @@ mod tests {
         let rules: Vec<RetroRule> = vec![];
         let routes = vec![route(
             vec![step(
-                "STUB_ACCOUNTING_FAIL",
+                "some_other_rule",
                 "rule:some_other_rule",
-                "CCO",
-                &["CC=O"],
+                // Not on the default reagent-omission allowlist, and a
+                // genuine per-element violation (target's Br has no
+                // precursor source), not a stubbed trigger.
+                "Brc1ccccc1",
+                &["c1ccccc1"],
             )],
-            &["CC=O"],
+            &["c1ccccc1"],
         )];
-        let stock = vec!["CC=O".to_string()];
+        let stock = vec!["c1ccccc1".to_string()];
         let ctx = AssessmentContext {
             stock: Some(&stock),
             ..empty_context(&rules)
         };
         let mut config = SynthesizabilityConfig::conservative();
         config.require_target_element_accounting = false;
-        let result = assess_routes("CCO", &routes, &ctx, &config).unwrap();
+        let result = assess_routes("Brc1ccccc1", &routes, &ctx, &config).unwrap();
         assert_eq!(result.status, AssessmentStatus::RouteSupported);
         let selected = result.selected_route.unwrap();
         assert_eq!(
@@ -1144,6 +1173,67 @@ mod tests {
                 .warnings
                 .iter()
                 .any(|w| w.contains("max_routes_to_assess"))
+        );
+    }
+
+    #[test]
+    fn max_routes_to_assess_truncation_never_drops_the_best_route() {
+        // The genuinely clean route is supplied SECOND (i.e. later in
+        // caller order than a route with a stock mismatch). Truncation must
+        // happen after §4.8 sorting, not on the caller-supplied order --
+        // otherwise the worse, first-supplied route would survive and the
+        // better, second-supplied one would be silently dropped.
+        let rules: Vec<RetroRule> = vec![];
+        let routes = vec![
+            // Worse: "c1ccccc1" is not in the configured stock.
+            route(
+                vec![step("rule:x", "rule:x", "CCO", &["c1ccccc1"])],
+                &["c1ccccc1"],
+            ),
+            // Better: leaf is in the configured stock.
+            route(vec![step("rule:x", "rule:x", "CCO", &["CC=O"])], &["CC=O"]),
+        ];
+        let stock = vec!["CC=O".to_string()];
+        let ctx = AssessmentContext {
+            stock: Some(&stock),
+            ..empty_context(&rules)
+        };
+        let mut config = SynthesizabilityConfig::conservative();
+        config.max_routes_to_assess = 1;
+        let result = assess_routes("CCO", &routes, &ctx, &config).unwrap();
+        assert_eq!(result.route_assessments.len(), 1);
+        let survivor = &result.route_assessments[0];
+        assert!(survivor.hard_failures.is_empty());
+        assert_eq!(
+            survivor.stock_termination_status,
+            StockTerminationStatus::AllLeavesVerifiedInConfiguredStock
+        );
+        assert_eq!(result.status, AssessmentStatus::RouteSupported);
+    }
+
+    #[test]
+    fn stock_source_label_is_echoed_into_provenance() {
+        let rules: Vec<RetroRule> = vec![];
+        let routes = vec![route(
+            vec![step("rule:x", "rule:x", "CCO", &["CC=O"])],
+            &["CC=O"],
+        )];
+        let stock = vec!["CC=O".to_string()];
+        let ctx = AssessmentContext {
+            stock: Some(&stock),
+            stock_source: Some("data/building_blocks.smi".to_string()),
+            ..empty_context(&rules)
+        };
+        let result = assess_routes(
+            "CCO",
+            &routes,
+            &ctx,
+            &SynthesizabilityConfig::conservative(),
+        )
+        .unwrap();
+        assert_eq!(
+            result.provenance.stock_source,
+            Some("data/building_blocks.smi".to_string())
         );
     }
 }

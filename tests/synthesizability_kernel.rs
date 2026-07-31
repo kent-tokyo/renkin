@@ -350,9 +350,9 @@ fn issue71_phenylacetaldehyde_false_positive_is_not_in_stock() {
 }
 
 // ---------------------------------------------------------------------
-// 5. Stock not supplied -> StockNotSupplied / ValidationGap::
-//    StockProvenanceHashMissing (top-level-integration-test version of an
-//    existing assessment.rs-internal test).
+// 5. Stock not supplied -> StockNotSupplied / ValidationGap::StockNotSupplied
+//    (top-level-integration-test version of an existing
+//    assessment.rs-internal test).
 // ---------------------------------------------------------------------
 
 #[test]
@@ -377,7 +377,7 @@ fn stock_not_supplied_is_a_gap_not_a_hard_failure_top_level() {
     assert!(
         result.route_assessments[0]
             .validation_gaps
-            .contains(&ValidationGap::StockProvenanceHashMissing)
+            .contains(&ValidationGap::StockNotSupplied)
     );
     assert!(result.route_assessments[0].hard_failures.is_empty());
     assert_eq!(

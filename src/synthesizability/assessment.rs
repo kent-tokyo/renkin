@@ -67,6 +67,7 @@ pub fn assess_routes(
     let canonicalized_stock = signals::canonicalize_stock(context.stock);
     let stock_count = canonicalized_stock.count;
     let stock_hash = canonicalized_stock.hash.clone();
+    let stock_input_status = canonicalized_stock.input_status;
     if !canonicalized_stock.unparseable_raw_entries.is_empty() {
         warnings.push(format!(
             "{} stock entr{} failed to parse/canonicalize under the kernel's own pipeline and were excluded from the canonicalized stock set",
@@ -101,6 +102,7 @@ pub fn assess_routes(
                 rules_hash,
                 stock_count,
                 stock_hash,
+                stock_input_status,
                 context,
                 assessment_config_hash,
                 config_used,
@@ -108,6 +110,32 @@ pub fn assess_routes(
             ));
         }
     };
+
+    // 1.5. Kernel-integrity invariant: a non-empty stock list where every
+    // single entry failed to parse is a data-quality failure on the
+    // caller's input, not the same thing as "no stock was supplied" -- it
+    // must not be silently absorbed into `StockTerminationStatus::StockNotSupplied`
+    // (design doc §4.2/§4.7; see `StockInputStatus::AllEntriesInvalid`).
+    if stock_input_status == crate::synthesizability::schema::StockInputStatus::AllEntriesInvalid {
+        warnings.push(format!(
+            "All {} supplied stock entries failed to parse/canonicalize -- this is a data-quality failure on the stock input, not the same as no stock being supplied at all",
+            context.stock.map(<[String]>::len).unwrap_or(0)
+        ));
+        return Ok(early_assessment(
+            target,
+            AssessmentStatus::EvaluationError,
+            Some(canonical_target),
+            rules_count,
+            rules_hash,
+            stock_count,
+            stock_hash,
+            stock_input_status,
+            context,
+            assessment_config_hash,
+            config_used,
+            warnings,
+        ));
+    }
 
     // 2. Kernel-integrity invariant: `forward_validation`, if supplied, must
     // have exactly one entry per route in `routes` (design doc §4.1 #2 --
@@ -128,6 +156,7 @@ pub fn assess_routes(
             rules_hash,
             stock_count,
             stock_hash,
+            stock_input_status,
             context,
             assessment_config_hash,
             config_used,
@@ -146,6 +175,7 @@ pub fn assess_routes(
             rules_hash,
             stock_count,
             stock_hash,
+            stock_input_status,
             context,
             assessment_config_hash,
             config_used,
@@ -254,6 +284,7 @@ pub fn assess_routes(
             rules_hash,
             stock_count,
             stock_hash,
+            stock_input_status,
             stock_source: context.stock_source.clone(),
             template_metadata_hash: context.template_metadata_hash.clone(),
             search_config_summary: context.search_config_summary.clone(),
@@ -284,6 +315,7 @@ fn early_assessment(
     rules_hash: String,
     stock_count: usize,
     stock_hash: String,
+    stock_input_status: crate::synthesizability::schema::StockInputStatus,
     context: &AssessmentContext,
     assessment_config_hash: String,
     config_used: SynthesizabilityConfigSummary,
@@ -317,6 +349,7 @@ fn early_assessment(
             rules_hash,
             stock_count,
             stock_hash,
+            stock_input_status,
             stock_source: context.stock_source.clone(),
             template_metadata_hash: context.template_metadata_hash.clone(),
             search_config_summary: context.search_config_summary.clone(),
@@ -529,13 +562,17 @@ fn assess_stock_termination(
                 }
             }
         }
-        StockTerminationStatus::StockNotSupplied => {
-            // Nothing was supplied to verify against at all -- distinct
-            // from a genuine mismatch (never "assume it's fine", design
-            // doc §4.2/§4.7), recorded as a validation gap rather than a
-            // hard failure: the caller didn't claim these leaves are in
-            // stock, the kernel just can't confirm or deny it.
-            validation_gaps.push(ValidationGap::StockProvenanceHashMissing);
+        StockTerminationStatus::StockNotSupplied
+        | StockTerminationStatus::StockSuppliedButEmpty => {
+            // Nothing usable was supplied to verify against at all --
+            // distinct from a genuine mismatch (never "assume it's fine",
+            // design doc §4.2/§4.7), recorded as a validation gap rather
+            // than a hard failure: the caller didn't claim these leaves
+            // are in stock, the kernel just can't confirm or deny it.
+            // Both variants land on the same gap here -- the per-route
+            // consequence is identical either way; `StockInputStatus` on
+            // `AssessmentProvenance` is where the two are told apart.
+            validation_gaps.push(ValidationGap::StockNotSupplied);
         }
         StockTerminationStatus::StockCheckNotPerformed => {
             // Per Agent B's contract, `check_stock_termination` never
@@ -877,6 +914,57 @@ mod tests {
     }
 
     #[test]
+    fn stock_entries_all_invalid_escalates_to_evaluation_error() {
+        // A non-empty stock list where every entry fails to parse is a
+        // data-quality failure on the caller's own input, not "no stock" --
+        // must not silently collapse into StockNotSupplied/proceed as if
+        // nothing were wrong.
+        let rules: Vec<RetroRule> = vec![];
+        let routes = vec![route(
+            vec![step("rule:x", "rule:x", "CCO", &["CC=O"])],
+            &["CC=O"],
+        )];
+        let stock = vec!["[C(".to_string(), "not-a-smiles(((".to_string()];
+        let ctx = AssessmentContext {
+            stock: Some(&stock),
+            ..empty_context(&rules)
+        };
+        let result = assess_routes(
+            "CCO",
+            &routes,
+            &ctx,
+            &SynthesizabilityConfig::conservative(),
+        )
+        .expect("all-invalid stock must surface as a status, not an Err");
+        assert_eq!(result.status, AssessmentStatus::EvaluationError);
+        assert!(result.route_assessments.is_empty());
+        assert_eq!(
+            result.provenance.stock_input_status,
+            crate::synthesizability::schema::StockInputStatus::AllEntriesInvalid
+        );
+    }
+
+    #[test]
+    fn invalid_target_wins_over_all_invalid_stock() {
+        // §4.1 decision order: InvalidTarget strictly beats EvaluationError
+        // even when both conditions hold at once.
+        let rules: Vec<RetroRule> = vec![];
+        let stock = vec!["[C(".to_string()];
+        let ctx = AssessmentContext {
+            stock: Some(&stock),
+            ..empty_context(&rules)
+        };
+        let result = assess_routes(
+            "not-a-smiles(((",
+            &[],
+            &ctx,
+            &SynthesizabilityConfig::conservative(),
+        )
+        .expect("must not Err");
+        assert_eq!(result.status, AssessmentStatus::InvalidTarget);
+    }
+
+    #[test]
     fn clean_route_with_verified_stock_is_route_supported() {
         let rules: Vec<RetroRule> = vec![];
         let routes = vec![route(
@@ -925,7 +1013,7 @@ mod tests {
         assert!(
             selected
                 .validation_gaps
-                .contains(&ValidationGap::StockProvenanceHashMissing)
+                .contains(&ValidationGap::StockNotSupplied)
         );
     }
 

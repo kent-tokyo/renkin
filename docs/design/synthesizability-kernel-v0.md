@@ -181,16 +181,43 @@ experimental synthesis success."*
 
 ### 4.2 Stock-termination signal — independent re-verification, not `is_building_block`
 
-Six states (per spec):
+Seven states (post-review update: `StockNotSupplied`/"caller passed `None`"
+and "caller passed `Some(&[])`" were originally conflated; split into two
+distinct states, since only the latter implies the caller actually tried to
+configure a stock):
 
 ```rust
 pub enum StockTerminationStatus {
     AllLeavesVerifiedInConfiguredStock,
     OneOrMoreLeavesNotInStock,
-    StockNotSupplied,
+    StockNotSupplied,           // AssessmentContext::stock was None
+    StockSuppliedButEmpty,      // AssessmentContext::stock was Some(&[])
     StockIdentityUnavailable,   // a leaf SMILES fails to parse under the kernel's own pipeline
     StockCheckNotPerformed,     // config disabled this check
     StockCheckError,            // internal error distinct from a genuine mismatch
+}
+```
+
+A non-empty stock list where every single entry fails to parse is a
+different, more severe case than either of the above — a data-quality
+failure on the caller's own input, not "no stock." It is not a
+`StockTerminationStatus` variant at all: `assess_routes()` short-circuits to
+`AssessmentStatus::EvaluationError` before assessing any route in that case
+(see `StockInputStatus::AllEntriesInvalid` below), so no route ever reaches
+this per-route check with that condition.
+
+`StockInputStatus` (new, computed once per `assess_routes()` call, echoed on
+`AssessmentProvenance::stock_input_status`) makes the caller's raw stock
+argument fully self-describing, since `stock_count`/`stock_hash` alone
+cannot distinguish "no stock" from "an unusable stock":
+
+```rust
+pub enum StockInputStatus {
+    NotSupplied,        // None
+    SuppliedButEmpty,   // Some(&[])
+    AllEntriesInvalid,  // Some(non_empty), 0 parsed -> escalates to EvaluationError
+    PartiallyUsable,    // Some(non_empty), some parsed, some didn't
+    FullyUsable,        // Some(non_empty), all parsed
 }
 ```
 
@@ -387,11 +414,28 @@ pub enum ValidationGap {
     NoEvidence,
     NoExactSubstrateEvidence,
     StepNotEvaluable { step_index: usize },
-    StockProvenanceHashMissing,
+    StockNotSupplied,             // StockTerminationStatus::{StockNotSupplied, StockSuppliedButEmpty}
+    StockProvenanceHashMissing,   // reserved, unreachable -- see below
     ReagentOmissionAccountingGap { step_index: usize, template_id: String }, // class 2, see §4.5
+    UnaccountedTargetElementNotEnforced { step_index: usize }, // classes 1/3, diagnostic()-only downgrade
     BestEffortRouteOnly,  // reserved for when a real search timeout/budget concept exists
 }
 ```
+
+Post-review naming fix: `StockProvenanceHashMissing` was originally emitted
+whenever no stock was supplied at all — indistinguishable from "no stock
+argument was given." Split into two: `ValidationGap::StockNotSupplied`
+covers that case (both `StockTerminationStatus::StockNotSupplied` and
+`StockSuppliedButEmpty` land here — the per-route consequence is identical,
+`StockInputStatus` on the top-level provenance is where the two are told
+apart). `StockProvenanceHashMissing` is reserved for its originally-intended,
+narrower meaning — "stock was supplied and used for this check, but its
+provenance/hash metadata is incomplete" — and is currently **unreachable**:
+the only candidate trigger (`AssessmentContext::stock_source` being `None`)
+would demote nearly every assessment run without a source label out of
+`RouteSupported`, a verdict-level behavior change beyond a naming fix. Kept
+reserved-but-unused the same way `AssessmentStatus::Indeterminate` already
+is in this schema, pending a maintainer decision on whether to wire it up.
 
 ### 4.7 `SynthesizabilityConfig`
 
@@ -467,6 +511,7 @@ pub struct AssessmentProvenance {
     pub rules_hash: String,                 // sha256 over sorted template_ids + smirks, same style as ChemEnv::content_sha256
     pub stock_count: usize,
     pub stock_hash: String,                 // sha256 over sorted kernel-canonicalized stock entries
+    pub stock_input_status: StockInputStatus, // see §4.2 -- distinguishes "no stock" from "unusable stock", which stock_count/stock_hash alone cannot
     pub stock_source: Option<String>,       // caller-supplied label (file path, "embedded", etc.) -- never a silent default
     pub template_metadata_hash: Option<String>,
     pub search_config_summary: Option<String>, // caller-supplied echo of the SearchConfig used to produce the routes; the kernel does not re-run or infer this

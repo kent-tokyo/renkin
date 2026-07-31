@@ -89,10 +89,20 @@ pub enum StockTerminationStatus {
     /// At least one leaf's kernel-canonicalized SMILES was not found in
     /// the configured stock set.
     OneOrMoreLeavesNotInStock,
-    /// No stock set was supplied to the assessment at all. Never silently
-    /// treated as `StockCheckNotPerformed` or, worse, "assume it's fine"
-    /// -- a distinct, explicit status.
+    /// No stock set was supplied to the assessment at all (`AssessmentContext::stock`
+    /// was `None`). Never silently treated as `StockCheckNotPerformed` or,
+    /// worse, "assume it's fine" -- a distinct, explicit status. Distinct
+    /// from [`Self::StockSuppliedButEmpty`]: that one means the caller
+    /// affirmatively passed an empty list, this one means no stock argument
+    /// was given at all.
     StockNotSupplied,
+    /// A stock set *was* supplied (`AssessmentContext::stock` was
+    /// `Some(&[])`), but it contained zero entries. Kept distinct from
+    /// [`Self::StockNotSupplied`] so an assessment can tell "no stock
+    /// argument was given" apart from "the caller explicitly configured an
+    /// empty stock" -- the latter is far more likely to indicate a caller
+    /// bug (e.g. an empty file, a failed load upstream) than the former.
+    StockSuppliedButEmpty,
     /// A specific leaf's SMILES failed to parse or standardize under the
     /// kernel's own pipeline. A fact about the *input*, not the check
     /// logic -- distinct from `StockCheckError`. Do not conflate the two:
@@ -106,6 +116,38 @@ pub enum StockTerminationStatus {
     /// chemistry judgment -- distinct from `StockIdentityUnavailable`,
     /// which is a fact about one leaf's input, not the check machinery.
     StockCheckError,
+}
+
+/// Overall usability of the raw stock list a caller passed as
+/// `AssessmentContext::stock`, computed once per `assess_routes()` call
+/// (independent of any single route). Exists because `count == 0` alone
+/// cannot distinguish "no stock argument was given" from "a non-empty stock
+/// argument was given but every single entry failed to parse" -- the latter
+/// is a data-quality failure on the caller's input, not the absence of
+/// input, and must not be silently absorbed as if it were the same thing.
+/// Echoed on [`AssessmentProvenance::stock_input_status`] so every
+/// assessment is self-describing about which of these actually happened.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StockInputStatus {
+    /// `AssessmentContext::stock` was `None`.
+    NotSupplied,
+    /// `AssessmentContext::stock` was `Some(&[])`.
+    SuppliedButEmpty,
+    /// `AssessmentContext::stock` was `Some(non_empty)`, but every single
+    /// entry failed to parse/canonicalize. Never treated as equivalent to
+    /// [`Self::NotSupplied`] -- `assess_routes()` escalates this to
+    /// [`AssessmentStatus::EvaluationError`] instead of silently proceeding
+    /// as if no stock had been given at all.
+    AllEntriesInvalid,
+    /// `AssessmentContext::stock` was `Some(non_empty)`; at least one entry
+    /// parsed and at least one did not. The stock check proceeds using only
+    /// the entries that did parse -- this status exists purely so that fact
+    /// is visible on the audit record, not to change behavior.
+    PartiallyUsable,
+    /// `AssessmentContext::stock` was `Some(non_empty)` and every entry
+    /// parsed successfully.
+    FullyUsable,
 }
 
 // ---------------------------------------------------------------------
@@ -256,8 +298,23 @@ pub enum ValidationGap {
     NoExactSubstrateEvidence,
     /// A step's forward-validation status is `NotEvaluable`.
     StepNotEvaluable { step_index: usize },
-    /// The configured stock set has no provenance hash attached, so its
-    /// contents cannot be independently reproduced/audited.
+    /// No stock was available to check this route's leaves against --
+    /// [`StockTerminationStatus::StockNotSupplied`] or
+    /// [`StockTerminationStatus::StockSuppliedButEmpty`]. The caller didn't
+    /// claim these leaves are in stock, the kernel just can't confirm or
+    /// deny it. Distinct from [`Self::StockProvenanceHashMissing`], which
+    /// requires stock to actually have been supplied and used.
+    StockNotSupplied,
+    /// Reserved for "stock exists and was used for this route's check, but
+    /// its provenance/hash metadata is incomplete" -- kept separate from
+    /// [`Self::StockNotSupplied`] (no stock at all), which this variant
+    /// used to be wrongly emitted for. Unreachable today: the only
+    /// candidate trigger (`AssessmentContext::stock_source` being `None`)
+    /// would demote nearly every assessment run without a source label out
+    /// of `RouteSupported`, a verdict-level behavior change beyond a naming
+    /// fix -- left as a maintainer decision rather than inferred here. Kept
+    /// in the schema now, unused, the same way [`AssessmentStatus::Indeterminate`]
+    /// is reserved. Do not wire this up without also deciding that trade-off.
     StockProvenanceHashMissing,
     /// A step's target-element accounting failed, but its template *is*
     /// on `reagent_omission_template_allowlist`: design doc §4.5's third
@@ -509,6 +566,13 @@ pub struct AssessmentProvenance {
     pub stock_count: usize,
     /// sha256 over sorted, kernel-canonicalized stock entries.
     pub stock_hash: String,
+    /// Overall usability of the raw stock list supplied for this
+    /// assessment -- see [`StockInputStatus`] for what each variant means.
+    /// Distinguishes "no stock argument" from "an unusable stock argument",
+    /// which `stock_count`/`stock_hash` alone cannot: both are `0`/the
+    /// hash-of-nothing whenever the caller passed `None`, `Some(&[])`, or a
+    /// non-empty list that entirely failed to parse.
+    pub stock_input_status: StockInputStatus,
     /// Caller-supplied label for where the stock set came from (a file
     /// path, `"embedded"`, etc.) -- never a silent default; `None` means
     /// the caller did not say.
@@ -704,6 +768,7 @@ mod tests {
                 rules_hash: "sha256:rules".to_string(),
                 stock_count: 1,
                 stock_hash: "sha256:stock".to_string(),
+                stock_input_status: StockInputStatus::FullyUsable,
                 stock_source: None,
                 template_metadata_hash: None,
                 search_config_summary: None,

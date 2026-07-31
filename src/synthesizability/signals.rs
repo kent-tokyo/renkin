@@ -14,7 +14,7 @@ use sha2::{Digest, Sha256};
 use crate::chem_env::canonical_stock_identity_from_smiles;
 use crate::evidence::{ExampleMatch, MetadataSource};
 use crate::synthesizability::schema::{
-    EvidenceCoverage, ForwardValidationStatus, StockTerminationStatus,
+    EvidenceCoverage, ForwardValidationStatus, StockInputStatus, StockTerminationStatus,
 };
 use crate::validation::StepValidationStatus;
 
@@ -68,19 +68,11 @@ fn stock_content_hash(canonical_set: &HashSet<String>) -> String {
 /// (not once per route) so `stock_count`/`stock_hash` in provenance and
 /// every route's stock check share one canonicalization pass.
 ///
-/// **Caller gotcha, flagged loudly for whoever calls this (`assessment.rs`,
-/// currently Agent C)**: `count == 0` does not by itself mean "no stock was
-/// supplied." A stock list of entries that are ALL unparseable also
-/// produces `count == 0` (every entry lands in
-/// `unparseable_raw_entries` instead of `canonical_set`), and
-/// [`check_stock_termination`] treats `count == 0` as `StockNotSupplied`
-/// per its documented precedence rule (1). If the original caller-supplied
-/// `stock: Option<&[String]>` was `Some(non_empty_list)` but every entry
-/// failed to parse, the resulting `StockNotSupplied` status is misleading
-/// by itself -- it looks identical to "the caller passed `None`." Callers
-/// that care about this distinction must check `unparseable_raw_entries`
-/// (or the original `Option`) themselves; this struct only reports the
-/// fact, it does not disambiguate the two cases in `status`.
+/// `count == 0` alone cannot distinguish "no stock was supplied" from "a
+/// non-empty stock was supplied but every entry failed to parse" -- both
+/// produce an empty `canonical_set`. [`Self::input_status`] is the field
+/// that disambiguates them; callers that care about this distinction
+/// (`assessment.rs`) must read it rather than inferring from `count`.
 pub(crate) struct CanonicalizedStock {
     /// Number of distinct, successfully-canonicalized stock entries (i.e.
     /// `canonical_set.len()`) -- the same "count what's actually usable"
@@ -96,10 +88,14 @@ pub(crate) struct CanonicalizedStock {
     /// standardize -- a data-quality warning about the *stock list*
     /// itself, distinct from a route leaf failing the same way.
     pub unparseable_raw_entries: Vec<String>,
+    /// Which of [`StockInputStatus`]'s five cases the raw `stock` argument
+    /// fell into. See [`Self`]'s own doc comment for why this can't be
+    /// re-derived from `count` alone.
+    pub input_status: StockInputStatus,
 }
 
 /// `stock: None` => `count: 0, hash: String::new(), canonical_set: empty,
-/// unparseable_raw_entries: empty`.
+/// unparseable_raw_entries: empty, input_status: NotSupplied`.
 pub(crate) fn canonicalize_stock(stock: Option<&[String]>) -> CanonicalizedStock {
     let Some(entries) = stock else {
         return CanonicalizedStock {
@@ -107,8 +103,19 @@ pub(crate) fn canonicalize_stock(stock: Option<&[String]>) -> CanonicalizedStock
             hash: String::new(),
             canonical_set: HashSet::new(),
             unparseable_raw_entries: Vec::new(),
+            input_status: StockInputStatus::NotSupplied,
         };
     };
+
+    if entries.is_empty() {
+        return CanonicalizedStock {
+            count: 0,
+            hash: stock_content_hash(&HashSet::new()),
+            canonical_set: HashSet::new(),
+            unparseable_raw_entries: Vec::new(),
+            input_status: StockInputStatus::SuppliedButEmpty,
+        };
+    }
 
     let mut canonical_set: HashSet<String> = HashSet::new();
     let mut unparseable_raw_entries = Vec::new();
@@ -121,12 +128,21 @@ pub(crate) fn canonicalize_stock(stock: Option<&[String]>) -> CanonicalizedStock
         }
     }
 
+    let input_status = if canonical_set.is_empty() {
+        StockInputStatus::AllEntriesInvalid
+    } else if unparseable_raw_entries.is_empty() {
+        StockInputStatus::FullyUsable
+    } else {
+        StockInputStatus::PartiallyUsable
+    };
+
     let hash = stock_content_hash(&canonical_set);
     CanonicalizedStock {
         count: canonical_set.len(),
         hash,
         canonical_set,
         unparseable_raw_entries,
+        input_status,
     }
 }
 
@@ -145,9 +161,14 @@ pub(crate) struct StockCheckResult {
 
 /// Attempts the check unconditionally given `canonicalized_stock`.
 /// Precedence when multiple conditions could apply to different leaves in
-/// the same route: (1) if `canonicalized_stock.count == 0` (i.e. caller
-/// passed `None` originally) -> `StockNotSupplied` regardless of route
-/// leaves; (2) else if ANY leaf's SMILES fails to parse/standardize ->
+/// the same route: (1) if `canonicalized_stock.count == 0`, branch on
+/// `canonicalized_stock.input_status` -> `StockNotSupplied` (caller passed
+/// `None`) or `StockSuppliedButEmpty` (caller passed `Some(&[])`)
+/// regardless of route leaves -- `StockInputStatus::AllEntriesInvalid`
+/// never reaches this function in practice (`assess_routes()` short-circuits
+/// to `AssessmentStatus::EvaluationError` before assessing any route in that
+/// case), but if it somehow did, this falls back to `StockNotSupplied` as
+/// the safer of the two; (2) else if ANY leaf's SMILES fails to parse/standardize ->
 /// `StockIdentityUnavailable` (report all such leaves in
 /// `unparseable_leaves`); (3) else if ANY leaf's canonical form is not in
 /// `canonicalized_stock.canonical_set` -> `OneOrMoreLeavesNotInStock`
@@ -183,8 +204,13 @@ pub(crate) fn check_stock_termination(
     canonicalized_stock: &CanonicalizedStock,
 ) -> StockCheckResult {
     if canonicalized_stock.count == 0 {
+        let status = if canonicalized_stock.input_status == StockInputStatus::SuppliedButEmpty {
+            StockTerminationStatus::StockSuppliedButEmpty
+        } else {
+            StockTerminationStatus::StockNotSupplied
+        };
         return StockCheckResult {
-            status: StockTerminationStatus::StockNotSupplied,
+            status,
             unmatched_leaves: Vec::new(),
             unparseable_leaves: Vec::new(),
         };
@@ -393,6 +419,7 @@ mod tests {
         assert_eq!(stock.hash, "");
         assert!(stock.canonical_set.is_empty());
         assert!(stock.unparseable_raw_entries.is_empty());
+        assert_eq!(stock.input_status, StockInputStatus::NotSupplied);
     }
 
     #[test]
@@ -403,6 +430,43 @@ mod tests {
         assert_eq!(result.status, StockTerminationStatus::StockNotSupplied);
         assert!(result.unmatched_leaves.is_empty());
         assert!(result.unparseable_leaves.is_empty());
+    }
+
+    #[test]
+    fn stock_supplied_but_empty_is_distinct_from_not_supplied() {
+        let entries: Vec<String> = vec![];
+        let stock = canonicalize_stock(Some(&entries));
+        assert_eq!(stock.count, 0);
+        assert_eq!(stock.input_status, StockInputStatus::SuppliedButEmpty);
+
+        let leaves = vec!["CCO".to_string()];
+        let result = check_stock_termination(&leaves, &stock);
+        assert_eq!(result.status, StockTerminationStatus::StockSuppliedButEmpty);
+        assert_ne!(result.status, StockTerminationStatus::StockNotSupplied);
+    }
+
+    #[test]
+    fn stock_entries_all_invalid_is_distinct_from_not_supplied_or_empty() {
+        let entries = vec!["[C(".to_string(), "not-a-smiles(((".to_string()];
+        let stock = canonicalize_stock(Some(&entries));
+        assert_eq!(stock.count, 0);
+        assert_eq!(stock.unparseable_raw_entries.len(), 2);
+        assert_eq!(stock.input_status, StockInputStatus::AllEntriesInvalid);
+    }
+
+    #[test]
+    fn stock_partially_usable_when_some_entries_invalid() {
+        let entries = vec!["CCO".to_string(), "[C(".to_string()];
+        let stock = canonicalize_stock(Some(&entries));
+        assert_eq!(stock.count, 1);
+        assert_eq!(stock.input_status, StockInputStatus::PartiallyUsable);
+    }
+
+    #[test]
+    fn stock_fully_usable_when_every_entry_parses() {
+        let entries = vec!["CCO".to_string(), "c1ccccc1".to_string()];
+        let stock = canonicalize_stock(Some(&entries));
+        assert_eq!(stock.input_status, StockInputStatus::FullyUsable);
     }
 
     #[test]

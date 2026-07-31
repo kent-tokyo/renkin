@@ -9,11 +9,9 @@
 
 use std::collections::HashSet;
 
-use chematic::chem::standardize::{StandardizeOptions, ZwitterionHandling, standardize};
-use chematic::smiles::canonical_smiles;
 use sha2::{Digest, Sha256};
 
-use crate::chem_env::mol_from_smiles;
+use crate::chem_env::canonical_stock_identity_from_smiles;
 use crate::evidence::{ExampleMatch, MetadataSource};
 use crate::synthesizability::schema::{
     EvidenceCoverage, ForwardValidationStatus, StockTerminationStatus,
@@ -21,35 +19,21 @@ use crate::synthesizability::schema::{
 use crate::validation::StepValidationStatus;
 
 // ---------------------------------------------------------------------
-// 4.2 Stock termination -- kernel's own canonicalization, never
-// `ChemEnv::is_building_block` (see design doc §4.2 for the full
-// reasoning: that path is the confirmed-buggy VF2 fallback today, and even
-// post-fix its correctness depends on branch-specific `chem_env.rs` wiring
-// this kernel should not have to track).
+// 4.2 Stock termination -- an independent membership check that reuses
+// `chem_env::canonical_stock_identity_from_smiles` (the shared identity
+// primitive, post-#71/PR #74) but never calls `ChemEnv::is_building_block`
+// itself, so a bug or policy change in that consumer's membership logic
+// can't silently change this kernel's own verdict (see design doc §4.2).
 // ---------------------------------------------------------------------
 
-/// Mirrors `chem_env.rs`'s private `STANDARDIZE_OPTS` field-for-field.
-/// `chem_env.rs` does not expose that static, so per the design doc's
-/// explicit instruction (§4.2) it is re-derived here instead of adding a
-/// new public accessor to a file this agent must not touch. **Keep this in
-/// sync by hand** if `chem_env.rs`'s `STANDARDIZE_OPTS` literal ever
-/// changes -- there is no shared source of truth between the two copies.
-static KERNEL_STANDARDIZE_OPTS: StandardizeOptions = StandardizeOptions {
-    canonical_tautomer: false,
-    neutralize_charges: false,
-    remove_explicit_h: true,
-    largest_fragment_only: false,
-    zwitterion_handling: ZwitterionHandling::Keep,
-};
-
-/// Canonicalizes one SMILES string under the kernel's own, independent
-/// identity policy (design doc §4.2): parse (`chem_env::mol_from_smiles`),
-/// standardize (`KERNEL_STANDARDIZE_OPTS`), canonicalize (chematic's
-/// `canonical_smiles`, **not** RDKit). `None` if the SMILES fails to parse.
+/// Canonicalizes one SMILES string under the shared stock-identity policy
+/// (design doc §4.2): `chem_env::canonical_stock_identity_from_smiles`, the
+/// same function `ChemEnv::is_building_block`/`search::is_bb` use, so this
+/// kernel's independent stock check can never drift from `ChemEnv`'s own
+/// policy while still never calling `ChemEnv::is_building_block` itself.
+/// `None` if the SMILES fails to parse.
 fn kernel_canonicalize(smiles: &str) -> Option<String> {
-    let mol = mol_from_smiles(smiles).ok()?;
-    let std_mol = standardize(&mol, &KERNEL_STANDARDIZE_OPTS);
-    Some(canonical_smiles(&std_mol))
+    canonical_stock_identity_from_smiles(smiles).ok()
 }
 
 /// Domain separator for [`stock_content_hash`]. Deliberately distinct from
@@ -77,9 +61,9 @@ fn stock_content_hash(canonical_set: &HashSet<String>) -> String {
     format!("sha256:{:x}", hasher.finalize())
 }
 
-/// Result of canonicalizing a supplied stock list under the kernel's own
-/// identity policy (design doc §4.2 -- reuses `chem_env::standardize`/
-/// `STANDARDIZE_OPTS` + chematic's `canonical_smiles`, NEVER
+/// Result of canonicalizing a supplied stock list under the shared
+/// identity policy (design doc §4.2 -- reuses
+/// `chem_env::canonical_stock_identity_from_smiles`, NEVER
 /// `ChemEnv::is_building_block`). Computed once per `assess_routes()` call
 /// (not once per route) so `stock_count`/`stock_hash` in provenance and
 /// every route's stock check share one canonicalization pass.

@@ -9,6 +9,7 @@ pub mod pool_export;
 pub mod score;
 pub mod scorer;
 pub mod search;
+pub mod synthesizability;
 pub mod validation;
 
 #[cfg(feature = "python")]

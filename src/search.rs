@@ -252,8 +252,8 @@ fn is_bb(smiles: &str, env: &ChemEnv) -> bool {
     if env.is_building_block_smiles(smiles) {
         return true;
     }
-    // VF2 fallback: handles edge cases where run_reactants produces
-    // explicit-H forms whose canonical SMILES doesn't match the stored form.
+    // Slow path: re-parse and re-standardize. Exact identity only (no
+    // subgraph matching) — see ChemEnv::is_building_block.
     mol_from_smiles(smiles)
         .map(|mol| env.is_building_block(&mol))
         .unwrap_or(false)

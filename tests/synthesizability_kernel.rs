@@ -209,11 +209,22 @@ fn stock_full_termination_all_leaves_verified() {
 
 // ---------------------------------------------------------------------
 // 4. Stock: leaf mismatch -> OneOrMoreLeavesNotInStock / HardFailure::
-//    StockTerminalMismatch. The exact 3 real Issue #71 false positives
-//    (see `data/comparison/results_100/per_target_audit.md` lines 36-38 and
-//    design doc §9): the kernel's own independent stock check must report
-//    these as NOT in stock, unlike the old `ChemEnv::is_building_block` VF2
-//    fallback which accepted them incorrectly.
+//    StockTerminalMismatch, using the exact 3 real Issue #71 false-positive
+//    SMILES (see `data/comparison/results_100/per_target_audit.md` lines
+//    36-38 and design doc §9). Note on what these fixtures do and don't
+//    prove: none of the 3 leaves has any subgraph relationship to the
+//    ("CCO") stock entry used below, so a reintroduced VF2-style matcher
+//    would reject these too -- this fixture alone can't discriminate
+//    "kernel does exact canonical-identity matching" from "kernel has some
+//    other, still-buggy matcher that happens to also reject these
+//    specific molecules." The actual guarantee that no VF2/subgraph
+//    machinery exists in this module comes from its absence in
+//    `signals.rs`/`element_accounting.rs` (grep for `find_matches`/
+//    `parse_smarts`/subgraph), not from this fixture. What this fixture
+//    *does* prove: the kernel's own independent stock check correctly
+//    flags these three specific, previously-mis-accepted leaves as not in
+//    stock -- a real, valuable regression guard, just not a general proof
+//    of "no subgraph matching anywhere."
 // ---------------------------------------------------------------------
 
 /// Shared shape for all three Issue #71 fixtures: a single-step route whose

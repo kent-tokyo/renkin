@@ -609,3 +609,21 @@ Every fixture in the original spec's list, plus:
    description, `main.rs`'s `"most_reliable"` Pareto label) — this design
    does not fix those; flagged for a maintainer decision, independent of
    this PR.
+5. Chematic's `canonical_smiles()` does not strip vestigial `/`/`\`
+   bond-direction markers on a non-stereogenic double bond (confirmed:
+   `C=C/C/C=C` and `C=CCC=C`, the same real molecule, 1,4-pentadiene,
+   canonicalize to two different strings). This is a concrete instance of
+   item 3's chematic-invariance dependency, found by the independent
+   reviewer pass: the direction of the risk is a **false negative**
+   (over-rejection) — a leaf genuinely in stock, written with such
+   markers, can be wrongly reported `OneOrMoreLeavesNotInStock`. Not a
+   kernel-introduced regression: `ChemEnv::is_building_block`'s primary
+   path has the identical limitation (and the kernel is arguably more
+   careful, since it standardizes both the stock side and the query side,
+   where `is_building_block` only standardizes the stock side at load
+   time).
+6. Stoichiometric multiplicity is entirely unmodeled: if a route's
+   `precursors` lists a building block once but the real reaction needs
+   two-plus equivalents of it, nothing in `element_accounting.rs` or
+   `signals.rs` catches that — heavy-atom sums only check element
+   totals, not per-species quantities needed.

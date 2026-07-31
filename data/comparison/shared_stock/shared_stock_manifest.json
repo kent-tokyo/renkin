@@ -1,0 +1,347 @@
+{
+  "duplicate_count": 47,
+  "duplicates": [
+    {
+      "duplicate_of_line_no": 81,
+      "inchi_key": "FJKROLUGYXJWQN-UHFFFAOYSA-N",
+      "line_no": 111,
+      "smiles": "Oc1ccc(C(=O)O)cc1"
+    },
+    {
+      "duplicate_of_line_no": 20,
+      "inchi_key": "LFQSCWFLJHTTHZ-UHFFFAOYSA-N",
+      "line_no": 112,
+      "smiles": "OCC"
+    },
+    {
+      "duplicate_of_line_no": 80,
+      "inchi_key": "ALYNCZNDIQEVRV-UHFFFAOYSA-N",
+      "line_no": 137,
+      "smiles": "Nc1ccc(C(=O)O)cc1"
+    },
+    {
+      "duplicate_of_line_no": 80,
+      "inchi_key": "ALYNCZNDIQEVRV-UHFFFAOYSA-N",
+      "line_no": 142,
+      "smiles": "c1cc(N)ccc1C(=O)O"
+    },
+    {
+      "duplicate_of_line_no": 122,
+      "inchi_key": "QUSNBJAOOMFDIB-UHFFFAOYSA-N",
+      "line_no": 143,
+      "smiles": "NCC"
+    },
+    {
+      "duplicate_of_line_no": 153,
+      "inchi_key": "NQRYJNQNLNOLGT-UHFFFAOYSA-N",
+      "line_no": 158,
+      "smiles": "C1CCCCN1"
+    },
+    {
+      "duplicate_of_line_no": 134,
+      "inchi_key": "WDFQBORIUYODSI-UHFFFAOYSA-N",
+      "line_no": 174,
+      "smiles": "Brc1ccc(N)cc1"
+    },
+    {
+      "duplicate_of_line_no": 107,
+      "inchi_key": "GZFGOTFRPZRKDS-UHFFFAOYSA-N",
+      "line_no": 175,
+      "smiles": "Brc1ccc(O)cc1"
+    },
+    {
+      "duplicate_of_line_no": 86,
+      "inchi_key": "TUXYZHVUPGXXQG-UHFFFAOYSA-N",
+      "line_no": 181,
+      "smiles": "Brc1ccc(C(=O)O)cc1"
+    },
+    {
+      "duplicate_of_line_no": 64,
+      "inchi_key": "ZRYZBQLXDKPBDU-UHFFFAOYSA-N",
+      "line_no": 182,
+      "smiles": "Brc1ccc(C=O)cc1"
+    },
+    {
+      "duplicate_of_line_no": 133,
+      "inchi_key": "QSNSCYSYFYORTR-UHFFFAOYSA-N",
+      "line_no": 185,
+      "smiles": "Clc1ccc(N)cc1"
+    },
+    {
+      "duplicate_of_line_no": 82,
+      "inchi_key": "XRHGYUZYPHTUJZ-UHFFFAOYSA-N",
+      "line_no": 187,
+      "smiles": "Clc1ccc(C(=O)O)cc1"
+    },
+    {
+      "duplicate_of_line_no": 132,
+      "inchi_key": "KRZCOLNOCZKSDF-UHFFFAOYSA-N",
+      "line_no": 189,
+      "smiles": "Fc1ccc(N)cc1"
+    },
+    {
+      "duplicate_of_line_no": 140,
+      "inchi_key": "ICSNLGPSRYBMBD-UHFFFAOYSA-N",
+      "line_no": 225,
+      "smiles": "c1ccnc(N)c1"
+    },
+    {
+      "duplicate_of_line_no": 139,
+      "inchi_key": "CUYKNJBYIJFRCU-UHFFFAOYSA-N",
+      "line_no": 226,
+      "smiles": "c1ccncc1N"
+    },
+    {
+      "duplicate_of_line_no": 232,
+      "inchi_key": "SMWDFEZZVXVKRB-UHFFFAOYSA-N",
+      "line_no": 233,
+      "smiles": "c1ccnc2ccccc12"
+    },
+    {
+      "duplicate_of_line_no": 232,
+      "inchi_key": "SMWDFEZZVXVKRB-UHFFFAOYSA-N",
+      "line_no": 234,
+      "smiles": "c1cnc2ccccc2c1"
+    },
+    {
+      "duplicate_of_line_no": 154,
+      "inchi_key": "WYURNTSHIVDZCO-UHFFFAOYSA-N",
+      "line_no": 235,
+      "smiles": "C1CCCO1"
+    },
+    {
+      "duplicate_of_line_no": 199,
+      "inchi_key": "OKDGRDCXVWSXDC-UHFFFAOYSA-N",
+      "line_no": 237,
+      "smiles": "c1ccnc(Cl)c1"
+    },
+    {
+      "duplicate_of_line_no": 198,
+      "inchi_key": "PWRBCZZQRRPXAB-UHFFFAOYSA-N",
+      "line_no": 238,
+      "smiles": "c1ccncc1Cl"
+    },
+    {
+      "duplicate_of_line_no": 129,
+      "inchi_key": "PAYRUJLWNCNPSJ-UHFFFAOYSA-N",
+      "line_no": 239,
+      "smiles": "c1ccc(cc1)N"
+    },
+    {
+      "duplicate_of_line_no": 183,
+      "inchi_key": "WYECURVXVYPVAT-UHFFFAOYSA-N",
+      "line_no": 293,
+      "smiles": "Brc1ccc(cc1)C(=O)C"
+    },
+    {
+      "duplicate_of_line_no": 328,
+      "inchi_key": "UBQKCCHYAOITMY-UHFFFAOYSA-N",
+      "line_no": 329,
+      "smiles": "OC1=NC=CC=C1"
+    },
+    {
+      "duplicate_of_line_no": 232,
+      "inchi_key": "SMWDFEZZVXVKRB-UHFFFAOYSA-N",
+      "line_no": 333,
+      "smiles": "c1cc2ccccc2nc1"
+    },
+    {
+      "duplicate_of_line_no": 339,
+      "inchi_key": "LJXQPZWIHJMPQQ-UHFFFAOYSA-N",
+      "line_no": 342,
+      "smiles": "c1cnc(N)nc1"
+    },
+    {
+      "duplicate_of_line_no": 339,
+      "inchi_key": "LJXQPZWIHJMPQQ-UHFFFAOYSA-N",
+      "line_no": 346,
+      "smiles": "c1ccnc(N)n1"
+    },
+    {
+      "duplicate_of_line_no": 165,
+      "inchi_key": "WTKZEGDFNFYCGP-UHFFFAOYSA-N",
+      "line_no": 350,
+      "smiles": "c1c[nH]nc1"
+    },
+    {
+      "duplicate_of_line_no": 351,
+      "inchi_key": "XKVUYEYANWFIJX-UHFFFAOYSA-N",
+      "line_no": 352,
+      "smiles": "Cc1ccn[nH]1"
+    },
+    {
+      "duplicate_of_line_no": 165,
+      "inchi_key": "WTKZEGDFNFYCGP-UHFFFAOYSA-N",
+      "line_no": 355,
+      "smiles": "c1cc[nH]n1"
+    },
+    {
+      "duplicate_of_line_no": 164,
+      "inchi_key": "RAXXELZNTBOGNW-UHFFFAOYSA-N",
+      "line_no": 356,
+      "smiles": "c1c[nH]cn1"
+    },
+    {
+      "duplicate_of_line_no": 220,
+      "inchi_key": "YLQBMQCUIZJEEH-UHFFFAOYSA-N",
+      "line_no": 372,
+      "smiles": "c1ccoc1"
+    },
+    {
+      "duplicate_of_line_no": 221,
+      "inchi_key": "YTPLMLYBLZKORZ-UHFFFAOYSA-N",
+      "line_no": 373,
+      "smiles": "c1ccsc1"
+    },
+    {
+      "duplicate_of_line_no": 231,
+      "inchi_key": "IANQTJSKSUMEQM-UHFFFAOYSA-N",
+      "line_no": 379,
+      "smiles": "c1cc2ccccc2o1"
+    },
+    {
+      "duplicate_of_line_no": 230,
+      "inchi_key": "FCEHBMOGCRZNNI-UHFFFAOYSA-N",
+      "line_no": 380,
+      "smiles": "c1cc2ccccc2s1"
+    },
+    {
+      "duplicate_of_line_no": 156,
+      "inchi_key": "YNAVUWVOSKDBBP-UHFFFAOYSA-N",
+      "line_no": 386,
+      "smiles": "C1COCCN1"
+    },
+    {
+      "duplicate_of_line_no": 125,
+      "inchi_key": "JJWLVOIRVHMVIS-UHFFFAOYSA-N",
+      "line_no": 394,
+      "smiles": "C(C)(C)N"
+    },
+    {
+      "duplicate_of_line_no": 123,
+      "inchi_key": "WGYKZJWCGVVSQN-UHFFFAOYSA-N",
+      "line_no": 396,
+      "smiles": "C(CC)N"
+    },
+    {
+      "duplicate_of_line_no": 155,
+      "inchi_key": "GLUUGHFHXGJENI-UHFFFAOYSA-N",
+      "line_no": 399,
+      "smiles": "N1CCNCC1"
+    },
+    {
+      "duplicate_of_line_no": 149,
+      "inchi_key": "NISGSNTVMOOSJQ-UHFFFAOYSA-N",
+      "line_no": 400,
+      "smiles": "C1CCCC1N"
+    },
+    {
+      "duplicate_of_line_no": 128,
+      "inchi_key": "WGQKYBSKWIADBV-UHFFFAOYSA-N",
+      "line_no": 401,
+      "smiles": "c1ccc(cc1)CN"
+    },
+    {
+      "duplicate_of_line_no": 129,
+      "inchi_key": "PAYRUJLWNCNPSJ-UHFFFAOYSA-N",
+      "line_no": 403,
+      "smiles": "c1cccc(N)c1"
+    },
+    {
+      "duplicate_of_line_no": 65,
+      "inchi_key": "KWOLFJPFCHCOCG-UHFFFAOYSA-N",
+      "line_no": 414,
+      "smiles": "CC(=O)c1ccccc1"
+    },
+    {
+      "duplicate_of_line_no": 301,
+      "inchi_key": "GJNGXPDXRVXSEH-UHFFFAOYSA-N",
+      "line_no": 437,
+      "smiles": "N#Cc1ccc(Cl)cc1"
+    },
+    {
+      "duplicate_of_line_no": 332,
+      "inchi_key": "MTAODLNXWYIKSO-UHFFFAOYSA-N",
+      "line_no": 451,
+      "smiles": "Fc1ccccn1"
+    },
+    {
+      "duplicate_of_line_no": 478,
+      "inchi_key": "WOAORAPRPVIATR-UHFFFAOYSA-N",
+      "line_no": 479,
+      "smiles": "OB(O)c1cc(C(F)(F)F)ccc1"
+    },
+    {
+      "duplicate_of_line_no": 274,
+      "inchi_key": "HQSCPPCMBMFJJN-UHFFFAOYSA-N",
+      "line_no": 485,
+      "smiles": "N#Cc1ccc(Br)cc1"
+    },
+    {
+      "duplicate_of_line_no": 255,
+      "inchi_key": "CSKNSYBAZOQPLR-UHFFFAOYSA-N",
+      "line_no": 491,
+      "smiles": "O=S(=O)(Cl)c1ccccc1"
+    }
+  ],
+  "excluded": [
+    {
+      "line_no": 223,
+      "reason": "rdkit_unparseable",
+      "smiles": "c1csc[nH]1"
+    },
+    {
+      "line_no": 277,
+      "reason": "rdkit_unparseable",
+      "smiles": "Brc1ccc(N+](=O)[O-])cc1"
+    },
+    {
+      "line_no": 280,
+      "reason": "rdkit_unparseable",
+      "smiles": "Brc1cncc1"
+    },
+    {
+      "line_no": 307,
+      "reason": "rdkit_unparseable",
+      "smiles": "Clc1ccc(N+](=O)[O-])cc1"
+    },
+    {
+      "line_no": 316,
+      "reason": "rdkit_unparseable",
+      "smiles": "OB(O)c1ccc(N+](=O)[O-])cc1"
+    },
+    {
+      "line_no": 361,
+      "reason": "rdkit_unparseable",
+      "smiles": "Cc1csc[nH]1"
+    },
+    {
+      "line_no": 362,
+      "reason": "rdkit_unparseable",
+      "smiles": "c1ncs[nH]1"
+    },
+    {
+      "line_no": 366,
+      "reason": "rdkit_unparseable",
+      "smiles": "c1cco[nH]1"
+    },
+    {
+      "line_no": 501,
+      "reason": "rdkit_unparseable",
+      "smiles": "O=S(=O)(Cl)c1csc(=N)n1"
+    }
+  ],
+  "excluded_count": 9,
+  "output_hdf5_path": "data/comparison/shared_stock/shared_stock.hdf5",
+  "output_hdf5_sha256": "4a5382e9ca5f8b673a079c9e645ab7c1ea21ca9add19c46a8cf688e23d7e0a0e",
+  "output_smi_path": "data/comparison/shared_stock/shared_stock.smi",
+  "output_smi_sha256": "9046b2e234efd32a44c9209f1f80c4162ca35c1629deaf3b69d4dfcc82de38b9",
+  "policy": "Shared-stock identity is RDKit's Chem.MolToInchiKey() of each Chem.MolFromSmiles()-parsed source line, stereo/isotope/charge exactly as present in the source SMILES (no stripping or normalization beyond RDKit's default sanitization). The InChIKey table is written directly to HDF5 (bypassing smiles2stock's own SMILES-reading pipeline), so AiZynthFinder's runtime stock lookup (which computes the same Chem.MolToInchiKey call on its own candidate molecules) can never disagree with this stock's keys by construction. Any source line RDKit cannot parse, or cannot compute an InChIKey for, is excluded and listed under 'excluded' -- never silently retried or exempted.",
+  "roundtrip_extra_count": 0,
+  "roundtrip_identity_confirmed": true,
+  "roundtrip_missing_count": 0,
+  "shared_stock_compound_count": 393,
+  "source_file": "data/building_blocks.smi",
+  "source_file_sha256": "6fb4550dbc29480427ef4331dc492f0f66a315776b32bf1a6ab7057c6f1521dd",
+  "source_raw_line_count": 514
+}

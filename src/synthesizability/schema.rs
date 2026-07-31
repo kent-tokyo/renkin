@@ -216,16 +216,21 @@ pub enum HardFailure {
     /// [`StockTerminationStatus`]).
     StockTerminalMismatch { leaf: String },
     /// A step's target-element accounting failed (see
-    /// [`ElementAccountingStatus::UnaccountedTargetElement`]) and the
-    /// step's template is not on `reagent_omission_template_allowlist`.
-    /// Design doc §4.5 names three failure classes that can surface this
-    /// way, only two of which land here: a genuine template-extraction
-    /// defect (#72-class), or a `split_fragments` fragment-filter artifact
-    /// -- both indistinguishable to the kernel, both a real reason to
-    /// reject the route. The third class (an intentionally-unmodeled
-    /// reagent, e.g. Boc/Cbz deprotection) is carved out via the allowlist
-    /// and recorded instead as
-    /// [`ValidationGap::ReagentOmissionAccountingGap`].
+    /// [`ElementAccountingStatus::UnaccountedTargetElement`]), the step's
+    /// template is not on `reagent_omission_template_allowlist`, **and**
+    /// `SynthesizabilityConfig::accounting_failure_policy` is
+    /// `AccountingFailurePolicy::HardFailure` (`conservative()`-style
+    /// configs). Design doc §4.5 names three failure classes that can
+    /// surface this way, only two of which ever land here: a genuine
+    /// template-extraction defect (#72-class), or a `split_fragments`
+    /// fragment-filter artifact -- both indistinguishable to the kernel.
+    /// The third class (an intentionally-unmodeled reagent, e.g. Boc/Cbz
+    /// deprotection) is carved out via the allowlist and recorded instead
+    /// as [`ValidationGap::ReagentOmissionAccountingGap`] unconditionally.
+    /// Under `AccountingFailurePolicy::ValidationGap`
+    /// (`diagnostic()`-style configs), a non-allowlisted failure is
+    /// downgraded to [`ValidationGap::UnaccountedTargetElementNotEnforced`]
+    /// instead of landing here.
     UnaccountedTargetElement { step_index: usize },
     /// A step's forward validation was `Invalid`, and
     /// `ForwardValidationPolicy` configured this as required.
@@ -260,8 +265,9 @@ pub enum ValidationGap {
     /// `rule:boc_deprotection_retro`, `rule:cbz_deprotection_retro`) --
     /// an accepted search-rule limitation, not a defect. This bucket is
     /// deliberately kept separate from the genuine-extraction-defect and
-    /// fragment-filter-artifact classes that land in
-    /// [`HardFailure::UnaccountedTargetElement`] instead. See issue #73
+    /// fragment-filter-artifact classes, and applies regardless of
+    /// `AccountingFailurePolicy` -- an allowlisted template is never a
+    /// hard failure, even under `conservative()`. See issue #73
     /// (unresolved as of this design) for why `rule:aryl_amine_retro` is
     /// *not* on the default allowlist, and therefore a matching failure on
     /// that template does not land here.
@@ -269,6 +275,18 @@ pub enum ValidationGap {
         step_index: usize,
         template_id: String,
     },
+    /// A step's target-element accounting failed, its template is *not* on
+    /// `reagent_omission_template_allowlist` (so it is a genuine
+    /// extraction-defect or fragment-filter-artifact candidate, design doc
+    /// §4.5 classes 1/3 -- the kernel cannot tell which), **and**
+    /// `SynthesizabilityConfig::accounting_failure_policy` is
+    /// `AccountingFailurePolicy::ValidationGap` (i.e. `diagnostic()`-style
+    /// configs), so it is downgraded from what would otherwise be
+    /// [`HardFailure::UnaccountedTargetElement`] under
+    /// `AccountingFailurePolicy::HardFailure` (`conservative()`-style
+    /// configs). Distinct from `ReagentOmissionAccountingGap`, which is
+    /// unconditional on this policy setting.
+    UnaccountedTargetElementNotEnforced { step_index: usize },
     /// Reserved for when a real search timeout/node budget exists (see
     /// [`AssessmentStatus::Indeterminate`]) and a route is known to be
     /// only a best-effort result of a cut-off search, not a search of the
@@ -346,6 +364,27 @@ pub enum EvidencePolicy {
     RequireExactSubstrate,
 }
 
+/// Whether a target-element-accounting failure on a **non-allowlisted**
+/// template (design doc §4.5's classes 1/3 -- genuine extraction defect or
+/// fragment-filter artifact, indistinguishable to the kernel) is recorded
+/// as a hard failure or downgraded to a validation gap. Never affects the
+/// allowlisted case ([`ValidationGap::ReagentOmissionAccountingGap`] is
+/// unconditional on this policy) -- this only governs how strictly the
+/// *un*-allowlisted, potentially-genuine-defect case is treated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AccountingFailurePolicy {
+    /// A non-allowlisted accounting failure rejects the route outright
+    /// ([`HardFailure::UnaccountedTargetElement`]). The `conservative()`
+    /// default.
+    HardFailure,
+    /// A non-allowlisted accounting failure is recorded as
+    /// [`ValidationGap::UnaccountedTargetElementNotEnforced`] instead --
+    /// the route is not rejected on this basis alone. The `diagnostic()`
+    /// default, for exploratory use only.
+    ValidationGap,
+}
+
 /// Configuration for `assess_routes()`: which checks are required for
 /// `RouteSupported`, and how the target-element-accounting
 /// reagent-omission allowlist is applied (design doc §4.5, §4.7). Not
@@ -369,6 +408,11 @@ pub struct SynthesizabilityConfig {
     /// existing graph-rule exact-formula carve-out and is not assumed to
     /// be the same class.
     pub reagent_omission_template_allowlist: Vec<String>,
+    /// How a **non-allowlisted** accounting failure is classified -- see
+    /// [`AccountingFailurePolicy`]. This is the field that actually
+    /// distinguishes `conservative()` from `diagnostic()`; every other
+    /// field is identical between the two constructors.
+    pub accounting_failure_policy: AccountingFailurePolicy,
     pub max_routes_to_assess: usize,
     pub include_all_route_diagnostics: bool,
 }
@@ -394,9 +438,9 @@ impl SynthesizabilityConfig {
     /// target-element accounting are required; forward validation and
     /// evidence are not (design doc §4.7 -- neither validator's
     /// reliability has been measured yet, so neither is a hard
-    /// requirement out of the box). See [`Self::diagnostic`]'s doc comment
-    /// for what is -- and, importantly, currently is *not* -- different
-    /// about that constructor.
+    /// requirement out of the box). A non-allowlisted accounting failure
+    /// is a hard failure (`AccountingFailurePolicy::HardFailure`). See
+    /// [`Self::diagnostic`]'s doc comment for the one field that differs.
     pub fn conservative() -> Self {
         Self {
             require_verified_stock_terminal: true,
@@ -404,34 +448,26 @@ impl SynthesizabilityConfig {
             forward_validation_policy: ForwardValidationPolicy::Ignore,
             evidence_policy: EvidencePolicy::Ignore,
             reagent_omission_template_allowlist: Self::default_reagent_omission_allowlist(),
+            accounting_failure_policy: AccountingFailurePolicy::HardFailure,
             max_routes_to_assess: DEFAULT_MAX_ROUTES_TO_ASSESS,
             include_all_route_diagnostics: false,
         }
     }
 
-    /// For exploratory use. Every field value here is identical to
-    /// [`Self::conservative`]'s -- per design doc §4.5's last paragraph,
-    /// the two constructors are meant to differ in how a
-    /// non-allowlisted `UnaccountedTargetElement` is classified
-    /// (`HardFailure` under `conservative()`, `ValidationGap` under
-    /// `diagnostic()`), but that distinction is *behavioral*: it is
-    /// implemented downstream in `assessment.rs`'s branching logic, not
-    /// encoded as a field on this struct.
-    ///
-    /// **Known open point, not resolved by this file -- blocks Agent C**:
-    /// because every field is identical, a `SynthesizabilityConfig` value
-    /// by itself does not let `assessment.rs` tell a `conservative()`-built
-    /// config apart from a `diagnostic()`-built one at runtime -- there is
-    /// no field to branch on. Agent C cannot implement §4.5's
-    /// conservative-vs-diagnostic branching from this value alone, and
-    /// cannot add a field to this struct (schema types are Agent A's job,
-    /// per the agent split). Resolving this needs either (a)
-    /// `assess_routes` taking an explicit mode parameter alongside the
-    /// config, or (b) a field added to this struct on the integration
-    /// branch before Agent C starts. The orchestrator must decide which,
-    /// before Agent C's worktree branches off.
+    /// For exploratory use. Identical to [`Self::conservative`] in every
+    /// field except `accounting_failure_policy`
+    /// (`AccountingFailurePolicy::ValidationGap` here, `HardFailure`
+    /// there, design doc §4.5's last paragraph): a non-allowlisted
+    /// accounting failure is downgraded to
+    /// [`ValidationGap::UnaccountedTargetElementNotEnforced`] rather than
+    /// rejecting the route outright. Does not change how the allowlisted
+    /// (reagent-omission) case is treated -- that is unconditional on this
+    /// setting.
     pub fn diagnostic() -> Self {
-        Self::conservative()
+        Self {
+            accounting_failure_policy: AccountingFailurePolicy::ValidationGap,
+            ..Self::conservative()
+        }
     }
 }
 
@@ -446,6 +482,7 @@ pub struct SynthesizabilityConfigSummary {
     pub forward_validation_policy: ForwardValidationPolicy,
     pub evidence_policy: EvidencePolicy,
     pub reagent_omission_template_allowlist: Vec<String>,
+    pub accounting_failure_policy: AccountingFailurePolicy,
     pub max_routes_to_assess: usize,
     pub include_all_route_diagnostics: bool,
 }
@@ -566,15 +603,26 @@ mod tests {
     }
 
     #[test]
-    fn diagnostic_config_is_field_identical_to_conservative() {
-        // Per design doc §4.5's last paragraph: these two constructors are
-        // meant to differ in downstream policy interpretation (assessment.rs),
-        // not in any SynthesizabilityConfig field value. This test pins that
-        // down -- if a future edit makes them diverge, it must be deliberate
-        // and update this test, not an accidental drift.
+    fn diagnostic_config_differs_from_conservative_only_in_accounting_failure_policy() {
+        let conservative = SynthesizabilityConfig::conservative();
+        let diagnostic = SynthesizabilityConfig::diagnostic();
         assert_eq!(
-            SynthesizabilityConfig::conservative(),
-            SynthesizabilityConfig::diagnostic()
+            conservative.accounting_failure_policy,
+            AccountingFailurePolicy::HardFailure
+        );
+        assert_eq!(
+            diagnostic.accounting_failure_policy,
+            AccountingFailurePolicy::ValidationGap
+        );
+        // Every other field must still be identical -- if a future edit
+        // makes another field diverge too, it must be deliberate and this
+        // test updated, not an accidental drift.
+        assert_eq!(
+            SynthesizabilityConfig {
+                accounting_failure_policy: AccountingFailurePolicy::HardFailure,
+                ..diagnostic
+            },
+            conservative
         );
     }
 
@@ -673,6 +721,7 @@ mod tests {
                 reagent_omission_template_allowlist: vec![
                     "rule:boc_deprotection_retro".to_string(),
                 ],
+                accounting_failure_policy: AccountingFailurePolicy::HardFailure,
                 max_routes_to_assess: 10,
                 include_all_route_diagnostics: false,
             },

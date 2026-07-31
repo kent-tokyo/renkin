@@ -8,7 +8,7 @@ use anyhow::{Context, Result};
 use chematic::chem::standardize::{StandardizeOptions, ZwitterionHandling, standardize};
 use chematic::core::{Atom, AtomIdx, BondIdx, BondOrder, Element, MoleculeBuilder};
 use chematic::rxn::run_reactants;
-use chematic::smarts::{QueryMolecule, find_matches, parse_smarts};
+use chematic::smarts::parse_smarts;
 use chematic::smiles::{canonical_smiles, parse};
 use sha2::{Digest, Sha256};
 
@@ -56,26 +56,20 @@ pub fn template_id_for_smirks(smirks: &str) -> String {
 
 /// Building-block library.
 ///
-/// Two-tier storage for scalability:
-/// - `canon_set`: canonical-SMILES FxHashSet used for all lookups (O(1), low memory).
-///   Scales to millions of BBs (500k BBs ≈ 12 MB vs 2.8 GB for VF2 QueryMolecules).
-/// - `vf2_index`: (atom_count, bond_count) → VF2 QueryMolecule fallback for small
-///   sets (DEFAULT_BUILDING_BLOCKS). Provides a secondary confirmation when the
-///   canonical-SMILES check fails, e.g. for molecules with explicit-H notation
-///   produced by `run_reactants`.
-///
-/// In practice the canonical-SMILES path handles all lookups; the VF2 index
-/// only activates when `bb_count ≤ VF2_THRESHOLD` (small in-memory sets).
+/// Stock membership is an exact-identity check: every entry is standardized
+/// (see `STANDARDIZE_OPTS` — explicit H removed, tautomers and charges left
+/// as written, stereo preserved) and stored by canonical SMILES. A query
+/// molecule is a stock hit iff its canonicalized-and-standardized form
+/// exactly matches an entry — never a subgraph/substructure match. This
+/// project previously used a VF2 subgraph-isomorphism fallback here; it was
+/// removed because full-coverage subgraph matches do not imply molecular
+/// identity, which produced false-positive stock hits (see the
+/// `stock membership must not use subgraph matching` tests below).
 pub struct ChemEnv {
-    /// Canonical SMILES of every BB — primary fast lookup.
+    /// Standardized canonical SMILES of every BB — the sole identity lookup.
     canon_set: FxHashSet<String>,
-    /// VF2 fallback for small sets (populated only when bb_count ≤ VF2_THRESHOLD).
-    vf2_index: FxHashMap<(usize, usize), Vec<QueryMolecule>>,
     bb_count: usize,
 }
-
-/// BBs up to this count also build a VF2 index for secondary confirmation.
-const VF2_THRESHOLD: usize = 2000;
 
 impl ChemEnv {
     pub fn load(path: &str) -> Result<Self> {
@@ -95,32 +89,19 @@ impl ChemEnv {
 
     fn from_smiles_iter(iter: impl Iterator<Item = String>) -> Self {
         let mut canon_set: FxHashSet<String> = FxHashSet::default();
-        let mut vf2_raw: Vec<(usize, usize, QueryMolecule)> = Vec::new();
         let mut bb_count = 0usize;
 
         for smiles in iter {
             let Ok(mol) = parse(&smiles) else { continue };
-            let canon = canonical_smiles(&mol);
+            let canon = canonical_stock_identity(&mol);
             if !canon_set.insert(canon) {
                 continue; // duplicate
             }
             bb_count += 1;
-            // VF2 index only for small sets (skip parse_smarts for large sets to save memory)
-            if bb_count <= VF2_THRESHOLD
-                && let Ok(query) = parse_smarts(&smiles)
-            {
-                vf2_raw.push((mol.atom_count(), mol.bonds().count(), query));
-            }
-        }
-
-        let mut vf2_index: FxHashMap<(usize, usize), Vec<QueryMolecule>> = FxHashMap::default();
-        for (n_atoms, n_bonds, query) in vf2_raw {
-            vf2_index.entry((n_atoms, n_bonds)).or_default().push(query);
         }
 
         Self {
             canon_set,
-            vf2_index,
             bb_count,
         }
     }
@@ -130,33 +111,22 @@ impl ChemEnv {
         self.bb_count
     }
 
-    /// Fast O(1) BB check for an already-canonical SMILES string.
-    /// Skips molecule parsing and re-canonicalization. Use this when the
-    /// input is guaranteed to be canonical (e.g. `FEntry.smiles` in search).
+    /// Fast O(1) BB check for an already-canonical, already-standardized
+    /// SMILES string. Skips molecule parsing/standardization/re-canonicalization.
+    /// Use this only when the input is guaranteed to already be in that exact
+    /// form (e.g. `FEntry.smiles` in search, which is produced by
+    /// `split_fragments`'s `standardize` + `canonical_smiles` pipeline).
     pub fn is_building_block_smiles(&self, canonical_smi: &str) -> bool {
         self.canon_set.contains(canonical_smi)
     }
 
     /// Check if `mol` is in the building-block library.
     ///
-    /// Primary: O(1) canonical-SMILES FxHashSet lookup.
-    /// Fallback: VF2 subgraph isomorphism (small sets only, bb_count ≤ VF2_THRESHOLD).
+    /// Exact-identity check only: standardizes `mol` with the same policy
+    /// used to build `canon_set`, then does an O(1) canonical-SMILES lookup.
+    /// No subgraph/substructure matching — a partial match is not membership.
     pub fn is_building_block(&self, mol: &Molecule) -> bool {
-        let canon = canonical_smiles(mol);
-        if self.canon_set.contains(&canon) {
-            return true;
-        }
-        // VF2 fallback for small sets
-        if !self.vf2_index.is_empty() {
-            let key = (mol.atom_count(), mol.bonds().count());
-            if let Some(candidates) = self.vf2_index.get(&key) {
-                let n_atoms = mol.atom_count();
-                return candidates
-                    .iter()
-                    .any(|q| find_matches(q, mol).iter().any(|m| m.len() == n_atoms));
-            }
-        }
-        false
+        self.canon_set.contains(&canonical_stock_identity(mol))
     }
 
     /// Content hash over every canonical BB SMILES (sorted before hashing,
@@ -194,6 +164,28 @@ static STANDARDIZE_OPTS: StandardizeOptions = StandardizeOptions {
     largest_fragment_only: false,
     zwitterion_handling: ZwitterionHandling::Keep,
 };
+
+/// The single, shared stock-identity policy: standardize (see
+/// `STANDARDIZE_OPTS`'s doc comment for exactly what that does and doesn't
+/// fold together), then canonicalize. This is the *only* function that
+/// decides "what counts as the same molecule for stock-membership
+/// purposes" — `ChemEnv::is_building_block`/`from_smiles_iter` and any
+/// other consumer that needs an independent stock-identity check (e.g. the
+/// Synthesizability Kernel, `src/synthesizability/signals.rs`) must call
+/// this rather than hand-duplicating `STANDARDIZE_OPTS`, so the policy can
+/// only ever drift by being changed here.
+pub(crate) fn canonical_stock_identity(mol: &Molecule) -> String {
+    canonical_smiles(&standardize(mol, &STANDARDIZE_OPTS))
+}
+
+/// Parses `smiles` and applies [`canonical_stock_identity`]. `Err` if the
+/// SMILES doesn't parse -- callers that need to distinguish "doesn't parse"
+/// from "parses but isn't a stock hit" should match on the `Result` rather
+/// than collapsing both to `false`/`None`.
+pub(crate) fn canonical_stock_identity_from_smiles(smiles: &str) -> Result<String> {
+    let mol = parse(smiles).with_context(|| format!("Failed to parse SMILES: {smiles}"))?;
+    Ok(canonical_stock_identity(&mol))
+}
 
 // ── Graph-based Ar-Ar bond cleavage (Suzuki retro) ─────────────────────────
 //
@@ -1408,7 +1400,7 @@ mod tests {
     }
 
     #[test]
-    fn building_block_recognized_by_vf2() {
+    fn building_block_recognized_by_exact_match() {
         let env = env_aspirin_bbs();
         let mol = mol_from_smiles("CC(=O)O").unwrap();
         assert!(
@@ -1429,7 +1421,9 @@ mod tests {
 
     #[test]
     fn building_block_canonical_form_variant() {
-        // VF2 must match even when canonical SMILES differ (L2 in lessons.md).
+        // Canonical-SMILES lookup must match regardless of input notation
+        // (same molecule, different SMILES string) — no substructure
+        // matching involved, just canonicalization (L2 in lessons.md).
         let env = ChemEnv::in_memory(&["CC(=O)O"]);
         let mol = mol_from_smiles("OC(C)=O").unwrap(); // different SMILES, same molecule
         assert!(
@@ -1440,13 +1434,191 @@ mod tests {
 
     #[test]
     fn benzoic_acid_variant_matches() {
-        // Different SMILES representations of benzoic acid must match via VF2 (L2).
+        // Different SMILES representations of the *same* benzoic acid
+        // molecule must match via canonicalization (L2 in lessons.md).
         let env = ChemEnv::in_memory(&["c1ccccc1C(=O)O"]);
         let mol = mol_from_smiles("c1c(C(=O)O)cccc1").unwrap();
         assert!(
             env.is_building_block(&mol),
             "c1c(C(=O)O)cccc1 is benzoic acid"
         );
+    }
+
+    #[test]
+    fn stock_membership_requires_exact_identity_not_substructure() {
+        // A stock containing a larger molecule must not make a genuine
+        // substructure of it register as a stock hit. Guards against
+        // reintroducing subgraph/VF2-style matching for stock identity.
+        let env = ChemEnv::in_memory(&["Cc1ccccc1"]); // toluene only, no benzene
+        let benzene = mol_from_smiles("c1ccccc1").unwrap();
+        assert!(
+            !env.is_building_block(&benzene),
+            "benzene is a substructure of toluene but is not the same molecule"
+        );
+    }
+
+    #[test]
+    #[ignore = "one-off diagnostic for issue #71: sweeps the full 402-compound \
+        stock against every one-step retro-fragment of the real 4,903-target \
+        corpus. Run explicitly with `cargo test --lib -- --ignored --nocapture \
+        issue_71_before_after_stock_identity_diff`."]
+    fn issue_71_before_after_stock_identity_diff() {
+        use chematic::smarts::{QueryMolecule, find_matches, parse_smarts};
+        use std::collections::HashSet;
+
+        /// Recreates the pre-fix VF2-inclusive membership check, for
+        /// before/after comparison only. Not used anywhere outside this test.
+        struct OldEnv {
+            canon_set: HashSet<String>,
+            vf2_index: FxHashMap<(usize, usize), Vec<QueryMolecule>>,
+        }
+        impl OldEnv {
+            fn load(path: &str) -> Self {
+                let content = std::fs::read_to_string(path).unwrap();
+                let mut canon_set = HashSet::new();
+                let mut vf2_raw = Vec::new();
+                for line in content
+                    .lines()
+                    .map(str::trim)
+                    .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                {
+                    let Some(smiles) = line.split_whitespace().next() else {
+                        continue;
+                    };
+                    let Ok(mol) = parse(smiles) else { continue };
+                    let canon = canonical_smiles(&mol);
+                    if !canon_set.insert(canon) {
+                        continue;
+                    }
+                    if let Ok(query) = parse_smarts(smiles) {
+                        vf2_raw.push((mol.atom_count(), mol.bonds().count(), query));
+                    }
+                }
+                let mut vf2_index: FxHashMap<(usize, usize), Vec<QueryMolecule>> =
+                    FxHashMap::default();
+                for (a, b, q) in vf2_raw {
+                    vf2_index.entry((a, b)).or_default().push(q);
+                }
+                Self {
+                    canon_set,
+                    vf2_index,
+                }
+            }
+            fn is_building_block(&self, mol: &Molecule) -> bool {
+                let canon = canonical_smiles(mol);
+                if self.canon_set.contains(&canon) {
+                    return true;
+                }
+                let key = (mol.atom_count(), mol.bonds().count());
+                if let Some(cands) = self.vf2_index.get(&key) {
+                    let n = mol.atom_count();
+                    return cands
+                        .iter()
+                        .any(|q| find_matches(q, mol).iter().any(|m| m.len() == n));
+                }
+                false
+            }
+        }
+
+        let old_env = OldEnv::load("data/building_blocks.smi");
+        let new_env = ChemEnv::load("data/building_blocks.smi").unwrap();
+        let rules = default_rules();
+
+        // Probe set: every distinct one-step retro-fragment SMILES produced
+        // by applying every default rule to every real target in the
+        // 4,903-target corpus (data/comparison/sample_full_sorted.jsonl).
+        // Single-level apply_retro only (no multi-step search), so this is
+        // fast despite the corpus size.
+        let corpus = std::fs::read_to_string("data/comparison/sample_full_sorted.jsonl").unwrap();
+        let mut probe_smiles: HashSet<String> = HashSet::new();
+        for line in corpus.lines() {
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+                continue;
+            };
+            let Some(smi) = v.get("canonical_smiles").and_then(|s| s.as_str()) else {
+                continue;
+            };
+            let Ok(mol) = mol_from_smiles(smi) else {
+                continue;
+            };
+            for rule in &rules {
+                for prec_set in apply_retro(&mol, rule) {
+                    for p in prec_set {
+                        probe_smiles.insert(p.smiles);
+                    }
+                }
+            }
+        }
+
+        let mut only_old: Vec<&str> = Vec::new();
+        let mut only_new: Vec<&str> = Vec::new();
+        let mut both = 0usize;
+        let mut neither = 0usize;
+        for smi in &probe_smiles {
+            let Ok(mol) = mol_from_smiles(smi) else {
+                continue;
+            };
+            match (
+                old_env.is_building_block(&mol),
+                new_env.is_building_block(&mol),
+            ) {
+                (true, true) => both += 1,
+                (true, false) => only_old.push(smi),
+                (false, true) => only_new.push(smi),
+                (false, false) => neither += 1,
+            }
+        }
+        only_old.sort_unstable();
+        only_new.sort_unstable();
+
+        println!("probe set size: {}", probe_smiles.len());
+        println!("both accept (real matches, unaffected): {both}");
+        println!("neither accepts: {neither}");
+        println!(
+            "OLD-only accepts (VF2 false positives fixed by this PR): {}",
+            only_old.len()
+        );
+        for s in &only_old {
+            println!("  FIXED FALSE POSITIVE: {s}");
+        }
+        println!(
+            "NEW-only accepts (previously-missed true matches, now correct): {}",
+            only_new.len()
+        );
+        for s in &only_new {
+            println!("  NEWLY CORRECT MATCH: {s}");
+        }
+    }
+
+    #[test]
+    fn vf2_false_positive_regressions_from_issue_71() {
+        // Real false positives found during the #66 benchmark's per-target
+        // audit (data/comparison/results_100/per_target_audit.md in
+        // renkin-compare-66, "3 common-stock-fail targets"). Before this
+        // fix, ChemEnv::is_building_block's VF2 subgraph fallback accepted
+        // each of these as a stock hit even though none is present in
+        // data/building_blocks.smi under any SMILES notation or
+        // canonicalization (independently re-verified via RDKit over the
+        // full stock file during the audit).
+        let env = ChemEnv::load("data/building_blocks.smi").unwrap();
+        let false_positives = [
+            (
+                "C=C/C/C=C",
+                "1,4-pentadiene, via cc_single_cleavage (#L679)",
+            ),
+            ("O=C/C(=O)O", "glyoxylic acid, via wittig_retro (#L1640)"),
+            (
+                "c1ccc(cc1)CC=O",
+                "phenylacetaldehyde, via co_aliphatic_cleavage (#L4575)",
+            ),
+        ];
+        for (smiles, label) in false_positives {
+            let mol = mol_from_smiles(smiles).unwrap();
+            assert!(
+                !env.is_building_block(&mol),
+                "{label} ({smiles}) must not be a stock hit — it is not in data/building_blocks.smi"
+            );
+        }
     }
 
     #[test]

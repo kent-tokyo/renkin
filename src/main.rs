@@ -4,6 +4,7 @@ use renkin::DEFAULT_BUILDING_BLOCKS;
 use renkin::chem_env;
 use renkin::display;
 use renkin::evidence_match;
+use renkin::ring_context;
 use renkin::search::{self, SearchConfig};
 
 use anyhow::{Context, Result, bail};
@@ -58,6 +59,8 @@ fn main() -> Result<()> {
     let mut constraints_path: Option<String> = None;
     #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
     let mut scorer_path: Option<String> = None;
+    let mut ring_context_policy_arg: Option<String> = None;
+    let mut ring_context_sidecar_path: Option<String> = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -133,6 +136,18 @@ fn main() -> Result<()> {
             }
             "--bond-index" => {
                 bond_index = true;
+            }
+            "--ring-context-policy" => {
+                i += 1;
+                if i < args.len() {
+                    ring_context_policy_arg = Some(args[i].clone());
+                }
+            }
+            "--ring-context-sidecar" => {
+                i += 1;
+                if i < args.len() {
+                    ring_context_sidecar_path = Some(args[i].clone());
+                }
             }
             "--bb-prices" => {
                 i += 1;
@@ -247,6 +262,44 @@ fn main() -> Result<()> {
                 })
         });
 
+    let ring_context_policy = match ring_context_policy_arg.as_deref() {
+        None | Some("disabled") => ring_context::RingContextPolicy::Disabled,
+        Some("audit-only") => ring_context::RingContextPolicy::AuditOnly,
+        Some("conservative") => ring_context::RingContextPolicy::Conservative,
+        Some(other) => {
+            eprintln!(
+                "error: invalid --ring-context-policy '{other}' (expected disabled|audit-only|conservative)"
+            );
+            std::process::exit(1);
+        }
+    };
+    let ring_context_guard: Option<std::sync::Arc<ring_context::RingContextGuard>> =
+        if ring_context_policy == ring_context::RingContextPolicy::Disabled {
+            None
+        } else {
+            let Some(sidecar_path) = ring_context_sidecar_path.as_deref() else {
+                eprintln!("error: --ring-context-policy requires --ring-context-sidecar <path>");
+                std::process::exit(1);
+            };
+            let Some(templates_path) = templates_path.as_deref() else {
+                eprintln!(
+                    "error: --ring-context-policy requires --templates <path> (the sidecar is validated against the loaded template file's exact content)"
+                );
+                std::process::exit(1);
+            };
+            let templates_content = std::fs::read_to_string(templates_path).unwrap_or_else(|e| {
+                eprintln!("error: could not read --templates file {templates_path}: {e}");
+                std::process::exit(1);
+            });
+            match ring_context::RingContextGuard::load(sidecar_path, &templates_content) {
+                Ok(g) => Some(std::sync::Arc::new(g)),
+                Err(e) => {
+                    eprintln!("error: failed to load ring-context sidecar: {e}");
+                    std::process::exit(1);
+                }
+            }
+        };
+
     let constraints: ConstraintSpec = constraints_path
         .as_deref()
         .and_then(|p| std::fs::read_to_string(p).ok())
@@ -287,6 +340,8 @@ fn main() -> Result<()> {
         template_metadata: template_metadata.map(|tm| tm.templates),
         #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
         nn_scorer,
+        ring_context_policy,
+        ring_context_guard,
         ..Default::default()
     };
     let (mut routes, stats) = search::find_routes(&target_smiles, &env, &rules, &config)?;

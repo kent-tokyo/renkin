@@ -1081,6 +1081,12 @@ pub fn find_routes(
             },
             t0.elapsed().as_secs_f64()
         );
+        if config.ring_context_policy != crate::ring_context::RingContextPolicy::Disabled {
+            eprintln!(
+                "[renkin] ring_context_diagnostics: {}",
+                serde_json::to_string(&ring_context_diagnostics).unwrap_or_default()
+            );
+        }
     }
 
     if config.required_element_present != 0 {

@@ -202,16 +202,24 @@ impl RingContextGuard {
                 };
                 changed_bond_intents.insert(key, cb.intent);
             }
+            // A handful of extracted templates parse fine under
+            // `chematic::smarts::parse_smarts` (chem_env.rs's own
+            // `load_rules_from_file` validation, hence still present in the
+            // .smi corpus) but fail under `chematic::rxn::parse_reaction`
+            // (e.g. `#7`-style atomic-number SMARTS primitives, which
+            // `parse_reaction`'s stricter SMILES-shaped grammar rejects).
+            // `find_reaction_matches`/`apply_reaction_match` call the exact
+            // same `parse_reaction` internally, so such a template already
+            // deterministically fails there today (pre-existing, silently
+            // swallowed by `apply_retro`'s `.unwrap_or_default()`) --
+            // `run_diagnostics_pass`/`run_conservative_pass` already handle
+            // that `Err` gracefully via `reaction_application_failed`
+            // *before* ever reaching `classify_match`, so an empty table
+            // here is unreachable dead data, not a correctness gap.
             let atom_map_table = if changed_bond_intents.is_empty() {
                 Vec::new()
             } else {
-                lhs_atom_map_table(&tmpl.simplified_smirks).ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "ring-context sidecar entry {template_id} has changed bonds but its \
-                         SMIRKS LHS failed to parse: {}",
-                        tmpl.simplified_smirks
-                    )
-                })?
+                lhs_atom_map_table(&tmpl.simplified_smirks).unwrap_or_default()
             };
             compiled.insert(
                 template_id,

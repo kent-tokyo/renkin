@@ -120,6 +120,10 @@ pub struct SearchStats {
     pub retro_cache_hits: u64,
     /// retro_cache misses (new intermediate → full apply_retro run).
     pub retro_cache_misses: u64,
+    /// Ring-context safety guard counters (Issue #72), accumulated across
+    /// every extracted-template application in this search. All-zero
+    /// unless `SearchConfig::ring_context_policy` is not `Disabled`.
+    pub ring_context_diagnostics: crate::ring_context::RingContextDiagnostics,
 }
 
 fn extract_building_blocks(steps: &[ReactionStep]) -> Vec<String> {
@@ -636,6 +640,16 @@ pub struct SearchConfig {
     /// When Some, pre-filters rules to top-K most relevant before SMARTS matching.
     #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
     pub nn_scorer: Option<std::sync::Arc<crate::scorer::nn::TemplateScorer>>,
+    /// Ring-context safety guard policy (Issue #72). `Disabled` (the
+    /// default) reproduces pre-existing behaviour exactly -- extracted
+    /// templates are applied via the unmodified legacy `apply_retro` path,
+    /// no sidecar is required. `AuditOnly`/`Conservative` require
+    /// `ring_context_guard` to be `Some`.
+    pub ring_context_policy: crate::ring_context::RingContextPolicy,
+    /// Loaded ring-context sidecar (`RingContextGuard::load`). Required
+    /// (hard error at the call site, not here) when `ring_context_policy`
+    /// is not `Disabled`.
+    pub ring_context_guard: Option<std::sync::Arc<crate::ring_context::RingContextGuard>>,
 }
 
 impl Default for SearchConfig {
@@ -654,6 +668,8 @@ impl Default for SearchConfig {
             template_metadata: None,
             #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
             nn_scorer: None,
+            ring_context_policy: crate::ring_context::RingContextPolicy::Disabled,
+            ring_context_guard: None,
         }
     }
 }
@@ -724,6 +740,7 @@ pub fn find_routes(
     let mut matched_templates: u64 = 0;
     let mut stock_hits: u64 = 0;
     let mut retro_cache_hits: u64 = 0;
+    let mut ring_context_diagnostics = crate::ring_context::RingContextDiagnostics::default();
     let mut retro_cache_misses: u64 = 0;
 
     let mut routes: Vec<Route> = Vec::new();
@@ -868,8 +885,16 @@ pub fn find_routes(
                     upstream_score_status: crate::candidate::UpstreamScoreStatus::NotApplicable,
                 })
                 .collect();
-            let raw_proposals =
-                crate::candidate::raw_propose(&target_mol, &target_smi, &scored_active_rules);
+            let (raw_proposals, step_ring_diag) = crate::candidate::raw_propose(
+                &target_mol,
+                &target_smi,
+                &scored_active_rules,
+                crate::ring_context::RingContextArgs {
+                    policy: config.ring_context_policy,
+                    guard: config.ring_context_guard.as_deref(),
+                },
+            );
+            ring_context_diagnostics.merge(&step_ring_diag);
 
             let entries: Vec<RetroEntry> = raw_proposals
                 .into_iter()
@@ -1083,6 +1108,7 @@ pub fn find_routes(
             stock_hits,
             retro_cache_hits,
             retro_cache_misses,
+            ring_context_diagnostics,
         },
     ))
 }

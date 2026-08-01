@@ -333,7 +333,7 @@
   ],
   "excluded_count": 9,
   "output_hdf5_path": "data/comparison/shared_stock/shared_stock.hdf5",
-  "output_hdf5_sha256": "4a5382e9ca5f8b673a079c9e645ab7c1ea21ca9add19c46a8cf688e23d7e0a0e",
+  "output_hdf5_sha256": "dd9b6523727a4173bcf85aa2cacc2c02120ab89335b2ab2fb8286a758853aacd",
   "output_smi_path": "data/comparison/shared_stock/shared_stock.smi",
   "output_smi_sha256": "9046b2e234efd32a44c9209f1f80c4162ca35c1629deaf3b69d4dfcc82de38b9",
   "policy": "Shared-stock identity is RDKit's Chem.MolToInchiKey() of each Chem.MolFromSmiles()-parsed source line, stereo/isotope/charge exactly as present in the source SMILES (no stripping or normalization beyond RDKit's default sanitization). The InChIKey table is written directly to HDF5 (bypassing smiles2stock's own SMILES-reading pipeline), so AiZynthFinder's runtime stock lookup (which computes the same Chem.MolToInchiKey call on its own candidate molecules) can never disagree with this stock's keys by construction. Any source line RDKit cannot parse, or cannot compute an InChIKey for, is excluded and listed under 'excluded' -- never silently retried or exempted.",

@@ -153,17 +153,48 @@ disappearance/change is the expected, predicted effect of the fix. `L3400`
 was one of the 4 accounting-fail targets (`boc_deprotection_retro`); it no
 longer produces any route.
 
-**`L4092` and `L626` are new to this list and their mechanism is not
-established.** Both were classified `true`/`accounted` in Part 1 — i.e.
-their *reported* route's own leaves were genuinely in stock even before the
-fix, by this audit's own per-leaf check. Removing the VF2 fallback should
-only make stock membership *stricter*, so it is not obvious why a route
-whose final leaves were already confirmed genuine would stop being
-discoverable at all under an unchanged depth=5/beam=100 search budget. No
-root cause is claimed here — establishing one would mean instrumenting the
-search itself (closer to Issue #72-adjacent work than a re-measurement),
-which this round does not do. Flagged for follow-up, not fixed here, same
-disposition as `L984`'s `extracted_9` defect above.
+**`L4092` and `L626` are new to this list.** Both were classified
+`true`/`accounted` in Part 1 — i.e. their *reported* route's own leaves were
+genuinely in stock even before the fix, by this audit's own per-leaf check.
+Traced directly by building both the pre-#74 (`8e3a7cd`) and post-#74
+binaries in separate worktrees (confirmed clean isolation: identical
+chematic pin `0.8.1`; the only functional source diff between the two is
+exactly the VF2-fallback removal in `is_bb`) and re-running each target
+against both:
+
+- **`L4092`: the pre-#74 binary is itself nondeterministic for this
+  target.** Two separate invocations of the identical command against the
+  identical (old) binary returned two *different* routes (a 2-step route
+  via `extracted_34`+`cc_single_cleavage` on one run, the checked-in 5-step
+  route on another). The post-#74 binary was checked 3x directly and is
+  consistently unsolved; separately, the full 100-target repeatability
+  cross-check below confirms post-#74 RENKIN is deterministic across the
+  whole sample (99/100 byte-identical, the only difference being the
+  disclosed boundary timeout). So the pre-fix "clean" classification for
+  `L4092` was never a stable, repeatable result to begin with — this
+  doesn't need to be attributed to the VF2 fix specifically.
+- **`L626`: the pre-#74 binary is deterministic here** (3/3 identical
+  routes via `extracted_12`+`co_aliphatic_cleavage`). The terminal leaf
+  `C1[C@H](N)CC[C@@H2]C1` carries an invalid stereo descriptor (an
+  explicit-2H atom can't be a stereocenter) from `co_aliphatic_cleavage`
+  (a handcrafted graph rule, unrelated to the extracted-template ring-topology
+  class in Issue #72) — a plausible-looking lead, since a malformed leaf
+  behaving differently under an exact-identity check vs. the old VF2
+  subgraph fallback was exactly the mechanism found for the original 3
+  stock-fail targets. **Checked directly and ruled out**: RDKit parses this
+  SMILES cleanly and canonicalizes it to `NC1CCCCC1` — genuine
+  cyclohexylamine, present in `data/building_blocks.smi` — i.e. a correct
+  canonicalizer discards the meaningless stereo flag and this leaf was
+  likely always a valid stock match under both binaries. `L626`'s mechanism
+  remains unestablished. Establishing it would mean instrumenting the
+  search itself or chematic's own canonicalization on this exact string
+  (not just RDKit's) — closer to Issue #72-adjacent work than a
+  re-measurement, which this round does not do. Flagged for follow-up, same
+  disposition as `L984`'s `extracted_9` defect above.
+
+(Both pre-#74 routes terminate through `co_aliphatic_cleavage` producing
+this same invalid-stereo-notation leaf shape — worth a narrowly-scoped bug
+report of its own if someone wants to chase it, not filed here.)
 
 Net effect on the "3 stock-fail" / "4 accounting-fail" partition from Part
 1: the stock-fail bucket is now **empty** (0/16, down from 3/21) — every

@@ -463,21 +463,31 @@ could proceed, all of the following must hold, and a human must explicitly
 decide to proceed after reviewing the 100-target results:
 
 - the 100-target feasibility results are reviewed and judged worth scaling;
-- AiZynthFinder's repeat-run variance (given no documented seed control) is
-  characterized on at least 3 independent repetitions of the 100-target
-  sample, in both native and shared-stock modes, before larger-N numbers
-  are treated as stable — a single-run result must never be the basis for
-  a paired comparison at any scale (this round's shared-stock arm is
-  itself still a single run per tool; see the per-run repeatability note
-  in "Common post-hoc validation" and the PR discussion for what remains
-  outstanding);
+- ~~AiZynthFinder's repeat-run variance... characterized on at least 3
+  independent repetitions~~ **done**: `data/comparison/results_100_repeatability/repeatability_report.md`
+  characterizes 4 total runs per arm for AiZynthFinder (native and
+  shared-stock) and 2 total runs per arm for RENKIN. Finding: both tools'
+  solve-state (`route_found`) is stable across repeats (RENKIN
+  byte-identical modulo one disclosed boundary-timeout target per arm;
+  AiZynthFinder's solve/not-solve status unanimous across all 4 runs, both
+  arms) — but AiZynthFinder's *specific route selection* has measurable
+  run-to-run variance even among consistently-solved targets (9.1% of
+  always-solved native targets, 1/4 shared-stock). A single-run result is
+  no longer the sole basis for this round's paired comparisons;
+- Issue #72 (extracted templates carry no ring-topology information, so
+  ring-breaking disconnections go undetected) is resolved, or its scope at
+  500/4,903 targets is explicitly disclosed — otherwise
+  `target_elements_accounted_route_rate` at a larger scale would carry the
+  same undiagnosed correctness gap this round's data does;
 - the known gaps above (corpus provenance, building-block parser
   discrepancy) are either resolved or explicitly re-disclosed at the larger
   scale;
 - compute/time budget for a much larger sequential sweep is confirmed
   (this Mac's Docker VM allocation and shared, non-dedicated hardware were
   adequate for 100 targets run sequentially; 500 or 4,903 is a materially
-  larger commitment).
+  larger commitment — note one of this round's own repeat runs needed a
+  manual retry after AiZynthFinder's public-data mount was found empty,
+  worth planning around for a longer unattended sweep).
 
 ## Reproduction
 

@@ -324,17 +324,13 @@ above, replaced by disclosed per-tool deployment-cost figures (see
 
 ## Outstanding: repeatability (item D)
 
-Not attempted this round. AiZynthFinder has no documented seed-fixing
-mechanism, and both the native and shared-stock AiZynthFinder arms above
-are **single runs**. Per-target solved frequency across repeated runs,
-union/intersection route-found rate, target flip rate, route-hash
-stability, and latency distribution across repetitions have not been
-characterized. RENKIN's own repeatability (expected deterministic, given no
-RNG/seed) was confirmed once during the original 5-target smoke gate
-(byte-identical `run_status`/`normalized_route_sha256` across two runs of
-the same target — see `smoke_gate_report.md`) but has not been reconfirmed
-at n=100 this round. Before any 500- or 4,903-target round, or before
-treating the shared-stock arm as a formally established, stable
-comparison, this repeatability characterization (at least 3 independent
-AiZynthFinder runs per mode, at least 2 RENKIN runs per mode) must be
-completed — see the comparison guide's "500/full run gate".
+Not attempted in this round (both arms above are single runs per tool). **Completed
+in a follow-up round**: `data/comparison/results_100_repeatability/repeatability_report.md`
+characterizes 4 total AiZynthFinder runs and 2 total RENKIN runs per arm.
+Summary: RENKIN is deterministic modulo one disclosed boundary-timeout
+target per arm; AiZynthFinder's solve/not-solve status is unanimous across
+all 4 runs in both arms (zero target flips), but its specific route
+selection has measurable run-to-run variance among some consistently-solved
+targets (9.1% of always-solved native targets, 1/4 shared-stock). See that
+report for full detail — this section is left as the historical record of
+what this round did not attempt.

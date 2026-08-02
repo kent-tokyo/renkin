@@ -1,0 +1,67 @@
+=== 100 targets ===
+
+[disabled] statuses={'completed': 100} route_found=16/100
+[audit_only] statuses={'completed': 99, 'timeout': 1} route_found=16/100
+[conservative] statuses={'completed': 100} route_found=15/100
+[conservative_repeat] statuses={'completed': 100} route_found=15/100
+
+=== Disabled vs AuditOnly (must be identical) ===
+  status_flips: 1
+    ('uspto50k_test#L1446', 'completed', 'timeout')
+  route_found_flips: 0
+  route_signature_flips_same_solve_state: 0
+
+=== Disabled vs Conservative ===
+  status_flips: 0
+  route_found_flips: 1
+    ('uspto50k_test#L984', True, False)
+  route_signature_flips_same_solve_state: 3
+    ('uspto50k_test#L3857', 'f3c9056bab85ffa3', 'f9a470c5ce63e4bc')
+    ('uspto50k_test#L4464', 'f9c58de1aa75ef83', '318a39da3672f52e')
+    ('uspto50k_test#L4575', '69d0a25a4ab99a73', '2a3cf3a37287f75d')
+
+=== Conservative vs Conservative-repeat (determinism) ===
+  status_flips: 0
+  route_found_flips: 0
+  route_signature_flips_same_solve_state: 0
+
+=== Aggregate ring_context_diagnostics: AuditOnly ===
+{
+  "invalid_mapped_bond": 0,
+  "matches_applied": 422065,
+  "matches_enumerated": 444381,
+  "matches_ring_checked": 235836,
+  "matches_unknown_intent": 0,
+  "outcomes_accepted": 421821,
+  "outcomes_element_rejected": 244,
+  "reaction_application_failed": 2357372,
+  "reaction_parse_calls": 5755932,
+  "ring_rejects_nonring_intent_on_ring_bond": 22316,
+  "ring_rejects_ring_intent_on_nonring_bond": 0,
+  "ring_rejects_unknown_intent_on_ring_bond": 0,
+  "templates_missing_metadata": 0,
+  "valence_filtered": 0
+}
+
+=== Aggregate ring_context_diagnostics: Conservative ===
+{
+  "invalid_mapped_bond": 0,
+  "matches_applied": 440666,
+  "matches_enumerated": 464452,
+  "matches_ring_checked": 248311,
+  "matches_unknown_intent": 0,
+  "outcomes_accepted": 440076,
+  "outcomes_element_rejected": 590,
+  "reaction_application_failed": 2443048,
+  "reaction_parse_calls": 5966843,
+  "ring_rejects_nonring_intent_on_ring_bond": 23786,
+  "ring_rejects_ring_intent_on_nonring_bond": 0,
+  "ring_rejects_unknown_intent_on_ring_bond": 0,
+  "templates_missing_metadata": 0,
+  "valence_filtered": 0
+}
+
+=== Latency (elapsed_s) percentiles by arm ===
+  disabled: n=100 total=1458.3s p50=6.90s p95=64.95s max=122.81s
+  audit_only: n=100 total=1837.1s p50=10.17s p95=69.42s max=150.01s
+  conservative: n=100 total=1431.3s p50=6.91s p95=60.00s max=130.27s

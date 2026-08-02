@@ -1,19 +1,23 @@
 #!/usr/bin/env python3
 """
-100-target Disabled/AuditOnly/Conservative gate for the ring-context safety
-guard (Issue #72 / task #242). Reuses the exact 100-target sample and
-per-target configuration already checked into
+100-target Disabled/AuditOnly/Conservative/RingOnly/ElementOnly gate for the
+ring-context safety guard (Issue #72 / task #242). Reuses the exact
+100-target sample and per-target configuration already checked into
 data/comparison/results_100/renkin_native.jsonl (depth=5, beam-width=100,
 max-routes=1, data/building_blocks.smi, data/templates_extracted_500.smi --
 the same corpus the ring-context sidecar was generated from), calling the
 `renkin` binary directly (not through the AiZynthFinder-comparison harness,
 which this gate has no need for).
 
-For each target, runs the SAME binary at three policies:
-  - disabled     (must reproduce the checked-in native-mode measurement)
-  - audit-only   (must be byte-identical to disabled by construction)
-  - conservative (the actual guard)
-plus a second conservative run for a same-process determinism check.
+For each target, runs the SAME binary at six arms:
+  - disabled       (must reproduce the checked-in native-mode measurement)
+  - audit-only     (must be byte-identical to disabled by construction)
+  - conservative   (both ring-context and element-accounting enforced)
+  - conservative_repeat (same policy again, for a determinism check)
+  - ring_only      (ring-context enforced, element-accounting audit-only --
+                     isolates the ring-context gate's individual effect)
+  - element_only   (element-accounting enforced, ring-context audit-only --
+                     isolates the element-accounting gate's individual effect)
 
 Usage:
     python3 scripts/ring_context_gate.py --renkin-binary target/release/renkin
@@ -126,12 +130,21 @@ def main():
     targets = load_sample(args.sample)
     print(f"Loaded {len(targets)} targets from {args.sample}", flush=True)
 
-    results = {"disabled": {}, "audit_only": {}, "conservative": {}, "conservative_repeat": {}}
+    results = {
+        "disabled": {},
+        "audit_only": {},
+        "conservative": {},
+        "conservative_repeat": {},
+        "ring_only": {},
+        "element_only": {},
+    }
     policy_map = {
         "disabled": "disabled",
         "audit_only": "audit-only",
         "conservative": "conservative",
         "conservative_repeat": "conservative",
+        "ring_only": "ring-only",
+        "element_only": "element-only",
     }
 
     for i, t in enumerate(targets):

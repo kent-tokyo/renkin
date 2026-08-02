@@ -57,7 +57,14 @@ def main():
     n = len(results["disabled"])
     print(f"=== {n} targets ===\n")
 
-    for arm in ("disabled", "audit_only", "conservative", "conservative_repeat"):
+    for arm in (
+        "disabled",
+        "audit_only",
+        "conservative",
+        "conservative_repeat",
+        "ring_only",
+        "element_only",
+    ):
         statuses = {}
         for r in results[arm].values():
             statuses[r.get("status")] = statuses.get(r.get("status"), 0) + 1
@@ -89,15 +96,37 @@ def main():
             print(f"    {row}")
     print()
 
+    print("=== Disabled vs RingOnly (ring-context gate's isolated effect) ===")
+    d = compare_arms(results, "disabled", "ring_only")
+    for k, v in d.items():
+        print(f"  {k}: {len(v)}")
+        for row in v[:20]:
+            print(f"    {row}")
+    print()
+
+    print("=== Disabled vs ElementOnly (element-accounting gate's isolated effect) ===")
+    d = compare_arms(results, "disabled", "element_only")
+    for k, v in d.items():
+        print(f"  {k}: {len(v)}")
+        for row in v[:20]:
+            print(f"    {row}")
+    print()
+
     print("=== Aggregate ring_context_diagnostics: AuditOnly ===")
     print(json.dumps(sum_diagnostics(results["audit_only"]), indent=2, sort_keys=True))
     print()
     print("=== Aggregate ring_context_diagnostics: Conservative ===")
     print(json.dumps(sum_diagnostics(results["conservative"]), indent=2, sort_keys=True))
     print()
+    print("=== Aggregate ring_context_diagnostics: RingOnly ===")
+    print(json.dumps(sum_diagnostics(results["ring_only"]), indent=2, sort_keys=True))
+    print()
+    print("=== Aggregate ring_context_diagnostics: ElementOnly ===")
+    print(json.dumps(sum_diagnostics(results["element_only"]), indent=2, sort_keys=True))
+    print()
 
     print("=== Latency (elapsed_s) percentiles by arm ===")
-    for arm in ("disabled", "audit_only", "conservative"):
+    for arm in ("disabled", "audit_only", "conservative", "ring_only", "element_only"):
         times = sorted(r["elapsed_s"] for r in results[arm].values() if "elapsed_s" in r)
         if not times:
             continue

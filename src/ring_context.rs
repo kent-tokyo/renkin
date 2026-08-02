@@ -548,10 +548,19 @@ fn run_diagnostics_pass(
     diagnostics.matches_enumerated += matches.len() as u64;
     let ring_cache = RingBondCache::new(mol);
     for m in &matches {
-        let verdict = classify_match(m, compiled, &ring_cache, diagnostics);
+        match classify_match(m, compiled, &ring_cache, diagnostics) {
+            MatchVerdict::Accept => {}
+            MatchVerdict::Reject(reason) => {
+                record_reject(diagnostics, reason);
+                continue;
+            }
+        }
         // Element-accounting is diagnosed too, on the actual applied
-        // outcome, so AuditOnly's counters reflect what Conservative would
-        // reject -- but never filters here.
+        // outcome, gated behind the same ring-context accept that
+        // Conservative uses -- so AuditOnly's counters reflect exactly what
+        // Conservative would accept/reject, over the same denominator, but
+        // never filter the returned outcomes here.
+        diagnostics.matches_applied += 1;
         diagnostics.reaction_parse_calls += 1;
         if let Ok(Some(products)) = apply_reaction_match(&rule.smirks, &[mol], m, true) {
             let precs: Vec<PrecursorMol> = products.iter().flat_map(split_fragments).collect();
@@ -562,10 +571,6 @@ fn run_diagnostics_pass(
             }
         } else {
             diagnostics.valence_filtered += 1;
-        }
-        match verdict {
-            MatchVerdict::Accept => diagnostics.matches_applied += 1,
-            MatchVerdict::Reject(reason) => record_reject(diagnostics, reason),
         }
     }
 }

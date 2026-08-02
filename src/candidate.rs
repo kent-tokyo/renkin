@@ -952,9 +952,9 @@ pub struct RawCandidate {
 /// callers -- see module doc. `active_rules` is the caller's own selection
 /// (already mode-specific); this function does not choose rules itself.
 ///
-/// `ring` defaults to `RingContextPolicy::Disabled`/`guard: None`, which
-/// reproduces pre-existing behaviour exactly (delegates straight to
-/// `apply_retro`, unchanged). Returns per-call ring-context diagnostics
+/// `ring` defaults to `RingContextConfig::Disabled`, which reproduces
+/// pre-existing behaviour exactly (delegates straight to `apply_retro`,
+/// unchanged). Returns per-call ring-context diagnostics
 /// alongside the candidates so a serial caller (`find_routes`'s A* loop)
 /// can accumulate them across many `raw_propose` calls without needing a
 /// shared mutex here.
@@ -962,7 +962,7 @@ pub(crate) fn raw_propose(
     target_mol: &Molecule,
     target_smi: &str,
     active_rules: &[ScoredRuleRef<'_>],
-    ring: crate::ring_context::RingContextArgs<'_>,
+    ring: crate::ring_context::RingContextArgs,
 ) -> (
     Vec<RawCandidate>,
     crate::ring_context::RingContextDiagnostics,
@@ -987,8 +987,7 @@ pub(crate) fn raw_propose(
             let candidates = crate::ring_context::apply_retro_with_policy(
                 target_mol,
                 r.rule,
-                ring.policy,
-                ring.guard,
+                &ring.config,
                 &mut diag,
             )
             .into_iter()

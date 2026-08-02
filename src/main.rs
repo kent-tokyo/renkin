@@ -139,15 +139,20 @@ fn main() -> Result<()> {
             }
             "--ring-context-policy" => {
                 i += 1;
-                if i < args.len() {
-                    ring_context_policy_arg = Some(args[i].clone());
-                }
+                let Some(v) = args.get(i) else {
+                    bail!(
+                        "--ring-context-policy requires a value \
+                         (disabled|audit-only|conservative|ring-only|element-only)"
+                    );
+                };
+                ring_context_policy_arg = Some(v.clone());
             }
             "--ring-context-sidecar" => {
                 i += 1;
-                if i < args.len() {
-                    ring_context_sidecar_path = Some(args[i].clone());
-                }
+                let Some(v) = args.get(i) else {
+                    bail!("--ring-context-sidecar requires a <path> value");
+                };
+                ring_context_sidecar_path = Some(v.clone());
             }
             "--bb-prices" => {
                 i += 1;
@@ -204,7 +209,11 @@ fn main() -> Result<()> {
              --require-elements / -r  Comma-separated elements each route must supply (e.g. \"B\")\n  \
              --verbose / -v         Print search statistics to stderr\n  \
              --bond-index           Bond-center template index: ~24%% faster, no accuracy loss\n  \
-             --bb-prices <path>     CSV (SMILES,price_per_gram) for route cost scoring"
+             --bb-prices <path>     CSV (SMILES,price_per_gram) for route cost scoring\n  \
+             --ring-context-policy <policy>  disabled (default) | audit-only | conservative | \
+             ring-only | element-only\n  \
+             --ring-context-sidecar <path>   Ring-context metadata JSON, required unless policy \
+             is disabled"
         );
     };
 
@@ -262,21 +271,23 @@ fn main() -> Result<()> {
                 })
         });
 
-    let ring_context_policy = match ring_context_policy_arg.as_deref() {
-        None | Some("disabled") => ring_context::RingContextPolicy::Disabled,
-        Some("audit-only") => ring_context::RingContextPolicy::AuditOnly,
-        Some("conservative") => ring_context::RingContextPolicy::Conservative,
+    let ring_context_safety_policy = match ring_context_policy_arg.as_deref() {
+        None | Some("disabled") => None,
+        Some("audit-only") => Some(ring_context::ExtractedTemplateSafetyPolicy::AUDIT_ONLY),
+        Some("conservative") => Some(ring_context::ExtractedTemplateSafetyPolicy::CONSERVATIVE),
+        Some("ring-only") => Some(ring_context::ExtractedTemplateSafetyPolicy::RING_ONLY),
+        Some("element-only") => Some(ring_context::ExtractedTemplateSafetyPolicy::ELEMENT_ONLY),
         Some(other) => {
             eprintln!(
-                "error: invalid --ring-context-policy '{other}' (expected disabled|audit-only|conservative)"
+                "error: invalid --ring-context-policy '{other}' \
+                 (expected disabled|audit-only|conservative|ring-only|element-only)"
             );
             std::process::exit(1);
         }
     };
-    let ring_context_guard: Option<std::sync::Arc<ring_context::RingContextGuard>> =
-        if ring_context_policy == ring_context::RingContextPolicy::Disabled {
-            None
-        } else {
+    let ring_context_config = match ring_context_safety_policy {
+        None => ring_context::RingContextConfig::Disabled,
+        Some(policy) => {
             let Some(sidecar_path) = ring_context_sidecar_path.as_deref() else {
                 eprintln!("error: --ring-context-policy requires --ring-context-sidecar <path>");
                 std::process::exit(1);
@@ -292,13 +303,17 @@ fn main() -> Result<()> {
                 std::process::exit(1);
             });
             match ring_context::RingContextGuard::load(sidecar_path, &templates_content) {
-                Ok(g) => Some(std::sync::Arc::new(g)),
+                Ok(g) => ring_context::RingContextConfig::Guarded {
+                    guard: std::sync::Arc::new(g),
+                    policy,
+                },
                 Err(e) => {
                     eprintln!("error: failed to load ring-context sidecar: {e}");
                     std::process::exit(1);
                 }
             }
-        };
+        }
+    };
 
     let constraints: ConstraintSpec = constraints_path
         .as_deref()
@@ -340,8 +355,7 @@ fn main() -> Result<()> {
         template_metadata: template_metadata.map(|tm| tm.templates),
         #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
         nn_scorer,
-        ring_context_policy,
-        ring_context_guard,
+        ring_context: ring_context_config,
         ..Default::default()
     };
     let (mut routes, stats) = search::find_routes(&target_smiles, &env, &rules, &config)?;

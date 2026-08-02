@@ -640,16 +640,13 @@ pub struct SearchConfig {
     /// When Some, pre-filters rules to top-K most relevant before SMARTS matching.
     #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
     pub nn_scorer: Option<std::sync::Arc<crate::scorer::nn::TemplateScorer>>,
-    /// Ring-context safety guard policy (Issue #72). `Disabled` (the
+    /// Ring-context safety guard configuration (Issue #72). `Disabled` (the
     /// default) reproduces pre-existing behaviour exactly -- extracted
     /// templates are applied via the unmodified legacy `apply_retro` path,
-    /// no sidecar is required. `AuditOnly`/`Conservative` require
-    /// `ring_context_guard` to be `Some`.
-    pub ring_context_policy: crate::ring_context::RingContextPolicy,
-    /// Loaded ring-context sidecar (`RingContextGuard::load`). Required
-    /// (hard error at the call site, not here) when `ring_context_policy`
-    /// is not `Disabled`.
-    pub ring_context_guard: Option<std::sync::Arc<crate::ring_context::RingContextGuard>>,
+    /// no sidecar is required. `Guarded` always carries a loaded guard
+    /// alongside its enforcement policy; "enforce without a guard" is not a
+    /// state this type can represent.
+    pub ring_context: crate::ring_context::RingContextConfig,
 }
 
 impl Default for SearchConfig {
@@ -668,8 +665,7 @@ impl Default for SearchConfig {
             template_metadata: None,
             #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
             nn_scorer: None,
-            ring_context_policy: crate::ring_context::RingContextPolicy::Disabled,
-            ring_context_guard: None,
+            ring_context: crate::ring_context::RingContextConfig::Disabled,
         }
     }
 }
@@ -890,8 +886,7 @@ pub fn find_routes(
                 &target_smi,
                 &scored_active_rules,
                 crate::ring_context::RingContextArgs {
-                    policy: config.ring_context_policy,
-                    guard: config.ring_context_guard.as_deref(),
+                    config: config.ring_context.clone(),
                 },
             );
             ring_context_diagnostics.merge(&step_ring_diag);
@@ -1081,7 +1076,10 @@ pub fn find_routes(
             },
             t0.elapsed().as_secs_f64()
         );
-        if config.ring_context_policy != crate::ring_context::RingContextPolicy::Disabled {
+        if !matches!(
+            config.ring_context,
+            crate::ring_context::RingContextConfig::Disabled
+        ) {
             eprintln!(
                 "[renkin] ring_context_diagnostics: {}",
                 serde_json::to_string(&ring_context_diagnostics).unwrap_or_default()

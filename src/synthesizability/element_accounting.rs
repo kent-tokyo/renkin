@@ -133,7 +133,7 @@ pub(crate) fn compute_element_accounting(route: &crate::search::Route) -> Elemen
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::search::{ReactionStep, Route};
+    use crate::search::{AtomEconomyStatus, ReactionStep, Route};
 
     fn step(rule: &str, target: &str, precursors: &[&str]) -> ReactionStep {
         ReactionStep {
@@ -143,6 +143,8 @@ mod tests {
             precursors: precursors.iter().map(|s| s.to_string()).collect(),
             conditions: None,
             atom_economy: None,
+            atom_economy_raw_percent: None,
+            atom_economy_status: AtomEconomyStatus::NotEvaluable,
             step_confidence: 1.0,
             procedure_hint: None,
             reaction_family: None,

@@ -378,7 +378,7 @@ mod tests {
         ConditionCandidate, EvidenceScope, ReactionExample, ReportedYield, ResolvedReactionExample,
         StepEvidence, YieldBasis, YieldPercentage,
     };
-    use crate::search::{ReactionStep, Route};
+    use crate::search::{AtomEconomyStatus, ReactionStep, Route};
 
     fn leaf(rule: &str, target: &str, precursors: &[&str]) -> ReactionStep {
         ReactionStep {
@@ -388,6 +388,8 @@ mod tests {
             precursors: precursors.iter().map(|s| s.to_string()).collect(),
             conditions: None,
             atom_economy: None,
+            atom_economy_raw_percent: None,
+            atom_economy_status: AtomEconomyStatus::NotEvaluable,
             step_confidence: 1.0,
             procedure_hint: None,
             reaction_family: None,

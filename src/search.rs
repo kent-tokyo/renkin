@@ -36,6 +36,36 @@ pub struct ReactionConditions {
     pub notes: Option<String>,
 }
 
+/// Why `ReactionStep::atom_economy` is (or isn't) populated. `AbovePhysicalRange`
+/// means MW(target) / Σ MW(precursors) computed to more than 100% -- the
+/// precursor set supplies less mass than the target needs, a target-atom-loss
+/// signal (Issue #79). Earlier behaviour silently clamped that ratio down to
+/// 100.0, which looked identical to a genuinely perfect-economy route.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AtomEconomyStatus {
+    Normal,
+    AbovePhysicalRange,
+    NotEvaluable,
+}
+
+/// Classifies a raw (unclamped) MW(target)/Σ MW(precursors)×100 ratio into
+/// (status, display value). `display` is `Some(raw)` only for `Normal` --
+/// never a clamped substitute, so a caller can't mistake "not evaluable in
+/// the normal sense" for a genuinely perfect route.
+fn classify_atom_economy(raw: Option<f64>) -> (AtomEconomyStatus, Option<f64>) {
+    let status = match raw {
+        None => AtomEconomyStatus::NotEvaluable,
+        Some(r) if r > 100.0 + 1e-6 => AtomEconomyStatus::AbovePhysicalRange,
+        Some(_) => AtomEconomyStatus::Normal,
+    };
+    let display = match status {
+        AtomEconomyStatus::Normal => raw,
+        AtomEconomyStatus::AbovePhysicalRange | AtomEconomyStatus::NotEvaluable => None,
+    };
+    (status, display)
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ReactionStep {
     pub rule: String,
@@ -48,9 +78,21 @@ pub struct ReactionStep {
     /// Suggested conditions for the forward reaction (None for extracted templates).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conditions: Option<ReactionConditions>,
-    /// Atom economy: MW(target) / Σ MW(precursors) × 100 — fraction of atoms retained.
+    /// Atom economy: MW(target) / Σ MW(precursors) × 100 — fraction of atoms
+    /// retained. `None` whenever `atom_economy_status` isn't `Normal`: never
+    /// clamped down to fit an expected range (see `atom_economy_raw_percent`
+    /// for the unclamped ratio, and `atom_economy_status` for why).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub atom_economy: Option<f64>,
+    /// The unclamped MW(target) / Σ MW(precursors) × 100 ratio, populated
+    /// whenever both molecular weights are computable regardless of
+    /// `atom_economy_status` -- the honest number `atom_economy` is derived
+    /// from, kept even when that ratio exceeds the physically-expected
+    /// [0, 100] range.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub atom_economy_raw_percent: Option<f64>,
+    /// See `AtomEconomyStatus`.
+    pub atom_economy_status: AtomEconomyStatus,
     /// Per-step template confidence: rule_weight / max_rule_weight ∈ [0, 1].
     /// Hand-crafted rules (weight=1.0) yield lower values when high-frequency extracted
     /// templates are present; all weights equal → all step_confidence = 1.0.
@@ -948,7 +990,9 @@ pub fn find_routes(
                     target: target_smi.clone(),
                     precursors: entry.precursor_smiles.clone(),
                     conditions: conditions_for_rule(&entry.rule_name),
-                    atom_economy: None,   // populated in post-processing
+                    atom_economy: None,             // populated in post-processing
+                    atom_economy_raw_percent: None, // populated in post-processing
+                    atom_economy_status: AtomEconomyStatus::NotEvaluable, // populated in post-processing
                     step_confidence: 0.0, // populated in post-processing
                     reaction_family: reaction_family_for_rule(&entry.rule_name).map(str::to_string),
                     procedure_hint: procedure_hint_for_rule(&entry.rule_name).map(str::to_string),
@@ -1020,13 +1064,11 @@ pub fn find_routes(
                     .filter_map(|s| mol_from_smiles(s).ok())
                     .map(|m| molecular_weight(&m))
                     .sum();
-                step.atom_economy = tmw.and_then(|tw| {
-                    if pmw > 0.0 {
-                        Some((tw / pmw * 100.0).min(100.0))
-                    } else {
-                        None
-                    }
-                });
+                let raw = tmw.and_then(|tw| (pmw > 0.0).then_some(tw / pmw * 100.0));
+                let (status, display) = classify_atom_economy(raw);
+                step.atom_economy_raw_percent = raw;
+                step.atom_economy_status = status;
+                step.atom_economy = display;
 
                 step.evidence = config
                     .template_metadata
@@ -1315,6 +1357,8 @@ mod tests {
             precursors: vec!["C".to_string(), "O=C=O".to_string()],
             conditions: None,
             atom_economy: None,
+            atom_economy_raw_percent: None,
+            atom_economy_status: AtomEconomyStatus::NotEvaluable,
             step_confidence: 0.5,
             procedure_hint: None,
             reaction_family: None,
@@ -1328,6 +1372,76 @@ mod tests {
                 && !json.contains("metadata_scope")
                 && !json.contains("evidence"),
             "absent metadata fields must be omitted from JSON, got: {json}"
+        );
+    }
+
+    // ── Issue #79: atom_economy must never silently clamp ──────────────
+
+    #[test]
+    fn classify_atom_economy_normal_case_unchanged() {
+        let (status, display) = classify_atom_economy(Some(87.5));
+        assert_eq!(status, AtomEconomyStatus::Normal);
+        assert_eq!(display, Some(87.5));
+    }
+
+    #[test]
+    fn classify_atom_economy_exactly_100_is_normal() {
+        let (status, display) = classify_atom_economy(Some(100.0));
+        assert_eq!(status, AtomEconomyStatus::Normal);
+        assert_eq!(display, Some(100.0));
+    }
+
+    #[test]
+    fn classify_atom_economy_above_range_is_never_clamped_into_display() {
+        // The historical bug: (raw).min(100.0) silently turned 183.4 into
+        // 100.0, making a broken route look like a perfect one.
+        let (status, display) = classify_atom_economy(Some(183.4));
+        assert_eq!(status, AtomEconomyStatus::AbovePhysicalRange);
+        assert_eq!(
+            display, None,
+            "a target-atom-loss ratio must never be reported as a display value, clamped or otherwise"
+        );
+    }
+
+    #[test]
+    fn classify_atom_economy_not_evaluable_when_no_raw_ratio() {
+        let (status, display) = classify_atom_economy(None);
+        assert_eq!(status, AtomEconomyStatus::NotEvaluable);
+        assert_eq!(display, None);
+    }
+
+    #[test]
+    fn above_range_step_omits_atom_economy_but_keeps_raw_and_status_in_json() {
+        let raw = 183.4;
+        let (status, display) = classify_atom_economy(Some(raw));
+        let step = ReactionStep {
+            rule: "extracted_0".to_string(),
+            template_id: "smirks-sha256:deadbeef".to_string(),
+            target: "CC(=O)O".to_string(),
+            precursors: vec!["C".to_string()],
+            conditions: None,
+            atom_economy: display,
+            atom_economy_raw_percent: Some(raw),
+            atom_economy_status: status,
+            step_confidence: 0.5,
+            procedure_hint: None,
+            reaction_family: None,
+            metadata_source: None,
+            metadata_scope: None,
+            evidence: None,
+        };
+        let json = serde_json::to_string(&step).unwrap();
+        assert!(
+            !json.contains("\"atom_economy\":"),
+            "atom_economy must be absent (never a clamped 100.0), got: {json}"
+        );
+        assert!(
+            json.contains("\"atom_economy_raw_percent\":183.4"),
+            "the honest raw ratio must still be reported, got: {json}"
+        );
+        assert!(
+            json.contains("\"atom_economy_status\":\"above_physical_range\""),
+            "got: {json}"
         );
     }
 

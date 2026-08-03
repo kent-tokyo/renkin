@@ -469,6 +469,19 @@ pub fn explain_route(route: &Route, target: &str, num: usize) -> String {
     for (i, ae) in &bad_ae {
         weaknesses.push(format!("low atom economy in step {i} ({ae:.0}%)"));
     }
+    // Issue #79: surface target-atom loss explicitly rather than letting a
+    // step silently drop out of both the "good economy" and "low economy"
+    // categories above (which is all a clamped-to-100 value used to do).
+    for (i, s) in route.steps.iter().enumerate() {
+        if s.atom_economy_status == crate::search::AtomEconomyStatus::AbovePhysicalRange
+            && let Some(raw) = s.atom_economy_raw_percent
+        {
+            weaknesses.push(format!(
+                "target-atom loss suspected in step {} (raw atom economy {raw:.0}% exceeds the physical maximum)",
+                i + 1
+            ));
+        }
+    }
     let mut families: Vec<&str> = Vec::new();
     for step in &route.steps {
         if let Some(f) = step.reaction_family.as_deref()
@@ -603,6 +616,8 @@ mod tests {
             precursors: vec!["CC(=O)O".to_string(), "Oc1ccccc1C(=O)O".to_string()],
             conditions: None,
             atom_economy: Some(90.0),
+            atom_economy_raw_percent: Some(90.0),
+            atom_economy_status: crate::search::AtomEconomyStatus::Normal,
             step_confidence: 1.0,
             procedure_hint: None,
             reaction_family: Some("esterification".to_string()),

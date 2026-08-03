@@ -64,9 +64,10 @@ a `dict` — parse it with `json.loads()` before accessing fields.
                     "template_id": str,      # stable template identity, see Template Evidence Metadata
                     "precursors": [str],     # SMILES of precursor molecules
                     "step_confidence": float,
-                    # conditions / atom_economy / procedure_hint / reaction_family /
-                    # metadata_source / metadata_scope / evidence are present when
-                    # applicable and omitted from the JSON otherwise. evidence, when
+                    # atom_economy_status: "normal" / "above_physical_range" / "not_evaluable" (always present)
+                    # conditions / atom_economy / atom_economy_raw_percent / procedure_hint /
+                    # reaction_family / metadata_source / metadata_scope / evidence are present
+                    # when applicable and omitted from the JSON otherwise. evidence, when
                     # present, may itself include an "examples" array (schema_version
                     # 2 sidecars only), each entry carrying a "match_kind" of
                     # "exact_substrate" or "template_only" -- see Template Evidence Metadata

@@ -54,6 +54,12 @@ class RenkinConfig:
     max_routes: int = 1
     external_timeout_s: float = 150.0
     grace_s: float = 10.0
+    # Ring-context safety guard (Issue #72/#242) -- None/"disabled" runs the
+    # shipped default (guard off); any other policy also requires a sidecar
+    # path and is used for the guard-cost comparison arm, never the primary
+    # RENKIN-vs-AiZynthFinder arm (see Issue #66 500-target protocol).
+    ring_context_policy: str | None = None
+    ring_context_sidecar: str | None = None
 
 
 _MAXRSS_RE = re.compile(r"^\s*(\d+)\s+maximum resident set size\s*$", re.MULTILINE)
@@ -132,6 +138,9 @@ def run_one_target(
     ]
     if config.templates_path:
         argv += ["--templates", config.templates_path]
+    if config.ring_context_policy and config.ring_context_policy != "disabled":
+        argv += ["--ring-context-policy", config.ring_context_policy]
+        argv += ["--ring-context-sidecar", config.ring_context_sidecar]
 
     returncode, stdout, stderr, wall_clock_s, peak_rss_bytes, wrapper_killed = (
         _run_with_time_wrapper(argv, config.external_timeout_s, config.grace_s)
@@ -185,7 +194,7 @@ def run_one_target(
         **base,
         run_status="completed",
         route_found=route_found,
-        tool_reported_route_count=routes_found,
+        tool_reported_route_count=routes_found if route_found else None,
         total_elapsed_ms=total_elapsed_ms,
         peak_rss_bytes=peak_rss_bytes,
         raw_output_sha256=raw_output_sha256,

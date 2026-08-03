@@ -1115,22 +1115,56 @@ fn parse_objectives(spec: &str) -> Vec<(ObjField, ObjDir)> {
         .collect()
 }
 
-fn obj_value(route: &search::Route, field: ObjField) -> f64 {
+/// Route-level atom-economy objective: `None` (not evaluable) as soon as
+/// any step isn't `Normal`, rather than silently averaging over only the
+/// evaluable steps and hiding the rest -- averaging a good step with an
+/// omitted bad one would report a route with a real problem as if it had
+/// none (Issue #79 review round 2).
+fn atom_economy_objective(route: &search::Route) -> Option<f64> {
+    if route.steps.is_empty()
+        || route
+            .steps
+            .iter()
+            .any(|s| s.atom_economy_status != search::AtomEconomyStatus::Normal)
+    {
+        return None;
+    }
+    let sum: f64 = route
+        .steps
+        .iter()
+        .map(|s| s.atom_economy.expect("Normal must carry a value"))
+        .sum();
+    Some(sum / route.steps.len() as f64)
+}
+
+/// `None` for every field means "not evaluable"; only `AtomEconomy` can
+/// currently produce one. Every other field is always `Some`.
+fn obj_value(route: &search::Route, field: ObjField) -> Option<f64> {
     match field {
-        ObjField::Cost => route.route_cost,
-        ObjField::SuccessProb => route.success_probability,
-        ObjField::Steps => route.steps.len() as f64,
-        ObjField::Depth => route.depth as f64,
-        ObjField::Confidence => route.confidence,
-        ObjField::Convergency => route.convergency,
-        ObjField::AtomEconomy => {
-            let vals: Vec<f64> = route.steps.iter().filter_map(|s| s.atom_economy).collect();
-            if vals.is_empty() {
-                0.0
-            } else {
-                vals.iter().sum::<f64>() / vals.len() as f64
-            }
-        }
+        ObjField::Cost => Some(route.route_cost),
+        ObjField::SuccessProb => Some(route.success_probability),
+        ObjField::Steps => Some(route.steps.len() as f64),
+        ObjField::Depth => Some(route.depth as f64),
+        ObjField::Confidence => Some(route.confidence),
+        ObjField::Convergency => Some(route.convergency),
+        ObjField::AtomEconomy => atom_economy_objective(route),
+    }
+}
+
+/// Compares `b`'s value against `a`'s under `dir`, returning
+/// `(b_is_better, b_is_worse)`. A `None` (not-evaluable) value is always
+/// worse than any `Some` value on that objective, regardless of `dir` --
+/// evaluable beats non-evaluable, never converted to 0 or ±infinity. Two
+/// `None`s tie (neither better nor worse).
+fn obj_compare(dir: ObjDir, a: Option<f64>, b: Option<f64>) -> (bool, bool) {
+    match (a, b) {
+        (None, None) => (false, false),
+        (Some(_), None) => (false, true),
+        (None, Some(_)) => (true, false),
+        (Some(va), Some(vb)) => match dir {
+            ObjDir::Min => (vb < va, vb > va),
+            ObjDir::Max => (vb > va, vb < va),
+        },
     }
 }
 
@@ -1142,10 +1176,7 @@ fn dominates(a: &search::Route, b: &search::Route, objs: &[(ObjField, ObjDir)]) 
     for &(field, dir) in objs {
         let va = obj_value(a, field);
         let vb = obj_value(b, field);
-        let (b_better, b_worse) = match dir {
-            ObjDir::Min => (vb < va, vb > va),
-            ObjDir::Max => (vb > va, vb < va),
-        };
+        let (b_better, b_worse) = obj_compare(dir, va, vb);
         if b_worse {
             all_no_worse = false;
         }
@@ -1171,12 +1202,14 @@ fn tradeoff_label(
     let mut labels: Vec<&'static str> = Vec::new();
     for &(field, dir) in objs {
         let my_val = obj_value(&routes[idx], field);
+        // A route whose own value on this objective isn't evaluable is
+        // never the unique best on it, even on a singleton front.
+        if my_val.is_none() {
+            continue;
+        }
         let is_unique_best = front.iter().filter(|&&j| j != idx).all(|&j| {
             let other = obj_value(&routes[j], field);
-            match dir {
-                ObjDir::Min => my_val < other,
-                ObjDir::Max => my_val > other,
-            }
+            obj_compare(dir, other, my_val).0
         });
         if is_unique_best {
             labels.push(match (field, dir) {
@@ -1194,6 +1227,136 @@ fn tradeoff_label(
         None
     } else {
         Some(labels.join("_and_"))
+    }
+}
+
+#[cfg(test)]
+mod pareto_tests {
+    use super::*;
+
+    fn step(
+        atom_economy_status: search::AtomEconomyStatus,
+        atom_economy: Option<f64>,
+    ) -> search::ReactionStep {
+        search::ReactionStep {
+            rule: "ester_cleavage".to_string(),
+            template_id: "rule:ester_cleavage".to_string(),
+            target: "CC(=O)Oc1ccccc1".to_string(),
+            precursors: vec!["CC(=O)O".to_string(), "Oc1ccccc1".to_string()],
+            conditions: None,
+            atom_economy,
+            atom_economy_raw_percent: atom_economy,
+            atom_economy_status,
+            step_confidence: 1.0,
+            procedure_hint: None,
+            reaction_family: None,
+            metadata_source: None,
+            metadata_scope: None,
+            evidence: None,
+        }
+    }
+
+    fn route(steps: Vec<search::ReactionStep>) -> search::Route {
+        search::Route {
+            steps,
+            depth: 1,
+            score: 1.0,
+            building_blocks: vec![],
+            confidence: 1.0,
+            convergency: 1.0,
+            success_probability: 1.0,
+            route_cost: 1.0,
+        }
+    }
+
+    #[test]
+    fn atom_economy_objective_is_average_when_all_steps_normal() {
+        let r = route(vec![
+            step(search::AtomEconomyStatus::Normal, Some(90.0)),
+            step(search::AtomEconomyStatus::Normal, Some(80.0)),
+        ]);
+        assert_eq!(atom_economy_objective(&r), Some(85.0));
+    }
+
+    #[test]
+    fn atom_economy_objective_is_none_when_any_step_is_above_expected_range() {
+        // One good step (90%) averaged with one route-defect step must not
+        // hide the defect behind a plausible-looking mean.
+        let r = route(vec![
+            step(search::AtomEconomyStatus::Normal, Some(90.0)),
+            step(search::AtomEconomyStatus::AboveExpectedRange, None),
+        ]);
+        assert_eq!(atom_economy_objective(&r), None);
+    }
+
+    #[test]
+    fn atom_economy_objective_is_none_when_any_step_is_not_evaluable() {
+        let r = route(vec![
+            step(search::AtomEconomyStatus::Normal, Some(90.0)),
+            step(search::AtomEconomyStatus::NotEvaluable, None),
+        ]);
+        assert_eq!(atom_economy_objective(&r), None);
+    }
+
+    #[test]
+    fn atom_economy_objective_is_none_for_a_zero_step_route() {
+        assert_eq!(atom_economy_objective(&route(vec![])), None);
+    }
+
+    #[test]
+    fn dominates_prefers_evaluable_atom_economy_over_not_evaluable() {
+        // Same on every other objective; b evaluates cleanly, a doesn't.
+        let a = route(vec![step(search::AtomEconomyStatus::NotEvaluable, None)]);
+        let b = route(vec![step(search::AtomEconomyStatus::Normal, Some(90.0))]);
+        let objs = vec![(ObjField::AtomEconomy, ObjDir::Max)];
+        assert!(
+            dominates(&a, &b, &objs),
+            "b (evaluable) must dominate a (not evaluable)"
+        );
+        assert!(!dominates(&b, &a, &objs));
+    }
+
+    #[test]
+    fn dominates_ties_when_both_atom_economy_not_evaluable() {
+        let a = route(vec![step(search::AtomEconomyStatus::NotEvaluable, None)]);
+        let b = route(vec![step(
+            search::AtomEconomyStatus::AboveExpectedRange,
+            None,
+        )]);
+        let objs = vec![(ObjField::AtomEconomy, ObjDir::Max)];
+        assert!(!dominates(&a, &b, &objs));
+        assert!(!dominates(&b, &a, &objs));
+    }
+
+    #[test]
+    fn tradeoff_label_never_tags_a_not_evaluable_route_best_atom_economy_even_alone_on_front() {
+        let routes = vec![route(vec![step(
+            search::AtomEconomyStatus::NotEvaluable,
+            None,
+        )])];
+        let objs = vec![(ObjField::AtomEconomy, ObjDir::Max)];
+        let front = pareto_front_indices(&routes, &objs);
+        assert_eq!(front, vec![0]);
+        assert_eq!(tradeoff_label(0, &front, &routes, &objs), None);
+    }
+
+    #[test]
+    fn tradeoff_label_tags_the_evaluable_route_best_atom_economy_against_a_not_evaluable_rival() {
+        let routes = vec![
+            route(vec![step(search::AtomEconomyStatus::NotEvaluable, None)]),
+            route(vec![step(search::AtomEconomyStatus::Normal, Some(90.0))]),
+        ];
+        let objs = vec![(ObjField::AtomEconomy, ObjDir::Max)];
+        let front = pareto_front_indices(&routes, &objs);
+        assert_eq!(
+            front,
+            vec![1],
+            "the not-evaluable route must be dominated off the front"
+        );
+        assert_eq!(
+            tradeoff_label(1, &front, &routes, &objs),
+            Some("best_atom_economy".to_string())
+        );
     }
 }
 

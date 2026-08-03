@@ -1,4 +1,4 @@
-=== 100 targets ===
+=== 100 targets (['audit_only', 'conservative', 'conservative_repeat', 'disabled', 'element_only', 'ring_only'] arms present) ===
 
 [disabled] statuses={'completed': 100} route_found=16/100
 [audit_only] statuses={'completed': 100} route_found=16/100

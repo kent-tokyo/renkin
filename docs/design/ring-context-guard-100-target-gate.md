@@ -11,16 +11,27 @@ arms, to answer one question before this can go to a 500-target run: **does
 the guard change or break anything it shouldn't?**
 
 Raw data: `data/comparison/ring_context_gate_results_100.json` (600 raw
-per-target invocations). Report script output:
-`data/comparison/ring_context_gate_report_100.txt`. Reproduce with:
+per-target invocations, native stock). Report script output:
+`data/comparison/ring_context_gate_report_100.txt`. A shared-stock
+confirmatory check (§ Shared-stock confirmation) adds
+`data/comparison/ring_context_gate_results_shared_stock_100.json` (300 more
+invocations) and `..._report_shared_stock_100.txt`. Reproduce with:
 
 ```
-python3 scripts/generate_ring_context_metadata.py   # regenerate the sidecar
+python3 scripts/generate_ring_context_metadata.py \
+    --dataset-revision 08a575f0546b2be57242997fd45f684d6814d5a9   # regenerate the sidecar
 cargo build --release
 python3 scripts/ring_context_gate.py --renkin-binary target/release/renkin \
     --output ring_context_gate_results.json
 python3 scripts/ring_context_gate_report.py --input ring_context_gate_results.json
 ```
+
+`--dataset-revision` is shown explicitly above for clarity, but this exact
+SHA is also `generate_ring_context_metadata.py`'s `PINNED_DATASET_REVISION`
+default — omitting the flag reproduces the same corpus. `--resolve-latest`
+opts into a dynamic HEAD resolution instead, for a deliberate re-baseline
+against upstream drift (never used for reproducing this checked-in
+artifact).
 
 ## Methodology correction (this revision)
 
@@ -130,36 +141,48 @@ counterpart of the `extracted_9`/isoindolinone unit-test regression
 (`src/ring_context.rs::extracted_9_conservative_rejects_isoindolinone_ring_opening`).
 Target SMILES
 `Cc1ccc(C(=O)Nc2ccc(-c3ccc4c(c3)CN([C@H](C(=O)O)C(C)C)C4=O)cc2)cc1` contains
-an isoindolinone (benzene-fused γ-lactam); the currently-published
-`renkin_native.jsonl` entry for it already carries
-`"target_element_accounting_status": "unaccounted_target_element"` — the
-route `Conservative` now removes was already flagged wrong in published
-data. `extracted_9`'s corrected observations (231/231 non-ring, 0 ring)
-still classify it `non_ring`, so it still fails closed here; no alternate
-route is found within budget.
+an isoindolinone (benzene-fused γ-lactam). This route is independently
+invalid on two grounds, not just this guard's own opinion: the
+currently-published `renkin_native.jsonl` entry for it already carries
+`"target_element_accounting_status": "unaccounted_target_element"` from
+the pre-existing comparison-harness validator, and the RingOnly/ElementOnly
+ablation below (§ RingOnly/ElementOnly ablation) shows this specific match
+independently fails this guard's own element-accounting axis too, with
+ring-context off. `extracted_9`'s corrected observations (231/231
+non-ring, 0 ring) still classify it `non_ring`, so `Conservative` fails
+closed here; no alternate route is found within budget.
 
-**`L1167`** (new in this revision — was not a casualty under the old,
+**`L1167`** (new in this revision — did not flip under the old,
 falsely-permissive sidecar): target SMILES `CC(N)C(=O)N1CC(=O)NC1(C)C`, a
 methylated hydantoin/imidazolidinedione ring. Directly traced (not
 inferred): re-running this target at `disabled` gives `routes_found: 1`;
-at `conservative`,
-`ring_context_diagnostics` shows `"ring_rejects_nonring_intent_on_ring_bond":2042`
-and `"outcomes_element_rejected":0` for this specific target —
-i.e. this is a **pure ring-context rejection**, unrelated to
-element-accounting, and `routes_found: 0` follows. Under the old,
-inflated-`either` sidecar, whatever template misapplies here on this ring
-was permissively classified `either` and passed through uncaught; the
-corrected sidecar now classifies it strictly and catches a second,
-independent real instance of the exact defect class #72 describes (a
-different ring system than L984's, same underlying mechanism: an
-extracted template trained overwhelmingly non-ring pattern-matching a real
-target's ring bond).
+at `conservative`, `ring_context_diagnostics` shows
+`"ring_rejects_nonring_intent_on_ring_bond":2042` and
+`"outcomes_element_rejected":0` for this specific target — i.e. this is a
+**pure ring-context rejection**, unrelated to element-accounting, and
+`routes_found: 0` follows. This is a **provenance-inconsistent
+application, conservatively rejected** — the template's historical
+occurrences give no support for applying this disconnection to a ring
+bond, so the guard fails closed by design. That is a safety
+classification, not independent proof that this specific disconnection is
+chemically impossible at this site (unlike `L984`, no independent
+element-accounting or pre-existing-validator confirmation was checked for
+this target). Under the old, inflated-`either` sidecar this same
+application was classified permissively and passed through unflagged; the
+corrected sidecar now classifies it strictly by the same mechanism as
+`L984` (an extracted template trained overwhelmingly non-ring
+pattern-matching a real target's ring bond) — the underlying mechanism is
+shared, the *chemical* wrongness is only independently confirmed for
+`L984`.
 
 **`L4464`/`L4575`** (route changed, still solved): same targets flagged in
-the prior revision; still resolve to a different, still-valid route after
-an unsafe match is rejected — `L3857` (flagged in the prior revision) no
-longer flips at all with the corrected sidecar, i.e. `disabled` and
-`conservative` now agree on its route.
+the prior revision; the search finds a different alternate route — one
+that passes this guard's implemented structural gates — after an unsafe
+match is rejected. This is not an external chemical-correctness claim
+about that alternate, only that it clears `Conservative`'s own checks.
+`L3857` (flagged in the prior revision) no longer flips at all with the
+corrected sidecar, i.e. `disabled` and `conservative` now agree on its
+route.
 
 ### Conservative vs Conservative-repeat — determinism
 
@@ -191,14 +214,20 @@ route (ring-context rejects), and ElementOnly alone *also* loses it
 which found this exact isoindolinone case fails element-accounting too: a
 fused-ring template misapplication can't cleanly split into the two
 product fragments the template's SMIRKS declares, since removing a ring
-bond never disconnects a graph into two components — a real,
-independently-discovered defense-in-depth result, not a test artifact).
+bond never disconnects a graph into two components). This is what lets
+`L984` be described as independently invalid above (§ Disabled vs
+Conservative) rather than only conservatively rejected: two of this
+guard's own independent checks agree, not just one.
 
-**`L4575` takes a genuinely different alternate route under ElementOnly
-than under RingOnly/Conservative** (distinct `route_signature`): the two
-gates are not simply superadditive — with ring-context off, a
-ring-unsafe-but-element-accounting-safe match stays available and the
-search finds yet another distinct valid route through it.
+**`L4575` takes a different alternate route under ElementOnly than under
+RingOnly/Conservative** (distinct `route_signature`): the two gates are
+not simply superadditive — with ring-context left `AuditOnly`, a
+ring-context-unsafe match stays available to the search and it settles on
+yet another distinct route through it. This `ElementOnly` alternate is
+**not** described as "valid" here: by construction it can still contain
+the same kind of ring-context-unsafe disconnection this guard exists to
+catch, since `ElementOnly` never enforces that axis. It only demonstrates
+that the two axes interact rather than one subsuming the other.
 
 ### Aggregate `ring_context_diagnostics`
 
@@ -237,6 +266,46 @@ by the dedicated unit tests in `src/ring_context.rs`, not this measurement.
 ring-context axis un-enforced, so nothing is skipped pre-apply) carry the
 expected overhead from unconditional classification/diagnostics.
 
+## Shared-stock confirmation
+
+Issue #66's formal comparison uses two stock arms: native (this branch's
+own 402-compound `data/building_blocks.smi`) and shared (the 393-compound
+`data/comparison/shared_stock/shared_stock.smi`, constructed for a
+guaranteed zero-diff identity between RENKIN's and AiZynthFinder's stocks).
+Everything above uses native stock; before a 500-target run touches shared
+stock too, this reruns the same 100 targets against shared stock at a
+cheaper 3-arm subset (`disabled`/`conservative`/`conservative-repeat` —
+`--arms` on `scripts/ring_context_gate.py`) as a confirmatory check, not a
+repeat of the full ablation. Raw data:
+`data/comparison/ring_context_gate_results_shared_stock_100.json`; report:
+`data/comparison/ring_context_gate_report_shared_stock_100.txt`.
+
+| arm | completed | routes found |
+|---|---|---|
+| disabled | 100 | 16/100 |
+| conservative | 100 | 14/100 |
+| conservative-repeat | 100 | 14/100 |
+
+- **Disabled vs Conservative**: identical target-level result to native
+  stock — `route_found` flips on `L1167`/`L984` only, `route_signature`
+  flips on `L4464`/`L4575` only, 0 status flips. Aggregate
+  `ring_context_diagnostics` for `conservative` are numerically identical
+  to native stock's (e.g. `matches_applied: 368,798`,
+  `ring_rejects_nonring_intent_on_ring_bond: 102,931`) — for this 100-target
+  sample, stock choice doesn't change which matches get enumerated or
+  ring-checked, only (separately, not measured by this gate) which leaves
+  ultimately count as solved.
+- **Conservative vs Conservative-repeat**: 0 diffs (deterministic, same as
+  native stock).
+- No crashes, no invalid output, no unexplained target-level difference
+  between native and shared stock.
+
+This is a confirmatory check, not a full ablation: `audit-only`/
+`ring-only`/`element-only` were not re-run against shared stock (their
+native-stock results already establish the mechanism; re-running here
+would only be useful if this 3-arm check had surfaced a stock-dependent
+discrepancy, which it didn't).
+
 ## Conclusion
 
 - `Disabled` ≡ current `master` (unaffected; this policy is the default).
@@ -244,16 +313,27 @@ expected overhead from unconditional classification/diagnostics.
   targets. The guard's diagnose-without-filter invariant holds with no
   exceptions.
 - `Conservative` changes exactly 4/100 targets, every one explained: two
-  known/newly-confirmed-wrong routes removed (`L984`, `L1167` — the second
-  found only after the generator's attribution fix removed false
-  permissiveness) with no budget left to find a replacement, and two routes
-  swapped for a different still-valid route after an unsafe match was
-  rejected. `Conservative` is deterministic across repeated runs.
+  routes removed with no budget left to find a replacement (`L984` —
+  independently invalid, confirmed by both this guard's element-accounting
+  axis and the pre-existing comparison-harness validator; `L1167` — a
+  provenance-inconsistent application conservatively rejected because the
+  template's historical occurrences give no support for this disconnection
+  on a ring bond, first visible only after the generator's attribution fix
+  removed false `Either` permissiveness), and two routes swapped for a
+  different alternate that passes this guard's implemented structural
+  gates after an unsafe match was rejected — not an external
+  chemical-correctness claim about those alternates. `Conservative` is
+  deterministic across repeated runs.
 - The `RingOnly`/`ElementOnly` ablation shows ring-context is doing the
   observable route-level work on this sample; element-accounting's
   contribution is real (fewer accepted outcomes) but not yet
   route-changing here, except in combination on `L984` (both axes reject it
   independently) and in producing a *different* alternate for `L4575` when
-  isolated.
+  isolated (that alternate is not itself asserted valid — `ElementOnly`
+  never enforces the ring-context axis).
+- The shared-stock confirmatory check (§ Shared-stock confirmation)
+  reproduces the exact same target-level result as native stock, with
+  identical aggregate diagnostics and clean determinism — no
+  stock-dependent surprise before a formal shared-stock run.
 - No unexplained route loss. This clears the bar to report and stop here;
   the 500-target run is explicitly out of scope for this PR.

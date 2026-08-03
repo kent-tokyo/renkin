@@ -196,7 +196,7 @@ pub(crate) fn canonical_stock_identity_from_smiles(smiles: &str) -> Result<Strin
 // from the molecular graph using MoleculeBuilder.
 
 /// Test whether removing the bond (a, b) disconnects the graph (i.e., it is a bridge bond).
-fn is_bridge_bond(mol: &Molecule, a: AtomIdx, b: AtomIdx) -> bool {
+pub(crate) fn is_bridge_bond(mol: &Molecule, a: AtomIdx, b: AtomIdx) -> bool {
     // BFS from `a`, skipping the direct a→b edge. If b is not reachable → bridge.
     let mut visited = FxHashSet::default();
     let mut stack = vec![a];
@@ -782,7 +782,7 @@ pub struct PrecursorMol {
 /// Split a (possibly disconnected) molecule into standardized PrecursorMol fragments.
 /// Filters out chemically invalid fragments (aromatic atoms outside any ring) that
 /// arise from chematic's SMIRKS BFS leaking substituents across product templates.
-fn split_fragments(mol: &Molecule) -> Vec<PrecursorMol> {
+pub(crate) fn split_fragments(mol: &Molecule) -> Vec<PrecursorMol> {
     canonical_smiles(mol)
         .split('.')
         .filter_map(|frag| {

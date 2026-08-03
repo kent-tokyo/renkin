@@ -469,15 +469,21 @@ pub fn explain_route(route: &Route, target: &str, num: usize) -> String {
     for (i, ae) in &bad_ae {
         weaknesses.push(format!("low atom economy in step {i} ({ae:.0}%)"));
     }
-    // Issue #79: surface target-atom loss explicitly rather than letting a
-    // step silently drop out of both the "good economy" and "low economy"
-    // categories above (which is all a clamped-to-100 value used to do).
+    // Issue #79: surface an above-expected-range ratio explicitly rather
+    // than letting a step silently drop out of both the "good economy" and
+    // "low economy" categories above (which is all a clamped-to-100 value
+    // used to do). This ratio alone is not proof of target-atom loss -- the
+    // denominator is only the precursors a template names, not every
+    // reactant/reagent a real reaction would use, so an omitted reagent can
+    // push it over 100% for a perfectly valid route. The message stays
+    // neutral about the cause and points at the independent
+    // element-accounting diagnostic rather than asserting loss.
     for (i, s) in route.steps.iter().enumerate() {
-        if s.atom_economy_status == crate::search::AtomEconomyStatus::AbovePhysicalRange
+        if s.atom_economy_status == crate::search::AtomEconomyStatus::AboveExpectedRange
             && let Some(raw) = s.atom_economy_raw_percent
         {
             weaknesses.push(format!(
-                "target-atom loss suspected in step {} (raw atom economy {raw:.0}% exceeds the physical maximum)",
+                "step {} atom economy exceeds the represented precursor mass ({raw:.0}%); possible causes include omitted reactants/reagents, an incomplete template outcome, or target-atom loss -- check the element-accounting diagnostic",
                 i + 1
             ));
         }
@@ -1014,5 +1020,32 @@ mod tests {
         assert!(!out.contains("step-success"));
         assert!(!out.contains("probability that every step"));
         assert!(out.contains("frequency-derived route ranking score"));
+    }
+
+    // Issue #79 review round 2: the atom-economy ratio alone can't tell an
+    // intentionally-omitted reagent apart from genuine target-atom loss, so
+    // the weakness message must stay neutral and never assert loss on its
+    // own -- it may only ever list it as one of several possible causes.
+    #[test]
+    fn above_expected_range_step_gets_a_neutral_weakness_message() {
+        let mut step = base_step();
+        step.atom_economy = None;
+        step.atom_economy_raw_percent = Some(183.4);
+        step.atom_economy_status = crate::search::AtomEconomyStatus::AboveExpectedRange;
+        let route = base_route(vec![step], 0.9);
+        let out = explain_route(&route, "CC(=O)Oc1ccccc1C(=O)O", 1);
+        assert!(
+            out.contains("check the element-accounting diagnostic"),
+            "got: {out}"
+        );
+        assert!(
+            out.contains("possible causes include omitted reactants/reagents"),
+            "got: {out}"
+        );
+        assert!(
+            !out.contains("target-atom loss suspected"),
+            "must not assert loss as a standalone claim, got: {out}"
+        );
+        assert!(!out.contains("physical maximum"), "got: {out}");
     }
 }

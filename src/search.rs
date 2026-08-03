@@ -36,32 +36,69 @@ pub struct ReactionConditions {
     pub notes: Option<String>,
 }
 
-/// Why `ReactionStep::atom_economy` is (or isn't) populated. `AbovePhysicalRange`
+/// Why `ReactionStep::atom_economy` is (or isn't) populated. `AboveExpectedRange`
 /// means MW(target) / Σ MW(precursors) computed to more than 100% -- the
-/// precursor set supplies less mass than the target needs, a target-atom-loss
-/// signal (Issue #79). Earlier behaviour silently clamped that ratio down to
-/// 100.0, which looked identical to a genuinely perfect-economy route.
+/// precursor set RENKIN represents supplies less mass than the target
+/// needs. This is **not** proof of target-atom loss on its own: the
+/// denominator is only the precursors a template names, not every reactant
+/// or reagent the real reaction would use, so an omitted reagent (a
+/// deprotection's H2, a leaving-group source, a catalyst -- none of which
+/// carry target atoms) can push this ratio over 100% for a perfectly valid
+/// route. Whether atoms were genuinely lost is a question for the
+/// independent directional element-accounting check
+/// (`synthesizability::element_accounting::compute_element_accounting`),
+/// not this MW ratio (Issue #79). Earlier behaviour silently clamped this
+/// ratio down to 100.0, which looked identical to a genuinely
+/// perfect-economy route.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AtomEconomyStatus {
     Normal,
-    AbovePhysicalRange,
+    AboveExpectedRange,
     NotEvaluable,
+}
+
+/// Computes the raw (unclamped) MW(target)/Σ MW(precursors)×100 ratio for a
+/// step, or `None` if either side isn't cleanly evaluable. All-or-nothing on
+/// the precursor side: a single unparseable precursor must not silently
+/// shrink the denominator and inflate the ratio (a `filter_map`-based sum
+/// would do exactly that). Never returns a non-finite value.
+fn compute_atom_economy_raw(target_smiles: &str, precursors: &[String]) -> Option<f64> {
+    let target_weight = mol_from_smiles(target_smiles)
+        .ok()
+        .map(|m| molecular_weight(&m))?;
+    let precursor_weights: Vec<f64> = precursors
+        .iter()
+        .map(|s| mol_from_smiles(s).ok().map(|m| molecular_weight(&m)))
+        .collect::<Option<Vec<f64>>>()?;
+    let precursor_weight: f64 = precursor_weights.iter().sum();
+    if !target_weight.is_finite()
+        || !precursor_weight.is_finite()
+        || target_weight < 0.0
+        || precursor_weight <= 0.0
+    {
+        return None;
+    }
+    let ratio = target_weight / precursor_weight * 100.0;
+    ratio.is_finite().then_some(ratio)
 }
 
 /// Classifies a raw (unclamped) MW(target)/Σ MW(precursors)×100 ratio into
 /// (status, display value). `display` is `Some(raw)` only for `Normal` --
 /// never a clamped substitute, so a caller can't mistake "not evaluable in
-/// the normal sense" for a genuinely perfect route.
+/// the normal sense" for a genuinely perfect route. A non-finite `raw`
+/// (NaN/±Infinity) is defensively treated as `NotEvaluable` -- callers are
+/// expected to already guard against this (see `find_routes`'s
+/// post-processing step), but this pure function must never trust that.
 fn classify_atom_economy(raw: Option<f64>) -> (AtomEconomyStatus, Option<f64>) {
     let status = match raw {
-        None => AtomEconomyStatus::NotEvaluable,
-        Some(r) if r > 100.0 + 1e-6 => AtomEconomyStatus::AbovePhysicalRange,
-        Some(_) => AtomEconomyStatus::Normal,
+        Some(r) if r.is_finite() && r > 100.0 + 1e-6 => AtomEconomyStatus::AboveExpectedRange,
+        Some(r) if r.is_finite() => AtomEconomyStatus::Normal,
+        _ => AtomEconomyStatus::NotEvaluable,
     };
     let display = match status {
         AtomEconomyStatus::Normal => raw,
-        AtomEconomyStatus::AbovePhysicalRange | AtomEconomyStatus::NotEvaluable => None,
+        AtomEconomyStatus::AboveExpectedRange | AtomEconomyStatus::NotEvaluable => None,
     };
     (status, display)
 }
@@ -1055,16 +1092,7 @@ pub fn find_routes(
                 let w = rule_weights.get(step.rule.as_str()).copied().unwrap_or(1.0);
                 step.step_confidence = (w / max_rule_weight).clamp(0.0, 1.0);
 
-                let tmw = mol_from_smiles(&step.target)
-                    .ok()
-                    .map(|m| molecular_weight(&m));
-                let pmw: f64 = step
-                    .precursors
-                    .iter()
-                    .filter_map(|s| mol_from_smiles(s).ok())
-                    .map(|m| molecular_weight(&m))
-                    .sum();
-                let raw = tmw.and_then(|tw| (pmw > 0.0).then_some(tw / pmw * 100.0));
+                let raw = compute_atom_economy_raw(&step.target, &step.precursors);
                 let (status, display) = classify_atom_economy(raw);
                 step.atom_economy_raw_percent = raw;
                 step.atom_economy_status = status;
@@ -1394,12 +1422,13 @@ mod tests {
     #[test]
     fn classify_atom_economy_above_range_is_never_clamped_into_display() {
         // The historical bug: (raw).min(100.0) silently turned 183.4 into
-        // 100.0, making a broken route look like a perfect one.
+        // 100.0, making a route with an unrepresented mass gap look like a
+        // perfect one.
         let (status, display) = classify_atom_economy(Some(183.4));
-        assert_eq!(status, AtomEconomyStatus::AbovePhysicalRange);
+        assert_eq!(status, AtomEconomyStatus::AboveExpectedRange);
         assert_eq!(
             display, None,
-            "a target-atom-loss ratio must never be reported as a display value, clamped or otherwise"
+            "a ratio above the expected range must never be reported as a display value, clamped or otherwise"
         );
     }
 
@@ -1407,6 +1436,75 @@ mod tests {
     fn classify_atom_economy_not_evaluable_when_no_raw_ratio() {
         let (status, display) = classify_atom_economy(None);
         assert_eq!(status, AtomEconomyStatus::NotEvaluable);
+        assert_eq!(display, None);
+    }
+
+    #[test]
+    fn classify_atom_economy_nan_is_not_evaluable() {
+        let (status, display) = classify_atom_economy(Some(f64::NAN));
+        assert_eq!(status, AtomEconomyStatus::NotEvaluable);
+        assert_eq!(display, None);
+    }
+
+    #[test]
+    fn classify_atom_economy_positive_infinity_is_not_evaluable() {
+        let (status, display) = classify_atom_economy(Some(f64::INFINITY));
+        assert_eq!(status, AtomEconomyStatus::NotEvaluable);
+        assert_eq!(display, None);
+    }
+
+    #[test]
+    fn classify_atom_economy_negative_infinity_is_not_evaluable() {
+        let (status, display) = classify_atom_economy(Some(f64::NEG_INFINITY));
+        assert_eq!(status, AtomEconomyStatus::NotEvaluable);
+        assert_eq!(display, None);
+    }
+
+    // ── compute_atom_economy_raw: the all-or-nothing denominator ────────
+
+    #[test]
+    fn compute_raw_one_unparseable_precursor_is_not_evaluable() {
+        // Must not silently drop the malformed entry and compute a ratio
+        // over just the remaining (valid) precursor -- that would inflate
+        // the ratio exactly the way the historical clamp did.
+        let raw =
+            compute_atom_economy_raw("CCO", &["not_a_smiles(((".to_string(), "C".to_string()]);
+        assert_eq!(raw, None);
+    }
+
+    #[test]
+    fn compute_raw_unparseable_target_is_not_evaluable() {
+        let raw = compute_atom_economy_raw("not_a_smiles(((", &["CCO".to_string()]);
+        assert_eq!(raw, None);
+    }
+
+    #[test]
+    fn compute_raw_empty_precursors_is_not_evaluable() {
+        // Also exercises the zero-denominator path: an empty precursor list
+        // sums to a weight of exactly 0.0.
+        let raw = compute_atom_economy_raw("CCO", &[]);
+        assert_eq!(raw, None);
+    }
+
+    #[test]
+    fn compute_raw_normal_case_matches_direct_molecular_weight_ratio() {
+        let target_w = molecular_weight(&mol_from_smiles("CCO").unwrap());
+        let precursor_w = molecular_weight(&mol_from_smiles("CC=O").unwrap());
+        let raw = compute_atom_economy_raw("CCO", &["CC=O".to_string()]).unwrap();
+        assert!((raw - target_w / precursor_w * 100.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn compute_raw_reagent_omission_lands_above_expected_range() {
+        // Retro step: target = cyclohexane, precursor = benzene (H2 omitted
+        // from the precursor list, as a common reagent never is tracked).
+        // Every heavy (carbon) atom the target needs is supplied, but the
+        // precursor list is lighter than the target -- this must classify
+        // as AboveExpectedRange, not silently pass as Normal or crash.
+        let raw = compute_atom_economy_raw("C1CCCCC1", &["c1ccccc1".to_string()]).unwrap();
+        assert!(raw > 100.0, "expected > 100%, got {raw}");
+        let (status, display) = classify_atom_economy(Some(raw));
+        assert_eq!(status, AtomEconomyStatus::AboveExpectedRange);
         assert_eq!(display, None);
     }
 
@@ -1440,9 +1538,70 @@ mod tests {
             "the honest raw ratio must still be reported, got: {json}"
         );
         assert!(
-            json.contains("\"atom_economy_status\":\"above_physical_range\""),
+            json.contains("\"atom_economy_status\":\"above_expected_range\""),
             "got: {json}"
         );
+    }
+
+    #[test]
+    fn compute_raw_precursor_excess_is_normal_well_under_100() {
+        // Opposite direction: precursors heavier than the target (a leaving
+        // group is dropped) is the ordinary, expected case, not a status of
+        // its own.
+        let raw = compute_atom_economy_raw("c1ccccc1", &["C1CCCCC1".to_string()]).unwrap();
+        assert!(raw < 100.0, "expected < 100%, got {raw}");
+        let (status, _) = classify_atom_economy(Some(raw));
+        assert_eq!(status, AtomEconomyStatus::Normal);
+    }
+
+    #[test]
+    fn atom_economy_fields_json_round_trip_by_status() {
+        fn step_with(
+            status: AtomEconomyStatus,
+            display: Option<f64>,
+            raw: Option<f64>,
+        ) -> ReactionStep {
+            ReactionStep {
+                rule: "extracted_0".to_string(),
+                template_id: "smirks-sha256:deadbeef".to_string(),
+                target: "CC(=O)O".to_string(),
+                precursors: vec!["C".to_string()],
+                conditions: None,
+                atom_economy: display,
+                atom_economy_raw_percent: raw,
+                atom_economy_status: status,
+                step_confidence: 0.5,
+                procedure_hint: None,
+                reaction_family: None,
+                metadata_source: None,
+                metadata_scope: None,
+                evidence: None,
+            }
+        }
+
+        let normal = step_with(AtomEconomyStatus::Normal, Some(87.5), Some(87.5));
+        let v: serde_json::Value =
+            serde_json::from_str(&serde_json::to_string(&normal).unwrap()).unwrap();
+        assert_eq!(v["atom_economy"], serde_json::json!(87.5));
+        assert_eq!(v["atom_economy_raw_percent"], serde_json::json!(87.5));
+        assert_eq!(v["atom_economy_status"], serde_json::json!("normal"));
+
+        let above = step_with(AtomEconomyStatus::AboveExpectedRange, None, Some(183.4));
+        let v: serde_json::Value =
+            serde_json::from_str(&serde_json::to_string(&above).unwrap()).unwrap();
+        assert!(v.get("atom_economy").is_none());
+        assert_eq!(v["atom_economy_raw_percent"], serde_json::json!(183.4));
+        assert_eq!(
+            v["atom_economy_status"],
+            serde_json::json!("above_expected_range")
+        );
+
+        let not_evaluable = step_with(AtomEconomyStatus::NotEvaluable, None, None);
+        let v: serde_json::Value =
+            serde_json::from_str(&serde_json::to_string(&not_evaluable).unwrap()).unwrap();
+        assert!(v.get("atom_economy").is_none());
+        assert!(v.get("atom_economy_raw_percent").is_none());
+        assert_eq!(v["atom_economy_status"], serde_json::json!("not_evaluable"));
     }
 
     #[test]

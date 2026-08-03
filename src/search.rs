@@ -41,15 +41,20 @@ pub struct ReactionConditions {
 /// precursor set RENKIN represents supplies less mass than the target
 /// needs. This is **not** proof of target-atom loss on its own: the
 /// denominator is only the precursors a template names, not every reactant
-/// or reagent the real reaction would use, so an omitted reagent (a
-/// deprotection's H2, a leaving-group source, a catalyst -- none of which
-/// carry target atoms) can push this ratio over 100% for a perfectly valid
-/// route. Whether atoms were genuinely lost is a question for the
-/// independent directional element-accounting check
-/// (`synthesizability::element_accounting::compute_element_accounting`),
-/// not this MW ratio (Issue #79). Earlier behaviour silently clamped this
-/// ratio down to 100.0, which looked identical to a genuinely
-/// perfect-economy route.
+/// or reagent the real reaction would use. An omitted reactant or reagent
+/// (a leaving-group source, a catalyst, a deprotection's H2) can
+/// contribute mass that is absent from the represented precursor set and
+/// push this ratio over 100% for a perfectly valid route -- this is not
+/// "atoms the reagent never carries": H2, for instance, can very much
+/// supply hydrogen to the target. What actually keeps such a case safe is
+/// that the independent directional element-accounting check
+/// (`synthesizability::element_accounting::compute_element_accounting`)
+/// is heavy-element-only (hydrogen excluded by design, see that module's
+/// doc comment), so it may still report `Accounted` when the omitted
+/// contribution is hydrogen-only -- even though this MW ratio alone
+/// can't tell that case apart from genuine atom loss (Issue #79). Earlier
+/// behaviour silently clamped this ratio down to 100.0, which looked
+/// identical to a genuinely perfect-economy route.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AtomEconomyStatus {
@@ -124,8 +129,9 @@ pub struct ReactionStep {
     /// The unclamped MW(target) / Σ MW(precursors) × 100 ratio, populated
     /// whenever both molecular weights are computable regardless of
     /// `atom_economy_status` -- the honest number `atom_economy` is derived
-    /// from, kept even when that ratio exceeds the physically-expected
-    /// [0, 100] range.
+    /// from, kept even when that ratio exceeds the expected [0, 100] range
+    /// under the represented-precursor convention (see `AtomEconomyStatus`
+    /// for why exceeding it isn't proof of anything on its own).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub atom_economy_raw_percent: Option<f64>,
     /// See `AtomEconomyStatus`.

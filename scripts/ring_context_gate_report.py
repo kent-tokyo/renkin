@@ -54,8 +54,9 @@ def main():
     with open(args.input) as f:
         results = json.load(f)
 
-    n = len(results["disabled"])
-    print(f"=== {n} targets ===\n")
+    present = set(results.keys())
+    n = len(next(iter(results.values())))
+    print(f"=== {n} targets ({sorted(present)} arms present) ===\n")
 
     for arm in (
         "disabled",
@@ -65,6 +66,8 @@ def main():
         "ring_only",
         "element_only",
     ):
+        if arm not in present:
+            continue
         statuses = {}
         for r in results[arm].values():
             statuses[r.get("status")] = statuses.get(r.get("status"), 0) + 1
@@ -72,61 +75,54 @@ def main():
         print(f"[{arm}] statuses={statuses} route_found={solved}/{n}")
     print()
 
-    print("=== Disabled vs AuditOnly (must be identical) ===")
-    d = compare_arms(results, "disabled", "audit_only")
-    for k, v in d.items():
-        print(f"  {k}: {len(v)}")
-        for row in v[:10]:
-            print(f"    {row}")
-    print()
+    def maybe_compare(title, a, b, limit):
+        if a not in present or b not in present:
+            return
+        print(f"=== {title} ===")
+        d = compare_arms(results, a, b)
+        for k, v in d.items():
+            print(f"  {k}: {len(v)}")
+            for row in v[:limit]:
+                print(f"    {row}")
+        print()
 
-    print("=== Disabled vs Conservative ===")
-    d = compare_arms(results, "disabled", "conservative")
-    for k, v in d.items():
-        print(f"  {k}: {len(v)}")
-        for row in v[:20]:
-            print(f"    {row}")
-    print()
+    maybe_compare("Disabled vs AuditOnly (must be identical)", "disabled", "audit_only", 10)
+    maybe_compare("Disabled vs Conservative", "disabled", "conservative", 20)
+    maybe_compare(
+        "Conservative vs Conservative-repeat (determinism)",
+        "conservative",
+        "conservative_repeat",
+        10,
+    )
+    maybe_compare(
+        "Disabled vs RingOnly (ring-context gate's isolated effect)",
+        "disabled",
+        "ring_only",
+        20,
+    )
+    maybe_compare(
+        "Disabled vs ElementOnly (element-accounting gate's isolated effect)",
+        "disabled",
+        "element_only",
+        20,
+    )
 
-    print("=== Conservative vs Conservative-repeat (determinism) ===")
-    d = compare_arms(results, "conservative", "conservative_repeat")
-    for k, v in d.items():
-        print(f"  {k}: {len(v)}")
-        for row in v[:10]:
-            print(f"    {row}")
-    print()
-
-    print("=== Disabled vs RingOnly (ring-context gate's isolated effect) ===")
-    d = compare_arms(results, "disabled", "ring_only")
-    for k, v in d.items():
-        print(f"  {k}: {len(v)}")
-        for row in v[:20]:
-            print(f"    {row}")
-    print()
-
-    print("=== Disabled vs ElementOnly (element-accounting gate's isolated effect) ===")
-    d = compare_arms(results, "disabled", "element_only")
-    for k, v in d.items():
-        print(f"  {k}: {len(v)}")
-        for row in v[:20]:
-            print(f"    {row}")
-    print()
-
-    print("=== Aggregate ring_context_diagnostics: AuditOnly ===")
-    print(json.dumps(sum_diagnostics(results["audit_only"]), indent=2, sort_keys=True))
-    print()
-    print("=== Aggregate ring_context_diagnostics: Conservative ===")
-    print(json.dumps(sum_diagnostics(results["conservative"]), indent=2, sort_keys=True))
-    print()
-    print("=== Aggregate ring_context_diagnostics: RingOnly ===")
-    print(json.dumps(sum_diagnostics(results["ring_only"]), indent=2, sort_keys=True))
-    print()
-    print("=== Aggregate ring_context_diagnostics: ElementOnly ===")
-    print(json.dumps(sum_diagnostics(results["element_only"]), indent=2, sort_keys=True))
-    print()
+    for arm, label in (
+        ("audit_only", "AuditOnly"),
+        ("conservative", "Conservative"),
+        ("ring_only", "RingOnly"),
+        ("element_only", "ElementOnly"),
+    ):
+        if arm not in present:
+            continue
+        print(f"=== Aggregate ring_context_diagnostics: {label} ===")
+        print(json.dumps(sum_diagnostics(results[arm]), indent=2, sort_keys=True))
+        print()
 
     print("=== Latency (elapsed_s) percentiles by arm ===")
     for arm in ("disabled", "audit_only", "conservative", "ring_only", "element_only"):
+        if arm not in present:
+            continue
         times = sorted(r["elapsed_s"] for r in results[arm].values() if "elapsed_s" in r)
         if not times:
             continue

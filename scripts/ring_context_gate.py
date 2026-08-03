@@ -125,19 +125,18 @@ def main():
     ap.add_argument("--templates", default="data/templates_extracted_500.smi")
     ap.add_argument("--timeout-s", type=float, default=150.0)
     ap.add_argument("--output", default="ring_context_gate_results.json")
+    ap.add_argument(
+        "--arms",
+        default="disabled,audit_only,conservative,conservative_repeat,ring_only,element_only",
+        help="Comma-separated subset of arms to run (default: all 6). Useful for a "
+        "cheaper confirmatory sweep -- e.g. --arms disabled,conservative,"
+        "conservative_repeat for a determinism-only check on a different stock.",
+    )
     args = ap.parse_args()
 
     targets = load_sample(args.sample)
     print(f"Loaded {len(targets)} targets from {args.sample}", flush=True)
 
-    results = {
-        "disabled": {},
-        "audit_only": {},
-        "conservative": {},
-        "conservative_repeat": {},
-        "ring_only": {},
-        "element_only": {},
-    }
     policy_map = {
         "disabled": "disabled",
         "audit_only": "audit-only",
@@ -146,11 +145,17 @@ def main():
         "ring_only": "ring-only",
         "element_only": "element-only",
     }
+    arms = [a.strip() for a in args.arms.split(",") if a.strip()]
+    unknown_arms = [a for a in arms if a not in policy_map]
+    if unknown_arms:
+        raise SystemExit(f"unknown --arms value(s): {unknown_arms} (valid: {list(policy_map)})")
+    results = {arm: {} for arm in arms}
 
     for i, t in enumerate(targets):
         if i % 10 == 0:
             print(f"  {i}/{len(targets)}...", flush=True)
-        for key, cli_policy in policy_map.items():
+        for key in arms:
+            cli_policy = policy_map[key]
             r = run_one(
                 args.renkin_binary,
                 t["target_smiles"],

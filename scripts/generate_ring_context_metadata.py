@@ -76,6 +76,14 @@ SCHEMA_VERSION = 2
 DATASET_ID = "bisectgroup/USPTO_50K"
 DATASET_SPLIT = "train"
 
+# The exact commit the checked-in data/ring_context_metadata_500.json was
+# generated from. Formal/checked-in regeneration must reproduce this exact
+# corpus by default -- resolving "whatever HEAD happens to be right now"
+# (the prior behavior) makes the artifact non-reproducible the moment
+# upstream changes. Use --resolve-latest to deliberately re-baseline
+# against upstream drift instead.
+PINNED_DATASET_REVISION = "08a575f0546b2be57242997fd45f684d6814d5a9"
+
 
 def sha256_hex(s: str) -> str:
     return hashlib.sha256(s.encode("utf-8")).hexdigest()
@@ -210,16 +218,23 @@ def classify_intent(ring_obs: int, non_ring_obs: int, ambiguous_obs: int, unknow
     return "unknown"
 
 
-def resolve_dataset_revision(dataset_id: str, requested: str | None) -> tuple:
-    """Returns (revision, resolution_method). An explicit --dataset-revision is
-    used as-is; otherwise the current HEAD commit SHA of the dataset repo is
-    resolved via the Hub API and pinned, so `source_dataset_revision` in the
-    output sidecar is always a real, reproducible commit -- never a
-    description of the split/row-count (the prior version of this field)."""
+def resolve_dataset_revision(dataset_id: str, requested: str | None, resolve_latest: bool) -> tuple:
+    """Returns (revision, resolution_method).
+
+    An explicit --dataset-revision always wins. Otherwise, formal/checked-in
+    regeneration defaults to PINNED_DATASET_REVISION -- reproducing the exact
+    corpus the checked-in sidecar was built from, not "whatever HEAD happens
+    to be right now" (which made the artifact non-reproducible the moment
+    upstream changed, even with no code change here). --resolve-latest opts
+    into that dynamic HfApi resolution instead, for a deliberate
+    re-baselining run against upstream drift.
+    """
     if requested:
         return requested, "user-provided"
-    info = HfApi().dataset_info(dataset_id)
-    return info.sha, "resolved-via-HfApi.dataset_info-at-generation-time"
+    if resolve_latest:
+        info = HfApi().dataset_info(dataset_id)
+        return info.sha, "resolved-via-HfApi.dataset_info-at-generation-time (--resolve-latest)"
+    return PINNED_DATASET_REVISION, "pinned-default"
 
 
 def rows_content_sha256(ds) -> str:
@@ -243,16 +258,25 @@ def main():
     ap.add_argument(
         "--dataset-revision",
         default=None,
-        help="Exact HF dataset commit SHA to pin. If omitted, resolved and pinned "
-        "automatically via the Hub API at generation time (never left as a "
-        "mutable 'main'/'latest').",
+        help=f"Exact HF dataset commit SHA to pin. If omitted, defaults to the "
+        f"checked-in corpus's pinned revision ({PINNED_DATASET_REVISION}) unless "
+        f"--resolve-latest is given.",
+    )
+    ap.add_argument(
+        "--resolve-latest",
+        action="store_true",
+        help="Resolve and pin the CURRENT HEAD revision via the Hub API instead of "
+        "PINNED_DATASET_REVISION. Only for a deliberate re-baseline against "
+        "upstream drift -- never used for reproducing the checked-in artifact.",
     )
     args = ap.parse_args()
 
     checked_in = load_checked_in_templates(args.templates)
     print(f"Loaded {len(checked_in)} checked-in templates from {args.templates}", flush=True)
 
-    revision, revision_resolution = resolve_dataset_revision(args.dataset_id, args.dataset_revision)
+    revision, revision_resolution = resolve_dataset_revision(
+        args.dataset_id, args.dataset_revision, args.resolve_latest
+    )
     print(f"Pinned dataset revision: {revision} ({revision_resolution})", flush=True)
 
     # Precompute changed bonds + smirks_sha256 per checked-in template, and a

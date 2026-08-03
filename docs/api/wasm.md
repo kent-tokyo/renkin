@@ -87,9 +87,10 @@ interface Step {
   template_id: string;    // stable template identity (rule:<name> / smirks-sha256:<hex>)
   precursors: string[];   // SMILES of precursor molecules
   step_confidence: number;
-  // conditions / atom_economy / procedure_hint / reaction_family /
-  // metadata_source / metadata_scope / evidence are present when applicable
-  // and simply absent from the JSON otherwise
+  atom_economy_status: string; // "normal" / "above_expected_range" / "not_evaluable" (always present)
+  // conditions / atom_economy / atom_economy_raw_percent / procedure_hint /
+  // reaction_family / metadata_source / metadata_scope / evidence are present
+  // when applicable and simply absent from the JSON otherwise
 }
 ```
 

@@ -133,7 +133,7 @@ pub(crate) fn compute_element_accounting(route: &crate::search::Route) -> Elemen
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::search::{ReactionStep, Route};
+    use crate::search::{AtomEconomyStatus, ReactionStep, Route};
 
     fn step(rule: &str, target: &str, precursors: &[&str]) -> ReactionStep {
         ReactionStep {
@@ -143,6 +143,8 @@ mod tests {
             precursors: precursors.iter().map(|s| s.to_string()).collect(),
             conditions: None,
             atom_economy: None,
+            atom_economy_raw_percent: None,
+            atom_economy_status: AtomEconomyStatus::NotEvaluable,
             step_confidence: 1.0,
             procedure_hint: None,
             reaction_family: None,
@@ -239,5 +241,88 @@ mod tests {
         let r = route(vec![]);
         let result = compute_element_accounting(&r);
         assert_eq!(result.status, ElementAccountingStatus::NotEvaluable);
+    }
+
+    // ── Issue #79 review round 2: atom-economy status alone cannot tell an
+    // intentionally-omitted reagent apart from genuine target-atom loss --
+    // only the (atom_economy_status, element_accounting_status) *tuple*
+    // can. Both fixtures below independently land `AtomEconomyStatus::
+    // AboveExpectedRange` (real MW ratio computed via
+    // `chematic::chem::molecular_weight`, not hardcoded), yet element
+    // accounting resolves them oppositely. ────────────────────────────────
+
+    #[test]
+    fn atom_economy_status_alone_cannot_distinguish_omission_from_loss() {
+        use chematic::chem::molecular_weight;
+
+        // Reagent omission, chemically valid: retro step target =
+        // cyclohexane, precursor = benzene (H2 omitted from the precursor
+        // list, as a common reagent never is tracked). Every heavy
+        // (carbon) atom the target needs is supplied.
+        let omission_target_w = molecular_weight(&mol_from_smiles("C1CCCCC1").unwrap());
+        let omission_precursor_w = molecular_weight(&mol_from_smiles("c1ccccc1").unwrap());
+        let omission_ratio = omission_target_w / omission_precursor_w * 100.0;
+        assert!(
+            omission_ratio > 100.0,
+            "fixture must exceed the expected range, got {omission_ratio}"
+        );
+        let mut omission_step = step("hydrogenation", "C1CCCCC1", &["c1ccccc1"]);
+        omission_step.atom_economy_status = AtomEconomyStatus::AboveExpectedRange;
+        omission_step.atom_economy_raw_percent = Some(omission_ratio);
+        let omission_route = route(vec![omission_step]);
+        let omission_accounting = compute_element_accounting(&omission_route);
+
+        // Genuine target-atom loss: target carries a nitrogen the single
+        // precursor (benzene, no N at all) cannot supply.
+        let loss_target_w = molecular_weight(&mol_from_smiles("Nc1ccccc1").unwrap());
+        let loss_precursor_w = molecular_weight(&mol_from_smiles("c1ccccc1").unwrap());
+        let loss_ratio = loss_target_w / loss_precursor_w * 100.0;
+        assert!(
+            loss_ratio > 100.0,
+            "fixture must exceed the expected range, got {loss_ratio}"
+        );
+        let mut loss_step = step("amination", "Nc1ccccc1", &["c1ccccc1"]);
+        loss_step.atom_economy_status = AtomEconomyStatus::AboveExpectedRange;
+        loss_step.atom_economy_raw_percent = Some(loss_ratio);
+        let loss_route = route(vec![loss_step]);
+        let loss_accounting = compute_element_accounting(&loss_route);
+
+        // Same atom-economy status on both -- the ratio alone is silent on
+        // which case this is.
+        assert_eq!(
+            omission_route.steps[0].atom_economy_status,
+            loss_route.steps[0].atom_economy_status
+        );
+        // Element accounting tells them apart: omission is Accounted (no
+        // heavy atom is actually missing), loss is UnaccountedTargetElement.
+        assert_eq!(
+            omission_accounting.status,
+            ElementAccountingStatus::Accounted
+        );
+        assert_eq!(
+            loss_accounting.status,
+            ElementAccountingStatus::UnaccountedTargetElement
+        );
+    }
+
+    #[test]
+    fn atom_economy_above_expected_range_with_missing_target_carbon() {
+        use chematic::chem::molecular_weight;
+
+        // Target (toluene) carries a methyl carbon the single precursor
+        // (benzene) doesn't supply.
+        let target_w = molecular_weight(&mol_from_smiles("Cc1ccccc1").unwrap());
+        let precursor_w = molecular_weight(&mol_from_smiles("c1ccccc1").unwrap());
+        let ratio = target_w / precursor_w * 100.0;
+        assert!(
+            ratio > 100.0,
+            "fixture must exceed the expected range, got {ratio}"
+        );
+        let r = route(vec![step("methylation", "Cc1ccccc1", &["c1ccccc1"])]);
+        let result = compute_element_accounting(&r);
+        assert_eq!(
+            result.status,
+            ElementAccountingStatus::UnaccountedTargetElement
+        );
     }
 }

@@ -245,7 +245,7 @@ pub(crate) fn compute_reproducibility_hash(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::search::ReactionStep;
+    use crate::search::{AtomEconomyStatus, ReactionStep};
     use crate::synthesizability::schema::{
         ElementAccountingStatus, EvidenceCoverage, ForwardValidationStatus, HardFailure,
         StockTerminationStatus,
@@ -330,6 +330,8 @@ mod tests {
             precursors: precursors.iter().map(|s| s.to_string()).collect(),
             conditions: None,
             atom_economy: None,
+            atom_economy_raw_percent: None,
+            atom_economy_status: AtomEconomyStatus::NotEvaluable,
             step_confidence: 1.0,
             procedure_hint: None,
             reaction_family: None,

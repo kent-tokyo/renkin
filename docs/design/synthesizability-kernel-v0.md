@@ -74,11 +74,13 @@ Explicitly **not** reused, with reasons:
   merged and (b) which canonicalization basis is linked, neither of which
   the kernel should have to know about.
 - `atom_conservation::step_balanced`/`route_balanced` (MW-sum only) and
-  `ReactionStep.atom_economy` (self-referential MW ratio, `.min(100.0)`
-  clamped) — see §4.5: **not safe as a hard-failure signal**. Confirmed:
-  Issue #72's `extracted_9` template self-reports `atom_economy: 100.0`
-  while actually dropping most of the target's heavy atoms — the clamp
-  hides exactly the case that should be the reddest flag.
+  `ReactionStep.atom_economy` (self-referential MW ratio) — see §4.5: **not
+  safe as a hard-failure signal**, independent of Issue #79's fix removing
+  the field's old silent `.min(100.0)` clamp. Confirmed: Issue #72's
+  `extracted_9` template drops most of the target's heavy atoms while its
+  MW ratio alone gives no *structural* account of which atoms went missing
+  — a self-referential mass ratio, clamped or not, can't substitute for the
+  kernel's own independent per-element accounting below.
 - `graph_rules::element_counts`/`delta_matches` — closest existing Rust
   analog to the needed per-element accounting, but H-inclusive (Python's
   check is heavy-atom-only) and shaped for exact-delta equality, not a

@@ -14,7 +14,7 @@
 
 use renkin::chem_env::RetroRule;
 use renkin::evidence::{ExampleMatch, ReactionExample, ResolvedReactionExample, StepEvidence};
-use renkin::search::{ReactionStep, Route};
+use renkin::search::{AtomEconomyStatus, ReactionStep, Route};
 use renkin::synthesizability::{
     AssessmentContext, AssessmentStatus, ElementAccountingStatus, EvidencePolicy,
     ForwardValidationPolicy, ForwardValidationStatus, HardFailure, SYNTHESIZABILITY_SCHEMA_VERSION,
@@ -39,6 +39,8 @@ fn step(rule: &str, template_id: &str, target: &str, precursors: &[&str]) -> Rea
         precursors: precursors.iter().map(|s| s.to_string()).collect(),
         conditions: None,
         atom_economy: None,
+        atom_economy_raw_percent: None,
+        atom_economy_status: AtomEconomyStatus::NotEvaluable,
         step_confidence: 1.0,
         procedure_hint: None,
         reaction_family: None,

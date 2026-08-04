@@ -131,7 +131,7 @@ Returns a JSON string:
 ```python
 >>> import renkin
 >>> renkin.__version__
-'0.20.0'
+'0.21.0'
 ```
 
 The version string is a module attribute, not a function.

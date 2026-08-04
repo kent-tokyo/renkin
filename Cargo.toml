@@ -4,7 +4,7 @@ resolver = "2"
 
 [package]
 name = "renkin"
-version = "0.20.0"
+version = "0.21.0"
 edition = "2024"
 authors = ["kent-tokyo <kent-tokyo@users.noreply.github.com>"]
 description = "Ultra-fast retrosynthesis engine for computer-aided synthesis planning (CASP) — pure Rust, WASM-ready, Python bindings via PyO3"
@@ -22,9 +22,13 @@ exclude       = [
     "data/uspto50k_test.smi",
     "data/uspto50k_benchmark_result*.json",
     "data/templates_extracted*.smi",
+    "data/comparison/**",
+    "data/ring_context_metadata_500.json",
     "docs/playground/**",
     "tasks/**",
     "scripts/**",
+    "docker/**",
+    "artifacts/**",
     ".claude/**",
     "data/template_scorer*.onnx",
     "data/template_scorer*.onnx.data",

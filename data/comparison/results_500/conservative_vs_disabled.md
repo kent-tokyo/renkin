@@ -36,6 +36,10 @@ rather than at stock-lookup time — the same templates get blocked regardless o
 same targets flip in both arms. McNemar p=0.125 (n=4 discordant pairs) does not reach conventional
 significance at 500 targets.
 
+Because only four discordant pairs were observed, the percentile-bootstrap interval is descriptive; the
+exact McNemar test is the primary inferential result for this sparse ablation, and it did not reach
+statistical significance.
+
 ## Interpretation
 
 **In this sample, no statistically significant difference was detected between Conservative and Disabled**

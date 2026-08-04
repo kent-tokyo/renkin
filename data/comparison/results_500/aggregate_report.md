@@ -82,7 +82,9 @@ Conservative is the official configuration. Included only as a sensitivity check
   Conservative solves 0 that Disabled misses. Conservative: 73/500 both modes. Disabled: 77/500 both modes.
 - Paired McNemar discordant counts: Conservative-only 0, Disabled-only 4 (n=500 pairs, both modes).
 - Observed difference (Conservative − Disabled): **−0.8 percentage points**, 95% CI [−1.6, −0.2],
-  exact McNemar p = 0.125.
+  exact McNemar p = 0.125. Because only four discordant pairs were observed, the percentile-bootstrap
+  interval is descriptive; the exact McNemar test is the primary inferential result for this sparse
+  ablation, and it did not reach statistical significance.
 - **In this sample, no statistically significant difference was detected between Conservative and
   Disabled.** This is not the same as "zero cost" — the observed direction is consistent with Conservative
   blocking a small number of correct routes, and the point estimate and 100-target measurement in #242

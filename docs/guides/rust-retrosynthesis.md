@@ -15,7 +15,7 @@ dependencies.
 
 ```toml
 [dependencies]
-renkin = "0.20"
+renkin = "0.21"
 ```
 
 or

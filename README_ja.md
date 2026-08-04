@@ -324,6 +324,7 @@ CC-BY-SA-4.0であり、RENKIN本体コードのMITとは別ライセンスで�
 | **単一既知反応物からの順反応列挙** | `renkin-forward enumerate --reactant <SMILES> --partners <path>` — 既知反応物1つと明示的なpartnerライブラリ（RENKIN自身のretro stockは使わない）から具体的な生成物を発見 — [Forward Enumeration guide](docs/guides/forward-enumeration.md)（英語）参照 |
 | **partner不要の検索用ヒント** | `renkin-forward hints --reactants <SMILES>...` — partner入力は一切なし：マッチしたテンプレートslot、不足partnerのSMARTS、結合デルタを特許・データベース検索向けに報告（具体的な生成物は出さない）— [Forward Retrieval Hints guide](docs/guides/forward-retrieval-hints.md)（英語）参照。`predict` / `enumerate` / `hints` の比較表: [table](docs/guides/forward-retrieval-hints.md#predict--enumerate--hints-at-a-glance) |
 | **順方向検証** | `renkin-forward validate` で各ステップを順方向適用して検証；stdin パイプ対応 |
+| **Ring-context安全ガード** | `--ring-context-policy conservative --ring-context-sidecar <path>` — extracted templateの環開閉切断が、訓練データで一度も環結合として観測されていない場合に拒否するopt-inのmatch-levelフィルタ。デフォルトは `disabled`（既存挙動のまま） — [Issue #72](https://github.com/kent-tokyo/renkin/issues/72)参照 |
 | **妥当性レポート** | `renkin-bench --plausibility` — ベストルートを順方向検証し、複合妥当性スコアを算出 |
 | **PaRoutesベンチマーク** | `renkin-bench --input-format paroutes` でmulti-step ground-truth評価（`depth_delta`, `route_diversity`） |
 | **原子収支チェック** | `renkin-bench` で `target_MW > Σ precursor_MW` のステップを検出（CompleteRXN参照） |
@@ -595,6 +596,11 @@ renkin/                          ← Cargo workspace ルート
 - [x] `renkin-forward` CLI 強化 — バージョン管理された `ForwardPredictionReport`、決定的な候補ID/マージ/由来情報、reactant 順序に依存しないマッチング（最大3試薬）、厳格な CLI/route-JSON 検証
 - [x] RETROSPECT 着想のオフライン候補リランキング基盤 — candidate proposal/selection の分離、feature schema v1、manifest v2、leakage-safe な train/val/test スプリット、7つの決定的 baseline arm + 学習済み ranker arm、paired bootstrap + オフラインゲートツール（[#59](https://github.com/kent-tokyo/renkin/pull/59)；**基盤のみ — 学習済みモデルや精度結果はまだ無く、route search には未統合**）
 - [x] `apply_retro`/`run_reactants` 性能回帰の解消 — `chematic`をnarrowなgit pinから公開済み`0.8.0`（上流のautomorphism-orbit-pruned canonicalization、[chematic#193](https://github.com/kent-tokyo/chematic/pull/193)）へ移行。固定30-targetゲートで現行masterに対し同一セッション計測: total elapsed **34.7%**高速化、p95 **33.8%**高速化、最悪ケースターゲットは**42.2%**高速化（単発ではなく複数回の孤立計測で確認済み）。correctnessへの影響ゼロ（`apply_retro`呼び出し回数はバージョン間で完全一致）
+- [x] `renkin-forward enumerate` — 既知反応物1つと明示的なpartnerライブラリからの、境界付きtemplate誘導型順反応列挙（[#64](https://github.com/kent-tokyo/renkin/issues/64)）
+- [x] `renkin-forward hints` — partner不要の検索用ヒント（マッチしたテンプレートslot・不足partnerのSMARTS・結合デルタ）。具体的な生成物は予測しない（[#64](https://github.com/kent-tokyo/renkin/issues/64) phase 2）
+- [x] `atom_economy` の100%への暗黙クランプを廃止（[#79](https://github.com/kent-tokyo/renkin/issues/79)）— ルートの精製物集合が対象の全質量を説明できない場合、新設の `atom_economy_status` フィールド（`normal`/`above_expected_range`/`not_evaluable`）で明示的に報告
+- [x] extracted template向けRing-context安全ガード（[#72](https://github.com/kent-tokyo/renkin/issues/72)/[#242](https://github.com/kent-tokyo/renkin/pull/242)）— opt-inの `--ring-context-policy`/`--ring-context-sidecar`。訓練データで環結合として一度も観測されていない環開閉切断のテンプレート誤適用を検出。デフォルトは引き続き `disabled`（既存挙動のまま）
+- [x] 500-target規模のRENKIN vs AiZynthFinder正式比較（[#66](https://github.com/kent-tokyo/renkin/issues/66)）— 固定500-targetサンプル・共有393化合物ストック・各ツールの設定下で、RENKIN Conservativeの`route_to_shared_stock`はAiZynthFinderより9.8ポイント高く（73/500 対 24/500、95% CI [7.0, 12.8]、exact McNemar p≈1.9e-11）、このプロトコル下で統計的に有意なペア差だった——一般的な探索能力の優位性を主張するものではない。各ツール本来のnative構成では逆方向に乖離し、ストックサイズ差を含む未統制条件が支配的。詳細は[比較ガイド](docs/guides/open-source-retrosynthesis-comparison.md)（英語）の限定的な解釈を参照
 
 ---
 

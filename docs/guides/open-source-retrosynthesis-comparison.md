@@ -38,8 +38,8 @@ lists, and the cited AiZynthFinder/Retro\*/ASKCOS numbers come from their
 own original publications, not a common run. That table is **not rewritten
 by this work** — replacing it is deferred to a future PR, after a formal
 500- or 4,903-target measurement using the infrastructure documented here.
-This page's own 100-target results (below) are a separate, new, narrower
-measurement: same targets, same hardware, same timeout, run by this
+This page's own 100- and 500-target results (below) are a separate, new,
+narrower measurement: same targets, same hardware, same timeout, run by this
 project, for RENKIN and AiZynthFinder only.
 
 ## Three measurement arms
@@ -371,7 +371,32 @@ Since both tools run on the identical target sample, every comparison is
 **At n=100, every number here is explicitly descriptive.** Wide confidence
 intervals are expected and are shown, not narrated away — no
 "statistically significant" claim is made at this sample size. The same
-code runs unchanged at n=500/4,903 once those rounds are approved.
+code ran unchanged at n=500 (see "500-target results" below); the
+4,903-target full corpus remains not run.
+
+## 500-target results
+
+The n=500 round (Phase 1/2/3 of the formal Issue #66 protocol) is complete.
+Full results, paired stats with exact McNemar p-values and 95% confidence
+intervals, per-target audit, and reproduction commands:
+`data/comparison/results_500/aggregate_report.md`.
+
+Headline finding, stated with the same scoping discipline as this document's
+n=100 numbers above but now with a statistically significant paired
+difference at n=500: under this fixed 500-target sample, the shared
+393-compound stock, and each tool's configured policy and search budget for
+this run, RENKIN Conservative's `route_to_shared_stock` outcome was 9.8
+percentage points higher than AiZynthFinder's (95% CI [7.0, 12.8], exact
+McNemar p≈1.9e-11, RENKIN 73/500 vs AiZynthFinder 24/500). Per Arm B's own
+framing above, this does not isolate search-engine quality in full — see
+`aggregate_report.md`'s scoped interpretation for what is and is not
+established by this number. The native-mode arm (Arm A) diverges in the
+opposite direction (−48.6pt, AiZynthFinder ahead) driven by unmatched
+conditions including, but not proven to be limited to, native stock size
+(RENKIN ~402 vs AiZynthFinder ~17.4M compounds) — see the same document for
+the full caveat. A Conservative-vs-Disabled ring-context-guard ablation
+(Issue #72/#242) found no statistically significant difference at this
+sample size (`data/comparison/results_500/conservative_vs_disabled.md`).
 
 ## RENKIN-specific diagnostics (`tool_specific.renkin`)
 
@@ -457,10 +482,15 @@ directly, same mechanism as the RENKIN adapter's own stock-leaf check).
 
 ## 500/full run gate
 
-**Not started.** Per explicit standing instruction, this round stops after
-the 100-target feasibility measurement. Before a 500- or 4,903-target run
-could proceed, all of the following must hold, and a human must explicitly
-decide to proceed after reviewing the 100-target results:
+**500-target round: complete** (see "500-target results" above,
+`data/comparison/results_500/`). **4,903-target full-corpus round: not
+started**, and out of scope for this document's current results — per
+explicit standing instruction, no run against the full corpus has been
+performed. The gate conditions below were the criteria evaluated before the
+500-target round was approved to proceed; they are retained here as a
+historical record of that decision, not as an open gate for the 500-target
+round (which has already run). A 4,903-target round would need its own,
+separately-evaluated gate.
 
 - the 100-target feasibility results are reviewed and judged worth scaling;
 - ~~AiZynthFinder's repeat-run variance... characterized on at least 3
@@ -549,6 +579,45 @@ cp data/comparison/shared_stock/shared_stock.hdf5 \
     --aizynthfinder-rows data/comparison/results_100/aizynthfinder_shared_stock.jsonl \
     --output-stats data/comparison/results_100/paired_stats_shared_stock.json \
     --output-table data/comparison/results_100/paired_table_shared_stock.json
+
+# 7. 500-target round (complete, see "500-target results" above). Each arm is
+#    its own independently resumable job -- --resume skips target_ids already
+#    present in --output-rows, flushing+fsyncing every new row immediately.
+#    --manifest-path records binary/commit/Docker/input-file hashes and host
+#    environment at arm start and end. RENKIN's official configuration for
+#    this comparison is --ring-context-policy conservative (Issue #72/#242);
+#    Disabled is an ablation-only arm, not a headline arm.
+.venv-compare-66/bin/python scripts/compare_run.py \
+    --tool renkin --comparison-mode shared_stock --sample-size 500 --resume \
+    --ring-context-policy conservative \
+    --ring-context-sidecar data/ring_context_metadata_500.json \
+    --output-rows data/comparison/results_500/renkin_conservative_shared_stock/rows.jsonl \
+    --output-aggregate data/comparison/results_500/renkin_conservative_shared_stock/aggregate.json \
+    --manifest-path data/comparison/results_500/renkin_conservative_shared_stock/manifest.json
+# ... repeated per arm (renkin_conservative_native, aizynthfinder_shared_stock,
+#     aizynthfinder_native, renkin_disabled_shared_stock, renkin_disabled_native)
+#     with --tool/--comparison-mode/--ring-context-policy set accordingly.
+
+# 8. Post-arm integrity verification (exact 500/500 coverage, no
+#    duplicate/missing targets, schema validation, route_found<=>hash
+#    invariant, manifest cross-check)
+.venv-compare-66/bin/python scripts/compare_verify_arm.py \
+    --rows data/comparison/results_500/<arm>/rows.jsonl \
+    --manifest data/comparison/results_500/<arm>/manifest.json \
+    --sample-list data/comparison/sample_full_sorted.jsonl --sample-size 500
+
+# 9. Headline paired statistics, 500-target round
+.venv-compare-66/bin/python scripts/compare_paired_report.py --mode shared_stock \
+    --renkin-rows data/comparison/results_500/renkin_conservative_shared_stock/rows.jsonl \
+    --aizynthfinder-rows data/comparison/results_500/aizynthfinder_shared_stock/rows.jsonl \
+    --output-stats data/comparison/results_500/paired_stats_shared_stock.json \
+    --output-table data/comparison/results_500/paired_table_shared_stock.json
+
+.venv-compare-66/bin/python scripts/compare_paired_report.py --mode native \
+    --renkin-rows data/comparison/results_500/renkin_conservative_native/rows.jsonl \
+    --aizynthfinder-rows data/comparison/results_500/aizynthfinder_native/rows.jsonl \
+    --output-stats data/comparison/results_500/paired_stats_native.json \
+    --output-table data/comparison/results_500/paired_table_native.json
 ```
 
 ## Interpretation rules (summary)
@@ -565,9 +634,21 @@ cp data/comparison/shared_stock/shared_stock.hdf5 \
    versa.
 5. Never claim statistical significance from the n=100 round, and never
    treat a single AiZynthFinder run as sufficient evidence for a paired
-   comparison given its undocumented search-seed behavior.
+   comparison given its undocumented search-seed behavior. (The n=500
+   round's shared_stock arm *does* reach statistical significance — see
+   "500-target results" — but rule 7 still applies to it.)
 6. Never compare the 4,903-target cross-tool corpus against the historical
    4,907-row RENKIN-only "corrected baseline" as if they were the same
    denominator.
 7. Never treat this document, or any number in it, as a superiority claim
-   for RENKIN, AiZynthFinder, or any tool.
+   for RENKIN, AiZynthFinder, or any tool — including the n=500 shared_stock
+   result. A statistically significant paired difference under this
+   protocol's fixed sample, stock, and configured policies/budgets is not
+   the same claim as "RENKIN's search capability is better." Never claim
+   the native-mode difference is caused by stock size alone — the arm does
+   not control for anything else, so only the *direction-reversal* between
+   native and shared_stock is licensed as evidence of stock sensitivity.
+8. Never report a cross-tool percentage-point difference without also
+   giving both tools' raw numerator/denominator, the paired discordant
+   counts, the 95% CI, and the exact p-value — a bare percentage is not
+   auditable.

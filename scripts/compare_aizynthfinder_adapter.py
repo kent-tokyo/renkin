@@ -293,7 +293,7 @@ def run_one_target(
         **base,
         run_status="completed",
         route_found=route_found,
-        tool_reported_route_count=record.get("number_of_routes"),
+        tool_reported_route_count=record.get("number_of_routes") if route_found else None,
         total_elapsed_ms=total_elapsed_ms,
         peak_rss_bytes=peak_rss_bytes,
         rss_measurement_method=rss_measurement_method,

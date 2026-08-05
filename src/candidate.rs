@@ -2444,6 +2444,25 @@ mod tests {
     }
 
     #[test]
+    fn index_rules_by_template_id_succeeds_on_real_extracted_corpus() {
+        // Regression for the hash-atom-wildcard fix (Issue #88): the fix
+        // must preserve one-logical-template-per-line semantics. If it
+        // instead flat_maps a template into several independent RetroRules
+        // sharing one template_id (as an earlier draft of that fix did),
+        // this indexer -- used by candidate-pool export for the retro
+        // reranker -- hard-errors on the very first such template.
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/data/templates_extracted.smi");
+        let rules = crate::chem_env::load_rules_from_file(path);
+        assert_eq!(
+            rules.len(),
+            500,
+            "load_rules_from_file must return exactly one RetroRule per raw template line"
+        );
+        index_rules_by_template_id(&rules)
+            .expect("candidate-pool export must not hard-error on the real extracted corpus");
+    }
+
+    #[test]
     fn index_rules_by_template_id_tolerates_exact_duplicate() {
         let mut a = rule("dup", "[C:1]>>[C:1]");
         a.template_id = "rule:dup".to_string();

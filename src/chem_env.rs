@@ -867,6 +867,256 @@ fn required_elements_from_smirks(smirks: &str) -> u64 {
     mask
 }
 
+// ── Hash-atom ([#N]) wildcard expansion ────────────────────────────────
+//
+// `chematic::rxn::run_reactants`/`parse_reaction` parse a SMIRKS through
+// chematic-smiles's *SMILES* grammar (confirmed by reading
+// chematic-smiles-0.10.0's `parser.rs` and chematic-rxn-0.10.0's
+// `reaction.rs`/`transform.rs`), not the SMARTS grammar `parse_smarts`
+// above uses. SMILES bracket atoms require a concrete element symbol, so a
+// bare atomic-number primitive like `[#7:2]` ("any isotope of nitrogen,
+// aromaticity unspecified" -- a real SMARTS wildcard, not a mistake in the
+// extracted template) fails to parse there, even though `parse_smarts`
+// happily accepts it at load time. This silently breaks every such
+// template at *apply* time, in both directions (`apply_retro` and, via the
+// same `RetroRule`s, `renkin-forward`'s prediction), while load-time
+// validation reports success -- see Issue #72 follow-up investigation for
+// the empirical confirmation.
+//
+// `#N` genuinely doesn't say whether the atom is aromatic, so this module
+// never guesses a single answer: it expands each bracket into every
+// aromatic/aliphatic reading and lets real re-parsing (not a heuristic)
+// decide which readings are even syntactically valid. The union of the
+// resulting variants is exactly the semantics `[#N]` describes -- no
+// narrowing. Candidates that don't independently pass
+// `chematic::rxn::parse_reaction` are dropped, never guessed into.
+
+/// Upper bound on how many variant SMIRKS one template can expand into.
+/// The checked-in extracted-template corpora need at most 8 (`k=3`); a
+/// larger, differently-curated template file could have more distinct
+/// `[#N]` atoms per template, so this cap exists to keep expansion
+/// bounded. Never applied silently -- see `HashAtomExpansion::Expanded`'s
+/// `capped` field.
+const MAX_HASH_ATOM_VARIANTS: usize = 16;
+
+/// One `[#N]`/`[#N:map]` bracket-atom occurrence in a raw SMIRKS string.
+/// `byte_range` covers the whole bracket (`[` through `]` inclusive) so it
+/// can be sliced out and replaced.
+struct HashAtomOccurrence {
+    byte_range: std::ops::Range<usize>,
+    atomic_number: u8,
+    atom_map: Option<u32>,
+}
+
+/// Scans `smirks` for bracket atoms whose entire content is a bare
+/// `#<digits>` or `#<digits>:<digits>` primitive. Returns `None` (meaning
+/// "don't attempt expansion for this template") if a `#` primitive is
+/// found combined with anything else in the same bracket (e.g. `[#7;+0]`)
+/// or the bracket/atom-map syntax is malformed -- those are more complex
+/// SMARTS shapes this module doesn't attempt to rewrite safely, not
+/// something to guess about. Returns `Some(vec![])` if no `#` atoms exist
+/// at all.
+fn find_hash_atoms(smirks: &str) -> Option<Vec<HashAtomOccurrence>> {
+    let mut occurrences = Vec::new();
+    let mut i = 0;
+    while i < smirks.len() {
+        if smirks.as_bytes()[i] != b'[' {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        let end = smirks[i..].find(']').map(|rel| i + rel + 1)?;
+        let inner = &smirks[start + 1..end - 1];
+        if let Some(hash_pos) = inner.find('#') {
+            if hash_pos != 0 {
+                // `#` combined with other content ahead of it in the
+                // bracket (shouldn't normally happen -- `#` is always the
+                // first primitive when present) -- bail defensively.
+                return None;
+            }
+            let rest = &inner[1..];
+            let (num_str, map_str) = match rest.split_once(':') {
+                Some((n, m)) => (n, Some(m)),
+                None => (rest, None),
+            };
+            if num_str.is_empty() || !num_str.bytes().all(|b| b.is_ascii_digit()) {
+                // `#` not followed by a bare digit run (e.g. a combined
+                // primitive like `#7;+0`) -- don't attempt to rewrite.
+                return None;
+            }
+            let atomic_number: u32 = num_str.parse().ok()?;
+            if atomic_number == 0 || atomic_number > 118 {
+                return None;
+            }
+            let atom_map = match map_str {
+                None => None,
+                Some(m) if !m.is_empty() && m.bytes().all(|b| b.is_ascii_digit()) => {
+                    Some(m.parse().ok()?)
+                }
+                Some(_) => return None, // malformed atom-map token
+            };
+            occurrences.push(HashAtomOccurrence {
+                byte_range: start..end,
+                atomic_number: atomic_number as u8,
+                atom_map,
+            });
+        }
+        i = end;
+    }
+    Some(occurrences)
+}
+
+/// Candidate element-symbol spellings for a `[#N]` atom: the uppercase
+/// (aliphatic) and lowercase (aromatic) readings. Both are proposed;
+/// callers must still validate each candidate SMIRKS via
+/// `chematic::rxn::parse_reaction` before trusting it -- this function
+/// only enumerates possibilities, it doesn't decide which are valid
+/// (e.g. some elements' lowercase form may not be accepted by chematic's
+/// parser at all, in which case that candidate is dropped downstream).
+fn hash_atom_candidate_symbols(atomic_number: u8) -> Vec<String> {
+    match Element::from_atomic_number(atomic_number) {
+        Some(elem) => {
+            let upper = elem.symbol().to_string();
+            let lower = upper.to_lowercase();
+            if upper == lower {
+                vec![upper]
+            } else {
+                vec![upper, lower]
+            }
+        }
+        None => vec![],
+    }
+}
+
+/// Result of attempting to expand a raw SMIRKS's `[#N]` atoms into
+/// concrete-element variants. See the module docs above `find_hash_atoms`.
+enum HashAtomExpansion {
+    /// No `[#N]` atoms found -- caller should use the SMIRKS unchanged.
+    NotApplicable,
+    /// Found `[#N]` atoms but couldn't safely/usefully expand them (a
+    /// combined primitive, inconsistent atom-map usage across the two
+    /// sides, or zero candidate variants survived re-parsing) -- caller
+    /// should fall back to the original, unmodified SMIRKS, i.e. today's
+    /// pre-fix behavior for that one template (load succeeds, apply
+    /// fails) rather than a regression.
+    Unexpandable,
+    /// One or more variant SMIRKS strings, each independently confirmed
+    /// parseable by `chematic::rxn::parse_reaction`. `total_combinations`
+    /// is the full 2^k count before any cap; `capped` is true when
+    /// `variants.len() < total_combinations` because the space exceeded
+    /// `MAX_HASH_ATOM_VARIANTS` -- callers must surface `capped`
+    /// (`load_rules_from_file` does, via an `eprintln!` warning), never
+    /// swallow it.
+    Expanded {
+        variants: Vec<String>,
+        total_combinations: usize,
+        capped: bool,
+    },
+}
+
+fn expand_hash_atom_variants(smirks: &str) -> HashAtomExpansion {
+    let occurrences = match find_hash_atoms(smirks) {
+        Some(o) => o,
+        None => return HashAtomExpansion::Unexpandable,
+    };
+    if occurrences.is_empty() {
+        return HashAtomExpansion::NotApplicable;
+    }
+
+    // Group occurrences by atom-map number: the same atom-map appearing on
+    // both sides of `>>` must get the same element/aromaticity choice.
+    // Unmapped `[#N]` atoms (no atom-map -- can't have "another side" to
+    // agree with) each get their own independent group.
+    let mut group_order: Vec<Option<u32>> = Vec::new();
+    let mut group_members: Vec<Vec<usize>> = Vec::new();
+    let mut group_atomic_number: Vec<u8> = Vec::new();
+    for (idx, occ) in occurrences.iter().enumerate() {
+        let existing = occ
+            .atom_map
+            .and_then(|m| group_order.iter().position(|g| *g == Some(m)));
+        match existing {
+            Some(gi) => {
+                if group_atomic_number[gi] != occ.atomic_number {
+                    // Same atom-map resolves to two different elements --
+                    // internally inconsistent template; don't guess.
+                    return HashAtomExpansion::Unexpandable;
+                }
+                group_members[gi].push(idx);
+            }
+            None => {
+                group_order.push(occ.atom_map);
+                group_members.push(vec![idx]);
+                group_atomic_number.push(occ.atomic_number);
+            }
+        }
+    }
+
+    let mut group_candidates: Vec<Vec<String>> = Vec::with_capacity(group_order.len());
+    for &an in &group_atomic_number {
+        let candidates = hash_atom_candidate_symbols(an);
+        if candidates.is_empty() {
+            return HashAtomExpansion::Unexpandable;
+        }
+        group_candidates.push(candidates);
+    }
+
+    let total_combinations: usize = group_candidates.iter().map(Vec::len).product();
+    let capped = total_combinations > MAX_HASH_ATOM_VARIANTS;
+    let combos_to_try = total_combinations.min(MAX_HASH_ATOM_VARIANTS);
+
+    // Deterministic mixed-radix enumeration ("odometer"): combo_indices[g]
+    // selects group g's candidate symbol. Same order every run (no
+    // randomness), so a capped template's tried subset is reproducible.
+    // The cap bounds how many combinations are *attempted* (each costs a
+    // real `parse_reaction` call), not how many end up validating --
+    // those are independent (a combination can be tried and still fail).
+    let mut combo_indices = vec![0usize; group_candidates.len()];
+    let mut variants = Vec::new();
+    for _ in 0..combos_to_try {
+        let mut replacements: Vec<(std::ops::Range<usize>, String)> = Vec::new();
+        for (gi, members) in group_members.iter().enumerate() {
+            let symbol = &group_candidates[gi][combo_indices[gi]];
+            for &occ_idx in members {
+                let occ = &occurrences[occ_idx];
+                let replacement = match occ.atom_map {
+                    Some(m) => format!("[{symbol}:{m}]"),
+                    None => format!("[{symbol}]"),
+                };
+                replacements.push((occ.byte_range.clone(), replacement));
+            }
+        }
+        // Apply replacements back-to-front so earlier byte offsets stay valid.
+        replacements.sort_by_key(|r| std::cmp::Reverse(r.0.start));
+        let mut candidate = smirks.to_string();
+        for (range, replacement) in replacements {
+            candidate.replace_range(range, &replacement);
+        }
+        if chematic::rxn::parse_reaction(&candidate).is_ok() {
+            variants.push(candidate);
+        }
+
+        // Advance the odometer.
+        let mut gi = 0;
+        while gi < combo_indices.len() {
+            combo_indices[gi] += 1;
+            if combo_indices[gi] < group_candidates[gi].len() {
+                break;
+            }
+            combo_indices[gi] = 0;
+            gi += 1;
+        }
+    }
+
+    if variants.is_empty() {
+        return HashAtomExpansion::Unexpandable;
+    }
+    HashAtomExpansion::Expanded {
+        variants,
+        total_combinations,
+        capped,
+    }
+}
+
 fn rr(name: &str, smirks: &str) -> RetroRule {
     let required_elements = required_elements_from_smirks(smirks);
     RetroRule {
@@ -1235,7 +1485,7 @@ pub fn load_rules_from_file(path: &str) -> Vec<RetroRule> {
         .map(str::trim)
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
         .enumerate()
-        .filter_map(|(i, line)| {
+        .flat_map(|(i, line)| {
             // Format is exactly 2 tab-separated columns today: SMIRKS, count.
             // `splitn(2, '\t')`'s second half is everything after the first tab,
             // including any further tab-separated content -- so a naive 3rd column
@@ -1245,23 +1495,83 @@ pub fn load_rules_from_file(path: &str) -> Vec<RetroRule> {
             // via `.unwrap_or(1.0)` below, corrupting the frequency weight for every
             // such line. Whoever adds a 3rd column needs to change this split first.
             let mut cols = line.splitn(2, '\t');
-            let smirks = cols.next()?.trim();
+            let Some(smirks) = cols.next().map(str::trim) else {
+                return vec![];
+            };
             let count: f64 = cols
                 .next()
                 .and_then(|c| c.trim().parse().ok())
                 .unwrap_or(1.0);
             let weight = (count + 1.0).ln();
-            let reactant = smirks.split(">>").next()?;
+            let Some(reactant) = smirks.split(">>").next() else {
+                return vec![];
+            };
             // Validate that chematic can parse the reactant SMARTS pattern.
-            parse_smarts(reactant).ok()?;
-            let required_elements = required_elements_from_smirks(smirks);
-            Some(RetroRule {
-                name: format!("extracted_{i}"),
-                template_id: template_id_for_smirks(smirks),
-                smirks: smirks.to_string(),
-                weight,
-                required_elements,
-            })
+            if parse_smarts(reactant).is_err() {
+                return vec![];
+            }
+            // Stable identity computed once from the *original* raw SMIRKS --
+            // every hash-atom variant of this line shares it (see
+            // `expand_hash_atom_variants`'s docs), so a template-keyed
+            // sidecar (e.g. the ring-context guard's metadata) generated
+            // against this file still resolves for the fixed-up variants,
+            // rather than silently missing them.
+            let template_id = template_id_for_smirks(smirks);
+            match expand_hash_atom_variants(smirks) {
+                HashAtomExpansion::NotApplicable => {
+                    let required_elements = required_elements_from_smirks(smirks);
+                    vec![RetroRule {
+                        name: format!("extracted_{i}"),
+                        template_id,
+                        smirks: smirks.to_string(),
+                        weight,
+                        required_elements,
+                    }]
+                }
+                HashAtomExpansion::Unexpandable => {
+                    // Same as today's pre-fix behavior: keep the single,
+                    // unmodified rule (it loads fine; `run_reactants` will
+                    // still fail on it at apply time, exactly as before --
+                    // not a regression, just not fixed by this expansion).
+                    let required_elements = required_elements_from_smirks(smirks);
+                    vec![RetroRule {
+                        name: format!("extracted_{i}"),
+                        template_id,
+                        smirks: smirks.to_string(),
+                        weight,
+                        required_elements,
+                    }]
+                }
+                HashAtomExpansion::Expanded {
+                    variants,
+                    total_combinations,
+                    capped,
+                } => {
+                    if capped {
+                        eprintln!(
+                            "Warning: template extracted_{i} has {total_combinations} \
+                             hash-atom ([#N]) variant combinations, exceeding the \
+                             {MAX_HASH_ATOM_VARIANTS}-variant cap -- only the first \
+                             {MAX_HASH_ATOM_VARIANTS} were generated and validated; \
+                             the rest are not represented as usable rules"
+                        );
+                    }
+                    variants
+                        .into_iter()
+                        .enumerate()
+                        .map(|(vi, variant_smirks)| {
+                            let required_elements = required_elements_from_smirks(&variant_smirks);
+                            RetroRule {
+                                name: format!("extracted_{i}_h{vi}"),
+                                template_id: template_id.clone(),
+                                smirks: variant_smirks,
+                                weight,
+                                required_elements,
+                            }
+                        })
+                        .collect()
+                }
+            }
         })
         .collect()
 }
@@ -1397,6 +1707,228 @@ mod tests {
     fn parse_aspirin_roundtrip() {
         let mol = mol_from_smiles("CC(=O)Oc1ccccc1C(=O)O").unwrap();
         assert_eq!(mol.atom_count(), 13);
+    }
+
+    // ── Hash-atom ([#N]) wildcard expansion ────────────────────────────
+
+    #[test]
+    fn hash_atom_not_applicable_for_plain_smirks() {
+        let smirks = "[N:1][CH2:2][c:3]>>[N:1].[Br][CH2:2][c:3]";
+        assert!(matches!(
+            expand_hash_atom_variants(smirks),
+            HashAtomExpansion::NotApplicable
+        ));
+    }
+
+    #[test]
+    fn hash_atom_expands_bare_nitrogen_wildcard_into_validated_variants() {
+        // Real extracted template (2-anilinopyrimidine-class retro):
+        // "any nitrogen" on both ring positions, aromaticity unspecified.
+        let smirks = "[#7:2]:[c:1](-[NH:4]-[c:5]):[#7:3]>>Cl-[c:1](:[#7:2]):[#7:3].[NH2:4]-[c:5]";
+        match expand_hash_atom_variants(smirks) {
+            HashAtomExpansion::Expanded {
+                variants,
+                total_combinations,
+                capped,
+            } => {
+                // One distinct atom-map per hash atom (map 2, map 3) -- but
+                // this template's neighboring-ring context means only the
+                // aromatic (lowercase) reading is a real pyrimidine; the
+                // aliphatic reading may or may not itself parse. Either
+                // way, expansion must not guess -- it must try both and
+                // keep only what `parse_reaction` actually accepts.
+                assert!(!capped);
+                assert_eq!(total_combinations, 4); // 2 atom-maps x 2 readings each
+                assert!(!variants.is_empty());
+                for v in &variants {
+                    assert!(
+                        chematic::rxn::parse_reaction(v).is_ok(),
+                        "every returned variant must independently re-parse: {v}"
+                    );
+                    assert!(
+                        !v.contains('#'),
+                        "no variant may still contain a hash atom: {v}"
+                    );
+                }
+                // The aromatic reading must be among the survivors -- this
+                // is the chemically-correct one for a pyrimidine ring.
+                assert!(
+                    variants
+                        .iter()
+                        .any(|v| v.contains("[n:2]") && v.contains("[n:3]")),
+                    "expected an all-aromatic variant among {variants:?}"
+                );
+            }
+            _ => panic!("expected Expanded, got a different outcome"),
+        }
+    }
+
+    #[test]
+    fn hash_atom_same_atom_map_gets_consistent_choice_both_sides() {
+        let smirks = "[#7:2]:[c:1]:[c:3]>>Cl-[c:1](:[#7:2]):[c:3]";
+        if let HashAtomExpansion::Expanded { variants, .. } = expand_hash_atom_variants(smirks) {
+            for v in &variants {
+                let is_upper = v.contains("[N:2]");
+                let is_lower = v.contains("[n:2]");
+                assert!(
+                    is_upper ^ is_lower,
+                    "atom-map 2 must resolve to exactly one consistent choice per variant: {v}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn hash_atom_bails_on_inconsistent_element_for_same_atom_map() {
+        // Synthetic: atom-map 2 is #7 (N) on one side, #8 (O) on the other --
+        // internally inconsistent, must not guess a choice.
+        let smirks = "[#7:2]-[C:1]>>[#8:2]-[C:1]";
+        assert!(matches!(
+            expand_hash_atom_variants(smirks),
+            HashAtomExpansion::Unexpandable
+        ));
+    }
+
+    #[test]
+    fn hash_atom_bails_on_combined_primitive() {
+        // `#7` combined with another primitive in the same bracket --
+        // outside what this expansion attempts to rewrite safely.
+        let smirks = "[#7;+0:2]-[C:1]>>[N:2]-[C:1]";
+        assert!(matches!(
+            expand_hash_atom_variants(smirks),
+            HashAtomExpansion::Unexpandable
+        ));
+    }
+
+    #[test]
+    fn hash_atom_expansion_is_capped_and_visible_when_combinatorial_space_is_large() {
+        // 10 distinct unmapped hash atoms (5 per side, no atom-map to
+        // share a choice across) -> 2^10 = 1024 combinations, hugely over
+        // the 16-variant cap.
+        let smirks = "[#7]-[#8]-[#16]-[#7]-[#8]>>[#7]-[#8]-[#16]-[#7]-[#8]";
+        match expand_hash_atom_variants(smirks) {
+            HashAtomExpansion::Expanded {
+                variants,
+                total_combinations,
+                capped,
+            } => {
+                assert_eq!(total_combinations, 1024);
+                assert!(capped);
+                assert!(variants.len() <= MAX_HASH_ATOM_VARIANTS);
+            }
+            _ => panic!("expected a capped Expanded outcome"),
+        }
+    }
+
+    #[test]
+    fn load_rules_from_file_hash_atom_variants_share_original_template_id() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!("renkin_hash_atom_test_{}.smi", std::process::id()));
+        let plain = "[N:1][CH2:2][c:3]>>[N:1].[Br][CH2:2][c:3]";
+        let hash_atom =
+            "[#7:2]:[c:1](-[NH:4]-[c:5]):[#7:3]>>Cl-[c:1](:[#7:2]):[#7:3].[NH2:4]-[c:5]";
+        std::fs::write(&path, format!("{plain}\t10\n{hash_atom}\t167\n")).unwrap();
+
+        let rules = load_rules_from_file(path.to_str().unwrap());
+        std::fs::remove_file(&path).ok();
+
+        let plain_rules: Vec<_> = rules.iter().filter(|r| r.smirks == plain).collect();
+        assert_eq!(
+            plain_rules.len(),
+            1,
+            "unaffected line must produce exactly one rule"
+        );
+        assert_eq!(plain_rules[0].name, "extracted_0");
+        assert_eq!(plain_rules[0].template_id, template_id_for_smirks(plain));
+
+        let expected_id = template_id_for_smirks(hash_atom);
+        let hash_variants: Vec<_> = rules
+            .iter()
+            .filter(|r| r.template_id == expected_id)
+            .collect();
+        assert!(
+            !hash_variants.is_empty(),
+            "hash-atom line must produce at least one surviving variant"
+        );
+        for r in &hash_variants {
+            assert!(!r.smirks.contains('#'));
+            assert!(r.name.starts_with("extracted_1_h"));
+        }
+    }
+
+    #[test]
+    fn apply_retro_succeeds_end_to_end_on_hash_atom_template_after_expansion() {
+        // Regression test for the real bug this module fixes: today,
+        // `apply_retro` on the *original* `[#7:2]`-bearing SMIRKS silently
+        // fails (chematic's SMILES-based `run_reactants` can't parse `#7`),
+        // returning zero precursors for every molecule -- even one that
+        // obviously matches. After expansion, the surviving variant must
+        // actually decompose the real target correctly.
+        let hash_atom_retro =
+            "[#7:2]:[c:1](-[NH:4]-[c:5]):[#7:3]>>Cl-[c:1](:[#7:2]):[#7:3].[NH2:4]-[c:5]";
+
+        // Sanity check the documented bug still reproduces on the raw,
+        // unexpanded template -- if chematic ever starts accepting `#N`
+        // directly, this assertion (not the fix) should be revisited.
+        let target = mol_from_smiles("c1ccc(Nc2ncccn2)cc1").unwrap(); // 2-anilinopyrimidine
+        let broken_rule = RetroRule {
+            name: "extracted_test".to_string(),
+            template_id: template_id_for_smirks(hash_atom_retro),
+            smirks: hash_atom_retro.to_string(),
+            weight: 1.0,
+            required_elements: 0,
+        };
+        assert!(
+            apply_retro(&target, &broken_rule).is_empty(),
+            "documents the pre-fix failure mode: the raw #N SMIRKS applied directly must \
+             still produce nothing, confirming the fix works via expansion, not by changing \
+             apply_retro/run_reactants itself"
+        );
+
+        let HashAtomExpansion::Expanded { variants, .. } =
+            expand_hash_atom_variants(hash_atom_retro)
+        else {
+            panic!("expected the real corpus template to expand successfully");
+        };
+        let aromatic_variant = variants
+            .iter()
+            .find(|v| v.contains("[n:2]") && v.contains("[n:3]"))
+            .expect("aromatic reading must be among the survivors");
+        let fixed_rule = RetroRule {
+            name: "extracted_test_h0".to_string(),
+            template_id: template_id_for_smirks(hash_atom_retro),
+            smirks: aromatic_variant.clone(),
+            weight: 1.0,
+            required_elements: 0,
+        };
+        let outcomes = apply_retro(&target, &fixed_rule);
+        assert!(
+            !outcomes.is_empty(),
+            "expanded variant must successfully decompose the real target"
+        );
+        let mut found_expected = false;
+        for outcome in &outcomes {
+            let smiles: Vec<&str> = outcome.iter().map(|p| p.smiles.as_str()).collect();
+            let has_chloropyrimidine = smiles
+                .iter()
+                .any(|s| s.contains("Cl") && (s.contains('n') || s.contains('N')));
+            let has_aniline = smiles.iter().any(|s| {
+                mol_from_smiles(s)
+                    .map(|m| m.atom_count() == 7) // aniline: C6H5NH2 -- 6 C + 1 N heavy atoms
+                    .unwrap_or(false)
+            });
+            if has_chloropyrimidine && has_aniline {
+                found_expected = true;
+            }
+        }
+        assert!(
+            found_expected,
+            "expected 2-chloropyrimidine + aniline among outcomes: {:?}",
+            outcomes
+                .iter()
+                .map(|o| o.iter().map(|p| &p.smiles).collect::<Vec<_>>())
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]

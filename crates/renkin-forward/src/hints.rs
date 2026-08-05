@@ -1882,10 +1882,17 @@ mod tests {
             "/../../data/templates_extracted.smi"
         );
         let rules = renkin::chem_env::load_rules_from_file(path);
+        // `load_rules_from_file` now expands `[#N]` hash-atom templates
+        // into multiple variant `RetroRule`s (see
+        // `chem_env::expand_hash_atom_variants`), so this is no longer the
+        // raw 500-line count -- see the matching
+        // lib.rs::reverse_smirks_validated_extracted_templates_accept_reject_partition_is_stable
+        // assertion for the raw-line-count check and the full explanation.
         assert_eq!(
             rules.len(),
-            500,
-            "extracted corpus size drifted -- reconcile with the matching \
+            865,
+            "extracted corpus rule count (post hash-atom expansion) drifted -- reconcile with \
+             the matching \
              lib.rs::reverse_smirks_validated_extracted_templates_accept_reject_partition_is_stable \
              assertion and the PR body's accept/reject table before changing this number"
         );

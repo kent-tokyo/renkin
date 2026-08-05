@@ -1696,29 +1696,59 @@ mod tests {
     /// (forward-LHS) side, so this is not a redundant check.
     #[test]
     fn reverse_smirks_validated_extracted_templates_accept_reject_partition_is_stable() {
-        // NOTE (regression-audit finding, verified against `git diff master`
-        // to confirm the refactor is a pure extract-method with no logic
-        // change): 217/500 extracted templates are rejected by
-        // `reverse_smirks_validated` -- this is PRE-EXISTING behavior on
-        // `master`, unrelated to the `hints`-motivated refactor.
-        // `load_rules_from_file` only pre-validates the product side at
-        // load time; its own precursor (forward-LHS) side is exercised here
-        // for the first time and many extracted USPTO templates use
-        // multi-condition SMARTS (`;`/`,`) on that side, which
-        // `parse_reaction`'s `parse_smiles`-based check has always rejected.
-        // This test locks in the current count as a stability baseline, not
-        // as an assertion that it's ideal -- a real fix belongs to #61
-        // (forward-prediction proposal-coverage work), not this PR.
+        // History: this test originally locked in a 217/500-rejected
+        // baseline caused by `parse_reaction`'s SMILES-based parser
+        // rejecting every `[#N]`/`[#N:map]` bare-atomic-number SMARTS
+        // primitive (e.g. `[#7:2]`, meaning "any nitrogen, aromaticity
+        // unspecified") -- confirmed the sole failure class across all 217
+        // (no multi-condition `;`/`,` or recursive SMARTS actually occur in
+        // this corpus; see the two fixtures above that still lock those in
+        // as *unsupported*, proving this fix stayed narrow).
+        //
+        // `chem_env::load_rules_from_file` now expands every `[#N]` atom
+        // into one variant `RetroRule` per aromatic/aliphatic reading,
+        // validating each via `chematic::rxn::parse_reaction` before
+        // keeping it (see `expand_hash_atom_variants`) -- `[#N]` itself
+        // doesn't say which reading is correct, so both are tried and only
+        // the ones that actually parse survive; nothing is guessed. This
+        // is why `rules.len()` is now larger than the raw line count: one
+        // template line can produce multiple variant rules, all sharing
+        // the same `template_id` (the ring-context sidecar and any other
+        // template-keyed metadata still resolves them by that shared ID).
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../data/templates_extracted.smi"
         );
+        let raw_content = std::fs::read_to_string(path).unwrap();
+        let raw_line_count = raw_content
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            .count();
+        assert_eq!(
+            raw_line_count, 500,
+            "raw extracted-template corpus line count changed -- update this test's baseline \
+             intentionally"
+        );
+
         let rules = renkin::chem_env::load_rules_from_file(path);
+        let distinct_template_ids: std::collections::HashSet<&str> =
+            rules.iter().map(|r| r.template_id.as_str()).collect();
+        assert_eq!(
+            distinct_template_ids.len(),
+            500,
+            "every one of the 500 raw template lines must still produce at least one RetroRule \
+             sharing that line's template_id -- a count below 500 means a line was dropped \
+             entirely (a real regression), not just expanded"
+        );
         assert_eq!(
             rules.len(),
-            500,
-            "extracted-template corpus size changed -- update this test's baseline intentionally"
+            865,
+            "total RetroRule count (raw lines + hash-atom variant expansion) changed -- update \
+             this test's baseline intentionally if `expand_hash_atom_variants` legitimately \
+             changed how many variants a template produces"
         );
+
         let mut rejected = 0usize;
         let mut accepted = 0usize;
         for rule in &rules {
@@ -1729,10 +1759,11 @@ mod tests {
         }
         assert_eq!(
             (accepted, rejected),
-            (283, 217),
-            "predict/enumerate's accept/reject partition over the extracted corpus changed -- \
-             if this is a deliberate loosening/tightening of reverse_smirks_validated, update \
-             this baseline with an explanation; if unintended, it's a real regression"
+            (865, 0),
+            "predict/enumerate's accept/reject partition over the (post-expansion) extracted \
+             corpus changed -- if this is a deliberate loosening/tightening of \
+             reverse_smirks_validated, update this baseline with an explanation; if unintended, \
+             it's a real regression"
         );
     }
 

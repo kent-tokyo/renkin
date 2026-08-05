@@ -28,7 +28,7 @@
 
 use std::cell::RefCell;
 
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -408,18 +408,27 @@ impl RingContextGuard {
             // .smi corpus) but fail under `chematic::rxn::parse_reaction`
             // (e.g. `#7`-style atomic-number SMARTS primitives, which
             // `parse_reaction`'s stricter SMILES-shaped grammar rejects).
-            // `find_reaction_matches`/`apply_reaction_match` call the exact
-            // same `parse_reaction` internally, so such a template already
-            // deterministically fails there today (pre-existing, silently
-            // swallowed by `apply_retro`'s `.unwrap_or_default()`) --
-            // `run_diagnostics_pass`/`run_conservative_pass` already handle
-            // that `Err` gracefully via `reaction_application_failed`
-            // *before* ever reaching `classify_match`, so an empty table
-            // here is unreachable dead data, not a correctness gap.
+            // Issue #88 fixed this by trying every independently-validated
+            // concrete-element reading (`application_smirks_variants`) at
+            // both `find_reaction_matches`/`apply_reaction_match` call
+            // sites in this file (`run_diagnostics_pass`/`run_gated_pass`),
+            // so such a template genuinely does match/apply here now, not
+            // just at the plain `apply_retro` path -- an empty
+            // `atom_map_table` here is a real correctness gap (every match
+            // fails closed as `InvalidMappedBond`, before ever reaching
+            // ring-context classification), not unreachable dead data.
+            // Every `[#N]` reading of one template shares the identical
+            // atom-map layout/connectivity by construction (only the
+            // element/aromaticity annotation differs), so trying variants
+            // in order and using the first one that parses is sufficient
+            // -- there is no "which variant's atom_map_table" ambiguity.
             let atom_map_table = if changed_bond_intents.is_empty() {
                 Vec::new()
             } else {
-                lhs_atom_map_table(&tmpl.simplified_smirks).unwrap_or_default()
+                smirks_variants_to_try(&tmpl.simplified_smirks)
+                    .iter()
+                    .find_map(|variant| lhs_atom_map_table(variant))
+                    .unwrap_or_default()
             };
             compiled.insert(
                 template_id,
@@ -736,6 +745,27 @@ pub fn apply_retro_with_policy(
     }
 }
 
+/// The concrete-element SMIRKS to actually attempt for `smirks` (Issue
+/// #88): `find_reaction_matches`/`apply_reaction_match` are, like
+/// `chematic::rxn::run_reactants`, SMILES-grammar-based and cannot parse a
+/// bare `[#N]` atomic-number SMARTS primitive -- this match-level API is
+/// a *separate* code path from `apply_retro` (chematic 0.10.0 added it
+/// specifically for this guard) and does not automatically inherit
+/// `chem_env::apply_retro`'s hash-atom fix, so it needs the same
+/// treatment independently. A single-element `Vec` for an ordinary
+/// SMIRKS, matching today's direct-call behavior exactly; every
+/// independently-validated concrete-element reading for a `[#N]`-bearing
+/// one. `crate::chem_env::application_smirks_variants` is cached by
+/// SMIRKS string, so repeated calls for the same rule are cheap.
+fn smirks_variants_to_try(smirks: &str) -> Vec<String> {
+    if !smirks.contains('#') {
+        return vec![smirks.to_string()];
+    }
+    crate::chem_env::application_smirks_variants(smirks)
+        .as_ref()
+        .clone()
+}
+
 /// Enumerates and classifies every match purely for `diagnostics`; the
 /// return value is discarded by the caller (`AuditOnly` always returns
 /// `apply_retro(mol, rule)`'s own result instead), so this can never affect
@@ -746,40 +776,42 @@ fn run_diagnostics_pass(
     compiled: &CompiledTemplate,
     diagnostics: &mut RingContextDiagnostics,
 ) {
-    diagnostics.reaction_parse_calls += 1;
-    let matches = match find_reaction_matches(&rule.smirks, &[mol]) {
-        Ok(m) => m,
-        Err(_) => {
-            diagnostics.reaction_application_failed += 1;
-            return;
-        }
-    };
-    diagnostics.matches_enumerated += matches.len() as u64;
     let ring_cache = RingBondCache::new(mol);
-    for m in &matches {
-        match classify_match(m, compiled, &ring_cache, diagnostics) {
-            MatchVerdict::Accept => {}
-            MatchVerdict::Reject(reason) => {
-                record_reject(diagnostics, reason);
+    for variant in smirks_variants_to_try(&rule.smirks) {
+        diagnostics.reaction_parse_calls += 1;
+        let matches = match find_reaction_matches(&variant, &[mol]) {
+            Ok(m) => m,
+            Err(_) => {
+                diagnostics.reaction_application_failed += 1;
                 continue;
             }
-        }
-        // Element-accounting is diagnosed too, on the actual applied
-        // outcome, gated behind the same ring-context accept that
-        // Conservative uses -- so AuditOnly's counters reflect exactly what
-        // Conservative would accept/reject, over the same denominator, but
-        // never filter the returned outcomes here.
-        diagnostics.matches_applied += 1;
-        diagnostics.reaction_parse_calls += 1;
-        if let Ok(Some(products)) = apply_reaction_match(&rule.smirks, &[mol], m, true) {
-            let precs: Vec<PrecursorMol> = products.iter().flat_map(split_fragments).collect();
-            if !element_accounting_ok(mol, &precs) {
-                diagnostics.outcomes_element_rejected += 1;
-            } else {
-                diagnostics.outcomes_accepted += 1;
+        };
+        diagnostics.matches_enumerated += matches.len() as u64;
+        for m in &matches {
+            match classify_match(m, compiled, &ring_cache, diagnostics) {
+                MatchVerdict::Accept => {}
+                MatchVerdict::Reject(reason) => {
+                    record_reject(diagnostics, reason);
+                    continue;
+                }
             }
-        } else {
-            diagnostics.valence_filtered += 1;
+            // Element-accounting is diagnosed too, on the actual applied
+            // outcome, gated behind the same ring-context accept that
+            // Conservative uses -- so AuditOnly's counters reflect exactly
+            // what Conservative would accept/reject, over the same
+            // denominator, but never filter the returned outcomes here.
+            diagnostics.matches_applied += 1;
+            diagnostics.reaction_parse_calls += 1;
+            if let Ok(Some(products)) = apply_reaction_match(&variant, &[mol], m, true) {
+                let precs: Vec<PrecursorMol> = products.iter().flat_map(split_fragments).collect();
+                if !element_accounting_ok(mol, &precs) {
+                    diagnostics.outcomes_element_rejected += 1;
+                } else {
+                    diagnostics.outcomes_accepted += 1;
+                }
+            } else {
+                diagnostics.valence_filtered += 1;
+            }
         }
     }
 }
@@ -804,43 +836,58 @@ fn run_gated_pass(
     policy: ExtractedTemplateSafetyPolicy,
     diagnostics: &mut RingContextDiagnostics,
 ) -> Vec<Vec<PrecursorMol>> {
-    diagnostics.reaction_parse_calls += 1;
-    let matches = match find_reaction_matches(&rule.smirks, &[mol]) {
-        Ok(m) => m,
-        Err(_) => {
-            diagnostics.reaction_application_failed += 1;
-            return vec![];
-        }
-    };
-    diagnostics.matches_enumerated += matches.len() as u64;
     let ring_cache = RingBondCache::new(mol);
+    let mut outcomes: Vec<Vec<PrecursorMol>> = Vec::new();
+    // A [#N]-bearing rule (Issue #88) may have multiple validated
+    // readings; two readings producing the same real precursor set for
+    // this molecule must not appear as separate outcomes.
+    let mut seen_signatures: FxHashSet<Vec<String>> = FxHashSet::default();
 
-    let mut outcomes = Vec::new();
-    for m in &matches {
-        if let MatchVerdict::Reject(reason) = classify_match(m, compiled, &ring_cache, diagnostics)
-        {
-            record_reject(diagnostics, reason);
-            if policy.ring_context == Enforcement::Enforce {
+    for variant in smirks_variants_to_try(&rule.smirks) {
+        diagnostics.reaction_parse_calls += 1;
+        let matches = match find_reaction_matches(&variant, &[mol]) {
+            Ok(m) => m,
+            Err(_) => {
+                diagnostics.reaction_application_failed += 1;
                 continue;
             }
-        }
-        diagnostics.matches_applied += 1;
-        diagnostics.reaction_parse_calls += 1;
-        match apply_reaction_match(&rule.smirks, &[mol], m, true) {
-            Ok(Some(products)) => {
-                let precs: Vec<PrecursorMol> = products.iter().flat_map(split_fragments).collect();
-                if element_accounting_ok(mol, &precs) {
-                    diagnostics.outcomes_accepted += 1;
-                    outcomes.push(precs);
-                } else {
-                    diagnostics.outcomes_element_rejected += 1;
-                    if policy.element_accounting != Enforcement::Enforce {
-                        outcomes.push(precs);
-                    }
+        };
+        diagnostics.matches_enumerated += matches.len() as u64;
+
+        for m in &matches {
+            if let MatchVerdict::Reject(reason) =
+                classify_match(m, compiled, &ring_cache, diagnostics)
+            {
+                record_reject(diagnostics, reason);
+                if policy.ring_context == Enforcement::Enforce {
+                    continue;
                 }
             }
-            Ok(None) => diagnostics.valence_filtered += 1,
-            Err(_) => diagnostics.reaction_application_failed += 1,
+            diagnostics.matches_applied += 1;
+            diagnostics.reaction_parse_calls += 1;
+            match apply_reaction_match(&variant, &[mol], m, true) {
+                Ok(Some(products)) => {
+                    let precs: Vec<PrecursorMol> =
+                        products.iter().flat_map(split_fragments).collect();
+                    let accept_for_element_accounting = if element_accounting_ok(mol, &precs) {
+                        diagnostics.outcomes_accepted += 1;
+                        true
+                    } else {
+                        diagnostics.outcomes_element_rejected += 1;
+                        policy.element_accounting != Enforcement::Enforce
+                    };
+                    if accept_for_element_accounting {
+                        let mut signature: Vec<String> =
+                            precs.iter().map(|p| p.smiles.clone()).collect();
+                        signature.sort_unstable();
+                        if seen_signatures.insert(signature) {
+                            outcomes.push(precs);
+                        }
+                    }
+                }
+                Ok(None) => diagnostics.valence_filtered += 1,
+                Err(_) => diagnostics.reaction_application_failed += 1,
+            }
         }
     }
     outcomes
@@ -936,6 +983,120 @@ mod tests {
         let path = dir.join("sidecar.json");
         std::fs::write(&path, sidecar_json).unwrap();
         RingContextGuard::load(path.to_str().unwrap(), templates_smi).unwrap()
+    }
+
+    // ── Hash-atom ([#N]) x ring-context guard interaction (Issue #88) ───
+    //
+    // Confirms the Issue #88 fix's central compatibility claim: a
+    // `[#N]`-bearing template's expanded application-time variants still
+    // resolve against a sidecar generated for the *original* (unexpanded)
+    // template, because `load_rules_from_file` never changes
+    // `RetroRule::template_id`/`name`/`smirks` -- there is only ever one
+    // real `RetroRule` per line for the guard to look up by template_id,
+    // exactly as before this fix.
+
+    /// 2-anilinopyrimidine-class retro template with two `[#7]` ring
+    /// nitrogens (map 2, map 3) that are pure spectators, and one real
+    /// changed bond: the aryl C(map 1)-N(map 4) bond formed by the SNAr
+    /// amination this template represents (present in the target pattern,
+    /// absent from the precursor pattern -- Cl takes map 1's other slot,
+    /// map 4 becomes a free amine).
+    const HASH_ATOM_SMIRKS: &str =
+        "[#7:2]:[c:1](-[NH:4]-[c:5]):[#7:3]>>Cl-[c:1](:[#7:2]):[#7:3].[NH2:4]-[c:5]";
+
+    fn hash_atom_rule() -> RetroRule {
+        RetroRule {
+            name: "extracted_hashtest".to_string(),
+            template_id: template_id_for_smirks(HASH_ATOM_SMIRKS),
+            smirks: HASH_ATOM_SMIRKS.to_string(),
+            weight: 1.0,
+            required_elements: 0,
+        }
+    }
+
+    /// Sidecar for `HASH_ATOM_SMIRKS`, declaring its one real changed bond
+    /// (map 1 - map 4, the formed aryl C-N bond) as `non_ring` -- correct
+    /// for this chemistry (an intermolecular amination), independent of
+    /// which `[#7]` aromatic/aliphatic reading a given application-time
+    /// variant happens to use, since the guard's classification runs on
+    /// atom-map identity, not element spelling.
+    fn hash_atom_nonring_sidecar_json(template_file_sha256: &str) -> String {
+        format!(
+            r#"{{
+                "schema_version": 2,
+                "template_file_sha256": "{template_file_sha256}",
+                "templates": {{
+                    "{tid}": {{
+                        "simplified_smirks": "{smirks}",
+                        "changed_bonds": [
+                            {{"map_a": 1, "map_b": 4, "operation": "delete", "intent": "non_ring",
+                              "ring_observations": 0, "non_ring_observations": 167,
+                              "ambiguous_observations": 0, "unknown_observations": 0}}
+                        ]
+                    }}
+                }}
+            }}"#,
+            tid = template_id_for_smirks(HASH_ATOM_SMIRKS),
+            smirks = HASH_ATOM_SMIRKS,
+        )
+    }
+
+    fn hash_atom_templates_smi_fixture() -> String {
+        format!("{HASH_ATOM_SMIRKS}\t167\n")
+    }
+
+    #[test]
+    fn hash_atom_expanded_template_resolves_sidecar_by_original_template_id_across_all_policies() {
+        let smi = hash_atom_templates_smi_fixture();
+        let sidecar = hash_atom_nonring_sidecar_json("__HASH__");
+        let rule = hash_atom_rule();
+        let target = mol_from_smiles("c1ccc(Nc2ncccn2)cc1").unwrap(); // 2-anilinopyrimidine
+
+        let policies = [
+            ("AuditOnly", ExtractedTemplateSafetyPolicy::AUDIT_ONLY),
+            ("Conservative", ExtractedTemplateSafetyPolicy::CONSERVATIVE),
+            ("RingOnly", ExtractedTemplateSafetyPolicy::RING_ONLY),
+            ("ElementOnly", ExtractedTemplateSafetyPolicy::ELEMENT_ONLY),
+        ];
+
+        // Disabled: delegates straight to `apply_retro`, no guard involved
+        // at all -- included as the baseline every guarded policy is
+        // compared against.
+        let mut disabled_diagnostics = RingContextDiagnostics::default();
+        let disabled_outcomes = apply_retro_with_policy(
+            &target,
+            &rule,
+            &RingContextConfig::Disabled,
+            &mut disabled_diagnostics,
+        );
+        assert!(
+            !disabled_outcomes.is_empty(),
+            "Disabled: must still decompose the real target via the internal hash-atom \
+             variant path"
+        );
+
+        for (label, policy) in policies {
+            let guard = load_guard_with_intent(&sidecar, &smi);
+            let config = guarded(guard, policy);
+            let mut diagnostics = RingContextDiagnostics::default();
+            let outcomes = apply_retro_with_policy(&target, &rule, &config, &mut diagnostics);
+            assert_eq!(
+                diagnostics.templates_missing_metadata, 0,
+                "{label}: expanded hash-atom rule's template_id must still resolve against \
+                 the sidecar generated for the original (unexpanded) template"
+            );
+            assert_eq!(
+                diagnostics.ring_rejects_nonring_intent_on_ring_bond, 0,
+                "{label}: the real C-N bond is genuinely non-ring, matching the declared \
+                 intent, so a mismatch must never fire here"
+            );
+            assert!(
+                !outcomes.is_empty(),
+                "{label}: a correctly-classified match must be accepted, not silently \
+                 zero-resulted merely because the applied rule went through hash-atom \
+                 expansion"
+            );
+        }
     }
 
     // ── Guard loading: fail-closed ─────────────────────────────────────

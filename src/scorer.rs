@@ -341,29 +341,39 @@ pub mod nn {
 
         #[test]
         fn scorer_shape_contract_matches_real_extracted_corpus_rule_count() {
-            // Regression guard for Issue #88: `n_rules` here is meant to be
-            // exactly `rules.len()` from `chem_env::load_rules_from_file`
-            // for the real extracted-template corpus. A model trained for
-            // 500 outputs must still see `Available`, never
-            // `OutputShapeMismatch` -- which is exactly what an earlier
-            // draft of the #88 fix would have broken by inflating
-            // `load_rules_from_file`'s return count (500 -> 865) without
-            // retraining any model. This test doesn't load a real ONNX
-            // model (none is checked in for CI); it locks in the pure
-            // shape-validation contract against the corpus's real,
-            // current rule count instead.
+            // Regression guard for Issue #88, shaped exactly like the real
+            // call site (`main.rs`'s `score_templates`/`from_path` usage):
+            // `rules_offset` is `default_rules().len()` (the hand-crafted
+            // rules, always prepended and never scored), and `n_rules` is
+            // `rules_offset + file_rules.len()` -- NOT `file_rules.len()`
+            // alone with an implicit `rules_offset = 0`, which the previous
+            // version of this test used and which doesn't match production.
+            // A model trained for 500 file-template outputs must still see
+            // `Available`, never `OutputShapeMismatch` -- which is exactly
+            // what an earlier draft of the #88 fix would have broken by
+            // inflating `load_rules_from_file`'s return count (500 -> 865)
+            // without retraining any model. This test doesn't load a real
+            // ONNX model (none is checked in for CI); it locks in the pure
+            // shape-validation contract against the corpus's real, current
+            // rule count and the real `rules_offset` instead.
             let path = concat!(env!("CARGO_MANIFEST_DIR"), "/data/templates_extracted.smi");
-            let n_rules = crate::chem_env::load_rules_from_file(path).len();
+            let file_rules = crate::chem_env::load_rules_from_file(path);
             assert_eq!(
-                n_rules, 500,
+                file_rules.len(),
+                500,
                 "extracted-template corpus rule count changed -- if intentional, a real \
                  template scorer trained against the old count needs retraining, and this \
                  constant should move with it"
             );
-            let synthetic_logits: Vec<f32> = (0..n_rules).map(|i| i as f32 * 0.001).collect();
-            let out = validate_and_rank_logits(&synthetic_logits, 0, n_rules);
+            let rules_offset = crate::chem_env::default_rules().len();
+            let n_rules = rules_offset + file_rules.len();
+            let synthetic_logits: Vec<f32> =
+                (0..file_rules.len()).map(|i| i as f32 * 0.001).collect();
+            let out = validate_and_rank_logits(&synthetic_logits, rules_offset, n_rules);
             assert_eq!(out.status, TemplateScoreStatus::Available);
-            assert_eq!(out.scores.len(), n_rules);
+            assert_eq!(out.scores.len(), 500);
+            assert_eq!(out.scores.first().unwrap().rule_index, rules_offset);
+            assert_eq!(out.scores.last().unwrap().rule_index, n_rules - 1);
         }
 
         #[test]

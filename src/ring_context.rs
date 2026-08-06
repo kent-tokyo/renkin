@@ -752,18 +752,20 @@ pub fn apply_retro_with_policy(
 /// a *separate* code path from `apply_retro` (chematic 0.10.0 added it
 /// specifically for this guard) and does not automatically inherit
 /// `chem_env::apply_retro`'s hash-atom fix, so it needs the same
-/// treatment independently. A single-element `Vec` for an ordinary
-/// SMIRKS, matching today's direct-call behavior exactly; every
+/// treatment independently. A single-element list for an ordinary SMIRKS,
+/// matching today's direct-call behavior exactly; every
 /// independently-validated concrete-element reading for a `[#N]`-bearing
-/// one. `crate::chem_env::application_smirks_variants` is cached by
-/// SMIRKS string, so repeated calls for the same rule are cheap.
-fn smirks_variants_to_try(smirks: &str) -> Vec<String> {
+/// one. Returns the `Arc` directly (no `.clone()` of its contents) since
+/// this is called on every match-level apply in the ring-context hot path
+/// -- a hash-atom template can carry up to 64 variant `String`s, and
+/// cloning that `Vec` per call was measurable overhead under `Conservative`.
+/// `crate::chem_env::application_smirks_variants` is itself cached by
+/// SMIRKS string, so repeated calls for the same rule are cheap either way.
+fn smirks_variants_to_try(smirks: &str) -> std::sync::Arc<Vec<String>> {
     if !smirks.contains('#') {
-        return vec![smirks.to_string()];
+        return std::sync::Arc::new(vec![smirks.to_string()]);
     }
     crate::chem_env::application_smirks_variants(smirks)
-        .as_ref()
-        .clone()
 }
 
 /// Enumerates and classifies every match purely for `diagnostics`; the
@@ -777,9 +779,9 @@ fn run_diagnostics_pass(
     diagnostics: &mut RingContextDiagnostics,
 ) {
     let ring_cache = RingBondCache::new(mol);
-    for variant in smirks_variants_to_try(&rule.smirks) {
+    for variant in smirks_variants_to_try(&rule.smirks).iter() {
         diagnostics.reaction_parse_calls += 1;
-        let matches = match find_reaction_matches(&variant, &[mol]) {
+        let matches = match find_reaction_matches(variant, &[mol]) {
             Ok(m) => m,
             Err(_) => {
                 diagnostics.reaction_application_failed += 1;
@@ -802,7 +804,7 @@ fn run_diagnostics_pass(
             // denominator, but never filter the returned outcomes here.
             diagnostics.matches_applied += 1;
             diagnostics.reaction_parse_calls += 1;
-            if let Ok(Some(products)) = apply_reaction_match(&variant, &[mol], m, true) {
+            if let Ok(Some(products)) = apply_reaction_match(variant, &[mol], m, true) {
                 let precs: Vec<PrecursorMol> = products.iter().flat_map(split_fragments).collect();
                 if !element_accounting_ok(mol, &precs) {
                     diagnostics.outcomes_element_rejected += 1;
@@ -843,9 +845,9 @@ fn run_gated_pass(
     // this molecule must not appear as separate outcomes.
     let mut seen_signatures: FxHashSet<Vec<String>> = FxHashSet::default();
 
-    for variant in smirks_variants_to_try(&rule.smirks) {
+    for variant in smirks_variants_to_try(&rule.smirks).iter() {
         diagnostics.reaction_parse_calls += 1;
-        let matches = match find_reaction_matches(&variant, &[mol]) {
+        let matches = match find_reaction_matches(variant, &[mol]) {
             Ok(m) => m,
             Err(_) => {
                 diagnostics.reaction_application_failed += 1;
@@ -865,7 +867,7 @@ fn run_gated_pass(
             }
             diagnostics.matches_applied += 1;
             diagnostics.reaction_parse_calls += 1;
-            match apply_reaction_match(&variant, &[mol], m, true) {
+            match apply_reaction_match(variant, &[mol], m, true) {
                 Ok(Some(products)) => {
                     let precs: Vec<PrecursorMol> =
                         products.iter().flat_map(split_fragments).collect();

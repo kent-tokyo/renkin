@@ -1127,6 +1127,55 @@ mod tests {
         }
     }
 
+    /// Issue #90's exact known-bad hash-atom variant, run directly through
+    /// `run_gated_pass` (the real Conservative-path function, not just
+    /// `aromaticity_integrity_violation` in isolation) to prove this
+    /// module's own wiring -- not merely `chem_env`'s -- rejects the
+    /// outcome and increments `outcomes_aromaticity_rejected`. Uses an
+    /// empty `changed_bond_intents` so `classify_match` trivially accepts
+    /// every match (nothing to classify: this SMIRKS deletes no mapped
+    /// bond, it only relabels one), isolating the aromaticity-integrity
+    /// gate from ring-context classification entirely.
+    #[test]
+    fn run_gated_pass_rejects_aromaticity_integrity_violation_and_counts_it() {
+        let bad_variant = "[N:2]-[CH2:1]-[C:3]>>O=[C:1](-[n:2])-[C:3]";
+        let rule = RetroRule {
+            name: "extracted_test".to_string(),
+            template_id: template_id_for_smirks(bad_variant),
+            smirks: bad_variant.to_string(),
+            weight: 1.0,
+            required_elements: 0,
+        };
+        let compiled = CompiledTemplate {
+            changed_bond_intents: FxHashMap::default(),
+            atom_map_table: lhs_atom_map_table(bad_variant).unwrap(),
+        };
+        let target = mol_from_smiles("c1ccccc1CCCNCC").unwrap();
+        let mut diagnostics = RingContextDiagnostics::default();
+        let outcomes = run_gated_pass(
+            &target,
+            &rule,
+            &compiled,
+            ExtractedTemplateSafetyPolicy::CONSERVATIVE,
+            &mut diagnostics,
+        );
+        assert!(
+            outcomes.is_empty(),
+            "the aromaticity-integrity violation must reject every match, not just \
+             filter some of them: got {} outcome(s)",
+            outcomes.len()
+        );
+        assert_eq!(
+            diagnostics.outcomes_aromaticity_rejected, 2,
+            "run_gated_pass must count both rejections (this target has two independent \
+             N-CH2-C matches -- propyl-side and ethyl-side), not just silently drop them"
+        );
+        assert_eq!(
+            diagnostics.outcomes_accepted, 0,
+            "the corrupted outcome must never reach outcomes_accepted"
+        );
+    }
+
     // ── Guard loading: fail-closed ─────────────────────────────────────
 
     #[test]

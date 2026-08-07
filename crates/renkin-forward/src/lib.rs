@@ -1845,6 +1845,26 @@ mod tests {
         assert_eq!(products, expected);
     }
 
+    #[test]
+    fn canonicalize_outcome_rejects_aromaticity_integrity_violation() {
+        // Issue #90's exact known-bad hash-atom variant, applied directly
+        // via chematic::rxn::run_reactants (bypassing chem_env's now-fixed
+        // spectator grouping entirely) to prove canonicalize_outcome's own
+        // wiring of aromaticity_integrity_violation -- not just chem_env's
+        // -- rejects the raw product with the right reason code, before its
+        // own canonical_smiles/mol_from_smiles round-trip below gets a
+        // chance to (possibly) hide the same defect.
+        let bad_variant = "[N:2]-[CH2:1]-[C:3]>>O=[C:1](-[n:2])-[C:3]";
+        let target = mol_from_smiles("c1ccccc1CCCNCC").unwrap();
+        let results = chematic::rxn::run_reactants(bad_variant, &[&target]).unwrap_or_default();
+        let group = results
+            .first()
+            .expect("the bad variant must still match the acyclic amine");
+        let err = canonicalize_outcome(group)
+            .expect_err("must reject an aromaticity-integrity violation");
+        assert_eq!(err, "aromatic_atom_not_in_ring");
+    }
+
     fn synthetic_metathesis_rule() -> RetroRule {
         RetroRule {
             name: "synthetic_halide_metathesis".to_string(),

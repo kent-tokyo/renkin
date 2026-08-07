@@ -2482,19 +2482,75 @@ mod tests {
     }
 
     #[test]
-    fn aromaticity_integrity_violation_detects_acyclic_aromatic_atom() {
+    fn aromaticity_integrity_accepts_valid_acetanilide() {
         let mol = mol_from_smiles("CC(=O)Nc1ccccc1").unwrap(); // acetanilide, real, valid
         assert_eq!(aromaticity_integrity_violation(&mol), None);
     }
 
     #[test]
-    fn aromaticity_integrity_violation_accepts_real_heteroaromatic_ring() {
+    fn aromaticity_integrity_accepts_real_heteroaromatic_ring() {
         // Pyridine: a real aromatic ring where every aromatic atom has both
         // ring membership and an incident aromatic bond -- must not be
         // flagged, mirroring the pre-existing 4-bromopyridine concern
         // documented on `split_fragments`.
         let mol = mol_from_smiles("c1ccncc1").unwrap();
         assert_eq!(aromaticity_integrity_violation(&mol), None);
+    }
+
+    #[test]
+    fn aromaticity_integrity_violation_detects_acyclic_aromatic_atom() {
+        // Issue #90's exact known-bad hash-atom variant, applied directly
+        // via `run_reactants` -- bypassing `expand_hash_atom_variants`'
+        // now-fixed spectator grouping entirely -- to prove the atom-level
+        // integrity check (the second, independent layer of defense) really
+        // does detect this defect on its own. Without a test like this, the
+        // grouping fix alone could make every reproducer above pass for the
+        // wrong reason: because the bad variant is never generated, not
+        // because this check would catch it if it somehow were.
+        let bad_variant = "[N:2]-[CH2:1]-[C:3]>>O=[C:1](-[n:2])-[C:3]";
+        let target = mol_from_smiles("c1ccccc1CCCNCC").unwrap();
+        let results = run_reactants(bad_variant, &[&target]).unwrap_or_default();
+        assert!(
+            !results.is_empty(),
+            "the bad variant must still match an acyclic amine (that's what makes it dangerous)"
+        );
+        for group in &results {
+            for product in group {
+                assert_eq!(
+                    aromaticity_integrity_violation(product),
+                    Some(AromaticityIntegrityViolation::AromaticAtomNotInRing),
+                    "product {:?} must be flagged AromaticAtomNotInRing",
+                    canonical_smiles(product)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn aromaticity_integrity_violation_detects_ring_atom_without_aromatic_bond() {
+        // Same known-bad variant, but the spectator N it corrupts is a real
+        // piperazine ring atom this time -- confirms the check catches both
+        // failure shapes uniformly (acyclic above, on-ring here), the same
+        // target as `apply_retro_rejects_spectator_atom_aromaticity_flip_on_real_ring`
+        // but exercising the raw defect directly rather than relying on the
+        // grouping fix to have already prevented it from ever being generated.
+        let bad_variant = "[N:2]-[CH2:1]-[C:3]>>O=[C:1](-[n:2])-[C:3]";
+        let target = mol_from_smiles("O=C(OC)C1CN(CCN1)C(=O)OC(C)(C)C").unwrap();
+        let results = run_reactants(bad_variant, &[&target]).unwrap_or_default();
+        assert!(
+            !results.is_empty(),
+            "the bad variant must still match a piperazine ring nitrogen"
+        );
+        for group in &results {
+            for product in group {
+                assert_eq!(
+                    aromaticity_integrity_violation(product),
+                    Some(AromaticityIntegrityViolation::AromaticAtomWithoutAromaticBond),
+                    "product {:?} must be flagged AromaticAtomWithoutAromaticBond",
+                    canonical_smiles(product)
+                );
+            }
+        }
     }
 
     #[test]

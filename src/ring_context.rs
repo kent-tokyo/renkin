@@ -36,7 +36,8 @@ use chematic::core::{AtomIdx, Element};
 use chematic::rxn::{ReactionMatch, apply_reaction_match, find_reaction_matches, parse_reaction};
 
 use crate::chem_env::{
-    Molecule, PrecursorMol, RetroRule, apply_retro, is_bridge_bond, split_fragments,
+    Molecule, PrecursorMol, RetroRule, apply_retro, aromaticity_integrity_violation,
+    is_bridge_bond, split_fragments,
 };
 use crate::sha256_hex;
 
@@ -521,6 +522,11 @@ pub struct RingContextDiagnostics {
     pub templates_missing_metadata: u64,
     pub invalid_mapped_bond: u64,
     pub reaction_application_failed: u64,
+    /// Applied outcomes rejected by `aromaticity_integrity_violation`
+    /// (Issue #90) -- an atom flagged aromatic with no ring/aromatic-bond
+    /// backing it, checked on the raw applied product before
+    /// `split_fragments`'s own text round-trip.
+    pub outcomes_aromaticity_rejected: u64,
 }
 
 impl RingContextDiagnostics {
@@ -542,6 +548,7 @@ impl RingContextDiagnostics {
         self.templates_missing_metadata += other.templates_missing_metadata;
         self.invalid_mapped_bond += other.invalid_mapped_bond;
         self.reaction_application_failed += other.reaction_application_failed;
+        self.outcomes_aromaticity_rejected += other.outcomes_aromaticity_rejected;
     }
 }
 
@@ -805,6 +812,13 @@ fn run_diagnostics_pass(
             diagnostics.matches_applied += 1;
             diagnostics.reaction_parse_calls += 1;
             if let Ok(Some(products)) = apply_reaction_match(variant, &[mol], m, true) {
+                if products
+                    .iter()
+                    .any(|p| aromaticity_integrity_violation(p).is_some())
+                {
+                    diagnostics.outcomes_aromaticity_rejected += 1;
+                    continue;
+                }
                 let precs: Vec<PrecursorMol> = products.iter().flat_map(split_fragments).collect();
                 if !element_accounting_ok(mol, &precs) {
                     diagnostics.outcomes_element_rejected += 1;
@@ -869,6 +883,18 @@ fn run_gated_pass(
             diagnostics.reaction_parse_calls += 1;
             match apply_reaction_match(variant, &[mol], m, true) {
                 Ok(Some(products)) => {
+                    // Fail-closed, same invariant `apply_retro` enforces
+                    // (Issue #90): reject the whole outcome if any raw
+                    // product molecule fails the aromaticity-integrity
+                    // check, before `split_fragments`'s own text
+                    // round-trip can silently repair or reject it instead.
+                    if products
+                        .iter()
+                        .any(|p| aromaticity_integrity_violation(p).is_some())
+                    {
+                        diagnostics.outcomes_aromaticity_rejected += 1;
+                        continue;
+                    }
                     let precs: Vec<PrecursorMol> =
                         products.iter().flat_map(split_fragments).collect();
                     let accept_for_element_accounting = if element_accounting_ok(mol, &precs) {

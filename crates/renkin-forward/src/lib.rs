@@ -8,7 +8,7 @@ use std::collections::btree_map::Entry;
 use anyhow::{Context, Result, bail};
 use chematic::core::Element;
 use chematic::smiles::canonical_smiles;
-use renkin::chem_env::{Molecule, RetroRule, mol_from_smiles};
+use renkin::chem_env::{Molecule, RetroRule, aromaticity_integrity_violation, mol_from_smiles};
 use renkin::search::Route;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -245,6 +245,14 @@ fn canonicalize_outcome(outcome: &[Molecule]) -> std::result::Result<Vec<String>
     }
     let mut products = Vec::with_capacity(outcome.len());
     for mol in outcome {
+        // Checked against the raw, just-constructed product molecule --
+        // before this function's own canonical_smiles/mol_from_smiles
+        // round-trip below, which (like an external tool's sanitizer) can
+        // silently repair or reject the exact defect this catches, hiding
+        // it here even when it's still semantically wrong (Issue #90).
+        if let Some(violation) = aromaticity_integrity_violation(mol) {
+            return Err(violation.reason_code());
+        }
         let canon = canonical_smiles(mol);
         if mol_from_smiles(&canon).is_err() {
             return Err("product_roundtrip_failed");

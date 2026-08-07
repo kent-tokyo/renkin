@@ -786,6 +786,18 @@ pub fn apply_retro(mol: &Molecule, rule: &RetroRule) -> Vec<Vec<PrecursorMol>> {
     let mut seen_signatures: FxHashSet<Vec<String>> = FxHashSet::default();
     for variant in variants.iter() {
         for products in run_reactants(variant, &[mol]).unwrap_or_default() {
+            // Fail-closed: reject the whole outcome if any raw product
+            // molecule (before split_fragments' own text round-trip, which
+            // can silently repair or reject the same defect -- see
+            // `aromaticity_integrity_violation`'s doc comment) fails the
+            // aromaticity-integrity check. This is never a partial/best-
+            // effort acceptance -- one bad fragment invalidates the outcome.
+            if products
+                .iter()
+                .any(|p| aromaticity_integrity_violation(p).is_some())
+            {
+                continue;
+            }
             let precursors: Vec<PrecursorMol> = products
                 .into_iter()
                 .flat_map(|product_mol| split_fragments(&product_mol))
@@ -836,6 +848,83 @@ pub(crate) fn split_fragments(mol: &Molecule) -> Vec<PrecursorMol> {
             })
         })
         .collect()
+}
+
+/// Why a just-constructed product molecule failed the aromaticity-integrity
+/// check (see [`aromaticity_integrity_violation`]). Kept distinct so callers
+/// (search stats, diagnostics) can report which invariant broke rather than
+/// one opaque "invalid" bucket.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AromaticityIntegrityViolation {
+    /// An atom is flagged aromatic but doesn't lie on any ring (cycle) in
+    /// the molecular graph -- e.g. an acyclic `n` produced when a hash-atom
+    /// variant's independently-chosen per-side aromaticity spelling doesn't
+    /// match the real, matched atom's actual ring membership (Issue #90).
+    AromaticAtomNotInRing,
+    /// An atom is flagged aromatic and does lie on a ring, but none of its
+    /// incident bonds carry `BondOrder::Aromatic` -- the ring exists but
+    /// wasn't (re-)perceived as aromatic around this atom, so treating it
+    /// as aromatic is unsupported by the actual bond orders present.
+    AromaticAtomWithoutAromaticBond,
+}
+
+impl AromaticityIntegrityViolation {
+    /// Machine-readable reason code, stable across releases (used in
+    /// diagnostics output, not just human-facing text).
+    pub fn reason_code(self) -> &'static str {
+        match self {
+            Self::AromaticAtomNotInRing => "aromatic_atom_not_in_ring",
+            Self::AromaticAtomWithoutAromaticBond => "aromatic_atom_without_aromatic_bond",
+        }
+    }
+}
+
+/// The first aromaticity-integrity violation found in `mol`, if any.
+///
+/// Checked against the raw molecule as constructed by `run_reactants` --
+/// before `split_fragments`'s text round-trip (`canonical_smiles` ->
+/// `parse` -> `standardize`) or any external tool's own re-parse -- because
+/// that round-trip (or an external parser's sanitizer) can silently repair
+/// or reject the exact defect this function exists to catch, hiding it from
+/// RENKIN itself even when it's still semantically wrong (see Issue #90: a
+/// piperazine-ring nitrogen wrongly flagged aromatic parses fine and gets
+/// silently corrected by at least one external SMILES sanitizer, but an
+/// acyclic wrongly-aromatic nitrogen elsewhere in the same corpus doesn't
+/// parse at all -- both must be caught here, at the source, uniformly).
+///
+/// Used identically by `apply_retro` (this module), `renkin-forward`'s
+/// product enumeration, and `ring_context.rs`'s match-level gate -- all
+/// three reach hash-atom-expanded SMIRKS via the same
+/// [`application_smirks_variants`] helper and are equally exposed.
+///
+/// Ring membership reuses the existing [`is_bridge_bond`] BFS (already
+/// relied on by the graph-based cleavage rules above and by
+/// `ring_context.rs`) rather than a second bridge-finding implementation:
+/// an atom lies on a ring iff at least one of its incident bonds is not a
+/// bridge.
+pub fn aromaticity_integrity_violation(mol: &Molecule) -> Option<AromaticityIntegrityViolation> {
+    for (idx, atom) in mol.atoms() {
+        if !atom.aromatic {
+            continue;
+        }
+        let mut in_ring = false;
+        let mut has_aromatic_bond = false;
+        for (neighbor, bidx) in mol.neighbors(idx) {
+            if !is_bridge_bond(mol, idx, neighbor) {
+                in_ring = true;
+            }
+            if mol.bond(bidx).order == BondOrder::Aromatic {
+                has_aromatic_bond = true;
+            }
+        }
+        if !in_ring {
+            return Some(AromaticityIntegrityViolation::AromaticAtomNotInRing);
+        }
+        if !has_aromatic_bond {
+            return Some(AromaticityIntegrityViolation::AromaticAtomWithoutAromaticBond);
+        }
+    }
+    None
 }
 
 /// Compute a bitmask of atomic numbers that MUST appear in the target molecule
@@ -1096,6 +1185,165 @@ enum HashAtomExpansion {
     Expanded { variants: Vec<String> },
 }
 
+/// The role of one atom-map number within a SMIRKS's `>>` transform,
+/// relative to its own local bonded environment -- used to decide whether
+/// a hash-atom map's aromaticity reading may be chosen independently per
+/// side (see `expand_hash_atom_variants`'s grouping) or must be bound
+/// together. See Issue #90: a spectator atom-map given independent
+/// per-side aromaticity produced product SMILES with an aromatic-flagged
+/// atom that has no ring/aromatic-bond backing it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MappedAtomRole {
+    /// The atom-map's local bonded environment (neighbor atom-maps and
+    /// bond conditions) is structurally identical on both sides of `>>` --
+    /// a genuine spectator, unchanged by the reaction. Its aromaticity
+    /// reading must be the same choice on both sides.
+    Spectator,
+    /// The atom-map's local bonded environment differs between LHS and
+    /// RHS (a bond was added/removed/changed condition) -- a real reaction
+    /// center, where LHS and RHS aromaticity may legitimately differ
+    /// (aromatization/dearomatization is a real reaction class).
+    ReactionCenter,
+    /// Couldn't confidently compare (one side failed to parse as SMARTS,
+    /// or the atom-map appears more than once on one side). Fails safe to
+    /// the same treatment as `Spectator` -- coverage is never guessed at
+    /// the cost of correctness.
+    Unknown,
+}
+
+/// Split `s` on top-level `.` (bracket-depth 0 only) -- a SMIRKS/SMARTS
+/// component separator never appears inside `[...]` brackets, so tracking
+/// bracket depth is sufficient (no need for a full grammar parse here).
+fn split_top_level_dots(s: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0i32;
+    let mut start = 0usize;
+    for (i, b) in s.bytes().enumerate() {
+        match b {
+            b'[' => depth += 1,
+            b']' => depth -= 1,
+            b'.' if depth == 0 => {
+                parts.push(&s[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(&s[start..]);
+    parts
+}
+
+/// Parse one side of a SMIRKS (LHS or RHS text, `.`-separated components)
+/// into one `QueryMolecule` per component via `chematic::smarts::parse_smarts`
+/// -- the SMARTS grammar accepts `[#N]` natively, unlike the SMILES grammar
+/// `chematic::rxn::parse_reaction` requires (see Issue #88's root cause).
+/// `None` if any component fails to parse -- classification becomes
+/// unavailable for the whole template rather than silently partial.
+fn parse_side_as_query_fragments(side_text: &str) -> Option<Vec<chematic::smarts::QueryMolecule>> {
+    split_top_level_dots(side_text)
+        .into_iter()
+        .map(|frag| parse_smarts(frag).ok())
+        .collect()
+}
+
+/// This atom-map's (neighbor atom-map, bond condition) multiset within one
+/// parsed side. `None` if the map doesn't appear exactly once across the
+/// side's fragments (absent, or ambiguously repeated -- don't guess).
+fn mapped_atom_signature(
+    fragments: &[chematic::smarts::QueryMolecule],
+    map: u16,
+) -> Option<Vec<(Option<u16>, chematic::smarts::BondQuery)>> {
+    let mut found = None;
+    for qmol in fragments {
+        for (atom_idx, qatom) in qmol.atoms.iter().enumerate() {
+            if qatom.atom_map != Some(map) {
+                continue;
+            }
+            if found.is_some() {
+                return None; // repeated on this side -- don't guess
+            }
+            let sig = qmol.adj[atom_idx]
+                .iter()
+                .map(|&(bond_idx, neighbor_idx)| {
+                    (
+                        qmol.atoms[neighbor_idx].atom_map,
+                        qmol.bonds[bond_idx].query.clone(),
+                    )
+                })
+                .collect();
+            found = Some(sig);
+        }
+    }
+    found
+}
+
+/// Multiset equality (order-independent, respects duplicates) via O(n^2)
+/// removal-matching -- fine at the tiny per-atom degree these signatures
+/// have (organic valence caps this at single digits).
+fn bond_signature_multiset_eq(
+    a: &[(Option<u16>, chematic::smarts::BondQuery)],
+    b: &[(Option<u16>, chematic::smarts::BondQuery)],
+) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut remaining: Vec<&(Option<u16>, chematic::smarts::BondQuery)> = b.iter().collect();
+    for item in a {
+        let Some(pos) = remaining
+            .iter()
+            .position(|r| r.0 == item.0 && r.1 == item.1)
+        else {
+            return false;
+        };
+        remaining.remove(pos);
+    }
+    true
+}
+
+/// Classify every atom-map appearing on BOTH sides of `smirks` as
+/// `Spectator`, `ReactionCenter`, or `Unknown`. Atom-maps appearing on only
+/// one side aren't classified here -- they already get exactly one
+/// independent group under the existing `(side, atom_map)` grouping,
+/// unaffected by this classification either way.
+fn classify_mapped_atom_roles(smirks: &str) -> FxHashMap<u32, MappedAtomRole> {
+    let mut roles = FxHashMap::default();
+    let Some((lhs_text, rhs_text)) = smirks.split_once(">>") else {
+        return roles;
+    };
+    let Some(lhs_frags) = parse_side_as_query_fragments(lhs_text) else {
+        return roles;
+    };
+    let Some(rhs_frags) = parse_side_as_query_fragments(rhs_text) else {
+        return roles;
+    };
+    let lhs_maps: FxHashSet<u16> = lhs_frags
+        .iter()
+        .flat_map(|q| q.atoms.iter().filter_map(|a| a.atom_map))
+        .collect();
+    let rhs_maps: FxHashSet<u16> = rhs_frags
+        .iter()
+        .flat_map(|q| q.atoms.iter().filter_map(|a| a.atom_map))
+        .collect();
+
+    for &map in lhs_maps.intersection(&rhs_maps) {
+        let role = match (
+            mapped_atom_signature(&lhs_frags, map),
+            mapped_atom_signature(&rhs_frags, map),
+        ) {
+            (Some(l), Some(r)) => {
+                if bond_signature_multiset_eq(&l, &r) {
+                    MappedAtomRole::Spectator
+                } else {
+                    MappedAtomRole::ReactionCenter
+                }
+            }
+            _ => MappedAtomRole::Unknown,
+        };
+        roles.insert(map as u32, role);
+    }
+    roles
+}
+
 fn expand_hash_atom_variants(smirks: &str) -> HashAtomExpansion {
     let occurrences = match find_hash_atoms(smirks) {
         Some(o) => o,
@@ -1123,25 +1371,43 @@ fn expand_hash_atom_variants(smirks: &str) -> HashAtomExpansion {
         }
     }
 
-    // Group by (side, atom-map): an atom-map used on both sides gets one
-    // independent choice per side (aromatization/dearomatization is a
-    // real reaction class). Unmapped atoms are always their own group,
-    // regardless of side.
+    // Group by (side, atom-map) -- EXCEPT for atom-maps confirmed (or
+    // fail-safe-assumed) `Spectator`/`Unknown` (see `MappedAtomRole`),
+    // which bind their LHS and RHS occurrences into ONE group so both
+    // sides always pick the same aromaticity reading together. Only a
+    // `ReactionCenter` map -- whose local bonded environment genuinely
+    // differs between LHS and RHS -- gets the old per-side independent
+    // choice (aromatization/dearomatization is a real reaction class).
+    // Unmapped atoms are always their own group, regardless of side. See
+    // Issue #90: an unconditional per-side choice let a spectator map's
+    // RHS spelling flip aromaticity while its LHS still matched the real,
+    // unchanged atom -- producing an aromatic-flagged atom with no ring or
+    // aromatic bond backing it.
+    let mapped_atom_roles = classify_mapped_atom_roles(smirks);
+    let is_reaction_center =
+        |m: u32| mapped_atom_roles.get(&m) == Some(&MappedAtomRole::ReactionCenter);
     let mut group_key: Vec<(HashAtomSide, Option<u32>, usize)> = Vec::new(); // (side, map, disambiguator)
     let mut group_members: Vec<Vec<usize>> = Vec::new();
     let mut group_atomic_number: Vec<u8> = Vec::new();
     let mut next_disambiguator = 0usize;
     for (idx, occ) in occurrences.iter().enumerate() {
+        // Non-reaction-center mapped atoms are keyed under a canonical
+        // `Lhs` side so a RHS occurrence of the same map joins the SAME
+        // group as its LHS counterpart, instead of getting its own.
+        let key_side = match occ.atom_map {
+            Some(m) if !is_reaction_center(m) => HashAtomSide::Lhs,
+            _ => occ.side,
+        };
         let existing = occ.atom_map.and_then(|m| {
             group_key
                 .iter()
-                .position(|(s, gm, _)| *s == occ.side && *gm == Some(m))
+                .position(|(s, gm, _)| *s == key_side && *gm == Some(m))
         });
         match existing {
             Some(gi) => group_members[gi].push(idx),
             None => {
                 let key = match occ.atom_map {
-                    Some(m) => (occ.side, Some(m), 0),
+                    Some(m) => (key_side, Some(m), 0),
                     None => {
                         next_disambiguator += 1;
                         (occ.side, None, next_disambiguator)
@@ -2055,13 +2321,18 @@ mod tests {
             required_elements: required_elements_from_smirks(hash_atom_retro),
         };
 
-        // Atom-maps 2 and 3 each appear on both sides of `>>`, and each
-        // side now picks independently (4 groups x 2 readings = 16
-        // combinations) -- all 16 happen to independently re-parse for
-        // this template.
+        // Atom-maps 2 and 3 each appear on both sides of `>>`, bonded to
+        // map 1 by the same aromatic (`:`) bond on both sides -- both are
+        // genuine spectators (Issue #90's `MappedAtomRole::Spectator`), not
+        // reaction centers, so each now gets ONE combined LHS/RHS group
+        // instead of two independent ones (2 groups x 2 readings = 4
+        // combinations, not the pre-#90 16 -- the previous 16 included
+        // spurious cross-side N/n combinations for these same spectator
+        // maps that this template's own test simply never happened to
+        // exercise as invalid output).
         assert_eq!(
             concrete_application_status(&rule.smirks),
-            ConcreteApplicationStatus::HashAtomVariants { variant_count: 16 }
+            ConcreteApplicationStatus::HashAtomVariants { variant_count: 4 }
         );
 
         let target = mol_from_smiles("c1ccc(Nc2ncccn2)cc1").unwrap(); // 2-anilinopyrimidine
@@ -2129,6 +2400,101 @@ mod tests {
             signatures, deduped,
             "apply_retro must not report the same precursor set twice: {signatures:?}"
         );
+    }
+
+    #[test]
+    fn apply_retro_rejects_spectator_atom_aromaticity_flip_with_unrelated_ring() {
+        // Issue #90 minimal reproducer. `extracted_45` (real corpus
+        // template, data/templates_extracted_500.smi line 50): atom-map 2
+        // is a pure spectator, same position on both sides of `>>`. Before
+        // the fix, `expand_hash_atom_variants` gave each side an
+        // independent aromaticity choice for it, so a variant like
+        // `[N:2]-[CH2:1]-[C:3]>>O=[C:1](-[n:2])-[C:3]` would match a real,
+        // non-aromatic nitrogen on the LHS (correct) and spell that same
+        // atom as aromatic `n` on the RHS (wrong) -- confirmed to produce
+        // acyclic aromatic-`n` outcomes (`c1c(cccc1)CCC(=O)nCC` and
+        // `c1c(CCCnC(=O)C)cccc1`) when run directly, against real master
+        // pre-fix. The pre-existing whole-fragment `has_aromatic &&
+        // !has_ring` guard in `split_fragments` didn't catch it because the
+        // *fragment* (not the corrupted atom) does contain a real ring --
+        // the phenyl below -- which is exactly why this needed an
+        // atom-level fix, not a better text heuristic.
+        let smirks = "[#7:2]-[CH2:1]-[C:3]>>O=[C:1](-[#7:2])-[C:3]";
+        let rule = RetroRule {
+            name: "extracted_45".to_string(),
+            template_id: template_id_for_smirks(smirks),
+            smirks: smirks.to_string(),
+            weight: 1.0,
+            required_elements: required_elements_from_smirks(smirks),
+        };
+        let target = mol_from_smiles("c1ccccc1CCCNCC").unwrap();
+        let outcomes = apply_retro(&target, &rule);
+        assert!(
+            !outcomes.is_empty(),
+            "the real (non-spectator-corrupted) N->N reading must still succeed"
+        );
+        for outcome in &outcomes {
+            for p in outcome {
+                assert_eq!(
+                    aromaticity_integrity_violation(&p.mol),
+                    None,
+                    "outcome {:?} must not contain an aromaticity-integrity violation",
+                    p.smiles
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn apply_retro_rejects_spectator_atom_aromaticity_flip_on_real_ring() {
+        // Same root cause as above, but the spectator nitrogen this time
+        // sits on a *real* ring (a Boc-piperazine), not acyclically. Before
+        // the fix this was confirmed to still be flagged internally as
+        // `aromatic=true` with zero incident `BondOrder::Aromatic` bonds
+        // (i.e. it fails the same atom-level check), even though at least
+        // one external SMILES sanitizer (a downstream tool re-parsing the
+        // canonical SMILES text) silently repairs `n`->`N` for this
+        // specific ring shape instead of rejecting it outright -- unlike
+        // the acyclic case above, which such a re-parse rejects outright.
+        // A check that only looked at "does this re-parse" would miss this
+        // case; this test locks in that it's caught at generation time
+        // regardless of whether a downstream parser would happen to notice.
+        let smirks = "[#7:2]-[CH2:1]-[C:3]>>O=[C:1](-[#7:2])-[C:3]";
+        let rule = RetroRule {
+            name: "extracted_45".to_string(),
+            template_id: template_id_for_smirks(smirks),
+            smirks: smirks.to_string(),
+            weight: 1.0,
+            required_elements: required_elements_from_smirks(smirks),
+        };
+        let target = mol_from_smiles("O=C(OC)C1CN(CCN1)C(=O)OC(C)(C)C").unwrap();
+        let outcomes = apply_retro(&target, &rule);
+        for outcome in &outcomes {
+            for p in outcome {
+                assert_eq!(
+                    aromaticity_integrity_violation(&p.mol),
+                    None,
+                    "outcome {:?} must not contain an aromaticity-integrity violation",
+                    p.smiles
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn aromaticity_integrity_violation_detects_acyclic_aromatic_atom() {
+        let mol = mol_from_smiles("CC(=O)Nc1ccccc1").unwrap(); // acetanilide, real, valid
+        assert_eq!(aromaticity_integrity_violation(&mol), None);
+    }
+
+    #[test]
+    fn aromaticity_integrity_violation_accepts_real_heteroaromatic_ring() {
+        // Pyridine: a real aromatic ring where every aromatic atom has both
+        // ring membership and an incident aromatic bond -- must not be
+        // flagged, mirroring the pre-existing 4-bromopyridine concern
+        // documented on `split_fragments`.
+        let mol = mol_from_smiles("c1ccncc1").unwrap();
+        assert_eq!(aromaticity_integrity_violation(&mol), None);
     }
 
     #[test]

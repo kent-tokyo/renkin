@@ -13,4 +13,4 @@
 rdkit==2025.9.3
 rdchiral==1.1.0
 datasets==5.0.0
-huggingface_hub==1.16.1
+huggingface_hub==1.26.0

@@ -58,6 +58,7 @@ fn main() -> Result<()> {
     let mut require_elements: String = String::new();
     let mut verbose = false;
     let mut search_diagnostics = false;
+    let mut candidate_trace_limit: Option<usize> = None;
     let mut bond_index = false;
     let mut bb_prices_path: Option<String> = None;
     let mut stock_path: Option<String> = None;
@@ -143,6 +144,21 @@ fn main() -> Result<()> {
             "--search-diagnostics" => {
                 search_diagnostics = true;
             }
+            "--candidate-trace-limit" => {
+                i += 1;
+                let Some(v) = args.get(i) else {
+                    bail!("--candidate-trace-limit requires a <N> value");
+                };
+                let n: usize = v.parse().map_err(|_| {
+                    anyhow::anyhow!(
+                        "--candidate-trace-limit value must be a non-negative integer, got {v:?}"
+                    )
+                })?;
+                candidate_trace_limit = Some(n);
+                // Self-sufficient: requesting a trace implies wanting to see
+                // it, without also having to remember --search-diagnostics.
+                search_diagnostics = true;
+            }
             "--bond-index" => {
                 bond_index = true;
             }
@@ -219,6 +235,8 @@ fn main() -> Result<()> {
              --verbose / -v         Print search statistics to stderr\n  \
              --search-diagnostics   Add a \"search_diagnostics\" block (beam eviction, \
              cross-template dedup, branching factor -- Issue #101) to JSON output\n  \
+             --candidate-trace-limit <N>  Also collect up to N per-candidate trace records \
+             (implies --search-diagnostics; offline diagnostic use, competitive program Phase 1B)\n  \
              --bond-index           Bond-center template index: ~24%% faster, no accuracy loss\n  \
              --bb-prices <path>     CSV (SMILES,price_per_gram) for route cost scoring\n  \
              --ring-context-policy <policy>  disabled (default) | audit-only | conservative | \
@@ -367,6 +385,7 @@ fn main() -> Result<()> {
         #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
         nn_scorer,
         ring_context: ring_context_config,
+        candidate_trace_cap: candidate_trace_limit,
         ..Default::default()
     };
     let (mut routes, stats) = search::find_routes(&target_smiles, &env, &rules, &config)?;

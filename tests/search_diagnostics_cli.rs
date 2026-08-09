@@ -108,3 +108,93 @@ fn search_diagnostics_flag_adds_block_when_no_route_found() {
     // Pre-existing diagnostics block must still be present and unchanged in shape.
     assert!(v["diagnostics"].get("nodes_expanded").is_some());
 }
+
+// ── Phase 1B: candidate-level trace (--candidate-trace-limit) ────────────
+
+#[test]
+fn candidate_trace_absent_without_the_flag() {
+    let v = run(&[
+        "--target",
+        BUILDING_BLOCK,
+        "--depth",
+        "2",
+        "--max-routes",
+        "1",
+        "--search-diagnostics",
+    ]);
+    let sd = v.get("search_diagnostics").unwrap();
+    let trace = sd
+        .get("candidate_trace")
+        .expect("candidate_trace key must still be present (empty array)");
+    assert_eq!(
+        trace.as_array().unwrap().len(),
+        0,
+        "no records collected without --candidate-trace-limit"
+    );
+    for key in [
+        "candidates_generated_before_dedup",
+        "candidates_after_same_template_dedup",
+        "candidates_after_cross_template_dedup",
+    ] {
+        assert!(sd.get(key).is_some(), "missing aggregate field {key}");
+    }
+}
+
+#[test]
+fn candidate_trace_limit_implies_search_diagnostics_and_bounds_record_count() {
+    // ASPIRIN needs more than one rule application to reach a building block;
+    // a tiny cap (2) must never be exceeded even though many more candidates
+    // are generated during this search.
+    let v = run(&[
+        "--target",
+        ASPIRIN,
+        "--depth",
+        "2",
+        "--max-routes",
+        "1",
+        "--candidate-trace-limit",
+        "2",
+    ]);
+    let sd = v
+        .get("search_diagnostics")
+        .expect("--candidate-trace-limit must imply --search-diagnostics");
+    let trace = sd["candidate_trace"].as_array().unwrap();
+    assert!(
+        trace.len() <= 2,
+        "cap must never be exceeded, got {}",
+        trace.len()
+    );
+    assert!(
+        !trace.is_empty(),
+        "aspirin's search must generate candidates"
+    );
+    for record in trace {
+        for key in [
+            "depth",
+            "parent_smiles",
+            "template_id",
+            "rule_name",
+            "provenance",
+            "precursor_signature",
+            "f_score",
+            "survived_beam",
+            "later_reached_stock",
+        ] {
+            assert!(record.get(key).is_some(), "missing field {key} in {record}");
+        }
+    }
+}
+
+#[test]
+fn candidate_trace_limit_missing_value_is_hard_error() {
+    let out = std::process::Command::new(bin())
+        .args(["--target", ASPIRIN, "--candidate-trace-limit"])
+        .output()
+        .expect("failed to spawn renkin");
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("--candidate-trace-limit"),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}

@@ -8,6 +8,9 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **`renkin` CLI** — `--search-diagnostics` flag adds a `search_diagnostics` block (beam eviction counts and scores, cross-template duplicate precursor-signature count, rule-application attempts, stock-terminal/non-stock candidate counts, depth-wise branching factor) to JSON output, on both the route-found and no-route-found paths ([#101](https://github.com/kent-tokyo/renkin/issues/101)). Diagnostics-only: the counters are bookkeeping added at points `find_routes`'s search loop already visits — they do not change candidate expansion, scoring, pruning order, or default output (the block is omitted, not `null`, unless the flag is passed). Added to trace the beam-width crowd-out effect measured in the Issue #101 100-target sensitivity gate (Conservative × shared-stock, beam 100/200/300): `route_to_configured_stock` plateaus at beam≥200 while timeouts and p95 latency keep growing, and one target (`L1541`) is solved only at beam=200 — lost again at beam=300 — a non-monotonic result inconsistent with a pure beam-budget explanation, motivating this instrumentation over simply raising the default beam width.
+
 ## [0.21.1] — 2026-08-09
 
 ### Fixed

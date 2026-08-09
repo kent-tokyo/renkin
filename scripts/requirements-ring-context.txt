@@ -10,7 +10,7 @@
 # datasets + huggingface_hub load and pin the exact USPTO-50k revision
 # (bisectgroup/USPTO_50K) the sidecar is generated from. Versions below are
 # what the checked-in data/ring_context_metadata_500.json was generated with.
-rdkit==2025.9.3
+rdkit==2026.3.5
 rdchiral==1.1.0
 datasets==5.0.1
-huggingface_hub==1.16.1
+huggingface_hub==1.26.1

@@ -11,4 +11,4 @@
 # docs/guides/open-source-retrosynthesis-comparison.md, "Canonicalizer
 # choice"), which would bias stock-leaf matching in RENKIN's favor since
 # RENKIN's own SMILES share its notation lineage. rdkit-pypi is MIT-licensed.
-rdkit==2026.3.4
+rdkit==2026.3.5

@@ -26,7 +26,7 @@ use sha2::{Digest, Sha256};
 
 fn sha256_file(path: &str) -> String {
     let bytes = std::fs::read(path).expect("template file must exist");
-    format!("{:x}", Sha256::digest(&bytes))
+    renkin::sha256_hex(Sha256::digest(&bytes))
 }
 
 fn git_head_sha() -> String {

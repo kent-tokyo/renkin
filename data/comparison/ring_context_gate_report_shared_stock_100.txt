@@ -1,0 +1,41 @@
+=== 100 targets (['conservative', 'conservative_repeat', 'disabled'] arms present) ===
+
+[disabled] statuses={'completed': 100} route_found=16/100
+[conservative] statuses={'completed': 100} route_found=14/100
+[conservative_repeat] statuses={'completed': 100} route_found=14/100
+
+=== Disabled vs Conservative ===
+  status_flips: 0
+  route_found_flips: 2
+    ('uspto50k_test#L1167', True, False)
+    ('uspto50k_test#L984', True, False)
+  route_signature_flips_same_solve_state: 2
+    ('uspto50k_test#L4464', 'f9c58de1aa75ef83', '318a39da3672f52e')
+    ('uspto50k_test#L4575', '69d0a25a4ab99a73', '2a3cf3a37287f75d')
+
+=== Conservative vs Conservative-repeat (determinism) ===
+  status_flips: 0
+  route_found_flips: 0
+  route_signature_flips_same_solve_state: 0
+
+=== Aggregate ring_context_diagnostics: Conservative ===
+{
+  "invalid_mapped_bond": 0,
+  "matches_applied": 368798,
+  "matches_enumerated": 471729,
+  "matches_ring_checked": 255725,
+  "matches_unknown_intent": 0,
+  "outcomes_accepted": 368465,
+  "outcomes_element_rejected": 333,
+  "reaction_application_failed": 2473468,
+  "reaction_parse_calls": 5961574,
+  "ring_rejects_nonring_intent_on_ring_bond": 102931,
+  "ring_rejects_ring_intent_on_nonring_bond": 0,
+  "ring_rejects_unknown_intent_on_ring_bond": 0,
+  "templates_missing_metadata": 0,
+  "valence_filtered": 0
+}
+
+=== Latency (elapsed_s) percentiles by arm ===
+  disabled: n=100 total=2137.3s p50=10.57s p95=88.61s max=127.68s
+  conservative: n=100 total=2005.6s p50=11.39s p95=77.21s max=140.32s

@@ -1,0 +1,14 @@
+# Dependencies for the Issue #66 open-source planner comparison harness
+# (scripts/compare_*.py) ONLY -- never added to the RENKIN runtime
+# (Cargo.toml / pyproject.toml). Install into a separate venv:
+#
+#   python3 -m venv .venv-compare-66
+#   .venv-compare-66/bin/pip install -r scripts/requirements-compare-66.txt
+#
+# rdkit is used as the single, tool-neutral canonicalizer for both sample
+# selection and post-hoc route validation -- deliberately NOT chematic, whose
+# canonical_smiles is a documented non-invariant stable fixed point (see
+# docs/guides/open-source-retrosynthesis-comparison.md, "Canonicalizer
+# choice"), which would bias stock-leaf matching in RENKIN's favor since
+# RENKIN's own SMILES share its notation lineage. rdkit-pypi is MIT-licensed.
+rdkit==2026.3.4

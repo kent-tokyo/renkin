@@ -207,7 +207,7 @@ fn reaction_identity_hash(
     for set in accepted_products_sorted {
         hash_string_sequence(&mut hasher, set);
     }
-    format!("{:x}", hasher.finalize())
+    renkin::sha256_hex(hasher.finalize())
 }
 
 /// Deterministic grouped-reaction-hash fallback (Phase 0: "otherwise use a
@@ -219,7 +219,7 @@ fn fallback_group_key(reactants_sorted: &[String]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"renkin-forward-bench-group-v1\0");
     hash_string_sequence(&mut hasher, reactants_sorted);
-    format!("{:x}", hasher.finalize())
+    renkin::sha256_hex(hasher.finalize())
 }
 
 /// Deterministic bucket in `[0, 100)` for a group key, via SHA-256 -- not
@@ -1904,7 +1904,7 @@ fn rules_content_hash(rules: &[RetroRule]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"renkin-forward-bench-rules-content-v1\0");
     hash_string_sequence(&mut hasher, &pairs);
-    format!("{:x}", hasher.finalize())
+    renkin::sha256_hex(hasher.finalize())
 }
 
 /// SHA-256 of the currently-running executable's own bytes on disk. `None`
@@ -1915,7 +1915,7 @@ fn binary_sha256() -> Option<String> {
     let bytes = std::fs::read(path).ok()?;
     let mut hasher = Sha256::new();
     hasher.update(&bytes);
-    Some(format!("{:x}", hasher.finalize()))
+    Some(renkin::sha256_hex(hasher.finalize()))
 }
 
 /// SHA-256 of the workspace `Cargo.lock` at compile time -- pins the entire
@@ -1932,7 +1932,7 @@ fn cargo_lock_sha256() -> String {
     const CARGO_LOCK: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../Cargo.lock"));
     let mut hasher = Sha256::new();
     hasher.update(CARGO_LOCK.as_bytes());
-    format!("{:x}", hasher.finalize())
+    renkin::sha256_hex(hasher.finalize())
 }
 
 /// SHA-256 over this run's own deterministic configuration values --
@@ -1945,7 +1945,7 @@ fn config_hash(template_source: &str, train_max_bucket: u32, val_max_bucket: u32
     hasher.update(train_max_bucket.to_be_bytes());
     hasher.update(val_max_bucket.to_be_bytes());
     hasher.update(SPLIT_PROTOCOL_VERSION.to_be_bytes());
-    format!("{:x}", hasher.finalize())
+    renkin::sha256_hex(hasher.finalize())
 }
 
 /// Field names published as `RunProvenance::reproducibility_excludes` --
@@ -1984,7 +1984,7 @@ fn reproducibility_hash(rows: &[BenchRow]) -> String {
         hasher.update((bytes.len() as u64).to_be_bytes());
         hasher.update(&bytes);
     }
-    format!("{:x}", hasher.finalize())
+    renkin::sha256_hex(hasher.finalize())
 }
 
 /// Runs the full Phase 1 harness end to end: load + canonicalize + dedupe

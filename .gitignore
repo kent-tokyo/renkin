@@ -63,5 +63,20 @@ data/uspto50k_benchmark_result.json
 # corpus manifests themselves, e.g. screening_500.json, are not excluded).
 data/corpora/_*
 
+# ---- Issue #66 comparison: large downloaded/generated binaries ----
+# AiZynthFinder's official public models/stock (openly licensed -- MIT
+# stock, CC BY 4.0 models -- but still large binaries, reproducible via
+# `download_public_data`; only their SHA-256 + provenance are committed).
+data/comparison/aizynthfinder_public_data/
+# Shared-stock HDF5 (regenerable via scripts/compare_shared_stock.py; its
+# manifest/hash and the source .smi list it was built from ARE committed).
+data/comparison/*.hdf5
+data/comparison/shared_stock/*.hdf5
+# Raw per-target adapter stderr logs for the 100-target feasibility round --
+# progress noise, not a deliverable (the JSONL rows, aggregate JSON, and
+# aggregate Markdown reports next to them ARE committed).
+data/comparison/results_*/*.log
+.venv-compare-66/
+
 # ---- Claude Code internal files ----
 .claude/

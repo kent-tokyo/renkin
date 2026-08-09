@@ -118,6 +118,8 @@ Real output for aspirin at `depth=1` (hand-crafted rules only, one route shown):
       "precursors": ["OC(=O)C", "c1cccc(c1O)C(O)=O"],
       "step_confidence": 1.0,
       "atom_economy": 90.90950376941474,
+      "atom_economy_raw_percent": 90.90950376941474,
+      "atom_economy_status": "normal",
       "reaction_family": "esterification",
       "conditions": {"catalyst": "NaOH or LiOH (2 eq)", "solvent": "THF/H₂O (2:1)", "temperature": "rt → 60 °C"},
       "procedure_hint": "Dissolve in THF/H₂O, add NaOH (2 eq), stir at 60 °C, acidify to pH 2.",

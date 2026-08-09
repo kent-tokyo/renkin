@@ -1,0 +1,16 @@
+# Dependencies for scripts/generate_ring_context_metadata.py (Issue #72 ring-
+# context sidecar generator) ONLY -- never added to the RENKIN runtime
+# (Cargo.toml / pyproject.toml). Install into a separate venv:
+#
+#   python3 -m venv .venv-ring-context
+#   .venv-ring-context/bin/pip install -r scripts/requirements-ring-context.txt
+#
+# rdkit is the SMARTS/SMILES engine used for real reaction-center bond
+# attribution; rdchiral re-extracts each historical reaction's template;
+# datasets + huggingface_hub load and pin the exact USPTO-50k revision
+# (bisectgroup/USPTO_50K) the sidecar is generated from. Versions below are
+# what the checked-in data/ring_context_metadata_500.json was generated with.
+rdkit==2025.9.3
+rdchiral==1.1.0
+datasets==5.0.1
+huggingface_hub==1.16.1

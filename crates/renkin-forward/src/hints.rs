@@ -1153,7 +1153,7 @@ fn hint_merge_key(
     hasher.update(b"\0products\0");
     hash_string_sequence(&mut hasher, &prods);
 
-    format!("sha256:{:x}", hasher.finalize())
+    format!("sha256:{}", renkin::sha256_hex(hasher.finalize()))
 }
 
 // ---------------------------------------------------------------------------
@@ -1882,12 +1882,20 @@ mod tests {
             "/../../data/templates_extracted.smi"
         );
         let rules = renkin::chem_env::load_rules_from_file(path);
+        // `load_rules_from_file` returns exactly one RetroRule per raw
+        // line, unchanged by the Issue #88 hash-atom fix (which operates
+        // only at apply time -- see
+        // lib.rs::reverse_smirks_validated_extracted_templates_accept_reject_partition_is_stable
+        // for the full explanation). `hints` was never affected by `[#N]`
+        // in the first place: it uses `chematic::smarts::parse_smarts`
+        // (SMARTS-capable), not `chematic::rxn::parse_reaction`, so this
+        // assertion is just the raw corpus size.
         assert_eq!(
             rules.len(),
             500,
-            "extracted corpus size drifted -- reconcile with the matching \
+            "extracted corpus size changed -- reconcile with the matching \
              lib.rs::reverse_smirks_validated_extracted_templates_accept_reject_partition_is_stable \
-             assertion and the PR body's accept/reject table before changing this number"
+             assertion before changing this number"
         );
         let mut rejected = 0usize;
         for rule in &rules {

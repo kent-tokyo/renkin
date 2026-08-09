@@ -160,14 +160,14 @@ jobs:
 
       - name: Check sitemap.xml includes key pages
         run: |
-          for page in api/python api/rust api/wasm benchmark benchmark_ja getting_started/installation getting_started/quickstart examples/aspirin examples/druglike guides/python-retrosynthesis guides/rust-retrosynthesis guides/reaction-evidence guides/forward-prediction guides/forward-enumeration guides/forward-retrieval-hints guides/forward-benchmark comparison/open-source-retrosynthesis-tools; do
+          for page in api/python api/rust api/wasm benchmark benchmark_ja getting_started/installation getting_started/quickstart examples/aspirin examples/druglike guides/python-retrosynthesis guides/rust-retrosynthesis guides/reaction-evidence guides/forward-prediction guides/forward-enumeration guides/forward-retrieval-hints guides/forward-benchmark guides/open-source-retrosynthesis-comparison comparison/open-source-retrosynthesis-tools comparison/askcos-feasibility-issue-66; do
             grep -q "$page/" /tmp/site/sitemap.xml || { echo "ERROR: $page missing from sitemap.xml"; exit 1; }
           done
           echo "OK: sitemap.xml includes all key pages"
 
       - name: Check social card images were generated for key pages
         run: |
-          for page in index api/python api/rust api/wasm benchmark benchmark_ja getting_started/installation getting_started/quickstart examples/aspirin examples/druglike guides/python-retrosynthesis guides/rust-retrosynthesis guides/reaction-evidence guides/forward-prediction guides/forward-enumeration guides/forward-retrieval-hints guides/forward-benchmark comparison/open-source-retrosynthesis-tools; do
+          for page in index api/python api/rust api/wasm benchmark benchmark_ja getting_started/installation getting_started/quickstart examples/aspirin examples/druglike guides/python-retrosynthesis guides/rust-retrosynthesis guides/reaction-evidence guides/forward-prediction guides/forward-enumeration guides/forward-retrieval-hints guides/forward-benchmark guides/open-source-retrosynthesis-comparison comparison/open-source-retrosynthesis-tools comparison/askcos-feasibility-issue-66; do
             test -s "/tmp/site/assets/images/social/$page.png" || { echo "ERROR: social card missing for $page"; exit 1; }
           done
           echo "OK: social card images generated for all key pages"

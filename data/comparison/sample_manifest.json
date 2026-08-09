@@ -1,0 +1,54 @@
+{
+  "canonical_duplicate_detail": [
+    {
+      "canonical_smiles": "O=C(O)CCCCCc1cccc2cncn12",
+      "kept_line_number": 1745,
+      "raw_line_numbers": [
+        1745,
+        3961
+      ]
+    },
+    {
+      "canonical_smiles": "N#CCc1ccc(Br)cc1F",
+      "kept_line_number": 1841,
+      "raw_line_numbers": [
+        1841,
+        2853
+      ]
+    },
+    {
+      "canonical_smiles": "O=[N+]([O-])c1c[nH]nc1-c1nc2cc(CN3CCOCC3)ccc2[nH]1",
+      "kept_line_number": 1953,
+      "raw_line_numbers": [
+        1953,
+        2351
+      ]
+    },
+    {
+      "canonical_smiles": "CC(C)(C)OC(=O)N1CCC(CO)CC1",
+      "kept_line_number": 2415,
+      "raw_line_numbers": [
+        2415,
+        3406
+      ]
+    }
+  ],
+  "canonical_duplicate_groups": 4,
+  "canonicalizer": "rdkit",
+  "canonicalizer_version": "2026.03.4",
+  "comment_or_blank_lines": 3,
+  "hash_function": "SHA-256(\"renkin-issue66-sample-v1|\" + canonical_smiles), lowercase hex",
+  "ordered_list_sha256": "572f7796f3aec07c85f9487c99803cff491623a59b1258e1e77a774a8c838ce8",
+  "protocol_version": "renkin-issue66-sample-v1",
+  "raw_candidate_lines": 4907,
+  "raw_lines_total": 4910,
+  "sample_100_size": 100,
+  "sample_500_size": 500,
+  "sample_full_size": 4903,
+  "source_file": "data/uspto50k_test.smi",
+  "source_file_sha256": "ac246998c6e7b2c68904eaf030e4c6d8c72f0c35334f86e55100d504586fff3d",
+  "tie_break": "ascending canonical SMILES string on sample_key collision",
+  "unique_canonical_targets": 4903,
+  "unparseable_count": 0,
+  "unparseable_lines": []
+}

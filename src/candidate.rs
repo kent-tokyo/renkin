@@ -47,9 +47,10 @@ use rayon::prelude::*;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
+#[cfg(test)]
+use crate::chem_env::apply_retro;
 use crate::chem_env::{
-    Molecule, PrecursorMol, RetroRule, TemplateBondIndex, apply_retro, mol_from_smiles,
-    to_canonical,
+    Molecule, PrecursorMol, RetroRule, TemplateBondIndex, mol_from_smiles, to_canonical,
 };
 use crate::score::step_cost;
 #[cfg(test)]
@@ -281,7 +282,7 @@ fn transformation_cache()
 fn smirks_hash(smirks: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(smirks.as_bytes());
-    format!("{:x}", hasher.finalize())
+    crate::sha256_hex(hasher.finalize())
 }
 
 /// atom_map -> (mol_idx, atom_idx) for one side (reactants or products) of a
@@ -617,7 +618,7 @@ pub fn feature_schema_hash() -> String {
         hasher.update((name.len() as u64).to_be_bytes());
         hasher.update(name.as_bytes());
     }
-    format!("sha256:{:x}", hasher.finalize())
+    format!("sha256:{}", crate::sha256_hex(hasher.finalize()))
 }
 
 fn heavy_atom_count_and_charge(mol: &Molecule) -> (u32, i64) {
@@ -950,11 +951,22 @@ pub struct RawCandidate {
 /// `find_routes`' retro-cache-miss branch does. Shared verbatim by both
 /// callers -- see module doc. `active_rules` is the caller's own selection
 /// (already mode-specific); this function does not choose rules itself.
+///
+/// `ring` defaults to `RingContextConfig::Disabled`, which reproduces
+/// pre-existing behaviour exactly (delegates straight to `apply_retro`,
+/// unchanged). Returns per-call ring-context diagnostics
+/// alongside the candidates so a serial caller (`find_routes`'s A* loop)
+/// can accumulate them across many `raw_propose` calls without needing a
+/// shared mutex here.
 pub(crate) fn raw_propose(
     target_mol: &Molecule,
     target_smi: &str,
     active_rules: &[ScoredRuleRef<'_>],
-) -> Vec<RawCandidate> {
+    ring: crate::ring_context::RingContextArgs,
+) -> (
+    Vec<RawCandidate>,
+    crate::ring_context::RingContextDiagnostics,
+) {
     let target_elem_mask: u64 = crate::search::elem_mask_from_smiles(target_smi);
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -962,28 +974,47 @@ pub(crate) fn raw_propose(
     #[cfg(target_arch = "wasm32")]
     let iter = active_rules.iter();
 
-    let raw: Vec<RawCandidate> = iter
+    let per_rule: Vec<(
+        Vec<RawCandidate>,
+        crate::ring_context::RingContextDiagnostics,
+    )> = iter
         .filter(|r| {
             r.rule.required_elements == 0
                 || (target_elem_mask & r.rule.required_elements == r.rule.required_elements)
         })
-        .flat_map(|r| {
-            apply_retro(target_mol, r.rule)
-                .into_iter()
-                .filter(|precs| !precs.is_empty() && !precs.iter().any(|p| p.smiles == target_smi))
-                .map(|precs| RawCandidate {
-                    rule_name: r.rule.name.to_string(),
-                    template_id: r.rule.template_id.clone(),
-                    rule_weight: r.rule.weight,
-                    original_rank: r.source_rank,
-                    upstream_score: r.upstream_score,
-                    upstream_score_status: r.upstream_score_status,
-                    precursors: precs,
-                })
-                .collect::<Vec<_>>()
+        .map(|r| {
+            let mut diag = crate::ring_context::RingContextDiagnostics::default();
+            let candidates = crate::ring_context::apply_retro_with_policy(
+                target_mol,
+                r.rule,
+                &ring.config,
+                &mut diag,
+            )
+            .into_iter()
+            .filter(|precs| !precs.is_empty() && !precs.iter().any(|p| p.smiles == target_smi))
+            .map(|precs| RawCandidate {
+                rule_name: r.rule.name.to_string(),
+                template_id: r.rule.template_id.clone(),
+                rule_weight: r.rule.weight,
+                original_rank: r.source_rank,
+                upstream_score: r.upstream_score,
+                upstream_score_status: r.upstream_score_status,
+                precursors: precs,
+            })
+            .collect::<Vec<_>>();
+            (candidates, diag)
         })
         .collect();
-    raw
+
+    let mut merged_diag = crate::ring_context::RingContextDiagnostics::default();
+    let raw: Vec<RawCandidate> = per_rule
+        .into_iter()
+        .flat_map(|(candidates, diag)| {
+            merged_diag.merge(&diag);
+            candidates
+        })
+        .collect();
+    (raw, merged_diag)
 }
 
 /// Hashes a sequence of strings with an unambiguous, length-prefixed
@@ -1012,7 +1043,7 @@ fn candidate_id_for(canonical_target: &str, precursor_smiles: &[String]) -> Stri
     hash_string_sequence(&mut hasher, &[canonical_target.to_string()]);
     hasher.update(b"\0precursors\0");
     hash_string_sequence(&mut hasher, precursor_smiles);
-    format!("sha256:{:x}", hasher.finalize())
+    format!("sha256:{}", crate::sha256_hex(hasher.finalize()))
 }
 
 /// Merge sources that share `(template_id, rule_name)` within one
@@ -1290,7 +1321,12 @@ impl<'a> CandidateProposalContext<'a> {
             &config.mode,
             self.bond_index.as_ref(),
         )?;
-        let raw = raw_propose(&target_mol, &canonical_target, &active_rules);
+        let (raw, _ring_diag) = raw_propose(
+            &target_mol,
+            &canonical_target,
+            &active_rules,
+            crate::ring_context::RingContextArgs::default(),
+        );
         let candidates = merge_into_candidates(&canonical_target, raw)?;
 
         Ok(CandidatePool {
@@ -1871,7 +1907,12 @@ mod tests {
 
         let active_rules =
             select_active_rules(&target_mol, &rules, &ProposalMode::Exhaustive, None).unwrap();
-        let got = raw_propose(&target_mol, &canon_target, &active_rules);
+        let (got, _ring_diag) = raw_propose(
+            &target_mol,
+            &canon_target,
+            &active_rules,
+            crate::ring_context::RingContextArgs::default(),
+        );
         let mut got_pairs: Vec<(String, Vec<String>)> = got
             .into_iter()
             .map(|p| {
@@ -2400,6 +2441,25 @@ mod tests {
         let mut b = rule("dup", "[N:1]>>[N:1]"); // different smirks, same id
         b.template_id = "rule:dup".to_string();
         assert!(index_rules_by_template_id(&[a, b]).is_err());
+    }
+
+    #[test]
+    fn index_rules_by_template_id_succeeds_on_real_extracted_corpus() {
+        // Regression for the hash-atom-wildcard fix (Issue #88): the fix
+        // must preserve one-logical-template-per-line semantics. If it
+        // instead flat_maps a template into several independent RetroRules
+        // sharing one template_id (as an earlier draft of that fix did),
+        // this indexer -- used by candidate-pool export for the retro
+        // reranker -- hard-errors on the very first such template.
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/data/templates_extracted.smi");
+        let rules = crate::chem_env::load_rules_from_file(path);
+        assert_eq!(
+            rules.len(),
+            500,
+            "load_rules_from_file must return exactly one RetroRule per raw template line"
+        );
+        index_rules_by_template_id(&rules)
+            .expect("candidate-pool export must not hard-error on the real extracted corpus");
     }
 
     #[test]

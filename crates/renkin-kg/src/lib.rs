@@ -236,7 +236,7 @@ fn cypher_escape(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use renkin::search::{ReactionStep, Route};
+    use renkin::search::{AtomEconomyStatus, ReactionStep, Route};
 
     fn mock_route() -> Route {
         Route {
@@ -247,6 +247,8 @@ mod tests {
                 precursors: vec!["CC(=O)O".to_string(), "N".to_string()],
                 conditions: None,
                 atom_economy: None,
+                atom_economy_raw_percent: None,
+                atom_economy_status: AtomEconomyStatus::NotEvaluable,
                 step_confidence: 0.8,
                 procedure_hint: None,
                 reaction_family: Some("amide_coupling".to_string()),

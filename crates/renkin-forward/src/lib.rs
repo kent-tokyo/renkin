@@ -8,7 +8,7 @@ use std::collections::btree_map::Entry;
 use anyhow::{Context, Result, bail};
 use chematic::core::Element;
 use chematic::smiles::canonical_smiles;
-use renkin::chem_env::{Molecule, RetroRule, mol_from_smiles};
+use renkin::chem_env::{Molecule, RetroRule, aromaticity_integrity_violation, mol_from_smiles};
 use renkin::search::Route;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -191,6 +191,30 @@ fn reverse_smirks_validated(smirks: &str) -> std::result::Result<String, String>
     Ok(fwd)
 }
 
+/// Every forward SMIRKS to actually attempt for `retro_smirks`. For a
+/// `[#N]`-bearing template (Issue #88), `#N` doesn't say whether the atom
+/// is aromatic, so every independently-validated retro-direction reading
+/// (`renkin::chem_env::application_smirks_variants`) is reversed and
+/// forward-validated in turn -- keeping every one that passes, not
+/// guessing a single answer. For an ordinary SMIRKS, behaves exactly like
+/// calling [`reverse_smirks_validated`] once: a one-element `Vec` on
+/// success, empty on failure. `rule.smirks`/`rule.template_id` are never
+/// touched by this -- callers still report the *original* template's
+/// identity in every `ForwardCandidateSource`/`ForwardEnumerationSource`,
+/// regardless of which variant a given outcome came from.
+fn forward_smirks_variants(retro_smirks: &str) -> Vec<String> {
+    if !retro_smirks.contains('#') {
+        return match reverse_smirks_validated(retro_smirks) {
+            Ok(fwd) => vec![fwd],
+            Err(_) => Vec::new(),
+        };
+    }
+    renkin::chem_env::application_smirks_variants(retro_smirks)
+        .iter()
+        .filter_map(|retro_variant| reverse_smirks_validated(retro_variant).ok())
+        .collect()
+}
+
 /// Backward-compatible alias kept for the existing unit test on plain
 /// string-level reversal semantics; production code should go through
 /// [`reverse_smirks_validated`].
@@ -223,6 +247,14 @@ fn canonicalize_outcome(outcome: &[Molecule]) -> std::result::Result<Vec<String>
     }
     let mut products = Vec::with_capacity(outcome.len());
     for mol in outcome {
+        // Checked against the raw, just-constructed product molecule --
+        // before this function's own canonical_smiles/mol_from_smiles
+        // round-trip below, which (like an external tool's sanitizer) can
+        // silently repair or reject the exact defect this catches, hiding
+        // it here even when it's still semantically wrong (Issue #90).
+        if let Some(violation) = aromaticity_integrity_violation(mol) {
+            return Err(violation.reason_code());
+        }
         let canon = canonical_smiles(mol);
         if mol_from_smiles(&canon).is_err() {
             return Err("product_roundtrip_failed");
@@ -318,7 +350,7 @@ fn candidate_id_for(reactant_canon: &[String], products: &[String]) -> String {
     hash_string_sequence(&mut hasher, reactant_canon);
     hasher.update(b"\0products\0");
     hash_string_sequence(&mut hasher, products);
-    format!("sha256:{:x}", hasher.finalize())
+    format!("sha256:{}", renkin::sha256_hex(hasher.finalize()))
 }
 
 /// `chematic::rxn::run_reactants` binds `reactants[i]` to the i-th
@@ -513,34 +545,41 @@ pub fn predict_products_detailed(
 
         stats.templates_attempted += 1;
 
-        let fwd = match reverse_smirks_validated(&rule.smirks) {
-            Ok(s) => s,
-            Err(reason) => {
-                let msg = format!("template {:?}: {reason}", rule.template_id);
-                if config.strict_template_errors {
-                    bail!(msg);
-                }
-                warnings.push(ForwardWarning {
-                    code: "invalid_forward_smirks".to_string(),
-                    template_id: Some(rule.template_id.clone()),
-                    rule_name: Some(rule.name.clone()),
-                    message: msg,
-                });
-                continue;
+        let fwd_variants = forward_smirks_variants(&rule.smirks);
+        if fwd_variants.is_empty() {
+            let msg = format!(
+                "template {:?}: no valid forward SMIRKS reading",
+                rule.template_id
+            );
+            if config.strict_template_errors {
+                bail!(msg);
             }
-        };
+            warnings.push(ForwardWarning {
+                code: "invalid_forward_smirks".to_string(),
+                template_id: Some(rule.template_id.clone()),
+                rule_name: Some(rule.name.clone()),
+                message: msg,
+            });
+            continue;
+        }
 
         // `run_reactants` matches reactant slots to SMIRKS components
         // positionally, so every distinct ordering computed above is tried;
         // an ordering that doesn't match the template's arity/shape just
         // contributes no outcomes, not an error. Only report an error if
-        // every ordering failed.
+        // every (variant, ordering) pair failed. A [#N]-bearing template
+        // may have multiple validated readings (Issue #88); trying all of
+        // them can produce the same real outcome more than once, but the
+        // candidate merge below dedupes by (candidate_id, template_id,
+        // rule_name), so this never inflates the final candidate list.
         let mut outcomes: Vec<Vec<Molecule>> = Vec::new();
         let mut last_err = None;
-        for ordering in &orderings {
-            match chematic::rxn::run_reactants(&fwd, ordering) {
-                Ok(o) => outcomes.extend(o),
-                Err(e) => last_err = Some(e),
+        for fwd in &fwd_variants {
+            for ordering in &orderings {
+                match chematic::rxn::run_reactants(fwd, ordering) {
+                    Ok(o) => outcomes.extend(o),
+                    Err(e) => last_err = Some(e),
+                }
             }
         }
 
@@ -833,7 +872,7 @@ pub fn sha256_hex_of_file(path: &str) -> Result<String> {
         std::fs::read(path).with_context(|| format!("failed to read {path:?} for hashing"))?;
     let mut hasher = Sha256::new();
     hasher.update(&bytes);
-    Ok(format!("{:x}", hasher.finalize()))
+    Ok(renkin::sha256_hex(hasher.finalize()))
 }
 
 /// One row of an explicit `--partners` SMILES library, used by
@@ -1138,17 +1177,23 @@ fn enumeration_candidate_id_for(known_reactant_canon: &str, products: &[String])
     hasher.update(known_reactant_canon.as_bytes());
     hasher.update(b"\0products\0");
     hash_string_sequence(&mut hasher, products);
-    format!("sha256:{:x}", hasher.finalize())
+    format!("sha256:{}", renkin::sha256_hex(hasher.finalize()))
 }
 
-/// Applies one (template, slot, optional-partner) combination via
-/// `run_reactants`, folding every accepted outcome into `candidates` and
-/// every diagnostic into `warnings`/`stats`. Returns whether at least one
-/// outcome was accepted (used by the caller to track
+/// Applies one (template, slot, optional-partner) combination -- trying
+/// every forward SMIRKS variant in `fwd_variants` (see
+/// `forward_smirks_variants`; a single element for an ordinary template)
+/// via `run_reactants` -- folding every accepted outcome into `candidates`
+/// and every diagnostic into `warnings`/`stats`. Returns whether at least
+/// one outcome was accepted (used by the caller to track
 /// `stats.slot_assignments_with_accepted_outcome`/`stats.partners_matched`).
+/// Two variants that happen to produce the same real outcome merge into
+/// one source below (keyed on `(template_id, rule_name, slot_index,
+/// partner.row_index)`, not on which variant matched), so trying multiple
+/// variants never inflates the candidate list.
 #[allow(clippy::too_many_arguments)]
 fn apply_combination(
-    fwd_smirks: &str,
+    fwd_variants: &[String],
     ordering: &[&Molecule],
     known_canon: &str,
     rule: &RetroRule,
@@ -1162,101 +1207,116 @@ fn apply_combination(
 ) -> bool {
     let mut matched = false;
     let other_canon = partner.map(|p| p.canonical_smiles.as_str());
+    // [#N]-bearing templates (Issue #88) may have multiple validated
+    // forward readings; try every one. Two readings producing the same
+    // real outcome merge below (keyed on template_id/rule_name/slot_index/
+    // partner, not on which reading matched), so this never inflates the
+    // candidate list -- only `stats.duplicate_candidates_merged`, which is
+    // accurate: it genuinely matched more than once.
+    let mut any_ok = false;
+    let mut last_err = None;
+    for fwd_smirks in fwd_variants {
+        let outcomes = match chematic::rxn::run_reactants(fwd_smirks, ordering) {
+            Ok(o) => {
+                any_ok = true;
+                o
+            }
+            Err(e) => {
+                last_err = Some(e);
+                continue;
+            }
+        };
+        for outcome in &outcomes {
+            stats.raw_outcomes += 1;
 
-    match chematic::rxn::run_reactants(fwd_smirks, ordering) {
-        Ok(outcomes) => {
-            for outcome in &outcomes {
-                stats.raw_outcomes += 1;
-
-                let products = match canonicalize_outcome(outcome) {
-                    Ok(p) => p,
-                    Err(code) => {
-                        stats.invalid_outcomes_rejected += 1;
-                        warnings.push(ForwardWarning {
-                            code: code.to_string(),
-                            template_id: Some(rule.template_id.clone()),
-                            rule_name: Some(rule.name.clone()),
-                            message: format!("outcome rejected: {code}"),
-                        });
-                        continue;
-                    }
-                };
-
-                if config.reject_no_op {
-                    let mut reactant_set: Vec<String> = match other_canon {
-                        Some(o) => vec![known_canon.to_string(), o.to_string()],
-                        None => vec![known_canon.to_string()],
-                    };
-                    reactant_set.sort_unstable();
-                    if products == reactant_set {
-                        stats.no_op_outcomes_rejected += 1;
-                        continue;
-                    }
-                }
-
-                if let Some(msg) = atom_charge_imbalance_diagnostic(ordering, outcome) {
+            let products = match canonicalize_outcome(outcome) {
+                Ok(p) => p,
+                Err(code) => {
+                    stats.invalid_outcomes_rejected += 1;
                     warnings.push(ForwardWarning {
-                        code: "atom_balance_diagnostic".to_string(),
+                        code: code.to_string(),
                         template_id: Some(rule.template_id.clone()),
                         rule_name: Some(rule.name.clone()),
-                        message: msg,
+                        message: format!("outcome rejected: {code}"),
                     });
+                    continue;
                 }
+            };
 
-                stats.accepted_outcomes_before_merge += 1;
-                matched = true;
-
-                let candidate_id = enumeration_candidate_id_for(known_canon, &products);
-                let partner_ref = partner.map(|p| ForwardEnumerationPartnerRef {
-                    row_index: p.row_index,
-                    label: p.label.clone(),
-                    canonical_smiles: p.canonical_smiles.clone(),
-                });
-                let source = ForwardEnumerationSource {
-                    template_id: rule.template_id.clone(),
-                    rule_name: rule.name.clone(),
-                    template_weight: rule.weight,
-                    source_rank,
-                    slot_index,
-                    partner: partner_ref,
+            if config.reject_no_op {
+                let mut reactant_set: Vec<String> = match other_canon {
+                    Some(o) => vec![known_canon.to_string(), o.to_string()],
+                    None => vec![known_canon.to_string()],
                 };
+                reactant_set.sort_unstable();
+                if products == reactant_set {
+                    stats.no_op_outcomes_rejected += 1;
+                    continue;
+                }
+            }
 
-                match candidates.entry(candidate_id) {
-                    Entry::Vacant(e) => {
-                        e.insert((products, vec![source]));
-                    }
-                    Entry::Occupied(mut e) => {
-                        stats.duplicate_candidates_merged += 1;
-                        let (existing_products, sources) = e.get_mut();
-                        debug_assert_eq!(
-                            existing_products, &products,
-                            "candidate_id collision: different product multisets hashed to the same ID"
-                        );
-                        let dup = sources.iter_mut().find(|s| {
-                            s.template_id == source.template_id
-                                && s.rule_name == source.rule_name
-                                && s.slot_index == source.slot_index
-                                && s.partner.as_ref().map(|p| p.row_index)
-                                    == source.partner.as_ref().map(|p| p.row_index)
-                        });
-                        match dup {
-                            Some(existing) => {
-                                existing.source_rank = existing.source_rank.min(source.source_rank);
-                            }
-                            None => sources.push(source),
+            if let Some(msg) = atom_charge_imbalance_diagnostic(ordering, outcome) {
+                warnings.push(ForwardWarning {
+                    code: "atom_balance_diagnostic".to_string(),
+                    template_id: Some(rule.template_id.clone()),
+                    rule_name: Some(rule.name.clone()),
+                    message: msg,
+                });
+            }
+
+            stats.accepted_outcomes_before_merge += 1;
+            matched = true;
+
+            let candidate_id = enumeration_candidate_id_for(known_canon, &products);
+            let partner_ref = partner.map(|p| ForwardEnumerationPartnerRef {
+                row_index: p.row_index,
+                label: p.label.clone(),
+                canonical_smiles: p.canonical_smiles.clone(),
+            });
+            let source = ForwardEnumerationSource {
+                template_id: rule.template_id.clone(),
+                rule_name: rule.name.clone(),
+                template_weight: rule.weight,
+                source_rank,
+                slot_index,
+                partner: partner_ref,
+            };
+
+            match candidates.entry(candidate_id) {
+                Entry::Vacant(e) => {
+                    e.insert((products, vec![source]));
+                }
+                Entry::Occupied(mut e) => {
+                    stats.duplicate_candidates_merged += 1;
+                    let (existing_products, sources) = e.get_mut();
+                    debug_assert_eq!(
+                        existing_products, &products,
+                        "candidate_id collision: different product multisets hashed to the same ID"
+                    );
+                    let dup = sources.iter_mut().find(|s| {
+                        s.template_id == source.template_id
+                            && s.rule_name == source.rule_name
+                            && s.slot_index == source.slot_index
+                            && s.partner.as_ref().map(|p| p.row_index)
+                                == source.partner.as_ref().map(|p| p.row_index)
+                    });
+                    match dup {
+                        Some(existing) => {
+                            existing.source_rank = existing.source_rank.min(source.source_rank);
                         }
+                        None => sources.push(source),
                     }
                 }
             }
         }
-        Err(e) => {
-            warnings.push(ForwardWarning {
-                code: "combination_application_failed".to_string(),
-                template_id: Some(rule.template_id.clone()),
-                rule_name: Some(rule.name.clone()),
-                message: format!("run_reactants failed: {e:?}"),
-            });
-        }
+    }
+    if !any_ok && let Some(e) = last_err {
+        warnings.push(ForwardWarning {
+            code: "combination_application_failed".to_string(),
+            template_id: Some(rule.template_id.clone()),
+            rule_name: Some(rule.name.clone()),
+            message: format!("run_reactants failed: {e:?}"),
+        });
     }
     matched
 }
@@ -1346,30 +1406,37 @@ pub fn enumerate_products_detailed(
 
         stats.templates_inspected += 1;
 
-        let fwd = match reverse_smirks_validated(&rule.smirks) {
-            Ok(s) => s,
-            Err(reason) => {
-                let msg = format!("template {:?}: {reason}", rule.template_id);
-                if config.strict_template_errors {
-                    bail!(msg);
-                }
-                warnings.push(ForwardWarning {
-                    code: "invalid_forward_smirks".to_string(),
-                    template_id: Some(rule.template_id.clone()),
-                    rule_name: Some(rule.name.clone()),
-                    message: msg,
-                });
-                continue;
+        let fwd_variants = forward_smirks_variants(&rule.smirks);
+        if fwd_variants.is_empty() {
+            let msg = format!(
+                "template {:?}: no valid forward SMIRKS reading",
+                rule.template_id
+            );
+            if config.strict_template_errors {
+                bail!(msg);
             }
-        };
+            warnings.push(ForwardWarning {
+                code: "invalid_forward_smirks".to_string(),
+                template_id: Some(rule.template_id.clone()),
+                rule_name: Some(rule.name.clone()),
+                message: msg,
+            });
+            continue;
+        }
 
-        // Re-parses `fwd` (already validated once inside
-        // `reverse_smirks_validated`) to get structural access to per-slot
+        // Re-parses the first variant (already validated once inside
+        // `forward_smirks_variants`) to get structural access to per-slot
         // atom maps for arity detection and spectator-slot analysis --
         // cheap for a short SMIRKS string, and this is the only place in
         // the crate that needs the parsed `Reaction` shape rather than just
-        // knowing it parses.
-        let reaction = match chematic::rxn::parse_reaction(&fwd) {
+        // knowing it parses. Every variant of a `[#N]`-bearing template
+        // shares identical atom-map/connectivity structure by construction
+        // (only the element/aromaticity annotation at existing positions
+        // differs -- see `chem_env::expand_hash_atom_variants`), so arity
+        // and spectator-slot classification are the same for all of them;
+        // only the actual `run_reactants` call needs to try every variant
+        // (see `apply_combination` below).
+        let reaction = match chematic::rxn::parse_reaction(&fwd_variants[0]) {
             Ok(r) => r,
             Err(e) => {
                 let msg = format!(
@@ -1405,7 +1472,7 @@ pub fn enumerate_products_detailed(
                 }
                 stats.combinations_attempted += 1;
                 let matched = apply_combination(
-                    &fwd,
+                    &fwd_variants,
                     &[&known_mol],
                     &known_canon,
                     rule,
@@ -1464,7 +1531,7 @@ pub fn enumerate_products_detailed(
                         };
 
                         let matched = apply_combination(
-                            &fwd,
+                            &fwd_variants,
                             &ordering,
                             &known_canon,
                             rule,
@@ -1698,19 +1765,33 @@ mod tests {
     /// (forward-LHS) side, so this is not a redundant check.
     #[test]
     fn reverse_smirks_validated_extracted_templates_accept_reject_partition_is_stable() {
-        // NOTE (regression-audit finding, verified against `git diff master`
-        // to confirm the refactor is a pure extract-method with no logic
-        // change): 217/500 extracted templates are rejected by
-        // `reverse_smirks_validated` -- this is PRE-EXISTING behavior on
-        // `master`, unrelated to the `hints`-motivated refactor.
-        // `load_rules_from_file` only pre-validates the product side at
-        // load time; its own precursor (forward-LHS) side is exercised here
-        // for the first time and many extracted USPTO templates use
-        // multi-condition SMARTS (`;`/`,`) on that side, which
-        // `parse_reaction`'s `parse_smiles`-based check has always rejected.
-        // This test locks in the current count as a stability baseline, not
-        // as an assertion that it's ideal -- a real fix belongs to #61
-        // (forward-prediction proposal-coverage work), not this PR.
+        // History: this test originally locked in a 217/500-rejected
+        // baseline caused by `parse_reaction`'s SMILES-based parser
+        // rejecting every `[#N]`/`[#N:map]` bare-atomic-number SMARTS
+        // primitive (e.g. `[#7:2]`, meaning "any nitrogen, aromaticity
+        // unspecified") -- confirmed the sole failure class across all 217
+        // (no multi-condition `;`/`,` or recursive SMARTS actually occur in
+        // this corpus; see the two fixtures above that still lock those in
+        // as *unsupported*, proving this fix stayed narrow).
+        //
+        // `load_rules_from_file` is unchanged: exactly 500 `RetroRule`s,
+        // one per raw line, `smirks` byte-identical to the file (including
+        // any `[#N]` atoms) -- ONNX template-scorer `n_rules` and
+        // candidate-pool `template_id` uniqueness both depend on this and
+        // are exercised by dedicated tests elsewhere (Issue #88's fix
+        // deliberately does not touch this loader). What changed is what
+        // `predict`/`enumerate` do with a `[#N]`-bearing rule at *apply*
+        // time: `forward_smirks_variants` tries every independently-
+        // validated concrete-element reading (via
+        // `renkin::chem_env::application_smirks_variants`) instead of
+        // calling `reverse_smirks_validated` on the raw SMIRKS once and
+        // giving up -- `[#N]` doesn't say which reading is correct, so
+        // every one that actually parses is tried, nothing is guessed.
+        // This test now audits `forward_smirks_variants`, which is what
+        // `predict_products_detailed` actually calls, not
+        // `reverse_smirks_validated` in isolation (that one-shot function
+        // is unchanged and still rejects raw `[#N]` SMIRKS on its own --
+        // see the fixture two tests below).
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../data/templates_extracted.smi"
@@ -1721,19 +1802,29 @@ mod tests {
             500,
             "extracted-template corpus size changed -- update this test's baseline intentionally"
         );
+        let distinct_template_ids: std::collections::HashSet<&str> =
+            rules.iter().map(|r| r.template_id.as_str()).collect();
+        assert_eq!(
+            distinct_template_ids.len(),
+            500,
+            "template_id must be unique across the loaded rule set (candidate-pool export relies \
+             on this)"
+        );
+
         let mut rejected = 0usize;
         let mut accepted = 0usize;
         for rule in &rules {
-            match reverse_smirks_validated(&rule.smirks) {
-                Ok(_) => accepted += 1,
-                Err(_) => rejected += 1,
+            if forward_smirks_variants(&rule.smirks).is_empty() {
+                rejected += 1;
+            } else {
+                accepted += 1;
             }
         }
         assert_eq!(
             (accepted, rejected),
-            (283, 217),
+            (500, 0),
             "predict/enumerate's accept/reject partition over the extracted corpus changed -- \
-             if this is a deliberate loosening/tightening of reverse_smirks_validated, update \
+             if this is a deliberate loosening/tightening of forward_smirks_variants, update \
              this baseline with an explanation; if unintended, it's a real regression"
         );
     }
@@ -1754,6 +1845,26 @@ mod tests {
         ];
         expected.sort_unstable();
         assert_eq!(products, expected);
+    }
+
+    #[test]
+    fn canonicalize_outcome_rejects_aromaticity_integrity_violation() {
+        // Issue #90's exact known-bad hash-atom variant, applied directly
+        // via chematic::rxn::run_reactants (bypassing chem_env's now-fixed
+        // spectator grouping entirely) to prove canonicalize_outcome's own
+        // wiring of aromaticity_integrity_violation -- not just chem_env's
+        // -- rejects the raw product with the right reason code, before its
+        // own canonical_smiles/mol_from_smiles round-trip below gets a
+        // chance to (possibly) hide the same defect.
+        let bad_variant = "[N:2]-[CH2:1]-[C:3]>>O=[C:1](-[n:2])-[C:3]";
+        let target = mol_from_smiles("c1ccccc1CCCNCC").unwrap();
+        let results = chematic::rxn::run_reactants(bad_variant, &[&target]).unwrap_or_default();
+        let group = results
+            .first()
+            .expect("the bad variant must still match the acyclic amine");
+        let err = canonicalize_outcome(group)
+            .expect_err("must reject an aromaticity-integrity violation");
+        assert_eq!(err, "aromatic_atom_not_in_ring");
     }
 
     fn synthetic_metathesis_rule() -> RetroRule {
@@ -2444,6 +2555,8 @@ mod tests {
             precursors: vec!["Oc1ccccc1C(=O)O".to_string(), "CCO".to_string()],
             conditions: None,
             atom_economy: None,
+            atom_economy_raw_percent: None,
+            atom_economy_status: renkin::search::AtomEconomyStatus::NotEvaluable,
             step_confidence: 1.0,
             procedure_hint: None,
             reaction_family: None,
@@ -2493,6 +2606,8 @@ mod tests {
             precursors: vec!["CCO".to_string(), "Oc1ccccc1C(=O)O".to_string()],
             conditions: None,
             atom_economy: None,
+            atom_economy_raw_percent: None,
+            atom_economy_status: renkin::search::AtomEconomyStatus::NotEvaluable,
             step_confidence: 1.0,
             procedure_hint: None,
             reaction_family: None,
@@ -2534,6 +2649,8 @@ mod tests {
             precursors: vec!["Oc1ccccc1C(=O)O".to_string(), "CCO".to_string()],
             conditions: None,
             atom_economy: None,
+            atom_economy_raw_percent: None,
+            atom_economy_status: renkin::search::AtomEconomyStatus::NotEvaluable,
             step_confidence: 1.0,
             procedure_hint: None,
             reaction_family: None,

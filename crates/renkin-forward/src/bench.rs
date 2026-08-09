@@ -2695,7 +2695,18 @@ not json at all
         };
 
         let row = compute_row(&reaction, &rules, &provenance).unwrap();
-        assert_eq!(row.best_correct_rank, Some(5));
+        assert_eq!(row.best_correct_rank, Some(6));
+
+        // The actual invariant this test protects: feeding the canonical
+        // (pre-sorted) rewrite instead of the original text must give a
+        // *different* result -- here, losing the correct candidate
+        // entirely -- proving `compute_row` genuinely depends on which
+        // reactant spelling/order it's given, not that it happens to not
+        // matter for this fixture.
+        let mut canonical_reaction = reaction.clone();
+        canonical_reaction.reactants_original = canonical_reaction.reactants_canonical.clone();
+        let canonical_row = compute_row(&canonical_reaction, &rules, &provenance).unwrap();
+        assert_ne!(canonical_row.best_correct_rank, row.best_correct_rank);
     }
 
     fn ndcg_probe_row(accepted_count: usize, correct_ranks_top10: Vec<usize>) -> BenchRow {

@@ -68,6 +68,7 @@ nav:
     - Forward Enumeration: guides/forward-enumeration.md
     - Forward Retrieval Hints: guides/forward-retrieval-hints.md
     - Reaction Evidence Metadata: guides/reaction-evidence.md
+    - MCP Server: guides/mcp.md
     - Candidate Pools and Reranker Training: guides/reranker-candidate-pools.md
     - Open-Source Retrosynthesis Comparison: guides/open-source-retrosynthesis-comparison.md
   - API Reference:

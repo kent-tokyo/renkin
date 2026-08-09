@@ -5,6 +5,7 @@ pub mod chem_env;
 pub mod display;
 pub mod evidence;
 pub mod evidence_match;
+pub mod mcp;
 pub mod pool_export;
 pub mod ring_context;
 pub mod score;

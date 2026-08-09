@@ -10,6 +10,54 @@ instruction or a stale memory assumes it contains. Every claim below was
 verified directly against the real commit, PR, issue, and source-file state
 at the time of writing — see the citations inline.
 
+> **2026-08-09 update (rebased onto current `master`, no unresolved
+> content):** substantial work has landed since this audit was written
+> against `37b168e`, changing the status of two of the phases below. This
+> note summarizes what changed; the rest of the document below is preserved
+> as-written for historical context and is **not** re-verified line-by-line
+> against current state — treat §2/§4's per-phase claims as of 2026-08-05,
+> not current.
+>
+> - **Phase 2's 217-template gap is resolved**, not just diagnosed. It turned
+>   out to be the same defect Issue #88/PR #89/#91 fixed: `[#N]`/`[#N:map]`
+>   bare atomic-number SMARTS primitives failing at *apply* time (not the
+>   `[N;H1,H2:2]` multi-condition class this document guessed at in §4 —
+>   confirmed empirically, that class doesn't actually occur in this corpus).
+>   `crates/renkin-forward`'s `reverse_smirks_validated_extracted_templates_accept_reject_partition_is_stable`
+>   test now audits `forward_smirks_variants` instead of a raw
+>   `reverse_smirks_validated` call, and the historical 217-rejected baseline
+>   no longer applies. See PR #89/#91 and CHANGELOG `[Unreleased]`/prior
+>   entries for the fix and its measured impact (including a real, disclosed
+>   beam-budget crowd-out side effect — see Issue #101 below).
+> - **Phase 3's design conflict is resolved, and the fix has already landed
+>   and been measured**, upgrading it from "blocked" to "implemented,
+>   opt-in, formally measured, default unchanged." PR #82 merged the
+>   match-level `RingContextConfig` guard this section anticipated;
+>   `--ring-context-policy conservative` was **RENKIN's official/headline
+>   configuration** for the Issue #66 500-target comparison (not an
+>   ablation-only arm), and a Conservative-vs-Disabled ablation within that
+>   round found no statistically significant `route_to_configured_stock`
+>   cost (−0.8pt, 95% CI [−1.6, −0.2], p=0.125, n=4 discordant pairs). Full
+>   detail in the 2026-08-09 comment on Issue #72. `Disabled` remains the
+>   compiled-in default (unchanged legacy behavior) — whether to flip that
+>   default is a policy call this program hasn't made yet.
+> - **Issue #66's formal 500-target comparison (§4 Phase 4's blocker) has
+>   completed and is published** (v0.21.0, tag `issue66-500-base-e479b27`,
+>   `data/comparison/results_500/`) — this is the "4,903-target full
+>   comparison" this document lists as Phase 4, run instead at 500-target
+>   scale first per the program's own "measurement PR" discipline. The
+>   4,903-target full-corpus round remains not started.
+> - **Open PR/issue counts below (§2) are stale.** #68 and #56 are still
+>   open and still the two PRs this document names; #87 (this document's own
+>   PR) has been rebased and is otherwise unchanged. Several new issues
+>   opened since (#98, #99, #100, #101 — split off Issue #88's closure;
+>   #101 specifically is a beam-width search crowd-out effect from the
+>   Phase-2-adjacent fix above, with its own diagnostics-only PR #102).
+>   #77 remains open and unaddressed.
+> - Phase 1 (large matched stock), Phase 5 (retro reranker gate), Phase 6
+>   (Synth Kernel CLI surface), and Phase 7 are unchanged from this
+>   document's original assessment — still not started.
+
 ## 1. Win condition
 
 RENKIN's target is not feature-parity with AiZynthFinder's route coverage or

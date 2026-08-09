@@ -343,10 +343,11 @@ pub struct CandidateTraceRecord {
     /// f() = g + h at creation -- the score `beam_prune` ranks on.
     pub f_score: f64,
     /// This candidate's 0-based rank (ascending f()) at the last
-    /// `beam_prune` call it was subject to before either being evicted or
-    /// surviving through to being popped/search end. `None` if
-    /// `beam_width == 0` (nothing is ever pruned) or the search ended
-    /// before any `beam_prune` call processed it.
+    /// `beam_prune` call that actually truncated the heap while this
+    /// candidate was present. `None` if `beam_width == 0`, the search ended
+    /// before any `beam_prune` call processed it, or every `beam_prune`
+    /// call it was subject to found the heap already within `beam_width`
+    /// (no sort happens in that case, so there is no real rank to report).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rank_before_prune: Option<usize>,
     /// `true` unless a `beam_prune` call evicted this candidate (i.e. its
@@ -837,24 +838,19 @@ type TraceRank = (u64, usize, bool);
 /// this function already performs -- does not change which nodes are
 /// kept), `None` when nothing was pruned. `trace_ranks` is
 /// `(trace_id, rank, survived)` for every node with `Node::trace_id ==
-/// Some(_)` present in `heap` at call time, in no particular order; empty
-/// whenever no traced node is present (the common case when
-/// `SearchConfig::candidate_trace_cap` is `None`) -- computed from the same
-/// sort as `eviction_stats` (or trivially, all `survived = true`, when
-/// nothing is pruned), so this never re-sorts.
+/// Some(_)`, computed from the sort this function performs when truncation
+/// happens -- so it never re-sorts. Empty when nothing is truncated
+/// (`heap.len() <= beam_width`): the heap isn't sorted in that branch, so
+/// there is no real rank to report, and a traced node's
+/// `CandidateTraceRecord` simply keeps its as-created
+/// `rank_before_prune: None, survived_beam: true` rather than being
+/// overwritten with a fabricated rank.
 fn beam_prune(
     heap: &mut BinaryHeap<Node>,
     beam_width: usize,
 ) -> (Option<BeamEvictionStats>, Vec<TraceRank>) {
-    if beam_width == 0 {
+    if beam_width == 0 || heap.len() <= beam_width {
         return (None, Vec::new());
-    }
-    if heap.len() <= beam_width {
-        let trace_ranks = heap
-            .iter()
-            .filter_map(|n| n.trace_id.map(|id| (id, 0usize, true)))
-            .collect();
-        return (None, trace_ranks);
     }
     let mut nodes: Vec<Node> = heap.drain().collect();
     nodes.sort_unstable_by(|a, b| {
@@ -1794,11 +1790,14 @@ mod tests {
     }
 
     #[test]
-    fn beam_prune_reports_rank_zero_survived_when_nothing_evicted() {
+    fn beam_prune_reports_no_trace_ranks_when_nothing_evicted() {
+        // No truncation means no sort, so there is no real rank to report --
+        // a traced node here must keep its as-created default rather than
+        // being reported as a fabricated rank 0.
         let mut heap: BinaryHeap<Node> = vec![traced_node(0.0, 7), node(1.0)].into_iter().collect();
         let (stats, trace_ranks) = beam_prune(&mut heap, 10);
         assert_eq!(stats, None, "heap smaller than beam_width -> no eviction");
-        assert_eq!(trace_ranks, vec![(7, 0, true)]);
+        assert!(trace_ranks.is_empty());
     }
 
     #[test]

@@ -175,6 +175,8 @@ Constraints compose freely and are enforced in two layers:
 
 Add `--verbose` to print search statistics (nodes expanded, elapsed time) to stderr. Performance counters are available in native builds only; disabled in WASM.
 
+Add `--search-diagnostics` to add a `search_diagnostics` block to JSON output (beam eviction counts/scores, cross-template duplicate precursor signatures, rule-application attempts, stock-terminal/non-stock candidate counts, depth-wise branching factor, hypothetical dedup-strategy counts) — diagnostics-only bookkeeping, off by default, does not affect search behavior ([Issue #101](https://github.com/kent-tokyo/renkin/issues/101)). Add `--candidate-trace-limit <N>` (implies `--search-diagnostics`) to also collect up to `N` per-candidate trace records (precursor signature, template provenance, beam rank/survival, whether it fed a returned route) — offline diagnostic use only, gated at collection time so the default no-trace path allocates nothing extra.
+
 ---
 
 ## Template Evidence Metadata

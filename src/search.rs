@@ -209,6 +209,154 @@ pub struct SearchStats {
     /// every extracted-template application in this search. All-zero
     /// unless `SearchConfig::ring_context_policy` is not `Disabled`.
     pub ring_context_diagnostics: crate::ring_context::RingContextDiagnostics,
+    /// Beam/crowd-out diagnostics (Issue #101). Always accumulated (the
+    /// bookkeeping cost is a handful of integer ops at points the search
+    /// loop already visits); the CLI only *surfaces* this behind
+    /// `--search-diagnostics` so default JSON output is unchanged.
+    pub crowd_out: CrowdOutDiagnostics,
+}
+
+/// Diagnostics-only counters (Issue #101): computing these does not change
+/// which candidates are expanded, scored, kept, or in what order --- only
+/// bookkeeping is added at points [`find_routes`] already visits. Not used
+/// by ranking or pruning itself.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct CrowdOutDiagnostics {
+    /// Number of times [`beam_prune`] actually truncated the open-node heap.
+    pub beam_prune_invocations: u64,
+    /// Total nodes evicted across all `beam_prune` invocations.
+    pub candidates_evicted_total: u64,
+    /// Lowest f() = g + h (best/most-promising, since lower is better)
+    /// among all ever-evicted nodes, aggregated across every `beam_prune`
+    /// call in this search. `None` if nothing was ever evicted. Because g
+    /// grows with depth, this running minimum usually comes from an early
+    /// (shallow, cheap) prune -- it is *not* comparable to
+    /// `final_beam_boundary_f` (a single later invocation) to judge "how
+    /// close" a miss was; use `beam_prune`'s per-call return value for that
+    /// within one invocation.
+    pub evicted_f_min: Option<f64>,
+    /// Highest (worst) f() among all ever-evicted nodes, same
+    /// cross-invocation aggregation as `evicted_f_min`.
+    pub evicted_f_max: Option<f64>,
+    /// f() of the worst node still retained after the *final* `beam_prune`
+    /// call in this search -- the beam's closing cutoff score, one number
+    /// from one invocation (not an aggregate).
+    pub final_beam_boundary_f: Option<f64>,
+    /// Sum of `active_rules.len()` across every retro-cache-miss expansion
+    /// (unique intermediates only -- a cache hit reuses a prior expansion's
+    /// proposals without re-attempting any rule). Counts *RetroRule entries
+    /// attempted*, not concrete SMIRKS applications: a single hash-atom
+    /// `RetroRule` can internally try several `[#N]`-variant SMIRKS strings
+    /// inside `apply_retro` (see `chem_env::expand_hash_atom_variants`), so
+    /// this is a lower bound on raw SMIRKS-match attempts, and must not be
+    /// read as a logical-template count (already-expanded variants are
+    /// separate `RetroRule` entries in `rules`, same as `matched_templates`).
+    pub rules_attempted_total: u64,
+    /// Same-parent proposals from *different* templates whose precursor
+    /// SMILES multiset (sorted) is identical -- these push distinct heap
+    /// nodes that would collapse to the same downstream synthesis state.
+    /// Diagnostics-only: this count does not merge or drop any node.
+    pub cross_template_duplicate_precursor_signatures: u64,
+    /// Frontier entries confirmed in stock, counted the same way as
+    /// [`SearchStats::stock_hits`] (kept alongside `non_stock_candidates`
+    /// so the terminal/open ratio doesn't need re-deriving elsewhere).
+    pub stock_terminal_candidates: u64,
+    /// Frontier entries NOT in stock -- still-open synthesis lines.
+    pub non_stock_candidates: u64,
+    /// Depth → (nodes expanded at that depth, children produced from them).
+    /// `children_produced / nodes_expanded` at a given depth is that
+    /// depth's mean branching factor. `BTreeMap` for deterministic
+    /// (depth-ordered) JSON output.
+    pub branching_by_depth: std::collections::BTreeMap<u32, DepthBranching>,
+    /// Sum of raw proposals across every expansion, before any collapsing
+    /// by precursor-set identity. Equal to [`SearchStats::matched_templates`]
+    /// (same underlying count, named here for self-containment within this
+    /// diagnostics block) -- included so a reader doesn't have to
+    /// cross-reference the parent struct to get the "before" side of the
+    /// two dedup counts below.
+    pub candidates_generated_before_dedup: u64,
+    /// Sum, across every expansion, of the number of *distinct*
+    /// `(template_id, sorted precursor multiset)` pairs among that
+    /// expansion's proposals -- i.e. what would remain if only exact
+    /// same-template repeats (e.g. a symmetric template matching two
+    /// equivalent sites and re-deriving the same precursor set) collapsed.
+    /// Diagnostics-only: nothing is actually collapsed; `find_routes` still
+    /// pushes one heap node per raw proposal.
+    pub candidates_after_same_template_dedup: u64,
+    /// Sum, across every expansion, of the number of *distinct* sorted
+    /// precursor multisets among that expansion's proposals, regardless of
+    /// which template produced them -- what would remain under a
+    /// same-parent cross-template dedup (Phase 1E candidate #1). Always
+    /// `<= candidates_after_same_template_dedup`. Diagnostics-only.
+    pub candidates_after_cross_template_dedup: u64,
+    /// Per-candidate trace records (competitive-diagnostics program, Phase
+    /// 1B), collected only when [`SearchConfig::candidate_trace_cap`] is
+    /// `Some` -- empty by default, zero collection cost when the cap is
+    /// `None`. Bounded by that cap, filled in first-generated order
+    /// (deterministic, not sampled).
+    pub candidate_trace: Vec<CandidateTraceRecord>,
+}
+
+/// One depth's branching-factor accumulator; see
+/// [`CrowdOutDiagnostics::branching_by_depth`].
+#[derive(Debug, Clone, Copy, Default, Serialize)]
+pub struct DepthBranching {
+    pub nodes_expanded: u64,
+    pub children_produced: u64,
+}
+
+/// Where a template originated (competitive-diagnostics program, Phase 1B).
+/// Derived read-only from `RetroRule::template_id`/`smirks`; does not
+/// require any change to rule loading or application.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CandidateProvenance {
+    /// `template_id` starts with `rule:` -- a hand-crafted rule.
+    Handcrafted,
+    /// Extracted template (`smirks-sha256:` id) whose SMIRKS contains no
+    /// bare atomic-number (`[#N]`) primitive -- applied directly, no
+    /// variant expansion needed.
+    FileBacked,
+    /// Extracted template whose SMIRKS contains a bare atomic-number
+    /// primitive (`[#N]`) -- applied via `chem_env::application_smirks_variants`
+    /// (Issue #88/#89/#91 hash-atom fix).
+    HashAtom,
+}
+
+/// One candidate node's trace record (competitive-diagnostics program,
+/// Phase 1B): what it was, where it ranked at each beam-prune it was
+/// subject to, and whether it ultimately contributed to a returned route.
+/// Collected only under [`SearchConfig::candidate_trace_cap`]; never
+/// affects which candidates are expanded, scored, kept, or in what order.
+#[derive(Debug, Clone, Serialize)]
+pub struct CandidateTraceRecord {
+    /// Depth this candidate sits at (its parent node's depth + 1).
+    pub depth: u32,
+    /// Canonical SMILES of the intermediate this candidate was proposed from.
+    pub parent_smiles: String,
+    pub template_id: String,
+    pub rule_name: String,
+    pub provenance: CandidateProvenance,
+    /// Sorted precursor SMILES multiset -- the identity used for the dedup
+    /// counts above and for `later_reached_stock` matching.
+    pub precursor_signature: Vec<String>,
+    /// f() = g + h at creation -- the score `beam_prune` ranks on.
+    pub f_score: f64,
+    /// This candidate's 0-based rank (ascending f()) at the last
+    /// `beam_prune` call that actually truncated the heap while this
+    /// candidate was present. `None` if `beam_width == 0`, the search ended
+    /// before any `beam_prune` call processed it, or every `beam_prune`
+    /// call it was subject to found the heap already within `beam_width`
+    /// (no sort happens in that case, so there is no real rank to report).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rank_before_prune: Option<usize>,
+    /// `true` unless a `beam_prune` call evicted this candidate (i.e. its
+    /// rank at that call was >= the beam width). Starts `true` at creation.
+    pub survived_beam: bool,
+    /// Set in post-processing: `true` iff this exact
+    /// `(parent_smiles, template_id, precursor_signature)` step appears in
+    /// one of the routes this search ultimately returned.
+    pub later_reached_stock: bool,
 }
 
 fn extract_building_blocks(steps: &[ReactionStep]) -> Vec<String> {
@@ -255,6 +403,11 @@ struct Node {
     depth: u32,
     g: f64,
     h: f64,
+    /// Index into `crowd_out.candidate_trace`, set only when
+    /// `SearchConfig::candidate_trace_cap` is `Some` and the cap hasn't been
+    /// reached yet. `None` (the default) costs nothing beyond this field's
+    /// own size -- see [`CandidateTraceRecord`].
+    trace_id: Option<u64>,
 }
 
 impl Node {
@@ -672,9 +825,32 @@ fn compute_route_cost(
 
 /// Prune the heap to at most `beam_width` nodes (keep the best).
 /// Uses sort_unstable_by (lower constant than sort_by) for deterministic ordering.
-fn beam_prune(heap: &mut BinaryHeap<Node>, beam_width: usize) {
+///
+/// `(evicted_count, evicted_f_min, evicted_f_max, boundary_f)`, present only
+/// when a truncation actually happened.
+type BeamEvictionStats = (usize, f64, f64, f64);
+/// `(trace_id, rank, survived)` for one traced node -- see [`beam_prune`].
+type TraceRank = (u64, usize, bool);
+
+/// Returns `(eviction_stats, trace_ranks)`. `eviction_stats` is
+/// `Some((evicted_count, evicted_f_min, evicted_f_max, boundary_f))` when a
+/// truncation actually happened (diagnostics-only bookkeeping over the sort
+/// this function already performs -- does not change which nodes are
+/// kept), `None` when nothing was pruned. `trace_ranks` is
+/// `(trace_id, rank, survived)` for every node with `Node::trace_id ==
+/// Some(_)`, computed from the sort this function performs when truncation
+/// happens -- so it never re-sorts. Empty when nothing is truncated
+/// (`heap.len() <= beam_width`): the heap isn't sorted in that branch, so
+/// there is no real rank to report, and a traced node's
+/// `CandidateTraceRecord` simply keeps its as-created
+/// `rank_before_prune: None, survived_beam: true` rather than being
+/// overwritten with a fabricated rank.
+fn beam_prune(
+    heap: &mut BinaryHeap<Node>,
+    beam_width: usize,
+) -> (Option<BeamEvictionStats>, Vec<TraceRank>) {
     if beam_width == 0 || heap.len() <= beam_width {
-        return;
+        return (None, Vec::new());
     }
     let mut nodes: Vec<Node> = heap.drain().collect();
     nodes.sort_unstable_by(|a, b| {
@@ -682,8 +858,76 @@ fn beam_prune(heap: &mut BinaryHeap<Node>, beam_width: usize) {
             .partial_cmp(&b.f())
             .unwrap_or(std::cmp::Ordering::Equal)
     });
+    let trace_ranks: Vec<(u64, usize, bool)> = nodes
+        .iter()
+        .enumerate()
+        .filter_map(|(rank, n)| n.trace_id.map(|id| (id, rank, rank < beam_width)))
+        .collect();
+    let evicted = &nodes[beam_width..];
+    let evicted_f_min = evicted.iter().map(Node::f).fold(f64::INFINITY, f64::min);
+    let evicted_f_max = evicted
+        .iter()
+        .map(Node::f)
+        .fold(f64::NEG_INFINITY, f64::max);
+    let boundary_f = nodes[beam_width - 1].f();
+    let evicted_count = evicted.len();
     nodes.truncate(beam_width);
     *heap = nodes.into_iter().collect();
+    (
+        Some((evicted_count, evicted_f_min, evicted_f_max, boundary_f)),
+        trace_ranks,
+    )
+}
+
+/// Diagnostics-only (Issue #101 / Phase 1B): for one node's expansion,
+/// count (a) proposals from *different* templates whose precursor SMILES
+/// multiset (sorted) is identical to an already-seen one -- same as the
+/// original Issue #101 counter -- and (b) how many candidates would remain
+/// under two hypothetical dedup strategies (same-template-only vs.
+/// cross-template), without actually merging, dedupeing, or reordering
+/// `entries`.
+///
+/// Returns `(cross_template_duplicates, after_same_template_dedup,
+/// after_cross_template_dedup)`.
+fn dedup_counts(entries: &[RetroEntry]) -> (u64, u64, u64) {
+    let mut cross_template_duplicates = 0u64;
+    // Keyed by (template_id, sorted precursor signature): collapses only
+    // exact same-template repeats.
+    let mut seen_same_template: FxHashSet<(&str, Vec<String>)> = FxHashSet::default();
+    // Keyed by sorted precursor signature alone: collapses regardless of template.
+    let mut seen_cross_template: FxHashMap<Vec<String>, &str> = FxHashMap::default();
+    for e in entries {
+        let mut sig = e.precursor_smiles.clone();
+        sig.sort_unstable();
+        seen_same_template.insert((e.template_id.as_str(), sig.clone()));
+        match seen_cross_template.get(sig.as_slice()) {
+            Some(&prev_template) if prev_template != e.template_id => {
+                cross_template_duplicates += 1;
+            }
+            Some(_) => {}
+            None => {
+                seen_cross_template.insert(sig, e.template_id.as_str());
+            }
+        }
+    }
+    (
+        cross_template_duplicates,
+        seen_same_template.len() as u64,
+        seen_cross_template.len() as u64,
+    )
+}
+
+/// Classify a template's provenance from its stable identity and SMIRKS
+/// (competitive-diagnostics program, Phase 1B). Read-only: does not touch
+/// rule loading or application.
+fn classify_provenance(template_id: &str, smirks: &str) -> CandidateProvenance {
+    if template_id.starts_with("rule:") {
+        CandidateProvenance::Handcrafted
+    } else if smirks.contains("[#") {
+        CandidateProvenance::HashAtom
+    } else {
+        CandidateProvenance::FileBacked
+    }
 }
 
 pub struct SearchConfig {
@@ -732,6 +976,14 @@ pub struct SearchConfig {
     /// alongside its enforcement policy; "enforce without a guard" is not a
     /// state this type can represent.
     pub ring_context: crate::ring_context::RingContextConfig,
+    /// Competitive-diagnostics program, Phase 1B: when `Some(cap)`, collect
+    /// up to `cap` per-candidate trace records (`CrowdOutDiagnostics::candidate_trace`)
+    /// across the whole search, in first-generated (deterministic) order.
+    /// `None` (the default) collects nothing -- zero extra allocation or
+    /// bookkeeping beyond the always-on aggregate counters. Offline
+    /// diagnostic use only (CLI `--candidate-trace-limit`); does not affect
+    /// which candidates are expanded, scored, kept, or in what order.
+    pub candidate_trace_cap: Option<usize>,
 }
 
 impl Default for SearchConfig {
@@ -751,6 +1003,7 @@ impl Default for SearchConfig {
             #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
             nn_scorer: None,
             ring_context: crate::ring_context::RingContextConfig::Disabled,
+            candidate_trace_cap: None,
         }
     }
 }
@@ -804,6 +1057,18 @@ pub fn find_routes(
 
     let max_rule_weight = rules.iter().map(|r| r.weight).fold(1.0_f64, f64::max);
 
+    // Phase 1B: template_id -> smirks, built once, used only when
+    // candidate-trace collection is active (`config.candidate_trace_cap`)
+    // to classify each traced candidate's provenance.
+    let template_smirks: FxHashMap<&str, &str> = if config.candidate_trace_cap.is_some() {
+        rules
+            .iter()
+            .map(|r| (r.template_id.as_str(), r.smirks.as_str()))
+            .collect()
+    } else {
+        FxHashMap::default()
+    };
+
     // Bond-center template index — built once, queried per-expansion (O(bonds) per node).
     let bond_idx: Option<TemplateBondIndex> = if config.bond_index {
         Some(TemplateBondIndex::build(rules))
@@ -823,6 +1088,7 @@ pub fn find_routes(
     let mut retro_cache_hits: u64 = 0;
     let mut ring_context_diagnostics = crate::ring_context::RingContextDiagnostics::default();
     let mut retro_cache_misses: u64 = 0;
+    let mut crowd_out = CrowdOutDiagnostics::default();
 
     let mut routes: Vec<Route> = Vec::new();
     let mut closed: FxHashSet<u64> = FxHashSet::default();
@@ -848,6 +1114,7 @@ pub fn find_routes(
         depth: 0,
         g: 0.0,
         h: h0,
+        trace_id: None,
     });
 
     while let Some(node) = heap.pop() {
@@ -868,8 +1135,10 @@ pub fn find_routes(
                 if first_unsolved.is_none() {
                     first_unsolved = Some(e);
                 }
+                crowd_out.non_stock_candidates += 1;
             } else {
                 stock_hits += 1;
+                crowd_out.stock_terminal_candidates += 1;
             }
         }
 
@@ -943,6 +1212,7 @@ pub fn find_routes(
             } else {
                 &ranked_rules
             };
+            crowd_out.rules_attempted_total += active_rules.len() as u64;
 
             // Shared with the standalone `propose_one_step` candidate-pool API
             // (`crate::candidate::raw_propose`) so route search and offline
@@ -997,12 +1267,28 @@ pub fn find_routes(
                     }
                 })
                 .collect();
+
+            // Diagnostics-only (Issue #101 / Phase 1B): same-parent
+            // proposals from different templates landing on an identical
+            // precursor multiset, plus what would remain under two
+            // hypothetical dedup strategies. Does not merge or drop any entry.
+            let (cross_dup, after_same_template, after_cross_template) = dedup_counts(&entries);
+            crowd_out.cross_template_duplicate_precursor_signatures += cross_dup;
+            crowd_out.candidates_generated_before_dedup += entries.len() as u64;
+            crowd_out.candidates_after_same_template_dedup += after_same_template;
+            crowd_out.candidates_after_cross_template_dedup += after_cross_template;
+
             let arc = Arc::new(entries);
             retro_cache.insert(target_smi.clone(), Arc::clone(&arc));
             arc // no extra clone: Arc move
         };
 
         matched_templates += expansions.len() as u64;
+        {
+            let depth_entry = crowd_out.branching_by_depth.entry(node.depth).or_default();
+            depth_entry.nodes_expanded += 1;
+            depth_entry.children_produced += expansions.len() as u64;
+        }
 
         for entry in expansions.iter() {
             let new_frontier: SmallVec<[FEntry; 6]> = node
@@ -1062,12 +1348,43 @@ pub fn find_routes(
                 }
             }
 
+            // Phase 1B: opt-in candidate-level trace record. `trace_id`
+            // stays `None` (no record, no lookup) whenever
+            // `candidate_trace_cap` is `None` or has already been reached --
+            // the common case, costing one `Option` check.
+            let trace_id = config.candidate_trace_cap.and_then(|cap| {
+                if crowd_out.candidate_trace.len() >= cap {
+                    return None;
+                }
+                let mut precursor_signature = entry.precursor_smiles.clone();
+                precursor_signature.sort_unstable();
+                let smirks = template_smirks
+                    .get(entry.template_id.as_str())
+                    .copied()
+                    .unwrap_or("");
+                let id = crowd_out.candidate_trace.len() as u64;
+                crowd_out.candidate_trace.push(CandidateTraceRecord {
+                    depth: node.depth + 1,
+                    parent_smiles: target_smi.clone(),
+                    template_id: entry.template_id.clone(),
+                    rule_name: entry.rule_name.clone(),
+                    provenance: classify_provenance(&entry.template_id, smirks),
+                    precursor_signature,
+                    f_score: node.g + entry.step_cost + new_h,
+                    rank_before_prune: None,
+                    survived_beam: true,
+                    later_reached_stock: false,
+                });
+                Some(id)
+            });
+
             heap.push(Node {
                 frontier: new_frontier,
                 path: new_path,
                 depth: node.depth + 1,
                 g: node.g + entry.step_cost,
                 h: new_h,
+                trace_id,
             });
         }
 
@@ -1075,7 +1392,55 @@ pub fn find_routes(
         if config.beam_width > 0 && heap.len() > config.beam_width {
             beam_limit_hit = true;
         }
-        beam_prune(&mut heap, config.beam_width);
+        let (eviction_stats, trace_ranks) = beam_prune(&mut heap, config.beam_width);
+        if let Some((evicted_n, evicted_min, evicted_max, boundary)) = eviction_stats {
+            crowd_out.beam_prune_invocations += 1;
+            crowd_out.candidates_evicted_total += evicted_n as u64;
+            crowd_out.evicted_f_min = Some(
+                crowd_out
+                    .evicted_f_min
+                    .map_or(evicted_min, |m| m.min(evicted_min)),
+            );
+            crowd_out.evicted_f_max = Some(
+                crowd_out
+                    .evicted_f_max
+                    .map_or(evicted_max, |m| m.max(evicted_max)),
+            );
+            crowd_out.final_beam_boundary_f = Some(boundary);
+        }
+        for (trace_id, rank, survived) in trace_ranks {
+            if let Some(record) = crowd_out.candidate_trace.get_mut(trace_id as usize) {
+                record.rank_before_prune = Some(rank);
+                record.survived_beam = survived;
+            }
+        }
+    }
+
+    // Phase 1B post-processing: mark each traced candidate that ended up
+    // part of a route this search actually returned. Cheap even for a full
+    // trace (`candidate_trace_cap` records against `routes.len() <=
+    // config.max_routes` steps) -- skipped entirely when nothing was traced.
+    if !crowd_out.candidate_trace.is_empty() {
+        // Keyed on owned, *sorted* precursor signatures -- `ReactionStep::precursors`
+        // preserves the template's original ordering, while
+        // `CandidateTraceRecord::precursor_signature` is sorted at creation, so
+        // both sides must be normalized the same way to compare equal.
+        let mut solved_steps: FxHashSet<(String, String, Vec<String>)> = FxHashSet::default();
+        for route in &routes {
+            for step in &route.steps {
+                let mut sig = step.precursors.clone();
+                sig.sort_unstable();
+                solved_steps.insert((step.target.clone(), step.template_id.clone(), sig));
+            }
+        }
+        for record in &mut crowd_out.candidate_trace {
+            let key = (
+                record.parent_smiles.clone(),
+                record.template_id.clone(),
+                record.precursor_signature.clone(),
+            );
+            record.later_reached_stock = solved_steps.contains(&key);
+        }
     }
 
     // Post-processing: confidence, atom economy, convergency.
@@ -1189,6 +1554,7 @@ pub fn find_routes(
             retro_cache_hits,
             retro_cache_misses,
             ring_context_diagnostics,
+            crowd_out,
         },
     ))
 }
@@ -1339,6 +1705,285 @@ mod tests {
             "beam=1 ({}) should find ≤ routes than beam=0 ({})",
             routes_beam.len(),
             routes_full.len()
+        );
+    }
+
+    // ── Crowd-out diagnostics tests (Issue #101) ─────────────────────────────
+
+    fn node(f: f64) -> Node {
+        Node {
+            frontier: smallvec![FEntry {
+                smiles: "C".to_string(),
+            }],
+            path: None,
+            depth: 0,
+            g: f,
+            h: 0.0,
+            trace_id: None,
+        }
+    }
+
+    fn traced_node(f: f64, trace_id: u64) -> Node {
+        Node {
+            trace_id: Some(trace_id),
+            ..node(f)
+        }
+    }
+
+    #[test]
+    fn beam_prune_returns_none_when_beam_width_zero() {
+        let mut heap: BinaryHeap<Node> = (0..5).map(|i| node(i as f64)).collect();
+        let (stats, trace_ranks) = beam_prune(&mut heap, 0);
+        assert_eq!(stats, None);
+        assert!(trace_ranks.is_empty());
+        assert_eq!(heap.len(), 5, "beam_width=0 must not truncate");
+    }
+
+    #[test]
+    fn beam_prune_returns_none_when_heap_within_beam_width() {
+        let mut heap: BinaryHeap<Node> = (0..3).map(|i| node(i as f64)).collect();
+        let (stats, trace_ranks) = beam_prune(&mut heap, 10);
+        assert_eq!(stats, None);
+        assert!(trace_ranks.is_empty());
+        assert_eq!(heap.len(), 3);
+    }
+
+    #[test]
+    fn beam_prune_reports_exact_eviction_stats() {
+        // f = 0.0, 1.0, 2.0, 3.0, 4.0 -- keep the best 2 (lowest f).
+        let mut heap: BinaryHeap<Node> = (0..5).map(|i| node(i as f64)).collect();
+        let (evicted_n, evicted_min, evicted_max, boundary) = beam_prune(&mut heap, 2).0.unwrap();
+        assert_eq!(evicted_n, 3, "5 nodes - beam_width 2 = 3 evicted");
+        assert_eq!(evicted_min, 2.0, "lowest f among the evicted (f=2,3,4)");
+        assert_eq!(evicted_max, 4.0, "highest f among the evicted");
+        assert_eq!(boundary, 1.0, "f of the worst *retained* node (f=0,1)");
+        assert_eq!(heap.len(), 2);
+        // Retained nodes must indeed be the two lowest-f ones.
+        let mut retained: Vec<f64> = heap.iter().map(Node::f).collect();
+        retained.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_eq!(retained, vec![0.0, 1.0]);
+    }
+
+    #[test]
+    fn beam_prune_reports_survived_and_evicted_trace_ranks() {
+        // f = 0,1,2,3,4; beam_width=2 keeps rank 0,1 (f=0,1), evicts rank 2,3,4.
+        let mut heap: BinaryHeap<Node> = vec![
+            traced_node(0.0, 100),
+            traced_node(2.0, 101),
+            node(1.0),
+            node(3.0),
+            node(4.0),
+        ]
+        .into_iter()
+        .collect();
+        let (_, trace_ranks) = beam_prune(&mut heap, 2);
+        let mut by_id: FxHashMap<u64, (usize, bool)> = trace_ranks
+            .into_iter()
+            .map(|(id, rank, survived)| (id, (rank, survived)))
+            .collect();
+        assert_eq!(by_id.remove(&100), Some((0, true)), "f=0.0 -> rank 0, kept");
+        assert_eq!(
+            by_id.remove(&101),
+            Some((2, false)),
+            "f=2.0 -> rank 2, evicted (beam_width=2)"
+        );
+    }
+
+    #[test]
+    fn beam_prune_reports_no_trace_ranks_when_nothing_evicted() {
+        // No truncation means no sort, so there is no real rank to report --
+        // a traced node here must keep its as-created default rather than
+        // being reported as a fabricated rank 0.
+        let mut heap: BinaryHeap<Node> = vec![traced_node(0.0, 7), node(1.0)].into_iter().collect();
+        let (stats, trace_ranks) = beam_prune(&mut heap, 10);
+        assert_eq!(stats, None, "heap smaller than beam_width -> no eviction");
+        assert!(trace_ranks.is_empty());
+    }
+
+    #[test]
+    fn dedup_counts_ignores_same_template_repeats_for_cross_template_duplicates() {
+        let entries = vec![
+            RetroEntry {
+                rule_name: "extracted_1".to_string(),
+                template_id: "smirks-sha256:aaa".to_string(),
+                step_cost: 1.0,
+                precursor_smiles: vec!["CC".to_string(), "O".to_string()],
+            },
+            RetroEntry {
+                rule_name: "extracted_1".to_string(),
+                template_id: "smirks-sha256:aaa".to_string(),
+                step_cost: 1.0,
+                precursor_smiles: vec!["O".to_string(), "CC".to_string()],
+            },
+        ];
+        let (cross_dup, after_same_template, after_cross_template) = dedup_counts(&entries);
+        assert_eq!(
+            cross_dup, 0,
+            "identical signature from the SAME template is not cross-template duplication"
+        );
+        assert_eq!(
+            after_same_template, 1,
+            "both entries collapse to one (template_id, signature) pair"
+        );
+        assert_eq!(after_cross_template, 1);
+    }
+
+    #[test]
+    fn dedup_counts_detects_cross_template_collision() {
+        let entries = vec![
+            RetroEntry {
+                rule_name: "extracted_1".to_string(),
+                template_id: "smirks-sha256:aaa".to_string(),
+                step_cost: 1.0,
+                precursor_smiles: vec!["CC".to_string(), "O".to_string()],
+            },
+            RetroEntry {
+                rule_name: "extracted_2".to_string(),
+                template_id: "smirks-sha256:bbb".to_string(),
+                // Same multiset, different order -- must still collide (sorted signature).
+                precursor_smiles: vec!["O".to_string(), "CC".to_string()],
+                step_cost: 1.0,
+            },
+            RetroEntry {
+                rule_name: "extracted_3".to_string(),
+                template_id: "smirks-sha256:ccc".to_string(),
+                precursor_smiles: vec!["N".to_string()],
+                step_cost: 1.0,
+            },
+        ];
+        let (cross_dup, after_same_template, after_cross_template) = dedup_counts(&entries);
+        assert_eq!(
+            cross_dup, 1,
+            "extracted_2 duplicates extracted_1's signature; extracted_3 is distinct"
+        );
+        assert_eq!(
+            after_same_template, 3,
+            "all 3 have distinct (template_id, signature) pairs"
+        );
+        assert_eq!(
+            after_cross_template, 2,
+            "extracted_1/extracted_2 share one signature; extracted_3 is the second"
+        );
+    }
+
+    #[test]
+    fn classify_provenance_distinguishes_handcrafted_file_backed_and_hash_atom() {
+        assert_eq!(
+            classify_provenance("rule:esterification", "[C:1](=O)O.[O:2]>>..."),
+            CandidateProvenance::Handcrafted
+        );
+        assert_eq!(
+            classify_provenance("smirks-sha256:abc", "[C:1](=O)O.[O:2]>>..."),
+            CandidateProvenance::FileBacked
+        );
+        assert_eq!(
+            classify_provenance("smirks-sha256:abc", "[#7:2]:[c:1]>>..."),
+            CandidateProvenance::HashAtom
+        );
+    }
+
+    #[test]
+    fn crowd_out_diagnostics_default_off_when_beam_unlimited() {
+        let env = aspirin_env();
+        let rules = default_rules();
+        let (_, stats) = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg(3)).unwrap();
+        assert_eq!(stats.crowd_out.beam_prune_invocations, 0);
+        assert_eq!(stats.crowd_out.candidates_evicted_total, 0);
+        assert_eq!(stats.crowd_out.evicted_f_min, None);
+        assert_eq!(stats.crowd_out.evicted_f_max, None);
+        assert_eq!(stats.crowd_out.final_beam_boundary_f, None);
+    }
+
+    #[test]
+    fn crowd_out_diagnostics_records_eviction_under_tight_beam() {
+        let env = aspirin_env();
+        let rules = default_rules();
+        let cfg_beam = SearchConfig {
+            max_depth: 3,
+            max_routes: 3,
+            beam_width: 1,
+            ..Default::default()
+        };
+        let (_, stats) = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg_beam).unwrap();
+        assert!(
+            stats.crowd_out.beam_prune_invocations > 0,
+            "beam_width=1 on a multi-rule target must trigger at least one prune"
+        );
+        assert!(stats.crowd_out.candidates_evicted_total > 0);
+        // evicted_f_min/max are running aggregates across every beam_prune
+        // invocation in the search (g grows with depth, so an early, cheap
+        // prune's evicted_min can legitimately be lower than a later, deeper
+        // prune's boundary -- these are not from the same invocation, so
+        // only self-consistency is checked here; see
+        // `beam_prune_reports_exact_eviction_stats` for the single-invocation
+        // ordering guarantee).
+        let evicted_min = stats.crowd_out.evicted_f_min.expect("must be Some");
+        let evicted_max = stats.crowd_out.evicted_f_max.expect("must be Some");
+        assert!(evicted_min <= evicted_max);
+        assert!(stats.crowd_out.final_beam_boundary_f.is_some());
+    }
+
+    #[test]
+    fn crowd_out_diagnostics_stock_and_non_stock_candidates_are_counted() {
+        let env = aspirin_env();
+        let rules = default_rules();
+        let (_, stats) = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg(3)).unwrap();
+        assert!(
+            stats.crowd_out.stock_terminal_candidates > 0,
+            "aspirin's search must encounter stock hits (acetic/salicylic acid)"
+        );
+        assert!(
+            stats.crowd_out.stock_terminal_candidates + stats.crowd_out.non_stock_candidates > 0
+        );
+        assert!(stats.crowd_out.rules_attempted_total > 0);
+    }
+
+    #[test]
+    fn crowd_out_diagnostics_branching_by_depth_sums_match_top_level_stats() {
+        let env = aspirin_env();
+        let rules = default_rules();
+        let (_, stats) = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg(3)).unwrap();
+        assert!(!stats.crowd_out.branching_by_depth.is_empty());
+        let sum_expanded: u64 = stats
+            .crowd_out
+            .branching_by_depth
+            .values()
+            .map(|d| d.nodes_expanded)
+            .sum();
+        let sum_children: u64 = stats
+            .crowd_out
+            .branching_by_depth
+            .values()
+            .map(|d| d.children_produced)
+            .sum();
+        assert_eq!(
+            sum_expanded, stats.nodes_expanded,
+            "per-depth nodes_expanded must sum to the top-level total"
+        );
+        assert_eq!(
+            sum_children, stats.matched_templates,
+            "per-depth children_produced must sum to matched_templates \
+             (both are bumped at the same call site)"
+        );
+    }
+
+    #[test]
+    fn crowd_out_diagnostics_are_deterministic_across_repeated_runs() {
+        let env = aspirin_env();
+        let rules = default_rules();
+        let cfg_beam = SearchConfig {
+            max_depth: 3,
+            max_routes: 3,
+            beam_width: 2,
+            ..Default::default()
+        };
+        let (_, stats1) = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg_beam).unwrap();
+        let (_, stats2) = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg_beam).unwrap();
+        let j1 = serde_json::to_string(&stats1.crowd_out).unwrap();
+        let j2 = serde_json::to_string(&stats2.crowd_out).unwrap();
+        assert_eq!(
+            j1, j2,
+            "identical inputs must yield byte-identical diagnostics"
         );
     }
 

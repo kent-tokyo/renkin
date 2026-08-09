@@ -21,6 +21,11 @@ struct Output {
     /// itself is a template-frequency ranking score, not a measured or
     /// predicted experimental success rate.
     joint_success_probability: f64,
+    /// Beam/crowd-out diagnostics (Issue #101). Only present with
+    /// `--search-diagnostics`; omitted (not `null`) by default so existing
+    /// consumers see byte-identical output.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    search_diagnostics: Option<search::CrowdOutDiagnostics>,
 }
 
 // ..Default::default() is needed when nn-scoring feature is enabled (adds nn_scorer field).
@@ -52,6 +57,8 @@ fn main() -> Result<()> {
     let mut avoid_elements: String = String::new();
     let mut require_elements: String = String::new();
     let mut verbose = false;
+    let mut search_diagnostics = false;
+    let mut candidate_trace_limit: Option<usize> = None;
     let mut bond_index = false;
     let mut bb_prices_path: Option<String> = None;
     let mut stock_path: Option<String> = None;
@@ -134,6 +141,24 @@ fn main() -> Result<()> {
             "--verbose" | "-v" => {
                 verbose = true;
             }
+            "--search-diagnostics" => {
+                search_diagnostics = true;
+            }
+            "--candidate-trace-limit" => {
+                i += 1;
+                let Some(v) = args.get(i) else {
+                    bail!("--candidate-trace-limit requires a <N> value");
+                };
+                let n: usize = v.parse().map_err(|_| {
+                    anyhow::anyhow!(
+                        "--candidate-trace-limit value must be a non-negative integer, got {v:?}"
+                    )
+                })?;
+                candidate_trace_limit = Some(n);
+                // Self-sufficient: requesting a trace implies wanting to see
+                // it, without also having to remember --search-diagnostics.
+                search_diagnostics = true;
+            }
             "--bond-index" => {
                 bond_index = true;
             }
@@ -208,6 +233,10 @@ fn main() -> Result<()> {
              --avoid-elements / -e  Comma-separated elements to ban from BBs (e.g. \"Br,I\")\n  \
              --require-elements / -r  Comma-separated elements each route must supply (e.g. \"B\")\n  \
              --verbose / -v         Print search statistics to stderr\n  \
+             --search-diagnostics   Add a \"search_diagnostics\" block (beam eviction, \
+             cross-template dedup, branching factor -- Issue #101) to JSON output\n  \
+             --candidate-trace-limit <N>  Also collect up to N per-candidate trace records \
+             (implies --search-diagnostics; offline diagnostic use, competitive program Phase 1B)\n  \
              --bond-index           Bond-center template index: ~24%% faster, no accuracy loss\n  \
              --bb-prices <path>     CSV (SMILES,price_per_gram) for route cost scoring\n  \
              --ring-context-policy <policy>  disabled (default) | audit-only | conservative | \
@@ -356,6 +385,7 @@ fn main() -> Result<()> {
         #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
         nn_scorer,
         ring_context: ring_context_config,
+        candidate_trace_cap: candidate_trace_limit,
         ..Default::default()
     };
     let (mut routes, stats) = search::find_routes(&target_smiles, &env, &rules, &config)?;
@@ -472,7 +502,7 @@ fn main() -> Result<()> {
         _ => {
             if routes.is_empty() {
                 let (causes, suggestions) = diagnose(&stats, max_depth);
-                let out = serde_json::json!({
+                let mut out = serde_json::json!({
                     "target": target_smiles,
                     "routes_found": 0,
                     "routes": [],
@@ -486,6 +516,9 @@ fn main() -> Result<()> {
                         "suggestions":       suggestions,
                     }
                 });
+                if search_diagnostics {
+                    out["search_diagnostics"] = serde_json::to_value(&stats.crowd_out)?;
+                }
                 println!("{}", serde_json::to_string_pretty(&out)?);
             } else {
                 let joint_success_probability = 1.0
@@ -497,6 +530,7 @@ fn main() -> Result<()> {
                     target: target_smiles,
                     routes_found: routes.len(),
                     joint_success_probability,
+                    search_diagnostics: search_diagnostics.then_some(stats.crowd_out),
                     routes,
                 };
                 println!("{}", serde_json::to_string_pretty(&output)?);

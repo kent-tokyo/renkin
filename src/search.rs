@@ -295,6 +295,82 @@ pub struct CrowdOutDiagnostics {
     /// `None`. Bounded by that cap, filled in first-generated order
     /// (deterministic, not sampled).
     pub candidate_trace: Vec<CandidateTraceRecord>,
+
+    /// Open-state dominance diagnostics (Issue #101 Phase 2). All nine
+    /// fields below are computed only when
+    /// [`SearchConfig::open_state_diagnostics`] or
+    /// [`SearchConfig::open_state_dominance`] is `true` -- all-zero
+    /// otherwise, zero extra allocation. See those fields' doc comments for
+    /// what "dominance" means. Under `open_state_diagnostics` alone (no
+    /// `open_state_dominance`), these counters record what dominance
+    /// *would* decide without ever skipping a push or discarding a node --
+    /// so `stale_open_nodes_discarded_on_pop` and
+    /// `stale_open_nodes_removed_before_beam_prune` are always `0` in that
+    /// mode (nothing is ever marked stale when nothing is ever replaced in
+    /// the heap); the interesting numbers there are `open_state_dominated_skipped`
+    /// / `open_state_better_replacements` (how much duplication *would* be
+    /// caught) and the `peak_*` fields (how much duplication the raw heap
+    /// actually carries).
+    /// Total candidate pushes examined (every candidate that survives the
+    /// `forbidden_elements` in-search prune, terminal or not).
+    ///
+    /// The other counters below only cover the non-terminal, finite-g
+    /// subset of this total -- `open_state_unique_inserted +
+    /// open_state_dominated_skipped + open_state_better_replacements <=
+    /// open_state_candidates_considered`, with the gap made up of terminal
+    /// candidates (`n_unsolved == 0`, always excluded to preserve route
+    /// diversity) and non-finite-g candidates (fail-closed: treated as
+    /// un-trackable, never dominated or dominating).
+    pub open_state_candidates_considered: u64,
+    /// Of the non-terminal, finite-g subset: first candidate seen for its
+    /// (frontier, depth) state -- always inserted into the open-state
+    /// record.
+    pub open_state_unique_inserted: u64,
+    /// Of the non-terminal, finite-g subset: a later candidate for an
+    /// already-seen state whose g is >= the recorded best g for that state
+    /// -- dominated. Under `open_state_dominance` this candidate is never
+    /// pushed; under `open_state_diagnostics` alone it is still pushed
+    /// (counted only).
+    pub open_state_dominated_skipped: u64,
+    /// Of the non-terminal, finite-g subset: a later candidate for an
+    /// already-seen state whose g is strictly lower than the recorded best
+    /// -- replaces the record. Under `open_state_dominance` the
+    /// previously-pushed node for that state becomes stale (see the two
+    /// fields below).
+    pub open_state_better_replacements: u64,
+    /// Stale open-state nodes discarded when popped from the heap, instead
+    /// of being expanded. Always `0` unless `open_state_dominance` is
+    /// `true` (see the struct-level note above).
+    pub stale_open_nodes_discarded_on_pop: u64,
+    /// Stale open-state nodes actively removed from the heap before
+    /// `beam_prune` runs, so they cannot consume beam-width capacity that
+    /// should go to genuinely distinct candidates. Always `0` unless
+    /// `open_state_dominance` is `true` (see the struct-level note above).
+    /// This is the counter that most directly measures whether open-state
+    /// dominance addresses L1541-style crowd-out: removal here happens
+    /// *before* `beam_prune`, whereas the pre-existing `closed`-set dedup
+    /// only ever discards a duplicate one at a time, after it is popped --
+    /// by which point it may already have taken a beam slot away from a
+    /// distinct candidate.
+    pub stale_open_nodes_removed_before_beam_prune: u64,
+    /// Running maximum, across every point this search checked, of the
+    /// number of distinct (frontier, depth) states with an open-state
+    /// record. Compare against `peak_raw_heap_nodes` to see how much of the
+    /// open heap is genuinely distinct states vs. duplicate copies.
+    pub peak_unique_open_states: u64,
+    /// Running maximum of `heap.len()` at the same check points as
+    /// `peak_unique_open_states`. Under `open_state_dominance` this is
+    /// measured *after* the pre-beam-prune stale filter (so it reflects the
+    /// already-deduplicated heap); under `open_state_diagnostics` alone
+    /// nothing is ever removed, so this is simply the raw heap size.
+    pub peak_raw_heap_nodes: u64,
+    /// Running maximum of `heap.len() - open_state_best.len()` at the same
+    /// check points (saturating; never negative). An upper bound on "how
+    /// many extra copies of already-tracked states were sitting in the heap
+    /// at once" -- an upper bound because it also counts terminal and
+    /// non-finite-g nodes, which are never tracked by an open-state record
+    /// at all.
+    pub peak_duplicate_open_nodes: u64,
 }
 
 /// One depth's branching-factor accumulator; see
@@ -490,6 +566,68 @@ fn state_hash(frontier: &[FEntry]) -> u64 {
         k.hash(&mut h);
     }
     h.finish()
+}
+
+/// Identity of a search state for open-state dominance (Issue #101 Phase
+/// 2): two candidates represent the same logical state iff their frontiers
+/// are equal as multisets (order-independent, duplicates preserved) AND
+/// they sit at the same depth. Depth-scoped only for v1 -- cross-depth
+/// comparisons of the same frontier are out of scope, since remaining
+/// max-depth budget differs between them.
+///
+/// Deliberately holds the full sorted SMILES list rather than a 64-bit
+/// hash: using this as a `HashMap` key gets exact `Eq` comparison on any
+/// hash collision for free (standard `HashMap` collision resolution),
+/// unlike [`state_hash`]'s closed-set u64, which trusts the hash alone.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct StateKey {
+    depth: u32,
+    sorted_frontier: Vec<String>,
+}
+
+impl StateKey {
+    fn new(depth: u32, frontier: &[FEntry]) -> Self {
+        let mut sorted_frontier: Vec<String> = frontier.iter().map(|e| e.smiles.clone()).collect();
+        sorted_frontier.sort_unstable();
+        Self {
+            depth,
+            sorted_frontier,
+        }
+    }
+}
+
+/// Best known g() (path cost) seen so far for one [`StateKey`]. Whether a
+/// node holding the old (now-dominated) g is actually removed from the
+/// heap depends on `SearchConfig::open_state_dominance` -- see
+/// [`CrowdOutDiagnostics`]'s `open_state_*` fields.
+struct OpenStateRecord {
+    best_g: f64,
+}
+
+/// What an open-state dominance decision is for one candidate g against the
+/// current record (if any) for its [`StateKey`] (Issue #101 Phase 2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OpenStateVerdict {
+    /// No record existed yet for this state -- the candidate becomes it.
+    Inserted,
+    /// A record exists with `best_g <= candidate_g` -- ties go to whichever
+    /// was generated first (deterministic), so an equal-g candidate is
+    /// dominated, not inserted.
+    Dominated,
+    /// A record exists with `best_g > candidate_g` -- the candidate is
+    /// strictly better and replaces it.
+    Replaced,
+}
+
+/// Pure decision function, independent of how the caller stores records --
+/// see [`CrowdOutDiagnostics`]'s `open_state_*` fields for what each
+/// verdict means in `find_routes`.
+fn open_state_verdict(existing: Option<&OpenStateRecord>, candidate_g: f64) -> OpenStateVerdict {
+    match existing {
+        None => OpenStateVerdict::Inserted,
+        Some(e) if e.best_g <= candidate_g => OpenStateVerdict::Dominated,
+        Some(_) => OpenStateVerdict::Replaced,
+    }
 }
 
 fn is_bb(smiles: &str, env: &ChemEnv) -> bool {
@@ -984,6 +1122,15 @@ pub struct SearchConfig {
     /// diagnostic use only (CLI `--candidate-trace-limit`); does not affect
     /// which candidates are expanded, scored, kept, or in what order.
     pub candidate_trace_cap: Option<usize>,
+    /// Competitive-diagnostics program, Phase 2A: when `true`, additionally
+    /// compute -- for every non-terminal candidate push -- what an
+    /// open-state dominance decision on its depth-scoped exact-frontier
+    /// [`StateKey`] would be, WITHOUT ever skipping a push or discarding a
+    /// node. Purely a counting pass: `find_routes` pushes, expands, and
+    /// prunes exactly as it would with this flag `false`. See
+    /// `CrowdOutDiagnostics::open_state_*` for the resulting counters.
+    /// `false` (the default) costs nothing beyond this field's own size.
+    pub open_state_diagnostics: bool,
 }
 
 impl Default for SearchConfig {
@@ -1004,6 +1151,7 @@ impl Default for SearchConfig {
             nn_scorer: None,
             ring_context: crate::ring_context::RingContextConfig::Disabled,
             candidate_trace_cap: None,
+            open_state_diagnostics: false,
         }
     }
 }
@@ -1093,6 +1241,10 @@ pub fn find_routes(
     let mut routes: Vec<Route> = Vec::new();
     let mut closed: FxHashSet<u64> = FxHashSet::default();
     let mut heap: BinaryHeap<Node> = BinaryHeap::new();
+    // Issue #101 Phase 2A: best known g() per depth-scoped state, used to
+    // compute (and, once `open_state_dominance` lands, act on) open-state
+    // dominance. Empty and unused unless `open_state_diagnostics` is true.
+    let mut open_state_best: FxHashMap<StateKey, OpenStateRecord> = FxHashMap::default();
     let mut sa_cache: FxHashMap<String, f64> = FxHashMap::default();
     // Opt-D: per-search memoization of apply_retro results.
     // Key: canonical target SMILES. Value: Arc-wrapped filtered expansions.
@@ -1346,6 +1498,53 @@ pub fn find_routes(
                 {
                     continue;
                 }
+            }
+
+            // Issue #101 Phase 2A: open-state dominance diagnostics.
+            // Counting-only -- never skips a push. Terminal candidates
+            // (n_unsolved == 0) are excluded, matching the eventual
+            // dominance rule's route-diversity requirement; skipping them
+            // here too keeps the diagnostics numbers directly comparable to
+            // what `open_state_dominance` will actually decide.
+            if config.open_state_diagnostics {
+                crowd_out.open_state_candidates_considered += 1;
+                let is_terminal = new_frontier.iter().all(|e| is_bb(&e.smiles, env));
+                if !is_terminal {
+                    let candidate_g = node.g + entry.step_cost;
+                    if candidate_g.is_finite() {
+                        let key = StateKey::new(node.depth + 1, &new_frontier);
+                        match open_state_verdict(open_state_best.get(&key), candidate_g) {
+                            OpenStateVerdict::Inserted => {
+                                crowd_out.open_state_unique_inserted += 1;
+                                open_state_best.insert(
+                                    key,
+                                    OpenStateRecord {
+                                        best_g: candidate_g,
+                                    },
+                                );
+                            }
+                            OpenStateVerdict::Dominated => {
+                                crowd_out.open_state_dominated_skipped += 1;
+                            }
+                            OpenStateVerdict::Replaced => {
+                                crowd_out.open_state_better_replacements += 1;
+                                open_state_best.insert(
+                                    key,
+                                    OpenStateRecord {
+                                        best_g: candidate_g,
+                                    },
+                                );
+                            }
+                        }
+                    }
+                }
+                let raw = heap.len() as u64 + 1; // +1: this candidate hasn't been pushed yet
+                let unique = open_state_best.len() as u64;
+                crowd_out.peak_raw_heap_nodes = crowd_out.peak_raw_heap_nodes.max(raw);
+                crowd_out.peak_unique_open_states = crowd_out.peak_unique_open_states.max(unique);
+                crowd_out.peak_duplicate_open_nodes = crowd_out
+                    .peak_duplicate_open_nodes
+                    .max(raw.saturating_sub(unique));
             }
 
             // Phase 1B: opt-in candidate-level trace record. `trace_id`
@@ -2576,6 +2775,221 @@ mod tests {
             (best_score - 2.127).abs() < 0.05,
             "expected the only recorded route to be the direct-path route \
              (g≈2.13), got best_score={best_score}"
+        );
+    }
+
+    // ── Open-state dominance (Issue #101 Phase 2A) ───────────────────────────
+
+    #[test]
+    fn compute_h_depends_only_on_frontier_content_not_construction_order() {
+        // Phase 2's g-only dominance rule assumes h is a pure function of
+        // the frontier multiset -- if the same set of molecules produced a
+        // different h depending on push/insertion order, "lower g implies
+        // lower f" would not hold and dominance could discard a genuinely
+        // better node. Verify directly against the real `compute_h` (not a
+        // stand-in), covering both a stock-mixed frontier (exercises the
+        // `is_bb` filter) and a repeat SMILES (exercises the sa_cache).
+        let env = aspirin_env();
+        let forward: SmallVec<[FEntry; 6]> = smallvec![
+            FEntry {
+                smiles: "CC(=O)O".to_string(), // building block -> filtered out
+            },
+            FEntry {
+                smiles: "c1ccccc1C(=O)O".to_string(),
+            },
+            FEntry {
+                smiles: "c1ccccc1C(=O)O".to_string(), // repeat, exercises sa_cache
+            },
+        ];
+        let reversed: SmallVec<[FEntry; 6]> = forward.iter().cloned().rev().collect();
+
+        let mut cache_a = FxHashMap::default();
+        let h_forward = compute_h(&forward, &env, &mut cache_a, None);
+        let mut cache_b = FxHashMap::default();
+        let h_reversed = compute_h(&reversed, &env, &mut cache_b, None);
+
+        assert_eq!(
+            h_forward, h_reversed,
+            "h must be identical for the same frontier content regardless of order"
+        );
+    }
+
+    #[test]
+    fn state_key_ignores_frontier_order() {
+        let a = StateKey::new(
+            2,
+            &[
+                FEntry {
+                    smiles: "A".to_string(),
+                },
+                FEntry {
+                    smiles: "B".to_string(),
+                },
+            ],
+        );
+        let b = StateKey::new(
+            2,
+            &[
+                FEntry {
+                    smiles: "B".to_string(),
+                },
+                FEntry {
+                    smiles: "A".to_string(),
+                },
+            ],
+        );
+        assert_eq!(a, b, "same multiset, different order -> same StateKey");
+    }
+
+    #[test]
+    fn state_key_is_depth_scoped() {
+        let frontier = [FEntry {
+            smiles: "A".to_string(),
+        }];
+        let at_depth_1 = StateKey::new(1, &frontier);
+        let at_depth_2 = StateKey::new(2, &frontier);
+        assert_ne!(
+            at_depth_1, at_depth_2,
+            "same frontier at different depths must not be the same state (v1 scope)"
+        );
+    }
+
+    #[test]
+    fn state_key_multiplicity_matters() {
+        let two_a = StateKey::new(
+            1,
+            &[
+                FEntry {
+                    smiles: "A".to_string(),
+                },
+                FEntry {
+                    smiles: "A".to_string(),
+                },
+                FEntry {
+                    smiles: "B".to_string(),
+                },
+            ],
+        );
+        let one_a = StateKey::new(
+            1,
+            &[
+                FEntry {
+                    smiles: "A".to_string(),
+                },
+                FEntry {
+                    smiles: "B".to_string(),
+                },
+            ],
+        );
+        assert_ne!(two_a, one_a, "[A,A,B] must not collapse to [A,B]");
+    }
+
+    #[test]
+    fn open_state_verdict_worse_g_is_dominated() {
+        let existing = OpenStateRecord { best_g: 5.0 };
+        assert_eq!(
+            open_state_verdict(Some(&existing), 6.0),
+            OpenStateVerdict::Dominated
+        );
+    }
+
+    #[test]
+    fn open_state_verdict_equal_g_keeps_first_generated() {
+        // Ties must resolve deterministically to "keep whichever was
+        // recorded first" -- a later candidate with the exact same g as the
+        // existing record is dominated, not treated as an improvement.
+        let existing = OpenStateRecord { best_g: 5.0 };
+        assert_eq!(
+            open_state_verdict(Some(&existing), 5.0),
+            OpenStateVerdict::Dominated
+        );
+    }
+
+    #[test]
+    fn open_state_verdict_better_g_replaces() {
+        let existing = OpenStateRecord { best_g: 5.0 };
+        assert_eq!(
+            open_state_verdict(Some(&existing), 4.0),
+            OpenStateVerdict::Replaced
+        );
+    }
+
+    #[test]
+    fn open_state_verdict_no_record_is_inserted() {
+        assert_eq!(open_state_verdict(None, 5.0), OpenStateVerdict::Inserted);
+    }
+
+    #[test]
+    fn open_state_diagnostics_default_off_produces_zero_counters() {
+        let env = aspirin_env();
+        let rules = default_rules();
+        let (_, stats) = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg(3)).unwrap();
+        let d = &stats.crowd_out;
+        assert_eq!(d.open_state_candidates_considered, 0);
+        assert_eq!(d.open_state_unique_inserted, 0);
+        assert_eq!(d.open_state_dominated_skipped, 0);
+        assert_eq!(d.open_state_better_replacements, 0);
+        assert_eq!(d.stale_open_nodes_discarded_on_pop, 0);
+        assert_eq!(d.stale_open_nodes_removed_before_beam_prune, 0);
+        assert_eq!(d.peak_unique_open_states, 0);
+        assert_eq!(d.peak_raw_heap_nodes, 0);
+        assert_eq!(d.peak_duplicate_open_nodes, 0);
+    }
+
+    #[test]
+    fn open_state_diagnostics_never_changes_routes_or_search_behaviour() {
+        // Counting-only: routes found and every non-open-state diagnostic
+        // must be identical whether the flag is on or off.
+        let env = aspirin_env();
+        let rules = default_rules();
+        let cfg_off = cfg(3);
+        let cfg_on = SearchConfig {
+            open_state_diagnostics: true,
+            ..cfg(3)
+        };
+        let (routes_off, stats_off) =
+            find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg_off).unwrap();
+        let (routes_on, stats_on) =
+            find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg_on).unwrap();
+
+        assert_eq!(routes_off.len(), routes_on.len());
+        let hashes_off: Vec<_> = routes_off.iter().map(|r| format!("{r:?}")).collect();
+        let hashes_on: Vec<_> = routes_on.iter().map(|r| format!("{r:?}")).collect();
+        assert_eq!(hashes_off, hashes_on, "routes must be byte-identical");
+
+        assert_eq!(stats_off.nodes_expanded, stats_on.nodes_expanded);
+        assert_eq!(
+            stats_off.crowd_out.rules_attempted_total,
+            stats_on.crowd_out.rules_attempted_total
+        );
+        assert_eq!(
+            stats_off.crowd_out.beam_prune_invocations,
+            stats_on.crowd_out.beam_prune_invocations
+        );
+
+        // The diagnostics-only counters must actually have counted something
+        // on a non-trivial target (else this test would pass vacuously).
+        assert!(stats_on.crowd_out.open_state_candidates_considered > 0);
+    }
+
+    #[test]
+    fn open_state_diagnostics_stale_counters_stay_zero_without_dominance() {
+        // Struct-level invariant documented on `CrowdOutDiagnostics`: under
+        // `open_state_diagnostics` alone (no `open_state_dominance`),
+        // nothing is ever marked stale because nothing is ever replaced in
+        // the heap -- these two counters must never be anything but 0 in
+        // this mode, even when replacements *would* have happened.
+        let env = aspirin_env();
+        let rules = default_rules();
+        let cfg_on = SearchConfig {
+            open_state_diagnostics: true,
+            ..cfg(3)
+        };
+        let (_, stats) = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg_on).unwrap();
+        assert_eq!(stats.crowd_out.stale_open_nodes_discarded_on_pop, 0);
+        assert_eq!(
+            stats.crowd_out.stale_open_nodes_removed_before_beam_prune,
+            0
         );
     }
 }

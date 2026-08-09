@@ -59,6 +59,7 @@ fn main() -> Result<()> {
     let mut verbose = false;
     let mut search_diagnostics = false;
     let mut candidate_trace_limit: Option<usize> = None;
+    let mut open_state_diagnostics = false;
     let mut bond_index = false;
     let mut bb_prices_path: Option<String> = None;
     let mut stock_path: Option<String> = None;
@@ -159,6 +160,11 @@ fn main() -> Result<()> {
                 // it, without also having to remember --search-diagnostics.
                 search_diagnostics = true;
             }
+            "--open-state-diagnostics" => {
+                open_state_diagnostics = true;
+                // Same self-sufficiency as --candidate-trace-limit above.
+                search_diagnostics = true;
+            }
             "--bond-index" => {
                 bond_index = true;
             }
@@ -237,6 +243,9 @@ fn main() -> Result<()> {
              cross-template dedup, branching factor -- Issue #101) to JSON output\n  \
              --candidate-trace-limit <N>  Also collect up to N per-candidate trace records \
              (implies --search-diagnostics; offline diagnostic use, competitive program Phase 1B)\n  \
+             --open-state-diagnostics  Add open-state dominance counters (implies \
+             --search-diagnostics; counting-only, never changes search behaviour -- \
+             competitive program Phase 2A)\n  \
              --bond-index           Bond-center template index: ~24%% faster, no accuracy loss\n  \
              --bb-prices <path>     CSV (SMILES,price_per_gram) for route cost scoring\n  \
              --ring-context-policy <policy>  disabled (default) | audit-only | conservative | \
@@ -386,6 +395,7 @@ fn main() -> Result<()> {
         nn_scorer,
         ring_context: ring_context_config,
         candidate_trace_cap: candidate_trace_limit,
+        open_state_diagnostics,
         ..Default::default()
     };
     let (mut routes, stats) = search::find_routes(&target_smiles, &env, &rules, &config)?;

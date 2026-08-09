@@ -1,0 +1,702 @@
+[
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L1010"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L1027"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L112"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": true,
+    "renkin_target_element_accounting_status": "accounted",
+    "target_id": "uspto50k_test#L1135"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L1164"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L1166"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": true,
+    "renkin_target_element_accounting_status": "accounted",
+    "target_id": "uspto50k_test#L1167"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": true,
+    "renkin_target_element_accounting_status": "accounted",
+    "target_id": "uspto50k_test#L1178"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L1223"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L1248"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L1282"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L1298"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L133"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L1415"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L1446"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L1486"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L1508"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L1530"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": true,
+    "renkin_target_element_accounting_status": "accounted",
+    "target_id": "uspto50k_test#L1541"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L1632"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L1640"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L1693"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L1708"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L1772"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L1844"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L1845"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L1953"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L2098"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L2104"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L2225"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": true,
+    "renkin_target_element_accounting_status": "unaccounted_target_element",
+    "target_id": "uspto50k_test#L2263"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L2301"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L2441"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": true,
+    "renkin_target_element_accounting_status": "accounted",
+    "target_id": "uspto50k_test#L2553"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L2603"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L262"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L2668"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L2738"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L2743"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L2867"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L3015"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L3034"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L3217"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L3262"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L3283"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": null,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L3345"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L338"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L3396"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L3400"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L3405"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L349"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L350"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L3524"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L354"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L3592"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L3654"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": true,
+    "renkin_target_element_accounting_status": "accounted",
+    "target_id": "uspto50k_test#L370"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L3763"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L3767"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": true,
+    "renkin_target_element_accounting_status": "accounted",
+    "target_id": "uspto50k_test#L3773"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L3845"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L3855"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": true,
+    "renkin_target_element_accounting_status": "accounted",
+    "target_id": "uspto50k_test#L3857"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L3891"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L3944"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L3960"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L3962"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L3990"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L405"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L4092"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L41"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L4129"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": true,
+    "renkin_target_element_accounting_status": "accounted",
+    "target_id": "uspto50k_test#L4139"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L4204"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L422"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": true,
+    "renkin_target_element_accounting_status": "unaccounted_target_element",
+    "target_id": "uspto50k_test#L4259"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L4307"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L4422"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": true,
+    "renkin_target_element_accounting_status": "accounted",
+    "target_id": "uspto50k_test#L4464"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L4489"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": true,
+    "renkin_target_element_accounting_status": "unaccounted_target_element",
+    "target_id": "uspto50k_test#L4575"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L4579"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L4601"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L4635"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L4678"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L4886"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L506"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L576"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L585"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": true,
+    "renkin_target_element_accounting_status": "accounted",
+    "target_id": "uspto50k_test#L602"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L626"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L673"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": true,
+    "renkin_target_element_accounting_status": "accounted",
+    "target_id": "uspto50k_test#L675"
+  },
+  {
+    "aizynthfinder_route_found": false,
+    "aizynthfinder_target_element_accounting_status": null,
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L679"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L68"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L77"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L775"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L836"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": false,
+    "renkin_target_element_accounting_status": null,
+    "target_id": "uspto50k_test#L904"
+  },
+  {
+    "aizynthfinder_route_found": true,
+    "aizynthfinder_target_element_accounting_status": "accounted",
+    "renkin_route_found": true,
+    "renkin_target_element_accounting_status": "unaccounted_target_element",
+    "target_id": "uspto50k_test#L984"
+  }
+]

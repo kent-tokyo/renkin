@@ -3,10 +3,12 @@
 use renkin::DEFAULT_BUILDING_BLOCKS;
 use renkin::chem_env;
 use renkin::display;
+use renkin::evidence_match;
+use renkin::ring_context;
 use renkin::search::{self, SearchConfig};
 
 use anyhow::{Context, Result, bail};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize)]
 struct Output {
@@ -34,6 +36,9 @@ fn main() -> Result<()> {
     if args.get(1).map(|s| s.as_str()) == Some("template") {
         return run_template(&args[2..]);
     }
+    if args.get(1).map(|s| s.as_str()) == Some("evidence") {
+        return run_evidence(&args[2..]);
+    }
 
     let mut target: Option<String> = None;
     let mut max_depth: u32 = 5;
@@ -54,6 +59,8 @@ fn main() -> Result<()> {
     let mut constraints_path: Option<String> = None;
     #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
     let mut scorer_path: Option<String> = None;
+    let mut ring_context_policy_arg: Option<String> = None;
+    let mut ring_context_sidecar_path: Option<String> = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -130,6 +137,23 @@ fn main() -> Result<()> {
             "--bond-index" => {
                 bond_index = true;
             }
+            "--ring-context-policy" => {
+                i += 1;
+                let Some(v) = args.get(i) else {
+                    bail!(
+                        "--ring-context-policy requires a value \
+                         (disabled|audit-only|conservative|ring-only|element-only)"
+                    );
+                };
+                ring_context_policy_arg = Some(v.clone());
+            }
+            "--ring-context-sidecar" => {
+                i += 1;
+                let Some(v) = args.get(i) else {
+                    bail!("--ring-context-sidecar requires a <path> value");
+                };
+                ring_context_sidecar_path = Some(v.clone());
+            }
             "--bb-prices" => {
                 i += 1;
                 if i < args.len() {
@@ -185,7 +209,11 @@ fn main() -> Result<()> {
              --require-elements / -r  Comma-separated elements each route must supply (e.g. \"B\")\n  \
              --verbose / -v         Print search statistics to stderr\n  \
              --bond-index           Bond-center template index: ~24%% faster, no accuracy loss\n  \
-             --bb-prices <path>     CSV (SMILES,price_per_gram) for route cost scoring"
+             --bb-prices <path>     CSV (SMILES,price_per_gram) for route cost scoring\n  \
+             --ring-context-policy <policy>  disabled (default) | audit-only | conservative | \
+             ring-only | element-only\n  \
+             --ring-context-sidecar <path>   Ring-context metadata JSON, required unless policy \
+             is disabled"
         );
     };
 
@@ -243,6 +271,50 @@ fn main() -> Result<()> {
                 })
         });
 
+    let ring_context_safety_policy = match ring_context_policy_arg.as_deref() {
+        None | Some("disabled") => None,
+        Some("audit-only") => Some(ring_context::ExtractedTemplateSafetyPolicy::AUDIT_ONLY),
+        Some("conservative") => Some(ring_context::ExtractedTemplateSafetyPolicy::CONSERVATIVE),
+        Some("ring-only") => Some(ring_context::ExtractedTemplateSafetyPolicy::RING_ONLY),
+        Some("element-only") => Some(ring_context::ExtractedTemplateSafetyPolicy::ELEMENT_ONLY),
+        Some(other) => {
+            eprintln!(
+                "error: invalid --ring-context-policy '{other}' \
+                 (expected disabled|audit-only|conservative|ring-only|element-only)"
+            );
+            std::process::exit(1);
+        }
+    };
+    let ring_context_config = match ring_context_safety_policy {
+        None => ring_context::RingContextConfig::Disabled,
+        Some(policy) => {
+            let Some(sidecar_path) = ring_context_sidecar_path.as_deref() else {
+                eprintln!("error: --ring-context-policy requires --ring-context-sidecar <path>");
+                std::process::exit(1);
+            };
+            let Some(templates_path) = templates_path.as_deref() else {
+                eprintln!(
+                    "error: --ring-context-policy requires --templates <path> (the sidecar is validated against the loaded template file's exact content)"
+                );
+                std::process::exit(1);
+            };
+            let templates_content = std::fs::read_to_string(templates_path).unwrap_or_else(|e| {
+                eprintln!("error: could not read --templates file {templates_path}: {e}");
+                std::process::exit(1);
+            });
+            match ring_context::RingContextGuard::load(sidecar_path, &templates_content) {
+                Ok(g) => ring_context::RingContextConfig::Guarded {
+                    guard: std::sync::Arc::new(g),
+                    policy,
+                },
+                Err(e) => {
+                    eprintln!("error: failed to load ring-context sidecar: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+    };
+
     let constraints: ConstraintSpec = constraints_path
         .as_deref()
         .and_then(|p| std::fs::read_to_string(p).ok())
@@ -283,6 +355,7 @@ fn main() -> Result<()> {
         template_metadata: template_metadata.map(|tm| tm.templates),
         #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
         nn_scorer,
+        ring_context: ring_context_config,
         ..Default::default()
     };
     let (mut routes, stats) = search::find_routes(&target_smiles, &env, &rules, &config)?;
@@ -520,6 +593,126 @@ fn run_template(args: &[String]) -> Result<()> {
             Ok(())
         }
     }
+}
+
+/// Returns the value following the first occurrence of `--name` in `args`,
+/// or `None` if the flag isn't present (or has no following value).
+fn flag_value<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
+    args.windows(2)
+        .find(|w| w[0] == name)
+        .map(|w| w[1].as_str())
+}
+
+fn run_evidence(args: &[String]) -> Result<()> {
+    let cmd = args.first().map(|s| s.as_str()).unwrap_or("help");
+    let rest = if args.len() > 1 {
+        &args[1..]
+    } else {
+        &[] as &[String]
+    };
+    match cmd {
+        "match" => evidence_match(rest),
+        "validate-sidecar" => evidence_validate_sidecar(rest),
+        _ => {
+            println!("Usage: renkin evidence <cmd> [args]");
+            println!(
+                "  match             --input <reactions.jsonl> [--templates <file.smi>] --output <matches.jsonl>"
+            );
+            println!(
+                "  validate-sidecar  --metadata <sidecar.json>  — revalidate an evidence sidecar via RENKIN's own loader"
+            );
+            Ok(())
+        }
+    }
+}
+
+/// One line of `renkin evidence match --input`: an external reaction record
+/// to batch-match against RENKIN's stable `template_id`s (see
+/// `renkin::evidence_match::match_reaction_to_templates`).
+#[derive(Deserialize)]
+struct EvidenceMatchInputRow {
+    record_id: String,
+    target_smiles: String,
+    #[serde(default)]
+    precursor_smiles: Vec<String>,
+}
+
+/// One line of `renkin evidence match --output`.
+#[derive(Serialize)]
+struct EvidenceMatchOutputRow {
+    record_id: String,
+    canonical_target: String,
+    canonical_precursors: Vec<String>,
+    matching_template_ids: Vec<String>,
+    status: evidence_match::TemplateMatchStatus,
+}
+
+/// Batch-matches every record in a JSONL file against RENKIN's stable
+/// `template_id`s. Input order is preserved in the output. A malformed JSON
+/// line is a hard error (whole process aborts, line number reported); a
+/// malformed SMILES within an otherwise-valid record instead yields
+/// `invalid_input` for that one record only. No network access. No progress
+/// output on stdout -- only the JSONL result goes to `--output`; diagnostics
+/// go to stderr via the returned `Result`'s error path.
+fn evidence_match(args: &[String]) -> Result<()> {
+    let input_path = flag_value(args, "--input")
+        .context("renkin evidence match: --input <reactions.jsonl> is required")?;
+    let output_path = flag_value(args, "--output")
+        .context("renkin evidence match: --output <matches.jsonl> is required")?;
+
+    let mut rules = chem_env::default_rules();
+    if let Some(path) = flag_value(args, "--templates") {
+        rules.extend(chem_env::load_rules_from_file(path));
+    }
+
+    let content = std::fs::read_to_string(input_path)
+        .with_context(|| format!("failed to read --input file {input_path}"))?;
+
+    let mut rows: Vec<EvidenceMatchInputRow> = Vec::new();
+    for (i, line) in content.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let row: EvidenceMatchInputRow = serde_json::from_str(line)
+            .with_context(|| format!("{input_path}:{}: malformed JSONL", i + 1))?;
+        rows.push(row);
+    }
+
+    let mut out = String::new();
+    for row in rows {
+        let result = evidence_match::match_reaction_to_templates(
+            &row.target_smiles,
+            &row.precursor_smiles,
+            &rules,
+        );
+        let output_row = EvidenceMatchOutputRow {
+            record_id: row.record_id,
+            canonical_target: result.target_smiles,
+            canonical_precursors: result.precursor_smiles,
+            matching_template_ids: result.matching_template_ids,
+            status: result.status,
+        };
+        out.push_str(&serde_json::to_string(&output_row)?);
+        out.push('\n');
+    }
+
+    std::fs::write(output_path, out)
+        .with_context(|| format!("failed to write --output file {output_path}"))?;
+
+    Ok(())
+}
+
+/// Revalidates a metadata sidecar file via RENKIN's own loader
+/// (`evidence::load_template_metadata`, which validates as part of loading).
+/// Exits with an error (non-zero status) if validation fails -- a sidecar
+/// that fails validation is never reported as success.
+fn evidence_validate_sidecar(args: &[String]) -> Result<()> {
+    let path = flag_value(args, "--metadata")
+        .context("renkin evidence validate-sidecar: --metadata <sidecar.json> is required")?;
+    renkin::evidence::load_template_metadata(path)
+        .with_context(|| format!("sidecar {path} failed validation"))?;
+    println!("OK: {path}");
+    Ok(())
 }
 
 /// Print `template_id`, current display name, SMIRKS, and weight for every
@@ -922,22 +1115,56 @@ fn parse_objectives(spec: &str) -> Vec<(ObjField, ObjDir)> {
         .collect()
 }
 
-fn obj_value(route: &search::Route, field: ObjField) -> f64 {
+/// Route-level atom-economy objective: `None` (not evaluable) as soon as
+/// any step isn't `Normal`, rather than silently averaging over only the
+/// evaluable steps and hiding the rest -- averaging a good step with an
+/// omitted bad one would report a route with a real problem as if it had
+/// none (Issue #79 review round 2).
+fn atom_economy_objective(route: &search::Route) -> Option<f64> {
+    if route.steps.is_empty()
+        || route
+            .steps
+            .iter()
+            .any(|s| s.atom_economy_status != search::AtomEconomyStatus::Normal)
+    {
+        return None;
+    }
+    let sum: f64 = route
+        .steps
+        .iter()
+        .map(|s| s.atom_economy.expect("Normal must carry a value"))
+        .sum();
+    Some(sum / route.steps.len() as f64)
+}
+
+/// `None` for every field means "not evaluable"; only `AtomEconomy` can
+/// currently produce one. Every other field is always `Some`.
+fn obj_value(route: &search::Route, field: ObjField) -> Option<f64> {
     match field {
-        ObjField::Cost => route.route_cost,
-        ObjField::SuccessProb => route.success_probability,
-        ObjField::Steps => route.steps.len() as f64,
-        ObjField::Depth => route.depth as f64,
-        ObjField::Confidence => route.confidence,
-        ObjField::Convergency => route.convergency,
-        ObjField::AtomEconomy => {
-            let vals: Vec<f64> = route.steps.iter().filter_map(|s| s.atom_economy).collect();
-            if vals.is_empty() {
-                0.0
-            } else {
-                vals.iter().sum::<f64>() / vals.len() as f64
-            }
-        }
+        ObjField::Cost => Some(route.route_cost),
+        ObjField::SuccessProb => Some(route.success_probability),
+        ObjField::Steps => Some(route.steps.len() as f64),
+        ObjField::Depth => Some(route.depth as f64),
+        ObjField::Confidence => Some(route.confidence),
+        ObjField::Convergency => Some(route.convergency),
+        ObjField::AtomEconomy => atom_economy_objective(route),
+    }
+}
+
+/// Compares `b`'s value against `a`'s under `dir`, returning
+/// `(b_is_better, b_is_worse)`. A `None` (not-evaluable) value is always
+/// worse than any `Some` value on that objective, regardless of `dir` --
+/// evaluable beats non-evaluable, never converted to 0 or ±infinity. Two
+/// `None`s tie (neither better nor worse).
+fn obj_compare(dir: ObjDir, a: Option<f64>, b: Option<f64>) -> (bool, bool) {
+    match (a, b) {
+        (None, None) => (false, false),
+        (Some(_), None) => (false, true),
+        (None, Some(_)) => (true, false),
+        (Some(va), Some(vb)) => match dir {
+            ObjDir::Min => (vb < va, vb > va),
+            ObjDir::Max => (vb > va, vb < va),
+        },
     }
 }
 
@@ -949,10 +1176,7 @@ fn dominates(a: &search::Route, b: &search::Route, objs: &[(ObjField, ObjDir)]) 
     for &(field, dir) in objs {
         let va = obj_value(a, field);
         let vb = obj_value(b, field);
-        let (b_better, b_worse) = match dir {
-            ObjDir::Min => (vb < va, vb > va),
-            ObjDir::Max => (vb > va, vb < va),
-        };
+        let (b_better, b_worse) = obj_compare(dir, va, vb);
         if b_worse {
             all_no_worse = false;
         }
@@ -978,12 +1202,14 @@ fn tradeoff_label(
     let mut labels: Vec<&'static str> = Vec::new();
     for &(field, dir) in objs {
         let my_val = obj_value(&routes[idx], field);
+        // A route whose own value on this objective isn't evaluable is
+        // never the unique best on it, even on a singleton front.
+        if my_val.is_none() {
+            continue;
+        }
         let is_unique_best = front.iter().filter(|&&j| j != idx).all(|&j| {
             let other = obj_value(&routes[j], field);
-            match dir {
-                ObjDir::Min => my_val < other,
-                ObjDir::Max => my_val > other,
-            }
+            obj_compare(dir, other, my_val).0
         });
         if is_unique_best {
             labels.push(match (field, dir) {
@@ -1001,6 +1227,136 @@ fn tradeoff_label(
         None
     } else {
         Some(labels.join("_and_"))
+    }
+}
+
+#[cfg(test)]
+mod pareto_tests {
+    use super::*;
+
+    fn step(
+        atom_economy_status: search::AtomEconomyStatus,
+        atom_economy: Option<f64>,
+    ) -> search::ReactionStep {
+        search::ReactionStep {
+            rule: "ester_cleavage".to_string(),
+            template_id: "rule:ester_cleavage".to_string(),
+            target: "CC(=O)Oc1ccccc1".to_string(),
+            precursors: vec!["CC(=O)O".to_string(), "Oc1ccccc1".to_string()],
+            conditions: None,
+            atom_economy,
+            atom_economy_raw_percent: atom_economy,
+            atom_economy_status,
+            step_confidence: 1.0,
+            procedure_hint: None,
+            reaction_family: None,
+            metadata_source: None,
+            metadata_scope: None,
+            evidence: None,
+        }
+    }
+
+    fn route(steps: Vec<search::ReactionStep>) -> search::Route {
+        search::Route {
+            steps,
+            depth: 1,
+            score: 1.0,
+            building_blocks: vec![],
+            confidence: 1.0,
+            convergency: 1.0,
+            success_probability: 1.0,
+            route_cost: 1.0,
+        }
+    }
+
+    #[test]
+    fn atom_economy_objective_is_average_when_all_steps_normal() {
+        let r = route(vec![
+            step(search::AtomEconomyStatus::Normal, Some(90.0)),
+            step(search::AtomEconomyStatus::Normal, Some(80.0)),
+        ]);
+        assert_eq!(atom_economy_objective(&r), Some(85.0));
+    }
+
+    #[test]
+    fn atom_economy_objective_is_none_when_any_step_is_above_expected_range() {
+        // One good step (90%) averaged with one route-defect step must not
+        // hide the defect behind a plausible-looking mean.
+        let r = route(vec![
+            step(search::AtomEconomyStatus::Normal, Some(90.0)),
+            step(search::AtomEconomyStatus::AboveExpectedRange, None),
+        ]);
+        assert_eq!(atom_economy_objective(&r), None);
+    }
+
+    #[test]
+    fn atom_economy_objective_is_none_when_any_step_is_not_evaluable() {
+        let r = route(vec![
+            step(search::AtomEconomyStatus::Normal, Some(90.0)),
+            step(search::AtomEconomyStatus::NotEvaluable, None),
+        ]);
+        assert_eq!(atom_economy_objective(&r), None);
+    }
+
+    #[test]
+    fn atom_economy_objective_is_none_for_a_zero_step_route() {
+        assert_eq!(atom_economy_objective(&route(vec![])), None);
+    }
+
+    #[test]
+    fn dominates_prefers_evaluable_atom_economy_over_not_evaluable() {
+        // Same on every other objective; b evaluates cleanly, a doesn't.
+        let a = route(vec![step(search::AtomEconomyStatus::NotEvaluable, None)]);
+        let b = route(vec![step(search::AtomEconomyStatus::Normal, Some(90.0))]);
+        let objs = vec![(ObjField::AtomEconomy, ObjDir::Max)];
+        assert!(
+            dominates(&a, &b, &objs),
+            "b (evaluable) must dominate a (not evaluable)"
+        );
+        assert!(!dominates(&b, &a, &objs));
+    }
+
+    #[test]
+    fn dominates_ties_when_both_atom_economy_not_evaluable() {
+        let a = route(vec![step(search::AtomEconomyStatus::NotEvaluable, None)]);
+        let b = route(vec![step(
+            search::AtomEconomyStatus::AboveExpectedRange,
+            None,
+        )]);
+        let objs = vec![(ObjField::AtomEconomy, ObjDir::Max)];
+        assert!(!dominates(&a, &b, &objs));
+        assert!(!dominates(&b, &a, &objs));
+    }
+
+    #[test]
+    fn tradeoff_label_never_tags_a_not_evaluable_route_best_atom_economy_even_alone_on_front() {
+        let routes = vec![route(vec![step(
+            search::AtomEconomyStatus::NotEvaluable,
+            None,
+        )])];
+        let objs = vec![(ObjField::AtomEconomy, ObjDir::Max)];
+        let front = pareto_front_indices(&routes, &objs);
+        assert_eq!(front, vec![0]);
+        assert_eq!(tradeoff_label(0, &front, &routes, &objs), None);
+    }
+
+    #[test]
+    fn tradeoff_label_tags_the_evaluable_route_best_atom_economy_against_a_not_evaluable_rival() {
+        let routes = vec![
+            route(vec![step(search::AtomEconomyStatus::NotEvaluable, None)]),
+            route(vec![step(search::AtomEconomyStatus::Normal, Some(90.0))]),
+        ];
+        let objs = vec![(ObjField::AtomEconomy, ObjDir::Max)];
+        let front = pareto_front_indices(&routes, &objs);
+        assert_eq!(
+            front,
+            vec![1],
+            "the not-evaluable route must be dominated off the front"
+        );
+        assert_eq!(
+            tradeoff_label(1, &front, &routes, &objs),
+            Some("best_atom_economy".to_string())
+        );
     }
 }
 
@@ -1175,4 +1531,153 @@ fn load_prices(path: &str) -> std::collections::HashMap<String, f64> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod evidence_cli_tests {
+    use super::*;
+
+    fn write_temp(name: &str, content: &str) -> String {
+        let path = std::env::temp_dir().join(name);
+        std::fs::write(&path, content).unwrap();
+        path.to_str().unwrap().to_string()
+    }
+
+    fn read_output_rows(path: &str) -> Vec<serde_json::Value> {
+        std::fs::read_to_string(path)
+            .unwrap()
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn evidence_match_preserves_jsonl_input_order() {
+        let input = write_temp(
+            "evidence_match_order_input.jsonl",
+            concat!(
+                r#"{"record_id": "zzz", "target_smiles": "CCO", "precursor_smiles": []}"#,
+                "\n",
+                r#"{"record_id": "aaa", "target_smiles": "CCO", "precursor_smiles": []}"#,
+                "\n",
+                r#"{"record_id": "mmm", "target_smiles": "CCO", "precursor_smiles": []}"#,
+                "\n",
+            ),
+        );
+        let output = std::env::temp_dir()
+            .join("evidence_match_order_output.jsonl")
+            .to_str()
+            .unwrap()
+            .to_string();
+
+        let args = vec![
+            "--input".to_string(),
+            input.clone(),
+            "--output".to_string(),
+            output.clone(),
+        ];
+        evidence_match(&args).unwrap();
+
+        let rows = read_output_rows(&output);
+        let ids: Vec<&str> = rows
+            .iter()
+            .map(|r| r["record_id"].as_str().unwrap())
+            .collect();
+        assert_eq!(ids, vec!["zzz", "aaa", "mmm"]);
+
+        std::fs::remove_file(&input).ok();
+        std::fs::remove_file(&output).ok();
+    }
+
+    #[test]
+    fn evidence_match_malformed_json_line_is_hard_error_with_line_number() {
+        let input = write_temp(
+            "evidence_match_malformed_json_input.jsonl",
+            concat!(
+                r#"{"record_id": "ok-1", "target_smiles": "CCO", "precursor_smiles": []}"#,
+                "\n",
+                "{ this is not valid json",
+                "\n",
+            ),
+        );
+        let output = std::env::temp_dir()
+            .join("evidence_match_malformed_json_output.jsonl")
+            .to_str()
+            .unwrap()
+            .to_string();
+
+        let args = vec![
+            "--input".to_string(),
+            input.clone(),
+            "--output".to_string(),
+            output.clone(),
+        ];
+        let err = evidence_match(&args).unwrap_err();
+        let message = format!("{err:#}");
+        assert!(
+            message.contains(":2:"),
+            "error should cite line 2: {message}"
+        );
+        assert!(!std::path::Path::new(&output).exists());
+
+        std::fs::remove_file(&input).ok();
+    }
+
+    #[test]
+    fn evidence_match_malformed_smiles_yields_invalid_input_without_aborting() {
+        let input = write_temp(
+            "evidence_match_malformed_smiles_input.jsonl",
+            concat!(
+                r#"{"record_id": "good", "target_smiles": "CC(=O)OCC", "precursor_smiles": ["CC(=O)O", "CCO"]}"#,
+                "\n",
+                r#"{"record_id": "bad-smiles", "target_smiles": "not(a smiles", "precursor_smiles": ["CCO"]}"#,
+                "\n",
+            ),
+        );
+        let output = std::env::temp_dir()
+            .join("evidence_match_malformed_smiles_output.jsonl")
+            .to_str()
+            .unwrap()
+            .to_string();
+
+        let args = vec![
+            "--input".to_string(),
+            input.clone(),
+            "--output".to_string(),
+            output.clone(),
+        ];
+        evidence_match(&args).unwrap();
+
+        let rows = read_output_rows(&output);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["record_id"], "good");
+        assert_eq!(rows[0]["status"], "unique");
+        assert_eq!(rows[1]["record_id"], "bad-smiles");
+        assert_eq!(rows[1]["status"], "invalid_input");
+
+        std::fs::remove_file(&input).ok();
+        std::fs::remove_file(&output).ok();
+    }
+
+    #[test]
+    fn evidence_validate_sidecar_ok_on_valid_file() {
+        let path = write_temp(
+            "evidence_validate_sidecar_valid.json",
+            r#"{"schema_version": 2, "templates": {}}"#,
+        );
+        let args = vec!["--metadata".to_string(), path.clone()];
+        assert!(evidence_validate_sidecar(&args).is_ok());
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn evidence_validate_sidecar_errs_on_invalid_file() {
+        let path = write_temp(
+            "evidence_validate_sidecar_invalid.json",
+            r#"{"schema_version": 99, "templates": {}}"#,
+        );
+        let args = vec!["--metadata".to_string(), path.clone()];
+        assert!(evidence_validate_sidecar(&args).is_err());
+        std::fs::remove_file(&path).ok();
+    }
 }

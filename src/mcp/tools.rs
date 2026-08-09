@@ -445,20 +445,56 @@ fn mcp_parse_objectives(spec: &str) -> Vec<(u8, bool)> {
         .collect()
 }
 
-fn mcp_obj_val(r: &search::Route, field: u8) -> f64 {
+/// Route-level atom-economy objective: `None` (not evaluable) as soon as any
+/// step isn't `Normal`, rather than silently averaging over only the
+/// evaluable steps and hiding the rest (Issue #79 review round 2; mirrors
+/// main.rs's `atom_economy_objective`, ported from `src/bin/mcp.rs`'s
+/// pre-refactor fix in `de7e6d7` -- this module didn't exist yet when that
+/// fix landed on `master`).
+fn mcp_atom_economy_objective(r: &search::Route) -> Option<f64> {
+    if r.steps.is_empty()
+        || r.steps
+            .iter()
+            .any(|s| s.atom_economy_status != search::AtomEconomyStatus::Normal)
+    {
+        return None;
+    }
+    let sum: f64 = r
+        .steps
+        .iter()
+        .map(|s| s.atom_economy.expect("Normal must carry a value"))
+        .sum();
+    Some(sum / r.steps.len() as f64)
+}
+
+/// `None` for every field means "not evaluable"; only atom_economy (field 6)
+/// can currently produce one. Every other field is always `Some`.
+fn mcp_obj_val(r: &search::Route, field: u8) -> Option<f64> {
     match field {
-        0 => r.route_cost,
-        1 => r.success_probability,
-        2 => r.steps.len() as f64,
-        3 => r.depth as f64,
-        4 => r.confidence,
-        5 => r.convergency,
-        _ => {
-            let v: Vec<f64> = r.steps.iter().filter_map(|s| s.atom_economy).collect();
-            if v.is_empty() {
-                0.0
+        0 => Some(r.route_cost),
+        1 => Some(r.success_probability),
+        2 => Some(r.steps.len() as f64),
+        3 => Some(r.depth as f64),
+        4 => Some(r.confidence),
+        5 => Some(r.convergency),
+        _ => mcp_atom_economy_objective(r),
+    }
+}
+
+/// Compares `b`'s value against `a`'s, returning `(b_is_better, b_is_worse)`.
+/// A `None` (not-evaluable) value is always worse than any `Some` value,
+/// regardless of direction -- evaluable beats non-evaluable, never
+/// converted to 0 or ±infinity. Two `None`s tie.
+fn mcp_obj_compare(minimize: bool, a: Option<f64>, b: Option<f64>) -> (bool, bool) {
+    match (a, b) {
+        (None, None) => (false, false),
+        (Some(_), None) => (false, true),
+        (None, Some(_)) => (true, false),
+        (Some(va), Some(vb)) => {
+            if minimize {
+                (vb < va, vb > va)
             } else {
-                v.iter().sum::<f64>() / v.len() as f64
+                (vb > va, vb < va)
             }
         }
     }
@@ -476,11 +512,7 @@ fn mcp_pareto_front(routes: &[search::Route], objs: &[(u8, bool)]) -> Vec<usize>
                 for &(f, minimize) in objs {
                     let va = mcp_obj_val(&routes[i], f);
                     let vb = mcp_obj_val(&routes[j], f);
-                    let (b_better, b_worse) = if minimize {
-                        (vb < va, vb > va)
-                    } else {
-                        (vb > va, vb < va)
-                    };
+                    let (b_better, b_worse) = mcp_obj_compare(minimize, va, vb);
                     if b_worse {
                         all_no_worse = false;
                     }
@@ -512,9 +544,14 @@ fn mcp_tradeoff_label(
     let mut labels = Vec::new();
     for &(f, minimize) in objs {
         let my = mcp_obj_val(&routes[idx], f);
+        // A route whose own value on this objective isn't evaluable is
+        // never the unique best on it, even on a singleton front.
+        if my.is_none() {
+            continue;
+        }
         if front.iter().filter(|&&j| j != idx).all(|&j| {
             let o = mcp_obj_val(&routes[j], f);
-            if minimize { my < o } else { my > o }
+            mcp_obj_compare(minimize, o, my).0
         }) && let Some(name) = names.get(f as usize)
         {
             labels.push(*name);

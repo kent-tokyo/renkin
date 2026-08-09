@@ -3,86 +3,418 @@
 /// renkin-forward CLI
 ///
 /// Usage:
-///   renkin-forward predict --reactants "CC(=O)O" "CCO" [--templates file.smi] [--max-results 5]
+///   renkin-forward predict --reactants "CC(=O)O" "CCO" [--templates file.smi] [--max-results 5] [--report]
 ///   renkin-forward validate --route-json '{"steps":[...]}' [--templates file.smi]
+///   renkin-forward enumerate --reactant "CC(=O)O" [--partners partners.smi] [--templates file.smi]
+///   renkin-forward hints --reactants "Brc1ccccc1" [--templates file.smi] [--max-hints 50]
 ///
-/// Output: JSON to stdout.
+/// Output: JSON to stdout, nothing else. Template load summary, warnings,
+/// and diagnostics go to stderr.
 use anyhow::{Result, bail};
-use renkin::chem_env::{default_rules, load_rules_from_file};
-use renkin_forward::{ForwardPrediction, predict_products};
+use renkin::chem_env::default_rules;
+use renkin_forward::hints::{HintGenerationConfig, generate_retrieval_hints};
+use renkin_forward::{
+    ForwardEnumerationConfig, ForwardPredictConfig, ForwardPrediction, enumerate_products_detailed,
+    legacy_predictions_from_report, load_partners_strict, load_templates_strict,
+    predict_products_detailed, sha256_hex_of_file,
+};
+
+const TOP_LEVEL_HELP: &str = "renkin-forward — template-based forward reaction prediction\n\
+\n\
+Usage:\n  \
+renkin-forward predict --reactants <SMILES>... [--templates <path>] [--max-results N] [--report]\n  \
+renkin-forward validate --route-json <JSON> [--templates <path>] [--max-results N]\n  \
+renkin-forward enumerate --reactant <SMILES> [--partners <path>] [--templates <path>] [--max-results N]\n  \
+renkin-forward hints --reactants <SMILES>... [--templates <path>] [--max-hints N]\n  \
+renkin-forward --help\n  \
+renkin-forward --version\n\
+\n\
+Run `renkin-forward predict --help`, `renkin-forward validate --help`,\n\
+`renkin-forward enumerate --help`, or `renkin-forward hints --help` for\n\
+subcommand options.";
+
+const PREDICT_HELP: &str = "renkin-forward predict — forward-apply reversible SMIRKS templates to reactants\n\
+\n\
+Usage:\n  \
+renkin-forward predict --reactants <SMILES>... [--templates <path>] [--max-results N] [--report]\n\
+\n\
+Options:\n  \
+--reactants <SMILES>...   One or more reactant SMILES (required)\n  \
+--templates <path>        Additional SMIRKS template file (hard error if missing/unreadable/empty)\n  \
+--max-results N           Without --report: maximum legacy prediction records returned, after\n                            \
+per-source expansion. With --report: maximum merged candidates included in\n                            \
+the report. Same flag, different meaning depending on --report. Must be > 0\n                            \
+(default 5).\n  \
+--report                  Emit a full ForwardPredictionReport instead of the legacy array\n\
+\n\
+Without --report, output is a JSON array of {template, products, weight} (products may repeat\n\
+across entries when several templates converge on the same set, or one template matches more\n\
+than once). `weight` is a ranking signal only, not a calibrated probability.\n\
+With --report, output is a versioned ForwardPredictionReport with full candidate provenance,\n\
+deterministic ranking, and structured stats/warnings.";
+
+const VALIDATE_HELP: &str = "renkin-forward validate — check whether forward prediction reproduces a route's targets\n\
+\n\
+Usage:\n  \
+renkin-forward validate --route-json <JSON> [--templates <path>] [--max-results N]\n\
+\n\
+--route-json accepts a bare route object ({\"steps\":[...]}) or a full find_routes\n\
+output ({\"routes\":[{\"steps\":[...]}]}); omit --route-json to read JSON from stdin instead.\n\
+\n\
+Options:\n  \
+--route-json <JSON>       Route JSON (or pipe it via stdin)\n  \
+--templates <path>        Additional SMIRKS template file (hard error if missing/unreadable/empty)\n  \
+--max-results N           Cap on displayed top_predictions per step (default 5, must be > 0);\n                            \
+`verified` itself is always computed over the full, untruncated candidate set.";
+
+const ENUMERATE_HELP: &str = "renkin-forward enumerate — discover forward products from one known reactant\n\
+\n\
+Usage:\n  \
+renkin-forward enumerate --reactant <SMILES> [--partners <path>] [--templates <path>]\n                          \
+[--max-results N] [--max-partners-per-template N] [--max-combinations N]\n\
+\n\
+Options:\n  \
+--reactant <SMILES>              The one known reactant (required)\n  \
+--partners <path>                Explicit partner SMILES library for binary-template slots.\n                                    \
+Required to enumerate any binary (two-reactant) template; omit for\n                                    \
+unary-template discovery only (hard error if the path is missing/\n                                    \
+unreadable/empty/all-malformed)\n  \
+--templates <path>                Additional SMIRKS template file (hard error if missing/unreadable/empty)\n  \
+--max-results N                   Maximum merged candidates returned. Must be > 0 (default 5)\n  \
+--max-partners-per-template N     Cap on partners tried per (template, slot). Must be > 0 (default 50)\n  \
+--max-combinations N              Global cap on (template, slot, partner) combinations attempted\n                                    \
+across the whole run. Must be > 0 (default 2000)\n\
+\n\
+Bounded, template-guided enumeration, not a generative predictor: unary templates apply directly;\n\
+binary templates try the known reactant in each compatible slot and search --partners for the\n\
+other. Templates needing 2+ missing partners are reported as unsupported, never silently skipped.\n\
+No conditions, catalyst, yield, or reaction-success probability -- proposal_score is a ranking\n\
+signal only. Output is a versioned ForwardEnumerationReport with full candidate provenance.";
+
+const HINTS_HELP: &str = "renkin-forward hints — partner-free forward retrieval hints from known reactants\n\
+\n\
+Usage:\n  \
+renkin-forward hints --reactants <SMILES>... [--templates <path>]\n                       \
+[--max-hints N] [--max-matches-per-slot N] [--max-assignments-per-template N]\n\
+\n\
+Options:\n  \
+--reactants <SMILES>...           One or more known reactants (required)\n  \
+--templates <path>                Additional SMIRKS template file (hard error if missing/unreadable/empty)\n  \
+--max-hints N                     Maximum merged hints returned. Must be > 0 (default 50)\n  \
+--max-matches-per-slot N          Cap on reported match sites per (template, slot). Must be > 0 (default 20)\n  \
+--max-assignments-per-template N  Cap on injective known-reactant/slot assignments enumerated\n                                    \
+per template. Must be > 0 (default 200)\n\
+\n\
+Static, partner-free template analysis for search/retrieval, not a generative predictor:\n\
+never calls run_reactants and never invents partner molecules. Reports, per compatible\n\
+template, which slot(s) the known reactant(s) occupy, the exact SMARTS query for every\n\
+still-missing partner slot, the bond-forming/breaking delta, and a query pattern (never a\n\
+concrete SMILES) for the product. No conditions, catalyst, yield, or reaction-success\n\
+probability, and no claim that a hint corresponds to a real, literature-verified reaction.\n\
+Output is a versioned ForwardRetrievalHintReport.";
+
+fn print_version() {
+    println!(
+        "renkin-forward {} (a sub-crate of the renkin workspace; this is NOT the renkin package version)",
+        env!("CARGO_PKG_VERSION")
+    );
+}
+
+/// Parses a `--flag N` style option, requiring a well-formed positive
+/// integer. Shared by every numeric-limit flag (`--max-results`,
+/// `--max-partners-per-template`, `--max-combinations`) so each gets the
+/// same strict, named-in-the-error validation.
+fn parse_positive_usize(flag: &str, raw: &str) -> Result<usize> {
+    let n: usize = raw.parse().map_err(|_| {
+        anyhow::anyhow!("invalid {flag} value {raw:?}: expected a positive integer")
+    })?;
+    if n == 0 {
+        bail!("{flag} must be greater than 0, got 0");
+    }
+    Ok(n)
+}
+
+struct ParsedArgs {
+    reactants: Vec<String>,
+    reactant: Option<String>,
+    route_json: Option<String>,
+    templates_path: Option<String>,
+    partners_path: Option<String>,
+    max_results: usize,
+    max_partners_per_template: usize,
+    max_combinations: usize,
+    max_hints: usize,
+    max_matches_per_slot: usize,
+    max_assignments_per_template: usize,
+    report: bool,
+}
+
+/// Strict argument parser shared by `predict`/`validate`: unknown options,
+/// missing option values, and invalid integers are all hard errors, never
+/// silently ignored or defaulted. Each subcommand also has its own option
+/// allowlist -- `--reactants`/`--report` only make sense for `predict`,
+/// `--route-json` only for `validate` -- so an option valid for the *other*
+/// subcommand (e.g. `predict --route-json`, `validate --reactants`) is
+/// itself an unknown-option hard error, not silently accepted or ignored.
+fn parse_args(subcommand: &str, args: &[String]) -> Result<ParsedArgs> {
+    let mut reactants: Vec<String> = Vec::new();
+    let mut reactant: Option<String> = None;
+    let mut route_json: Option<String> = None;
+    let mut templates_path: Option<String> = None;
+    let mut partners_path: Option<String> = None;
+    let mut max_results: usize = 5;
+    let mut max_partners_per_template: usize = 50;
+    let mut max_combinations: usize = 2000;
+    let hints_defaults = HintGenerationConfig::default();
+    let mut max_hints: usize = hints_defaults.max_hints;
+    let mut max_matches_per_slot: usize = hints_defaults.max_matches_per_slot;
+    let mut max_assignments_per_template: usize = hints_defaults.max_assignments_per_template;
+    let mut report = false;
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--reactants" if subcommand == "predict" || subcommand == "hints" => {
+                i += 1;
+                let start = i;
+                while i < args.len() && !args[i].starts_with("--") {
+                    reactants.push(args[i].clone());
+                    i += 1;
+                }
+                if i == start {
+                    bail!("--reactants requires at least one SMILES value");
+                }
+                continue;
+            }
+            "--reactant" if subcommand == "enumerate" => {
+                i += 1;
+                let v = args
+                    .get(i)
+                    .ok_or_else(|| anyhow::anyhow!("--reactant requires a value"))?;
+                reactant = Some(v.clone());
+            }
+            "--route-json" if subcommand == "validate" => {
+                i += 1;
+                let v = args
+                    .get(i)
+                    .ok_or_else(|| anyhow::anyhow!("--route-json requires a value"))?;
+                route_json = Some(v.clone());
+            }
+            "--templates" => {
+                i += 1;
+                let v = args
+                    .get(i)
+                    .ok_or_else(|| anyhow::anyhow!("--templates requires a value"))?;
+                templates_path = Some(v.clone());
+            }
+            "--partners" if subcommand == "enumerate" => {
+                i += 1;
+                let v = args
+                    .get(i)
+                    .ok_or_else(|| anyhow::anyhow!("--partners requires a value"))?;
+                partners_path = Some(v.clone());
+            }
+            "--max-results" => {
+                i += 1;
+                let v = args
+                    .get(i)
+                    .ok_or_else(|| anyhow::anyhow!("--max-results requires a value"))?;
+                max_results = parse_positive_usize("--max-results", v)?;
+            }
+            "--max-partners-per-template" if subcommand == "enumerate" => {
+                i += 1;
+                let v = args.get(i).ok_or_else(|| {
+                    anyhow::anyhow!("--max-partners-per-template requires a value")
+                })?;
+                max_partners_per_template = parse_positive_usize("--max-partners-per-template", v)?;
+            }
+            "--max-combinations" if subcommand == "enumerate" => {
+                i += 1;
+                let v = args
+                    .get(i)
+                    .ok_or_else(|| anyhow::anyhow!("--max-combinations requires a value"))?;
+                max_combinations = parse_positive_usize("--max-combinations", v)?;
+            }
+            "--max-hints" if subcommand == "hints" => {
+                i += 1;
+                let v = args
+                    .get(i)
+                    .ok_or_else(|| anyhow::anyhow!("--max-hints requires a value"))?;
+                max_hints = parse_positive_usize("--max-hints", v)?;
+            }
+            "--max-matches-per-slot" if subcommand == "hints" => {
+                i += 1;
+                let v = args
+                    .get(i)
+                    .ok_or_else(|| anyhow::anyhow!("--max-matches-per-slot requires a value"))?;
+                max_matches_per_slot = parse_positive_usize("--max-matches-per-slot", v)?;
+            }
+            "--max-assignments-per-template" if subcommand == "hints" => {
+                i += 1;
+                let v = args.get(i).ok_or_else(|| {
+                    anyhow::anyhow!("--max-assignments-per-template requires a value")
+                })?;
+                max_assignments_per_template =
+                    parse_positive_usize("--max-assignments-per-template", v)?;
+            }
+            "--report" if subcommand == "predict" => {
+                report = true;
+            }
+            "--help" | "-h" => {
+                println!(
+                    "{}",
+                    match subcommand {
+                        "predict" => PREDICT_HELP,
+                        "validate" => VALIDATE_HELP,
+                        "enumerate" => ENUMERATE_HELP,
+                        "hints" => HINTS_HELP,
+                        _ => TOP_LEVEL_HELP,
+                    }
+                );
+                std::process::exit(0);
+            }
+            other => bail!("unknown option {other:?} for '{subcommand}'"),
+        }
+        i += 1;
+    }
+
+    Ok(ParsedArgs {
+        reactants,
+        reactant,
+        route_json,
+        templates_path,
+        partners_path,
+        max_results,
+        max_partners_per_template,
+        max_combinations,
+        max_hints,
+        max_matches_per_slot,
+        max_assignments_per_template,
+        report,
+    })
+}
+
+/// Strictly validates and extracts one route-JSON step's `target` and
+/// `precursors`, with the step index and offending field name in every
+/// error -- a step that isn't an object, or has a missing/wrong-type/empty
+/// field, is a hard error, never silently coerced or dropped (a
+/// `filter_map`/`as_str` pattern would drop a malformed precursor instead of
+/// rejecting the whole step).
+fn parse_step(idx: usize, step: &serde_json::Value) -> Result<(String, Vec<String>)> {
+    if !step.is_object() {
+        bail!("step {idx}: expected a JSON object, got {step}");
+    }
+
+    let target = step["target"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("step {idx}: missing or non-string 'target' field"))?;
+    if target.is_empty() {
+        bail!("step {idx}: 'target' must not be empty");
+    }
+
+    let precursors_json = step["precursors"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("step {idx}: missing or non-array 'precursors' field"))?;
+    if precursors_json.is_empty() {
+        bail!("step {idx}: 'precursors' must not be empty");
+    }
+
+    let mut precursors = Vec::with_capacity(precursors_json.len());
+    for (p_idx, p) in precursors_json.iter().enumerate() {
+        let s = p
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("step {idx}: precursors[{p_idx}] is not a string"))?;
+        if s.is_empty() {
+            bail!("step {idx}: precursors[{p_idx}] must not be empty");
+        }
+        precursors.push(s.to_string());
+    }
+
+    Ok((target.to_string(), precursors))
+}
+
+/// Loads the embedded default rules plus, if given, an explicit external
+/// template file (hard error if that path is missing/unreadable/empty --
+/// see [`load_templates_strict`]). Prints a stderr summary distinguishing
+/// the two sources.
+fn load_rules(templates_path: Option<&str>) -> Result<Vec<renkin::chem_env::RetroRule>> {
+    let mut rules = default_rules();
+    let embedded_count = rules.len();
+    eprintln!("Loaded {embedded_count} embedded default template(s)");
+    if let Some(path) = templates_path {
+        let external = load_templates_strict(path)?;
+        eprintln!("Loaded {} external template(s) from {path}", external.len());
+        rules.extend(external);
+    }
+    Ok(rules)
+}
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
 
     if args.len() < 2 {
-        bail!(
-            "Usage:\n  \
-             renkin-forward predict --reactants <SMILES>... [--templates <path>] [--max-results N]\n  \
-             renkin-forward validate --route-json <JSON>    [--templates <path>] [--max-results N]"
-        );
+        println!("{TOP_LEVEL_HELP}");
+        std::process::exit(2);
+    }
+
+    match args[1].as_str() {
+        "--help" | "-h" => {
+            println!("{TOP_LEVEL_HELP}");
+            return Ok(());
+        }
+        "--version" | "-V" => {
+            print_version();
+            return Ok(());
+        }
+        _ => {}
     }
 
     let subcommand = args[1].as_str();
-    let mut reactants: Vec<String> = Vec::new();
-    let mut route_json: Option<String> = None;
-    let mut templates_path: Option<String> = None;
-    let mut max_results: usize = 5;
-
-    let mut i = 2;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--reactants" => {
-                i += 1;
-                while i < args.len() && !args[i].starts_with("--") {
-                    reactants.push(args[i].clone());
-                    i += 1;
-                }
-                continue;
-            }
-            "--route-json" => {
-                i += 1;
-                if i < args.len() {
-                    route_json = Some(args[i].clone());
-                }
-            }
-            "--templates" => {
-                i += 1;
-                if i < args.len() {
-                    templates_path = Some(args[i].clone());
-                }
-            }
-            "--max-results" => {
-                i += 1;
-                if i < args.len() {
-                    max_results = args[i].parse().unwrap_or(5);
-                }
-            }
-            _ => {}
-        }
-        i += 1;
-    }
-
-    let mut rules = default_rules();
-    if let Some(ref path) = templates_path {
-        rules.extend(load_rules_from_file(path));
-        eprintln!(
-            "Loaded {} templates from {path}",
-            rules.len() - default_rules().len()
+    if !["predict", "validate", "enumerate", "hints"].contains(&subcommand) {
+        bail!(
+            "unknown subcommand {subcommand:?}. Use 'predict', 'validate', 'enumerate', 'hints', '--help', or '--version'."
         );
     }
 
+    let parsed = parse_args(subcommand, &args[2..])?;
+    let rules = load_rules(parsed.templates_path.as_deref())?;
+
     match subcommand {
         "predict" => {
-            if reactants.is_empty() {
+            if parsed.reactants.is_empty() {
                 bail!("predict requires --reactants <SMILES>...");
             }
-            let refs: Vec<&str> = reactants.iter().map(|s| s.as_str()).collect();
-            let predictions: Vec<ForwardPrediction> = predict_products(&refs, &rules, max_results)
-                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-            println!("{}", serde_json::to_string_pretty(&predictions)?);
+            let refs: Vec<&str> = parsed.reactants.iter().map(|s| s.as_str()).collect();
+            // Exactly one prediction pass regardless of --report: with
+            // --report, --max-results caps the merged candidates directly
+            // (config.max_results below); without it, the full candidate
+            // set is generated and --max-results instead caps the flat
+            // legacy record list *after* per-source expansion (see
+            // `legacy_predictions_from_report`) -- the same two numbers
+            // would otherwise silently mean different things at the same
+            // call site.
+            let config = ForwardPredictConfig {
+                max_results: if parsed.report {
+                    parsed.max_results
+                } else {
+                    usize::MAX
+                },
+                ..Default::default()
+            };
+            let report = predict_products_detailed(&refs, &rules, &config)?;
+            for w in &report.warnings {
+                eprintln!("warning[{}]: {}", w.code, w.message);
+            }
+            if parsed.report {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            } else {
+                let predictions: Vec<ForwardPrediction> =
+                    legacy_predictions_from_report(&report, parsed.max_results);
+                println!("{}", serde_json::to_string_pretty(&predictions)?);
+            }
         }
         "validate" => {
-            let json_str: String = match route_json {
+            let json_str: String = match parsed.route_json {
                 Some(s) => s,
                 None => {
                     use std::io::Read;
@@ -94,9 +426,6 @@ fn main() -> Result<()> {
             if json_str.is_empty() {
                 bail!("validate requires --route-json <JSON> or JSON piped via stdin");
             }
-            // Parse route JSON as a Value to extract steps.
-            // Accepts both a route object {"steps":[...]} and the full find_routes output
-            // {"routes":[{"steps":[...]}]} so that piping renkin output works directly.
             let v: serde_json::Value = serde_json::from_str(&json_str)
                 .map_err(|e| anyhow::anyhow!("invalid JSON: {e}"))?;
 
@@ -112,21 +441,33 @@ fn main() -> Result<()> {
 
             let mut results: Vec<serde_json::Value> = Vec::new();
             for (idx, step) in steps.iter().enumerate() {
-                let target = step["target"].as_str().unwrap_or("");
-                let prec_refs: Vec<&str> = step["precursors"]
-                    .as_array()
-                    .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
-                    .unwrap_or_default();
+                let (target, precursors) = parse_step(idx, step)?;
+                let prec_refs: Vec<&str> = precursors.iter().map(|s| s.as_str()).collect();
 
-                let preds: Vec<ForwardPrediction> =
-                    predict_products(&prec_refs, &rules, max_results)
-                        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+                // One prediction pass per step: `verified` and
+                // `top_predictions` are both derived from this same
+                // `full_report`, not from two separate template-application
+                // passes over the (potentially large) rule set.
+                let full_config = ForwardPredictConfig {
+                    max_results: usize::MAX,
+                    ..Default::default()
+                };
+                let full_report = predict_products_detailed(&prec_refs, &rules, &full_config)?;
+                for w in &full_report.warnings {
+                    eprintln!("warning[{}]: {}", w.code, w.message);
+                }
 
-                let target_canon = renkin::chem_env::mol_from_smiles(target)
+                let target_canon = renkin::chem_env::mol_from_smiles(&target)
                     .ok()
                     .map(|m| chematic::smiles::canonical_smiles(&m))
-                    .unwrap_or_else(|| target.to_string());
-                let verified = preds.iter().any(|p| p.products.contains(&target_canon));
+                    .unwrap_or_else(|| target.clone());
+                let verified = full_report
+                    .candidates
+                    .iter()
+                    .any(|c| c.products.contains(&target_canon));
+
+                let preds: Vec<ForwardPrediction> =
+                    legacy_predictions_from_report(&full_report, parsed.max_results);
 
                 results.push(serde_json::json!({
                     "step_index": idx,
@@ -137,9 +478,75 @@ fn main() -> Result<()> {
             }
             println!("{}", serde_json::to_string_pretty(&results)?);
         }
-        _ => {
-            bail!("unknown subcommand '{subcommand}'. Use 'predict' or 'validate'.");
+        "enumerate" => {
+            let reactant = parsed
+                .reactant
+                .as_deref()
+                .ok_or_else(|| anyhow::anyhow!("enumerate requires --reactant <SMILES>"))?;
+
+            let (partner_outcome, partners_file_sha256) = match parsed.partners_path.as_deref() {
+                Some(path) => {
+                    let outcome = load_partners_strict(path)?;
+                    if outcome.skipped_malformed > 0 {
+                        eprintln!(
+                            "warning[partner_lines_skipped_malformed]: {} line(s) in {path} \
+                             could not be parsed as SMILES and were skipped",
+                            outcome.skipped_malformed
+                        );
+                    }
+                    eprintln!(
+                        "Loaded {} partner record(s) from {path}",
+                        outcome.records.len()
+                    );
+                    (Some(outcome), Some(sha256_hex_of_file(path)?))
+                }
+                None => (None, None),
+            };
+            let templates_file_sha256 = match parsed.templates_path.as_deref() {
+                Some(path) => Some(sha256_hex_of_file(path)?),
+                None => None,
+            };
+
+            let config = ForwardEnumerationConfig {
+                max_results: parsed.max_results,
+                max_partners_per_template: parsed.max_partners_per_template,
+                max_combinations: parsed.max_combinations,
+                ..Default::default()
+            };
+            let partner_slice = partner_outcome.as_ref().map(|o| o.records.as_slice());
+            let mut report = enumerate_products_detailed(reactant, partner_slice, &rules, &config)?;
+            report.stats.templates_file_sha256 = templates_file_sha256;
+            report.stats.partners_file_sha256 = partners_file_sha256;
+            report.stats.partner_records_skipped_malformed =
+                partner_outcome.as_ref().map_or(0, |o| o.skipped_malformed);
+            report.stats.partner_diagnostics_returned =
+                partner_outcome.as_ref().map_or(0, |o| o.diagnostics.len());
+            report.stats.partner_diagnostics_truncated = partner_outcome
+                .as_ref()
+                .is_some_and(|o| o.diagnostics_truncated);
+            if let Some(outcome) = partner_outcome {
+                report.partner_load_warnings = outcome.diagnostics;
+            }
+
+            for w in &report.warnings {
+                eprintln!("warning[{}]: {}", w.code, w.message);
+            }
+            println!("{}", serde_json::to_string_pretty(&report)?);
         }
+        "hints" => {
+            if parsed.reactants.is_empty() {
+                bail!("hints requires --reactants <SMILES>...");
+            }
+            let refs: Vec<&str> = parsed.reactants.iter().map(|s| s.as_str()).collect();
+            let config = HintGenerationConfig {
+                max_hints: parsed.max_hints,
+                max_matches_per_slot: parsed.max_matches_per_slot,
+                max_assignments_per_template: parsed.max_assignments_per_template,
+            };
+            let report = generate_retrieval_hints(&refs, &rules, &config)?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+        }
+        _ => unreachable!("validated above"),
     }
     Ok(())
 }

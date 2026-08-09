@@ -64,8 +64,13 @@ nav:
   - Guides:
     - Python Retrosynthesis: guides/python-retrosynthesis.md
     - Rust Retrosynthesis: guides/rust-retrosynthesis.md
+    - Forward Reaction Prediction: guides/forward-prediction.md
+    - Forward Enumeration: guides/forward-enumeration.md
+    - Forward Retrieval Hints: guides/forward-retrieval-hints.md
     - Reaction Evidence Metadata: guides/reaction-evidence.md
     - MCP Server: guides/mcp.md
+    - Candidate Pools and Reranker Training: guides/reranker-candidate-pools.md
+    - Open-Source Retrosynthesis Comparison: guides/open-source-retrosynthesis-comparison.md
   - API Reference:
     - Rust API: api/rust.md
     - Python API: api/python.md
@@ -75,6 +80,7 @@ nav:
     - Drug-like Molecules: examples/druglike.md
   - Comparison:
     - Open-Source Retrosynthesis Tools: comparison/open-source-retrosynthesis-tools.md
+    - "ASKCOS Feasibility (Issue #66)": comparison/askcos-feasibility-issue-66.md
   - Playground: playground/index.html
   - Benchmark:
     - Results (EN): benchmark.md

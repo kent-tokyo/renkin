@@ -71,6 +71,25 @@ fn legacy_transcript_stdout_matches_golden_fixture_structurally() {
     let want = lines_as_json(LEGACY_GOLDEN_OUTPUT);
     assert_eq!(got.len(), want.len(), "response count changed");
     for (i, (g, w)) in got.iter().zip(want.iter()).enumerate() {
+        // Deliberately normalized, not a structural deviation: the golden
+        // fixture was captured against the pre-refactor binary at v0.18.0;
+        // every release since (v0.19.0/v0.20.0/v0.21.0) legitimately moves
+        // `serverInfo.version` (initialize, response #1) forward. Comparing
+        // it verbatim would make this test fail at every future release
+        // for a reason unrelated to protocol structure.
+        if i == 0 {
+            let mut g2 = g.clone();
+            let mut w2 = w.clone();
+            g2["result"]["serverInfo"]["version"] = Value::Null;
+            w2["result"]["serverInfo"]["version"] = Value::Null;
+            assert_eq!(
+                g2,
+                w2,
+                "response #{} (minus serverInfo.version) diverged from the legacy golden transcript",
+                i + 1
+            );
+            continue;
+        }
         // The one deliberate, spec-mandated deviation: the stale "509
         // curated building blocks" claim was removed from find_routes'
         // description (tools/list, response #2). Every other legacy

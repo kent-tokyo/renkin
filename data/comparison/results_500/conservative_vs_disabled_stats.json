@@ -1,0 +1,34 @@
+{
+  "native": {
+    "ci_high": -0.0020000000000000018,
+    "ci_low": -0.016000000000000014,
+    "conservative_only": 0,
+    "disabled_only": 4,
+    "flip_target_ids": [
+      "uspto50k_test#L1167",
+      "uspto50k_test#L308",
+      "uspto50k_test#L4279",
+      "uspto50k_test#L984"
+    ],
+    "metric": "route_found",
+    "n_pairs": 500,
+    "observed_diff_conservative_minus_disabled": -0.008000000000000007,
+    "p_value": 0.125
+  },
+  "shared_stock": {
+    "ci_high": -0.0020000000000000018,
+    "ci_low": -0.016000000000000014,
+    "conservative_only": 0,
+    "disabled_only": 4,
+    "flip_target_ids": [
+      "uspto50k_test#L1167",
+      "uspto50k_test#L308",
+      "uspto50k_test#L4279",
+      "uspto50k_test#L984"
+    ],
+    "metric": "route_to_shared_stock",
+    "n_pairs": 500,
+    "observed_diff_conservative_minus_disabled": -0.008000000000000007,
+    "p_value": 0.125
+  }
+}

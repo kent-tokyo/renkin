@@ -4,7 +4,7 @@ resolver = "2"
 
 [package]
 name = "renkin"
-version = "0.18.0"
+version = "0.21.0"
 edition = "2024"
 authors = ["kent-tokyo <kent-tokyo@users.noreply.github.com>"]
 description = "Ultra-fast retrosynthesis engine for computer-aided synthesis planning (CASP) — pure Rust, WASM-ready, Python bindings via PyO3"
@@ -22,9 +22,13 @@ exclude       = [
     "data/uspto50k_test.smi",
     "data/uspto50k_benchmark_result*.json",
     "data/templates_extracted*.smi",
+    "data/comparison/**",
+    "data/ring_context_metadata_500.json",
     "docs/playground/**",
     "tasks/**",
     "scripts/**",
+    "docker/**",
+    "artifacts/**",
     ".claude/**",
     "data/template_scorer*.onnx",
     "data/template_scorer*.onnx.data",
@@ -69,15 +73,28 @@ python = ["pyo3/extension-module"]
 # nn-scoring: ONNX-based template relevance prediction (CLI/PyO3 only, not WASM)
 # Requires: data/template_scorer.onnx built by scripts/train_template_scorer.py
 nn-scoring = ["dep:tract-onnx", "chematic/fp"]
+# perf-instrumentation: exposes chematic-rxn's own run_reactants-level work
+# counters (chematic_rxn::perf_counters) for the apply-retro-performance-regression
+# gate/benchmark. Off by default, zero cost when disabled (same convention as
+# chematic's own feature of the same name).
+perf-instrumentation = ["dep:chematic-rxn"]
 
 [dependencies]
-chematic = { version = "0.6", features = ["smiles", "chem", "smarts", "rxn"] }
+# chematic 0.8.0 includes the automorphism-orbit-pruned canonical_smiles() fix
+# (chematic#193, https://github.com/kent-tokyo/chematic/pull/193, merged as
+# 3e45f55) which resolves the apply_retro/run_reactants combinatorial
+# regression this crate previously worked around with a git-pinned commit.
+chematic = { version = "0.11", features = ["smiles", "chem", "smarts", "rxn"] }
+# Same registry release as `chematic` above (required: they must resolve to the
+# same chematic-core/etc. instance). Only for perf_counters -- normal builds
+# reach run_reactants via the chematic facade, not this direct dependency.
+chematic-rxn = { version = "0.11", features = ["perf-instrumentation"], optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
 rustc-hash = "2"
 smallvec = { version = "1", features = ["union"] }
-sha2 = "0.10"
+sha2 = "0.11"
 
 # PyO3: Python bindings (optional)
 pyo3 = { version = "0.29", optional = true }

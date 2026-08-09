@@ -289,6 +289,20 @@ prediction」と明記されます。`conditions`／`reported_yield`／`warnings
 [Reaction Evidence guide](docs/guides/reaction-evidence.md#substrate-specific-examples-schema_version-2)
 を参照してください。
 
+**ORDからのevidenceインポート。** `renkin evidence match`(exact-setの
+バッチtemplate matching、fuzzy/類似度matchingなし)と
+[`scripts/ord_evidence_audit.py`](scripts/README_ord_evidence.md)(オフライン、
+ネットワークアクセスなし)により、ローカルにダウンロード済みの
+[Open Reaction Database](https://github.com/open-reaction-database/ord-data)
+corpusを`schema_version: 2`のsidecarへ変換できます。採用されたrecordはRENKIN
+自身のloaderで再検証され、一意にmatchせず・provenanceが確認できないものは
+推測せずaudit reportへ除外理由付きで記録されます。RENKIN自体が文献検索を行う
+ことはなく、reported yieldは予測値ではありません。ORDのreaction dataは
+CC-BY-SA-4.0であり、RENKIN本体コードのMITとは別ライセンスです。詳細な採用
+基準とライセンスの分離については
+[Reaction Evidence guide](docs/guides/reaction-evidence.md#importing-from-ord-open-reaction-database)
+を参照してください。
+
 ---
 
 ## 特徴
@@ -306,7 +320,11 @@ prediction」と明記されます。`conditions`／`reported_yield`／`warnings
 | **制約 DSL** | `--constraints constraints.json` — JSON駆動の合成計画：元素フィルタ・ステップ数制限・信頼度閾値・優先反応族；LLM → RENKIN パイプラインに対応 |
 | **出力フォーマット** | `--format json` · `tree` · `mermaid` · `explain`（ルートごとの人間可読解説）· `compare`（並列比較表）· `compare-json` · `pareto` |
 | **失敗時診断** | ルートが見つからない場合、JSON に `diagnostics` ブロック（`likely_causes` + `suggestions`）を付加 |
+| **単体順反応予測** | `renkin-forward predict --reactants <SMILES>...` — ルート検索とは独立に、反転したSMIRKSテンプレートから順反応生成物候補を列挙・ランキング — [Forward Prediction guide](docs/guides/forward-prediction.md)（英語）参照 |
+| **単一既知反応物からの順反応列挙** | `renkin-forward enumerate --reactant <SMILES> --partners <path>` — 既知反応物1つと明示的なpartnerライブラリ（RENKIN自身のretro stockは使わない）から具体的な生成物を発見 — [Forward Enumeration guide](docs/guides/forward-enumeration.md)（英語）参照 |
+| **partner不要の検索用ヒント** | `renkin-forward hints --reactants <SMILES>...` — partner入力は一切なし：マッチしたテンプレートslot、不足partnerのSMARTS、結合デルタを特許・データベース検索向けに報告（具体的な生成物は出さない）— [Forward Retrieval Hints guide](docs/guides/forward-retrieval-hints.md)（英語）参照。`predict` / `enumerate` / `hints` の比較表: [table](docs/guides/forward-retrieval-hints.md#predict--enumerate--hints-at-a-glance) |
 | **順方向検証** | `renkin-forward validate` で各ステップを順方向適用して検証；stdin パイプ対応 |
+| **Ring-context安全ガード** | `--ring-context-policy conservative --ring-context-sidecar <path>` — extracted templateの環開閉切断が、訓練データで一度も環結合として観測されていない場合に拒否するopt-inのmatch-levelフィルタ。デフォルトは `disabled`（既存挙動のまま） — [Issue #72](https://github.com/kent-tokyo/renkin/issues/72)参照 |
 | **妥当性レポート** | `renkin-bench --plausibility` — ベストルートを順方向検証し、複合妥当性スコアを算出 |
 | **PaRoutesベンチマーク** | `renkin-bench --input-format paroutes` でmulti-step ground-truth評価（`depth_delta`, `route_diversity`） |
 | **原子収支チェック** | `renkin-bench` で `target_MW > Σ precursor_MW` のステップを検出（CompleteRXN参照） |
@@ -506,6 +524,8 @@ renkin/                          ← Cargo workspace ルート
 │   ├── score.rs                 # SA Score ヒューリスティック
 │   ├── search.rs                # A* / AND-OR 木探索エンジン
 │   ├── scorer.rs                # Phase B: tract-onnx NNテンプレートスコアラー
+│   ├── candidate.rs             # 1ステップ候補提案（オフラインリランキング基盤、探索へは未統合）
+│   ├── pool_export.rs           # 候補プール JSONL + 再現性マニフェストのエクスポート
 │   ├── python.rs                # PyO3 バインディング
 │   └── wasm.rs                  # wasm-bindgen バインディング
 ├── crates/                      ← 兄弟クレート
@@ -518,7 +538,9 @@ renkin/                          ← Cargo workspace ルート
 │   └── bench_chunks/                    # USPTO-50k チャンク別結果
 ├── scripts/
 │   ├── extract_templates.py         # rdchiral テンプレート抽出パイプライン
-│   └── run_benchmark_chunks.sh      # 再開可能チャンクベンチマーク
+│   ├── run_benchmark_chunks.sh      # 再開可能チャンクベンチマーク
+│   ├── train_reranker.py            # 候補リランカー訓練/評価（開発ツール、オフライン専用 — docs/guides/reranker-candidate-pools.md 参照）
+│   └── tests/                       # train_reranker.py の unittest スイート
 ├── docs/                # MkDocs ソース → kent-tokyo.github.io/renkin/
 └── mkdocs.yml
 ```
@@ -572,23 +594,24 @@ renkin/                          ← Cargo workspace ルート
 - [x] MCP サーバー拡張 — 6 ツール体制（`explain_route`・`find_pareto_routes`・`plan_with_constraints` 追加）
 - [x] 安定 `template_id`（`rule:<name>` / `smirks-sha256:<hex>`）+ `--template-metadata` evidence サイドカー + `renkin template ids`（[#41](https://github.com/kent-tokyo/renkin/issues/41) phase 1）
 - [x] 基質固有の `examples`（`schema_version: 2`）— ステップごとに「exact substrate match」か「同一テンプレート・別基質」かを解決し、`--format explain` に表示、JSONでは `match_kind` フィールドとして提供（[#41](https://github.com/kent-tokyo/renkin/issues/41) phase 2）
+- [x] 決定的なORD（Open Reaction Database）evidenceインポート — オフラインの `renkin evidence match`（exact-setバッチtemplate matcher）+ `scripts/ord_evidence_audit.py`（audit/converter）により `schema_version: 2` サイドカーへ変換。ネットワークアクセスなし、fuzzy matchingなし、ambiguous/provenance不明なrecordは推測せずaudit reportへ除外理由付きで記録（[#41](https://github.com/kent-tokyo/renkin/issues/41) phase 3A）
+- [x] `renkin-forward` CLI 強化 — バージョン管理された `ForwardPredictionReport`、決定的な候補ID/マージ/由来情報、reactant 順序に依存しないマッチング（最大3試薬）、厳格な CLI/route-JSON 検証
+- [x] RETROSPECT 着想のオフライン候補リランキング基盤 — candidate proposal/selection の分離、feature schema v1、manifest v2、leakage-safe な train/val/test スプリット、7つの決定的 baseline arm + 学習済み ranker arm、paired bootstrap + オフラインゲートツール（[#59](https://github.com/kent-tokyo/renkin/pull/59)；**基盤のみ — 学習済みモデルや精度結果はまだ無く、route search には未統合**）
+- [x] `apply_retro`/`run_reactants` 性能回帰の解消 — `chematic`をnarrowなgit pinから公開済み`0.8.0`（上流のautomorphism-orbit-pruned canonicalization、[chematic#193](https://github.com/kent-tokyo/chematic/pull/193)）へ移行。固定30-targetゲートで現行masterに対し同一セッション計測: total elapsed **34.7%**高速化、p95 **33.8%**高速化、最悪ケースターゲットは**42.2%**高速化（単発ではなく複数回の孤立計測で確認済み）。correctnessへの影響ゼロ（`apply_retro`呼び出し回数はバージョン間で完全一致）
+- [x] `renkin-forward enumerate` — 既知反応物1つと明示的なpartnerライブラリからの、境界付きtemplate誘導型順反応列挙（[#64](https://github.com/kent-tokyo/renkin/issues/64)）
+- [x] `renkin-forward hints` — partner不要の検索用ヒント（マッチしたテンプレートslot・不足partnerのSMARTS・結合デルタ）。具体的な生成物は予測しない（[#64](https://github.com/kent-tokyo/renkin/issues/64) phase 2）
+- [x] `atom_economy` の100%への暗黙クランプを廃止（[#79](https://github.com/kent-tokyo/renkin/issues/79)）— ルートの精製物集合が対象の全質量を説明できない場合、新設の `atom_economy_status` フィールド（`normal`/`above_expected_range`/`not_evaluable`）で明示的に報告
+- [x] extracted template向けRing-context安全ガード（[#72](https://github.com/kent-tokyo/renkin/issues/72)/[#242](https://github.com/kent-tokyo/renkin/pull/242)）— opt-inの `--ring-context-policy`/`--ring-context-sidecar`。訓練データで環結合として一度も観測されていない環開閉切断のテンプレート誤適用を検出。デフォルトは引き続き `disabled`（既存挙動のまま）
+- [x] 500-target規模のRENKIN vs AiZynthFinder正式比較（[#66](https://github.com/kent-tokyo/renkin/issues/66)）— 固定500-targetサンプル・共有393化合物ストック・各ツールの設定下で、RENKIN Conservativeの`route_to_shared_stock`はAiZynthFinderより9.8ポイント高く（73/500 対 24/500、95% CI [7.0, 12.8]、exact McNemar p≈1.9e-11）、このプロトコル下で統計的に有意なペア差だった——一般的な探索能力の優位性を主張するものではない。各ツール本来のnative構成では逆方向に乖離し、ストックサイズ差を含む未統制条件が支配的。詳細は[比較ガイド](docs/guides/open-source-retrosynthesis-comparison.md)（英語）の限定的な解釈を参照
 
 ---
 
 ## 引用
 
-学術論文で RENKIN を使用した場合は以下を引用してください：
-
-```bibtex
-@software{renkin2026,
-  author    = {kent-tokyo},
-  title     = {{RENKIN}: Retrosynthesis Engine for Knowledge-Informed Navigation},
-  year      = {2026},
-  url       = {https://github.com/kent-tokyo/renkin/releases/tag/v0.18.0},
-  version   = {0.18.0},
-  license   = {MIT}
-}
-```
+学術論文で RENKIN を使用した場合は、[`CITATION.cff`](CITATION.cff)（正式な
+バージョン管理付き引用レコード）を引用してください。GitHub の「Cite this
+repository」ボタン（リポジトリページ上部）がこのファイルを直接読み込み、
+APA / BibTeX 形式でのエクスポートに対応しています。
 
 ---
 

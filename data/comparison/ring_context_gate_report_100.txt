@@ -1,0 +1,122 @@
+=== 100 targets (['audit_only', 'conservative', 'conservative_repeat', 'disabled', 'element_only', 'ring_only'] arms present) ===
+
+[disabled] statuses={'completed': 100} route_found=16/100
+[audit_only] statuses={'completed': 100} route_found=16/100
+[conservative] statuses={'completed': 100} route_found=14/100
+[conservative_repeat] statuses={'completed': 100} route_found=14/100
+[ring_only] statuses={'completed': 100} route_found=14/100
+[element_only] statuses={'completed': 100} route_found=15/100
+
+=== Disabled vs AuditOnly (must be identical) ===
+  status_flips: 0
+  route_found_flips: 0
+  route_signature_flips_same_solve_state: 0
+
+=== Disabled vs Conservative ===
+  status_flips: 0
+  route_found_flips: 2
+    ('uspto50k_test#L1167', True, False)
+    ('uspto50k_test#L984', True, False)
+  route_signature_flips_same_solve_state: 2
+    ('uspto50k_test#L4464', 'f9c58de1aa75ef83', '318a39da3672f52e')
+    ('uspto50k_test#L4575', '69d0a25a4ab99a73', '2a3cf3a37287f75d')
+
+=== Conservative vs Conservative-repeat (determinism) ===
+  status_flips: 0
+  route_found_flips: 0
+  route_signature_flips_same_solve_state: 0
+
+=== Disabled vs RingOnly (ring-context gate's isolated effect) ===
+  status_flips: 0
+  route_found_flips: 2
+    ('uspto50k_test#L1167', True, False)
+    ('uspto50k_test#L984', True, False)
+  route_signature_flips_same_solve_state: 2
+    ('uspto50k_test#L4464', 'f9c58de1aa75ef83', '318a39da3672f52e')
+    ('uspto50k_test#L4575', '69d0a25a4ab99a73', '2a3cf3a37287f75d')
+
+=== Disabled vs ElementOnly (element-accounting gate's isolated effect) ===
+  status_flips: 0
+  route_found_flips: 1
+    ('uspto50k_test#L984', True, False)
+  route_signature_flips_same_solve_state: 1
+    ('uspto50k_test#L4575', '69d0a25a4ab99a73', '0b81f3d9e371eae2')
+
+=== Aggregate ring_context_diagnostics: AuditOnly ===
+{
+  "invalid_mapped_bond": 0,
+  "matches_applied": 362750,
+  "matches_enumerated": 454427,
+  "matches_ring_checked": 241828,
+  "matches_unknown_intent": 0,
+  "outcomes_accepted": 362606,
+  "outcomes_element_rejected": 144,
+  "reaction_application_failed": 2393842,
+  "reaction_parse_calls": 5778379,
+  "ring_rejects_nonring_intent_on_ring_bond": 91677,
+  "ring_rejects_ring_intent_on_nonring_bond": 0,
+  "ring_rejects_unknown_intent_on_ring_bond": 0,
+  "templates_missing_metadata": 0,
+  "valence_filtered": 0
+}
+
+=== Aggregate ring_context_diagnostics: Conservative ===
+{
+  "invalid_mapped_bond": 0,
+  "matches_applied": 368798,
+  "matches_enumerated": 471729,
+  "matches_ring_checked": 255725,
+  "matches_unknown_intent": 0,
+  "outcomes_accepted": 368465,
+  "outcomes_element_rejected": 333,
+  "reaction_application_failed": 2473468,
+  "reaction_parse_calls": 5961574,
+  "ring_rejects_nonring_intent_on_ring_bond": 102931,
+  "ring_rejects_ring_intent_on_nonring_bond": 0,
+  "ring_rejects_unknown_intent_on_ring_bond": 0,
+  "templates_missing_metadata": 0,
+  "valence_filtered": 0
+}
+
+=== Aggregate ring_context_diagnostics: RingOnly ===
+{
+  "invalid_mapped_bond": 0,
+  "matches_applied": 369743,
+  "matches_enumerated": 472421,
+  "matches_ring_checked": 255998,
+  "matches_unknown_intent": 0,
+  "outcomes_accepted": 369600,
+  "outcomes_element_rejected": 143,
+  "reaction_application_failed": 2475219,
+  "reaction_parse_calls": 5965582,
+  "ring_rejects_nonring_intent_on_ring_bond": 102678,
+  "ring_rejects_ring_intent_on_nonring_bond": 0,
+  "ring_rejects_unknown_intent_on_ring_bond": 0,
+  "templates_missing_metadata": 0,
+  "valence_filtered": 0
+}
+
+=== Aggregate ring_context_diagnostics: ElementOnly ===
+{
+  "invalid_mapped_bond": 0,
+  "matches_applied": 462044,
+  "matches_enumerated": 462044,
+  "matches_ring_checked": 246213,
+  "matches_unknown_intent": 0,
+  "outcomes_accepted": 461229,
+  "outcomes_element_rejected": 815,
+  "reaction_application_failed": 2433157,
+  "reaction_parse_calls": 5965697,
+  "ring_rejects_nonring_intent_on_ring_bond": 93762,
+  "ring_rejects_ring_intent_on_nonring_bond": 0,
+  "ring_rejects_unknown_intent_on_ring_bond": 0,
+  "templates_missing_metadata": 0,
+  "valence_filtered": 0
+}
+
+=== Latency (elapsed_s) percentiles by arm ===
+  disabled: n=100 total=1429.2s p50=7.63s p95=61.56s max=75.28s
+  audit_only: n=100 total=1744.4s p50=9.41s p95=73.46s max=88.51s
+  conservative: n=100 total=1309.5s p50=7.85s p95=50.36s max=66.26s
+  ring_only: n=100 total=1297.2s p50=7.58s p95=50.48s max=69.24s
+  element_only: n=100 total=1437.1s p50=7.70s p95=59.71s max=82.20s

@@ -186,6 +186,7 @@ c1ccccc1-c2ccccc2
 | **输出格式** | `--format json` · `tree` · `mermaid` · `explain`（每条路线的人类可读分析）· `compare`（并排对比表）· `compare-json` · `pareto` |
 | **失败诊断** | 未找到路线时，JSON 输出会附带 `diagnostics` 区块，包含 `likely_causes` 与 `suggestions` |
 | **正向验证** | `renkin-forward validate` 通过正向应用模板来验证每一步；支持 `--route-json` 或 stdin 输入 |
+| **Ring-context安全护栏** | `--ring-context-policy conservative --ring-context-sidecar <path>` — opt-in的match-level过滤器，当extracted template的训练数据从未观察到某环开闭断裂时予以拒绝。默认为`disabled`（既有行为不变）——详见[Issue #72](https://github.com/kent-tokyo/renkin/issues/72) |
 | **合理性报告** | `renkin-bench --plausibility` —— 对最优路线执行正向验证，并给出综合合理性评分 |
 | **PaRoutes 基准测试** | `renkin-bench --input-format paroutes` 支持基于多步真值（ground truth）的评估，给出 `depth_delta` 与 `route_diversity` |
 | **原子平衡检查** | `renkin-bench` 会标记出 `target_MW > Σ precursor_MW` 的步骤（参考 CompleteRXN） |
@@ -418,6 +419,8 @@ renkin/                          ← Cargo workspace 根目录
 │   ├── score.rs                 # SA Score 启发函数 + 步骤代价
 │   ├── search.rs                # A* / AND-OR 树搜索引擎 + 束剪枝
 │   ├── scorer.rs                # Phase B：tract-onnx 神经网络模板评分器
+│   ├── candidate.rs             # 一步候选提案（离线重排序基础设施，尚未接入搜索）
+│   ├── pool_export.rs           # 候选池 JSONL + 可复现性 manifest 导出
 │   ├── python.rs                # PyO3 绑定（--features python）
 │   └── wasm.rs                  # wasm-bindgen 绑定（cfg = wasm32）
 ├── crates/                      ← 同级 crate
@@ -430,7 +433,9 @@ renkin/                          ← Cargo workspace 根目录
 │   └── bench_chunks/                    # USPTO-50k 按分块的结果
 ├── scripts/
 │   ├── extract_templates.py         # rdchiral 模板提取流水线
-│   └── run_benchmark_chunks.sh      # 可续跑的分块基准测试脚本
+│   ├── run_benchmark_chunks.sh      # 可续跑的分块基准测试脚本
+│   ├── train_reranker.py            # 候选重排序器训练/评估（开发工具，仅限离线 — 参见 docs/guides/reranker-candidate-pools.md）
+│   └── tests/                       # train_reranker.py 的 unittest 套件
 ├── docs/                # MkDocs 源文件 → kent-tokyo.github.io/renkin/
 └── mkdocs.yml
 ```
@@ -441,6 +446,15 @@ renkin/                          ← Cargo workspace 根目录
 
 ### 近期完成
 
+- [x] 500-target规模的RENKIN vs AiZynthFinder正式比较（[#66](https://github.com/kent-tokyo/renkin/issues/66)）— 在固定500-target样本、共享393化合物库存、各工具自身配置下，RENKIN Conservative的`route_to_shared_stock`比AiZynthFinder高9.8个百分点（73/500对24/500，95% CI [7.0, 12.8]，exact McNemar p≈1.9e-11）——在该协议下具有统计显著性的配对差异，并非泛化的搜索能力优越性主张。各工具原生配置下方向相反，主要受库存规模等未受控条件支配。详见[比较指南](docs/guides/open-source-retrosynthesis-comparison.md)（英文）
+- [x] extracted template的Ring-context安全护栏（[#72](https://github.com/kent-tokyo/renkin/issues/72)/[#242](https://github.com/kent-tokyo/renkin/pull/242)）— opt-in的`--ring-context-policy`/`--ring-context-sidecar`，检测训练数据中从未观察到环结合的环开闭断裂被extracted template误用的情况。默认仍为`disabled`（既有行为不变）
+- [x] `atom_economy`不再隐式钳制为100%（[#79](https://github.com/kent-tokyo/renkin/issues/79)）— 当路线的呈现前体集合无法解释目标全部质量时，新增`atom_economy_status`字段（`normal`/`above_expected_range`/`not_evaluable`）明确报告
+- [x] `renkin-forward enumerate` — 从单一已知反应物加明确partner库进行有界、template引导的正向枚举（[#64](https://github.com/kent-tokyo/renkin/issues/64)）
+- [x] `renkin-forward hints` — 无需partner输入的检索提示（匹配的template slot、缺失partner的SMARTS、结合变化），不预测具体产物（[#64](https://github.com/kent-tokyo/renkin/issues/64) phase 2）
+- [x] `apply_retro`/`run_reactants` 性能回归修复 — `chematic` 从窄范围的 git-pin 修复迁移到已发布的 `0.8.0`（上游 automorphism-orbit-pruned canonicalization，[chematic#193](https://github.com/kent-tokyo/chematic/pull/193)）；在固定的 30-target 门控测试中、同一次会话内对当前 master 测得：总耗时快 **34.7%**，p95 快 **33.8%**，最差目标快 **42.2%**（通过多次独立重复测量确认，非单次结果）。正确性零变化（各版本间 `apply_retro` 调用次数完全一致）
+- [x] `renkin-forward` CLI 强化 — 带版本号的 `ForwardPredictionReport`、确定性候选ID/合并/来源信息、与 reactant 顺序无关的匹配（最多 3 个反应物）、严格的 CLI/route-JSON 校验
+- [x] 受 RETROSPECT 启发的离线候选重排序基础设施 — proposal/selection 分离、feature schema v1、manifest v2、leakage-safe 的 train/val/test 划分、7 个确定性 baseline arm + 训练模型 arm、paired bootstrap + 离线门控工具（[#59](https://github.com/kent-tokyo/renkin/pull/59)；**目前仅为基础设施 — 尚无训练好的模型或准确率结果，也尚未接入 route search**）
+- [x] 确定性的 ORD（Open Reaction Database）evidence 导入 — 离线的 `renkin evidence match`（exact-set 批量 template matcher）+ `scripts/ord_evidence_audit.py`（audit/converter）转换为 `schema_version: 2` 附加文件。无网络访问、无 fuzzy matching，存疑/来源不明的记录不会被猜测，而是记录在 audit report 中并注明排除原因（[#41](https://github.com/kent-tokyo/renkin/issues/41) phase 3A）
 - [x] 稳定的 `template_id`（`rule:<name>` / `smirks-sha256:<hex>`）+ `--template-metadata` evidence 附加文件 + `renkin template ids`（[#41](https://github.com/kent-tokyo/renkin/issues/41) phase 1）
 - [x] 针对特定底物的 `examples`（`schema_version: 2`）——按每个步骤解析为「精确底物匹配」或「同模板但底物不同」，在 `--format explain` 中展示，并在 JSON 中以 `match_kind` 字段体现（[#41](https://github.com/kent-tokyo/renkin/issues/41) phase 2）
 - [x] `renkin-bench cascade` — 多阶段搜索（先用较快的默认参数搜索，未解决的困难目标再用更深的参数重跑）；只有未解决的目标才会进入后续阶段。USPTO-50k 上 **78.0% → 95.9%**
@@ -504,18 +518,9 @@ renkin/                          ← Cargo workspace 根目录
 
 ## 引用
 
-若您在学术工作中使用 RENKIN，请引用：
-
-```bibtex
-@software{renkin2026,
-  author    = {kent-tokyo},
-  title     = {{RENKIN}: Retrosynthesis Engine for Knowledge-Informed Navigation},
-  year      = {2026},
-  url       = {https://github.com/kent-tokyo/renkin/releases/tag/v0.18.0},
-  version   = {0.18.0},
-  license   = {MIT}
-}
-```
+若您在学术工作中使用 RENKIN，请引用 [`CITATION.cff`](CITATION.cff)
+（正式的、随版本更新的引用记录）。GitHub 的 "Cite this repository" 按钮
+（位于仓库页面顶部）会直接读取该文件，并支持导出 APA 或 BibTeX 格式。
 
 ---
 

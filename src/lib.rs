@@ -1,12 +1,17 @@
 #![forbid(unsafe_code)]
 
+pub mod candidate;
 pub mod chem_env;
 pub mod display;
 pub mod evidence;
+pub mod evidence_match;
 pub mod mcp;
+pub mod pool_export;
+pub mod ring_context;
 pub mod score;
 pub mod scorer;
 pub mod search;
+pub mod synthesizability;
 pub mod validation;
 
 #[cfg(feature = "python")]
@@ -14,6 +19,14 @@ pub mod python;
 
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
+
+/// Lower-hex encoding of a digest, shared by every `"sha256:<hex>"`-style
+/// hash string across this crate and `renkin-forward`. sha2/digest 0.11's
+/// output type (`Array<u8, N>`, from the `hybrid-array` crate) no longer
+/// implements `LowerHex` the way `generic_array::GenericArray` did in 0.10.
+pub fn sha256_hex(digest: impl AsRef<[u8]>) -> String {
+    digest.as_ref().iter().map(|b| format!("{b:02x}")).collect()
+}
 
 /// Default set of commercially available starting materials (SMILES).
 pub const DEFAULT_BUILDING_BLOCKS: &[&str] = &[

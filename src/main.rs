@@ -60,6 +60,7 @@ fn main() -> Result<()> {
     let mut search_diagnostics = false;
     let mut candidate_trace_limit: Option<usize> = None;
     let mut open_state_diagnostics = false;
+    let mut open_state_dominance = false;
     let mut bond_index = false;
     let mut bb_prices_path: Option<String> = None;
     let mut stock_path: Option<String> = None;
@@ -165,6 +166,11 @@ fn main() -> Result<()> {
                 // Same self-sufficiency as --candidate-trace-limit above.
                 search_diagnostics = true;
             }
+            "--open-state-dominance" => {
+                open_state_dominance = true;
+                // Same self-sufficiency as --candidate-trace-limit above.
+                search_diagnostics = true;
+            }
             "--bond-index" => {
                 bond_index = true;
             }
@@ -246,6 +252,9 @@ fn main() -> Result<()> {
              --open-state-diagnostics  Add open-state dominance counters (implies \
              --search-diagnostics; counting-only, never changes search behaviour -- \
              competitive program Phase 2A)\n  \
+             --open-state-dominance  EXPERIMENTAL: prune duplicate-state candidates before \
+             beam allocation (implies --search-diagnostics; default off, changes search \
+             results when enabled -- competitive program Phase 2B-2D)\n  \
              --bond-index           Bond-center template index: ~24%% faster, no accuracy loss\n  \
              --bb-prices <path>     CSV (SMILES,price_per_gram) for route cost scoring\n  \
              --ring-context-policy <policy>  disabled (default) | audit-only | conservative | \
@@ -396,6 +405,7 @@ fn main() -> Result<()> {
         ring_context: ring_context_config,
         candidate_trace_cap: candidate_trace_limit,
         open_state_diagnostics,
+        open_state_dominance,
         ..Default::default()
     };
     let (mut routes, stats) = search::find_routes(&target_smiles, &env, &rules, &config)?;

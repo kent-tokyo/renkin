@@ -484,6 +484,18 @@ struct Node {
     /// reached yet. `None` (the default) costs nothing beyond this field's
     /// own size -- see [`CandidateTraceRecord`].
     trace_id: Option<u64>,
+    /// Set only under `SearchConfig::open_state_diagnostics` /
+    /// `open_state_dominance`, and only for a non-terminal candidate with a
+    /// finite g whose push made it the current open-state record for its
+    /// `StateKey` (an `Inserted` or `Replaced` verdict from
+    /// [`open_state_verdict`]). `None` for terminal nodes, the root,
+    /// non-finite-g candidates, `Dominated` candidates, and always when
+    /// both flags are off. Sharing the `Arc` with the value stored in the
+    /// open-state map (rather than re-deriving a `StateKey` from
+    /// `frontier`/`depth` on demand) is what makes the pre-`beam_prune` and
+    /// pop-time staleness checks an O(1) map lookup instead of an
+    /// O(frontier size) sort-and-clone per check.
+    open_state_key: Option<Arc<StateKey>>,
 }
 
 impl Node {
@@ -627,6 +639,23 @@ fn open_state_verdict(existing: Option<&OpenStateRecord>, candidate_g: f64) -> O
         None => OpenStateVerdict::Inserted,
         Some(e) if e.best_g <= candidate_g => OpenStateVerdict::Dominated,
         Some(_) => OpenStateVerdict::Replaced,
+    }
+}
+
+/// True iff a node carrying `open_state_key` and path cost `g` has been
+/// superseded by a strictly better arrival at the same state since it was
+/// pushed (Issue #101 Phase 2D) -- shared by the pre-`beam_prune` heap
+/// filter and the pop-time backstop. Always `false` for `None` (a terminal
+/// node, the root, or a candidate that was never tracked in the first
+/// place -- see [`OpenStateVerdict`]).
+fn is_stale_open_state(
+    open_state_key: &Option<Arc<StateKey>>,
+    g: f64,
+    open_state_best: &FxHashMap<Arc<StateKey>, OpenStateRecord>,
+) -> bool {
+    match open_state_key {
+        Some(key) => open_state_best.get(key).map(|r| r.best_g) != Some(g),
+        None => false,
     }
 }
 
@@ -1131,6 +1160,26 @@ pub struct SearchConfig {
     /// `CrowdOutDiagnostics::open_state_*` for the resulting counters.
     /// `false` (the default) costs nothing beyond this field's own size.
     pub open_state_diagnostics: bool,
+    /// Competitive-diagnostics program, Phase 2B/2C/2D: when `true`, acts
+    /// on the same open-state dominance decision `open_state_diagnostics`
+    /// only counts. A candidate whose depth-scoped exact-frontier
+    /// [`StateKey`] already has a recorded g <= its own is never pushed
+    /// (`OpenStateVerdict::Dominated`; ties keep whichever was generated
+    /// first, deterministic). A candidate with a strictly lower g
+    /// (`Replaced`) becomes the new record, and the node previously
+    /// holding that state's record becomes stale: it is actively removed
+    /// from the heap before every `beam_prune` call (so it cannot consume
+    /// beam-width capacity a genuinely distinct candidate should get) and,
+    /// as a backstop, is discarded unexpanded if it is ever popped anyway.
+    /// Terminal states (`n_unsolved == 0`) are always excluded from
+    /// dominance, preserving the existing behaviour of returning multiple
+    /// distinct routes that converge on the same building-block frontier.
+    /// `false` (the default) reproduces pre-existing search behaviour
+    /// exactly -- verified byte-identical output against master. Implies
+    /// `open_state_diagnostics`'s counters are populated as a side effect
+    /// of the real decisions made; setting both is redundant, not
+    /// additive.
+    pub open_state_dominance: bool,
 }
 
 impl Default for SearchConfig {
@@ -1152,6 +1201,7 @@ impl Default for SearchConfig {
             ring_context: crate::ring_context::RingContextConfig::Disabled,
             candidate_trace_cap: None,
             open_state_diagnostics: false,
+            open_state_dominance: false,
         }
     }
 }
@@ -1241,10 +1291,13 @@ pub fn find_routes(
     let mut routes: Vec<Route> = Vec::new();
     let mut closed: FxHashSet<u64> = FxHashSet::default();
     let mut heap: BinaryHeap<Node> = BinaryHeap::new();
-    // Issue #101 Phase 2A: best known g() per depth-scoped state, used to
-    // compute (and, once `open_state_dominance` lands, act on) open-state
-    // dominance. Empty and unused unless `open_state_diagnostics` is true.
-    let mut open_state_best: FxHashMap<StateKey, OpenStateRecord> = FxHashMap::default();
+    // Issue #101 Phase 2: best known g() per depth-scoped state. Keyed by
+    // `Arc<StateKey>` so a `Node` that becomes a state's current record can
+    // hold a cheap clone of the same key for O(1) staleness lookups later,
+    // rather than re-deriving (sort + clone) its `StateKey` on every check.
+    // Empty and unused unless `open_state_diagnostics`/`open_state_dominance`
+    // is true.
+    let mut open_state_best: FxHashMap<Arc<StateKey>, OpenStateRecord> = FxHashMap::default();
     let mut sa_cache: FxHashMap<String, f64> = FxHashMap::default();
     // Opt-D: per-search memoization of apply_retro results.
     // Key: canonical target SMILES. Value: Arc-wrapped filtered expansions.
@@ -1267,6 +1320,7 @@ pub fn find_routes(
         g: 0.0,
         h: h0,
         trace_id: None,
+        open_state_key: None,
     });
 
     while let Some(node) = heap.pop() {
@@ -1274,6 +1328,22 @@ pub fn find_routes(
         {
             nodes_popped += 1;
         }
+
+        // Issue #101 Phase 2D: a stale node (superseded by a strictly
+        // better-g arrival at the same state since it was pushed) is never
+        // expanded, even if it slipped through to a pop somehow -- the
+        // pre-`beam_prune` filter below is the primary removal path, this
+        // is the backstop. Checked before the `max_routes` break: a stale
+        // node never carries a route (terminal states are never given an
+        // `open_state_key`), so this ordering cannot change which routes
+        // are returned, only how quickly a stale pop is skipped.
+        if config.open_state_dominance
+            && is_stale_open_state(&node.open_state_key, node.g, &open_state_best)
+        {
+            crowd_out.stale_open_nodes_discarded_on_pop += 1;
+            continue;
+        }
+
         if routes.len() >= config.max_routes {
             break;
         }
@@ -1500,41 +1570,47 @@ pub fn find_routes(
                 }
             }
 
-            // Issue #101 Phase 2A: open-state dominance diagnostics.
-            // Counting-only -- never skips a push. Terminal candidates
-            // (n_unsolved == 0) are excluded, matching the eventual
-            // dominance rule's route-diversity requirement; skipping them
-            // here too keeps the diagnostics numbers directly comparable to
-            // what `open_state_dominance` will actually decide.
-            if config.open_state_diagnostics {
+            // Issue #101 Phase 2A-2D: open-state dominance. Terminal
+            // candidates (n_unsolved == 0) are always excluded, preserving
+            // route diversity for states that happen to converge on the
+            // same stock-terminal frontier. Under `open_state_diagnostics`
+            // alone this only counts what the decision *would* be, never
+            // skipping a push; under `open_state_dominance` it actually
+            // acts (`continue` past a dominated candidate -- it is never
+            // pushed at all).
+            let candidate_g = node.g + entry.step_cost;
+            let mut open_state_key: Option<Arc<StateKey>> = None;
+            if config.open_state_diagnostics || config.open_state_dominance {
                 crowd_out.open_state_candidates_considered += 1;
                 let is_terminal = new_frontier.iter().all(|e| is_bb(&e.smiles, env));
-                if !is_terminal {
-                    let candidate_g = node.g + entry.step_cost;
-                    if candidate_g.is_finite() {
-                        let key = StateKey::new(node.depth + 1, &new_frontier);
-                        match open_state_verdict(open_state_best.get(&key), candidate_g) {
-                            OpenStateVerdict::Inserted => {
-                                crowd_out.open_state_unique_inserted += 1;
-                                open_state_best.insert(
-                                    key,
-                                    OpenStateRecord {
-                                        best_g: candidate_g,
-                                    },
-                                );
+                if !is_terminal && candidate_g.is_finite() {
+                    let key = Arc::new(StateKey::new(node.depth + 1, &new_frontier));
+                    match open_state_verdict(open_state_best.get(&key), candidate_g) {
+                        OpenStateVerdict::Inserted => {
+                            crowd_out.open_state_unique_inserted += 1;
+                            open_state_best.insert(
+                                Arc::clone(&key),
+                                OpenStateRecord {
+                                    best_g: candidate_g,
+                                },
+                            );
+                            open_state_key = Some(key);
+                        }
+                        OpenStateVerdict::Dominated => {
+                            crowd_out.open_state_dominated_skipped += 1;
+                            if config.open_state_dominance {
+                                continue;
                             }
-                            OpenStateVerdict::Dominated => {
-                                crowd_out.open_state_dominated_skipped += 1;
-                            }
-                            OpenStateVerdict::Replaced => {
-                                crowd_out.open_state_better_replacements += 1;
-                                open_state_best.insert(
-                                    key,
-                                    OpenStateRecord {
-                                        best_g: candidate_g,
-                                    },
-                                );
-                            }
+                        }
+                        OpenStateVerdict::Replaced => {
+                            crowd_out.open_state_better_replacements += 1;
+                            open_state_best.insert(
+                                Arc::clone(&key),
+                                OpenStateRecord {
+                                    best_g: candidate_g,
+                                },
+                            );
+                            open_state_key = Some(key);
                         }
                     }
                 }
@@ -1581,10 +1657,30 @@ pub fn find_routes(
                 frontier: new_frontier,
                 path: new_path,
                 depth: node.depth + 1,
-                g: node.g + entry.step_cost,
+                g: candidate_g,
                 h: new_h,
                 trace_id,
+                open_state_key,
             });
+        }
+
+        // Issue #101 Phase 2D: remove stale open-state nodes (superseded by
+        // a strictly better-g arrival at their state since they were
+        // pushed) BEFORE beam_prune runs, so they cannot consume beam-width
+        // capacity a genuinely distinct candidate should get instead. This
+        // is the primary removal path -- the pop-time check above is only
+        // a backstop for whatever a single filter pass here might miss
+        // between iterations.
+        if config.open_state_dominance {
+            let mut removed = 0u64;
+            heap.retain(|n| {
+                let stale = is_stale_open_state(&n.open_state_key, n.g, &open_state_best);
+                if stale {
+                    removed += 1;
+                }
+                !stale
+            });
+            crowd_out.stale_open_nodes_removed_before_beam_prune += removed;
         }
 
         // --- Phase 3.2: Beam search pruning ---
@@ -1919,6 +2015,7 @@ mod tests {
             g: f,
             h: 0.0,
             trace_id: None,
+            open_state_key: None,
         }
     }
 
@@ -2970,6 +3067,229 @@ mod tests {
         // The diagnostics-only counters must actually have counted something
         // on a non-trivial target (else this test would pass vacuously).
         assert!(stats_on.crowd_out.open_state_candidates_considered > 0);
+    }
+
+    // ── is_stale_open_state (Issue #101 Phase 2D) ────────────────────────────
+    // The pre-`beam_prune` filter runs every outer-loop iteration before any
+    // `heap.pop()` can observe a newly-stale node, so the pop-time backstop
+    // is provably unreachable through a real `find_routes` call -- these
+    // test the shared predicate directly instead.
+
+    #[test]
+    fn is_stale_open_state_true_when_record_has_lower_g() {
+        let mut map: FxHashMap<Arc<StateKey>, OpenStateRecord> = FxHashMap::default();
+        let key = Arc::new(StateKey::new(1, &[FEntry { smiles: "A".into() }]));
+        map.insert(Arc::clone(&key), OpenStateRecord { best_g: 1.0 });
+        assert!(is_stale_open_state(&Some(key), 5.0, &map));
+    }
+
+    #[test]
+    fn is_stale_open_state_false_when_g_matches_record() {
+        let mut map: FxHashMap<Arc<StateKey>, OpenStateRecord> = FxHashMap::default();
+        let key = Arc::new(StateKey::new(1, &[FEntry { smiles: "A".into() }]));
+        map.insert(Arc::clone(&key), OpenStateRecord { best_g: 5.0 });
+        assert!(!is_stale_open_state(&Some(key), 5.0, &map));
+    }
+
+    #[test]
+    fn is_stale_open_state_false_when_key_is_none() {
+        let map: FxHashMap<Arc<StateKey>, OpenStateRecord> = FxHashMap::default();
+        assert!(!is_stale_open_state(&None, 5.0, &map));
+    }
+
+    #[test]
+    fn state_key_exact_comparison_survives_hash_collisions() {
+        // H: exact-key comparison must prevent false dedup even under an
+        // adversarial hasher that collides every key into one bucket --
+        // proving correctness never depends on hash quality, only on `Eq`.
+        #[derive(Default)]
+        struct AlwaysCollideHasher;
+        impl std::hash::Hasher for AlwaysCollideHasher {
+            fn finish(&self) -> u64 {
+                0
+            }
+            fn write(&mut self, _bytes: &[u8]) {}
+        }
+        let mut map: std::collections::HashMap<
+            StateKey,
+            i32,
+            std::hash::BuildHasherDefault<AlwaysCollideHasher>,
+        > = Default::default();
+        let key_a = StateKey::new(1, &[FEntry { smiles: "A".into() }]);
+        let key_b = StateKey::new(1, &[FEntry { smiles: "B".into() }]);
+        map.insert(key_a.clone(), 1);
+        map.insert(key_b.clone(), 2);
+        assert_eq!(
+            map.len(),
+            2,
+            "distinct StateKeys must not collapse despite an identical hash"
+        );
+        assert_eq!(map.get(&key_a), Some(&1));
+        assert_eq!(map.get(&key_b), Some(&2));
+    }
+
+    // ── Full-search open-state dominance fixtures ────────────────────────────
+    // Two independent 2-hop paths from T converge on the identical
+    // single-molecule state M at the same depth, via different depth-1
+    // intermediates A and B:
+    //   T --p1--> A --p2--> M   (path P)
+    //   T --q1--> B --q2--> M   (path Q)
+    // Mirrors the existing `closed_set_discards_better_path_reaching_same_state`
+    // fixture's style (single-molecule "frontier" transformations), but with
+    // both convergent paths reaching M at the SAME depth (2), which is what
+    // open-state dominance (depth-scoped) needs to observe -- unlike that
+    // older fixture's depth-1-vs-depth-2 convergence.
+
+    fn convergent_state_rules() -> Vec<RetroRule> {
+        fn rr(name: &str, smirks: &str) -> RetroRule {
+            RetroRule {
+                name: name.to_string(),
+                template_id: format!("rule:{name}"),
+                smirks: smirks.to_string(),
+                weight: 1.0,
+                required_elements: 0,
+            }
+        }
+        vec![
+            rr("p1", "[Cl][C:1][C:2][I]>>[Br][C:1][C:2][I]"), // T -> A
+            rr("p2", "[Br][C:1][C:2][I]>>[Br][C:1][C:2][Br]"), // A -> M
+            rr("q1", "[Cl][C:1][C:2][I]>>[Cl][C:1][C:2][Br]"), // T -> B
+            rr("q2", "[Cl][C:1][C:2][Br]>>[Br][C:1][C:2][Br]"), // B -> M
+        ]
+    }
+
+    /// Orders pop events A, B, M(via A), M(via B) -- in that order -- so
+    /// M's first (via A) arrival is still sitting unpopped in the heap when
+    /// B's expansion produces a strictly cheaper second arrival, forcing a
+    /// real `Replaced` verdict (not merely `Dominated`, already covered by
+    /// the pure-function tests above) with the superseded node still live
+    /// to observe the stale-removal path at the full-search level. A small
+    /// bonus on p1 only orders A before B without making M's first arrival
+    /// (via A) cheap enough to beat B itself; a large bonus on q2 only
+    /// then makes M's second arrival (via B) strictly cheaper once B
+    /// expands.
+    struct BiasQPathCheaperOverall;
+    impl ReactionPrior for BiasQPathCheaperOverall {
+        fn prior(&self, template_name: &str, _target_smiles: &str) -> f64 {
+            match template_name {
+                "p1" => 0.5,
+                "q2" => 10.0,
+                _ => 0.0,
+            }
+        }
+    }
+
+    #[test]
+    fn open_state_dominance_marks_and_removes_stale_duplicate_state() {
+        let rules = convergent_state_rules();
+        let env = ChemEnv::in_memory(&["FCCF"]); // M ("BrCCBr") is not a building block
+        let cfg_dominance = SearchConfig {
+            max_depth: 2,
+            max_routes: 10,
+            beam_width: 0,
+            open_state_dominance: true,
+            reaction_prior: Some(std::sync::Arc::new(BiasQPathCheaperOverall)),
+            ..Default::default()
+        };
+        let (_, stats) = find_routes("ClCCI", &env, &rules, &cfg_dominance).unwrap();
+        let d = &stats.crowd_out;
+        assert!(
+            d.open_state_better_replacements > 0,
+            "the two paths converging on M must produce at least one replacement"
+        );
+        assert!(
+            d.stale_open_nodes_removed_before_beam_prune > 0,
+            "the superseded M node must be actively removed before beam_prune"
+        );
+    }
+
+    #[test]
+    fn open_state_dominance_is_deterministic_across_repeated_runs() {
+        let rules = convergent_state_rules();
+        let env = ChemEnv::in_memory(&["FCCF"]);
+        let cfg_dominance = SearchConfig {
+            max_depth: 2,
+            max_routes: 10,
+            beam_width: 0,
+            open_state_dominance: true,
+            ..Default::default()
+        };
+        let (routes_a, stats_a) = find_routes("ClCCI", &env, &rules, &cfg_dominance).unwrap();
+        let (routes_b, stats_b) = find_routes("ClCCI", &env, &rules, &cfg_dominance).unwrap();
+        assert_eq!(
+            format!("{:?}", routes_a),
+            format!("{:?}", routes_b),
+            "identical inputs must produce byte-identical routes across repeats"
+        );
+        assert_eq!(
+            stats_a.crowd_out.open_state_better_replacements,
+            stats_b.crowd_out.open_state_better_replacements
+        );
+        assert_eq!(
+            stats_a.crowd_out.stale_open_nodes_removed_before_beam_prune,
+            stats_b.crowd_out.stale_open_nodes_removed_before_beam_prune
+        );
+    }
+
+    #[test]
+    fn open_state_dominance_preserves_route_diversity_for_terminal_convergence() {
+        // F: when the converging state M is itself a building block
+        // (terminal), both distinct routes reaching it must be preserved,
+        // not collapsed into one -- terminal states are always excluded
+        // from dominance tracking.
+        let rules = convergent_state_rules();
+        let env = ChemEnv::in_memory(&["BrCCBr"]); // M itself is now the only BB
+        let cfg_off = SearchConfig {
+            max_depth: 2,
+            max_routes: 10,
+            beam_width: 0,
+            ..Default::default()
+        };
+        let cfg_on = SearchConfig {
+            max_depth: 2,
+            max_routes: 10,
+            beam_width: 0,
+            open_state_dominance: true,
+            ..Default::default()
+        };
+        let (routes_off, _) = find_routes("ClCCI", &env, &rules, &cfg_off).unwrap();
+        let (routes_on, _) = find_routes("ClCCI", &env, &rules, &cfg_on).unwrap();
+        assert!(
+            routes_off.len() >= 2,
+            "sanity: both convergent paths must reach the BB without dominance"
+        );
+        assert_eq!(
+            routes_off.len(),
+            routes_on.len(),
+            "dominance must not collapse distinct routes converging on a terminal state"
+        );
+    }
+
+    #[test]
+    fn open_state_dominance_default_off_matches_legacy_behaviour_exactly() {
+        // I: byte-identical output against a config that never sets any
+        // open_state_* field at all (Phase 2E backward-compatibility gate).
+        let env = aspirin_env();
+        let rules = default_rules();
+        let legacy_cfg = cfg(3);
+        let explicit_off_cfg = SearchConfig {
+            open_state_dominance: false,
+            open_state_diagnostics: false,
+            ..cfg(3)
+        };
+        let (routes_legacy, stats_legacy) =
+            find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &legacy_cfg).unwrap();
+        let (routes_explicit, stats_explicit) =
+            find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &explicit_off_cfg).unwrap();
+        assert_eq!(
+            format!("{:?}", routes_legacy),
+            format!("{:?}", routes_explicit)
+        );
+        assert_eq!(stats_legacy.nodes_expanded, stats_explicit.nodes_expanded);
+        assert_eq!(
+            stats_legacy.crowd_out.rules_attempted_total,
+            stats_explicit.crowd_out.rules_attempted_total
+        );
     }
 
     #[test]

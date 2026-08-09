@@ -8,7 +8,7 @@ use std::collections::btree_map::Entry;
 use anyhow::{Context, Result, bail};
 use chematic::core::Element;
 use chematic::smiles::canonical_smiles;
-use renkin::chem_env::{Molecule, RetroRule, mol_from_smiles};
+use renkin::chem_env::{Molecule, RetroRule, aromaticity_integrity_violation, mol_from_smiles};
 use renkin::search::Route;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -245,6 +245,14 @@ fn canonicalize_outcome(outcome: &[Molecule]) -> std::result::Result<Vec<String>
     }
     let mut products = Vec::with_capacity(outcome.len());
     for mol in outcome {
+        // Checked against the raw, just-constructed product molecule --
+        // before this function's own canonical_smiles/mol_from_smiles
+        // round-trip below, which (like an external tool's sanitizer) can
+        // silently repair or reject the exact defect this catches, hiding
+        // it here even when it's still semantically wrong (Issue #90).
+        if let Some(violation) = aromaticity_integrity_violation(mol) {
+            return Err(violation.reason_code());
+        }
         let canon = canonical_smiles(mol);
         if mol_from_smiles(&canon).is_err() {
             return Err("product_roundtrip_failed");
@@ -1835,6 +1843,26 @@ mod tests {
         ];
         expected.sort_unstable();
         assert_eq!(products, expected);
+    }
+
+    #[test]
+    fn canonicalize_outcome_rejects_aromaticity_integrity_violation() {
+        // Issue #90's exact known-bad hash-atom variant, applied directly
+        // via chematic::rxn::run_reactants (bypassing chem_env's now-fixed
+        // spectator grouping entirely) to prove canonicalize_outcome's own
+        // wiring of aromaticity_integrity_violation -- not just chem_env's
+        // -- rejects the raw product with the right reason code, before its
+        // own canonical_smiles/mol_from_smiles round-trip below gets a
+        // chance to (possibly) hide the same defect.
+        let bad_variant = "[N:2]-[CH2:1]-[C:3]>>O=[C:1](-[n:2])-[C:3]";
+        let target = mol_from_smiles("c1ccccc1CCCNCC").unwrap();
+        let results = chematic::rxn::run_reactants(bad_variant, &[&target]).unwrap_or_default();
+        let group = results
+            .first()
+            .expect("the bad variant must still match the acyclic amine");
+        let err = canonicalize_outcome(group)
+            .expect_err("must reject an aromaticity-integrity violation");
+        assert_eq!(err, "aromatic_atom_not_in_ring");
     }
 
     fn synthetic_metathesis_rule() -> RetroRule {

@@ -157,6 +157,163 @@ pub fn to_canonical(mol: &Molecule) -> String {
     canonical_smiles(mol)
 }
 
+/// Structurally clear every atom's `atom_map`, leaving every other property
+/// (element, charge, isotope, aromaticity, chirality, hydrogen count,
+/// wildcard, stereo groups, stereo neighbor order, bond directions, bond
+/// orders, ring topology) untouched.
+///
+/// Ground-truth label pipelines that need map-free canonical SMILES from
+/// mapped reaction data (e.g. `scripts/generate_real_labels.py`) must clear
+/// atom maps this way, not via string manipulation on the SMILES text --
+/// `:` is also SMILES bond syntax (explicit aromatic/double bonds), so a
+/// text-level `:\d+` strip can corrupt a ring-closure digit that follows an
+/// explicit bond symbol instead of an atom map (see the regression tests
+/// below for a concrete case). Rebuilds via [`MoleculeBuilder`] rather than
+/// mutating in place because [`Molecule`] exposes no atom mutator for
+/// `atom_map` (only `set_charge`/`set_isotope`/`set_element`/etc. -- by
+/// design, atom maps are meant to be set once during parsing/reaction
+/// construction, not edited post hoc).
+///
+/// Atoms and bonds are re-added in exactly the same order as `mol` yields
+/// them, so atom/bond indices are unchanged and `stereo_groups`/
+/// `stereo_neighbor_order`/`bond_directions` (all keyed by index) can be
+/// copied over verbatim -- see `MoleculeBuilder::from_molecule`'s own doc
+/// comment for why that invariant is what makes the verbatim copy valid.
+pub fn clear_atom_maps(mol: &Molecule) -> Molecule {
+    let mut builder = MoleculeBuilder::new();
+    for (_, atom) in mol.atoms() {
+        let mut a = atom.clone();
+        a.atom_map = None;
+        builder.add_atom(a);
+    }
+    for (_, bond) in mol.bonds() {
+        let _ = builder.add_bond(bond.atom1, bond.atom2, bond.order);
+    }
+    builder.copy_stereo_groups_from(mol);
+    builder.copy_stereo_from(mol);
+    builder.copy_bond_directions_from(mol);
+    builder.build()
+}
+
+#[cfg(test)]
+mod clear_atom_maps_tests {
+    use super::*;
+
+    fn canon_after_clear(smiles: &str) -> String {
+        let mol = mol_from_smiles(smiles).unwrap_or_else(|e| panic!("{smiles}: {e}"));
+        to_canonical(&clear_atom_maps(&mol))
+    }
+
+    #[test]
+    fn normal_mapped_atom_matches_unmapped_canonical() {
+        assert_eq!(
+            canon_after_clear("[CH3:1]O"),
+            to_canonical(&mol_from_smiles("CO").unwrap())
+        );
+    }
+
+    #[test]
+    fn multi_digit_atom_map_matches_unmapped_canonical() {
+        assert_eq!(
+            canon_after_clear("[CH3:123]O"),
+            to_canonical(&mol_from_smiles("CO").unwrap())
+        );
+    }
+
+    #[test]
+    fn isotope_survives_map_clearing() {
+        assert_eq!(
+            canon_after_clear("[13CH4:1]"),
+            to_canonical(&mol_from_smiles("[13CH4]").unwrap())
+        );
+    }
+
+    #[test]
+    fn formal_charge_survives_map_clearing() {
+        assert_eq!(
+            canon_after_clear("[NH4+:1]"),
+            to_canonical(&mol_from_smiles("[NH4+]").unwrap())
+        );
+    }
+
+    #[test]
+    fn tetrahedral_stereo_survives_map_clearing() {
+        assert_eq!(
+            canon_after_clear("[C@H:1](F)(Cl)Br"),
+            to_canonical(&mol_from_smiles("[C@H](F)(Cl)Br").unwrap())
+        );
+        // Also confirm it's not just "some canonical form" but the correct
+        // one -- the mirror-image @@ stereocenter must differ.
+        assert_ne!(
+            canon_after_clear("[C@H:1](F)(Cl)Br"),
+            canon_after_clear("[C@@H:1](F)(Cl)Br")
+        );
+    }
+
+    #[test]
+    fn aromatic_atoms_survive_map_clearing() {
+        assert_eq!(
+            canon_after_clear("[cH:1]1ccccc1"),
+            to_canonical(&mol_from_smiles("c1ccccc1").unwrap())
+        );
+    }
+
+    #[test]
+    fn disconnected_fragments_survive_map_clearing() {
+        assert_eq!(
+            canon_after_clear("[CH3:1]O.[Na+:2]"),
+            to_canonical(&mol_from_smiles("CO.[Na+]").unwrap())
+        );
+    }
+
+    #[test]
+    fn already_unmapped_smiles_is_a_no_op() {
+        assert_eq!(
+            canon_after_clear("CC(=O)O"),
+            to_canonical(&mol_from_smiles("CC(=O)O").unwrap())
+        );
+    }
+
+    /// Pins the exact failure mode a text-level `re.sub(r":\d+", "", smiles)`
+    /// atom-map strip has: `:` is also explicit SMILES bond syntax, so a
+    /// mapped aromatic ring written with explicit `:` bonds and a `:`-led
+    /// ring-closure digit gets its ring closure silently deleted along with
+    /// the atom map, corrupting the ring into an open chain.
+    #[test]
+    fn explicit_colon_bond_with_ring_closure_digit_is_not_corrupted() {
+        // Benzene, atom-mapped, every ring bond written with an explicit
+        // aromatic `:` bond symbol (including the closing ring bond, whose
+        // digit immediately follows a `:`).
+        let mapped = "[cH:1]:1:c:c:c:c:c:1";
+        let benzene = to_canonical(&mol_from_smiles("c1ccccc1").unwrap());
+        assert_eq!(
+            canon_after_clear(mapped),
+            benzene,
+            "structural atom-map clearing must keep the ring closed"
+        );
+
+        // The old regex's actual output on this exact input, replayed
+        // structurally: `:\d+` strips both the atom-map `:1` and the
+        // ring-closure `:1`, leaving `[cH]:c:c:c:c:c` -- an open chain, a
+        // different molecule entirely. If this ever equals `benzene`, the
+        // fixture stopped being a real regression pin and must be replaced.
+        let regex_corrupted = to_canonical(&mol_from_smiles("[cH]:c:c:c:c:c").unwrap());
+        assert_ne!(
+            regex_corrupted, benzene,
+            "fixture no longer demonstrates the regex-corruption failure mode"
+        );
+    }
+
+    #[test]
+    fn heavy_atom_count_is_unchanged_by_map_clearing() {
+        let mol = mol_from_smiles("[CH3:1][CH2:2][OH:3]").unwrap();
+        let cleared = clear_atom_maps(&mol);
+        assert_eq!(mol.atoms().count(), cleared.atoms().count());
+        assert_eq!(mol.bonds().count(), cleared.bonds().count());
+        assert!(cleared.atoms().all(|(_, a)| a.atom_map.is_none()));
+    }
+}
+
 static STANDARDIZE_OPTS: StandardizeOptions = StandardizeOptions {
     canonical_tautomer: false,
     neutralize_charges: false,

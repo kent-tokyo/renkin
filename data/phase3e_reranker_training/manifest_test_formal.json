@@ -1,0 +1,57 @@
+{
+  "manifest_schema_version": 2,
+  "feature_schema_version": 1,
+  "feature_names": [
+    "num_precursors",
+    "target_heavy_atom_count",
+    "precursor_heavy_atom_count_sum",
+    "precursor_heavy_atom_count_max",
+    "heavy_atom_retention_ratio",
+    "net_charge_balanced",
+    "no_heavy_atom_gain",
+    "source_template_count",
+    "reaction_center_atom_count_min",
+    "reaction_center_atom_count_max",
+    "reaction_center_atom_count_mean",
+    "reaction_center_extractable_fraction",
+    "min_base_step_cost",
+    "best_upstream_score",
+    "fraction_precursors_in_stock",
+    "all_precursors_in_stock",
+    "max_template_log_frequency",
+    "mean_template_log_frequency"
+  ],
+  "feature_schema_hash": "sha256:756404c59bbee9a65e194f92df3530e1b801028f333e01c67214917977061df1",
+  "proposal_mode": {
+    "mode": "exhaustive",
+    "top_k": null,
+    "rules_offset": null,
+    "scorer_identity": null,
+    "scorer_model_sha256": null,
+    "scorer_status": null
+  },
+  "rules_content_hash": "sha256:0bbc3acdb0f1ec01e712d96d11aac3c74b238aeb6395302fa6d6126a75dd5dca",
+  "rules_count": 500,
+  "stock_identity": null,
+  "stock_compound_count": null,
+  "stock_content_sha256": null,
+  "target_count": 4903,
+  "group_count": 4903,
+  "candidate_count": 134499,
+  "candidate_jsonl_sha256": "sha256:e16d811d128aa29653481be0a19589e643aa87e65785572550f5bdf7ce0bf94c",
+  "target_group_index_sha256": "sha256:64f207eff20cf7d3fc34b0de5065ba21b9fa6a794591b2b1e4f4603ecb5e3036",
+  "provenance": {
+    "renkin_git_commit": "9a2344e64a05af9ead4ad37a993b32208f54a772",
+    "cargo_lock_sha256": "sha256:ada045bd1b65319d8ede433417d50991b5f7866464c522eedca07de7a6775174",
+    "chematic_version": "0.11.0",
+    "target_input_sha256": "sha256:45d583f7acb2fa0fe79358f5c545b15eb86bd02e55faaac40165861a0338a82e",
+    "stock_source": null,
+    "embedded_fallback_used": false,
+    "export_config": {
+      "groups_path": "data/reranker_groups_uspto50k_test.jsonl",
+      "limit": null,
+      "proposal_mode": "exhaustive",
+      "templates_path": "data/templates_extracted_500.smi"
+    }
+  }
+}

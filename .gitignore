@@ -58,6 +58,77 @@ data/bench_chunks*_orchestrator.log
 data/uspto50k_test.smi
 data/uspto50k_benchmark_result.json
 
+# ---- Issue #101 Phase 3: reranker real-label generation ----
+# Regenerable from the pinned HF revision + scripts/generate_real_labels.py
+# (see data/phase3a_reranker_ground_truth_audit/findings.md for full
+# provenance -- SHA-256s, preprocessing command, accept/reject accounting).
+data/uspto50k_raw_test_split.jsonl
+data/uspto50k_raw_train_split.jsonl
+data/uspto50k_raw_val_split.jsonl
+data/reranker_labels_uspto50k_test.jsonl
+data/reranker_labels_uspto50k_test.summary.json
+data/reranker_labels_uspto50k_train.jsonl
+data/reranker_labels_uspto50k_val.jsonl
+data/reranker_labels_uspto50k_train_val.summary.json
+data/reranker_targets_uspto50k_train.jsonl
+data/reranker_targets_uspto50k_val.jsonl
+data/reranker_groups_uspto50k_test.jsonl
+data/reranker_groups_uspto50k_train.jsonl
+data/reranker_groups_uspto50k_val.jsonl
+data/reranker_split_manifest.jsonl
+data/phase3a_reranker_ground_truth_audit/benchmark_quarantine_target_identities.txt
+data/phase3a_reranker_ground_truth_audit/benchmark_quarantine_manifest.json
+data/phase3b_100_target_feasibility/pool_test_100.jsonl
+data/phase3b_100_target_feasibility/groups_test_100.jsonl
+data/phase3c_500_target_feasibility/pool_train_500.jsonl
+data/phase3c_500_target_feasibility/pool_val_500.jsonl
+data/phase3c_500_target_feasibility/groups_train_500.jsonl
+data/phase3c_500_target_feasibility/groups_val_500.jsonl
+data/phase3c_500_target_feasibility/*.split_manifest_subset.jsonl
+data/phase3d_full_pool/pool_train_full.jsonl
+data/phase3d_full_pool/pool_val_full.jsonl
+data/phase3d_full_pool/groups_train_full.jsonl
+data/phase3d_full_pool/groups_val_full.jsonl
+data/phase3d_full_pool/*.split_manifest_subset.jsonl
+data/phase3d_full_pool/train_full_run.log
+
+# Phase 3D.5 canonical identity audit: regenerable intermediate text (one
+# SMILES per line, extracted from already-committed pool/label files, then
+# re-canonicalized) -- the durable record is findings.md + the small JSON
+# ledgers (mismatch_ledger.json, precursor_drift_pairs_*.json,
+# false_negative_diagnostic_*.json, target_idempotence_audit.json), all
+# tracked.
+data/phase3d5_canonical_identity_audit/*_unique.txt
+data/phase3d5_canonical_identity_audit/*_canon.txt
+data/phase3d5_canonical_identity_audit/*_canon1.txt
+data/phase3d5_canonical_identity_audit/*_canon2.txt
+data/phase3d5_canonical_identity_audit/*.split_manifest_subset.jsonl
+
+# Phase 3E: training/formal-TEST run -- regenerable from committed scripts
+# (phase3e_build_combined_pool.py, phase3e_evaluate_formal_test.py,
+# renkin-pool-gen) plus already-gitignored Phase 3D/3A source pools, and
+# from the frozen model artifact by its own SHA-256 (Step 8b confirmed
+# byte-for-byte training reproducibility -- see freeze_manifest.json). The
+# durable record is findings.md, freeze_manifest.json, eval_report.json,
+# gate_val.json, formal_test_result.json, manifest_combined.json, and
+# manifest_test_formal.json, all tracked.
+data/phase3e_reranker_training/pool_combined.jsonl
+data/phase3e_reranker_training/pool_test_formal.jsonl
+data/phase3e_reranker_training/groups_combined.jsonl
+data/phase3e_reranker_training/groups_test_formal.jsonl
+data/phase3e_reranker_training/labels_combined.jsonl
+data/phase3e_reranker_training/split_manifest_combined.jsonl
+data/phase3e_reranker_training/model.txt
+data/phase3e_reranker_training/*.log
+# Golden-test fixture for a SEPARATE, not-yet-merged runtime-integration
+# effort (real formal-TEST feature vectors + frozen-model Python
+# predictions) -- regenerable via scripts/reranker_golden_fixture.py. This
+# PR does not itself verify anything against it; a from-scratch Rust
+# LightGBM reader on the runtime-integration branch was checked against a
+# sample of this fixture there, not here -- see that branch/PR for the
+# methodology and result once it exists.
+data/phase3e_reranker_training/reranker_golden_fixture.jsonl
+
 # Phase 32 scratch/raw run dumps under data/corpora/ (underscore prefix =
 # reproducible intermediate data, not a curated deliverable -- the fixed
 # corpus manifests themselves, e.g. screening_500.json, are not excluded).

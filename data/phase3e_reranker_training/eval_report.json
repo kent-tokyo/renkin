@@ -1,0 +1,460 @@
+{
+  "feature_schema_version": 1,
+  "proposal_mode": {
+    "mode": "exhaustive",
+    "top_k": null,
+    "rules_offset": null,
+    "scorer_identity": null,
+    "scorer_model_sha256": null,
+    "scorer_status": null
+  },
+  "rules_content_hash": "sha256:0bbc3acdb0f1ec01e712d96d11aac3c74b238aeb6395302fa6d6126a75dd5dca",
+  "unlabeled_group_count": 0,
+  "template_frequency_table_sha256": "sha256:12c3023fbbc3f85811c8454760538dd0a3f93670ff011b0f2de1ad7685552ffa",
+  "lightgbm": {
+    "hyperparameters": {
+      "objective": "lambdarank",
+      "metric": "ndcg",
+      "eval_at": [
+        1,
+        10
+      ],
+      "boosting_type": "gbdt",
+      "n_estimators": 200,
+      "learning_rate": 0.05,
+      "num_leaves": 31,
+      "max_depth": -1,
+      "min_child_weight": 0.001,
+      "min_child_samples": 5,
+      "subsample": 0.8,
+      "subsample_freq": 1,
+      "colsample_bytree": 0.8,
+      "reg_alpha": 0.0,
+      "reg_lambda": 0.1,
+      "random_state": 42,
+      "deterministic": true,
+      "num_threads": 1,
+      "verbosity": -1
+    },
+    "package_versions": {
+      "lightgbm": "4.7.0"
+    },
+    "best_iteration": 199
+  },
+  "arms": {
+    "original_rank": {
+      "train": {
+        "split": "train",
+        "target_count": 39668,
+        "group_count": 39927,
+        "scored_groups": 26648,
+        "groups_with_zero_positive_in_pool": 13279,
+        "top1_hit_rate": 0.25060042029420593,
+        "mean_reciprocal_rank": 0.430537079504621,
+        "conditional": {
+          "top1_hit_rate": 0.25060042029420593,
+          "top10_hit_rate": 0.7977709396577605,
+          "mean_reciprocal_rank": 0.430537079504621,
+          "ndcg_at_10": 0.5085684419713563,
+          "mean_best_positive_rank": 6.43530471329931,
+          "n_groups": 26648
+        },
+        "end_to_end": {
+          "top1_hit_rate": 0.16725524081448645,
+          "top10_hit_rate": 0.532446715255341,
+          "mean_reciprocal_rank": 0.28734821285443785,
+          "ndcg_at_10": 0.3394277516881484,
+          "n_groups": 39927
+        },
+        "description": "Ascending best_upstream_rank (the order the proposal/scorer originally produced candidates in) -- a sanity-check baseline: if the reranker can't beat 'trust the upstream order', it isn't adding anything.",
+        "status": "ok"
+      },
+      "val": {
+        "split": "val",
+        "target_count": 4924,
+        "group_count": 4931,
+        "scored_groups": 3253,
+        "groups_with_zero_positive_in_pool": 1678,
+        "top1_hit_rate": 0.2609898555179834,
+        "mean_reciprocal_rank": 0.4412095507400828,
+        "conditional": {
+          "top1_hit_rate": 0.2609898555179834,
+          "top10_hit_rate": 0.8075622502305564,
+          "mean_reciprocal_rank": 0.4412095507400828,
+          "ndcg_at_10": 0.5196953782214009,
+          "mean_best_positive_rank": 6.261297264063941,
+          "n_groups": 3253
+        },
+        "end_to_end": {
+          "top1_hit_rate": 0.17217602920300143,
+          "top10_hit_rate": 0.5327519772865544,
+          "mean_reciprocal_rank": 0.2910676675233197,
+          "ndcg_at_10": 0.3428450751073245,
+          "n_groups": 4931
+        },
+        "description": "Ascending best_upstream_rank (the order the proposal/scorer originally produced candidates in) -- a sanity-check baseline: if the reranker can't beat 'trust the upstream order', it isn't adding anything.",
+        "status": "ok"
+      },
+      "test": {
+        "split": "test",
+        "target_count": 0,
+        "group_count": 0,
+        "scored_groups": 0,
+        "groups_with_zero_positive_in_pool": 0,
+        "top1_hit_rate": null,
+        "mean_reciprocal_rank": null,
+        "conditional": {
+          "top1_hit_rate": null,
+          "top10_hit_rate": null,
+          "mean_reciprocal_rank": null,
+          "ndcg_at_10": null,
+          "mean_best_positive_rank": null,
+          "n_groups": 0
+        },
+        "end_to_end": {
+          "top1_hit_rate": null,
+          "top10_hit_rate": null,
+          "mean_reciprocal_rank": null,
+          "ndcg_at_10": null,
+          "n_groups": 0
+        },
+        "description": "Ascending best_upstream_rank (the order the proposal/scorer originally produced candidates in) -- a sanity-check baseline: if the reranker can't beat 'trust the upstream order', it isn't adding anything.",
+        "status": "ok"
+      }
+    },
+    "upstream_score": {
+      "train": {
+        "status": "not_computable",
+        "description": "best_upstream_score alone -- only meaningful for a ScorerConditioned pool (always missing under Exhaustive/BondIndexed, see FEATURE_NAMES_V1's doc)."
+      },
+      "val": {
+        "status": "not_computable",
+        "description": "best_upstream_score alone -- only meaningful for a ScorerConditioned pool (always missing under Exhaustive/BondIndexed, see FEATURE_NAMES_V1's doc)."
+      },
+      "test": {
+        "status": "not_computable",
+        "description": "best_upstream_score alone -- only meaningful for a ScorerConditioned pool (always missing under Exhaustive/BondIndexed, see FEATURE_NAMES_V1's doc)."
+      }
+    },
+    "template_frequency": {
+      "train": {
+        "split": "train",
+        "target_count": 39668,
+        "group_count": 39927,
+        "scored_groups": 26648,
+        "groups_with_zero_positive_in_pool": 13279,
+        "top1_hit_rate": 0.0014259981987391173,
+        "mean_reciprocal_rank": 0.05941556228651255,
+        "conditional": {
+          "top1_hit_rate": 0.0014259981987391173,
+          "top10_hit_rate": 0.11021465025517863,
+          "mean_reciprocal_rank": 0.05941556228651255,
+          "ndcg_at_10": 0.03804809266690755,
+          "mean_best_positive_rank": 23.078092164515162,
+          "n_groups": 26648
+        },
+        "end_to_end": {
+          "top1_hit_rate": 0.0009517369198787787,
+          "top10_hit_rate": 0.07355924562326245,
+          "mean_reciprocal_rank": 0.03965501800313037,
+          "ndcg_at_10": 0.025393983354315433,
+          "n_groups": 39927
+        },
+        "description": "Train-frozen template-frequency table (see fit_template_frequency) -- 'prefer whatever templates were common in training', independent of this candidate's own chemistry.",
+        "status": "ok"
+      },
+      "val": {
+        "split": "val",
+        "target_count": 4924,
+        "group_count": 4931,
+        "scored_groups": 3253,
+        "groups_with_zero_positive_in_pool": 1678,
+        "top1_hit_rate": 0.002459268367660621,
+        "mean_reciprocal_rank": 0.06112113996262688,
+        "conditional": {
+          "top1_hit_rate": 0.002459268367660621,
+          "top10_hit_rate": 0.11435597909621888,
+          "mean_reciprocal_rank": 0.06112113996262688,
+          "ndcg_at_10": 0.0406663102916736,
+          "mean_best_positive_rank": 23.089455886873655,
+          "n_groups": 3253
+        },
+        "end_to_end": {
+          "top1_hit_rate": 0.0016223889677550193,
+          "top10_hit_rate": 0.07544108700060839,
+          "mean_reciprocal_rank": 0.040321855262304855,
+          "ndcg_at_10": 0.02682772406789986,
+          "n_groups": 4931
+        },
+        "description": "Train-frozen template-frequency table (see fit_template_frequency) -- 'prefer whatever templates were common in training', independent of this candidate's own chemistry.",
+        "status": "ok"
+      },
+      "test": {
+        "status": "not_computable",
+        "description": "Train-frozen template-frequency table (see fit_template_frequency) -- 'prefer whatever templates were common in training', independent of this candidate's own chemistry."
+      }
+    },
+    "upstream_plus_frequency": {
+      "train": {
+        "split": "train",
+        "target_count": 39668,
+        "group_count": 39927,
+        "scored_groups": 26648,
+        "groups_with_zero_positive_in_pool": 13279,
+        "top1_hit_rate": 0.003940258180726509,
+        "mean_reciprocal_rank": 0.07931252128393632,
+        "conditional": {
+          "top1_hit_rate": 0.003940258180726509,
+          "top10_hit_rate": 0.22189282497748425,
+          "mean_reciprocal_rank": 0.07931252128393632,
+          "ndcg_at_10": 0.08065771431689132,
+          "mean_best_positive_rank": 19.779720804563194,
+          "n_groups": 26648
+        },
+        "end_to_end": {
+          "top1_hit_rate": 0.0026297993838755728,
+          "top10_hit_rate": 0.14809527387482155,
+          "mean_reciprocal_rank": 0.05293460733774977,
+          "ndcg_at_10": 0.05383241343242718,
+          "n_groups": 39927
+        },
+        "description": "Rank fusion (see _rank_fusion_score) of upstream_score and template_frequency.",
+        "status": "ok"
+      },
+      "val": {
+        "split": "val",
+        "target_count": 4924,
+        "group_count": 4931,
+        "scored_groups": 3253,
+        "groups_with_zero_positive_in_pool": 1678,
+        "top1_hit_rate": 0.004918536735321242,
+        "mean_reciprocal_rank": 0.0807572624649843,
+        "conditional": {
+          "top1_hit_rate": 0.004918536735321242,
+          "top10_hit_rate": 0.2170304334460498,
+          "mean_reciprocal_rank": 0.0807572624649843,
+          "ndcg_at_10": 0.08059118257533048,
+          "mean_best_positive_rank": 19.89486627728251,
+          "n_groups": 3253
+        },
+        "end_to_end": {
+          "top1_hit_rate": 0.0032447779355100387,
+          "top10_hit_rate": 0.14317582640438045,
+          "mean_reciprocal_rank": 0.053275882133156344,
+          "ndcg_at_10": 0.0531663185799128,
+          "n_groups": 4931
+        },
+        "description": "Rank fusion (see _rank_fusion_score) of upstream_score and template_frequency.",
+        "status": "ok"
+      },
+      "test": {
+        "status": "not_computable",
+        "description": "Rank fusion (see _rank_fusion_score) of upstream_score and template_frequency."
+      }
+    },
+    "structural": {
+      "train": {
+        "split": "train",
+        "target_count": 39668,
+        "group_count": 39927,
+        "scored_groups": 26648,
+        "groups_with_zero_positive_in_pool": 13279,
+        "top1_hit_rate": 0.022778444911438007,
+        "mean_reciprocal_rank": 0.10733572741298417,
+        "conditional": {
+          "top1_hit_rate": 0.022778444911438007,
+          "top10_hit_rate": 0.26046982888021614,
+          "mean_reciprocal_rank": 0.10733572741298417,
+          "ndcg_at_10": 0.11317208284176634,
+          "mean_best_positive_rank": 18.63873461422996,
+          "n_groups": 26648
+        },
+        "end_to_end": {
+          "top1_hit_rate": 0.015202745009642598,
+          "top10_hit_rate": 0.1738422621283843,
+          "mean_reciprocal_rank": 0.07163780058860425,
+          "ndcg_at_10": 0.07553308947748115,
+          "n_groups": 39927
+        },
+        "description": "net_charge_balanced + no_heavy_atom_gain - num_precursors -- prefer chemistry-valid, low-precursor-count candidates.",
+        "status": "ok"
+      },
+      "val": {
+        "split": "val",
+        "target_count": 4924,
+        "group_count": 4931,
+        "scored_groups": 3253,
+        "groups_with_zero_positive_in_pool": 1678,
+        "top1_hit_rate": 0.022440823854903168,
+        "mean_reciprocal_rank": 0.10705361653863371,
+        "conditional": {
+          "top1_hit_rate": 0.022440823854903168,
+          "top10_hit_rate": 0.25453427605287426,
+          "mean_reciprocal_rank": 0.10705361653863371,
+          "ndcg_at_10": 0.11151975767703648,
+          "mean_best_positive_rank": 18.761143559790963,
+          "n_groups": 3253
+        },
+        "end_to_end": {
+          "top1_hit_rate": 0.014804299330764551,
+          "top10_hit_rate": 0.1679172581626445,
+          "mean_reciprocal_rank": 0.07062368983982467,
+          "ndcg_at_10": 0.07357002062936517,
+          "n_groups": 4931
+        },
+        "description": "net_charge_balanced + no_heavy_atom_gain - num_precursors -- prefer chemistry-valid, low-precursor-count candidates.",
+        "status": "ok"
+      },
+      "test": {
+        "status": "not_computable",
+        "description": "net_charge_balanced + no_heavy_atom_gain - num_precursors -- prefer chemistry-valid, low-precursor-count candidates."
+      }
+    },
+    "reaction_center": {
+      "train": {
+        "split": "train",
+        "target_count": 39668,
+        "group_count": 39927,
+        "scored_groups": 26648,
+        "groups_with_zero_positive_in_pool": 13279,
+        "top1_hit_rate": 0.018162713899729812,
+        "mean_reciprocal_rank": 0.10047764301066786,
+        "conditional": {
+          "top1_hit_rate": 0.018162713899729812,
+          "top10_hit_rate": 0.24992494746322425,
+          "mean_reciprocal_rank": 0.10047764301066786,
+          "ndcg_at_10": 0.10395500597482092,
+          "mean_best_positive_rank": 18.360102071450015,
+          "n_groups": 26648
+        },
+        "end_to_end": {
+          "top1_hit_rate": 0.012122122874245498,
+          "top10_hit_rate": 0.16680441806296492,
+          "mean_reciprocal_rank": 0.06706059135292602,
+          "ndcg_at_10": 0.06938144611959396,
+          "n_groups": 39927
+        },
+        "description": "Prefer a smaller, well-defined (extractable) reaction center -- see _reaction_center_score.",
+        "status": "ok"
+      },
+      "val": {
+        "split": "val",
+        "target_count": 4924,
+        "group_count": 4931,
+        "scored_groups": 3253,
+        "groups_with_zero_positive_in_pool": 1678,
+        "top1_hit_rate": 0.0178296956655395,
+        "mean_reciprocal_rank": 0.09976820689211245,
+        "conditional": {
+          "top1_hit_rate": 0.0178296956655395,
+          "top10_hit_rate": 0.24131570857669843,
+          "mean_reciprocal_rank": 0.09976820689211245,
+          "ndcg_at_10": 0.10100852858356411,
+          "mean_best_positive_rank": 18.434675683984015,
+          "n_groups": 3253
+        },
+        "end_to_end": {
+          "top1_hit_rate": 0.01176232001622389,
+          "top10_hit_rate": 0.15919691746096126,
+          "mean_reciprocal_rank": 0.06581747658082372,
+          "ndcg_at_10": 0.06663572165531009,
+          "n_groups": 4931
+        },
+        "description": "Prefer a smaller, well-defined (extractable) reaction center -- see _reaction_center_score.",
+        "status": "ok"
+      },
+      "test": {
+        "status": "not_computable",
+        "description": "Prefer a smaller, well-defined (extractable) reaction center -- see _reaction_center_score."
+      }
+    },
+    "availability": {
+      "train": {
+        "status": "not_computable",
+        "description": "fraction_precursors_in_stock + all_precursors_in_stock -- prefer candidates whose precursors are actually purchasable. Not computable without a stock supplied to feature extraction."
+      },
+      "val": {
+        "status": "not_computable",
+        "description": "fraction_precursors_in_stock + all_precursors_in_stock -- prefer candidates whose precursors are actually purchasable. Not computable without a stock supplied to feature extraction."
+      },
+      "test": {
+        "status": "not_computable",
+        "description": "fraction_precursors_in_stock + all_precursors_in_stock -- prefer candidates whose precursors are actually purchasable. Not computable without a stock supplied to feature extraction."
+      }
+    },
+    "full_configured_model": {
+      "train": {
+        "split": "train",
+        "target_count": 39668,
+        "group_count": 39927,
+        "scored_groups": 26648,
+        "groups_with_zero_positive_in_pool": 13279,
+        "top1_hit_rate": 0.4632242569798859,
+        "mean_reciprocal_rank": 0.6281499591097692,
+        "conditional": {
+          "top1_hit_rate": 0.4632242569798859,
+          "top10_hit_rate": 0.9467877514259982,
+          "mean_reciprocal_rank": 0.6281499591097692,
+          "ndcg_at_10": 0.7025355171037363,
+          "mean_best_positive_rank": 3.1468027619333534,
+          "n_groups": 26648
+        },
+        "end_to_end": {
+          "top1_hit_rate": 0.3091642247100959,
+          "top10_hit_rate": 0.6319032233826734,
+          "mean_reciprocal_rank": 0.41923861322806943,
+          "ndcg_at_10": 0.46888487639392806,
+          "n_groups": 39927
+        }
+      },
+      "val": {
+        "split": "val",
+        "target_count": 4924,
+        "group_count": 4931,
+        "scored_groups": 3253,
+        "groups_with_zero_positive_in_pool": 1678,
+        "top1_hit_rate": 0.43805717798954813,
+        "mean_reciprocal_rank": 0.6118148853985347,
+        "conditional": {
+          "top1_hit_rate": 0.43805717798954813,
+          "top10_hit_rate": 0.9492775899169997,
+          "mean_reciprocal_rank": 0.6118148853985347,
+          "ndcg_at_10": 0.6909319386245373,
+          "mean_best_positive_rank": 3.171841377190286,
+          "n_groups": 3253
+        },
+        "end_to_end": {
+          "top1_hit_rate": 0.2889880348813628,
+          "top10_hit_rate": 0.6262421415534374,
+          "mean_reciprocal_rank": 0.40361667454906375,
+          "ndcg_at_10": 0.45581050422746294,
+          "n_groups": 4931
+        }
+      },
+      "test": {
+        "split": "test",
+        "target_count": 0,
+        "group_count": 0,
+        "scored_groups": 0,
+        "groups_with_zero_positive_in_pool": 0,
+        "top1_hit_rate": null,
+        "mean_reciprocal_rank": null,
+        "conditional": {
+          "top1_hit_rate": null,
+          "top10_hit_rate": null,
+          "mean_reciprocal_rank": null,
+          "ndcg_at_10": null,
+          "mean_best_positive_rank": null,
+          "n_groups": 0
+        },
+        "end_to_end": {
+          "top1_hit_rate": null,
+          "top10_hit_rate": null,
+          "mean_reciprocal_rank": null,
+          "ndcg_at_10": null,
+          "n_groups": 0
+        }
+      }
+    }
+  }
+}

@@ -19,7 +19,7 @@
     "sha256": "sha256:7e0b5a1ef1d119eb8451235cde734790f21ee7e1413b11a82cc6b3b521c3b85b",
     "lightgbm_version": "4.7.0",
     "best_iteration": 199,
-    "note": "best_iteration=199 of n_estimators=200 -- early stopping (patience=20) never triggered; training used every configured tree."
+    "note": "best_iteration_=199 (round count, 1-indexed) of n_estimators=200 -- CORRECTED from an earlier version of this note that said early stopping never triggered. Direct inspection of model.txt shows exactly 199 `Tree=` blocks (Tree=0..Tree=198): round 200 was boosted but did not improve VAL ndcg within the patience=20 window relative to round 199, so LightGBM's sklearn API truncated the saved booster to the best 199 trees. This is early stopping firing (one round short of the 200-round cap), not a no-op. Does not change any VAL/formal-TEST gate result -- both were evaluated against this exact 199-tree model.txt file throughout."
   },
   "hyperparameters": {
     "objective": "lambdarank",

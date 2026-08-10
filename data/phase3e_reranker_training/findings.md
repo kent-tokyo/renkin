@@ -78,8 +78,13 @@ accounting).
 
 Full freeze manifest: `freeze_manifest.json`. Frozen the moment the VAL gate
 PASSed, before any TEST-pool generation. Key facts: LightGBM 4.7.0,
-`best_iteration=199` (of `n_estimators=200` -- early stopping never
-triggered), `random_state=42`, model SHA-256
+`best_iteration_=199` (of `n_estimators=200` -- direct inspection of
+`model.txt` shows exactly 199 `Tree=` blocks, i.e. early stopping DID fire:
+round 200 was boosted but didn't improve VAL ndcg within the patience=20
+window, so the sklearn API truncated the saved booster to the best 199
+trees; corrected here from an earlier "never triggered" note -- does not
+change any gate result, both gates evaluated this same 199-tree file
+throughout), `random_state=42`, model SHA-256
 `7e0b5a1ef1d119eb8451235cde734790f21ee7e1413b11a82cc6b3b521c3b85b`, feature
 schema hash `756404c59bbee9a65e194f92df3530e1b801028f333e01c67214917977061df1`
 (18 features, `max`/`mean_template_log_frequency` post-hoc imputed from a

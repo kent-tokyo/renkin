@@ -226,5 +226,109 @@ class LabelAndSplitRowsTests(unittest.TestCase):
             tr.label_and_split_rows(pool_rows, labels, group_records)
 
 
+class SplitManifestTests(unittest.TestCase):
+    """--split-manifest (Issue #101 Phase 3A Round 2, Section E): an
+    explicit target_id -> split assignment that overrides the default
+    SHA-256 hash bucket, needed because reranker train/val corpora sourced
+    directly from the USPTO-50k original train/val splits (see
+    generate_train_val_labels.py) must land in "train"/"val" by origin, not
+    by whatever the hash happens to compute.
+    """
+
+    def tearDown(self):
+        # configure_split_override is process-global; every test must leave
+        # it empty so it can't leak into an unrelated test run afterward.
+        tr.configure_split_override(None)
+
+    def test_no_manifest_is_unchanged_hash_bucket_behavior(self):
+        tid = "some-target"
+        bucket = tr.target_split_bucket(tid)
+        if bucket < tr.TRAIN_MAX_BUCKET:
+            expected = "train"
+        elif bucket < tr.VAL_MAX_BUCKET:
+            expected = "val"
+        else:
+            expected = "test"
+        self.assertEqual(tr.split_for_target(tid), expected)
+
+    def test_override_takes_precedence_over_hash_bucket(self):
+        tid = "some-target"
+        hash_split = tr.split_for_target(tid)
+        forced = "val" if hash_split != "val" else "test"
+        tr.configure_split_override({tid: forced})
+        self.assertEqual(tr.split_for_target(tid), forced)
+
+    def test_clearing_override_restores_hash_bucket(self):
+        tid = "some-target"
+        hash_split = tr.split_for_target(tid)
+        tr.configure_split_override({tid: "train" if hash_split != "train" else "val"})
+        tr.configure_split_override(None)
+        self.assertEqual(tr.split_for_target(tid), hash_split)
+
+    def test_load_split_manifest_rejects_invalid_split_value(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "manifest.jsonl")
+            write_jsonl_lines(path, [{"target_id": "t1", "split": "bogus"}])
+            with self.assertRaises(ValueError):
+                tr.load_split_manifest(path, {"t1"})
+
+    def test_load_split_manifest_rejects_conflicting_assignment(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "manifest.jsonl")
+            write_jsonl_lines(
+                path, [{"target_id": "t1", "split": "train"}, {"target_id": "t1", "split": "val"}]
+            )
+            with self.assertRaises(ValueError):
+                tr.load_split_manifest(path, {"t1"})
+
+    def test_load_split_manifest_rejects_unknown_target(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "manifest.jsonl")
+            write_jsonl_lines(path, [{"target_id": "t1", "split": "train"}, {"target_id": "t2", "split": "val"}])
+            with self.assertRaises(ValueError):
+                tr.load_split_manifest(path, {"t1"})  # t2 is unknown
+
+    def test_load_split_manifest_rejects_missing_assignment(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "manifest.jsonl")
+            write_jsonl_lines(path, [{"target_id": "t1", "split": "train"}])
+            with self.assertRaises(ValueError):
+                tr.load_split_manifest(path, {"t1", "t2"})  # t2 has no assignment
+
+    def test_load_split_manifest_accepts_exact_coverage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "manifest.jsonl")
+            write_jsonl_lines(
+                path,
+                [
+                    {"target_id": "t1", "split": "train"},
+                    {"target_id": "t2", "split": "val"},
+                    {"target_id": "t3", "split": "test"},
+                ],
+            )
+            assignments = tr.load_split_manifest(path, {"t1", "t2", "t3"})
+            self.assertEqual(assignments, {"t1": "train", "t2": "val", "t3": "test"})
+
+    def test_label_and_split_rows_respects_manifest_override(self):
+        group_records = [
+            {"group_id": "g1", "target_id": "t1", "target_smiles": "CCO", "candidate_count": 1, "proposal_status": "ok"},
+        ]
+        pool_rows = [
+            {"group_id": "g1", "target_id": "t1", "target_smiles": "CCO",
+             "candidate_id": "c1", "precursor_smiles": ["CCO"], "feature_values": [0.0],
+             "feature_missing": [False], "sources": [{"template_id": "rule:a"}]},
+        ]
+        labels = {"g1": tr.GroupLabel(target_id="t1", correct_precursor_sets=frozenset({("CCO",)}))}
+
+        # Force a split that almost certainly disagrees with the hash bucket
+        # for this target_id (verified below), then confirm label_and_split_rows
+        # picks up the override rather than the hash.
+        hash_split = tr.split_for_target("t1")
+        forced = "val" if hash_split != "val" else "train"
+        tr.configure_split_override({"t1": forced})
+        labeled, _ = tr.label_and_split_rows(pool_rows, labels, group_records)
+        self.assertEqual(labeled[0].split, forced)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -38,12 +38,23 @@ under `correct_precursor_sets`, and is within-split, so it carries no
 leakage risk.
 
 Canonicalization: every SMILES (target and precursor fragments) is run
-through the `renkin-canonicalize` binary -- RENKIN's own canonicalizer
-(`chem_env::to_canonical`), the exact function `propose_one_step` uses to
-produce `precursor_smiles` in the candidate pool. `train_reranker.py`
-labels a candidate positive via an EXACT string match against
-`correct_precursor_sets` (`label_and_split_rows`), so using any other
-toolkit's canonical form (e.g. RDKit) would silently produce zero matches.
+through the `renkin-canonicalize --clear-atom-maps` binary -- RENKIN's own
+canonicalizer (`chem_env::to_canonical`), the exact function
+`propose_one_step` uses to produce `precursor_smiles` in the candidate
+pool. `train_reranker.py` labels a candidate positive via an EXACT string
+match against `correct_precursor_sets` (`label_and_split_rows`), so using
+any other toolkit's canonical form (e.g. RDKit) would silently produce zero
+matches.
+
+Atom maps in the raw dataset (`[CH3:1]O`) are cleared structurally inside
+the binary (`chem_env::clear_atom_maps`, operating on the parsed molecule
+graph), never by regex/string manipulation on the SMILES text here: `:` is
+also SMILES bond syntax (explicit aromatic/double bonds), so a text-level
+`:\d+` strip can delete a ring-closure digit that happens to follow an
+explicit bond symbol rather than an atom map, silently corrupting the ring
+into an open chain. See
+`chem_env::clear_atom_maps_tests::explicit_colon_bond_with_ring_closure_digit_is_not_corrupted`
+for a concrete before/after example.
 
 Usage:
     cargo build --release --bin renkin-canonicalize
@@ -58,56 +69,11 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
-import re
-import subprocess
 import sys
 from collections import defaultdict
 
-_ATOM_MAP_RE = re.compile(r":\d+")
-
-
-def strip_atom_map(smiles: str) -> str:
-    return _ATOM_MAP_RE.sub("", smiles)
-
-
-def sha256_of(path: str) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
-def canonicalize_batch(smiles_list: list[str], canonicalize_bin: str) -> list[str | None]:
-    """Batch-canonicalize via the renkin-canonicalize binary. Returns None
-    for entries the binary reports as "ERR" (unparseable)."""
-    if not smiles_list:
-        return []
-    inp = "\n".join(smiles_list) + "\n"
-    try:
-        result = subprocess.run(
-            [canonicalize_bin], input=inp, capture_output=True, text=True, timeout=600
-        )
-    except FileNotFoundError:
-        raise RuntimeError(
-            f"renkin-canonicalize binary not found at {canonicalize_bin!r}. "
-            "Build with: cargo build --release --bin renkin-canonicalize"
-        )
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"renkin-canonicalize failed (exit {result.returncode}):\n{result.stderr}"
-        )
-    lines = result.stdout.split("\n")
-    if lines and lines[-1] == "":
-        lines = lines[:-1]
-    if len(lines) != len(smiles_list):
-        raise RuntimeError(
-            f"renkin-canonicalize output line count ({len(lines)}) != input count "
-            f"({len(smiles_list)}) -- cannot safely align results"
-        )
-    return [None if line == "ERR" else line for line in lines]
+from reranker_label_common import canonicalize_batch, sha256_of
 
 
 def main(argv=None) -> int:
@@ -129,24 +95,28 @@ def main(argv=None) -> int:
 
     # Canonicalize every raw product + every raw reactant fragment in one
     # batch call each, so target/precursor identity uses the exact same
-    # binary invocation as the pool exporter will use at runtime.
-    raw_products_stripped = [strip_atom_map(r["product"]) for r in raw_rows]
-    raw_products_canon = canonicalize_batch(raw_products_stripped, args.canonicalize_bin)
+    # binary invocation as the pool exporter will use at runtime. Fragments
+    # are still split on top-level '.' here (never inside '[...]' bracket
+    # atom notation, so a plain split is safe) -- precursor_smiles in the
+    # pool is one string per fragment, not one multi-component string.
+    # Atom maps are left in place; the binary clears them structurally.
+    raw_products_canon = canonicalize_batch(
+        [r["product"] for r in raw_rows], args.canonicalize_bin
+    )
 
     reactant_frag_index: list[tuple[int, int]] = []  # (raw_row_idx, frag_idx)
-    reactant_frags_stripped: list[str] = []
+    reactant_frags_mapped: list[str] = []
     for i, r in enumerate(raw_rows):
         for frag in r["reactants"].split("."):
-            reactant_frag_index.append((i, len(reactant_frags_stripped)))
-            reactant_frags_stripped.append(strip_atom_map(frag))
-    reactant_frags_canon = canonicalize_batch(reactant_frags_stripped, args.canonicalize_bin)
+            reactant_frag_index.append((i, len(reactant_frags_mapped)))
+            reactant_frags_mapped.append(frag)
+    reactant_frags_canon = canonicalize_batch(reactant_frags_mapped, args.canonicalize_bin)
 
     n_product_parse_fail = sum(1 for c in raw_products_canon if c is None)
     n_reactant_parse_fail = sum(1 for c in reactant_frags_canon if c is None)
 
     # Group raw rows -> distinct canonical precursor-sets, by canonical product.
     by_product: dict[str, set[tuple[str, ...]]] = defaultdict(set)
-    frag_iter = iter(zip(reactant_frag_index, reactant_frags_canon))
     row_frags: dict[int, list[str | None]] = defaultdict(list)
     for (row_idx, _frag_pos), canon in zip(reactant_frag_index, reactant_frags_canon):
         row_frags[row_idx].append(canon)

@@ -12,12 +12,25 @@
 /// stdout (one line per input line, same order). Outputs "ERR" for
 /// unparseable input so line-alignment with the input is always preserved.
 ///
+/// `--clear-atom-maps`: structurally clear each atom's atom-map number
+/// (`chem_env::clear_atom_maps`) before canonicalizing -- input SMILES may
+/// be atom-mapped (`[CH3:1]O`). Never strip atom maps by regex/string
+/// manipulation on SMILES text upstream of this binary: `:` is also SMILES
+/// bond syntax, so a text-level strip can corrupt a ring-closure digit that
+/// happens to follow an explicit bond symbol (see
+/// `chem_env::clear_atom_maps_tests::explicit_colon_bond_with_ring_closure_digit_is_not_corrupted`
+/// for a concrete case). Without this flag, atom maps in the input are
+/// preserved in the output canonical SMILES, unchanged from prior behavior.
+///
 /// Usage:
 ///   cargo build --release --bin renkin-canonicalize
 ///   echo "CC(=O)Oc1ccccc1C(=O)O" | ./target/release/renkin-canonicalize
+///   echo "[CH3:1]O" | ./target/release/renkin-canonicalize --clear-atom-maps
 fn main() {
-    use renkin::chem_env::{mol_from_smiles, to_canonical};
+    use renkin::chem_env::{clear_atom_maps, mol_from_smiles, to_canonical};
     use std::io::{self, BufRead, Write};
+
+    let clear_maps = std::env::args().any(|a| a == "--clear-atom-maps");
 
     let stdin = io::stdin();
     let stdout = io::stdout();
@@ -38,6 +51,11 @@ fn main() {
         }
         match mol_from_smiles(smiles) {
             Ok(mol) => {
+                let mol = if clear_maps {
+                    clear_atom_maps(&mol)
+                } else {
+                    mol
+                };
                 writeln!(out, "{}", to_canonical(&mol)).ok();
             }
             Err(_) => {

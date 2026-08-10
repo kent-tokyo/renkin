@@ -324,7 +324,90 @@ def target_split_bucket(target_id: str) -> int:
     return int.from_bytes(digest[:4], "big") % 100
 
 
+_SPLIT_OVERRIDE: dict = {}
+
+
+def configure_split_override(mapping: dict | None) -> None:
+    """Set (or clear, via `None`) an explicit target_id -> split override
+    consulted by every `split_for_target` call in this process, taking
+    precedence over the SHA-256 hash bucket below.
+
+    Exists for Phase 3's formal competitive-benchmark quarantine (Issue
+    #101): the existing hash bucket re-splits ANY target_id 70/15/15
+    regardless of provenance, which is wrong once train/val labels are
+    sourced from the USPTO-50k original train/val splits directly (their
+    target_ids must land in "train"/"val" by origin, not by hash) -- see
+    `generate_train_val_labels.py` and `--split-manifest` below. The
+    default (no manifest given) leaves this empty, so `split_for_target`'s
+    behavior for every existing caller is completely unchanged.
+
+    A module-level override (rather than threading a parameter through
+    `split_for_target`'s five call sites across this file) is deliberate:
+    a single override point every call site automatically respects is
+    safer here than five places to remember to update in lockstep. Callers
+    that share a process across multiple runs (e.g. a test suite) must
+    reset with `configure_split_override(None)` when done -- see
+    `scripts/tests/test_reranker_schema.py`'s split-manifest tests for the
+    pattern.
+    """
+    global _SPLIT_OVERRIDE
+    _SPLIT_OVERRIDE = dict(mapping) if mapping else {}
+
+
+def load_split_manifest(path: str, known_target_ids: set) -> dict:
+    """Load an explicit target_id -> split assignment, schema: one JSON
+    object per line, `{"target_id": ..., "split": "train"|"val"|"test"}`.
+
+    Hard errors (never silently coerced):
+      - a split value outside {"train", "val", "test"};
+      - a target_id with conflicting split assignments within the manifest;
+      - a target_id in the manifest that isn't in `known_target_ids`
+        ("unknown target" -- almost always a stale manifest built against a
+        different --groups file);
+      - a target_id in `known_target_ids` missing from the manifest
+        ("missing assignment" -- a manifest must cover every target this
+        run will actually touch, not silently fall back to hash bucketing
+        for the ones it forgot).
+    """
+    assignments: dict = {}
+    for row in load_jsonl(path):
+        target_id = row["target_id"]
+        split = row["split"]
+        if split not in ("train", "val", "test"):
+            raise ValueError(
+                f"split manifest entry for target_id={target_id!r} has split="
+                f"{split!r}, expected one of 'train'/'val'/'test'"
+            )
+        existing = assignments.get(target_id)
+        if existing is not None and existing != split:
+            raise ValueError(
+                f"split manifest has conflicting assignments for "
+                f"target_id={target_id!r}: {existing!r} vs {split!r}"
+            )
+        assignments[target_id] = split
+
+    unknown = sorted(set(assignments) - known_target_ids)
+    if unknown:
+        raise ValueError(
+            f"split manifest has {len(unknown)} target_id(s) not present in "
+            f"--groups for this run (e.g. {unknown[:5]!r}) -- built against "
+            "a different --groups file?"
+        )
+    missing = sorted(known_target_ids - set(assignments))
+    if missing:
+        raise ValueError(
+            f"split manifest is missing {len(missing)} target_id(s) that "
+            f"appear in --groups (e.g. {missing[:5]!r}) -- every target "
+            "this run touches must have an explicit assignment, not a "
+            "silent fallback to hash bucketing for the ones it forgot"
+        )
+    return assignments
+
+
 def split_for_target(target_id: str) -> str:
+    override = _SPLIT_OVERRIDE.get(target_id)
+    if override is not None:
+        return override
     bucket = target_split_bucket(target_id)
     if bucket < TRAIN_MAX_BUCKET:
         return "train"
@@ -1501,6 +1584,14 @@ def main() -> None:
              "evaluation instead of treating them as a hard error. The excluded count is "
              "printed, never silently dropped.",
     )
+    parser.add_argument(
+        "--split-manifest",
+        help="JSONL explicit target_id -> split assignment ({\"target_id\": ..., "
+             "\"split\": \"train\"|\"val\"|\"test\"}), overriding the default SHA-256 hash "
+             "bucket for every target_id in --groups. Must cover every target_id in --groups "
+             "exactly once (hard error otherwise) -- see load_split_manifest. Omit to use the "
+             "default hash-bucket split, unchanged from prior behavior.",
+    )
     parser.add_argument("--model-out", help="Path to save the trained LightGBM booster (text format)")
     parser.add_argument("--eval-out", help="Path to save the evaluation report JSON")
     parser.add_argument(
@@ -1563,6 +1654,21 @@ def main() -> None:
     pool_rows = load_jsonl(args.pool)
     group_records = load_jsonl(args.groups)
     validate_pool_rows(pool_rows, group_records)
+
+    if args.split_manifest:
+        known_target_ids = {r["target_id"] for r in group_records}
+        split_assignments = load_split_manifest(args.split_manifest, known_target_ids)
+        configure_split_override(split_assignments)
+        print(
+            f"Loaded split manifest {args.split_manifest} "
+            f"(sha256={sha256_file(args.split_manifest)}): "
+            f"{len(split_assignments)} target_id assignments, overriding the default "
+            "hash-bucket split for this run",
+            flush=True,
+        )
+    else:
+        configure_split_override(None)
+
     labels = load_labels(args.labels)
     labeled, unlabeled_group_count = label_and_split_rows(
         pool_rows, labels, group_records, allow_unlabeled=args.allow_unlabeled

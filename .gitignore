@@ -63,8 +63,18 @@ data/uspto50k_benchmark_result.json
 # (see data/phase3a_reranker_ground_truth_audit/findings.md for full
 # provenance -- SHA-256s, preprocessing command, accept/reject accounting).
 data/uspto50k_raw_test_split.jsonl
+data/uspto50k_raw_train_split.jsonl
+data/uspto50k_raw_val_split.jsonl
 data/reranker_labels_uspto50k_test.jsonl
 data/reranker_labels_uspto50k_test.summary.json
+data/reranker_labels_uspto50k_train.jsonl
+data/reranker_labels_uspto50k_val.jsonl
+data/reranker_labels_uspto50k_train_val.summary.json
+data/reranker_targets_uspto50k_train.jsonl
+data/reranker_targets_uspto50k_val.jsonl
+data/reranker_split_manifest.jsonl
+data/phase3a_reranker_ground_truth_audit/benchmark_quarantine_target_identities.txt
+data/phase3a_reranker_ground_truth_audit/benchmark_quarantine_manifest.json
 
 # Phase 32 scratch/raw run dumps under data/corpora/ (underscore prefix =
 # reproducible intermediate data, not a curated deliverable -- the fixed

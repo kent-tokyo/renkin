@@ -1398,9 +1398,28 @@ pub fn find_routes(
                         let mut key: Vec<String> =
                             p.precursors.iter().map(|pm| pm.smiles.clone()).collect();
                         key.sort_unstable();
-                        map.get(&crate::candidate::candidate_id_for(&target_smi, &key))
-                            .copied()
-                            .unwrap_or(0.0)
+                        // A miss here would mean this exact raw_proposals
+                        // slice produced a different candidate_id set when
+                        // merged for scoring above than when re-keyed here
+                        // -- an internal inconsistency between this
+                        // function and merge_into_candidates/
+                        // candidate_id_for, not a runtime/data condition to
+                        // degrade gracefully from (unlike a genuinely
+                        // external reranker failure, which IS handled by
+                        // falling back). 0.0 would be silently
+                        // indistinguishable from a legitimate worst-rank
+                        // bonus (rank_bonus(count-1, count) == 0.0), so
+                        // fail loudly instead of masking it.
+                        *map.get(&crate::candidate::candidate_id_for(&target_smi, &key))
+                            .unwrap_or_else(|| {
+                                panic!(
+                                    "candidate_id for proposal (rule {:?}, precursors {:?}) \
+                                     missing from reranker_bonus_by_id -- this is a bug in \
+                                     reranker_rank_bonuses/candidate_id_for consistency, not a \
+                                     reranker failure",
+                                    p.rule_name, key
+                                )
+                            })
                     } else if let Some(ref prior) = config.reaction_prior {
                         prior.prior(&p.rule_name, &target_smi)
                     } else {
@@ -2892,6 +2911,48 @@ mod tests {
             stats_reranked.matched_templates
         );
         assert_eq!(stats_legacy.nodes_expanded, stats_reranked.nodes_expanded);
+    }
+
+    #[test]
+    fn reranker_under_tight_beam_prunes_safely_and_stays_deterministic() {
+        // The tests above all use cfg()'s beam_width: 0 (unlimited A*),
+        // where beam_prune is a no-op -- they can't exercise the actual
+        // reranker/beam-pruning interaction (reordering changing which
+        // nodes survive beam_prune, hence which candidates ever get
+        // proposed deeper in the tree) that is the real mechanism behind
+        // this PR's L1541 result. Mirrors
+        // crowd_out_diagnostics_records_eviction_under_tight_beam's
+        // fixture (same target/beam_width=1, known to trigger real
+        // evictions) but with a reranker configured, to prove that
+        // combination doesn't panic, doesn't fail, and stays deterministic
+        // -- not to assert a specific behavioral divergence from legacy
+        // ordering, which would be fixture-dependent and flaky to pin down
+        // at this small a scale.
+        let env = aspirin_env();
+        let rules = default_rules();
+        let cfg_beam = SearchConfig {
+            max_depth: 3,
+            max_routes: 3,
+            beam_width: 1,
+            reranker: Some(std::sync::Arc::new(DeterministicReranker)),
+            ..Default::default()
+        };
+        let (routes_a, stats_a) =
+            find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg_beam).unwrap();
+        assert_eq!(stats_a.reranker_failures, 0);
+        assert!(
+            stats_a.crowd_out.beam_prune_invocations > 0,
+            "fixture must actually exercise beam pruning, or this test isn't testing anything \
+             the beam_width=0 tests don't already cover"
+        );
+        let (routes_b, stats_b) =
+            find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg_beam).unwrap();
+        assert_eq!(
+            serde_json::to_string(&routes_a).unwrap(),
+            serde_json::to_string(&routes_b).unwrap(),
+            "reranker + tight beam must still be deterministic"
+        );
+        assert_eq!(stats_b.reranker_failures, 0);
     }
 
     #[test]

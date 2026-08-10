@@ -26,6 +26,17 @@ struct Output {
     /// consumers see byte-identical output.
     #[serde(skip_serializing_if = "Option::is_none")]
     search_diagnostics: Option<search::CrowdOutDiagnostics>,
+    /// Issue #101 Task 35: only present when `--reranker-model`/
+    /// `--reranker-freq-table` were both given and loaded successfully.
+    /// A nonzero value means the reranker degraded to legacy ordering
+    /// partway through this search (see `SearchStats::reranker_failures`'
+    /// doc) -- surfaced unconditionally whenever the reranker was active,
+    /// not gated behind `--search-diagnostics`, since a paired ON-vs-OFF
+    /// comparison has no other way to tell "reranker ON and healthy for
+    /// this whole run" apart from "reranker ON but silently degraded"
+    /// (a run that exits 0 either way).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reranker_failures: Option<u64>,
 }
 
 // ..Default::default() is needed when nn-scoring feature is enabled (adds nn_scorer field).
@@ -573,6 +584,9 @@ fn main() -> Result<()> {
                 if search_diagnostics {
                     out["search_diagnostics"] = serde_json::to_value(&stats.crowd_out)?;
                 }
+                if config.reranker.is_some() {
+                    out["reranker_failures"] = serde_json::to_value(stats.reranker_failures)?;
+                }
                 println!("{}", serde_json::to_string_pretty(&out)?);
             } else {
                 let joint_success_probability = 1.0
@@ -585,6 +599,7 @@ fn main() -> Result<()> {
                     routes_found: routes.len(),
                     joint_success_probability,
                     search_diagnostics: search_diagnostics.then_some(stats.crowd_out),
+                    reranker_failures: config.reranker.is_some().then_some(stats.reranker_failures),
                     routes,
                 };
                 println!("{}", serde_json::to_string_pretty(&output)?);

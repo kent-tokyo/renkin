@@ -366,7 +366,7 @@ fn feature_index(name: &str) -> usize {
 /// `ReactionCandidate.reranker_score`, never touches `precursor_smiles`,
 /// never removes a candidate, never changes `sources`. How that score
 /// then adjusts search ordering (a rank-derived bonus on the existing
-/// `template_bonus` scale, NOT the raw score -- seeArch `src/search.rs`'s
+/// `template_bonus` scale, NOT the raw score -- see `src/search.rs`'s
 /// reranker-bonus wiring) is a separate, explicitly-runtime-only decision
 /// this type has no opinion on.
 pub struct RuntimeReranker {

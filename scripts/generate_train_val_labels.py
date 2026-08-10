@@ -25,15 +25,21 @@ val target_id that also appears in train is dropped from val entirely (not
 merged). This is a design choice, not the only valid one; recorded so a
 future reviewer doesn't have to reverse-engineer it from the diff.
 
-target_id / group_id (Section D): target_id is a stable identity derived
-from the canonical product SMILES (same product -> same target_id, no
-matter how many raw reactions produced it or which split they're read
-from). group_id is per raw reaction row (`uspto50k_{split}#L{line}`) --
-deliberately NOT collapsed to one group per target_id the way the formal
-test corpus is: for train/val, multiple literature routes to the same
-product are meant to be separate training/validation examples (denser
-supervision), whereas the formal test set collapses them so eval metrics
-don't double-count one target's coverage.
+target_id / group_id (Section D): target_id **is** the RENKIN-canonical
+product SMILES itself (same product -> same target_id, no matter how many
+raw reactions produced it or which split they're read from) -- not an
+opaque identifier of our own choosing. This is a hard constraint, not a
+design preference: `propose_one_step` sets `CandidatePool.target_id` to
+`to_canonical(&target_mol)` unconditionally (verified directly against the
+real function, see round2_split_hygiene.md), so a labels file using any
+other target_id convention would fail `train_reranker.py`'s group-index
+cross-check on every single row. group_id is per raw reaction row
+(`uspto50k_{split}#L{line}`) -- deliberately NOT collapsed to one group per
+target_id the way the formal test corpus is: for train/val, multiple
+literature routes to the same product are meant to be separate
+training/validation examples (denser supervision), whereas the formal test
+set collapses them so eval metrics don't double-count one target's
+coverage.
 
 Usage:
     cargo build --release --bin renkin-canonicalize
@@ -51,7 +57,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import sys
 from collections import defaultdict
@@ -60,15 +65,13 @@ from reranker_label_common import canonicalize_batch, sha256_of
 
 
 def target_id_for(canonical_product: str) -> str:
-    """Stable, split-independent identity for a product molecule -- the
-    same canonical product always maps to the same target_id regardless of
-    which split or how many raw reactions produced it. Deliberately NOT
-    namespaced by split (unlike group_id): that's what makes the
-    train/val cross-overlap check in `main()` able to detect a shared
-    product at all.
+    """target_id **is** the canonical product SMILES -- see the module
+    docstring's Section D note for why this isn't a free choice. Kept as a
+    named function (rather than using `canonical_product` inline
+    everywhere) so the identity mapping has one place to change if that
+    constraint is ever relaxed.
     """
-    digest = hashlib.sha256(canonical_product.encode("utf-8")).hexdigest()[:16]
-    return f"uspto50k#product:{digest}"
+    return canonical_product
 
 
 def process_split(
@@ -151,8 +154,8 @@ def main(argv=None) -> int:
     parser.add_argument(
         "--train-targets-output",
         default="data/reranker_targets_uspto50k_train.jsonl",
-        help="target_id -> canonical_smiles lookup (the labels file only stores the hashed "
-             "target_id -- pool generation and spot checks need the actual SMILES).",
+        help="Deduplicated target list (target_id IS the canonical SMILES, but this is the "
+             "flat list a pool-generation driver iterates over).",
     )
     parser.add_argument("--val-targets-output", default="data/reranker_targets_uspto50k_val.jsonl")
     parser.add_argument("--split-manifest-output", default="data/reranker_split_manifest.jsonl")

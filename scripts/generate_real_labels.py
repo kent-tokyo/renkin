@@ -141,26 +141,36 @@ def main(argv=None) -> int:
     seen_group_ids = set()
     seen_target_ids = set()
     for t, target_canon in zip(targets, target_canons):
-        target_id = t["target_id"]
+        # `sample_id` is sample_full_sorted.jsonl's own identifier
+        # (`uspto50k_test#L{n}`), used as group_id -- a human-readable,
+        # traceable-to-source label. `target_id` must be the RENKIN-canonical
+        # SMILES text: `propose_one_step` derives `CandidatePool.target_id`
+        # from the target molecule itself (`to_canonical(&target_mol)`), not
+        # from any caller-supplied identifier, so a labels file whose
+        # target_id isn't that same canonical text would fail
+        # train_reranker.py's group-index cross-check on every row. Verified
+        # empirically (see round2_split_hygiene.md's driver-design note)
+        # before writing this pipeline stage.
+        sample_id = t["target_id"]
         if target_canon is None:
-            unmatched.append({"target_id": target_id, "reason": "target_smiles_parse_fail"})
+            unmatched.append({"target_id": sample_id, "reason": "target_smiles_parse_fail"})
             continue
         precursor_sets = by_product.get(target_canon)
         if not precursor_sets:
-            unmatched.append({"target_id": target_id, "reason": "no_test_split_ground_truth_match"})
+            unmatched.append({"target_id": sample_id, "reason": "no_test_split_ground_truth_match"})
             continue
         if len(precursor_sets) > 1:
             n_multi_route += 1
-        group_id = target_id  # 1 group per USPTO-50k target; see module docstring.
+        group_id = sample_id  # 1 group per USPTO-50k target; see module docstring.
         assert group_id not in seen_group_ids, f"duplicate group_id {group_id!r}"
-        assert target_id not in seen_target_ids, f"duplicate target_id {target_id!r}"
+        assert target_canon not in seen_target_ids, f"duplicate target_id {target_canon!r}"
         seen_group_ids.add(group_id)
-        seen_target_ids.add(target_id)
+        seen_target_ids.add(target_canon)
         output_rows.append(
             {
                 "schema_version": 1,
                 "group_id": group_id,
-                "target_id": target_id,
+                "target_id": target_canon,
                 "correct_precursor_sets": [list(s) for s in sorted(precursor_sets)],
             }
         )

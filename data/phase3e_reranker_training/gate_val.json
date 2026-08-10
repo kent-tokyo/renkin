@@ -1,0 +1,49 @@
+{
+  "baseline_arm": "original_rank",
+  "treatment_arm": "full_configured_model",
+  "result": "PASS",
+  "checks": {
+    "coverage_unchanged": true,
+    "top1_hit_rate_delta_meets_threshold": true,
+    "mean_reciprocal_rank_delta_meets_threshold": true,
+    "top10_hit_rate_regression_within_threshold": true,
+    "top1_hit_rate_ci_lower_bound_positive": true
+  },
+  "thresholds": {
+    "top1_hit_rate_min_delta": 0.01,
+    "mean_reciprocal_rank_min_delta": 0.01,
+    "top10_hit_rate_max_regression": 0.002
+  },
+  "bootstrap": {
+    "n_resamples": 1000,
+    "seed": 1234,
+    "resample_unit": "target_id (cluster bootstrap -- all groups sharing a target_id resample together)",
+    "n_target_ids": 4924,
+    "deltas": {
+      "top1_hit_rate": {
+        "mean_delta": 0.1165864398625244,
+        "ci_95": [
+          0.1036931818181818,
+          0.12804383116883114
+        ],
+        "n_resamples_used": 1000
+      },
+      "top10_hit_rate": {
+        "mean_delta": 0.09334042165520628,
+        "ci_95": [
+          0.08424685343077543,
+          0.10204909717995536
+        ],
+        "n_resamples_used": 1000
+      },
+      "mean_reciprocal_rank": {
+        "mean_delta": 0.11236205953953372,
+        "ci_95": [
+          0.10361282901563124,
+          0.12034134084873438
+        ],
+        "n_resamples_used": 1000
+      }
+    }
+  }
+}

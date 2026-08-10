@@ -1,0 +1,119 @@
+{
+  "frozen_model_sha256": "sha256:7e0b5a1ef1d119eb8451235cde734790f21ee7e1413b11a82cc6b3b521c3b85b",
+  "frequency_table_refit_matches_frozen": true,
+  "test_unlabeled_group_count": 0,
+  "baseline_report": {
+    "split": "test",
+    "target_count": 4903,
+    "group_count": 4903,
+    "scored_groups": 3285,
+    "groups_with_zero_positive_in_pool": 1618,
+    "top1_hit_rate": 0.2447488584474886,
+    "mean_reciprocal_rank": 0.42713730716372544,
+    "conditional": {
+      "top1_hit_rate": 0.2447488584474886,
+      "top10_hit_rate": 0.8057838660578387,
+      "mean_reciprocal_rank": 0.42713730716372544,
+      "ndcg_at_10": 0.5080671338939772,
+      "mean_best_positive_rank": 6.420395738203958,
+      "n_groups": 3285
+    },
+    "end_to_end": {
+      "top1_hit_rate": 0.16398123597797268,
+      "top10_hit_rate": 0.5398735468080766,
+      "mean_reciprocal_rank": 0.28618112462427864,
+      "ndcg_at_10": 0.3404039434716939,
+      "n_groups": 4903
+    }
+  },
+  "model_report": {
+    "split": "test",
+    "target_count": 4903,
+    "group_count": 4903,
+    "scored_groups": 3285,
+    "groups_with_zero_positive_in_pool": 1618,
+    "top1_hit_rate": 0.434703196347032,
+    "mean_reciprocal_rank": 0.604387810817449,
+    "conditional": {
+      "top1_hit_rate": 0.434703196347032,
+      "top10_hit_rate": 0.9415525114155251,
+      "mean_reciprocal_rank": 0.604387810817449,
+      "ndcg_at_10": 0.6825944300602033,
+      "mean_best_positive_rank": 3.322983257229833,
+      "n_groups": 3285
+    },
+    "end_to_end": {
+      "top1_hit_rate": 0.29125025494595147,
+      "top10_hit_rate": 0.6308382622883949,
+      "mean_reciprocal_rank": 0.404938600557887,
+      "ndcg_at_10": 0.4573368759428448,
+      "n_groups": 4903
+    }
+  },
+  "gate": {
+    "baseline_arm": "original_rank",
+    "treatment_arm": "full_configured_model",
+    "result": "PASS",
+    "checks": {
+      "coverage_unchanged": true,
+      "top1_hit_rate_delta_meets_threshold": true,
+      "mean_reciprocal_rank_delta_meets_threshold": true,
+      "top10_hit_rate_regression_within_threshold": true,
+      "top1_hit_rate_ci_lower_bound_positive": true
+    },
+    "thresholds": {
+      "top1_hit_rate_min_delta": 0.01,
+      "mean_reciprocal_rank_min_delta": 0.01,
+      "top10_hit_rate_max_regression": 0.002
+    },
+    "bootstrap": {
+      "n_resamples": 1000,
+      "seed": 1234,
+      "resample_unit": "target_id (cluster bootstrap -- all groups sharing a target_id resample together)",
+      "n_target_ids": 4903,
+      "deltas": {
+        "top1_hit_rate": {
+          "mean_delta": 0.12724739955129513,
+          "ci_95": [
+            0.1142157862533143,
+            0.14011829492147665
+          ],
+          "n_resamples_used": 1000
+        },
+        "top10_hit_rate": {
+          "mean_delta": 0.0907468896593922,
+          "ci_95": [
+            0.08178666122781963,
+            0.09993881297164997
+          ],
+          "n_resamples_used": 1000
+        },
+        "mean_reciprocal_rank": {
+          "mean_delta": 0.11874069677822986,
+          "ci_95": [
+            0.10918098630913287,
+            0.128325174268556
+          ],
+          "n_resamples_used": 1000
+        }
+      }
+    }
+  },
+  "error_taxonomy": {
+    "counts": {
+      "A": 1618,
+      "B": 804,
+      "C": 1742,
+      "D": 416,
+      "E": 323
+    },
+    "net_C_minus_D": 1326,
+    "total_rank_improvement_C": 12327,
+    "total_rank_regression_D": 1473,
+    "mean_rank_improvement_per_C_group": 7.076349024110218,
+    "mean_rank_regression_per_D_group": 3.5408653846153846
+  },
+  "inference_determinism": {
+    "predict_twice_bit_identical": true
+  }
+}

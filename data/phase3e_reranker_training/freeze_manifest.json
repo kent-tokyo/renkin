@@ -1,0 +1,151 @@
+{
+  "_purpose": "Issue #101 Task 35 Step 4: model freeze manifest. Written immediately after the VAL screening gate PASSed and BEFORE any formal-TEST candidate pool generation or evaluation. Everything below is now frozen: no retraining, no best_iteration change, no feature change, no hyperparameter change, no baseline-arm change, no threshold change. The formal TEST result (Step 6) is judged against exactly this artifact, once.",
+  "decision": {
+    "val_gate_result": "PASS",
+    "val_gate_report": "gate_val.json (same directory)",
+    "val_gate_checks_all_true": true
+  },
+  "provenance": {
+    "renkin_git_commit": "9a2344e64a05af9ead4ad37a993b32208f54a772",
+    "renkin_branch": "feat/reranker-real-data-gate-101",
+    "cargo_lock_sha256": "sha256:ada045bd1b65319d8ede433417d50991b5f7866464c522eedca07de7a6775174",
+    "chematic_version": "0.11.0",
+    "rules_content_hash": "sha256:0bbc3acdb0f1ec01e712d96d11aac3c74b238aeb6395302fa6d6126a75dd5dca",
+    "rules_file": "data/templates_extracted_500.smi (500 rules)"
+  },
+  "model_artifact": {
+    "path": "data/phase3e_reranker_training/model.txt",
+    "format": "LightGBM text booster (LGBMRanker.booster_.save_model)",
+    "sha256": "sha256:7e0b5a1ef1d119eb8451235cde734790f21ee7e1413b11a82cc6b3b521c3b85b",
+    "lightgbm_version": "4.7.0",
+    "best_iteration": 199,
+    "note": "best_iteration=199 of n_estimators=200 -- early stopping (patience=20) never triggered; training used every configured tree."
+  },
+  "hyperparameters": {
+    "objective": "lambdarank",
+    "metric": "ndcg",
+    "eval_at": [1, 10],
+    "boosting_type": "gbdt",
+    "n_estimators": 200,
+    "learning_rate": 0.05,
+    "num_leaves": 31,
+    "max_depth": -1,
+    "min_child_weight": 0.001,
+    "min_child_samples": 5,
+    "subsample": 0.8,
+    "subsample_freq": 1,
+    "colsample_bytree": 0.8,
+    "reg_alpha": 0.0,
+    "reg_lambda": 0.1,
+    "random_state": 42,
+    "deterministic": true,
+    "num_threads": 1,
+    "verbosity": -1,
+    "early_stopping_rounds": 20,
+    "source": "scripts/train_reranker.py::LIGHTGBM_HYPERPARAMETERS / EARLY_STOPPING_ROUNDS, unchanged from the pre-existing protocol audited in Task 35 Step 1"
+  },
+  "bootstrap_seed": 1234,
+  "feature_schema": {
+    "feature_schema_version": 1,
+    "feature_schema_hash": "sha256:756404c59bbee9a65e194f92df3530e1b801028f333e01c67214917977061df1",
+    "feature_names_in_order": [
+      "num_precursors", "target_heavy_atom_count", "precursor_heavy_atom_count_sum",
+      "precursor_heavy_atom_count_max", "heavy_atom_retention_ratio", "net_charge_balanced",
+      "no_heavy_atom_gain", "source_template_count", "reaction_center_atom_count_min",
+      "reaction_center_atom_count_max", "reaction_center_atom_count_mean",
+      "reaction_center_extractable_fraction", "min_base_step_cost", "best_upstream_score",
+      "fraction_precursors_in_stock", "all_precursors_in_stock",
+      "max_template_log_frequency", "mean_template_log_frequency"
+    ],
+    "template_frequency_table_sha256": "sha256:12c3023fbbc3f85811c8454760538dd0a3f93670ff011b0f2de1ad7685552ffa",
+    "note": "max/mean_template_log_frequency (indices 16/17) are post-hoc imputed by train_reranker.py from a TRAIN-frozen frequency table -- see impute_frequency_features's doc -- never written back to the exported pool file."
+  },
+  "data_provenance": {
+    "combined_pool": {
+      "path": "data/phase3e_reranker_training/pool_combined.jsonl",
+      "sha256": "sha256:4431451622b671eb8c2c1af4ecdeae82054a9769e040ef67175a5aafb99c2b40",
+      "row_count": 1231108,
+      "built_by": "scripts/phase3e_build_combined_pool.py, order=train_then_val (pure byte concatenation, no rows added/removed/modified)"
+    },
+    "combined_groups": {
+      "path": "data/phase3e_reranker_training/groups_combined.jsonl",
+      "sha256": "sha256:7cad3e557a360d155fdd9ed538f146ea1b4f110c641de4012a871173558b3827",
+      "record_count": 44858
+    },
+    "combined_labels": {
+      "path": "data/phase3e_reranker_training/labels_combined.jsonl",
+      "sha256": "sha256:d61bd6a029e4f3dc6fd3c23adffca407987c1d17e599a0d8f100234213e04f47"
+    },
+    "combined_split_manifest": {
+      "path": "data/phase3e_reranker_training/split_manifest_combined.jsonl",
+      "sha256": "sha256:cd350d56b2b4ccf7853b8de8dc3885a4a7a2f4720569b6872ba127bf456088b0",
+      "target_id_count": 44592,
+      "note": "Concatenation of Phase 3D.5's coverage_{train,val}_full.json.split_manifest_subset.jsonl -- explicit target_id -> split assignment, overriding the default SHA-256 hash bucket (see load_split_manifest); required by train_reranker.py to cover every target_id in --groups exactly once."
+    },
+    "combined_manifest": {
+      "path": "data/phase3e_reranker_training/manifest_combined.json",
+      "target_count": 44592,
+      "group_count": 44858,
+      "candidate_count": 1231108
+    },
+    "train_split": {
+      "source_pool": "data/phase3d_full_pool/pool_train_full.jsonl",
+      "source_manifest_candidate_jsonl_sha256": "sha256:43d0f5c97a52314262e3aa421bffe7b5c1982b92e9d75d444c17acaaea2183b4",
+      "source_manifest_target_group_index_sha256": "sha256:5c3d135703daaeecf01ee2452e551ea2637fa597a4f8f3bba7dd9a90cc026fc0",
+      "target_count": 39668,
+      "group_count": 39927,
+      "candidate_row_count": 1095467,
+      "scored_groups_conditional": 26648,
+      "groups_with_zero_positive_in_pool": 13279
+    },
+    "val_split": {
+      "source_pool": "data/phase3d_full_pool/pool_val_full.jsonl",
+      "source_manifest_candidate_jsonl_sha256": "sha256:2770047e6103ffee9d63b9122996739cb8f0fa17b1fc42312eed742ee38fc1e1",
+      "source_manifest_target_group_index_sha256": "sha256:bb93a9b46c7eafd6b9dc2f138e020f2e9407a6e11bf73e8c53405b9cb26fe6ca",
+      "target_count": 4924,
+      "group_count": 4931,
+      "candidate_row_count": 135641,
+      "scored_groups_conditional": 3253,
+      "groups_with_zero_positive_in_pool": 1678
+    },
+    "unlabeled_group_count": 0
+  },
+  "primary_baseline": {
+    "arm_name": "original_rank",
+    "selection_basis": "Its own arm description in scripts/train_reranker.py's build_baseline_arms (\"a sanity-check baseline: if the reranker can't beat 'trust the upstream order', it isn't adding anything\") -- no constant named PRIMARY_BASELINE exists in the codebase; original_rank is the only arm that is always computable under this project's Exhaustive proposal mode (upstream_score and availability are both not_computable -- see Task 35 Step 1's audit).",
+    "treatment_arm": "full_configured_model"
+  },
+  "gate_thresholds": {
+    "top1_hit_rate_min_delta": 0.01,
+    "mean_reciprocal_rank_min_delta": 0.01,
+    "top10_hit_rate_max_regression": 0.002,
+    "additional_conditions": [
+      "coverage_identical=True (structural: both arms scored the identical group set)",
+      "top1_hit_rate delta's 95% CI lower bound > 0 (paired bootstrap, resample_unit=target_id, n_resamples=1000, seed=1234)"
+    ],
+    "source": "scripts/train_reranker.py::GATE_THRESHOLDS, unchanged from the pre-existing protocol audited in Task 35 Step 1"
+  },
+  "metric_definitions": {
+    "conditional": "denominator = groups with >=1 positive candidate in their own pool ('given ranking is possible at all, how good is it')",
+    "end_to_end": "denominator = every labeled group in the split, including groups with zero pool candidates or zero positive candidates ('coverage miss' scores 0, never excluded) -- gate thresholds are checked against END-TO-END deltas",
+    "top1_hit_rate": "fraction of groups where the top-ranked candidate is a true positive",
+    "top10_hit_rate": "fraction of groups where any of the top-10-ranked candidates is a true positive",
+    "mean_reciprocal_rank": "mean of 1/rank(first true positive), 0 for a coverage miss under end_to_end",
+    "source": "scripts/train_reranker.py::evaluate/aggregate_metrics/compute_group_metrics docstrings"
+  },
+  "val_gate_result_summary": {
+    "end_to_end_top1_hit_rate": {"original_rank": 0.17217602920300143, "full_configured_model": 0.2889880348813628, "delta": 0.11681200567836136},
+    "end_to_end_top10_hit_rate": {"original_rank": 0.5327519772865544, "full_configured_model": 0.6262421415534374, "delta": 0.09349016426688298},
+    "end_to_end_mean_reciprocal_rank": {"original_rank": 0.2910676675233197, "full_configured_model": 0.40361667454906375, "delta": 0.11254900702574405},
+    "bootstrap_top1_delta_ci_95": [0.1036931818181818, 0.12804383116883114]
+  },
+  "prohibited_after_this_point": [
+    "retraining",
+    "best_iteration change",
+    "feature change",
+    "hyperparameter change",
+    "baseline_arm change",
+    "gate_threshold change",
+    "any modification to model.txt, pool_combined.jsonl, groups_combined.jsonl, labels_combined.jsonl, split_manifest_combined.jsonl, or manifest_combined.json in this directory"
+  ]
+}

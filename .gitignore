@@ -104,6 +104,23 @@ data/phase3d5_canonical_identity_audit/*_canon1.txt
 data/phase3d5_canonical_identity_audit/*_canon2.txt
 data/phase3d5_canonical_identity_audit/*.split_manifest_subset.jsonl
 
+# Phase 3E: training/formal-TEST run -- regenerable from committed scripts
+# (phase3e_build_combined_pool.py, phase3e_evaluate_formal_test.py,
+# renkin-pool-gen) plus already-gitignored Phase 3D/3A source pools, and
+# from the frozen model artifact by its own SHA-256 (Step 8b confirmed
+# byte-for-byte training reproducibility -- see freeze_manifest.json). The
+# durable record is findings.md, freeze_manifest.json, eval_report.json,
+# gate_val.json, formal_test_result.json, manifest_combined.json, and
+# manifest_test_formal.json, all tracked.
+data/phase3e_reranker_training/pool_combined.jsonl
+data/phase3e_reranker_training/pool_test_formal.jsonl
+data/phase3e_reranker_training/groups_combined.jsonl
+data/phase3e_reranker_training/groups_test_formal.jsonl
+data/phase3e_reranker_training/labels_combined.jsonl
+data/phase3e_reranker_training/split_manifest_combined.jsonl
+data/phase3e_reranker_training/model.txt
+data/phase3e_reranker_training/*.log
+
 # Phase 32 scratch/raw run dumps under data/corpora/ (underscore prefix =
 # reproducible intermediate data, not a curated deliverable -- the fixed
 # corpus manifests themselves, e.g. screening_500.json, are not excluded).

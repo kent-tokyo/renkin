@@ -164,11 +164,13 @@ fn main() {
         // label generator computed. propose_one_step re-derives target_id
         // internally via its own canonicalization call, which normally just
         // reconfirms that same canonical form -- but for a rare molecule
-        // this CAN disagree (observed: chematic's canonical-form tie-break
-        // is sensitive to whether the parsed Molecule still carries atom-map
-        // annotations, so a label file canonicalized under a different
-        // chematic version/atom-map state can drift from what this binary
-        // derives now). Never trust pool.target_id silently here -- compare
+        // this CAN disagree (observed, root-caused in Phase 3D.5: to_canonical
+        // is not a pure function of the graph -- a Molecule rebuilt via
+        // clear_atom_maps/MoleculeBuilder and a Molecule parsed fresh from
+        // that same rebuild's own canonical SMILES text can land on two
+        // different, individually-stable canonical forms for the same
+        // molecule; no atom maps are involved in the second, divergent
+        // step). Never trust pool.target_id silently here -- compare
         // it against the caller's own g.target_id and reject the group
         // (not just "note" it) on any mismatch, so this class of defect is
         // caught at export time instead of surfacing later as an opaque

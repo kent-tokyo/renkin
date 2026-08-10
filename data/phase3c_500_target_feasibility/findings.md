@@ -13,18 +13,27 @@ While validating the train-500 pool against the real split-manifest via
 exact-coverage validation: its driver-derived `target_id` did not appear
 anywhere in `data/reranker_split_manifest.jsonl`.
 
-Root cause, isolated via direct `renkin-canonicalize` round-trips: RENKIN's
-canonical-form tie-break is **sensitive to whether the parsed `Molecule`
-still carries atom-map annotations**. `propose_one_step` derives `target_id`
-by calling `to_canonical` on the molecule it built internally; the original
-label-generation pipeline's `target_id` for this one molecule was
-canonicalized via a different atom-map state (or a different `chematic`
-version) than what this binary now produces. Both forms are individually
-stable/idempotent under repeated canonicalization -- this is not
-non-determinism, it is a real (and narrow) canonicalization-identity
-discrepancy between two otherwise-valid canonical SMILES for the same
-molecule. Confirmed narrow: exactly 1 mismatch across 1,000 group checks
-(500 train + 500 val).
+Root cause, isolated via direct `renkin-canonicalize` round-trips (**correction,
+Phase 3D.5**: an earlier version of this doc mischaracterized this as
+"atom-map presence" sensitivity -- disproved by the reproducer below, where
+atom maps are absent from *both* sides of the divergence): `to_canonical`
+is **not a pure function of the molecular graph** -- it also depends on
+*which code path built the in-memory `Molecule`*. A `Molecule` produced by
+`clear_atom_maps` (which rebuilds via `MoleculeBuilder` from the mapped
+molecule's raw atom/bond data) and a `Molecule` produced by parsing the
+*resulting canonical SMILES text* fresh (via `mol_from_smiles`, no atom maps
+involved at all in this second step) can canonicalize to two **different**
+stable strings for the identical graph. `propose_one_step` takes the
+already-canonical `target_id` text and re-derives it via the second
+(fresh-parse) path, so it can diverge from a `target_id` originally produced
+via the first (`clear_atom_maps`-rebuild) path. Both resulting strings are
+individually stable/idempotent under further re-canonicalization -- this is
+not non-determinism, it is two distinct fixed points of the same function
+reached via two different construction paths for the same graph. Confirmed
+narrow: exactly 1 mismatch across 1,000 group checks (500 train + 500 val);
+corroborated at full corpus scale in Phase 3D.5 (~0.27% across TRAIN, VAL,
+*and* the quarantined TEST corpus, RDKit-confirmed same-molecule on every
+precursor-string instance of this class that RDKit could parse).
 
 **Fix applied** (`src/pool_export.rs`, `src/bin/pool_gen.rs`): the driver no
 longer silently accepts whatever `target_id` `propose_one_step` returns. It
@@ -40,14 +49,31 @@ time -- the same fail-closed discipline `TargetParseFailed` already applied
 to unparseable targets.
 
 Not fixed in this round (deliberately out of scope): the underlying
-`chematic`/`to_canonical` atom-map-sensitivity itself. This is an upstream
-canonicalization-algorithm question, not a pool-export defect, and the
-project's established practice is to file it with a minimal reproducer
-rather than patch around it inside a driver. Minimal reproducer:
-- Mapped SMILES: `[CH3:1][N:2]1[CH2:3][c:4]2[cH:5][c:6]([Cl:7])[cH:8][cH:9][c:10]2-[n:11]2[c:12]([Br:13])[n:14][n:15][c:16]2[CH2:17]1`
-- `renkin-canonicalize --clear-atom-maps` (maps cleared before ranking): `N3(C)Cc1n(c2ccc(cc2C3)Cl)c(nn1)Br`
-- Same input canonicalized with maps preserved, then maps stripped from the *already-ranked* output text: `n12c(nnc1CN(C)Cc3cc(ccc23)Cl)Br`
-- Both forms independently idempotent under repeat canonicalization.
+`chematic`/`to_canonical` non-fixed-point-across-construction-paths issue
+itself. This is an upstream canonicalization-algorithm question, not a
+pool-export defect, and the project's established practice is to file it
+with a minimal reproducer rather than patch around it inside a driver.
+Verified minimal reproducer (corrected from an earlier, backwards version of
+this section):
+```
+MAPPED='[CH3:1][N:2]1[CH2:3][c:4]2[cH:5][c:6]([Cl:7])[cH:8][cH:9][c:10]2-[n:11]2[c:12]([Br:13])[n:14][n:15][c:16]2[CH2:17]1'
+
+# path 1: clear_atom_maps rebuild, then canonicalize -- the ORIGINAL label-gen path
+STEP1=$(echo "$MAPPED" | renkin-canonicalize --clear-atom-maps)
+# => n12c(nnc1CN(C)Cc3cc(ccc23)Cl)Br
+
+# path 2: feed STEP1's already-canonical, map-free text through a FRESH parse
+# + canonicalize -- exactly what propose_one_step does internally
+STEP2=$(echo "$STEP1" | renkin-canonicalize)
+# => N3(C)Cc1n(c2ccc(cc2C3)Cl)c(nn1)Br   (STEP1 != STEP2)
+
+STEP3=$(echo "$STEP2" | renkin-canonicalize)
+# => N3(C)Cc1n(c2ccc(cc2C3)Cl)c(nn1)Br   (STEP2 == STEP3: fixed point reached)
+```
+No atom maps are present anywhere in path 2 -- both `STEP1` and `STEP2` are
+plain, map-free SMILES, yet re-parsing `STEP1`'s own output text changes the
+canonical form. `data/phase3d5_canonical_identity_audit/` has the full
+issue-ready reproduction package (Phase 3D.5 Step 8).
 
 ## 500-target runs (post-fix)
 

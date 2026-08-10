@@ -1,0 +1,617 @@
+[
+  {
+    "group_id": "uspto50k_train#L35",
+    "split": "train",
+    "requested_target_id": "n12c(nnc1CN(C)Cc3cc(ccc23)Cl)Br"
+  },
+  {
+    "group_id": "uspto50k_train#L767",
+    "split": "train",
+    "requested_target_id": "ClCC(=O)Nc5cc3c(cc5OC)CCn4c1c(c(c34)-c2cccs2)CCCCN(C1=O)C(C)(C)C"
+  },
+  {
+    "group_id": "uspto50k_train#L1993",
+    "split": "train",
+    "requested_target_id": "c3c(OC)ccc4n(CCCCCCl)c1c(c34)CCSc2cc(ccc12)OC"
+  },
+  {
+    "group_id": "uspto50k_train#L2025",
+    "split": "train",
+    "requested_target_id": "c1c(N5CCOCC5)c(cc3c1[nH]cc2c(n(-c4ccsc4)nc23)=O)F"
+  },
+  {
+    "group_id": "uspto50k_train#L2191",
+    "split": "train",
+    "requested_target_id": "c26c(c(on6)CCC4(c5ccc(F)cc5)CCCCC4)CCc3cc(ccc23)CN1CC(C1)C(=O)O"
+  },
+  {
+    "group_id": "uspto50k_train#L2855",
+    "split": "train",
+    "requested_target_id": "c1cc2c([C@H](c5cccc(c5OC)OC)S[C@@H](Cc4sc(CCC(O)=O)cn4)c3nnc(n23)CF)cc1Cl"
+  },
+  {
+    "group_id": "uspto50k_train#L3480",
+    "split": "train",
+    "requested_target_id": "c23ccc(cc2OCCc4c3nc(-c5ncnn5C(C)C)s4)C1CCN(CC1)CCO"
+  },
+  {
+    "group_id": "uspto50k_train#L4308",
+    "split": "train",
+    "requested_target_id": "c4c(ccc5c(C6CCCCC6)c2n(c45)CCN(CCN(Cc3cnccc3)C)Cc1ccccc12)C(O)=O"
+  },
+  {
+    "group_id": "uspto50k_train#L4574",
+    "split": "train",
+    "requested_target_id": "s1c4c(CCOc5ccc(CCC(O)(C)C)nc45)cc1-c2n(-c3c(F)cc(F)cc3)ncn2"
+  },
+  {
+    "group_id": "uspto50k_train#L5343",
+    "split": "train",
+    "requested_target_id": "C7CCN(C7)[C@@H]1CC[C@H](N(C)C(=O)c6ccc(c(Cl)c6)-n5c2c(c(n5)C4CC4)CCc3nc(sc23)NC(C)=O)CC1"
+  },
+  {
+    "group_id": "uspto50k_train#L6102",
+    "split": "train",
+    "requested_target_id": "c2cc(c3cc5n(C=C4N=C(C)CN4c6c5cc(cc6)C(=O)O)c3c2)C1CCCCC1"
+  },
+  {
+    "group_id": "uspto50k_train#L6461",
+    "split": "train",
+    "requested_target_id": "O=C(Nc2cc4c(CCc3c(C(N)=O)nn(-c6ccc5c(c6)OCO5)c34)cc2)c1cc(Cl)ncc1Cl"
+  },
+  {
+    "group_id": "uspto50k_train#L6777",
+    "split": "train",
+    "requested_target_id": "c5cc(ccc5OCc6cc(C(=O)O)ccc6)-c1cc(Cn3cc2nc(-c4cccc(c4F)F)nc2cn3)on1"
+  },
+  {
+    "group_id": "uspto50k_train#L6779",
+    "split": "train",
+    "requested_target_id": "c1c3c(OCCc4cc(sc34)C(=O)N(C)c2c(Cl)cccc2)cc(c1)Br"
+  },
+  {
+    "group_id": "uspto50k_train#L6799",
+    "split": "train",
+    "requested_target_id": "c12cc(ccc1OCC(c3c2nc(s3)C(OCC)=O)OC)Br"
+  },
+  {
+    "group_id": "uspto50k_train#L6950",
+    "split": "train",
+    "requested_target_id": "n1c(-c5ncccc5)n3c(CN=C(c4cc(Cl)ccc34)c2c(cccc2)Cl)c1C(O)=O"
+  },
+  {
+    "group_id": "uspto50k_train#L7259",
+    "split": "train",
+    "requested_target_id": "c5c2c(cc(n5)N4CCCC4CO)OCCn3cc(nc23)-c1n(C(C)C)ncn1"
+  },
+  {
+    "group_id": "uspto50k_train#L7884",
+    "split": "train",
+    "requested_target_id": "c14ccccc1C(O)(c5c(=O)c3cc(ccc3n(c45)CC)C(C)C)c2ccccc2"
+  },
+  {
+    "group_id": "uspto50k_train#L8052",
+    "split": "train",
+    "requested_target_id": "C1N(CC7CC7)CCC(N2CCC(NC(=O)c6cc(OC)c(cc6)Nc5ncc4c(n5)N(C(C)C)[C@H](CC)c3c(C#N)ncn34)CC2)C1"
+  },
+  {
+    "group_id": "uspto50k_train#L8577",
+    "split": "train",
+    "requested_target_id": "c5(nc(C)ccn5)Nc4nc3c(s4)CCCCc2nn(cc23)Cc1ccc(OC)cc1"
+  },
+  {
+    "group_id": "uspto50k_train#L8761",
+    "split": "train",
+    "requested_target_id": "c5(C(C)(C)C)ccc(cc5)C(N(C)c4ccc(cc4)C(O)=O)C(N(c3ccccc3)c2ccc1cccc1o2)=O"
+  },
+  {
+    "group_id": "uspto50k_train#L8800",
+    "split": "train",
+    "requested_target_id": "c24c(cccc4)C(c3ccccc23)COC(=O)N[C@@H](CCCCNS(c1ccc(C)cc1)(=O)=O)C(=O)O"
+  },
+  {
+    "group_id": "uspto50k_train#L10453",
+    "split": "train",
+    "requested_target_id": "C(C(F)(F)F)n1c(-c2nc5n(CCOc4c5cc(cc4)C(=O)N3CCOCC3)c2)ncn1"
+  },
+  {
+    "group_id": "uspto50k_train#L10975",
+    "split": "train",
+    "requested_target_id": "c4c2c(c(c(F)c4)F)C(N1[C@H](c3c(ncn23)C(=O)O)CC1)=O"
+  },
+  {
+    "group_id": "uspto50k_train#L11406",
+    "split": "train",
+    "requested_target_id": "Fc6c1c(ccc6Oc2ncn(Cc5ccc(OC)cc5)c3nc(-c4ccc(C(OCC)=O)cc4)cc23)[nH]c(c1)C"
+  },
+  {
+    "group_id": "uspto50k_train#L11653",
+    "split": "train",
+    "requested_target_id": "n13c(C(C)C)nnc1C(CC(N5[C@H](CCC5)C(=O)O)=O)OC(c4cc(Cl)ccc34)c2c(c(OC)ccc2)OC"
+  },
+  {
+    "group_id": "uspto50k_train#L12709",
+    "split": "train",
+    "requested_target_id": "c1(F)c(F)cccc1-c5nc4cn(ncc4n5)Cc3onc(c3)-c2ccc(cc2)C#CC(C)(C)C"
+  },
+  {
+    "group_id": "uspto50k_train#L14028",
+    "split": "train",
+    "requested_target_id": "S(=O)(CC5=c4c(N(C=C5)C)c2c(=O)[nH]c3=CCN(c(cc4)c23)C1CCN(C(=O)OC(C)(C)C)CC1)(=O)C"
+  },
+  {
+    "group_id": "uspto50k_train#L14039",
+    "split": "train",
+    "requested_target_id": "n12c([C@@H]4CCCN4C(c3c2cccc3)=O)c(CO)nc1"
+  },
+  {
+    "group_id": "uspto50k_train#L14046",
+    "split": "train",
+    "requested_target_id": "Fc4c2c(ccc4)OC3(CCN(CC3)C(=O)C(F)(F)F)c1n2ccc1"
+  },
+  {
+    "group_id": "uspto50k_train#L14580",
+    "split": "train",
+    "requested_target_id": "Cn4c1c(c(n4)C(=O)Nc3cc(Cl)ccc3)COc2ccc(Cl)cc12"
+  },
+  {
+    "group_id": "uspto50k_train#L15275",
+    "split": "train",
+    "requested_target_id": "O=C(c4sc3c(c4)CCOc2cc(CNCCN(C)C)ccc23)N(C)c1c(Cl)cccc1"
+  },
+  {
+    "group_id": "uspto50k_train#L15722",
+    "split": "train",
+    "requested_target_id": "c12ccc(/C=C/3C(=O)Nc4c(cccc34)Cl)c1ccccc2"
+  },
+  {
+    "group_id": "uspto50k_train#L15929",
+    "split": "train",
+    "requested_target_id": "c1(Cl)sc(c3c1CCc2sc(NS(c4ccc(CCC)cc4)(=O)=O)nc23)S(C)(=O)=O"
+  },
+  {
+    "group_id": "uspto50k_train#L16195",
+    "split": "train",
+    "requested_target_id": "n13c(C)nnc1CCc4cc(ccc34)-c2cc(cnc2)C(F)(F)F"
+  },
+  {
+    "group_id": "uspto50k_train#L16270",
+    "split": "train",
+    "requested_target_id": "c12c(C(=O)N(Cc3c(ncn23)C#N)C)c(Cl)ccc1"
+  },
+  {
+    "group_id": "uspto50k_train#L16550",
+    "split": "train",
+    "requested_target_id": "C1(CCC(CNc4nc3c(s4)CCOc2ccccc23)CC1)NC(=O)CC"
+  },
+  {
+    "group_id": "uspto50k_train#L17736",
+    "split": "train",
+    "requested_target_id": "c34c(CCc5c4ccc(c5)C=C)nc(s3)-c1onc(-c2ccccc2)c1C(F)(F)F"
+  },
+  {
+    "group_id": "uspto50k_train#L18788",
+    "split": "train",
+    "requested_target_id": "c34cnn(cc3nc(-c5c(C)onc5C)n4)Cc2onc(c2)-c1ccc(C(F)(F)F)cc1C(F)(F)F"
+  },
+  {
+    "group_id": "uspto50k_train#L18798",
+    "split": "train",
+    "requested_target_id": "c4(C(N(C)C[C@H]6Cc5ccccc5O6)=O)nc3c(s4)CCOc2cc(ccc23)-c1c[nH]nc1"
+  },
+  {
+    "group_id": "uspto50k_train#L19950",
+    "split": "train",
+    "requested_target_id": "c1(Cl)ccc4c(C(=NCc3c(nc(C)n34)C(=O)O)c2ccccc2)c1"
+  },
+  {
+    "group_id": "uspto50k_train#L20029",
+    "split": "train",
+    "requested_target_id": "c1(cc(OC)ccc1Cn2c5c(CCCc4cc3n(C)c(CO)cc3cc45)cc(c2=O)C(=O)O)OC"
+  },
+  {
+    "group_id": "uspto50k_train#L20039",
+    "split": "train",
+    "requested_target_id": "C(c4cc(ccc4OCC(=O)OC(C)(C)C)Cl)#Cc1ccc3c(S(=O)(=O)c2c3cccc2)c1"
+  },
+  {
+    "group_id": "uspto50k_train#L20588",
+    "split": "train",
+    "requested_target_id": "c6(ccc4c(c6)C(=NC(c5n4c(C)nn5)OC)c3ccccc3F)C#CCN1C(CCc2ccccc12)=O"
+  },
+  {
+    "group_id": "uspto50k_train#L20897",
+    "split": "train",
+    "requested_target_id": "n1n5c(CCOc3c5cc(C4CN(C4)C(=O)C)cc3)cc1-c2n(ncn2)C(C)C"
+  },
+  {
+    "group_id": "uspto50k_train#L21054",
+    "split": "train",
+    "requested_target_id": "c1c2c(CCc4n2cnc4CC3C(=O)N(CCC3)C(=O)OC(C)(C)C)cc(OCC)c1"
+  },
+  {
+    "group_id": "uspto50k_train#L21138",
+    "split": "train",
+    "requested_target_id": "c1c4c(C(c3ccccc34)COC(=O)NC2(CCC(CC2)=O)C(=O)O)ccc1"
+  },
+  {
+    "group_id": "uspto50k_train#L21252",
+    "split": "train",
+    "requested_target_id": "c25c(cccc5)CC(Cn3c1c(c(C4CCCCC4)c23)ccc(C(=O)OC)c1)CO"
+  },
+  {
+    "group_id": "uspto50k_train#L21421",
+    "split": "train",
+    "requested_target_id": "[nH]6nc3c(c6)CCc2nc(-c4ccc(C5(N)CCC5)cc4)c(cc23)-c1ccccc1"
+  },
+  {
+    "group_id": "uspto50k_train#L21697",
+    "split": "train",
+    "requested_target_id": "c5(ccc2c(c5)C(c4ccccc4F)=NCc3nnc(n23)CN(CC)CC1CC1)F"
+  },
+  {
+    "group_id": "uspto50k_train#L21954",
+    "split": "train",
+    "requested_target_id": "[O-][N+](c1ccc(-c5cc(on5)Cn3cc2nc(-c4c(c(F)ccc4)F)nc2cn3)cc1)=O"
+  },
+  {
+    "group_id": "uspto50k_train#L22564",
+    "split": "train",
+    "requested_target_id": "c13c(c4c(cccc4)c([nH]3)=O)Cc2c(cccc12)CO"
+  },
+  {
+    "group_id": "uspto50k_train#L23095",
+    "split": "train",
+    "requested_target_id": "[N+]([O-])(=O)c1cc(Br)ccc1Cn4ncc3nc(nc3c4)-c2cccc(F)c2F"
+  },
+  {
+    "group_id": "uspto50k_train#L23314",
+    "split": "train",
+    "requested_target_id": "c5ccc2c(c5)C(C(NCC(F)(F)F)=O)(CCCCN3C(CN(c4nc(ccc4)OC)CC3C)C)c1ccccc12"
+  },
+  {
+    "group_id": "uspto50k_train#L23582",
+    "split": "train",
+    "requested_target_id": "c4n(ncc5nc(nc45)-c3c(c(F)ccc3)F)C(c2onc(c2)-c1ccc(C(F)(F)F)cc1C(F)(F)F)C"
+  },
+  {
+    "group_id": "uspto50k_train#L23602",
+    "split": "train",
+    "requested_target_id": "CC(C)(NC(c4ccc5c(c3n(c5c4)CCOc2cc(OC)ccc23)C1CCCCC1)=O)C(=O)OC"
+  },
+  {
+    "group_id": "uspto50k_train#L23609",
+    "split": "train",
+    "requested_target_id": "c1ncn(CCOc4c(cc2c(c4)CC(CC)n3c2cc(c(C(OCC)=O)c3)=O)OC)c1"
+  },
+  {
+    "group_id": "uspto50k_train#L24736",
+    "split": "train",
+    "requested_target_id": "c4nn(C(C)C)c(n4)-c1nc3n(CCOc2cc(O[C@@H](C)C(O)=O)ncc23)c1"
+  },
+  {
+    "group_id": "uspto50k_train#L24847",
+    "split": "train",
+    "requested_target_id": "c3(Br)cc1c(cc3OC)CCc2c(C(OC)=O)n(nc12)CCNC(=O)OC(C)(C)C"
+  },
+  {
+    "group_id": "uspto50k_train#L24957",
+    "split": "train",
+    "requested_target_id": "c13c4c(CCNCC)cc1nn(nc3C(=NSC4)N)Cc2c(c(c(cn2)C)OC)C"
+  },
+  {
+    "group_id": "uspto50k_train#L25418",
+    "split": "train",
+    "requested_target_id": "c24n(CCN(CCN(C)C)Cc5ccoc45)c1c(c2C3CCCCC3)ccc(c1)C(OC)=O"
+  },
+  {
+    "group_id": "uspto50k_train#L27314",
+    "split": "train",
+    "requested_target_id": "c3ccc1c(c3)CN(C(OC(C)(C)C)=O)Cc2cnnn12"
+  },
+  {
+    "group_id": "uspto50k_train#L27483",
+    "split": "train",
+    "requested_target_id": "c1ncc(-c3cc5nn(nc4C(N(C(=O)OC(C)(C)C)C(OC(C)(C)C)=O)=NSCc3c45)Cc2c(C)c(c(C)cn2)OC)cn1"
+  },
+  {
+    "group_id": "uspto50k_train#L27734",
+    "split": "train",
+    "requested_target_id": "c1(C(=O)N[C@@H]2CC[C@@H](CCN3C(c5coc4cccc4c5)CCCC3)CC2)ccc(C(C)(C)C)cc1"
+  },
+  {
+    "group_id": "uspto50k_train#L28096",
+    "split": "train",
+    "requested_target_id": "c4c1c(ccc4)OCCc2sc(NCC3CCC(CC3)NCCOC)nc12"
+  },
+  {
+    "group_id": "uspto50k_train#L28454",
+    "split": "train",
+    "requested_target_id": "O(c5c(cc2c(c5)CCn4c2c(c3c4C(=O)N(CCCC3)C(C)(C)C)Cl)-c1cnccc1)C"
+  },
+  {
+    "group_id": "uspto50k_train#L29022",
+    "split": "train",
+    "requested_target_id": "c1cc(-c4nc5cn(ncc5n4)Cc3nnc(cc3)-c2ccc(CC(C)C)cc2)c(F)c(F)c1"
+  },
+  {
+    "group_id": "uspto50k_train#L29231",
+    "split": "train",
+    "requested_target_id": "c3(=O)n(-c5ccc(Cl)cc5)nc4c(c(C)[nH]cc34)-c2cccc(c2)C(=O)N1CCCC1"
+  },
+  {
+    "group_id": "uspto50k_train#L29379",
+    "split": "train",
+    "requested_target_id": "n3(c2nc(-c4ccc(cc4)NS(C)(=O)=O)nc(=O)c2c([nH]3)CC)C1CCCC1"
+  },
+  {
+    "group_id": "uspto50k_train#L29435",
+    "split": "train",
+    "requested_target_id": "C(OCCOC)COCCNC(c3ccc1c(c3)C(c2cc(ccc12)C(NCCNC(=O)OC(C)(C)C)=O)CO)=O"
+  },
+  {
+    "group_id": "uspto50k_train#L29453",
+    "split": "train",
+    "requested_target_id": "FC(Cn1c(-c2nc4c(CCOc3cc(-c5cn(nc5)CC(N)(C)C)ccc34)s2)ncn1)(F)F"
+  },
+  {
+    "group_id": "uspto50k_train#L29615",
+    "split": "train",
+    "requested_target_id": "C(c5cc(ccc5)Oc4ccc(cc4)CCOc1cc3n(CCc2ccccc23)c(n1)=O)(F)(F)F"
+  },
+  {
+    "group_id": "uspto50k_train#L29680",
+    "split": "train",
+    "requested_target_id": "c4(ccc3c(c4)Oc1ccccc1-c2ccsc23)OCCCN(C)C"
+  },
+  {
+    "group_id": "uspto50k_train#L29706",
+    "split": "train",
+    "requested_target_id": "N(C)(C)C(=O)C(C)(C)c1cc(-c4ccc3c(c4)CCc2n3c(C)nn2)cnc1"
+  },
+  {
+    "group_id": "uspto50k_train#L29849",
+    "split": "train",
+    "requested_target_id": "n3c(NCc4ccccc4)nc2c(c3)CCc1c2sc(n1)C"
+  },
+  {
+    "group_id": "uspto50k_train#L30439",
+    "split": "train",
+    "requested_target_id": "C(CCCC(=O)OCC)CCn1c4c(cc(C)c(c4)N[C@H]3CN(CC3)C(=O)OC(C)(C)C)nc2c(=O)[nH]c(=O)nc12"
+  },
+  {
+    "group_id": "uspto50k_train#L30790",
+    "split": "train",
+    "requested_target_id": "c12n(ccc1CCc3c(cccc23)Cl)CCNC(=O)C"
+  },
+  {
+    "group_id": "uspto50k_train#L31075",
+    "split": "train",
+    "requested_target_id": "N5(C(=O)OC(C)(C)C)CCN(CC5)Cc4cccc(c4)C(Oc1ccc2c([C@@H](NC(=O)C)CCc3cc(c(OC)c(OC)c23)OC)c1)=O"
+  },
+  {
+    "group_id": "uspto50k_train#L31210",
+    "split": "train",
+    "requested_target_id": "c1cc5cc(-c2cn6c(c(C(C)O)c(C)c(c6N3CCC(C)(OCCCC[C@@H](Oc4c5cc(F)cc4)C)CC3)[C@H](OC(C)(C)C)C(O)=O)n2)c1"
+  },
+  {
+    "group_id": "uspto50k_train#L32036",
+    "split": "train",
+    "requested_target_id": "O(C(=O)c3c4c(cccc4)[nH]c2c1c(nc23)cccc1)C"
+  },
+  {
+    "group_id": "uspto50k_train#L32069",
+    "split": "train",
+    "requested_target_id": "n3n(-c5ccccc5)c2c(c3C(=O)C(C(Nc4ccccc4)=O)C#N)Cc1c2cccc1C(OCC)=O"
+  },
+  {
+    "group_id": "uspto50k_train#L32257",
+    "split": "train",
+    "requested_target_id": "c24n(CC(C(=O)N6C[C@@H](C)N(C)[C@@H](C)C6)=Cc5cc(ccc45)OC)c1c(c2C3CCCCC3)ccc(c1)C(NS(=O)(=O)N(C)C)=O"
+  },
+  {
+    "group_id": "uspto50k_train#L32362",
+    "split": "train",
+    "requested_target_id": "c13c(C(OC(c4ccc(n34)C=C(C)C)CCO)c2c(OC)c(ccc2)OC)cc(Cl)cc1"
+  },
+  {
+    "group_id": "uspto50k_train#L32536",
+    "split": "train",
+    "requested_target_id": "c1cc5c([nH]c(c4c(n(nc45)-c3ccc(cc3)C(=O)NCCCN(C)C)=O)C2CC2)cc1"
+  },
+  {
+    "group_id": "uspto50k_train#L32552",
+    "split": "train",
+    "requested_target_id": "c12c(C(=O)N(C)Cc3n2cnc3/C=C/C(=O)C)c(Cl)ccc1"
+  },
+  {
+    "group_id": "uspto50k_train#L33257",
+    "split": "train",
+    "requested_target_id": "c4n3c(nc4)c(=O)[nH]c1c3Cc2cc(CNC(=O)C)ccc12"
+  },
+  {
+    "group_id": "uspto50k_train#L33647",
+    "split": "train",
+    "requested_target_id": "C1(c4ccoc3cccc34)CCCCN1CC[C@@H]2CC[C@@H](NC(C)=O)CC2"
+  },
+  {
+    "group_id": "uspto50k_train#L33885",
+    "split": "train",
+    "requested_target_id": "O=c1n(C)c4c(CCCc3c4cc2ccn(C)c2c3)cc1C(=O)O"
+  },
+  {
+    "group_id": "uspto50k_train#L33908",
+    "split": "train",
+    "requested_target_id": "c5c2c(ccc5)C(NC(=O)C#Cc3cc(c(-n4cc(C)nc4)cc3)OC)c1ccccc12"
+  },
+  {
+    "group_id": "uspto50k_train#L34599",
+    "split": "train",
+    "requested_target_id": "n1c(SCc4cc(C#N)c(Oc5cc(C(F)(F)F)ccc5)cc4)cc3n(CCc2cc(OC)ccc23)c1=O"
+  },
+  {
+    "group_id": "uspto50k_train#L34738",
+    "split": "train",
+    "requested_target_id": "C(=O)(NC)c5ccc2c(c5)OCCc1cc(-c3nc(N)nn3-c4ccc(cc4F)F)sc12"
+  },
+  {
+    "group_id": "uspto50k_train#L34765",
+    "split": "train",
+    "requested_target_id": "c1cccc3c1C(COC(N5C[C@@H](C(NCC8(c6c(Oc7ccccc78)cccc6)COCCOC)=O)C[C@H](C5)NS(=O)(=O)c4ccc(F)cc4)=O)c2ccccc23"
+  },
+  {
+    "group_id": "uspto50k_train#L35096",
+    "split": "train",
+    "requested_target_id": "c1c(-c5nnc(cc5)Cn2cc3nc(-c4cccc(F)c4F)nc3cn2)ccc(c1)COC(C)(C)C"
+  },
+  {
+    "group_id": "uspto50k_train#L35190",
+    "split": "train",
+    "requested_target_id": "c13c([C@H](S[C@H](CC(=O)O)c4n3c(C(F)(F)F)nn4)c2cccc(F)c2F)cc(cc1)Cl"
+  },
+  {
+    "group_id": "uspto50k_train#L35552",
+    "split": "train",
+    "requested_target_id": "C(c4n2c(nn4)CN=C(c3c2ccc(c3)Br)c1ncccc1)N(C)O"
+  },
+  {
+    "group_id": "uspto50k_train#L36476",
+    "split": "train",
+    "requested_target_id": "C5(NS(c6ccccc6)(=O)=O)=c1c(N(C=C5)C)c2c(=O)[nH]c3=CCN(c4ccc(cc4)F)c(c23)cc1"
+  },
+  {
+    "group_id": "uspto50k_train#L36588",
+    "split": "train",
+    "requested_target_id": "n3c(-c4cnccc4)c2nc(cc2[nH]c3C)-c1ccccc1"
+  },
+  {
+    "group_id": "uspto50k_train#L36622",
+    "split": "train",
+    "requested_target_id": "c13ccccc1CN(Cc4ccccc34)C(OCC)=NC(=O)c2cccc(F)c2"
+  },
+  {
+    "group_id": "uspto50k_train#L36776",
+    "split": "train",
+    "requested_target_id": "c3[nH]c2cc(c(F)cc2c4nn(-c5ccccc5)c(c34)=O)N1CCCN(C)CC1"
+  },
+  {
+    "group_id": "uspto50k_train#L37204",
+    "split": "train",
+    "requested_target_id": "C(CNc4c(cc2c(c4)n(CCN3CCC(C(=O)O)CC3)c1nc([nH]c(=O)c1n2)=O)C)C(=O)OC(C)(C)C"
+  },
+  {
+    "group_id": "uspto50k_train#L37862",
+    "split": "train",
+    "requested_target_id": "C4[C@@H](CC[C@@H](NC(CS(=O)(=O)C)=O)C4)CCN3CCCCC3c1cc2cccc2oc1"
+  },
+  {
+    "group_id": "uspto50k_train#L37873",
+    "split": "train",
+    "requested_target_id": "C1(c3c4n(CCCN(c5ccccc45)C)c2cc(C(=O)O)ccc23)CCCCC1"
+  },
+  {
+    "group_id": "uspto50k_train#L37894",
+    "split": "train",
+    "requested_target_id": "c12c(C(=O)N(Cc3c(ncn23)C(N[C@@H](CO)C(OC)=O)=O)C)c(Cl)ccc1"
+  },
+  {
+    "group_id": "uspto50k_train#L38508",
+    "split": "train",
+    "requested_target_id": "c1c(OC(C)C5CCNCCC5)ccc4c1OCCn3cc(nc34)-c2nc(C)nn2C(C)C"
+  },
+  {
+    "group_id": "uspto50k_train#L38585",
+    "split": "train",
+    "requested_target_id": "c1n3c(CN(C)C(=O)c2cc(ccc23)Cl)c(n1)C#N"
+  },
+  {
+    "group_id": "uspto50k_train#L38887",
+    "split": "train",
+    "requested_target_id": "[nH]4c3c(cn4)CCCc2c3[nH]c1ccc(C(=O)O)cc12"
+  },
+  {
+    "group_id": "uspto50k_train#L39305",
+    "split": "train",
+    "requested_target_id": "c13c(C(=NCc4n3c(=O)[nH]c4C(O)=O)c2c(cccc2)Cl)cc(Cl)cc1"
+  },
+  {
+    "group_id": "uspto50k_train#L39697",
+    "split": "train",
+    "requested_target_id": "C(C)(n5ncnc5-c1nn2c(CCOc3ccc(C(=O)N4CCC(O)CC4)cc23)c1)C"
+  },
+  {
+    "group_id": "uspto50k_train#L39776",
+    "split": "train",
+    "requested_target_id": "c1cccc4c1N(CCc3sc(nc34)C)C(c2ccccc2)=O"
+  },
+  {
+    "group_id": "uspto50k_val#L818",
+    "split": "val",
+    "requested_target_id": "c34c2c(-c5c4cccc5)ccc(c2ccc3)-c1cccc(c1)Br"
+  },
+  {
+    "group_id": "uspto50k_val#L918",
+    "split": "val",
+    "requested_target_id": "c5(cc(c(cc5)-c4ccc(cn4)Cn3ncc2nc(nc2c3)-c1c(F)c(F)ccc1)C(F)(F)F)[N+]([O-])=O"
+  },
+  {
+    "group_id": "uspto50k_val#L977",
+    "split": "val",
+    "requested_target_id": "c3cc(ccc3)C(O)Cn2c1nc(Cl)c(CC#N)c1ccc2"
+  },
+  {
+    "group_id": "uspto50k_val#L1283",
+    "split": "val",
+    "requested_target_id": "S(N[C@@H]4CC[C@H](CC4)CCN3C(CCCC3)c2coc1cccc1c2)(C)(=O)=O"
+  },
+  {
+    "group_id": "uspto50k_val#L1760",
+    "split": "val",
+    "requested_target_id": "Brc4cc2c(cc4)OCCc1cc(C(Nc3ccccc3Cl)=O)sc12"
+  },
+  {
+    "group_id": "uspto50k_val#L2123",
+    "split": "val",
+    "requested_target_id": "c12ccccc1C(O)(C(C)(C)C)c3ccccc23"
+  },
+  {
+    "group_id": "uspto50k_val#L2435",
+    "split": "val",
+    "requested_target_id": "c3c(cccc3)-c1cc2cccc2oc1CC(OCC)=O"
+  },
+  {
+    "group_id": "uspto50k_val#L2586",
+    "split": "val",
+    "requested_target_id": "c1cccc3c1Cc4c(n[nH]c34)-c2ccc(cc2)C(=O)NC"
+  },
+  {
+    "group_id": "uspto50k_val#L3069",
+    "split": "val",
+    "requested_target_id": "C1CC(=O)CCN1C(c5c2n(c(=O)c(c5)-c4ccccc4)CCc3ccsc23)=O"
+  },
+  {
+    "group_id": "uspto50k_val#L3232",
+    "split": "val",
+    "requested_target_id": "C(Oc3c(cc1c(c3)CC(CC)n2c1cc(c(C(OCC)=O)c2)=O)OC)CCOC"
+  },
+  {
+    "group_id": "uspto50k_val#L3281",
+    "split": "val",
+    "requested_target_id": "c12c(C(c3ccccc23)COC(N[C@@H](C(=O)N[C@H](C)C(=O)O)C(C)C)=O)cccc1"
+  },
+  {
+    "group_id": "uspto50k_val#L4555",
+    "split": "val",
+    "requested_target_id": "c3(-c5ccc(C6(N)CCC6)cc5)c(-c4ccccc4)cc2c(n3)OCc1nn(c(n12)=O)CC(F)(F)F"
+  },
+  {
+    "group_id": "uspto50k_val#L4621",
+    "split": "val",
+    "requested_target_id": "c13ccsc1C(=O)N2CCC[C@H]2c5n3cnc5-c4oc(nn4)CN"
+  },
+  {
+    "group_id": "uspto50k_val#L4651",
+    "split": "val",
+    "requested_target_id": "N(C(c6nc(ccc6Cl)NC)=O)c1cc3c(CCc2c(C(N)=O)nn(-c5ccc4c(c5)OCO4)c23)cc1"
+  }
+]

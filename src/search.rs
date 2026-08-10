@@ -214,6 +214,14 @@ pub struct SearchStats {
     /// loop already visits); the CLI only *surfaces* this behind
     /// `--search-diagnostics` so default JSON output is unchanged.
     pub crowd_out: CrowdOutDiagnostics,
+    /// Issue #101 Task 35: number of expansions where the configured
+    /// reranker failed (model/table already loaded, but `score_pool`
+    /// erred on this pool) and this search fell back to legacy ordering
+    /// for the remainder of the run. Always `0` when `SearchConfig::reranker`
+    /// is `None`. Expected to be `0` even when a reranker is configured --
+    /// a nonzero value means a mixed-mode run (part reranked, part legacy)
+    /// happened and should be investigated, not silently accepted.
+    pub reranker_failures: u64,
 }
 
 /// Diagnostics-only counters (Issue #101): computing these does not change
@@ -917,6 +925,61 @@ fn dedup_counts(entries: &[RetroEntry]) -> (u64, u64, u64) {
     )
 }
 
+/// Issue #101 Task 35 runtime integration: score one expansion's raw
+/// proposals with `reranker`, exactly as the offline pool pipeline scores a
+/// candidate pool, and return a `candidate_id -> bonus` map on
+/// `template_bonus`'s own [0.0, 0.2] scale.
+///
+/// Two fidelity requirements, both load-bearing:
+///  - Candidates are built via [`crate::candidate::merge_into_candidates`],
+///    the same merge the offline exporter (`src/pool_export.rs`) uses --
+///    `entries` in the caller stays one `RetroEntry` per raw proposal
+///    (crowd-out diagnostics deliberately never merges at search time), but
+///    the reranker must see exactly the same candidate identities the model
+///    was trained to rank, or the score-to-candidate mapping is not the one
+///    that was validated.
+///  - `extract_features` is called with `stock: None`, matching
+///    `src/bin/pool_gen.rs`'s own `/* stock */ None` -- the offline training
+///    pool was built without a stock (`fraction_precursors_in_stock` /
+///    `all_precursors_in_stock` were `missing` for every training row), so
+///    passing this call site's real `env` stock would feed the frozen model
+///    a feature distribution it never saw in training, even though a stock
+///    happens to be available here.
+///
+/// Rank (not raw score) becomes the bonus, via a total, content-based order
+/// (`reranker_score` descending, `candidate_id` ascending as tie-break --
+/// `apply_retro` runs in parallel on native, so proposal order alone is not
+/// a stable tie-break and this must not depend on it). The bonus REPLACES
+/// `template_bonus`/`ReactionPrior::prior` at the call site, it is never
+/// added on top: summing both would push the effective step-cost bonus
+/// outside the calibrated range the A*/beam-prune g/h split assumes, and
+/// would stop this from being an ordering-only change.
+fn reranker_rank_bonuses(
+    reranker: &dyn crate::candidate::CandidateReranker,
+    target_smi: &str,
+    target_mol: &crate::chem_env::Molecule,
+    raw_proposals: &[crate::candidate::RawCandidate],
+    templates_by_id: &std::collections::HashMap<String, &RetroRule>,
+) -> anyhow::Result<FxHashMap<String, f64>> {
+    let mut candidates = crate::candidate::merge_into_candidates(target_smi, raw_proposals)?;
+    for c in candidates.iter_mut() {
+        c.features = crate::candidate::extract_features(c, target_mol, templates_by_id, None);
+    }
+    reranker.score_pool(target_smi, &mut candidates)?;
+    candidates.sort_by(|a, b| {
+        b.reranker_score
+            .partial_cmp(&a.reranker_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.candidate_id.cmp(&b.candidate_id))
+    });
+    let n = candidates.len();
+    Ok(candidates
+        .into_iter()
+        .enumerate()
+        .map(|(rank, c)| (c.candidate_id, crate::score::rank_bonus(rank, n)))
+        .collect())
+}
+
 /// Classify a template's provenance from its stable identity and SMIRKS
 /// (competitive-diagnostics program, Phase 1B). Read-only: does not touch
 /// rule loading or application.
@@ -984,6 +1047,23 @@ pub struct SearchConfig {
     /// diagnostic use only (CLI `--candidate-trace-limit`); does not affect
     /// which candidates are expanded, scored, kept, or in what order.
     pub candidate_trace_cap: Option<usize>,
+    /// Ordering-only LightGBM candidate reranker (Issue #101 Task 35).
+    /// `None` (the default) reproduces this crate's legacy
+    /// `template_bonus`/`reaction_prior` ordering byte-for-byte -- see
+    /// `reranker_rank_bonuses`' doc for exactly how a `Some` value changes
+    /// step-cost bonuses. "Ordering-only" is precise at the single-
+    /// expansion level: for one node, the reranker never adds, drops, or
+    /// merges a `RetroEntry` -- the same raw proposals become the same set
+    /// of children either way, just under different `step_cost`s. It is
+    /// NOT a claim that the whole search explores the identical candidate
+    /// set end to end under a nonzero `beam_width`: a changed `step_cost`
+    /// changes `f() = g + h`, which changes which open nodes `beam_prune`
+    /// evicts, which changes which of THEIR children ever get proposed at
+    /// all deeper in the tree. That's the intended mechanism (it's how a
+    /// reranker can fix beam-width crowd-out), not a bug -- just don't
+    /// read "ordering-only" as "identical search tree regardless of beam
+    /// width," which it isn't and was never meant to be.
+    pub reranker: Option<std::sync::Arc<dyn crate::candidate::CandidateReranker>>,
 }
 
 impl Default for SearchConfig {
@@ -1004,6 +1084,7 @@ impl Default for SearchConfig {
             nn_scorer: None,
             ring_context: crate::ring_context::RingContextConfig::Disabled,
             candidate_trace_cap: None,
+            reranker: None,
         }
     }
 }
@@ -1075,6 +1156,41 @@ pub fn find_routes(
     } else {
         None
     };
+
+    // Local, mutable "is the reranker still usable this run" handle,
+    // separate from `config.reranker` (which is immutable for the whole
+    // call): a mid-run inference error disables it for the remainder of
+    // this search rather than retrying every subsequent expansion, and
+    // `reranker_failures` records that it happened (expected value: 0).
+    let mut active_reranker = config.reranker.as_deref();
+    let mut reranker_failures: u64 = 0;
+
+    // Issue #101 Task 35: template_id -> &RetroRule, built once, used only
+    // when a reranker is configured (extract_features needs it to compute
+    // reaction-center features from each source's SMIRKS). This setup step
+    // is itself fallible -- index_rules_by_template_id hard-errors on a
+    // corpus with a conflicting duplicate template_id -- and must degrade
+    // exactly like a mid-run inference failure does (warn, disable the
+    // reranker for this whole run, never a hard error), not propagate via
+    // `?` and abort the search entirely just because the reranker happened
+    // to be turned on.
+    let templates_by_id: std::collections::HashMap<String, &RetroRule> =
+        if active_reranker.is_some() {
+            match crate::candidate::index_rules_by_template_id(rules) {
+                Ok(m) => m,
+                Err(e) => {
+                    eprintln!(
+                        "warning: reranker setup failed ({e:#}); falling back to legacy \
+                         ordering for this run"
+                    );
+                    reranker_failures += 1;
+                    active_reranker = None;
+                    std::collections::HashMap::new()
+                }
+            }
+        } else {
+            std::collections::HashMap::new()
+        };
 
     #[cfg(not(target_arch = "wasm32"))]
     let t0 = std::time::Instant::now();
@@ -1246,10 +1362,65 @@ pub fn find_routes(
             );
             ring_context_diagnostics.merge(&step_ring_diag);
 
+            // Issue #101 Task 35: score this expansion's candidate pool once
+            // (not per-proposal) when a reranker is still active. A failure
+            // here disables the reranker for the rest of this search (see
+            // `active_reranker`'s doc) and falls back to legacy ordering for
+            // this expansion and every later one -- never a hard error.
+            let reranker_bonus_by_id: Option<FxHashMap<String, f64>> =
+                if let Some(reranker) = active_reranker {
+                    match reranker_rank_bonuses(
+                        reranker,
+                        &target_smi,
+                        &target_mol,
+                        &raw_proposals,
+                        &templates_by_id,
+                    ) {
+                        Ok(map) => Some(map),
+                        Err(e) => {
+                            eprintln!(
+                                "warning: reranker inference failed ({e:#}); falling back to \
+                                 legacy ordering for the remainder of this search"
+                            );
+                            reranker_failures += 1;
+                            active_reranker = None;
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
+
             let entries: Vec<RetroEntry> = raw_proposals
                 .into_iter()
                 .map(|p| {
-                    let bonus = if let Some(ref prior) = config.reaction_prior {
+                    let bonus = if let Some(ref map) = reranker_bonus_by_id {
+                        let mut key: Vec<String> =
+                            p.precursors.iter().map(|pm| pm.smiles.clone()).collect();
+                        key.sort_unstable();
+                        // A miss here would mean this exact raw_proposals
+                        // slice produced a different candidate_id set when
+                        // merged for scoring above than when re-keyed here
+                        // -- an internal inconsistency between this
+                        // function and merge_into_candidates/
+                        // candidate_id_for, not a runtime/data condition to
+                        // degrade gracefully from (unlike a genuinely
+                        // external reranker failure, which IS handled by
+                        // falling back). 0.0 would be silently
+                        // indistinguishable from a legitimate worst-rank
+                        // bonus (rank_bonus(count-1, count) == 0.0), so
+                        // fail loudly instead of masking it.
+                        *map.get(&crate::candidate::candidate_id_for(&target_smi, &key))
+                            .unwrap_or_else(|| {
+                                panic!(
+                                    "candidate_id for proposal (rule {:?}, precursors {:?}) \
+                                     missing from reranker_bonus_by_id -- this is a bug in \
+                                     reranker_rank_bonuses/candidate_id_for consistency, not a \
+                                     reranker failure",
+                                    p.rule_name, key
+                                )
+                            })
+                    } else if let Some(ref prior) = config.reaction_prior {
                         prior.prior(&p.rule_name, &target_smi)
                     } else {
                         template_bonus(p.rule_weight, max_rule_weight)
@@ -1555,6 +1726,7 @@ pub fn find_routes(
             retro_cache_misses,
             ring_context_diagnostics,
             crowd_out,
+            reranker_failures,
         },
     ))
 }
@@ -2577,5 +2749,255 @@ mod tests {
             "expected the only recorded route to be the direct-path route \
              (g≈2.13), got best_score={best_score}"
         );
+    }
+
+    // ---- Issue #101 Task 35: runtime reranker integration ----
+
+    /// A `CandidateReranker` test double: no LightGBM model involved --
+    /// `RuntimeReranker`'s own bit-exactness against `lightgbm.Booster` is
+    /// already covered by `reranker.rs`'s tests and a 3000-row real-data
+    /// check (see that module's tests + `scripts/reranker_golden_fixture.py`
+    /// on the sibling reranker-real-data-gate branch). What THIS reranker
+    /// double isolates is search.rs's own new glue: does
+    /// `reranker_rank_bonuses` merge/featurize/score/rank raw proposals
+    /// exactly the same way calling those same shared primitives directly,
+    /// in the textbook order, would? Its score is a deterministic function
+    /// of candidate identity alone (sorted precursor SMILES joined length),
+    /// independently recomputable by the test without re-deriving anything
+    /// `reranker_rank_bonuses` itself computed.
+    struct DeterministicReranker;
+    impl crate::candidate::CandidateReranker for DeterministicReranker {
+        fn score_pool(
+            &self,
+            _target: &str,
+            candidates: &mut [crate::candidate::ReactionCandidate],
+        ) -> anyhow::Result<()> {
+            for c in candidates.iter_mut() {
+                c.reranker_score = Some(c.precursor_smiles.join(".").len() as f64);
+            }
+            Ok(())
+        }
+    }
+
+    fn deterministic_score(precursor_smiles: &[String]) -> f64 {
+        let mut sorted = precursor_smiles.to_vec();
+        sorted.sort_unstable();
+        sorted.join(".").len() as f64
+    }
+
+    #[test]
+    fn reranker_rank_bonuses_matches_the_canonical_merge_extract_score_pipeline() {
+        let rules = default_rules();
+        let target_smi = "CC(=O)Oc1ccccc1C(=O)O"; // aspirin: multiple rules apply
+        let target_mol = mol_from_smiles(target_smi).unwrap();
+        let scored_active_rules: Vec<crate::candidate::ScoredRuleRef<'_>> = rules
+            .iter()
+            .enumerate()
+            .map(|(rank, rule)| crate::candidate::ScoredRuleRef {
+                rule,
+                source_rank: rank,
+                upstream_score: None,
+                upstream_score_status: crate::candidate::UpstreamScoreStatus::NotApplicable,
+            })
+            .collect();
+        let (raw_proposals, _diag) = crate::candidate::raw_propose(
+            &target_mol,
+            target_smi,
+            &scored_active_rules,
+            crate::ring_context::RingContextArgs {
+                config: crate::ring_context::RingContextConfig::Disabled,
+            },
+        );
+        assert!(
+            raw_proposals.len() >= 2,
+            "fixture must exercise a multi-candidate pool, got {}",
+            raw_proposals.len()
+        );
+
+        let templates_by_id = crate::candidate::index_rules_by_template_id(&rules).unwrap();
+
+        // Path A: exactly what search.rs's hot loop calls.
+        let via_search_rs = reranker_rank_bonuses(
+            &DeterministicReranker,
+            target_smi,
+            &target_mol,
+            &raw_proposals,
+            &templates_by_id,
+        )
+        .unwrap();
+
+        // Path B: the same primitives, called directly in the textbook
+        // (offline-pool-export-equivalent) order, independently of
+        // `reranker_rank_bonuses`.
+        let mut candidates =
+            crate::candidate::merge_into_candidates(target_smi, &raw_proposals).unwrap();
+        for c in candidates.iter_mut() {
+            c.features = crate::candidate::extract_features(c, &target_mol, &templates_by_id, None);
+        }
+        assert!(
+            candidates.len() >= 2,
+            "merge must still produce a multi-candidate pool, got {}",
+            candidates.len()
+        );
+        candidates.sort_by(|a, b| {
+            deterministic_score(&b.precursor_smiles)
+                .partial_cmp(&deterministic_score(&a.precursor_smiles))
+                .unwrap()
+                .then_with(|| a.candidate_id.cmp(&b.candidate_id))
+        });
+        let n = candidates.len();
+        let via_direct: FxHashMap<String, f64> = candidates
+            .into_iter()
+            .enumerate()
+            .map(|(rank, c)| (c.candidate_id, crate::score::rank_bonus(rank, n)))
+            .collect();
+
+        assert_eq!(
+            via_search_rs.len(),
+            via_direct.len(),
+            "same candidate_id set expected from both paths"
+        );
+        for (id, direct_bonus) in &via_direct {
+            let search_bonus = via_search_rs
+                .get(id)
+                .unwrap_or_else(|| panic!("candidate_id {id} missing from search.rs's map"));
+            assert!(
+                (search_bonus - direct_bonus).abs() < 1e-12,
+                "bonus mismatch for {id}: search.rs={search_bonus}, direct={direct_bonus}"
+            );
+        }
+        // Bonus values must actually span the scale, not all collapse to 0 --
+        // otherwise this test would pass trivially without exercising rank.
+        let distinct: std::collections::BTreeSet<u64> =
+            via_direct.values().map(|v| v.to_bits()).collect();
+        assert!(
+            distinct.len() >= 2,
+            "fixture must produce differentiated ranks, got {distinct:?}"
+        );
+    }
+
+    #[test]
+    fn reranker_changes_ordering_only_not_the_candidate_set() {
+        let env = aspirin_env();
+        let rules = default_rules();
+        let target_smi = "CC(=O)Oc1ccccc1C(=O)O";
+
+        let legacy_cfg = cfg(2);
+        let (_routes_legacy, stats_legacy) =
+            find_routes(target_smi, &env, &rules, &legacy_cfg).unwrap();
+
+        let reranked_cfg = SearchConfig {
+            reranker: Some(std::sync::Arc::new(DeterministicReranker)),
+            ..cfg(2)
+        };
+        let (_routes_reranked, stats_reranked) =
+            find_routes(target_smi, &env, &rules, &reranked_cfg).unwrap();
+
+        assert_eq!(
+            stats_reranked.reranker_failures, 0,
+            "the deterministic test double must never fail"
+        );
+        // Ordering-only at the unbounded (beam_width: 0, via cfg()) search
+        // this fixture uses: the reranker must never change how many
+        // templates matched or how many nodes got expanded here, only
+        // which f() they're explored under. This is NOT a claim that a
+        // beam-limited search explores the identical tree regardless of
+        // beam width -- see SearchConfig::reranker's doc for why a
+        // reordering-induced difference in beam_prune's eviction choices
+        // under a real beam width is the intended mechanism, not something
+        // this test (or "ordering-only" generally) rules out.
+        assert_eq!(
+            stats_legacy.matched_templates,
+            stats_reranked.matched_templates
+        );
+        assert_eq!(stats_legacy.nodes_expanded, stats_reranked.nodes_expanded);
+    }
+
+    #[test]
+    fn reranker_under_tight_beam_prunes_safely_and_stays_deterministic() {
+        // The tests above all use cfg()'s beam_width: 0 (unlimited A*),
+        // where beam_prune is a no-op -- they can't exercise the actual
+        // reranker/beam-pruning interaction (reordering changing which
+        // nodes survive beam_prune, hence which candidates ever get
+        // proposed deeper in the tree) that is the real mechanism behind
+        // this PR's L1541 result. Mirrors
+        // crowd_out_diagnostics_records_eviction_under_tight_beam's
+        // fixture (same target/beam_width=1, known to trigger real
+        // evictions) but with a reranker configured, to prove that
+        // combination doesn't panic, doesn't fail, and stays deterministic
+        // -- not to assert a specific behavioral divergence from legacy
+        // ordering, which would be fixture-dependent and flaky to pin down
+        // at this small a scale.
+        let env = aspirin_env();
+        let rules = default_rules();
+        let cfg_beam = SearchConfig {
+            max_depth: 3,
+            max_routes: 3,
+            beam_width: 1,
+            reranker: Some(std::sync::Arc::new(DeterministicReranker)),
+            ..Default::default()
+        };
+        let (routes_a, stats_a) =
+            find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg_beam).unwrap();
+        assert_eq!(stats_a.reranker_failures, 0);
+        assert!(
+            stats_a.crowd_out.beam_prune_invocations > 0,
+            "fixture must actually exercise beam pruning, or this test isn't testing anything \
+             the beam_width=0 tests don't already cover"
+        );
+        let (routes_b, stats_b) =
+            find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg_beam).unwrap();
+        assert_eq!(
+            serde_json::to_string(&routes_a).unwrap(),
+            serde_json::to_string(&routes_b).unwrap(),
+            "reranker + tight beam must still be deterministic"
+        );
+        assert_eq!(stats_b.reranker_failures, 0);
+    }
+
+    #[test]
+    fn reranker_none_is_byte_identical_to_pre_reranker_ordering() {
+        let env = aspirin_env();
+        let rules = default_rules();
+        let target_smi = "CC(=O)Oc1ccccc1C(=O)O";
+        let (routes_a, stats_a) = find_routes(target_smi, &env, &rules, &cfg(3)).unwrap();
+        let (routes_b, stats_b) = find_routes(target_smi, &env, &rules, &cfg(3)).unwrap();
+        assert_eq!(
+            serde_json::to_string(&routes_a).unwrap(),
+            serde_json::to_string(&routes_b).unwrap(),
+            "reranker: None must be fully deterministic (a stand-in for byte-diffing \
+             against the pre-wiring binary's output on the same input)"
+        );
+        assert_eq!(stats_a.reranker_failures, 0);
+        assert_eq!(stats_b.reranker_failures, 0);
+    }
+
+    #[test]
+    fn reranker_some_is_also_fully_deterministic_across_repeated_runs() {
+        // Covers the "determinism" line item for the paired route-search
+        // gate without needing a second full external 100-target run:
+        // raw_propose's rayon par_iter().map().collect() preserves
+        // active_rules' input order regardless of completion order (same
+        // guarantee the legacy, already-deterministic path relies on), and
+        // reranker_rank_bonuses' sort key is a total, content-based order
+        // (score desc, candidate_id asc) with no dependency on iteration/
+        // hashmap order -- so a reranker-configured run should be exactly
+        // as deterministic as the legacy path.
+        let env = aspirin_env();
+        let rules = default_rules();
+        let target_smi = "CC(=O)Oc1ccccc1C(=O)O";
+        let reranked_cfg = SearchConfig {
+            reranker: Some(std::sync::Arc::new(DeterministicReranker)),
+            ..cfg(3)
+        };
+        let (routes_a, stats_a) = find_routes(target_smi, &env, &rules, &reranked_cfg).unwrap();
+        let (routes_b, stats_b) = find_routes(target_smi, &env, &rules, &reranked_cfg).unwrap();
+        assert_eq!(
+            serde_json::to_string(&routes_a).unwrap(),
+            serde_json::to_string(&routes_b).unwrap(),
+            "reranker: Some(..) must be just as deterministic as the legacy path"
+        );
+        assert_eq!(stats_a.reranker_failures, 0);
+        assert_eq!(stats_b.reranker_failures, 0);
     }
 }

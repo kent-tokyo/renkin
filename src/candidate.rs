@@ -1037,7 +1037,7 @@ fn hash_string_sequence(hasher: &mut Sha256, values: &[String]) {
 /// silently collide with this one), the canonical target, an explicit
 /// section separator, then the sorted (not deduplicated -- see call site)
 /// precursor multiset.
-fn candidate_id_for(canonical_target: &str, precursor_smiles: &[String]) -> String {
+pub(crate) fn candidate_id_for(canonical_target: &str, precursor_smiles: &[String]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"renkin-retrospect-candidate-v1\0");
     hash_string_sequence(&mut hasher, &[canonical_target.to_string()]);
@@ -1123,9 +1123,9 @@ fn merge_duplicate_sources(sources: Vec<CandidateSource>) -> anyhow::Result<Vec<
 /// ambiguous, and `best_*`/`min_*`/`max_*`/`mean_*` aggregates are computed
 /// over all sources -- no provenance is dropped in favor of "just the best
 /// one".
-fn merge_into_candidates(
+pub(crate) fn merge_into_candidates(
     canonical_target: &str,
-    raw: Vec<RawCandidate>,
+    raw: &[RawCandidate],
 ) -> anyhow::Result<Vec<ReactionCandidate>> {
     let mut order: Vec<String> = Vec::new();
     let mut precursors_by_id: HashMap<String, Vec<String>> = HashMap::new();
@@ -1158,8 +1158,8 @@ fn merge_into_candidates(
         );
 
         let source = CandidateSource {
-            template_id: proposal.template_id,
-            rule_name: proposal.rule_name,
+            template_id: proposal.template_id.clone(),
+            rule_name: proposal.rule_name.clone(),
             original_rank: proposal.original_rank,
             upstream_score: proposal.upstream_score,
             upstream_score_status: proposal.upstream_score_status,
@@ -1327,7 +1327,7 @@ impl<'a> CandidateProposalContext<'a> {
             &active_rules,
             crate::ring_context::RingContextArgs::default(),
         );
-        let candidates = merge_into_candidates(&canonical_target, raw)?;
+        let candidates = merge_into_candidates(&canonical_target, &raw)?;
 
         Ok(CandidatePool {
             group_id: group_id.to_string(),
@@ -1974,7 +1974,7 @@ mod tests {
             upstream_score_status: UpstreamScoreStatus::NotApplicable,
             precursors: vec![precs("CC"), precs("CC")],
         }];
-        let merged = merge_into_candidates("target", raw).unwrap();
+        let merged = merge_into_candidates("target", &raw).unwrap();
         assert_eq!(merged.len(), 1);
         assert_eq!(
             merged[0].precursor_smiles,
@@ -2005,7 +2005,7 @@ mod tests {
                 precursors: vec![precs("O"), precs("CC")], // same set, different order
             },
         ];
-        let merged = merge_into_candidates("target", raw).unwrap();
+        let merged = merge_into_candidates("target", &raw).unwrap();
         assert_eq!(
             merged.len(),
             1,
@@ -2050,7 +2050,7 @@ mod tests {
                 precursors: vec![precs("O"), precs("CC")], // same set, different match site
             },
         ];
-        let merged = merge_into_candidates("target", raw).unwrap();
+        let merged = merge_into_candidates("target", &raw).unwrap();
         assert_eq!(merged.len(), 1);
         assert_eq!(
             merged[0].source_template_count, 1,
@@ -2089,7 +2089,7 @@ mod tests {
                 precursors: vec![precs("CC")],
             },
         ];
-        assert!(merge_into_candidates("target", raw).is_err());
+        assert!(merge_into_candidates("target", &raw).is_err());
     }
 
     #[test]
@@ -2119,7 +2119,7 @@ mod tests {
         a.precursors = vec![precs("CC")];
         b.precursors = vec![precs("CC")];
 
-        let merged = merge_into_candidates("target", vec![a, b]).unwrap();
+        let merged = merge_into_candidates("target", &[a, b]).unwrap();
         assert_eq!(merged.len(), 1);
         assert_eq!(
             merged[0].best_upstream_score,
@@ -2160,7 +2160,7 @@ mod tests {
                 precursors: vec![precs("CC")],
             },
         ];
-        let merged = merge_into_candidates("target", raw).unwrap();
+        let merged = merge_into_candidates("target", &raw).unwrap();
         assert_eq!(merged.len(), 1);
         assert_eq!(merged[0].best_upstream_score, Some(0.9));
         assert_eq!(
@@ -2191,7 +2191,7 @@ mod tests {
                 precursors: vec![precs("CC")],
             },
         ];
-        let merged = merge_into_candidates("target", raw).unwrap();
+        let merged = merge_into_candidates("target", &raw).unwrap();
         assert_eq!(merged.len(), 1);
         // Tied on upstream_score and base_step_cost and original_rank -->
         // tie-break by template_id lexicographic: "a" before "z".
@@ -2248,8 +2248,8 @@ mod tests {
             one("rule_a", "rule:a", 0, "CC"),
         ];
 
-        let forward_summary = summarize(merge_into_candidates("target", forward).unwrap());
-        let reversed_summary = summarize(merge_into_candidates("target", reversed).unwrap());
+        let forward_summary = summarize(merge_into_candidates("target", &forward).unwrap());
+        let reversed_summary = summarize(merge_into_candidates("target", &reversed).unwrap());
         assert_eq!(
             forward_summary, reversed_summary,
             "merged candidate set/content must not depend on RawCandidate input order"

@@ -37,6 +37,24 @@ pub fn template_bonus(weight: f64, max_weight: f64) -> f64 {
     0.2 * (weight - 1.0) / (max_weight - 1.0)
 }
 
+/// Reranker rank bonus (Issue #101 Task 35): the same [0, 0.2] scale as
+/// [`template_bonus`], but keyed by a candidate's rank within its own
+/// same-target merged pool (`0` = best, ranked by reranker score
+/// descending, `candidate_id` ascending as a total tie-break) rather than
+/// by template weight. `rank=0` of `count` gets the full 0.2 bonus,
+/// `rank=count-1` gets 0.0, linearly in between. A pool of one candidate
+/// (or fewer) always gets 0.0 -- there is nothing to rank it above.
+/// Deliberately a REPLACEMENT for `template_bonus`/`ReactionPrior::prior`
+/// at its call site, not an addition to it: summing both would push the
+/// effective step cost bonus outside the calibrated [0, 0.2] range the
+/// A*/beam-prune g/h split assumes.
+pub fn rank_bonus(rank: usize, count: usize) -> f64 {
+    if count <= 1 {
+        return 0.0;
+    }
+    0.2 * (count - 1 - rank) as f64 / (count - 1) as f64
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -59,6 +77,20 @@ mod tests {
             (bonus_max - 0.2).abs() < 1e-10,
             "max bonus must be 0.2, got {bonus_max}"
         );
+    }
+
+    #[test]
+    fn rank_bonus_spans_full_scale_and_is_monotonic() {
+        assert_eq!(rank_bonus(0, 5), 0.2);
+        assert_eq!(rank_bonus(4, 5), 0.0);
+        assert!((rank_bonus(2, 5) - 0.1).abs() < 1e-12);
+        assert!(rank_bonus(0, 5) > rank_bonus(1, 5));
+    }
+
+    #[test]
+    fn rank_bonus_degenerate_pool_is_zero() {
+        assert_eq!(rank_bonus(0, 1), 0.0);
+        assert_eq!(rank_bonus(0, 0), 0.0);
     }
 
     fn mol(smi: &str) -> Molecule {

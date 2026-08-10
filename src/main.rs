@@ -26,6 +26,17 @@ struct Output {
     /// consumers see byte-identical output.
     #[serde(skip_serializing_if = "Option::is_none")]
     search_diagnostics: Option<search::CrowdOutDiagnostics>,
+    /// Issue #101 Task 35: only present when `--reranker-model`/
+    /// `--reranker-freq-table` were both given and loaded successfully.
+    /// A nonzero value means the reranker degraded to legacy ordering
+    /// partway through this search (see `SearchStats::reranker_failures`'
+    /// doc) -- surfaced unconditionally whenever the reranker was active,
+    /// not gated behind `--search-diagnostics`, since a paired ON-vs-OFF
+    /// comparison has no other way to tell "reranker ON and healthy for
+    /// this whole run" apart from "reranker ON but silently degraded"
+    /// (a run that exits 0 either way).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reranker_failures: Option<u64>,
 }
 
 // ..Default::default() is needed when nn-scoring feature is enabled (adds nn_scorer field).
@@ -68,6 +79,8 @@ fn main() -> Result<()> {
     let mut scorer_path: Option<String> = None;
     let mut ring_context_policy_arg: Option<String> = None;
     let mut ring_context_sidecar_path: Option<String> = None;
+    let mut reranker_model_path: Option<String> = None;
+    let mut reranker_freq_table_path: Option<String> = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -179,6 +192,20 @@ fn main() -> Result<()> {
                 };
                 ring_context_sidecar_path = Some(v.clone());
             }
+            "--reranker-model" => {
+                i += 1;
+                let Some(v) = args.get(i) else {
+                    bail!("--reranker-model requires a <path> value");
+                };
+                reranker_model_path = Some(v.clone());
+            }
+            "--reranker-freq-table" => {
+                i += 1;
+                let Some(v) = args.get(i) else {
+                    bail!("--reranker-freq-table requires a <path> value");
+                };
+                reranker_freq_table_path = Some(v.clone());
+            }
             "--bb-prices" => {
                 i += 1;
                 if i < args.len() {
@@ -242,7 +269,13 @@ fn main() -> Result<()> {
              --ring-context-policy <policy>  disabled (default) | audit-only | conservative | \
              ring-only | element-only\n  \
              --ring-context-sidecar <path>   Ring-context metadata JSON, required unless policy \
-             is disabled"
+             is disabled\n  \
+             --reranker-model <path>       Frozen LightGBM model.txt for candidate reranking \
+             (Issue #101 Task 35); ordering-only, requires --reranker-freq-table too\n  \
+             --reranker-freq-table <path>  TRAIN-frozen template frequency_table.json for the \
+             reranker\n  \
+             (either flag missing, or the model fails to load, falls back to legacy ordering \
+             with a stderr warning -- never a hard error)"
         );
     };
 
@@ -299,6 +332,37 @@ fn main() -> Result<()> {
                     std::process::exit(1)
                 })
         });
+
+    // Issue #101 Task 35: ordering-only candidate reranker. Unlike --scorer
+    // above, a problem here never aborts the run -- both flags are opt-in,
+    // and the whole point of a staged rollout is that a bad model file or a
+    // missing sibling flag degrades to this crate's pre-existing ordering
+    // rather than blocking prediction.
+    let reranker: Option<std::sync::Arc<dyn renkin::candidate::CandidateReranker>> = match (
+        reranker_model_path.as_deref(),
+        reranker_freq_table_path.as_deref(),
+    ) {
+        (Some(model_path), Some(freq_path)) => {
+            match renkin::reranker::RuntimeReranker::from_paths(model_path, freq_path) {
+                Ok(r) => Some(std::sync::Arc::new(r)),
+                Err(e) => {
+                    eprintln!(
+                        "warning: failed to load --reranker-model/--reranker-freq-table \
+                             ({e:#}); falling back to legacy ordering for this run"
+                    );
+                    None
+                }
+            }
+        }
+        (None, None) => None,
+        _ => {
+            eprintln!(
+                "warning: --reranker-model and --reranker-freq-table must both be given; \
+                     falling back to legacy ordering for this run"
+            );
+            None
+        }
+    };
 
     let ring_context_safety_policy = match ring_context_policy_arg.as_deref() {
         None | Some("disabled") => None,
@@ -386,6 +450,7 @@ fn main() -> Result<()> {
         nn_scorer,
         ring_context: ring_context_config,
         candidate_trace_cap: candidate_trace_limit,
+        reranker,
         ..Default::default()
     };
     let (mut routes, stats) = search::find_routes(&target_smiles, &env, &rules, &config)?;
@@ -519,6 +584,9 @@ fn main() -> Result<()> {
                 if search_diagnostics {
                     out["search_diagnostics"] = serde_json::to_value(&stats.crowd_out)?;
                 }
+                if config.reranker.is_some() {
+                    out["reranker_failures"] = serde_json::to_value(stats.reranker_failures)?;
+                }
                 println!("{}", serde_json::to_string_pretty(&out)?);
             } else {
                 let joint_success_probability = 1.0
@@ -531,6 +599,7 @@ fn main() -> Result<()> {
                     routes_found: routes.len(),
                     joint_success_probability,
                     search_diagnostics: search_diagnostics.then_some(stats.crowd_out),
+                    reranker_failures: config.reranker.is_some().then_some(stats.reranker_failures),
                     routes,
                 };
                 println!("{}", serde_json::to_string_pretty(&output)?);

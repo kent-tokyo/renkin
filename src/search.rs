@@ -2877,4 +2877,33 @@ mod tests {
         assert_eq!(stats_a.reranker_failures, 0);
         assert_eq!(stats_b.reranker_failures, 0);
     }
+
+    #[test]
+    fn reranker_some_is_also_fully_deterministic_across_repeated_runs() {
+        // Covers the "determinism" line item for the paired route-search
+        // gate without needing a second full external 100-target run:
+        // raw_propose's rayon par_iter().map().collect() preserves
+        // active_rules' input order regardless of completion order (same
+        // guarantee the legacy, already-deterministic path relies on), and
+        // reranker_rank_bonuses' sort key is a total, content-based order
+        // (score desc, candidate_id asc) with no dependency on iteration/
+        // hashmap order -- so a reranker-configured run should be exactly
+        // as deterministic as the legacy path.
+        let env = aspirin_env();
+        let rules = default_rules();
+        let target_smi = "CC(=O)Oc1ccccc1C(=O)O";
+        let reranked_cfg = SearchConfig {
+            reranker: Some(std::sync::Arc::new(DeterministicReranker)),
+            ..cfg(3)
+        };
+        let (routes_a, stats_a) = find_routes(target_smi, &env, &rules, &reranked_cfg).unwrap();
+        let (routes_b, stats_b) = find_routes(target_smi, &env, &rules, &reranked_cfg).unwrap();
+        assert_eq!(
+            serde_json::to_string(&routes_a).unwrap(),
+            serde_json::to_string(&routes_b).unwrap(),
+            "reranker: Some(..) must be just as deterministic as the legacy path"
+        );
+        assert_eq!(stats_a.reranker_failures, 0);
+        assert_eq!(stats_b.reranker_failures, 0);
+    }
 }

@@ -82,6 +82,13 @@ def main(argv=None) -> int:
     parser.add_argument("--sample-list", default="data/comparison/sample_full_sorted.jsonl")
     parser.add_argument("--canonicalize-bin", default="target/release/renkin-canonicalize")
     parser.add_argument("--output", default="data/reranker_labels_uspto50k_test.jsonl")
+    parser.add_argument(
+        "--groups-output",
+        default="data/reranker_groups_uspto50k_test.jsonl",
+        help="{group_id, target_id} pairs only, no ground truth -- the input a pool-generation "
+             "driver consumes, kept separate from --output so proposal/label separation holds "
+             "even at the file level (a driver never needs to see correct_precursor_sets).",
+    )
     parser.add_argument("--summary-output", default="data/reranker_labels_uspto50k_test.summary.json")
     args = parser.parse_args(argv)
 
@@ -182,6 +189,13 @@ def main(argv=None) -> int:
     with open(args.output, "w", encoding="utf-8") as f:
         for row in output_rows:
             f.write(json.dumps(row, sort_keys=True) + "\n")
+
+    with open(args.groups_output, "w", encoding="utf-8") as f:
+        for row in output_rows:
+            f.write(
+                json.dumps({"group_id": row["group_id"], "target_id": row["target_id"]}, sort_keys=True)
+                + "\n"
+            )
 
     summary = {
         "dataset": "bisectgroup/USPTO_50K",

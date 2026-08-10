@@ -72,9 +72,14 @@ data/reranker_labels_uspto50k_val.jsonl
 data/reranker_labels_uspto50k_train_val.summary.json
 data/reranker_targets_uspto50k_train.jsonl
 data/reranker_targets_uspto50k_val.jsonl
+data/reranker_groups_uspto50k_test.jsonl
+data/reranker_groups_uspto50k_train.jsonl
+data/reranker_groups_uspto50k_val.jsonl
 data/reranker_split_manifest.jsonl
 data/phase3a_reranker_ground_truth_audit/benchmark_quarantine_target_identities.txt
 data/phase3a_reranker_ground_truth_audit/benchmark_quarantine_manifest.json
+data/phase3b_100_target_feasibility/pool_test_100.jsonl
+data/phase3b_100_target_feasibility/groups_test_100.jsonl
 
 # Phase 32 scratch/raw run dumps under data/corpora/ (underscore prefix =
 # reproducible intermediate data, not a curated deliverable -- the fixed

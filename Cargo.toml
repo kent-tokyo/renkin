@@ -59,6 +59,10 @@ path = "src/bin/doctor.rs"
 name = "renkin-canonicalize"
 path = "src/bin/canonicalize.rs"
 
+[[bin]]
+name = "renkin-pool-gen"
+path = "src/bin/pool_gen.rs"
+
 [[example]]
 name = "measure_rank_recall"
 required-features = ["nn-scoring"]

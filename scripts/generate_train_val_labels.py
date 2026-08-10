@@ -158,6 +158,13 @@ def main(argv=None) -> int:
              "flat list a pool-generation driver iterates over).",
     )
     parser.add_argument("--val-targets-output", default="data/reranker_targets_uspto50k_val.jsonl")
+    parser.add_argument(
+        "--train-groups-output",
+        default="data/reranker_groups_uspto50k_train.jsonl",
+        help="{group_id, target_id} pairs only, no ground truth -- see generate_real_labels.py's "
+             "--groups-output for why this is kept separate from the labels file.",
+    )
+    parser.add_argument("--val-groups-output", default="data/reranker_groups_uspto50k_val.jsonl")
     parser.add_argument("--split-manifest-output", default="data/reranker_split_manifest.jsonl")
     parser.add_argument(
         "--summary-output", default="data/reranker_labels_uspto50k_train_val.summary.json"
@@ -199,6 +206,17 @@ def main(argv=None) -> int:
     with open(args.val_output, "w", encoding="utf-8") as f:
         for row in val_labels:
             f.write(json.dumps(row, sort_keys=True) + "\n")
+
+    def write_groups(path: str, labels: list) -> None:
+        with open(path, "w", encoding="utf-8") as f:
+            for row in labels:
+                f.write(
+                    json.dumps({"group_id": row["group_id"], "target_id": row["target_id"]}, sort_keys=True)
+                    + "\n"
+                )
+
+    write_groups(args.train_groups_output, train_labels)
+    write_groups(args.val_groups_output, val_labels)
 
     def write_targets(path: str, retained_rows: list) -> None:
         seen = {}

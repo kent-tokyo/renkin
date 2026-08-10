@@ -68,6 +68,8 @@ fn main() -> Result<()> {
     let mut scorer_path: Option<String> = None;
     let mut ring_context_policy_arg: Option<String> = None;
     let mut ring_context_sidecar_path: Option<String> = None;
+    let mut reranker_model_path: Option<String> = None;
+    let mut reranker_freq_table_path: Option<String> = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -179,6 +181,20 @@ fn main() -> Result<()> {
                 };
                 ring_context_sidecar_path = Some(v.clone());
             }
+            "--reranker-model" => {
+                i += 1;
+                let Some(v) = args.get(i) else {
+                    bail!("--reranker-model requires a <path> value");
+                };
+                reranker_model_path = Some(v.clone());
+            }
+            "--reranker-freq-table" => {
+                i += 1;
+                let Some(v) = args.get(i) else {
+                    bail!("--reranker-freq-table requires a <path> value");
+                };
+                reranker_freq_table_path = Some(v.clone());
+            }
             "--bb-prices" => {
                 i += 1;
                 if i < args.len() {
@@ -242,7 +258,13 @@ fn main() -> Result<()> {
              --ring-context-policy <policy>  disabled (default) | audit-only | conservative | \
              ring-only | element-only\n  \
              --ring-context-sidecar <path>   Ring-context metadata JSON, required unless policy \
-             is disabled"
+             is disabled\n  \
+             --reranker-model <path>       Frozen LightGBM model.txt for candidate reranking \
+             (Issue #101 Task 35); ordering-only, requires --reranker-freq-table too\n  \
+             --reranker-freq-table <path>  TRAIN-frozen template frequency_table.json for the \
+             reranker\n  \
+             (either flag missing, or the model fails to load, falls back to legacy ordering \
+             with a stderr warning -- never a hard error)"
         );
     };
 
@@ -299,6 +321,37 @@ fn main() -> Result<()> {
                     std::process::exit(1)
                 })
         });
+
+    // Issue #101 Task 35: ordering-only candidate reranker. Unlike --scorer
+    // above, a problem here never aborts the run -- both flags are opt-in,
+    // and the whole point of a staged rollout is that a bad model file or a
+    // missing sibling flag degrades to this crate's pre-existing ordering
+    // rather than blocking prediction.
+    let reranker: Option<std::sync::Arc<dyn renkin::candidate::CandidateReranker>> = match (
+        reranker_model_path.as_deref(),
+        reranker_freq_table_path.as_deref(),
+    ) {
+        (Some(model_path), Some(freq_path)) => {
+            match renkin::reranker::RuntimeReranker::from_paths(model_path, freq_path) {
+                Ok(r) => Some(std::sync::Arc::new(r)),
+                Err(e) => {
+                    eprintln!(
+                        "warning: failed to load --reranker-model/--reranker-freq-table \
+                             ({e:#}); falling back to legacy ordering for this run"
+                    );
+                    None
+                }
+            }
+        }
+        (None, None) => None,
+        _ => {
+            eprintln!(
+                "warning: --reranker-model and --reranker-freq-table must both be given; \
+                     falling back to legacy ordering for this run"
+            );
+            None
+        }
+    };
 
     let ring_context_safety_policy = match ring_context_policy_arg.as_deref() {
         None | Some("disabled") => None,
@@ -386,6 +439,7 @@ fn main() -> Result<()> {
         nn_scorer,
         ring_context: ring_context_config,
         candidate_trace_cap: candidate_trace_limit,
+        reranker,
         ..Default::default()
     };
     let (mut routes, stats) = search::find_routes(&target_smiles, &env, &rules, &config)?;

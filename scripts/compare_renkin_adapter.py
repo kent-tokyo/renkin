@@ -60,6 +60,12 @@ class RenkinConfig:
     # RENKIN-vs-AiZynthFinder arm (see Issue #66 500-target protocol).
     ring_context_policy: str | None = None
     ring_context_sidecar: str | None = None
+    # Issue #101 Task 35: ordering-only LightGBM candidate reranker. Both
+    # must be set together (renkin's own CLI already falls back to legacy
+    # ordering with a stderr warning if only one is given, or if loading
+    # fails -- this adapter doesn't duplicate that validation).
+    reranker_model: str | None = None
+    reranker_freq_table: str | None = None
 
 
 _MAXRSS_RE = re.compile(r"^\s*(\d+)\s+maximum resident set size\s*$", re.MULTILINE)
@@ -141,6 +147,9 @@ def run_one_target(
     if config.ring_context_policy and config.ring_context_policy != "disabled":
         argv += ["--ring-context-policy", config.ring_context_policy]
         argv += ["--ring-context-sidecar", config.ring_context_sidecar]
+    if config.reranker_model and config.reranker_freq_table:
+        argv += ["--reranker-model", config.reranker_model]
+        argv += ["--reranker-freq-table", config.reranker_freq_table]
 
     returncode, stdout, stderr, wall_clock_s, peak_rss_bytes, wrapper_killed = (
         _run_with_time_wrapper(argv, config.external_timeout_s, config.grace_s)

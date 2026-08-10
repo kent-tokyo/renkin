@@ -187,6 +187,7 @@ c1ccccc1-c2ccccc2
 | **失败诊断** | 未找到路线时，JSON 输出会附带 `diagnostics` 区块，包含 `likely_causes` 与 `suggestions` |
 | **正向验证** | `renkin-forward validate` 通过正向应用模板来验证每一步；支持 `--route-json` 或 stdin 输入 |
 | **Ring-context安全护栏** | `--ring-context-policy conservative --ring-context-sidecar <path>` — opt-in的match-level过滤器，当extracted template的训练数据从未观察到某环开闭断裂时予以拒绝。默认为`disabled`（既有行为不变）——详见[Issue #72](https://github.com/kent-tokyo/renkin/issues/72) |
+| **LightGBM candidate reranker**（实验性，Issue #101） | `--reranker-model model.txt --reranker-freq-table frequency_table.json` — opt-in且仅影响排序：用冻结的LightGBM模型对同一步骤内的候选重新排序，表现为template频率bonus同一量表上的rank派生bonus。绝不改变生成哪些候选，只改变其搜索顺序。省略任一flag（默认状态）时与legacy排序逐字节完全一致；model/table路径错误时不会使run失败，而是带stderr警告回退到legacy排序。纯Rust模型读取器，无C/C++依赖。在runtime paired-gate结果出来之前，此行保留"实验性"标签。 |
 | **合理性报告** | `renkin-bench --plausibility` —— 对最优路线执行正向验证，并给出综合合理性评分 |
 | **PaRoutes 基准测试** | `renkin-bench --input-format paroutes` 支持基于多步真值（ground truth）的评估，给出 `depth_delta` 与 `route_diversity` |
 | **原子平衡检查** | `renkin-bench` 会标记出 `target_MW > Σ precursor_MW` 的步骤（参考 CompleteRXN） |
@@ -453,7 +454,8 @@ renkin/                          ← Cargo workspace 根目录
 - [x] `renkin-forward hints` — 无需partner输入的检索提示（匹配的template slot、缺失partner的SMARTS、结合变化），不预测具体产物（[#64](https://github.com/kent-tokyo/renkin/issues/64) phase 2）
 - [x] `apply_retro`/`run_reactants` 性能回归修复 — `chematic` 从窄范围的 git-pin 修复迁移到已发布的 `0.8.0`（上游 automorphism-orbit-pruned canonicalization，[chematic#193](https://github.com/kent-tokyo/chematic/pull/193)）；在固定的 30-target 门控测试中、同一次会话内对当前 master 测得：总耗时快 **34.7%**，p95 快 **33.8%**，最差目标快 **42.2%**（通过多次独立重复测量确认，非单次结果）。正确性零变化（各版本间 `apply_retro` 调用次数完全一致）
 - [x] `renkin-forward` CLI 强化 — 带版本号的 `ForwardPredictionReport`、确定性候选ID/合并/来源信息、与 reactant 顺序无关的匹配（最多 3 个反应物）、严格的 CLI/route-JSON 校验
-- [x] 受 RETROSPECT 启发的离线候选重排序基础设施 — proposal/selection 分离、feature schema v1、manifest v2、leakage-safe 的 train/val/test 划分、7 个确定性 baseline arm + 训练模型 arm、paired bootstrap + 离线门控工具（[#59](https://github.com/kent-tokyo/renkin/pull/59)；**目前仅为基础设施 — 尚无训练好的模型或准确率结果，也尚未接入 route search**）
+- [x] 受 RETROSPECT 启发的离线候选重排序基础设施 — proposal/selection 分离、feature schema v1、manifest v2、leakage-safe 的 train/val/test 划分、7 个确定性 baseline arm + 训练模型 arm、paired bootstrap + 离线门控工具（[#59](https://github.com/kent-tokyo/renkin/pull/59)）
+- [x] 用真实数据训练并通过门控的离线候选重排序器（[#101](https://github.com/kent-tokyo/renkin/issues/101) Task 35）— 基于真实 USPTO-50k 标签训练 LambdaMART 模型，通过 VAL screening gate（top1 +11.7pp、MRR +11.3pp、top10 +9.3pp，均经 bootstrap CI 确认），冻结模型后对该 frozen 模型仅执行一次正式的 4,903-target TEST 评估并通过（top1 +12.7pp、MRR +11.9pp、top10 +9.1pp——与 VAL 幅度一致，无过拟合迹象）。**仅为离线 candidate-ranking 门控 — 尚未接入 route search**（见下方"进行中"）
 - [x] 确定性的 ORD（Open Reaction Database）evidence 导入 — 离线的 `renkin evidence match`（exact-set 批量 template matcher）+ `scripts/ord_evidence_audit.py`（audit/converter）转换为 `schema_version: 2` 附加文件。无网络访问、无 fuzzy matching，存疑/来源不明的记录不会被猜测，而是记录在 audit report 中并注明排除原因（[#41](https://github.com/kent-tokyo/renkin/issues/41) phase 3A）
 - [x] 稳定的 `template_id`（`rule:<name>` / `smirks-sha256:<hex>`）+ `--template-metadata` evidence 附加文件 + `renkin template ids`（[#41](https://github.com/kent-tokyo/renkin/issues/41) phase 1）
 - [x] 针对特定底物的 `examples`（`schema_version: 2`）——按每个步骤解析为「精确底物匹配」或「同模板但底物不同」，在 `--format explain` 中展示，并在 JSON 中以 `match_kind` 字段体现（[#41](https://github.com/kent-tokyo/renkin/issues/41) phase 2）
@@ -466,6 +468,7 @@ renkin/                          ← Cargo workspace 根目录
 
 ### 进行中
 
+- [ ] 已训练候选重排序器的 runtime 集成（[#101](https://github.com/kent-tokyo/renkin/issues/101) Task 35，另见上方 Key Features 表）— 实现与测试已完成；仍需完成一次 paired 100-target route-search 门控（reranker ON vs OFF，相同 commit/corpus/stock/templates/budget）才能报告 PASS/FAIL。结果出来前不会发布/打 tag
 - [ ] 面向 5 万条模板集合的模板检索索引（元素位掩码 + 键中心预筛选）
 - [ ] 校准过的路线置信度（将 `success_probability` 映射到经验已解决率）
 

@@ -51,14 +51,20 @@ def renkin_config_and_id(args):
         grace_s=args.grace_s,
         ring_context_policy=args.ring_context_policy,
         ring_context_sidecar=args.ring_context_sidecar,
+        reranker_model=args.reranker_model,
+        reranker_freq_table=args.reranker_freq_table,
     )
     policy_suffix = (
         f"-{args.ring_context_policy}"
         if args.ring_context_policy and args.ring_context_policy != "disabled"
         else "-disabled"
     )
+    reranker_suffix = (
+        "-reranker_on" if args.reranker_model and args.reranker_freq_table else ""
+    )
     configuration_id = (
-        f"renkin-{args.comparison_mode}-d{args.depth}-b{args.beam_width}{policy_suffix}"
+        f"renkin-{args.comparison_mode}-d{args.depth}-b{args.beam_width}"
+        f"{policy_suffix}{reranker_suffix}"
     )
     return config, building_blocks_path, configuration_id
 
@@ -177,6 +183,18 @@ def main(argv: list[str] | None = None) -> int:
         help="Ring-context metadata JSON sidecar; required when --ring-context-policy != disabled",
     )
     parser.add_argument(
+        "--reranker-model",
+        default=None,
+        help="RENKIN-only: frozen LightGBM model.txt for the ordering-only candidate reranker "
+        "(Issue #101 Task 35); ignored for --tool aizynthfinder. Requires --reranker-freq-table.",
+    )
+    parser.add_argument(
+        "--reranker-freq-table",
+        default=None,
+        help="RENKIN-only: TRAIN-frozen template frequency_table.json for the reranker. "
+        "Requires --reranker-model.",
+    )
+    parser.add_argument(
         "--resume",
         action="store_true",
         help="Append to --output-rows if it exists, skipping target_ids already present, "
@@ -192,6 +210,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.ring_context_policy != "disabled" and not args.ring_context_sidecar:
         parser.error("--ring-context-policy != disabled requires --ring-context-sidecar")
+    if bool(args.reranker_model) != bool(args.reranker_freq_table):
+        parser.error(
+            "--reranker-model and --reranker-freq-table must both be given or both omitted "
+            "-- renkin's own CLI would silently fall back to legacy ordering on a mismatched "
+            "pair, which this paired-comparison harness must not do unnoticed"
+        )
 
     sample = sampling.load_sample(args.sample_list, args.sample_size)
     sample_ids = [row["target_id"] for row in sample]
@@ -221,6 +245,10 @@ def main(argv: list[str] | None = None) -> int:
         }
         if args.ring_context_sidecar:
             input_files["ring_context_sidecar"] = args.ring_context_sidecar
+        if args.reranker_model:
+            input_files["reranker_model"] = args.reranker_model
+        if args.reranker_freq_table:
+            input_files["reranker_freq_table"] = args.reranker_freq_table
         if not os.path.exists(args.manifest_path):
             run_manifest = manifest_mod.capture_start_manifest(
                 tool=args.tool,
@@ -281,6 +309,10 @@ def main(argv: list[str] | None = None) -> int:
         }
         if args.ring_context_sidecar:
             input_files["ring_context_sidecar"] = args.ring_context_sidecar
+        if args.reranker_model:
+            input_files["reranker_model"] = args.reranker_model
+        if args.reranker_freq_table:
+            input_files["reranker_freq_table"] = args.reranker_freq_table
         run_manifest = manifest_mod.finalize_manifest(run_manifest, input_files)
         with open(args.manifest_path, "w", encoding="utf-8") as f:
             json.dump(run_manifest, f, indent=2, sort_keys=True, default=str)

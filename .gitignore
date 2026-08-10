@@ -80,6 +80,17 @@ data/phase3a_reranker_ground_truth_audit/benchmark_quarantine_target_identities.
 data/phase3a_reranker_ground_truth_audit/benchmark_quarantine_manifest.json
 data/phase3b_100_target_feasibility/pool_test_100.jsonl
 data/phase3b_100_target_feasibility/groups_test_100.jsonl
+data/phase3c_500_target_feasibility/pool_train_500.jsonl
+data/phase3c_500_target_feasibility/pool_val_500.jsonl
+data/phase3c_500_target_feasibility/groups_train_500.jsonl
+data/phase3c_500_target_feasibility/groups_val_500.jsonl
+data/phase3c_500_target_feasibility/*.split_manifest_subset.jsonl
+data/phase3d_full_pool/pool_train_full.jsonl
+data/phase3d_full_pool/pool_val_full.jsonl
+data/phase3d_full_pool/groups_train_full.jsonl
+data/phase3d_full_pool/groups_val_full.jsonl
+data/phase3d_full_pool/*.split_manifest_subset.jsonl
+data/phase3d_full_pool/train_full_run.log
 
 # Phase 32 scratch/raw run dumps under data/corpora/ (underscore prefix =
 # reproducible intermediate data, not a curated deliverable -- the fixed

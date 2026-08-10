@@ -33,7 +33,8 @@ use renkin::candidate::{CandidateProposalContext, ProposalConfig};
 use renkin::chem_env::{load_rules_from_file, mol_from_smiles};
 use renkin::pool_export::{
     PoolProvenance, build_manifest, candidate_rows_for_pool, target_pool_record_for_failure,
-    target_pool_record_for_pool, write_jsonl, write_target_pool_jsonl,
+    target_pool_record_for_pool, target_pool_record_for_target_id_mismatch, write_jsonl,
+    write_target_pool_jsonl,
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -153,17 +154,25 @@ fn main() {
     let mut candidate_counts: Vec<usize> = Vec::new();
     let mut n_parse_failed = 0usize;
     let mut n_zero_candidate = 0usize;
+    let mut n_target_id_mismatch = 0usize;
 
     for (i, g) in group_inputs.iter().enumerate() {
         if i % 500 == 0 && i > 0 {
             eprintln!("  {i}/{n_targets_requested}...");
         }
-        // The group's own target_id IS the canonical SMILES text an
-        // upstream label generator computed (see round2_split_hygiene.md's
-        // driver-design note) -- feeding it back through propose_one_step
-        // just reconfirms that canonical form, it never re-derives a
-        // *different* one, so group.target_id and the resulting
-        // pool.target_id are guaranteed to match downstream.
+        // The group's own target_id is the canonical SMILES text an upstream
+        // label generator computed. propose_one_step re-derives target_id
+        // internally via its own canonicalization call, which normally just
+        // reconfirms that same canonical form -- but for a rare molecule
+        // this CAN disagree (observed: chematic's canonical-form tie-break
+        // is sensitive to whether the parsed Molecule still carries atom-map
+        // annotations, so a label file canonicalized under a different
+        // chematic version/atom-map state can drift from what this binary
+        // derives now). Never trust pool.target_id silently here -- compare
+        // it against the caller's own g.target_id and reject the group
+        // (not just "note" it) on any mismatch, so this class of defect is
+        // caught at export time instead of surfacing later as an opaque
+        // load_split_manifest/label_and_split_rows failure.
         match mol_from_smiles(&g.target_id) {
             Err(_) => {
                 n_parse_failed += 1;
@@ -174,6 +183,17 @@ fn main() {
                     n_parse_failed += 1;
                     eprintln!("  {}: propose_one_step error: {e}", g.group_id);
                     group_records.push(target_pool_record_for_failure(&g.group_id, &g.target_id));
+                }
+                Ok(pool) if pool.target_id != g.target_id => {
+                    n_target_id_mismatch += 1;
+                    eprintln!(
+                        "  {}: target_id mismatch -- requested {:?}, propose_one_step derived {:?}",
+                        g.group_id, g.target_id, pool.target_id
+                    );
+                    group_records.push(target_pool_record_for_target_id_mismatch(
+                        &g.group_id,
+                        &g.target_id,
+                    ));
                 }
                 Ok(pool) => {
                     if pool.candidates.is_empty() {
@@ -251,6 +271,7 @@ fn main() {
     let feasibility_summary = serde_json::json!({
         "n_groups_requested": n_targets_requested,
         "n_groups_parse_failed": n_parse_failed,
+        "n_groups_target_id_mismatch": n_target_id_mismatch,
         "n_groups_zero_candidates": n_zero_candidate,
         "n_candidate_rows": candidate_rows.len(),
         "candidates_per_group_p50": percentile(&candidate_counts, 0.50),

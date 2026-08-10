@@ -296,7 +296,7 @@ pub struct CrowdOutDiagnostics {
     /// (deterministic, not sampled).
     pub candidate_trace: Vec<CandidateTraceRecord>,
 
-    /// Open-state dominance diagnostics (Issue #101 Phase 2). All nine
+    /// Open-state dominance diagnostics (Issue #101 Phase 2). All ten
     /// fields below are computed only when
     /// [`SearchConfig::open_state_diagnostics`] or
     /// [`SearchConfig::open_state_dominance`] is `true` -- all-zero
@@ -310,7 +310,13 @@ pub struct CrowdOutDiagnostics {
     /// the heap); the interesting numbers there are `open_state_dominated_skipped`
     /// / `open_state_better_replacements` (how much duplication *would* be
     /// caught) and the `peak_*` fields (how much duplication the raw heap
-    /// actually carries).
+    /// actually carries). `open_state_records_dropped_on_beam_eviction` is
+    /// the one exception to the "diagnostics never touches the map" rule:
+    /// removing a ghost record is pure bookkeeping (it never skips a push
+    /// or discards a heap node), so it happens identically in both modes
+    /// -- this is what keeps `peak_unique_open_states` measuring *live*
+    /// state under diagnostics-only too, not just under dominance (Round
+    /// 2D).
     /// Total candidate pushes examined (every candidate that survives the
     /// `forbidden_elements` in-search prune, terminal or not).
     ///
@@ -353,16 +359,34 @@ pub struct CrowdOutDiagnostics {
     /// by which point it may already have taken a beam slot away from a
     /// distinct candidate.
     pub stale_open_nodes_removed_before_beam_prune: u64,
+    /// Open-state records dropped because `beam_prune` evicted their live
+    /// representative on pure f()-score grounds (Issue #101 Round 2B-2C) --
+    /// distinct from `stale_open_nodes_removed_before_beam_prune`, which
+    /// counts nodes already superseded by a `Replaced` verdict *before*
+    /// beam_prune ever saw them. This is the counter that closes the
+    /// original ghost-record bug: without it, an evicted representative's
+    /// record would linger in `open_state_best` and incorrectly dominate a
+    /// later, legitimate regeneration of the same state that was never
+    /// actually explored. Always `0` unless `open_state_diagnostics` or
+    /// `open_state_dominance` is `true`.
+    pub open_state_records_dropped_on_beam_eviction: u64,
     /// Running maximum, across every point this search checked, of the
-    /// number of distinct (frontier, depth) states with an open-state
-    /// record. Compare against `peak_raw_heap_nodes` to see how much of the
-    /// open heap is genuinely distinct states vs. duplicate copies.
+    /// number of distinct (frontier, depth) states with a *live* open-state
+    /// record -- i.e. one whose representative node is still actually on
+    /// the heap right now, not merely one ever recorded in the past (Issue
+    /// #101 Round 2D; `open_state_best` only ever holds live records after
+    /// the Round 2A-2C lifecycle fix, so this is simply
+    /// `open_state_best.len()` at each check point). Compare against
+    /// `peak_raw_heap_nodes` to see how much of the open heap is genuinely
+    /// distinct states vs. duplicate copies. Measured identically under
+    /// `open_state_diagnostics` alone and `open_state_dominance`: ghost
+    /// cleanup is pure bookkeeping against the auxiliary map, never a heap
+    /// mutation, so it is safe in both modes (see the pop-time and
+    /// `beam_prune`-eviction cleanup in `find_routes`).
     pub peak_unique_open_states: u64,
     /// Running maximum of `heap.len()` at the same check points as
-    /// `peak_unique_open_states`. Under `open_state_dominance` this is
-    /// measured *after* the pre-beam-prune stale filter (so it reflects the
-    /// already-deduplicated heap); under `open_state_diagnostics` alone
-    /// nothing is ever removed, so this is simply the raw heap size.
+    /// `peak_unique_open_states` -- the raw node count currently on the
+    /// heap right now, before the about-to-be-pushed candidate.
     pub peak_raw_heap_nodes: u64,
     /// Running maximum of `heap.len() - open_state_best.len()` at the same
     /// check points (saturating; never negative). An upper bound on "how
@@ -490,12 +514,17 @@ struct Node {
     /// `StateKey` (an `Inserted` or `Replaced` verdict from
     /// [`open_state_verdict`]). `None` for terminal nodes, the root,
     /// non-finite-g candidates, `Dominated` candidates, and always when
-    /// both flags are off. Sharing the `Arc` with the value stored in the
+    /// both flags are off. The `u64` is this record's unique generation
+    /// token (Issue #101 Round 2A) -- identity of "is this node still the
+    /// live representative for its `StateKey`" is decided by token
+    /// equality against `open_state_best`, never by comparing `g` values
+    /// alone, since a stale and a live record can coincidentally carry the
+    /// same `g`. Sharing the `Arc<StateKey>` with the value stored in the
     /// open-state map (rather than re-deriving a `StateKey` from
     /// `frontier`/`depth` on demand) is what makes the pre-`beam_prune` and
-    /// pop-time staleness checks an O(1) map lookup instead of an
+    /// pop-time liveness checks an O(1) map lookup instead of an
     /// O(frontier size) sort-and-clone per check.
-    open_state_key: Option<Arc<StateKey>>,
+    open_state_token: Option<(Arc<StateKey>, u64)>,
 }
 
 impl Node {
@@ -608,12 +637,18 @@ impl StateKey {
     }
 }
 
-/// Best known g() (path cost) seen so far for one [`StateKey`]. Whether a
-/// node holding the old (now-dominated) g is actually removed from the
-/// heap depends on `SearchConfig::open_state_dominance` -- see
-/// [`CrowdOutDiagnostics`]'s `open_state_*` fields.
+/// Best known g() (path cost) seen so far for one [`StateKey`], plus the
+/// unique generation `token` of the `Node` currently representing it in the
+/// open heap (Issue #101 Round 2A). `token` -- not `best_g` -- is the sole
+/// identity check for "is this node still the live representative for its
+/// state": two records can coincidentally share a `g` value, but never a
+/// `token` (see [`Node::open_state_token`]). Whether a node holding a stale
+/// (non-matching) token is actually removed from the heap depends on
+/// `SearchConfig::open_state_dominance` -- see [`CrowdOutDiagnostics`]'s
+/// `open_state_*` fields.
 struct OpenStateRecord {
     best_g: f64,
+    token: u64,
 }
 
 /// What an open-state dominance decision is for one candidate g against the
@@ -642,19 +677,21 @@ fn open_state_verdict(existing: Option<&OpenStateRecord>, candidate_g: f64) -> O
     }
 }
 
-/// True iff a node carrying `open_state_key` and path cost `g` has been
-/// superseded by a strictly better arrival at the same state since it was
-/// pushed (Issue #101 Phase 2D) -- shared by the pre-`beam_prune` heap
-/// filter and the pop-time backstop. Always `false` for `None` (a terminal
-/// node, the root, or a candidate that was never tracked in the first
-/// place -- see [`OpenStateVerdict`]).
-fn is_stale_open_state(
-    open_state_key: &Option<Arc<StateKey>>,
-    g: f64,
+/// True iff a node carrying `open_state_token` is still the current live
+/// representative for its `StateKey` in `open_state_best` (Issue #101 Round
+/// 2A) -- identity decided purely by generation-token equality, never by
+/// comparing `g` values (two records can coincidentally share a `g`, but
+/// never a token). Shared by the pre-`beam_prune` heap filter, the pop-time
+/// removal, and the `beam_prune`-eviction cleanup. Always `false` for
+/// `None` (a terminal node, the root, or a candidate that was never
+/// tracked in the first place -- see [`OpenStateVerdict`]), since such a
+/// node was never anyone's representative to begin with.
+fn is_live_open_state_representative(
+    open_state_token: &Option<(Arc<StateKey>, u64)>,
     open_state_best: &FxHashMap<Arc<StateKey>, OpenStateRecord>,
 ) -> bool {
-    match open_state_key {
-        Some(key) => open_state_best.get(key).map(|r| r.best_g) != Some(g),
+    match open_state_token {
+        Some((key, token)) => open_state_best.get(key).map(|r| r.token) == Some(*token),
         None => false,
     }
 }
@@ -998,26 +1035,41 @@ fn compute_route_cost(
 type BeamEvictionStats = (usize, f64, f64, f64);
 /// `(trace_id, rank, survived)` for one traced node -- see [`beam_prune`].
 type TraceRank = (u64, usize, bool);
+/// `(StateKey, token)` of one evicted node's open-state record -- see
+/// [`beam_prune`] and Issue #101 Round 2C.
+type EvictedOpenStateToken = (Arc<StateKey>, u64);
 
-/// Returns `(eviction_stats, trace_ranks)`. `eviction_stats` is
-/// `Some((evicted_count, evicted_f_min, evicted_f_max, boundary_f))` when a
-/// truncation actually happened (diagnostics-only bookkeeping over the sort
-/// this function already performs -- does not change which nodes are
-/// kept), `None` when nothing was pruned. `trace_ranks` is
-/// `(trace_id, rank, survived)` for every node with `Node::trace_id ==
-/// Some(_)`, computed from the sort this function performs when truncation
-/// happens -- so it never re-sorts. Empty when nothing is truncated
-/// (`heap.len() <= beam_width`): the heap isn't sorted in that branch, so
-/// there is no real rank to report, and a traced node's
-/// `CandidateTraceRecord` simply keeps its as-created
+/// Returns `(eviction_stats, trace_ranks, evicted_open_state_tokens)`.
+/// `eviction_stats` is `Some((evicted_count, evicted_f_min, evicted_f_max,
+/// boundary_f))` when a truncation actually happened (diagnostics-only
+/// bookkeeping over the sort this function already performs -- does not
+/// change which nodes are kept), `None` when nothing was pruned.
+/// `trace_ranks` is `(trace_id, rank, survived)` for every node with
+/// `Node::trace_id == Some(_)`, computed from the sort this function
+/// performs when truncation happens -- so it never re-sorts. Empty when
+/// nothing is truncated (`heap.len() <= beam_width`): the heap isn't
+/// sorted in that branch, so there is no real rank to report, and a traced
+/// node's `CandidateTraceRecord` simply keeps its as-created
 /// `rank_before_prune: None, survived_beam: true` rather than being
-/// overwritten with a fabricated rank.
+/// overwritten with a fabricated rank. `evicted_open_state_tokens` is the
+/// `(StateKey, token)` of every evicted node with `Node::open_state_token
+/// == Some(_)` (Issue #101 Round 2C) -- the caller must still re-check each
+/// token against the live `open_state_best` map before deleting anything
+/// (this function has no map access, so it cannot tell a live eviction
+/// apart from one that was already stale going in). Always empty when
+/// `open_state_diagnostics`/`open_state_dominance` are both off, since no
+/// node ever carries a token in that case -- `filter_map` over an
+/// all-`None` iterator collects to an empty `Vec` without allocating.
 fn beam_prune(
     heap: &mut BinaryHeap<Node>,
     beam_width: usize,
-) -> (Option<BeamEvictionStats>, Vec<TraceRank>) {
+) -> (
+    Option<BeamEvictionStats>,
+    Vec<TraceRank>,
+    Vec<EvictedOpenStateToken>,
+) {
     if beam_width == 0 || heap.len() <= beam_width {
-        return (None, Vec::new());
+        return (None, Vec::new(), Vec::new());
     }
     let mut nodes: Vec<Node> = heap.drain().collect();
     nodes.sort_unstable_by(|a, b| {
@@ -1031,6 +1083,10 @@ fn beam_prune(
         .filter_map(|(rank, n)| n.trace_id.map(|id| (id, rank, rank < beam_width)))
         .collect();
     let evicted = &nodes[beam_width..];
+    let evicted_open_state_tokens: Vec<EvictedOpenStateToken> = evicted
+        .iter()
+        .filter_map(|n| n.open_state_token.clone())
+        .collect();
     let evicted_f_min = evicted.iter().map(Node::f).fold(f64::INFINITY, f64::min);
     let evicted_f_max = evicted
         .iter()
@@ -1043,6 +1099,7 @@ fn beam_prune(
     (
         Some((evicted_count, evicted_f_min, evicted_f_max, boundary_f)),
         trace_ranks,
+        evicted_open_state_tokens,
     )
 }
 
@@ -1291,13 +1348,19 @@ pub fn find_routes(
     let mut routes: Vec<Route> = Vec::new();
     let mut closed: FxHashSet<u64> = FxHashSet::default();
     let mut heap: BinaryHeap<Node> = BinaryHeap::new();
-    // Issue #101 Phase 2: best known g() per depth-scoped state. Keyed by
-    // `Arc<StateKey>` so a `Node` that becomes a state's current record can
-    // hold a cheap clone of the same key for O(1) staleness lookups later,
-    // rather than re-deriving (sort + clone) its `StateKey` on every check.
-    // Empty and unused unless `open_state_diagnostics`/`open_state_dominance`
-    // is true.
+    // Issue #101 Phase 2: best known g() per depth-scoped state, plus
+    // (Round 2A) which generation `token` currently owns that record.
+    // Keyed by `Arc<StateKey>` so a `Node` that becomes a state's current
+    // record can hold a cheap clone of the same key for O(1) liveness
+    // lookups later, rather than re-deriving (sort + clone) its `StateKey`
+    // on every check. Empty and unused unless
+    // `open_state_diagnostics`/`open_state_dominance` is true.
     let mut open_state_best: FxHashMap<Arc<StateKey>, OpenStateRecord> = FxHashMap::default();
+    // Monotonically increasing per-search counter handing out each new
+    // open-state record's unique token (Round 2A) -- never reused, so
+    // token equality is a safe identity check across insert/replace/evict
+    // cycles even when two records coincidentally share a `best_g`.
+    let mut open_state_token_counter: u64 = 0;
     let mut sa_cache: FxHashMap<String, f64> = FxHashMap::default();
     // Opt-D: per-search memoization of apply_retro results.
     // Key: canonical target SMILES. Value: Arc-wrapped filtered expansions.
@@ -1320,7 +1383,7 @@ pub fn find_routes(
         g: 0.0,
         h: h0,
         trace_id: None,
-        open_state_key: None,
+        open_state_token: None,
     });
 
     while let Some(node) = heap.pop() {
@@ -1329,19 +1392,33 @@ pub fn find_routes(
             nodes_popped += 1;
         }
 
-        // Issue #101 Phase 2D: a stale node (superseded by a strictly
-        // better-g arrival at the same state since it was pushed) is never
-        // expanded, even if it slipped through to a pop somehow -- the
-        // pre-`beam_prune` filter below is the primary removal path, this
-        // is the backstop. Checked before the `max_routes` break: a stale
-        // node never carries a route (terminal states are never given an
-        // `open_state_key`), so this ordering cannot change which routes
-        // are returned, only how quickly a stale pop is skipped.
-        if config.open_state_dominance
-            && is_stale_open_state(&node.open_state_key, node.g, &open_state_best)
-        {
-            crowd_out.stale_open_nodes_discarded_on_pop += 1;
-            continue;
+        // Issue #101 Round 2A-2B: a node's open-state record is
+        // authoritative only for the live representative of its
+        // `StateKey`. Checked before the `max_routes` break: a stale node
+        // never carries a route (terminal states are never given an
+        // `open_state_token`), so this ordering cannot change which
+        // routes are returned, only how quickly a stale pop is skipped.
+        if let Some((key, token)) = &node.open_state_token {
+            if open_state_best.get(key).map(|r| r.token) == Some(*token) {
+                // This node's arrival at its state is ending -- it's
+                // about to be expanded (or is a route-terminal check),
+                // so it is no longer "open". Pure bookkeeping: removal
+                // never gates control flow, so it is safe to do in both
+                // `open_state_diagnostics`-only and `open_state_dominance`
+                // mode without touching the diagnostics-only
+                // byte-identical-to-legacy guarantee.
+                open_state_best.remove(key);
+            } else if config.open_state_dominance {
+                // Superseded by a `Replaced` verdict since this node was
+                // pushed. The pre-`beam_prune` filter below is the primary
+                // removal path; this is the backstop for whatever it might
+                // miss between iterations. Under `open_state_diagnostics`
+                // alone, a stale node is left untouched and expanded
+                // normally -- diagnostics never skips a pop, matching
+                // legacy behaviour exactly.
+                crowd_out.stale_open_nodes_discarded_on_pop += 1;
+                continue;
+            }
         }
 
         if routes.len() >= config.max_routes {
@@ -1579,7 +1656,7 @@ pub fn find_routes(
             // acts (`continue` past a dominated candidate -- it is never
             // pushed at all).
             let candidate_g = node.g + entry.step_cost;
-            let mut open_state_key: Option<Arc<StateKey>> = None;
+            let mut open_state_token: Option<(Arc<StateKey>, u64)> = None;
             if config.open_state_diagnostics || config.open_state_dominance {
                 crowd_out.open_state_candidates_considered += 1;
                 let is_terminal = new_frontier.iter().all(|e| is_bb(&e.smiles, env));
@@ -1588,13 +1665,16 @@ pub fn find_routes(
                     match open_state_verdict(open_state_best.get(&key), candidate_g) {
                         OpenStateVerdict::Inserted => {
                             crowd_out.open_state_unique_inserted += 1;
+                            open_state_token_counter += 1;
+                            let token = open_state_token_counter;
                             open_state_best.insert(
                                 Arc::clone(&key),
                                 OpenStateRecord {
                                     best_g: candidate_g,
+                                    token,
                                 },
                             );
-                            open_state_key = Some(key);
+                            open_state_token = Some((key, token));
                         }
                         OpenStateVerdict::Dominated => {
                             crowd_out.open_state_dominated_skipped += 1;
@@ -1604,13 +1684,16 @@ pub fn find_routes(
                         }
                         OpenStateVerdict::Replaced => {
                             crowd_out.open_state_better_replacements += 1;
+                            open_state_token_counter += 1;
+                            let token = open_state_token_counter;
                             open_state_best.insert(
                                 Arc::clone(&key),
                                 OpenStateRecord {
                                     best_g: candidate_g,
+                                    token,
                                 },
                             );
-                            open_state_key = Some(key);
+                            open_state_token = Some((key, token));
                         }
                     }
                 }
@@ -1660,7 +1743,7 @@ pub fn find_routes(
                 g: candidate_g,
                 h: new_h,
                 trace_id,
-                open_state_key,
+                open_state_token,
             });
         }
 
@@ -1670,15 +1753,19 @@ pub fn find_routes(
         // capacity a genuinely distinct candidate should get instead. This
         // is the primary removal path -- the pop-time check above is only
         // a backstop for whatever a single filter pass here might miss
-        // between iterations.
+        // between iterations. Read-only against `open_state_best`: a stale
+        // node here never owned the map's current record for its
+        // `StateKey` (a live node does, and is left alone), so nothing
+        // needs removing from the map on this side.
         if config.open_state_dominance {
             let mut removed = 0u64;
             heap.retain(|n| {
-                let stale = is_stale_open_state(&n.open_state_key, n.g, &open_state_best);
-                if stale {
+                let live = n.open_state_token.is_none()
+                    || is_live_open_state_representative(&n.open_state_token, &open_state_best);
+                if !live {
                     removed += 1;
                 }
-                !stale
+                live
             });
             crowd_out.stale_open_nodes_removed_before_beam_prune += removed;
         }
@@ -1687,7 +1774,23 @@ pub fn find_routes(
         if config.beam_width > 0 && heap.len() > config.beam_width {
             beam_limit_hit = true;
         }
-        let (eviction_stats, trace_ranks) = beam_prune(&mut heap, config.beam_width);
+        let (eviction_stats, trace_ranks, evicted_open_state_tokens) =
+            beam_prune(&mut heap, config.beam_width);
+        // Issue #101 Round 2B-2C: a node beam_prune evicts on pure f()-score
+        // grounds may still be the live representative for its StateKey --
+        // unlike the stale-removal retain filter above, beam_prune has no
+        // knowledge of `open_state_best` at all, so this is the only place
+        // that reconciles a real eviction with the map. Token-gated: an
+        // evicted node whose token no longer matches the map's current
+        // record (already superseded by a `Replaced` verdict on some other
+        // node before this beam_prune call) must NOT delete a newer
+        // representative's record.
+        for (key, token) in &evicted_open_state_tokens {
+            if open_state_best.get(key).map(|r| r.token) == Some(*token) {
+                open_state_best.remove(key);
+                crowd_out.open_state_records_dropped_on_beam_eviction += 1;
+            }
+        }
         if let Some((evicted_n, evicted_min, evicted_max, boundary)) = eviction_stats {
             crowd_out.beam_prune_invocations += 1;
             crowd_out.candidates_evicted_total += evicted_n as u64;
@@ -2015,7 +2118,7 @@ mod tests {
             g: f,
             h: 0.0,
             trace_id: None,
-            open_state_key: None,
+            open_state_token: None,
         }
     }
 
@@ -2029,18 +2132,20 @@ mod tests {
     #[test]
     fn beam_prune_returns_none_when_beam_width_zero() {
         let mut heap: BinaryHeap<Node> = (0..5).map(|i| node(i as f64)).collect();
-        let (stats, trace_ranks) = beam_prune(&mut heap, 0);
+        let (stats, trace_ranks, evicted_tokens) = beam_prune(&mut heap, 0);
         assert_eq!(stats, None);
         assert!(trace_ranks.is_empty());
+        assert!(evicted_tokens.is_empty());
         assert_eq!(heap.len(), 5, "beam_width=0 must not truncate");
     }
 
     #[test]
     fn beam_prune_returns_none_when_heap_within_beam_width() {
         let mut heap: BinaryHeap<Node> = (0..3).map(|i| node(i as f64)).collect();
-        let (stats, trace_ranks) = beam_prune(&mut heap, 10);
+        let (stats, trace_ranks, evicted_tokens) = beam_prune(&mut heap, 10);
         assert_eq!(stats, None);
         assert!(trace_ranks.is_empty());
+        assert!(evicted_tokens.is_empty());
         assert_eq!(heap.len(), 3);
     }
 
@@ -2072,7 +2177,7 @@ mod tests {
         ]
         .into_iter()
         .collect();
-        let (_, trace_ranks) = beam_prune(&mut heap, 2);
+        let (_, trace_ranks, _) = beam_prune(&mut heap, 2);
         let mut by_id: FxHashMap<u64, (usize, bool)> = trace_ranks
             .into_iter()
             .map(|(id, rank, survived)| (id, (rank, survived)))
@@ -2091,9 +2196,10 @@ mod tests {
         // a traced node here must keep its as-created default rather than
         // being reported as a fabricated rank 0.
         let mut heap: BinaryHeap<Node> = vec![traced_node(0.0, 7), node(1.0)].into_iter().collect();
-        let (stats, trace_ranks) = beam_prune(&mut heap, 10);
+        let (stats, trace_ranks, evicted_tokens) = beam_prune(&mut heap, 10);
         assert_eq!(stats, None, "heap smaller than beam_width -> no eviction");
         assert!(trace_ranks.is_empty());
+        assert!(evicted_tokens.is_empty());
     }
 
     #[test]
@@ -2983,7 +3089,10 @@ mod tests {
 
     #[test]
     fn open_state_verdict_worse_g_is_dominated() {
-        let existing = OpenStateRecord { best_g: 5.0 };
+        let existing = OpenStateRecord {
+            best_g: 5.0,
+            token: 1,
+        };
         assert_eq!(
             open_state_verdict(Some(&existing), 6.0),
             OpenStateVerdict::Dominated
@@ -2995,7 +3104,10 @@ mod tests {
         // Ties must resolve deterministically to "keep whichever was
         // recorded first" -- a later candidate with the exact same g as the
         // existing record is dominated, not treated as an improvement.
-        let existing = OpenStateRecord { best_g: 5.0 };
+        let existing = OpenStateRecord {
+            best_g: 5.0,
+            token: 1,
+        };
         assert_eq!(
             open_state_verdict(Some(&existing), 5.0),
             OpenStateVerdict::Dominated
@@ -3004,7 +3116,10 @@ mod tests {
 
     #[test]
     fn open_state_verdict_better_g_replaces() {
-        let existing = OpenStateRecord { best_g: 5.0 };
+        let existing = OpenStateRecord {
+            best_g: 5.0,
+            token: 1,
+        };
         assert_eq!(
             open_state_verdict(Some(&existing), 4.0),
             OpenStateVerdict::Replaced
@@ -3028,6 +3143,7 @@ mod tests {
         assert_eq!(d.open_state_better_replacements, 0);
         assert_eq!(d.stale_open_nodes_discarded_on_pop, 0);
         assert_eq!(d.stale_open_nodes_removed_before_beam_prune, 0);
+        assert_eq!(d.open_state_records_dropped_on_beam_eviction, 0);
         assert_eq!(d.peak_unique_open_states, 0);
         assert_eq!(d.peak_raw_heap_nodes, 0);
         assert_eq!(d.peak_duplicate_open_nodes, 0);
@@ -3069,32 +3185,168 @@ mod tests {
         assert!(stats_on.crowd_out.open_state_candidates_considered > 0);
     }
 
-    // ── is_stale_open_state (Issue #101 Phase 2D) ────────────────────────────
+    // ── is_live_open_state_representative (Issue #101 Round 2A) ──────────────
     // The pre-`beam_prune` filter runs every outer-loop iteration before any
     // `heap.pop()` can observe a newly-stale node, so the pop-time backstop
     // is provably unreachable through a real `find_routes` call -- these
     // test the shared predicate directly instead.
 
     #[test]
-    fn is_stale_open_state_true_when_record_has_lower_g() {
+    fn is_live_open_state_representative_false_when_token_does_not_match_record() {
         let mut map: FxHashMap<Arc<StateKey>, OpenStateRecord> = FxHashMap::default();
         let key = Arc::new(StateKey::new(1, &[FEntry { smiles: "A".into() }]));
-        map.insert(Arc::clone(&key), OpenStateRecord { best_g: 1.0 });
-        assert!(is_stale_open_state(&Some(key), 5.0, &map));
+        map.insert(
+            Arc::clone(&key),
+            OpenStateRecord {
+                best_g: 1.0,
+                token: 99,
+            },
+        );
+        assert!(!is_live_open_state_representative(&Some((key, 1)), &map));
     }
 
     #[test]
-    fn is_stale_open_state_false_when_g_matches_record() {
+    fn is_live_open_state_representative_true_when_token_matches_record() {
         let mut map: FxHashMap<Arc<StateKey>, OpenStateRecord> = FxHashMap::default();
         let key = Arc::new(StateKey::new(1, &[FEntry { smiles: "A".into() }]));
-        map.insert(Arc::clone(&key), OpenStateRecord { best_g: 5.0 });
-        assert!(!is_stale_open_state(&Some(key), 5.0, &map));
+        map.insert(
+            Arc::clone(&key),
+            OpenStateRecord {
+                best_g: 5.0,
+                token: 42,
+            },
+        );
+        assert!(is_live_open_state_representative(&Some((key, 42)), &map));
     }
 
     #[test]
-    fn is_stale_open_state_false_when_key_is_none() {
+    fn is_live_open_state_representative_false_when_token_is_none() {
         let map: FxHashMap<Arc<StateKey>, OpenStateRecord> = FxHashMap::default();
-        assert!(!is_stale_open_state(&None, 5.0, &map));
+        assert!(!is_live_open_state_representative(&None, &map));
+    }
+
+    #[test]
+    fn is_live_open_state_representative_false_when_record_absent_even_with_matching_g() {
+        // A node whose state was never (or no longer) recorded at all --
+        // e.g. its record was already removed by the beam_prune-eviction
+        // cleanup -- must never be treated as live just because some other
+        // future token could coincidentally match its own g. There is no
+        // g-comparison at all here (Round 2A): a missing record is simply
+        // not live, full stop.
+        let map: FxHashMap<Arc<StateKey>, OpenStateRecord> = FxHashMap::default();
+        let key = Arc::new(StateKey::new(1, &[FEntry { smiles: "A".into() }]));
+        assert!(!is_live_open_state_representative(&Some((key, 1)), &map));
+    }
+
+    // ── Ghost-reentry regression (Issue #101 Round 2E) ────────────────────────
+    // The bug this whole round exists to fix: a node evicted by `beam_prune`
+    // on pure f()-score grounds (not superseded by a better-g replacement --
+    // that path is already covered by
+    // `open_state_dominance_marks_and_removes_stale_duplicate_state`) left a
+    // ghost record behind that could incorrectly dominate a later,
+    // legitimate regeneration of the same state that was never actually
+    // explored. Exercised through a real `beam_prune` call, not just the
+    // pure `open_state_verdict` decision function.
+
+    #[test]
+    fn open_state_dominance_ghost_reentry_after_beam_eviction() {
+        let mut open_state_best: FxHashMap<Arc<StateKey>, OpenStateRecord> = FxHashMap::default();
+        let key_s = Arc::new(StateKey::new(3, &[FEntry { smiles: "S".into() }]));
+
+        // 1. Push S with g=4 -- becomes the live representative, token 1.
+        open_state_best.insert(
+            Arc::clone(&key_s),
+            OpenStateRecord {
+                best_g: 4.0,
+                token: 1,
+            },
+        );
+        let s_node = Node {
+            frontier: smallvec![FEntry { smiles: "S".into() }],
+            path: None,
+            depth: 3,
+            g: 4.0,
+            h: 0.0,
+            trace_id: None,
+            open_state_token: Some((Arc::clone(&key_s), 1)),
+        };
+
+        // 2. Evict S via a REAL `beam_prune` call: two cheaper, unrelated
+        // distractor nodes crowd it out of a beam_width=2 heap -- S is
+        // never superseded by a better arrival at its own state, purely
+        // out-competed on score.
+        let mut heap: BinaryHeap<Node> = vec![node(0.0), node(1.0), s_node].into_iter().collect();
+        let (_, _, evicted_tokens) = beam_prune(&mut heap, 2);
+        assert_eq!(
+            evicted_tokens.len(),
+            1,
+            "only S should be evicted (worst f)"
+        );
+        assert_eq!(evicted_tokens[0].1, 1, "the evicted token must be S's");
+
+        // Reconciliation, mirroring `find_routes`'s beam_prune-eviction
+        // cleanup exactly: token-gated removal from the map.
+        for (key, token) in &evicted_tokens {
+            if open_state_best.get(key).map(|r| r.token) == Some(*token) {
+                open_state_best.remove(key);
+            }
+        }
+        assert!(
+            !open_state_best.contains_key(&key_s),
+            "S's ghost record must be gone once its live representative is evicted"
+        );
+
+        // 3. S was never popped/expanded -- confirmed structurally: nothing
+        // in the post-prune heap carries S's token, so no future pop could
+        // ever process it.
+        assert!(
+            heap.iter().all(|n| n.open_state_token.is_none()),
+            "S must not still be sitting in the post-prune heap"
+        );
+
+        // 4. Later, an independent arrival regenerates the exact same
+        // StateKey with g=5 (worse than the evicted g=4 -- irrelevant,
+        // since the ghost is gone entirely, not merely beaten on g).
+        let verdict = open_state_verdict(open_state_best.get(&key_s), 5.0);
+
+        // 5. Must NOT be dominated by the ghost -- free to re-enter.
+        assert_eq!(
+            verdict,
+            OpenStateVerdict::Inserted,
+            "a regenerated S must never be dominated by an evicted, never-expanded ghost"
+        );
+
+        // Complete the lifecycle: the new arrival actually re-enters the
+        // open heap, and only the new token is ever live again.
+        open_state_best.insert(
+            Arc::clone(&key_s),
+            OpenStateRecord {
+                best_g: 5.0,
+                token: 2,
+            },
+        );
+        heap.push(Node {
+            frontier: smallvec![FEntry { smiles: "S".into() }],
+            path: None,
+            depth: 3,
+            g: 5.0,
+            h: 0.0,
+            trace_id: None,
+            open_state_token: Some((Arc::clone(&key_s), 2)),
+        });
+        assert!(
+            heap.iter()
+                .any(|n| n.open_state_token.as_ref().map(|(_, t)| *t) == Some(2)),
+            "the regenerated S(g=5) must actually re-enter the open heap"
+        );
+        assert!(
+            !is_live_open_state_representative(&Some((Arc::clone(&key_s), 1)), &open_state_best),
+            "the old evicted token must never be considered live again"
+        );
+        assert!(
+            is_live_open_state_representative(&Some((key_s, 2)), &open_state_best),
+            "the new arrival must be the live representative"
+        );
     }
 
     #[test]
@@ -3290,6 +3542,36 @@ mod tests {
             stats_legacy.crowd_out.rules_attempted_total,
             stats_explicit.crowd_out.rules_attempted_total
         );
+    }
+
+    #[test]
+    fn peak_unique_open_states_never_exceeds_peak_raw_heap_nodes() {
+        // Issue #101 Round 2D invariant: with the ghost-record lifecycle
+        // fixed, the live-unique count can never exceed the raw heap
+        // count, in either mode. A small beam_width forces real
+        // `beam_prune` evictions during this search, exercising the
+        // ghost-cleanup path (not just the beam_width=0 no-op case `cfg`
+        // uses elsewhere in this file).
+        let env = aspirin_env();
+        let rules = default_rules();
+        for open_state_dominance in [false, true] {
+            let config = SearchConfig {
+                max_depth: 3,
+                max_routes: 5,
+                beam_width: 5,
+                open_state_diagnostics: true,
+                open_state_dominance,
+                ..Default::default()
+            };
+            let (_, stats) = find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &config).unwrap();
+            let d = &stats.crowd_out;
+            assert!(
+                d.peak_unique_open_states <= d.peak_raw_heap_nodes,
+                "open_state_dominance={open_state_dominance}: {} unique > {} raw",
+                d.peak_unique_open_states,
+                d.peak_raw_heap_nodes
+            );
+        }
     }
 
     #[test]

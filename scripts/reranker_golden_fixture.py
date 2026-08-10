@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-Issue #101 runtime-integration golden test, Python side. Loads the formal
-TEST pool (same imputed rows `phase3e_evaluate_formal_test.py` scored),
-takes a deterministic sample, and dumps `{"features": [...]}` (null =
-missing, matching CandidateFeatures.missing) alongside the FROZEN model's
-own `booster.predict()` score for that exact row -- ground truth for the
-Rust `LightGbmModel` reader (`src/reranker.rs`) to be checked against via
-`renkin-reranker-predict`.
+Issue #101 runtime-integration golden test, Python side -- prepares
+ground truth for a SEPARATE, not-yet-merged runtime-integration effort;
+this PR does not itself consume the fixture this script produces. Loads
+the formal TEST pool (same imputed rows `phase3e_evaluate_formal_test.py`
+scored), takes a deterministic sample, and dumps `{"features": [...]}`
+(null = missing, matching CandidateFeatures.missing) alongside the FROZEN
+model's own `booster.predict()` score for that exact row, for a Rust
+LightGBM reader on the runtime-integration branch to be checked against.
 
 Usage:
     python3 scripts/reranker_golden_fixture.py [--n 2000] [--seed 7]

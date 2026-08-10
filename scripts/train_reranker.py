@@ -347,7 +347,7 @@ def configure_split_override(mapping: dict | None) -> None:
     safer here than five places to remember to update in lockstep. Callers
     that share a process across multiple runs (e.g. a test suite) must
     reset with `configure_split_override(None)` when done -- see
-    `scripts/tests/test_reranker_schema.py`'s split-manifest tests for the
+    `scripts/tests/test_reranker_labels.py`'s `SplitManifestTests` for the
     pattern.
     """
     global _SPLIT_OVERRIDE

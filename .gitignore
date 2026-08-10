@@ -151,3 +151,8 @@ data/comparison/results_*/*.log
 
 # ---- Claude Code internal files ----
 .claude/
+# Runtime reranker local dev artifacts (external-path model + companion
+# frequency table, mirroring the --scorer <path> precedent -- never
+# committed into the crate, matching Cargo.toml's exclude list policy for
+# trained-model artifacts).
+data/phase3e_reranker_training/

@@ -937,6 +937,7 @@ fn select_active_rules<'a>(
 
 /// One raw one-step retrosynthetic proposal: a single rule application
 /// against a single target, before candidate-level canonical merge.
+#[derive(Clone)]
 pub struct RawCandidate {
     pub rule_name: String,
     pub template_id: String,
@@ -1037,7 +1038,7 @@ fn hash_string_sequence(hasher: &mut Sha256, values: &[String]) {
 /// silently collide with this one), the canonical target, an explicit
 /// section separator, then the sorted (not deduplicated -- see call site)
 /// precursor multiset.
-fn candidate_id_for(canonical_target: &str, precursor_smiles: &[String]) -> String {
+pub(crate) fn candidate_id_for(canonical_target: &str, precursor_smiles: &[String]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"renkin-retrospect-candidate-v1\0");
     hash_string_sequence(&mut hasher, &[canonical_target.to_string()]);
@@ -1123,7 +1124,7 @@ fn merge_duplicate_sources(sources: Vec<CandidateSource>) -> anyhow::Result<Vec<
 /// ambiguous, and `best_*`/`min_*`/`max_*`/`mean_*` aggregates are computed
 /// over all sources -- no provenance is dropped in favor of "just the best
 /// one".
-fn merge_into_candidates(
+pub(crate) fn merge_into_candidates(
     canonical_target: &str,
     raw: Vec<RawCandidate>,
 ) -> anyhow::Result<Vec<ReactionCandidate>> {

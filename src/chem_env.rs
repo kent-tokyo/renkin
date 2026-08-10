@@ -970,7 +970,6 @@ pub fn apply_retro(mol: &Molecule, rule: &RetroRule) -> Vec<Vec<PrecursorMol>> {
 }
 
 /// A standardized precursor molecule with its canonical SMILES.
-#[derive(Clone)]
 pub struct PrecursorMol {
     pub smiles: String,
     pub mol: Molecule,

@@ -961,8 +961,7 @@ fn reranker_rank_bonuses(
     raw_proposals: &[crate::candidate::RawCandidate],
     templates_by_id: &std::collections::HashMap<String, &RetroRule>,
 ) -> anyhow::Result<FxHashMap<String, f64>> {
-    let mut candidates =
-        crate::candidate::merge_into_candidates(target_smi, raw_proposals.to_vec())?;
+    let mut candidates = crate::candidate::merge_into_candidates(target_smi, raw_proposals)?;
     for c in candidates.iter_mut() {
         c.features = crate::candidate::extract_features(c, target_mol, templates_by_id, None);
     }
@@ -1052,8 +1051,18 @@ pub struct SearchConfig {
     /// `None` (the default) reproduces this crate's legacy
     /// `template_bonus`/`reaction_prior` ordering byte-for-byte -- see
     /// `reranker_rank_bonuses`' doc for exactly how a `Some` value changes
-    /// step-cost bonuses, and note it never changes which candidates are
-    /// generated, only how they're ordered.
+    /// step-cost bonuses. "Ordering-only" is precise at the single-
+    /// expansion level: for one node, the reranker never adds, drops, or
+    /// merges a `RetroEntry` -- the same raw proposals become the same set
+    /// of children either way, just under different `step_cost`s. It is
+    /// NOT a claim that the whole search explores the identical candidate
+    /// set end to end under a nonzero `beam_width`: a changed `step_cost`
+    /// changes `f() = g + h`, which changes which open nodes `beam_prune`
+    /// evicts, which changes which of THEIR children ever get proposed at
+    /// all deeper in the tree. That's the intended mechanism (it's how a
+    /// reranker can fix beam-width crowd-out), not a bug -- just don't
+    /// read "ordering-only" as "identical search tree regardless of beam
+    /// width," which it isn't and was never meant to be.
     pub reranker: Option<std::sync::Arc<dyn crate::candidate::CandidateReranker>>,
 }
 
@@ -1148,15 +1157,6 @@ pub fn find_routes(
         None
     };
 
-    // Issue #101 Task 35: template_id -> &RetroRule, built once, used only
-    // when a reranker is configured (extract_features needs it to compute
-    // reaction-center features from each source's SMIRKS).
-    let templates_by_id: std::collections::HashMap<String, &RetroRule> =
-        if config.reranker.is_some() {
-            crate::candidate::index_rules_by_template_id(rules)?
-        } else {
-            std::collections::HashMap::new()
-        };
     // Local, mutable "is the reranker still usable this run" handle,
     // separate from `config.reranker` (which is immutable for the whole
     // call): a mid-run inference error disables it for the remainder of
@@ -1164,6 +1164,33 @@ pub fn find_routes(
     // `reranker_failures` records that it happened (expected value: 0).
     let mut active_reranker = config.reranker.as_deref();
     let mut reranker_failures: u64 = 0;
+
+    // Issue #101 Task 35: template_id -> &RetroRule, built once, used only
+    // when a reranker is configured (extract_features needs it to compute
+    // reaction-center features from each source's SMIRKS). This setup step
+    // is itself fallible -- index_rules_by_template_id hard-errors on a
+    // corpus with a conflicting duplicate template_id -- and must degrade
+    // exactly like a mid-run inference failure does (warn, disable the
+    // reranker for this whole run, never a hard error), not propagate via
+    // `?` and abort the search entirely just because the reranker happened
+    // to be turned on.
+    let templates_by_id: std::collections::HashMap<String, &RetroRule> =
+        if active_reranker.is_some() {
+            match crate::candidate::index_rules_by_template_id(rules) {
+                Ok(m) => m,
+                Err(e) => {
+                    eprintln!(
+                        "warning: reranker setup failed ({e:#}); falling back to legacy \
+                         ordering for this run"
+                    );
+                    reranker_failures += 1;
+                    active_reranker = None;
+                    std::collections::HashMap::new()
+                }
+            }
+        } else {
+            std::collections::HashMap::new()
+        };
 
     #[cfg(not(target_arch = "wasm32"))]
     let t0 = std::time::Instant::now();
@@ -2784,7 +2811,7 @@ mod tests {
         // (offline-pool-export-equivalent) order, independently of
         // `reranker_rank_bonuses`.
         let mut candidates =
-            crate::candidate::merge_into_candidates(target_smi, raw_proposals.clone()).unwrap();
+            crate::candidate::merge_into_candidates(target_smi, &raw_proposals).unwrap();
         for c in candidates.iter_mut() {
             c.features = crate::candidate::extract_features(c, &target_mol, &templates_by_id, None);
         }
@@ -2851,9 +2878,15 @@ mod tests {
             stats_reranked.reranker_failures, 0,
             "the deterministic test double must never fail"
         );
-        // Ordering-only: the reranker must never change how many templates
-        // matched or how many nodes got expanded -- only which f() they're
-        // explored under.
+        // Ordering-only at the unbounded (beam_width: 0, via cfg()) search
+        // this fixture uses: the reranker must never change how many
+        // templates matched or how many nodes got expanded here, only
+        // which f() they're explored under. This is NOT a claim that a
+        // beam-limited search explores the identical tree regardless of
+        // beam width -- see SearchConfig::reranker's doc for why a
+        // reordering-induced difference in beam_prune's eviction choices
+        // under a real beam width is the intended mechanism, not something
+        // this test (or "ordering-only" generally) rules out.
         assert_eq!(
             stats_legacy.matched_templates,
             stats_reranked.matched_templates

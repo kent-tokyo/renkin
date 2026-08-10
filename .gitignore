@@ -120,6 +120,12 @@ data/phase3e_reranker_training/labels_combined.jsonl
 data/phase3e_reranker_training/split_manifest_combined.jsonl
 data/phase3e_reranker_training/model.txt
 data/phase3e_reranker_training/*.log
+# Runtime-integration golden-test fixture (real formal-TEST feature vectors
+# + frozen-model Python predictions) -- regenerable via
+# scripts/reranker_golden_fixture.py; a full 3000-row run was verified
+# bit-for-bit identical against the Rust reader (max_abs_diff=0.0), see
+# the runtime-integration PR for the methodology and result.
+data/phase3e_reranker_training/reranker_golden_fixture.jsonl
 
 # Phase 32 scratch/raw run dumps under data/corpora/ (underscore prefix =
 # reproducible intermediate data, not a curated deliverable -- the fixed

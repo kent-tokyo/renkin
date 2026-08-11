@@ -30,6 +30,18 @@ use crate::search::{SearchConfig, find_routes};
 ///         `template_id`, see ``renkin template ids``). Matching steps get an
 ///         ``evidence`` field; unmatched templates get none -- nothing is
 ///         fabricated. Default: ``None``.
+///     reranker_model_path (str | None): Path to a frozen LightGBM
+///         ``model.txt`` for candidate reranking (Issue #101 Task 35);
+///         ordering-only, requires ``reranker_freq_table_path`` too. Default:
+///         ``None``.
+///     reranker_freq_table_path (str | None): Path to the TRAIN-frozen
+///         template ``frequency_table.json`` for the reranker. Default:
+///         ``None``.
+///
+///     Either reranker path missing, or the model failing to load, falls
+///     back to legacy ordering with a message printed to stderr -- never a
+///     hard error, matching the ``renkin`` CLI's ``--reranker-model``/
+///     ``--reranker-freq-table`` flags exactly.
 ///
 /// Returns:
 ///     str: JSON string with retrosynthesis routes.
@@ -40,7 +52,7 @@ use crate::search::{SearchConfig, find_routes};
 ///     routes = json.loads(renkin.find_routes("CC(=O)Oc1ccccc1C(=O)O", depth=3))
 ///     print(routes["routes_found"])
 #[pyfunction]
-#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None))]
+#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None))]
 #[allow(clippy::too_many_arguments)]
 pub fn find_routes_py(
     target: &str,
@@ -54,6 +66,8 @@ pub fn find_routes_py(
     bb_prices_path: Option<&str>,
     templates_path: Option<&str>,
     template_metadata_path: Option<&str>,
+    reranker_model_path: Option<&str>,
+    reranker_freq_table_path: Option<&str>,
 ) -> PyResult<String> {
     let env = match building_blocks {
         Some(ref bbs) => {
@@ -96,6 +110,34 @@ pub fn find_routes_py(
             })
             .unwrap_or_default()
     });
+
+    // Issue #101 Task 35: ordering-only candidate reranker, mirroring the
+    // `renkin` CLI's --reranker-model/--reranker-freq-table exactly -- a
+    // missing/mismatched pair or a load failure degrades to this crate's
+    // pre-existing ordering rather than raising, never a hard error.
+    let reranker: Option<std::sync::Arc<dyn crate::candidate::CandidateReranker>> =
+        match (reranker_model_path, reranker_freq_table_path) {
+            (Some(model_path), Some(freq_path)) => {
+                match crate::reranker::RuntimeReranker::from_paths(model_path, freq_path) {
+                    Ok(r) => Some(std::sync::Arc::new(r)),
+                    Err(e) => {
+                        eprintln!(
+                            "warning: failed to load reranker_model_path/reranker_freq_table_path \
+                             ({e:#}); falling back to legacy ordering for this run"
+                        );
+                        None
+                    }
+                }
+            }
+            (None, None) => None,
+            _ => {
+                eprintln!(
+                    "warning: reranker_model_path and reranker_freq_table_path must both be \
+                     given; falling back to legacy ordering for this run"
+                );
+                None
+            }
+        };
     let config = SearchConfig {
         max_depth: depth,
         max_routes,
@@ -105,6 +147,7 @@ pub fn find_routes_py(
         verbose,
         bb_price_map,
         template_metadata: template_metadata.map(|tm| tm.templates),
+        reranker,
         ..Default::default()
     };
     let (routes, stats) = find_routes(target, &env, &rules, &config)

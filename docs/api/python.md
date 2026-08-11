@@ -20,6 +20,8 @@ renkin.find_routes(
     bb_prices_path: str | None = None,
     templates_path: str | None = None,
     template_metadata_path: str | None = None,
+    reranker_model_path: str | None = None,
+    reranker_freq_table_path: str | None = None,
 ) -> str
 ```
 
@@ -41,6 +43,8 @@ a `dict` — parse it with `json.loads()` before accessing fields.
 | `bb_prices_path` | `str \| None` | `None` | CSV (`SMILES,price_per_gram`) for route cost scoring |
 | `templates_path` | `str \| None` | `None` | Path to an extracted SMIRKS templates `.smi` file (tab-separated). `None` = hand-crafted rules only |
 | `template_metadata_path` | `str \| None` | `None` | Path to a JSON evidence sidecar keyed by `template_id` (see [Template Evidence Metadata](https://github.com/kent-tokyo/renkin#template-evidence-metadata)). Matching steps get an `evidence` field; nothing is fabricated for unmatched templates |
+| `reranker_model_path` | `str \| None` | `None` | Path to a frozen LightGBM `model.txt` for candidate reranking. Requires `reranker_freq_table_path` too. Ordering-only — never changes which candidates are considered, only their order |
+| `reranker_freq_table_path` | `str \| None` | `None` | Path to the TRAIN-frozen template `frequency_table.json` the reranker needs alongside `reranker_model_path` |
 
 **Returns:** a JSON string shaped like:
 
@@ -186,3 +190,11 @@ except ValueError as e:
 PyO3) when the target SMILES fails to parse, when `template_metadata_path`
 points to malformed or invalid metadata (validated before search starts), or
 when `route_json` isn't valid JSON.
+
+`reranker_model_path`/`reranker_freq_table_path` are the one exception to
+"bad input raises": a missing file, a malformed model, or only one of the
+two paths given never raises — it prints a warning to stderr and falls
+back to `find_routes`'s legacy candidate ordering for that call. This
+matches the `renkin` CLI's `--reranker-model`/`--reranker-freq-table`
+flags exactly, since a broken optional reranker file shouldn't be able to
+take down an otherwise-working search.

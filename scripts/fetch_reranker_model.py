@@ -1,17 +1,30 @@
 #!/usr/bin/env python3
 """Fetch the frozen LightGBM reranker model + template frequency table from
-a GitHub Release asset, verifying each file's SHA-256 against the committed
-freeze manifest before use (Issue #101 -- "batteries-included reranker").
+a GitHub Release asset, verifying each file with SHA-256 checks against two
+committed manifests before use (Issue #101 -- "batteries-included
+reranker").
 
 model.txt and frequency_table.json are trained artifacts derived from
 USPTO-50k (see data/phase3e_reranker_training/findings.md); they are not
 committed to this repository (unlike the JSON reports next to them) and are
 not bundled into the crates.io/PyPI/npm packages -- they are attached as
-GitHub Release assets instead, downloaded on request, and verified against
-the SHA-256 already committed in freeze_manifest.json. This keeps a
-research-provenance artifact of unclear upstream data licensing out of the
-MIT-licensed packages while still letting an ordinary user get a working
-reranker in one command, without running the training pipeline themselves.
+GitHub Release assets instead, downloaded on request, and SHA-256 verified.
+This keeps a research-provenance artifact of unclear upstream data licensing
+out of the MIT-licensed packages while still letting an ordinary user get a
+working reranker in one command, without running the training pipeline
+themselves.
+
+Two manifests, two different things verified:
+  - freeze_manifest.json: training-time artifact identity. model.txt's
+    entry is a whole-file hash. frequency_table.json's entry is a hash of
+    just the file's inner `table` data (computed before
+    phase3e_export_frequency_table.py wraps it in `_purpose`/`entries`/
+    `table` keys) -- read back from the file's own embedded "sha256"
+    field rather than re-derived.
+  - release_asset_manifest.json: release-asset identity (whole-file hash
+    of exactly what was uploaded). Needed for frequency_table.json since
+    freeze_manifest.json's entry there is not a whole-file hash and so
+    cannot by itself catch a wrong/corrupted/truncated download.
 
 This script does not create, modify, or upload to any GitHub Release --
 it only downloads and verifies assets that must already exist there.
@@ -29,16 +42,17 @@ import subprocess
 import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DEFAULT_MANIFEST = os.path.join(
+DEFAULT_FREEZE_MANIFEST = os.path.join(
     REPO_ROOT, "data/phase3e_reranker_training/freeze_manifest.json"
+)
+DEFAULT_ASSET_MANIFEST = os.path.join(
+    REPO_ROOT, "data/phase3e_reranker_training/release_asset_manifest.json"
 )
 DEFAULT_OUTPUT_DIR = os.path.join(REPO_ROOT, "data/phase3e_reranker_training")
 
-# filename -> dotted key into freeze_manifest.json for its expected sha256
+
 def sha256_of(path):
-    """Whole-file SHA-256 -- correct for model.txt, where
-    freeze_manifest.json's model_artifact.sha256 really is a hash of the
-    exact bytes on disk."""
+    """Whole-file SHA-256."""
     h = hashlib.sha256()
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
@@ -47,12 +61,11 @@ def sha256_of(path):
 
 
 def embedded_json_sha256(path):
-    """frequency_table.json is NOT hashed as a whole file against the
-    manifest -- freeze_manifest.json's feature_schema.
-    template_frequency_table_sha256 is a hash of just the inner `table`
-    data (scripts/train_reranker.py's template_frequency_table_sha256),
-    computed *before* phase3e_export_frequency_table.py wraps it with
-    `_purpose`/`entries`/`table` keys and writes it to disk. That same
+    """frequency_table.json's freeze_manifest.json entry is a hash of the
+    file's inner `table` data (scripts/train_reranker.py's
+    template_frequency_table_sha256), computed *before*
+    phase3e_export_frequency_table.py wraps it with `_purpose`/`entries`/
+    `table` keys and writes it to disk -- NOT a whole-file hash. That same
     export script embeds the identical hash in the file's own top-level
     "sha256" field for exactly this reason -- read it back rather than
     re-deriving it (which would require importing train_reranker.py's
@@ -67,21 +80,60 @@ def embedded_json_sha256(path):
     return data["sha256"]
 
 
-# filename -> (dotted key into freeze_manifest.json, function(path) -> actual sha256)
-ASSETS = {
-    "model.txt": ("model_artifact.sha256", sha256_of),
-    "frequency_table.json": (
-        "feature_schema.template_frequency_table_sha256",
-        embedded_json_sha256,
-    ),
-}
-
-
 def manifest_lookup(manifest, dotted_key):
     node = manifest
     for part in dotted_key.split("."):
         node = node[part]
     return node
+
+
+def build_checks(freeze_manifest, asset_manifest):
+    """Returns {filename: [(description, expected_sha256, verifier(path)), ...]}.
+
+    Every filename here must pass ALL of its listed checks -- see the
+    module docstring for why frequency_table.json needs two different
+    ones and model.txt only needs one.
+    """
+    return {
+        "model.txt": [
+            (
+                "whole-file hash vs freeze_manifest.json (model_artifact.sha256)",
+                manifest_lookup(freeze_manifest, "model_artifact.sha256"),
+                sha256_of,
+            ),
+        ],
+        "frequency_table.json": [
+            (
+                "whole-file hash vs release_asset_manifest.json (download authenticity)",
+                asset_manifest["assets"]["frequency_table.json"]["sha256"],
+                sha256_of,
+            ),
+            (
+                "embedded inner-table hash vs freeze_manifest.json "
+                "(feature_schema.template_frequency_table_sha256)",
+                manifest_lookup(
+                    freeze_manifest, "feature_schema.template_frequency_table_sha256"
+                ),
+                embedded_json_sha256,
+            ),
+        ],
+    }
+
+
+def check_asset_manifest_version(asset_manifest, version):
+    """Raises RuntimeError if `asset_manifest` isn't pinned to `version` --
+    per its own immutability policy, a new release's assets get a new
+    manifest entry rather than reusing an old one."""
+    pinned = asset_manifest.get("release_tag")
+    if pinned != version:
+        raise RuntimeError(
+            f"release_asset_manifest.json is pinned to release_tag={pinned!r}, "
+            f"but --version={version!r} was requested. Per this manifest's own "
+            "immutability policy, a new release's assets get a new manifest "
+            "entry rather than reusing an old one -- pass --asset-manifest "
+            "explicitly if you really mean to check a different release's "
+            "assets against this manifest."
+        )
 
 
 def version_from_cargo_toml(cargo_toml_path):
@@ -120,28 +172,29 @@ def fetch_one(url, dest_path):
     os.replace(tmp_path, dest_path)
 
 
-def fetch_and_verify(filename, manifest_key, verifier, manifest, repo, version, output_dir):
-    """Download `filename`, verify it against `manifest` via `verifier(path)
-    -> actual_sha256`, return the verified path. Deletes the downloaded file
-    and raises on a mismatch (or a verifier error, e.g. corrupt JSON) --
-    never returns a path that failed verification."""
-    expected_sha256 = manifest_lookup(manifest, manifest_key)
+def fetch_and_verify(filename, checks, repo, version, output_dir):
+    """Download `filename`, run every (description, expected_sha256,
+    verifier) in `checks` against it in order, return the verified path.
+    Deletes the downloaded file and raises on the first failing check --
+    never returns a path that failed any check."""
     dest_path = os.path.join(output_dir, filename)
     url = f"https://github.com/{repo}/releases/download/{version}/{filename}"
     print(f"Fetching {filename} from {url} ...")
     fetch_one(url, dest_path)
-    try:
-        actual_sha256 = verifier(dest_path)
-    except RuntimeError:
-        os.remove(dest_path)
-        raise
-    if actual_sha256 != expected_sha256:
-        os.remove(dest_path)
-        raise RuntimeError(
-            f"{filename} SHA-256 mismatch -- expected {expected_sha256}, got "
-            f"{actual_sha256}. Deleted the downloaded file; NOT safe to use."
-        )
-    print(f"  verified {filename}: {actual_sha256}")
+    for description, expected_sha256, verifier in checks:
+        try:
+            actual_sha256 = verifier(dest_path)
+        except RuntimeError:
+            os.remove(dest_path)
+            raise
+        if actual_sha256 != expected_sha256:
+            os.remove(dest_path)
+            raise RuntimeError(
+                f"{filename} failed check ({description}) -- expected "
+                f"{expected_sha256}, got {actual_sha256}. Deleted the "
+                "downloaded file; NOT safe to use."
+            )
+        print(f"  verified {filename}: {description}")
     return dest_path
 
 
@@ -156,7 +209,8 @@ def main(argv=None):
         help="Release tag, e.g. v0.23.0. Default: read from the committed "
         "Cargo.toml's [package].version, prefixed with 'v'.",
     )
-    parser.add_argument("--manifest", default=DEFAULT_MANIFEST)
+    parser.add_argument("--freeze-manifest", default=DEFAULT_FREEZE_MANIFEST)
+    parser.add_argument("--asset-manifest", default=DEFAULT_ASSET_MANIFEST)
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
     args = parser.parse_args(argv)
 
@@ -166,14 +220,19 @@ def main(argv=None):
     if version is None:
         parser.error("could not read version from Cargo.toml; pass --version explicitly")
 
-    with open(args.manifest, encoding="utf-8") as f:
-        manifest = json.load(f)
+    with open(args.freeze_manifest, encoding="utf-8") as f:
+        freeze_manifest = json.load(f)
+    with open(args.asset_manifest, encoding="utf-8") as f:
+        asset_manifest = json.load(f)
+    check_asset_manifest_version(asset_manifest, version)
+
     os.makedirs(args.output_dir, exist_ok=True)
+    checks_by_file = build_checks(freeze_manifest, asset_manifest)
 
     paths = {}
-    for filename, (manifest_key, verifier) in ASSETS.items():
+    for filename, checks in checks_by_file.items():
         paths[filename] = fetch_and_verify(
-            filename, manifest_key, verifier, manifest, args.repo, version, args.output_dir
+            filename, checks, args.repo, version, args.output_dir
         )
 
     print(

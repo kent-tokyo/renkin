@@ -155,5 +155,16 @@ data/comparison/results_*/*.log
 # Runtime reranker local dev artifacts (external-path model + companion
 # frequency table, mirroring the --scorer <path> precedent -- never
 # committed into the crate, matching Cargo.toml's exclude list policy for
-# trained-model artifacts).
-data/phase3e_reranker_training/
+# trained-model artifacts). `data/phase3e_reranker_training/*` (not the
+# trailing-slash `.../`) deliberately, for the same reason documented
+# above `tasks/*`: git can't re-include a file whose parent directory
+# itself is excluded, so the !exception below needs the directory to
+# stay non-excluded while its default-ignored contents (`*` matches
+# everything) are excluded per-file instead.
+data/phase3e_reranker_training/*
+
+# release_asset_manifest.json is durable release-distribution provenance
+# (whole-file SHA-256 for scripts/fetch_reranker_model.py's download
+# check), not a local dev artifact -- tracked despite the blanket
+# exclusion above, same rationale as the tasks/phase31_*/phase32_* exceptions.
+!data/phase3e_reranker_training/release_asset_manifest.json

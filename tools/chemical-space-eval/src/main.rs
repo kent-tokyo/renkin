@@ -13,7 +13,7 @@
 //!       --test-labels data/chemical_space_coverage_diagnosis/test_target_labels.jsonl \
 //!       --output data/chemical_space_coverage_diagnosis/nearest_train_tanimoto.jsonl
 
-use chematic::fp::{ecfp4, top_k_similar, BitVec2048};
+use chematic::fp::{BitVec2048, ecfp4, top_k_similar};
 use chematic::smiles;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
@@ -84,7 +84,8 @@ fn main() {
     .map(|l| serde_json::from_str(&l).unwrap_or_else(|e| panic!("parse {l:?}: {e}")))
     .collect();
 
-    let out_file = File::create(&output_path).unwrap_or_else(|e| panic!("create {output_path}: {e}"));
+    let out_file =
+        File::create(&output_path).unwrap_or_else(|e| panic!("create {output_path}: {e}"));
     let mut out = BufWriter::new(out_file);
 
     let mut test_parse_failures = 0usize;
@@ -131,7 +132,10 @@ fn main() {
         "test_target_parse_failures": test_parse_failures,
     });
     let manifest_path = format!("{output_path}.manifest.json");
-    std::fs::write(&manifest_path, serde_json::to_string_pretty(&manifest).unwrap())
-        .unwrap_or_else(|e| panic!("write {manifest_path}: {e}"));
+    std::fs::write(
+        &manifest_path,
+        serde_json::to_string_pretty(&manifest).unwrap(),
+    )
+    .unwrap_or_else(|e| panic!("write {manifest_path}: {e}"));
     eprintln!("Wrote {output_path} and {manifest_path}");
 }

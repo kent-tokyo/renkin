@@ -3,12 +3,18 @@
   "chirality": false,
   "fingerprint": "ecfp4",
   "nbits": 2048,
+  "output_path": "data/chemical_space_coverage_diagnosis/nearest_train_tanimoto.jsonl",
+  "output_sha256": "sha256:67403e18dd9f0ee3b2c9c7bb3923e00252dc17d1ca5adeb90327e14e7b3cd934",
   "radius": 2,
+  "renkin_commit": "45d35530d6578a1a136ed41d924b8cccb61ca881",
+  "source_hf_revision": "08a575f0546b2be57242997fd45f684d6814d5a9",
   "test_labels_path": "data/chemical_space_coverage_diagnosis/test_target_labels.jsonl",
+  "test_labels_sha256": "sha256:58c640d868b981acf668b565b8cb9dd136e038d4abcfafb63975a814d1cb8c97",
   "test_target_count_total": 4903,
   "test_target_parse_failures": 0,
   "train_reference_count_parsed": 39736,
   "train_reference_count_total": 39736,
   "train_reference_parse_failures": 0,
-  "train_reference_path": "data/chemical_space_coverage_diagnosis/train_reference_products.smi"
+  "train_reference_path": "data/chemical_space_coverage_diagnosis/train_reference_products.smi",
+  "train_reference_sha256": "sha256:4319055354db879abcb96a4627e3f47092ab04d05922bc6e5f350254eed9d964"
 }

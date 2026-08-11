@@ -2,6 +2,23 @@
   "_purpose": "Chemical Space Coverage Diagnosis Phase A PoC: decompose the 33.0% (1,618/4,903) zero-positive-candidate gap on the formal TEST corpus by nearest-TRAIN ECFP4 Tanimoto similarity, to prioritize between Phase B (template-diversity scaling) and Phase C (higher-level templates). Route-solved-rate intentionally omitted from this v1 -- the only per-target route data available is the 100-target paired gate (~25/bin, a different corpus, not usable here).",
   "reference_corpus": "USPTO-50k TRAIN split product SMILES (the same split scripts/extract_templates.py extracts templates from by default), 39,736 unique canonical structures",
   "fingerprint": "ECFP4 (chematic 0.11.0, radius=2, nbits=2048, no chirality)",
+  "provenance": {
+    "_note": "SHA-256 chain from this committed report back to the non-committed raw inputs it was built from (see findings.md's 'Reproducing this' to regenerate them) -- copied from nearest_train_tanimoto.jsonl.manifest.json, verified to still match the actual files on disk at report-generation time (see asserts above).",
+    "source_hf_revision": "08a575f0546b2be57242997fd45f684d6814d5a9",
+    "renkin_commit": "45d35530d6578a1a136ed41d924b8cccb61ca881",
+    "chematic_version": "0.11.0",
+    "fingerprint_config": {
+      "fingerprint": "ecfp4",
+      "radius": 2,
+      "nbits": 2048,
+      "chirality": false
+    },
+    "train_reference_path": "data/chemical_space_coverage_diagnosis/train_reference_products.smi",
+    "train_reference_sha256": "sha256:4319055354db879abcb96a4627e3f47092ab04d05922bc6e5f350254eed9d964",
+    "test_labels_path": "data/chemical_space_coverage_diagnosis/test_target_labels.jsonl",
+    "test_labels_sha256": "sha256:58c640d868b981acf668b565b8cb9dd136e038d4abcfafb63975a814d1cb8c97",
+    "nearest_train_tanimoto_sha256": "sha256:67403e18dd9f0ee3b2c9c7bb3923e00252dc17d1ca5adeb90327e14e7b3cd934"
+  },
   "overall": {
     "n": 4903,
     "zero_positive_count": 1618,

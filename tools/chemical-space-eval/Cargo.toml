@@ -19,3 +19,4 @@ path = "src/main.rs"
 chematic = { version = "0.11", features = ["smiles", "fp"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.11"

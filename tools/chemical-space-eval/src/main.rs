@@ -16,8 +16,17 @@
 use chematic::fp::{BitVec2048, ecfp4, top_k_similar};
 use chematic::smiles;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
+
+/// Pinned HF revision for `bisectgroup/USPTO_50K` that
+/// `train_reference_products.smi` and `test_target_labels.jsonl` both
+/// ultimately derive from -- see
+/// `data/phase3a_reranker_ground_truth_audit/findings.md` for the full
+/// provenance chain. Not read from any file here since neither input
+/// carries it; recorded directly so the manifest is self-contained.
+const SOURCE_HF_REVISION: &str = "08a575f0546b2be57242997fd45f684d6814d5a9";
 
 fn arg_value(flag: &str) -> String {
     let args: Vec<String> = std::env::args().collect();
@@ -26,6 +35,30 @@ fn arg_value(flag: &str) -> String {
         .and_then(|i| args.get(i + 1))
         .cloned()
         .unwrap_or_else(|| panic!("missing required flag {flag}"))
+}
+
+/// sha2/digest 0.11's output type (`Array<u8, N>`, from the `hybrid-array`
+/// crate) no longer implements `LowerHex` the way `generic_array::
+/// GenericArray` did in 0.10 (same issue/fix as RENKIN's own
+/// `renkin::sha256_hex` -- not reused here to keep this crate RENKIN-free).
+fn sha256_file(path: &str) -> String {
+    let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+    let hex: String = Sha256::digest(&bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    format!("sha256:{hex}")
+}
+
+/// Best-effort -- `git rev-parse HEAD` if run from within a checkout, else
+/// `None` rather than failing the whole run over a provenance nicety.
+fn renkin_commit() -> Option<String> {
+    std::process::Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
 }
 
 #[derive(Deserialize)]
@@ -45,6 +78,9 @@ fn main() {
     let train_reference_path = arg_value("--train-reference");
     let test_labels_path = arg_value("--test-labels");
     let output_path = arg_value("--output");
+
+    let train_reference_sha256 = sha256_file(&train_reference_path);
+    let test_labels_sha256 = sha256_file(&test_labels_path);
 
     eprintln!("Loading TRAIN reference SMILES from {train_reference_path}...");
     let train_smiles: Vec<String> = BufReader::new(
@@ -111,11 +147,17 @@ fn main() {
         writeln!(out, "{}", serde_json::to_string(&out_row).unwrap()).unwrap();
     }
 
+    out.flush()
+        .unwrap_or_else(|e| panic!("flush {output_path}: {e}"));
+    drop(out);
+
     eprintln!(
         "Done. {} TEST targets scored, {} parse failures.",
         test_rows.len() - test_parse_failures,
         test_parse_failures
     );
+
+    let output_sha256 = sha256_file(&output_path);
 
     let manifest = serde_json::json!({
         "fingerprint": "ecfp4",
@@ -123,13 +165,19 @@ fn main() {
         "nbits": 2048,
         "chirality": false,
         "chematic_version": "0.11.0",
+        "renkin_commit": renkin_commit(),
+        "source_hf_revision": SOURCE_HF_REVISION,
         "train_reference_path": train_reference_path,
+        "train_reference_sha256": train_reference_sha256,
         "train_reference_count_total": train_smiles.len(),
         "train_reference_count_parsed": train_fps.len(),
         "train_reference_parse_failures": train_parse_failures,
         "test_labels_path": test_labels_path,
+        "test_labels_sha256": test_labels_sha256,
         "test_target_count_total": test_rows.len(),
         "test_target_parse_failures": test_parse_failures,
+        "output_path": output_path,
+        "output_sha256": output_sha256,
     });
     let manifest_path = format!("{output_path}.manifest.json");
     std::fs::write(

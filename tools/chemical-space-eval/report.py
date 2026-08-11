@@ -14,11 +14,20 @@ target_id. Pure glue -- no chemistry logic of its own.
 Usage:
     python3 tools/chemical-space-eval/report.py
 """
+import hashlib
 import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 DIAG = ROOT / "data" / "chemical_space_coverage_diagnosis"
+
+
+def sha256_file(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return f"sha256:{h.hexdigest()}"
 
 BINS = [
     ("near (>=0.80)", 0.80, 1.01),
@@ -34,8 +43,28 @@ def load_jsonl(path):
 
 
 def main():
-    labels = {r["target_id"]: r for r in load_jsonl(DIAG / "test_target_labels.jsonl")}
-    sims = {r["target_id"]: r for r in load_jsonl(DIAG / "nearest_train_tanimoto.jsonl")}
+    manifest = json.loads((DIAG / "nearest_train_tanimoto.jsonl.manifest.json").read_text())
+
+    # Integrity check: the non-committed raw inputs this report is built
+    # from must still match what tools/chemical-space-eval's binary hashed
+    # when it wrote them -- catches silent drift between a fingerprint run
+    # and a later report run (e.g. test_target_labels.jsonl regenerated
+    # with different data in between).
+    labels_path = DIAG / "test_target_labels.jsonl"
+    sims_path = DIAG / "nearest_train_tanimoto.jsonl"
+    actual_labels_sha = sha256_file(labels_path)
+    actual_sims_sha = sha256_file(sims_path)
+    assert actual_labels_sha == manifest["test_labels_sha256"], (
+        f"{labels_path} has changed since the fingerprint run: "
+        f"{actual_labels_sha} != manifest's {manifest['test_labels_sha256']}"
+    )
+    assert actual_sims_sha == manifest["output_sha256"], (
+        f"{sims_path} has changed since the fingerprint run: "
+        f"{actual_sims_sha} != manifest's {manifest['output_sha256']}"
+    )
+
+    labels = {r["target_id"]: r for r in load_jsonl(labels_path)}
+    sims = {r["target_id"]: r for r in load_jsonl(sims_path)}
     assert set(labels) == set(sims), (
         f"target_id set mismatch between labels ({len(labels)}) and similarities ({len(sims)})"
     )
@@ -86,6 +115,29 @@ def main():
                              "scripts/extract_templates.py extracts templates from by "
                              "default), 39,736 unique canonical structures",
         "fingerprint": "ECFP4 (chematic 0.11.0, radius=2, nbits=2048, no chirality)",
+        "provenance": {
+            "_note": (
+                "SHA-256 chain from this committed report back to the non-committed "
+                "raw inputs it was built from (see findings.md's 'Reproducing this' "
+                "to regenerate them) -- copied from "
+                "nearest_train_tanimoto.jsonl.manifest.json, verified to still match "
+                "the actual files on disk at report-generation time (see asserts above)."
+            ),
+            "source_hf_revision": manifest["source_hf_revision"],
+            "renkin_commit": manifest["renkin_commit"],
+            "chematic_version": manifest["chematic_version"],
+            "fingerprint_config": {
+                "fingerprint": manifest["fingerprint"],
+                "radius": manifest["radius"],
+                "nbits": manifest["nbits"],
+                "chirality": manifest["chirality"],
+            },
+            "train_reference_path": manifest["train_reference_path"],
+            "train_reference_sha256": manifest["train_reference_sha256"],
+            "test_labels_path": manifest["test_labels_path"],
+            "test_labels_sha256": manifest["test_labels_sha256"],
+            "nearest_train_tanimoto_sha256": manifest["output_sha256"],
+        },
         "overall": overall,
         "bins": report_bins,
     }

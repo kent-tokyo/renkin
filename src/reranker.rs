@@ -6,9 +6,13 @@
 //! `src/scorer.rs`'s `nn` module): both `LightGbmModel::from_path` and
 //! `RuntimeReranker::from_paths` load files via `std::fs`, unavailable on
 //! `wasm32-unknown-unknown` (this project's WASM target, see
-//! `.github/workflows/ci.yml`). No WASM/Python surface for the runtime
-//! reranker in its first integration -- CLI-only, matching the staged
-//! rollout the ring-context-policy flag also followed (see `src/main.rs`).
+//! `.github/workflows/ci.yml`). No WASM surface -- and none is possible
+//! without a `std::fs`-free model-loading path. A Python surface exists as
+//! of Issue #101's batteries-included follow-up: `src/python.rs`'s
+//! `find_routes_py` takes `reranker_model_path`/`reranker_freq_table_path`
+//! and calls straight into [`RuntimeReranker::from_paths`] below -- PyO3
+//! builds are native, so this module is available to them the same way it
+//! is to `src/main.rs`'s CLI.
 //!
 //! Two pieces:
 //!   - [`LightGbmModel`]: a from-scratch, pure-Rust reader/evaluator for

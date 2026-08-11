@@ -38,10 +38,14 @@ use crate::search::{SearchConfig, find_routes};
 ///         template ``frequency_table.json`` for the reranker. Default:
 ///         ``None``.
 ///
-///     Either reranker path missing, or the model failing to load, falls
-///     back to legacy ordering with a message printed to stderr -- never a
-///     hard error, matching the ``renkin`` CLI's ``--reranker-model``/
-///     ``--reranker-freq-table`` flags exactly.
+///     Passing only one of the two reranker paths, or the model failing to
+///     load, falls back to legacy ordering with a message printed to
+///     stderr -- never a hard error, matching the ``renkin`` CLI's
+///     ``--reranker-model``/``--reranker-freq-table`` flags exactly. When a
+///     reranker is configured (either path given), the JSON output gains a
+///     ``reranker_failures`` integer field -- ``0`` for a fully healthy
+///     run, nonzero if inference degraded mid-search; the field is absent
+///     entirely (not ``null``) when no reranker was configured.
 ///
 /// Returns:
 ///     str: JSON string with retrosynthesis routes.
@@ -153,7 +157,7 @@ pub fn find_routes_py(
     let (routes, stats) = find_routes(target, &env, &rules, &config)
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
-    let output = if routes.is_empty() {
+    let mut output = if routes.is_empty() {
         serde_json::json!({
             "target": target,
             "routes_found": 0,
@@ -167,6 +171,13 @@ pub fn find_routes_py(
             "routes": routes,
         })
     };
+    // Mirrors the `renkin` CLI's exact contract (src/main.rs) -- surfaced
+    // unconditionally whenever a reranker was configured, since a graceful
+    // mid-run degrade (never a hard error) has no other way to be detected
+    // by the caller.
+    if config.reranker.is_some() {
+        output["reranker_failures"] = serde_json::Value::from(stats.reranker_failures);
+    }
 
     serde_json::to_string(&output).map_err(|e| PyValueError::new_err(e.to_string()))
 }

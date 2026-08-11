@@ -4,15 +4,19 @@ a GitHub Release asset, verifying each file with SHA-256 checks against two
 committed manifests before use (Issue #101 -- "batteries-included
 reranker").
 
-model.txt and frequency_table.json are trained artifacts derived from
-USPTO-50k (see data/phase3e_reranker_training/findings.md); they are not
-committed to this repository (unlike the JSON reports next to them) and are
-not bundled into the crates.io/PyPI/npm packages -- they are attached as
-GitHub Release assets instead, downloaded on request, and SHA-256 verified.
-This keeps a research-provenance artifact of unclear upstream data licensing
-out of the MIT-licensed packages while still letting an ordinary user get a
-working reranker in one command, without running the training pipeline
-themselves.
+model.txt is a trained artifact derived from USPTO-50k (see
+data/phase3e_reranker_training/findings.md); it is not committed to this
+repository and is not bundled into the crates.io/PyPI/npm packages -- it is
+attached as a GitHub Release asset instead, downloaded on request, and
+SHA-256 verified. This keeps a research-provenance artifact of unclear
+upstream data licensing out of the MIT-licensed packages while still
+letting an ordinary user get a working reranker in one command, without
+running the training pipeline themselves. frequency_table.json (aggregate
+per-template frequency counts, not raw training data) IS already committed
+and bundled in packages -- this script re-fetches/re-verifies it too
+anyway, purely for a single consistent "both files verified together"
+command; it is not filling a distribution gap for that file the way it is
+for model.txt.
 
 Two manifests, two different things verified:
   - freeze_manifest.json: training-time artifact identity. model.txt's
@@ -22,9 +26,18 @@ Two manifests, two different things verified:
     `table` keys) -- read back from the file's own embedded "sha256"
     field rather than re-derived.
   - release_asset_manifest.json: release-asset identity (whole-file hash
-    of exactly what was uploaded). Needed for frequency_table.json since
-    freeze_manifest.json's entry there is not a whole-file hash and so
-    cannot by itself catch a wrong/corrupted/truncated download.
+    of exactly what was uploaded, plus the release_tag those hashes are
+    valid for). Needed for frequency_table.json since freeze_manifest.json's
+    entry there is not a whole-file hash and so cannot by itself catch a
+    wrong/corrupted/truncated download.
+
+`--version` defaults to release_asset_manifest.json's own `release_tag`,
+NOT to Cargo.toml's crate version -- those are independently-varying
+concepts (the crate version bumps on every release; the asset manifest
+only gets a new release_tag when its assets are actually re-uploaded, per
+its own immutability policy) and conflating them would break this script's
+default invocation on every ordinary version bump, long before any new
+release actually re-hosts these assets.
 
 This script does not create, modify, or upload to any GitHub Release --
 it only downloads and verifies assets that must already exist there.
@@ -69,22 +82,39 @@ def embedded_json_sha256(path):
     export script embeds the identical hash in the file's own top-level
     "sha256" field for exactly this reason -- read it back rather than
     re-deriving it (which would require importing train_reranker.py's
-    hashing internals here too)."""
+    hashing internals here too). Raises RuntimeError (not some other
+    exception type) on any malformed input, so callers only ever need to
+    catch one exception type."""
     try:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
-    except json.JSONDecodeError as e:
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
         raise RuntimeError(f"{path} is not valid JSON: {e}") from e
     if "sha256" not in data:
         raise RuntimeError(f"{path} has no top-level \"sha256\" field to verify")
     return data["sha256"]
 
 
+def load_json_manifest(path, label):
+    """Load a manifest JSON file, raising RuntimeError (not a raw
+    FileNotFoundError/JSONDecodeError traceback) on any failure."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except OSError as e:
+        raise RuntimeError(f"could not read {label} at {path}: {e}") from e
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        raise RuntimeError(f"{label} at {path} is not valid JSON: {e}") from e
+
+
 def manifest_lookup(manifest, dotted_key):
-    node = manifest
-    for part in dotted_key.split("."):
-        node = node[part]
-    return node
+    try:
+        node = manifest
+        for part in dotted_key.split("."):
+            node = node[part]
+        return node
+    except KeyError as e:
+        raise RuntimeError(f"manifest is missing expected key {dotted_key!r}") from e
 
 
 def build_checks(freeze_manifest, asset_manifest):
@@ -94,6 +124,12 @@ def build_checks(freeze_manifest, asset_manifest):
     module docstring for why frequency_table.json needs two different
     ones and model.txt only needs one.
     """
+    try:
+        frequency_table_asset_sha256 = asset_manifest["assets"]["frequency_table.json"]["sha256"]
+    except KeyError as e:
+        raise RuntimeError(
+            "release_asset_manifest.json is missing assets.\"frequency_table.json\".sha256"
+        ) from e
     return {
         "model.txt": [
             (
@@ -105,7 +141,7 @@ def build_checks(freeze_manifest, asset_manifest):
         "frequency_table.json": [
             (
                 "whole-file hash vs release_asset_manifest.json (download authenticity)",
-                asset_manifest["assets"]["frequency_table.json"]["sha256"],
+                frequency_table_asset_sha256,
                 sha256_of,
             ),
             (
@@ -123,7 +159,10 @@ def build_checks(freeze_manifest, asset_manifest):
 def check_asset_manifest_version(asset_manifest, version):
     """Raises RuntimeError if `asset_manifest` isn't pinned to `version` --
     per its own immutability policy, a new release's assets get a new
-    manifest entry rather than reusing an old one."""
+    manifest entry rather than reusing an old one. A no-op when `version`
+    was left at its default (asset_manifest's own release_tag) -- this
+    only ever fires when the caller passes an explicit --version that
+    doesn't match what this manifest's checksums were actually issued for."""
     pinned = asset_manifest.get("release_tag")
     if pinned != version:
         raise RuntimeError(
@@ -134,21 +173,6 @@ def check_asset_manifest_version(asset_manifest, version):
             "explicitly if you really mean to check a different release's "
             "assets against this manifest."
         )
-
-
-def version_from_cargo_toml(cargo_toml_path):
-    with open(cargo_toml_path, encoding="utf-8") as f:
-        in_package = False
-        for line in f:
-            stripped = line.strip()
-            if stripped == "[package]":
-                in_package = True
-                continue
-            if stripped.startswith("[") and stripped != "[package]":
-                in_package = False
-            if in_package and stripped.startswith("version"):
-                return "v" + stripped.split("=", 1)[1].strip().strip('"')
-    return None
 
 
 def fetch_one(url, dest_path):
@@ -176,7 +200,10 @@ def fetch_and_verify(filename, checks, repo, version, output_dir):
     """Download `filename`, run every (description, expected_sha256,
     verifier) in `checks` against it in order, return the verified path.
     Deletes the downloaded file and raises on the first failing check --
-    never returns a path that failed any check."""
+    never returns a path that failed any check, regardless of what
+    exception type a verifier raises (a corrupted download can fail in
+    ways other than a clean SHA-256 mismatch, e.g. invalid UTF-8 -- the
+    cleanup must not depend on which one)."""
     dest_path = os.path.join(output_dir, filename)
     url = f"https://github.com/{repo}/releases/download/{version}/{filename}"
     print(f"Fetching {filename} from {url} ...")
@@ -184,9 +211,14 @@ def fetch_and_verify(filename, checks, repo, version, output_dir):
     for description, expected_sha256, verifier in checks:
         try:
             actual_sha256 = verifier(dest_path)
-        except RuntimeError:
+        except Exception as e:
             os.remove(dest_path)
-            raise
+            if isinstance(e, RuntimeError):
+                raise
+            raise RuntimeError(
+                f"{filename} failed check ({description}) with an unexpected "
+                f"error: {e!r}. Deleted the downloaded file; NOT safe to use."
+            ) from e
         if actual_sha256 != expected_sha256:
             os.remove(dest_path)
             raise RuntimeError(
@@ -206,24 +238,25 @@ def main(argv=None):
     parser.add_argument(
         "--version",
         default=None,
-        help="Release tag, e.g. v0.23.0. Default: read from the committed "
-        "Cargo.toml's [package].version, prefixed with 'v'.",
+        help="Release tag, e.g. v0.22.0. Default: release_asset_manifest.json's "
+        "own release_tag -- the release its checksums are actually valid for "
+        "(deliberately NOT the crate's current Cargo.toml version, which is an "
+        "independently-varying number).",
     )
     parser.add_argument("--freeze-manifest", default=DEFAULT_FREEZE_MANIFEST)
     parser.add_argument("--asset-manifest", default=DEFAULT_ASSET_MANIFEST)
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
     args = parser.parse_args(argv)
 
-    version = args.version or version_from_cargo_toml(
-        os.path.join(REPO_ROOT, "Cargo.toml")
-    )
-    if version is None:
-        parser.error("could not read version from Cargo.toml; pass --version explicitly")
+    freeze_manifest = load_json_manifest(args.freeze_manifest, "freeze_manifest.json")
+    asset_manifest = load_json_manifest(args.asset_manifest, "release_asset_manifest.json")
 
-    with open(args.freeze_manifest, encoding="utf-8") as f:
-        freeze_manifest = json.load(f)
-    with open(args.asset_manifest, encoding="utf-8") as f:
-        asset_manifest = json.load(f)
+    version = args.version or asset_manifest.get("release_tag")
+    if version is None:
+        parser.error(
+            "release_asset_manifest.json has no release_tag and --version was "
+            "not given -- pass --version explicitly"
+        )
     check_asset_manifest_version(asset_manifest, version)
 
     os.makedirs(args.output_dir, exist_ok=True)

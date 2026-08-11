@@ -156,19 +156,98 @@ Candidate cardinality grows sub-linearly with template count (no
 explosion); dedup rate climbs steadily (more templates -> more redundant
 rediscovery of the same candidates, expected).
 
-### Stage 3: full VAL (4,931 groups)
+### Stage 3: full VAL (4,931 groups) -- final
 
-**[IN PROGRESS -- filled in once all 5 arms complete]**
+| templates (actual) | zero-positive | positive-present | recall | dedup rate | candidates | p50 / p95 | wall-clock |
+|---|---|---|---|---|---|---|---|
+| 500 | 34.0% | 66.0% | 66.0% | 18.6% | 135,641 | 26 / 51 | 418s |
+| 1,000 | 27.7% | 72.3% | 72.3% | 19.7% | 213,232 | 41 / 79 | 804s |
+| 2,000 | 23.4% | 76.6% | 76.6% | 24.8% | 256,048 | 49 / 93 | 1,855s |
+| 5,000 | 19.8% | 80.2% | 80.2% | 28.6% | 329,263 | 64 / 121 | 6,214s |
+| 9,979 | 17.6% | 82.4% | 82.4% | 31.6% | 434,912 | 84 / 159 | 11,604s |
 
-<!-- PHASE_A5_STAGE3_RESULTS_PLACEHOLDER -->
+No anomalies at any arm: `n_groups_zero_candidates` 1/0/0/0/0,
+`n_groups_target_id_mismatch` 14/14/14/14/14 (identical across every arm
+-- confirms these are target-canonicalization edge cases independent of
+template-set size, not something the scaling introduced),
+`n_groups_parse_failed` 0 throughout. Full machine-readable output:
+`data/phase_a5_template_scaling/full_val/summary.json`.
+
+**Saturation curve** (successive-arm deltas): 500->1,000 **+6.35pp**,
+1,000->2,000 **+4.30pp**, 2,000->5,000 **+3.57pp**, 5,000->9,979
+**+2.23pp**. Decelerating (expected -- diminishing returns from an
+ever-larger, ever-more-specific template pool) but **still clearly
+positive at the last step**, not flattened out. No sign of the "saturates
+by 2k, residual gap needs different template abstraction" pattern the
+original proposal flagged as the concerning alternative.
+
+**Primary result: 500->9,979 templates, zero-positive rate 34.0% ->
+17.6%, an absolute improvement of 16.4 percentage points.**
 
 ## Interpretation
 
-**[TODO once Stage 3 completes -- apply the pre-registered thresholds
-above to the 500->10,000 absolute zero-positive improvement, read the
-saturation-curve shape, and report the verdict mechanically. Do not adjust
-the thresholds after seeing the result.]**
+Applying the pre-registered thresholds (fixed before this run, not
+adjusted after seeing the result):
+
+> \>=10pp: **Phase B strong GO**
+
+16.4pp clears this decisively -- it is not a borderline call sitting near
+a threshold boundary. Template-diversity scaling is not a weak or
+ambiguous lever here: on VAL, simply extending the same frequency-ranked
+extraction from 500 to ~10,000 templates cuts the zero-positive rate by
+essentially half (34.0% -> 17.6%), with candidate cardinality growing
+sub-linearly (p50 26->84, a 3.2x increase for a 20x template increase)
+and no zero-candidate or parse-failure pathologies introduced at any
+scale.
+
+This directly resolves the ambiguity Phase A left open (see
+`data/chemical_space_coverage_diagnosis/findings.md`'s "What this does
+and does not support"): Phase A's whole-molecule-Tanimoto metric could
+rule out a *distance*-based Phase B rationale but could not distinguish
+"more templates would find the right local pattern" from "no template
+count helps without a different template shape." Phase A.5 measured the
+actual mechanism directly and it works -- the local
+reaction-center/disconnection-pattern-coverage mechanism Phase A's review
+round identified as the more plausible path for Phase B is exactly what
+this result is consistent with.
+
+The saturation curve's still-positive final delta (+2.23pp at the
+5,000->9,979 step, the smallest but not negligible) also argues against
+assuming diminishing returns have been exhausted by 10,000 -- the
+ceiling, if there is one, has not yet been located within the range
+tested here.
+
+dedup rate climbing steadily (18.6% -> 31.6%) confirms candidate.rs's
+existing merge step is doing real, increasing work as the template pool
+grows (more templates rediscovering the same candidate via different
+disconnection routes) -- an efficiency signal for implementation design,
+not a correctness concern.
 
 ## Recommendation
 
-**[TODO once Stage 3 completes.]**
+**Phase B (template-diversity scaling) is authorized to proceed as the
+next implementation phase**, per the pre-registered strong-GO threshold.
+This is a recommendation for the user's decision, not a unilateral
+green light to start implementation -- Phase A.5 was scoped as measurement
+only, and beginning Phase B's actual implementation is a new decision
+point.
+
+Suggested scope for a Phase B kickoff, informed by what this diagnosis
+already shows:
+- Target template count: the saturation curve is still rising at 9,979,
+  so the original "500->10,000" framing likely undersells the available
+  headroom -- consider measuring one or two points beyond 10,000
+  (e.g. 20,000, capped by USPTO-50k TRAIN's actual distinct-template
+  ceiling) before fixing a final production template-set size, rather
+  than assuming 10,000 is optimal just because it was the tested ceiling.
+- Candidate cardinality growth (p50 26->84) and dedup-rate growth
+  (18.6%->31.6%) both point at match-time and merge-time cost as the
+  practical constraint on how large a template set is workable in
+  production, not correctness -- worth profiling before committing to a
+  specific final size, independent of the coverage curve itself.
+- The formal TEST 4,903-target corpus should be used for exactly one
+  final confirmation run once a production template-set size is chosen,
+  not for iterative tuning (per the Scope section above -- it has now
+  been read four times across the reranker gate, Phase A, Phase A review,
+  and this note; further exploratory use erodes its value as a held-out
+  benchmark).

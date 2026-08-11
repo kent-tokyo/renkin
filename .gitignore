@@ -202,3 +202,4 @@ data/phase_a5_template_scaling/*/*_pool.jsonl
 data/phase_a5_template_scaling/*/*_groups.jsonl
 data/phase_a5_template_scaling/*/*_pool_gen.log
 data/phase_a5_template_scaling/chunks/
+data/phase_a5_template_scaling/chunks_fine/

@@ -1,0 +1,306 @@
+{
+  "candidate_jsonl_sha256": "sha256:b5cd71661f88f21a5c645cf53c2ab48386781688076347e9cd407edcb3447bdb",
+  "candidates_per_group_max": 312,
+  "candidates_per_group_p50": 80,
+  "candidates_per_group_p90": 143,
+  "candidates_per_group_p95": 156,
+  "groups_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_00_groups.jsonl",
+  "manifest_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_00_manifest.json",
+  "n_candidate_rows": 44017,
+  "n_groups_parse_failed": 0,
+  "n_groups_requested": 500,
+  "n_groups_target_id_mismatch": 0,
+  "n_groups_zero_candidates": 0,
+  "pool_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_00_pool.jsonl",
+  "target_group_index_sha256": "sha256:1c79a0a2dcfbdbb6215801f3b8d9b78093b95d97900ffb18400aead666a4359a",
+  "wall_clock_seconds": 1382.08221225
+}
+
+{
+  "candidate_jsonl_sha256": "sha256:4ac8af1bf5d787831593301ae3aabc4dbc8ddc4482835971a9fe05ae9c50a4e8",
+  "candidates_per_group_max": 287,
+  "candidates_per_group_p50": 87,
+  "candidates_per_group_p90": 138,
+  "candidates_per_group_p95": 152,
+  "groups_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_01_groups.jsonl",
+  "manifest_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_01_manifest.json",
+  "n_candidate_rows": 44796,
+  "n_groups_parse_failed": 0,
+  "n_groups_requested": 500,
+  "n_groups_target_id_mismatch": 3,
+  "n_groups_zero_candidates": 0,
+  "pool_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_01_pool.jsonl",
+  "target_group_index_sha256": "sha256:75756d93cbaf4e1be57c8fb06b62a78b3aa27e4baa709e544b083b5958d7e10b",
+  "wall_clock_seconds": 1377.999125375
+}
+
+{
+  "candidate_jsonl_sha256": "sha256:d31715a3a585d998f6288b070a7ec7207842bd0956107aae50d2738147c17133",
+  "candidates_per_group_max": 241,
+  "candidates_per_group_p50": 85,
+  "candidates_per_group_p90": 144,
+  "candidates_per_group_p95": 160,
+  "groups_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_02_groups.jsonl",
+  "manifest_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_02_manifest.json",
+  "n_candidate_rows": 44021,
+  "n_groups_parse_failed": 0,
+  "n_groups_requested": 500,
+  "n_groups_target_id_mismatch": 1,
+  "n_groups_zero_candidates": 0,
+  "pool_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_02_pool.jsonl",
+  "target_group_index_sha256": "sha256:b66d2bd8b1872f347585e9efff8481f5ef214ce7d63a70fbb37824e80719ba2a",
+  "wall_clock_seconds": 1369.484192834
+}
+
+{
+  "candidate_jsonl_sha256": "sha256:f03f8ad24d6f4e7af6d6bf436c74735feb3ca1a8339bf8bd566463182537101c",
+  "candidates_per_group_max": 184,
+  "candidates_per_group_p50": 85,
+  "candidates_per_group_p90": 134,
+  "candidates_per_group_p95": 155,
+  "groups_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_03_0_groups.jsonl",
+  "manifest_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_03_0_manifest.json",
+  "n_candidate_rows": 21670,
+  "n_groups_parse_failed": 0,
+  "n_groups_requested": 250,
+  "n_groups_target_id_mismatch": 1,
+  "n_groups_zero_candidates": 0,
+  "pool_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_03_0_pool.jsonl",
+  "target_group_index_sha256": "sha256:99976ebfe13ece8a02cae29bcf95d4a78f00c38793a1833fdc62e8f70a76497f",
+  "wall_clock_seconds": 563.225070875
+}
+
+{
+  "candidate_jsonl_sha256": "sha256:5919b97793394feaaf43d4eebd90570d498fad7a5c653dffef43c0622968f589",
+  "candidates_per_group_max": 287,
+  "candidates_per_group_p50": 81,
+  "candidates_per_group_p90": 132,
+  "candidates_per_group_p95": 154,
+  "groups_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_03_1_groups.jsonl",
+  "manifest_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_03_1_manifest.json",
+  "n_candidate_rows": 21163,
+  "n_groups_parse_failed": 0,
+  "n_groups_requested": 250,
+  "n_groups_target_id_mismatch": 0,
+  "n_groups_zero_candidates": 0,
+  "pool_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_03_1_pool.jsonl",
+  "target_group_index_sha256": "sha256:b5196f1d3390fc115b109cfb5c1aebaecbe8f28b89a5c421c415a7e0bac97a5e",
+  "wall_clock_seconds": 618.875532584
+}
+
+{
+  "candidate_jsonl_sha256": "sha256:d894507d7d349671b79395c8e109be8d0cc7f98e6e574238d8dbf2e33759c8eb",
+  "candidates_per_group_max": 259,
+  "candidates_per_group_p50": 86,
+  "candidates_per_group_p90": 145,
+  "candidates_per_group_p95": 159,
+  "groups_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_04_0_groups.jsonl",
+  "manifest_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_04_0_manifest.json",
+  "n_candidate_rows": 22885,
+  "n_groups_parse_failed": 0,
+  "n_groups_requested": 250,
+  "n_groups_target_id_mismatch": 1,
+  "n_groups_zero_candidates": 0,
+  "pool_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_04_0_pool.jsonl",
+  "target_group_index_sha256": "sha256:e99474abc967cec81282ad859ca8458e24d0e5f0b633cfe557985e0ae1672cf6",
+  "wall_clock_seconds": 608.514283625
+}
+
+{
+  "candidate_jsonl_sha256": "sha256:a9e7a59dffe335b86114d63a7a1ba93b85369db552cf7d642fa48668d1afcce7",
+  "candidates_per_group_max": 213,
+  "candidates_per_group_p50": 85,
+  "candidates_per_group_p90": 142,
+  "candidates_per_group_p95": 165,
+  "groups_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_04_1_groups.jsonl",
+  "manifest_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_04_1_manifest.json",
+  "n_candidate_rows": 22027,
+  "n_groups_parse_failed": 0,
+  "n_groups_requested": 250,
+  "n_groups_target_id_mismatch": 1,
+  "n_groups_zero_candidates": 0,
+  "pool_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_04_1_pool.jsonl",
+  "target_group_index_sha256": "sha256:a3371097212a68702ce605a13828e7702a8b625f25942694a57b8e20a5b155aa",
+  "wall_clock_seconds": 561.90107525
+}
+
+{
+  "candidate_jsonl_sha256": "sha256:61b89c8b66618ad5796319a0f7b85bd684565ec488521e8b5144fc2d3195f3c7",
+  "candidates_per_group_max": 217,
+  "candidates_per_group_p50": 84,
+  "candidates_per_group_p90": 141,
+  "candidates_per_group_p95": 164,
+  "groups_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_05_0_groups.jsonl",
+  "manifest_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_05_0_manifest.json",
+  "n_candidate_rows": 21680,
+  "n_groups_parse_failed": 0,
+  "n_groups_requested": 250,
+  "n_groups_target_id_mismatch": 1,
+  "n_groups_zero_candidates": 0,
+  "pool_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_05_0_pool.jsonl",
+  "target_group_index_sha256": "sha256:2583b30c8bb11e0c9a4c2c9184aef256a6750832816871e4313b95dbcacbb9f5",
+  "wall_clock_seconds": 657.884061416
+}
+
+{
+  "candidate_jsonl_sha256": "sha256:f6cf4681dee222cb7ed3cff0ef0c0357ae35e28123930912c67db0f8f441d35a",
+  "candidates_per_group_max": 408,
+  "candidates_per_group_p50": 83,
+  "candidates_per_group_p90": 143,
+  "candidates_per_group_p95": 158,
+  "groups_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_05_1_groups.jsonl",
+  "manifest_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_05_1_manifest.json",
+  "n_candidate_rows": 22651,
+  "n_groups_parse_failed": 0,
+  "n_groups_requested": 250,
+  "n_groups_target_id_mismatch": 0,
+  "n_groups_zero_candidates": 0,
+  "pool_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_05_1_pool.jsonl",
+  "target_group_index_sha256": "sha256:a5c07dbdc60b3716ecf33811b211fe4cbc1003fe7ad6a5032da74f50f6541a7f",
+  "wall_clock_seconds": 658.682461459
+}
+
+{
+  "candidate_jsonl_sha256": "sha256:c116118fd6e28828ba67edb0914fef6532aa567d0a92d412705a5763c12fb7b6",
+  "candidates_per_group_max": 221,
+  "candidates_per_group_p50": 81,
+  "candidates_per_group_p90": 137,
+  "candidates_per_group_p95": 154,
+  "groups_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_06_0_groups.jsonl",
+  "manifest_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_06_0_manifest.json",
+  "n_candidate_rows": 21264,
+  "n_groups_parse_failed": 0,
+  "n_groups_requested": 250,
+  "n_groups_target_id_mismatch": 3,
+  "n_groups_zero_candidates": 0,
+  "pool_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_06_0_pool.jsonl",
+  "target_group_index_sha256": "sha256:74aebf32682f0cd51b2e400f644166a3e2c155c6c562cec37e838e360ea89c44",
+  "wall_clock_seconds": 448.686504333
+}
+
+{
+  "candidate_jsonl_sha256": "sha256:aa797a1c47db52add860f81c7b86d00e35a0748e486712aa7d82e92ede494d9a",
+  "candidates_per_group_max": 246,
+  "candidates_per_group_p50": 83,
+  "candidates_per_group_p90": 140,
+  "candidates_per_group_p95": 166,
+  "groups_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_06_1_groups.jsonl",
+  "manifest_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_06_1_manifest.json",
+  "n_candidate_rows": 21845,
+  "n_groups_parse_failed": 0,
+  "n_groups_requested": 250,
+  "n_groups_target_id_mismatch": 0,
+  "n_groups_zero_candidates": 0,
+  "pool_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_06_1_pool.jsonl",
+  "target_group_index_sha256": "sha256:9a98398827b6dadd82bdc87d09d61032382af2f1f6e5d3c0118f4443e88d4f5a",
+  "wall_clock_seconds": 500.899031542
+}
+
+{
+  "candidate_jsonl_sha256": "sha256:970696bdd25d161317493eabfc95b2b0ff0eff58d3f89b18fa44970fe1e31538",
+  "candidates_per_group_max": 222,
+  "candidates_per_group_p50": 86,
+  "candidates_per_group_p90": 139,
+  "candidates_per_group_p95": 158,
+  "groups_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_07_0_groups.jsonl",
+  "manifest_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_07_0_manifest.json",
+  "n_candidate_rows": 22493,
+  "n_groups_parse_failed": 0,
+  "n_groups_requested": 250,
+  "n_groups_target_id_mismatch": 0,
+  "n_groups_zero_candidates": 0,
+  "pool_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_07_0_pool.jsonl",
+  "target_group_index_sha256": "sha256:52012c2d32f6521530a767c95d98898a0da87ae6fce6d3c7f802416540af5428",
+  "wall_clock_seconds": 457.134668
+}
+
+{
+  "candidate_jsonl_sha256": "sha256:756f7a48705e36831588172ac12a274add3f7c35a3a7e7d3811a2737ebb1576e",
+  "candidates_per_group_max": 208,
+  "candidates_per_group_p50": 81,
+  "candidates_per_group_p90": 139,
+  "candidates_per_group_p95": 156,
+  "groups_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_07_1_groups.jsonl",
+  "manifest_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_07_1_manifest.json",
+  "n_candidate_rows": 21698,
+  "n_groups_parse_failed": 0,
+  "n_groups_requested": 250,
+  "n_groups_target_id_mismatch": 0,
+  "n_groups_zero_candidates": 0,
+  "pool_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_07_1_pool.jsonl",
+  "target_group_index_sha256": "sha256:92df780a444681af8a1d3ef1bbce8c7ef59e6388f823d0d4974fcf7ddbbd377d",
+  "wall_clock_seconds": 572.200086333
+}
+
+{
+  "candidate_jsonl_sha256": "sha256:98e36c7f327ba8a51ea29861fcf10baf1e43b35a7534ffcc4eb912ed0fa1addd",
+  "candidates_per_group_max": 240,
+  "candidates_per_group_p50": 83,
+  "candidates_per_group_p90": 139,
+  "candidates_per_group_p95": 171,
+  "groups_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_08_0_groups.jsonl",
+  "manifest_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_08_0_manifest.json",
+  "n_candidate_rows": 22088,
+  "n_groups_parse_failed": 0,
+  "n_groups_requested": 250,
+  "n_groups_target_id_mismatch": 0,
+  "n_groups_zero_candidates": 0,
+  "pool_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_08_0_pool.jsonl",
+  "target_group_index_sha256": "sha256:e87faed788b8f850f6d4ce032b6ac8c739b47072fdaf08764d14c0ffc45bdfe0",
+  "wall_clock_seconds": 518.550948583
+}
+
+{
+  "candidate_jsonl_sha256": "sha256:274e3407bca804c164ff9a7761c07bc21f36182ed0cbf8f876c56ef3315c86b5",
+  "candidates_per_group_max": 241,
+  "candidates_per_group_p50": 85,
+  "candidates_per_group_p90": 150,
+  "candidates_per_group_p95": 179,
+  "groups_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_08_1_groups.jsonl",
+  "manifest_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_08_1_manifest.json",
+  "n_candidate_rows": 22887,
+  "n_groups_parse_failed": 0,
+  "n_groups_requested": 250,
+  "n_groups_target_id_mismatch": 1,
+  "n_groups_zero_candidates": 0,
+  "pool_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_08_1_pool.jsonl",
+  "target_group_index_sha256": "sha256:faea370bffe31b2d7532428b4566618ef69a8abbaa327f002c7aca172b194c3c",
+  "wall_clock_seconds": 525.372490292
+}
+
+{
+  "candidate_jsonl_sha256": "sha256:aec0c607a26907fcf2cee4ebea97d59d10c729a494b59f53d9bf1e427f4b5dc5",
+  "candidates_per_group_max": 222,
+  "candidates_per_group_p50": 83,
+  "candidates_per_group_p90": 136,
+  "candidates_per_group_p95": 164,
+  "groups_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_09_0_groups.jsonl",
+  "manifest_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_09_0_manifest.json",
+  "n_candidate_rows": 22160,
+  "n_groups_parse_failed": 0,
+  "n_groups_requested": 250,
+  "n_groups_target_id_mismatch": 2,
+  "n_groups_zero_candidates": 0,
+  "pool_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_09_0_pool.jsonl",
+  "target_group_index_sha256": "sha256:2506f911a1c41797400e5fb12215d27c4f206beed33076f7d781082961a1357a",
+  "wall_clock_seconds": 466.288250417
+}
+
+{
+  "candidate_jsonl_sha256": "sha256:811446f1394f9eb8c6d0be04a53e8c46b18b168ac9cdfc94ccb0a01e83a5a80c",
+  "candidates_per_group_max": 238,
+  "candidates_per_group_p50": 86,
+  "candidates_per_group_p90": 131,
+  "candidates_per_group_p95": 140,
+  "groups_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_09_1_groups.jsonl",
+  "manifest_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_09_1_manifest.json",
+  "n_candidate_rows": 15567,
+  "n_groups_parse_failed": 0,
+  "n_groups_requested": 181,
+  "n_groups_target_id_mismatch": 0,
+  "n_groups_zero_candidates": 0,
+  "pool_output": "data/phase_a5_template_scaling/full_val/10000_val_groups_09_1_pool.jsonl",
+  "target_group_index_sha256": "sha256:4a404f0351af02ba684b649ba02dee0025e051ab121a09043c95240c3eb56aa7",
+  "wall_clock_seconds": 316.677944167
+}
+

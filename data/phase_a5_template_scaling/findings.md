@@ -212,10 +212,22 @@ round identified as the more plausible path for Phase B is exactly what
 this result is consistent with.
 
 The saturation curve's still-positive final delta (+2.23pp at the
-5,000->9,979 step, the smallest but not negligible) also argues against
-assuming diminishing returns have been exhausted by 10,000 -- the
-ceiling, if there is one, has not yet been located within the range
-tested here.
+5,000->9,979 step, the smallest but not negligible) shows the
+coverage-return curve had not flattened out by the time it hit 9,979 --
+but 9,979 is not an arbitrarily-chosen stopping point on an open-ended
+curve. It is USPTO-50k TRAIN's actual distinct-simplified-template
+vocabulary ceiling under the current extraction method (see Provenance
+above): `--top 10,000` returned every template that method can produce
+from this corpus, no more exist to request. The correct reading is
+**"the coverage-return curve was still improving at the point it hit
+the current TRAIN x extraction-method's vocabulary ceiling, not that
+returns had been exhausted before that ceiling was reached."** Whether
+there is headroom *beyond* that ceiling is a different, unanswered
+question -- it would require a different corpus (more/different TRAIN
+reactions) or a different template-abstraction method (rdchiral's
+current simplification is not the only way to derive templates), either
+of which is a separate experiment, not a rerun of this one with a larger
+`--top`.
 
 dedup rate climbing steadily (18.6% -> 31.6%) confirms candidate.rs's
 existing merge step is doing real, increasing work as the template pool
@@ -225,29 +237,70 @@ not a correctness concern.
 
 ## Recommendation
 
-**Phase B (template-diversity scaling) is authorized to proceed as the
-next implementation phase**, per the pre-registered strong-GO threshold.
-This is a recommendation for the user's decision, not a unilateral
-green light to start implementation -- Phase A.5 was scoped as measurement
-only, and beginning Phase B's actual implementation is a new decision
-point.
+Two separate verdicts, deliberately not collapsed into one:
 
-Suggested scope for a Phase B kickoff, informed by what this diagnosis
-already shows:
-- Target template count: the saturation curve is still rising at 9,979,
-  so the original "500->10,000" framing likely undersells the available
-  headroom -- consider measuring one or two points beyond 10,000
-  (e.g. 20,000, capped by USPTO-50k TRAIN's actual distinct-template
-  ceiling) before fixing a final production template-set size, rather
-  than assuming 10,000 is optimal just because it was the tested ceiling.
-- Candidate cardinality growth (p50 26->84) and dedup-rate growth
-  (18.6%->31.6%) both point at match-time and merge-time cost as the
-  practical constraint on how large a template set is workable in
-  production, not correctness -- worth profiling before committing to a
-  specific final size, independent of the coverage curve itself.
-- The formal TEST 4,903-target corpus should be used for exactly one
-  final confirmation run once a production template-set size is chosen,
-  not for iterative tuning (per the Scope section above -- it has now
-  been read four times across the reranker gate, Phase A, Phase A review,
-  and this note; further exploratory use erodes its value as a held-out
-  benchmark).
+**Scientific verdict: Phase B strong GO.** Template-diversity scaling, as
+a *mechanism*, is confirmed to work and to work strongly (16.4pp
+absolute, clears the pre-registered >=10pp bar with room to spare). This
+is the answer to the question Phase A.5 was designed to measure, and it
+is settled -- don't re-run or re-litigate it.
+
+**Production verdict: NOT decided.** Coverage improving does not by
+itself mean shipping 9,979 templates as the new default is the right
+call. Generation cost scales far faster than coverage benefit:
+
+| | 500 templates | 9,979 templates | ratio |
+|---|---|---|---|
+| candidates/group (p50) | 26 | 84 | **3.2x** (sub-linear) |
+| generation wall-clock, full VAL | 418s | 11,604s | ~27.8x |
+| generation wall-clock, 500-target (single-shot, directly comparable) | 48.2s | 1,467.2s | ~30.4x |
+
+(The full-VAL ratio is from summed per-chunk wall-clock time across the
+9,979-template arm's 17 chunks, not one continuous single-shot run --
+see "Chunked execution" above -- so the 500-target row, where both sides
+are single, uninterrupted `renkin-pool-gen` invocations, is the cleaner
+apples-to-apples comparison; both land in the same ~28-30x range
+regardless.)
+
+Candidate cardinality staying sub-linear means "no candidate explosion"
+holds, but **that is a correctness/memory observation, not a cost
+one** -- generation latency growing ~9x faster than candidate count
+means most of that 500->9,979 wall-clock increase is match-time (more
+templates attempted per target, most producing nothing), not
+downstream merge/write volume. Whether that cost is acceptable in
+production route search (called per search-tree node, not once per
+target the way this diagnosis ran it) is unmeasured and cannot be waved
+away by the coverage result alone.
+
+**Next: Phase B.1 -- coverage/cost frontier optimization (recorded as a
+candidate, not started).** Not a move to Phase C -- Phase B's mechanism
+is confirmed. The open question is *which* template count to actually
+ship, chosen by coverage-gain-per-compute-unit rather than "biggest
+tested size wins":
+
+- Compute coverage gain per unit of generation cost at each already-
+  measured point (500/1,000/2,000/5,000/9,979) using this run's own
+  numbers -- no new full-VAL runs needed for this part.
+- **5,000 is a plausible sweet-spot candidate worth a dedicated
+  comparison against 9,979**: the marginal cost/benefit shape changes
+  sharply at this point. 500->5,000 buys -14.2pp coverage for a ~14.8x
+  generation-cost increase (both Stage 2 single-shot and full-VAL
+  agree); 5,000->9,979 buys only another -2.2pp for a further ~1.9-2.1x
+  cost increase on top of that. The last third of the tested template
+  range delivers a small fraction of the total coverage gain at a
+  proportionally larger cost step than what came before it -- exactly
+  the pattern worth checking whether it holds up as a real production
+  trade-off, not assumed from these two ratios alone. Do not default to
+  5,000 without running this comparison end-to-end -- it is a candidate
+  to test, not a conclusion.
+- If match-time (not merge/write) is confirmed as the dominant cost via
+  profiling, that points at template-retrieval/prefiltering optimization
+  (the existing "template retrieval index (element bitmask + bond-center
+  prefilter)" in-progress ROADMAP item) as directly relevant to making a
+  larger template count production-viable, independent of which count is
+  ultimately chosen.
+- Only once a production template count is frozen from this analysis:
+  one final formal-TEST route-search gate run to confirm the VAL-measured
+  coverage gain survives into actual route-search outcomes (not just
+  candidate-pool presence) -- per Scope above, formal TEST stays reserved
+  for exactly this one confirmation, not iterative use.

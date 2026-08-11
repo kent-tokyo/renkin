@@ -23,6 +23,7 @@ __pycache__/
 .env
 AGENTS.md
 lessons.md
+ROADMAP.md
 tasks/todo.md
 # `tasks/*` (not `tasks/`) deliberately: a trailing-slash directory pattern
 # excludes the directory itself, and git cannot re-include a file whose

@@ -1,6 +1,10 @@
 # ---- Rust ----
 /target/
 Cargo.lock
+# tools/chemical-space-eval is a deliberately separate nested [workspace]
+# (see its own Cargo.toml) -- Cargo.lock above already matches it
+# (unanchored), but /target/ is root-anchored and misses its own build dir.
+tools/chemical-space-eval/target/
 
 # ---- WASM build output ----
 /pkg/
@@ -174,3 +178,14 @@ data/phase3e_reranker_training/*
 # check), not a local dev artifact -- tracked despite the blanket
 # exclusion above, same rationale as the tasks/phase31_*/phase32_* exceptions.
 !data/phase3e_reranker_training/release_asset_manifest.json
+
+# Chemical Space Coverage Diagnosis Phase A PoC: the large per-target JSONL/
+# SMILES intermediates are mechanically regenerable (see
+# data/chemical_space_coverage_diagnosis/findings.md's "Reproducing this"
+# section) -- findings.md itself plus the small aggregate report and run
+# manifest are the durable record, same `dir/*` + `!exceptions` pattern as
+# tasks/* and data/phase3e_reranker_training/* above.
+data/chemical_space_coverage_diagnosis/*
+!data/chemical_space_coverage_diagnosis/findings.md
+!data/chemical_space_coverage_diagnosis/coverage_by_chemical_space_report.json
+!data/chemical_space_coverage_diagnosis/nearest_train_tanimoto.jsonl.manifest.json

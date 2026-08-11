@@ -1,0 +1,14 @@
+{
+  "chematic_version": "0.11.0",
+  "chirality": false,
+  "fingerprint": "ecfp4",
+  "nbits": 2048,
+  "radius": 2,
+  "test_labels_path": "data/chemical_space_coverage_diagnosis/test_target_labels.jsonl",
+  "test_target_count_total": 4903,
+  "test_target_parse_failures": 0,
+  "train_reference_count_parsed": 39736,
+  "train_reference_count_total": 39736,
+  "train_reference_parse_failures": 0,
+  "train_reference_path": "data/chemical_space_coverage_diagnosis/train_reference_products.smi"
+}

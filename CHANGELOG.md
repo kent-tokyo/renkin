@@ -8,6 +8,10 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Python reranker exposure** ([#101](https://github.com/kent-tokyo/renkin/issues/101)) — `find_routes()` gains `reranker_model_path`/`reranker_freq_table_path`, mirroring the `renkin` CLI's `--reranker-model`/`--reranker-freq-table` flags exactly: a missing/mismatched pair or a load failure falls back to legacy ordering with a stderr warning, never a hard error. Closes v0.22.0's disclosed gap where the reranker had no Python surface at all.
+- **`scripts/fetch_reranker_model.py`** ([#101](https://github.com/kent-tokyo/renkin/issues/101)) — downloads the frozen `model.txt`/`frequency_table.json` from a GitHub Release asset and verifies each against the committed `freeze_manifest.json` before use (whole-file SHA-256 for `model.txt`; `frequency_table.json`'s manifest entry is a hash of its inner `table` data, not the whole file, so this reads and checks the file's own embedded `sha256` field instead — verified against the real committed artifacts, not just synthetic test bytes). No new dependency: shells out to `curl`, matching this repo's existing `scripts/fetch_chembl_approved.py` convention. Model/table are deliberately not bundled into the crates.io/PyPI/npm packages themselves — their USPTO-50k training data's license is undocumented upstream (see `docs/guides/open-source-retrosynthesis-comparison.md`'s "Known gaps") — so this script is the "batteries-included" path instead: one command, downloaded from a versioned release asset with cryptographic provenance, rather than silently bundling a research-provenance artifact into an MIT-licensed package. Not yet usable end-to-end: requires a release to actually have these two assets attached, which has not happened yet.
+
 ## [0.22.0] — 2026-08-11
 
 ### Added

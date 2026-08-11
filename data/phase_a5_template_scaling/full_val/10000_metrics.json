@@ -1,0 +1,27 @@
+{
+  "arm_label": "10000",
+  "unlabeled_groups_excluded": 0,
+  "group_count": 4931,
+  "target_count": 4924,
+  "zero_positive_count": 867,
+  "zero_positive_rate": 0.17582640438045022,
+  "positive_present_rate": 0.8241735956195497,
+  "ground_truth_precursor_recall_target_level": 0.8241267262388302,
+  "dedup_rate": 0.31579526969413796,
+  "total_candidate_count": 434912,
+  "positive_candidate_count": 4064,
+  "pool_gen_summary": {
+    "n_groups_requested": 4931,
+    "n_groups_parse_failed": 0,
+    "n_groups_target_id_mismatch": 14,
+    "n_groups_zero_candidates": 0,
+    "n_candidate_rows": 434912,
+    "candidates_per_group_p50": 84,
+    "candidates_per_group_p90": 141,
+    "candidates_per_group_p95": 159,
+    "candidates_per_group_max": 408,
+    "wall_clock_seconds": 11604.457939335,
+    "chunked": true,
+    "n_chunks": 17
+  }
+}

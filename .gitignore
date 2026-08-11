@@ -189,3 +189,17 @@ data/chemical_space_coverage_diagnosis/*
 !data/chemical_space_coverage_diagnosis/findings.md
 !data/chemical_space_coverage_diagnosis/coverage_by_chemical_space_report.json
 !data/chemical_space_coverage_diagnosis/nearest_train_tanimoto.jsonl.manifest.json
+
+# Phase A.5 (candidate-generation coverage program): template-count
+# scaling diagnosis on VAL. Large regenerable intermediates excluded
+# directly by pattern (no dir/*-plus-exceptions needed here, since the
+# excluded/kept file kinds are already distinguishable by suffix) -- small
+# metrics/manifest/summary JSON and the frozen nested template .smi files
+# (durable reproducibility record, since --top N re-extraction depends on
+# the script version at run time) stay tracked. chunks/ is fully
+# regenerable from reranker_groups_uspto50k_val.jsonl via `split`.
+data/phase_a5_template_scaling/*/*_pool.jsonl
+data/phase_a5_template_scaling/*/*_groups.jsonl
+data/phase_a5_template_scaling/*/*_pool_gen.log
+data/phase_a5_template_scaling/chunks/
+data/phase_a5_template_scaling/chunks_fine/

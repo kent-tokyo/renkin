@@ -146,8 +146,10 @@ data/comparison/*.hdf5
 data/comparison/shared_stock/*.hdf5
 # Raw per-target adapter stderr logs for the 100-target feasibility round --
 # progress noise, not a deliverable (the JSONL rows, aggregate JSON, and
-# aggregate Markdown reports next to them ARE committed).
-data/comparison/results_*/*.log
+# aggregate Markdown reports next to them ARE committed). `**/*.log` (not
+# `*/*.log`) since later arm/mode sweeps (e.g. results_500) nest logs one
+# directory deeper (results_500/<arm>/run.log), which */*.log misses.
+data/comparison/results_*/**/*.log
 .venv-compare-66/
 
 # ---- Claude Code internal files ----

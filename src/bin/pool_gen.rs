@@ -29,7 +29,9 @@
 //!       --manifest-output data/manifest_test_100.json \
 //!       --limit 100
 
-use renkin::candidate::{CandidateProposalContext, ProposalConfig};
+use renkin::candidate::{
+    CandidateProposalContext, ProposalConfig, propose_phase_nanos, reset_propose_phase_nanos,
+};
 use renkin::chem_env::{load_rules_from_file, mol_from_smiles};
 use renkin::pool_export::{
     PoolProvenance, build_manifest, candidate_rows_for_pool, target_pool_record_for_failure,
@@ -114,6 +116,14 @@ fn percentile(sorted: &[usize], pct: f64) -> usize {
     sorted[idx.min(sorted.len() - 1)]
 }
 
+fn percentile_f64(sorted: &[f64], pct: f64) -> f64 {
+    if sorted.is_empty() {
+        return 0.0;
+    }
+    let idx = ((sorted.len() - 1) as f64 * pct).round() as usize;
+    sorted[idx.min(sorted.len() - 1)]
+}
+
 fn main() {
     let start = Instant::now();
 
@@ -148,6 +158,7 @@ fn main() {
     let config = ProposalConfig::default();
     let templates_by_id = renkin::candidate::index_rules_by_template_id(&rules)
         .expect("rules must have consistent template_id -> rule mapping");
+    reset_propose_phase_nanos();
 
     let mut candidate_rows = Vec::new();
     let mut group_records = Vec::new();
@@ -155,6 +166,11 @@ fn main() {
     let mut n_parse_failed = 0usize;
     let mut n_zero_candidate = 0usize;
     let mut n_target_id_mismatch = 0usize;
+    // Per-target propose_one_step wall-clock, for p50/p95 proposal-cost
+    // reporting (Phase B.1 speed gate) -- driver-level timing, not gated
+    // behind perf-instrumentation, since this loop is a one-shot CLI tool,
+    // not the search hot path.
+    let mut per_target_seconds: Vec<f64> = Vec::new();
 
     for (i, g) in group_inputs.iter().enumerate() {
         if i % 500 == 0 && i > 0 {
@@ -180,33 +196,40 @@ fn main() {
                 n_parse_failed += 1;
                 group_records.push(target_pool_record_for_failure(&g.group_id, &g.target_id));
             }
-            Ok(target_mol) => match ctx.propose_one_step(&g.group_id, &g.target_id, &config) {
-                Err(e) => {
-                    n_parse_failed += 1;
-                    eprintln!("  {}: propose_one_step error: {e}", g.group_id);
-                    group_records.push(target_pool_record_for_failure(&g.group_id, &g.target_id));
-                }
-                Ok(pool) if pool.target_id != g.target_id => {
-                    n_target_id_mismatch += 1;
-                    eprintln!(
-                        "  {}: target_id mismatch -- requested {:?}, propose_one_step derived {:?}",
-                        g.group_id, g.target_id, pool.target_id
-                    );
-                    group_records.push(target_pool_record_for_target_id_mismatch(
-                        &g.group_id,
-                        &g.target_id,
-                    ));
-                }
-                Ok(pool) => {
-                    if pool.candidates.is_empty() {
-                        n_zero_candidate += 1;
+            Ok(target_mol) => {
+                let t_target = Instant::now();
+                let result = ctx.propose_one_step(&g.group_id, &g.target_id, &config);
+                per_target_seconds.push(t_target.elapsed().as_secs_f64());
+                match result {
+                    Err(e) => {
+                        n_parse_failed += 1;
+                        eprintln!("  {}: propose_one_step error: {e}", g.group_id);
+                        group_records
+                            .push(target_pool_record_for_failure(&g.group_id, &g.target_id));
                     }
-                    candidate_counts.push(pool.candidates.len());
-                    group_records.push(target_pool_record_for_pool(&pool));
-                    let rows = candidate_rows_for_pool(&pool, &target_mol, &templates_by_id, None);
-                    candidate_rows.extend(rows);
+                    Ok(pool) if pool.target_id != g.target_id => {
+                        n_target_id_mismatch += 1;
+                        eprintln!(
+                            "  {}: target_id mismatch -- requested {:?}, propose_one_step derived {:?}",
+                            g.group_id, g.target_id, pool.target_id
+                        );
+                        group_records.push(target_pool_record_for_target_id_mismatch(
+                            &g.group_id,
+                            &g.target_id,
+                        ));
+                    }
+                    Ok(pool) => {
+                        if pool.candidates.is_empty() {
+                            n_zero_candidate += 1;
+                        }
+                        candidate_counts.push(pool.candidates.len());
+                        group_records.push(target_pool_record_for_pool(&pool));
+                        let rows =
+                            candidate_rows_for_pool(&pool, &target_mol, &templates_by_id, None);
+                        candidate_rows.extend(rows);
+                    }
                 }
-            },
+            }
         }
     }
 
@@ -268,7 +291,9 @@ fn main() {
         .unwrap_or_else(|e| panic!("write {manifest_output}: {e}"));
 
     candidate_counts.sort_unstable();
+    per_target_seconds.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let elapsed = start.elapsed();
+    let phase_nanos = propose_phase_nanos();
 
     let feasibility_summary = serde_json::json!({
         "n_groups_requested": n_targets_requested,
@@ -286,6 +311,17 @@ fn main() {
         "manifest_output": manifest_output,
         "candidate_jsonl_sha256": candidate_jsonl_sha256,
         "target_group_index_sha256": target_group_index_sha256,
+        "proposal_mode": "exhaustive",
+        // Only non-zero with --features perf-instrumentation; see
+        // candidate::propose_phase_nanos doc for what each bucket covers.
+        "propose_phase_seconds": {
+            "select": phase_nanos.select as f64 / 1e9,
+            "raw_propose": phase_nanos.raw_propose as f64 / 1e9,
+            "merge": phase_nanos.merge as f64 / 1e9,
+        },
+        "proposal_seconds_per_target_p50": percentile_f64(&per_target_seconds, 0.50),
+        "proposal_seconds_per_target_p95": percentile_f64(&per_target_seconds, 0.95),
+        "proposal_seconds_per_target_max": per_target_seconds.last().copied().unwrap_or(0.0),
     });
     eprintln!(
         "{}",

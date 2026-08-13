@@ -203,3 +203,19 @@ data/phase_a5_template_scaling/*/*_groups.jsonl
 data/phase_a5_template_scaling/*/*_pool_gen.log
 data/phase_a5_template_scaling/chunks/
 data/phase_a5_template_scaling/chunks_fine/
+
+# Phase B.1 (coverage/cost frontier optimization -- closed as a negative
+# result, see data/phase_b1_frontier/findings.md): same rationale as
+# Phase A.5 above -- large regenerable per-run intermediates excluded by
+# pattern, findings.md/manifest/aggregate JSON (the durable record the
+# writeup's numbers were computed from) stay tracked. val_sample_full_sorted.jsonl
+# is regenerable from data/reranker_groups_uspto50k_val.jsonl (dedup by
+# canonical SMILES, documented in findings.md) -- not committed, same as
+# that source file's own gitignored status.
+data/phase_b1_frontier/*/*_pool.jsonl
+data/phase_b1_frontier/*/*_groups.jsonl
+data/phase_b1_frontier/*/*_rows.jsonl
+data/phase_b1_frontier/*/*_pool_gen.log
+data/phase_b1_frontier/*/*_run.log
+data/phase_b1_frontier/*/*.log
+data/phase_b1_frontier/val_sample_full_sorted.jsonl

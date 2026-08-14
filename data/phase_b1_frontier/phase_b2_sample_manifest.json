@@ -1,0 +1,15 @@
+{
+  "source_file": "data/phase_b1_frontier/val_sample_full_sorted.jsonl",
+  "already_used_100_excluded": true,
+  "selection_method": "sort remaining VAL targets by sample_key (sha256 of canonical_smiles) ascending; first 200 = decision sample, next 10 = smoke sample",
+  "decision_sample": {
+    "path": "data/phase_b1_frontier/val_sample_disjoint_200.jsonl",
+    "n": 200,
+    "sha256": "8725031a31e298c50eacba41152c4b3a634d591b39f219975c82ebe5a462bbfc"
+  },
+  "smoke_sample": {
+    "path": "data/phase_b1_frontier/val_sample_smoke_10.jsonl",
+    "n": 10,
+    "sha256": "8b23ca808ce1c77fb9b81f334a65af4cf8f6dc43aaaee6f38609f584f6214fd1"
+  }
+}

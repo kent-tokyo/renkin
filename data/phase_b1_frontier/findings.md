@@ -844,7 +844,7 @@ measurement.
    winning search path loses that competition). Understanding the
    mechanism did not waive the pre-registered threshold -- **rejected**.
 4. **1,000 templates, route-search level**: tested next as the lower-
-   cost fallback. **Fails on coverage alone** -- only 1pp of route-level
+   cost escalation candidate. **Fails on coverage alone** -- only 1pp of route-level
    `route_to_configured_stock` improvement survives from Phase A.5's
    -6.3pp one-step candidate-pool gain, far short of the required +3pp.
 
@@ -881,3 +881,142 @@ since no production template count was ever frozen to test it against.
 
 Formal TEST (4,903 targets) was never used anywhere in this program --
 reserved, untouched, as designed from the start.
+
+## Phase B.2: Progressive Template Escalation (2026-08-14)
+
+GO given 2026-08-14 after Phase B.1 closed as a negative result. Full
+pre-registration (arms, sample design, primary gate, B-vs-C tie-break,
+implementation boundary) is in `ROADMAP.md`'s Phase B.2 section --
+this section reports the result against that pre-registration,
+unchanged.
+
+**Sample**: new disjoint 200-target VAL sample, deterministic hash
+order (sorted by `sample_key` = SHA-256 of canonical SMILES), excluding
+the 100 targets already used throughout Phase B.1 and formal TEST.
+Manifest + SHA-256 fixed before any run
+(`data/phase_b1_frontier/phase_b2_sample_manifest.json`). A separate
+10-target smoke sample (also disjoint) validated the Stage 1 ->
+unsolved-manifest -> Stage 2 -> merge pipeline mechanics first --
+confirmed clean (Stage 2's target set exactly matched Stage 1's
+unsolved set for both arms, zero overlap with Stage 1's solved set) --
+before committing to the real 200-target run.
+
+**Implementation**: benchmark/orchestration layer only, per the
+implementation boundary -- no new RENKIN core API. Stage 1 run once via
+the existing `scripts/compare_run.py` (500 templates, 150s/10s
+timeout, beam 100, `shared_stock`, reranker OFF) over the 200-target
+sample. Its unsolved subset was written out in the same sample-list
+JSONL schema `compare_run.py` already consumes, then fed to two
+independent Stage 2 runs (Arm B: 1,000 templates; Arm C: 2,000
+templates; both 600s/20s timeout) over that identical unsolved set.
+Merge is trivial by construction: Stage-1-solved and Stage-2-attempted
+target sets are disjoint, so there is no overwrite decision to make.
+
+**Result**:
+
+| | Arm A (500 only) | Arm B (500→1,000 coverage mode) | Arm C (500→2,000 coverage mode) |
+|---|---|---|---|
+| Solved / 200 | 33 (16.5%) | 38 (19.0%) | 50 (25.0%) |
+| Coverage delta vs. A | -- | **+2.5pp** | **+8.5pp** |
+| Solved-target regressions | -- | **0** | **0** |
+| Invalid/unparseable | 0 | 0 | 0 |
+| Stage-2 invocation rate | -- | 83.5% (167/200) | 83.5% (167/200) |
+| New solves from Stage 2 | -- | 5 | 17 |
+| End-to-end p50 | 14.3s | 42.8s | 83.6s |
+| End-to-end p95 | 64.3s | 182.5s | 367.3s |
+| p95 ratio vs. Arm A | -- | 2.84x | 5.72x |
+| Total cumulative compute | 4,078.5s (68.0min) | 11,981.0s (199.7min) | 24,295.5s (404.9min) |
+| Additional compute / additional solve | -- | 1,580.5s (26.3min) | 1,189.2s (19.8min) |
+
+(Total/cumulative compute figures are the sum of every row's own
+`total_elapsed_ms` across every stage that arm actually used -- not
+`compare_run.py`'s own `wall_clock_total_sweep_s` field, which only
+covers the single invocation that happened to finish each run and is
+fragmented into meaninglessness by this program's many kill/resume
+cycles under heavy, variable system load, load average observed
+ranging 14-57 on a 10-core machine across this run's real-time span.)
+
+**The regression-elimination hypothesis is confirmed exactly as
+designed**: zero solved-target regressions in both arms, verified both
+structurally (Stage 2's target set is byte-identical to Stage 1's
+unsolved set in both arms -- confirmed by set equality, not merely
+"observed to be low") and empirically (the merged solved-set for every
+arm is a strict superset of Arm A's). This is the core mechanism Phase
+B.1's crowd-out regression (2%, `L6`/`L66`) motivated, and it worked:
+previously-solved targets structurally cannot compete with new
+candidates for beam slots if they never re-enter a larger search at
+all.
+
+**Primary gate verdict**:
+- **Arm B: FAILS.** Coverage `+2.5pp` is short of the pre-registered
+  `>=+3pp` bar (6 new solves needed at n=200; only 5 achieved).
+  Regression and invalid both clear their bars, but the gate requires
+  all three, and coverage alone disqualifies this arm regardless of
+  cost. Not layered into a cost-tier classification -- an arm that
+  fails the primary gate doesn't get a cost verdict per the
+  pre-registration.
+- **Arm C: PASSES the primary gate.** Coverage `+8.5pp`, comfortably
+  clear of `+3pp`. Regression `= 0` exact. Invalid `= 0`.
+
+**Since only one arm (C) passes the primary gate, the B-vs-C tie-break
+rule does not apply** (that rule is only defined for when both arms
+pass) -- Arm C is the sole candidate remaining to classify by cost.
+
+**Cost classification for Arm C**: `p95 = 5.72x` of Arm A -- **far
+past the `<=2.5x` default-candidate threshold.** Arm C lands in the
+**opt-in "coverage mode" candidate tier, not the default tier.** This
+is not a marginal miss: p50 latency itself grew ~5.9x, driven by the
+Stage-2 invocation rate being high (83.5% -- most targets in this
+200-target VAL sample are *not* solved by the 500-template baseline,
+so most targets do pay the full Stage-2 cost, not a rare fallback
+cost). "Progressive escalation" as tested here is closer to "usually
+escalate" than "rarely escalate" for this sample's difficulty
+distribution -- worth keeping in mind when reasoning about what
+`renkin coverage mode`'s typical latency would feel like in practice,
+versus a mental model of escalation as a rare, cheap safety net.
+
+**Interpretation**: the hypothesis motivating Phase B.2 is validated on
+its own terms -- staged escalation genuinely converts candidate-pool
+diversity into route coverage with zero regression, solving the exact
+problem Phase B.1 identified. But it does so at a real cost that Phase
+B.1's own numbers already foreshadowed (2,000-template per-node cost
+~4-5x): an opt-in mode paying ~5.7x p95 latency for +8.5pp coverage,
+not a free or cheap upgrade to the default. Arm B (1,000-template
+coverage mode) is not a viable substitute at a lower cost tier either --
+it fails the coverage bar outright before cost is even considered.
+
+**Status (2026-08-14): PAUSED at the user's request to prioritize other
+work.** Arm C is provisionally the coverage-mode candidate but not
+formally frozen until the determinism gate below passes -- no further
+CPU-heavy work (any `renkin`/`compare_run.py` run) resumes without
+explicit OK.
+
+**Determinism gate -- design finalized, one run started then cleanly
+stopped on pause (0/32 targets, no data loss, fully resumable).** A
+targeted 37-target spot-check, not a full 167-target repeat: all 17
+Arm-C newly-solved targets, 10 still-Stage-2-unsolved (hash order), 5
+Stage-1-solved-never-escalated (hash order), and 5 from Arm C's Stage-2
+latency tail (in practice: all 4 real timeouts plus the next-longest
+completed target). Each target's relevant stage(s) run twice; comparison
+is a deterministic semantic projection (`target_id`, Stage-1 outcome,
+Stage-2-invoked flag, selected stage, `route_found`,
+`normalized_route_sha256` for the canonical route/tree,
+configured-stock-leaves status, validator fields, invalid/timeout
+classification -- explicitly excluding wall-clock, timestamps, and temp
+paths), SHA-256'd and required to match exactly across both runs for
+every target. Implemented as real, unit-tested code (not ad hoc
+analysis) in `scripts/phase_b2_orchestrator.py` +
+`scripts/tests/test_phase_b2_orchestrator.py` (17 new tests, all
+passing alongside the existing 313) -- see `ROADMAP.md`'s Phase B.2
+section for the full design and the six specific invariants tested.
+Not yet committed (deferred along with all CPU-heavy work pending
+resume).
+
+**Next after determinism PASS**: reranker compatibility gate on a new,
+third disjoint 100-target VAL sample -- Arm A (500-only + reranker ON)
+vs. Arm C (500->2,000 coverage mode + reranker ON), gate `coverage
+>=+3pp`, `regressions=0`, `invalid=0`, `reranker_failures=0`, semantic
+determinism exact (no `p95<=2.5x` requirement, already opt-in-tier on
+cost, but real numbers reported and an extreme blowup, e.g. `>=10x`,
+would stop productization pending investigation). Full design in
+`ROADMAP.md`.

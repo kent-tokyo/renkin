@@ -1,0 +1,71 @@
+{
+  "binary_sha256": "6aafd9ea83fb06563cc1e9075fe4b7924758d59d5257088a6cf2ff1bdc610636",
+  "command_line": [
+    "scripts/compare_run.py",
+    "--tool",
+    "renkin",
+    "--comparison-mode",
+    "shared_stock",
+    "--sample-list",
+    "data/phase_b1_frontier/phase_b2/determinism/stage2_subset_sample.jsonl",
+    "--sample-size",
+    "32",
+    "--templates",
+    "data/phase_a5_template_scaling/templates/templates_2000.smi",
+    "--renkin-binary",
+    "target/release/renkin",
+    "--beam-width",
+    "100",
+    "--timeout-s",
+    "600",
+    "--grace-s",
+    "20",
+    "--resume",
+    "--output-rows",
+    "data/phase_b1_frontier/phase_b2/determinism/stage2_run1_rows.jsonl",
+    "--output-aggregate",
+    "data/phase_b1_frontier/phase_b2/determinism/stage2_run1_aggregate.json",
+    "--manifest-path",
+    "data/phase_b1_frontier/phase_b2/determinism/stage2_run1_manifest.json"
+  ],
+  "comparison_mode": "shared_stock",
+  "docker_image": null,
+  "docker_image_digest": null,
+  "end_environment": null,
+  "end_time_unix": null,
+  "git_commit": "ae7f7698daa8681d811a230b47d85f494436f059",
+  "input_file_sha256": {
+    "sample_list": "5010d00f9fd5397f18beac1db21ac1040b76d487ca51d4b7a3887b151003bbbe",
+    "stock": "9046b2e234efd32a44c9209f1f80c4162ca35c1629deaf3b69d4dfcc82de38b9",
+    "templates": "f1e2c7d9e5f5085fbac1f7eaf5daa1c53455d9ad4faa1125cb535bbe8ebfb6b5"
+  },
+  "input_file_sha256_at_end": null,
+  "ring_context_policy": "disabled",
+  "start_environment": {
+    "battery_raw": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=22478947)\t87%; discharging; 5:57 remaining present: true",
+    "caffeinate_active": true,
+    "caffeinate_raw": "980 caffeinate -dimsu\n52539 caffeinate -i -t 300\n53599 caffeinate -i -t 300\n54090 caffeinate -i -t 300",
+    "cpu_count": 10,
+    "disk_free_raw": "Filesystem      Size    Used   Avail Capacity iused ifree %iused  Mounted on\n/dev/disk3s5   228Gi   177Gi    24Gi    88%    3.7M  257M    1%   /System/Volumes/Data",
+    "load_average": [
+      6.4638671875,
+      5.1943359375,
+      4.4970703125
+    ],
+    "os": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "power_source": "battery",
+    "ram_bytes": 17179869184,
+    "top_cpu_processes_raw": [
+      "PID  %CPU COMM",
+      " 7951  89.2 /System/Library/PrivateFrameworks/StorageManagement.framework/PlugIns/ApplicationsStorageExtension.appex/Contents/MacOS/ApplicationsStorageExtension",
+      "54276  72.5 /Users/k_tanabe/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc",
+      "54290  40.2 /Library/Frameworks/Python.framework/Versions/3.13/Resources/Python.app/Contents/MacOS/Python",
+      "  402  26.7 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+      "33737  17.2 claude",
+      " 7892  14.7 /System/Library/PrivateFrameworks/StorageManagement.framework/PlugIns/StorageManagementService",
+      " 5051  13.7 claude"
+    ]
+  },
+  "start_time_unix": 1786704254.9168608,
+  "tool": "renkin"
+}

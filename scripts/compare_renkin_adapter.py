@@ -218,6 +218,7 @@ def run_one_target(
                 "beam_limit_hit": diagnostics.get("beam_limit_hit"),
                 "matched_templates": diagnostics.get("matched_templates"),
                 "stock_hits": diagnostics.get("stock_hits"),
+                "reranker_failures": parsed.get("reranker_failures"),
                 "diagnostics_source": "single_per_target_cli_call",
             }
         }
@@ -235,6 +236,7 @@ def run_one_target(
             "success_probability": best_route.get("success_probability"),
             "route_cost": best_route.get("route_cost"),
             "joint_success_probability": parsed.get("joint_success_probability"),
+            "reranker_failures": parsed.get("reranker_failures"),
             "diagnostics_source": "single_per_target_cli_call",
         }
     }

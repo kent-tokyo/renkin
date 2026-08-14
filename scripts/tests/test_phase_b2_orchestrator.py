@@ -139,6 +139,22 @@ class TestSemanticProjection(unittest.TestCase):
         self.assertTrue(proj_timeout["is_timeout"])
         self.assertFalse(proj_timeout["is_invalid"])
 
+    def test_reranker_failures_extracted_from_tool_specific(self):
+        r = row(
+            "A", True, tool_specific={"renkin": {"reranker_failures": 2}}
+        )
+        proj = orch.semantic_projection(
+            {"target_id": "A", "selected_stage": "stage1", "row": r}
+        )
+        self.assertEqual(proj["reranker_failures"], 2)
+
+    def test_reranker_failures_absent_tool_specific_is_none(self):
+        r = row("A", True)
+        proj = orch.semantic_projection(
+            {"target_id": "A", "selected_stage": "stage1", "row": r}
+        )
+        self.assertIsNone(proj["reranker_failures"])
+
 
 if __name__ == "__main__":
     unittest.main()

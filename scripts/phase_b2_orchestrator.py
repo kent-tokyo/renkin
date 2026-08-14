@@ -132,6 +132,7 @@ def semantic_projection(merged_entry):
         "run_status": row.get("run_status"),
         "is_invalid": row.get("run_status") == "invalid_input",
         "is_timeout": row.get("run_status") == "timeout",
+        "reranker_failures": (row.get("tool_specific") or {}).get("renkin", {}).get("reranker_failures"),
     }
 
 

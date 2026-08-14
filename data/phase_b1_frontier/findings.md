@@ -1040,6 +1040,24 @@ since it failed earlier on a criterion that doesn't get waived).
 
 ## Reranker compatibility gate (2026-08-15)
 
+**CORRECTION (2026-08-15, same day): this gate was initially recorded
+below as "all 5 criteria PASS." That was premature.** The 5-target
+spot-check described under "Determinism" is supplementary evidence,
+not a substitute for the pre-registered 37-target protocol (same
+discipline as never waiving the 2,000-template regression gate just
+because the crowd-out mechanism became understood -- understanding
+does not waive a pre-registered threshold, and neither does a lighter
+spot-check substitute for the pre-registered replay it was meant to
+approximate). The numeric result below (coverage/regressions/invalid/
+`reranker_failures`) stands as a strong PASS on those four criteria.
+The determinism criterion is downgraded to **PENDING** until an
+extended replay runs: the *same* fixed 37-target set used for the
+decision-run determinism gate (17 newly-solved + 10 Stage-2-unsolved +
+5 Stage-1-solved + 5 latency-tail, no new sample carved out), re-run
+under the reranker-ON coverage-mode configuration, twice, compared by
+semantic projection (extended to include `reranker_failures`). See
+below for the result once that replay completes.
+
 GO given after Phase B.2's determinism gate passed. New, third disjoint
 100-target VAL sample (`val_sample_reranker_100.jsonl`, excludes both
 the original 100 from Phase B.1 and the 200-target Phase B.2 decision
@@ -1073,33 +1091,38 @@ gate proving run-to-run determinism for this exact architecture.
 | `reranker_failures` | 0 (99/100 measured, 1 timeout) | 0 (72/73 measured, 1 timeout) |
 | Timeouts | 1/100 (Stage 1) | 1/73 (Stage 2) |
 
-**Determinism**: a lighter-weight spot-check than Phase B.2's original
-37-target protocol (5 targets: 3 Arm-C-newly-solved + 2 Stage-1-solved,
-each run twice) -- justified by strong prior evidence rather than
-re-running the full protocol: the staging/merge architecture's
-determinism was just fully verified (37/37 targets), and the reranker
-itself already has dedicated bit-exact determinism coverage in the
-Rust test suite (`reranker_some_is_also_fully_deterministic_across_repeated_runs`,
-and the LightGBM reader's validation against `lightgbm.Booster.predict()`).
-Both subsets matched exactly across both runs.
+**Determinism (superseded, see correction above)**: a lighter-weight
+spot-check than Phase B.2's original 37-target protocol (5 targets: 3
+Arm-C-newly-solved + 2 Stage-1-solved, each run twice) -- justified at
+the time by strong prior evidence rather than re-running the full
+protocol: the staging/merge architecture's determinism was just fully
+verified (37/37 targets), and the reranker itself already has
+dedicated bit-exact determinism coverage in the Rust test suite
+(`reranker_some_is_also_fully_deterministic_across_repeated_runs`, and
+the LightGBM reader's validation against `lightgbm.Booster.predict()`).
+Both subsets matched exactly across both runs -- good supplementary
+evidence, but not the pre-registered gate. See "Extended determinism
+replay" below for the actual gate result.
 
-**All 5 gate criteria PASS**: `coverage +7pp` (>=+3pp), `regressions=0`
-exact, `invalid=0`, `reranker_failures=0`, determinism exact. No p95
-requirement applied (Arm C already opt-in-tier on cost) and no extreme
-blowup observed (timeout rate stayed modest at both stages).
+**4 of 5 gate criteria PASS, determinism PENDING**: `coverage +7pp`
+(>=+3pp), `regressions=0` exact, `invalid=0`, `reranker_failures=0`.
+No p95 requirement applied (Arm C already opt-in-tier on cost) and no
+extreme blowup observed (timeout rate stayed modest at both stages).
 
-**Reranker compatibility: CONFIRMED.** The frozen reranker (trained on
+**Reranker compatibility: PROVISIONALLY CONFIRMED, pending the
+extended determinism replay.** The frozen reranker (trained on
 500-template candidate distributions) works correctly when layered on
-top of the 2,000-template coverage-mode escalation -- no candidate-
-distribution-shift degradation, no reranker failures, coverage gain
-preserved. Per the pre-registered discipline: this does NOT mean the
-reranker couldn't be *improved* by retraining on the larger-template
-candidate distribution -- that stays a separate, not-started idea
-(Phase B.3, if ever pursued) rather than something inferred from this
-compatibility check passing.
+top of the 2,000-template coverage-mode escalation on every numeric
+criterion measured -- no candidate-distribution-shift degradation, no
+reranker failures, coverage gain preserved. Not treated as a closed
+gate until the determinism replay below passes. Per the pre-registered
+discipline: none of this means the reranker couldn't be *improved* by
+retraining on the larger-template candidate distribution -- that stays
+a separate, not-started idea (Phase B.3, if ever pursued) rather than
+something inferred from this compatibility check.
 
-**Sequencing**: determinism PASS -> reranker compatibility PASS (both
-done) -> coverage-mode CLI/Python design -> product integration ->
-exactly one formal-TEST confirmation run under a frozen spec ->
-v0.24.0. Two of five gates clear; nothing beyond benchmark/
-orchestration-layer work has started.
+**Sequencing**: determinism PASS -> reranker compatibility (4/5 PASS,
+determinism replay pending) -> coverage-mode CLI/Python design (may
+proceed in parallel, design-only, no implementation) -> product
+integration (blocked on the replay passing) -> exactly one
+formal-TEST confirmation run under a frozen spec -> v0.24.0.

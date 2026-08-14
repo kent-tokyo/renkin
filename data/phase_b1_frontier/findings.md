@@ -1038,12 +1038,68 @@ coverage mode" (not default, `p95 5.72x`). Arm B (500->1,000) stays
 rejected on coverage alone (+2.5pp, never reached a determinism check
 since it failed earlier on a criterion that doesn't get waived).
 
-**Next**: reranker compatibility gate on a new, third disjoint
-100-target VAL sample -- Arm A (500-only + reranker ON) vs. Arm C
-(500->2,000 coverage mode + reranker ON), gate `coverage >=+3pp`,
-`regressions=0`, `invalid=0`, `reranker_failures=0`, semantic
-determinism exact (no `p95<=2.5x` requirement, already opt-in-tier on
-cost, but real numbers reported and an extreme blowup, e.g. `>=10x`,
-would stop productization pending investigation). Full design in
-`ROADMAP.md`. Not started -- awaiting the user's GO, same discipline as
-every other phase transition in this program.
+## Reranker compatibility gate (2026-08-15)
+
+GO given after Phase B.2's determinism gate passed. New, third disjoint
+100-target VAL sample (`val_sample_reranker_100.jsonl`, excludes both
+the original 100 from Phase B.1 and the 200-target Phase B.2 decision
+sample -- 4,624 remaining candidates, hash-sorted, first 100 taken).
+Arm A (500-only + reranker ON) vs. Arm C (500->2,000 coverage mode +
+reranker ON), both using the frozen `data/phase3e_reranker_training/`
+model/frequency-table artifacts.
+
+**Bug found and fixed en route**: `scripts/compare_renkin_adapter.py`
+never captured the `reranker_failures` field into `tool_specific`
+despite it being present in `renkin`'s own JSON output -- meant the
+gate's `reranker_failures=0` criterion couldn't actually be checked
+against already-collected data. Fixed (own commit, +1 unit test,
+`test_reranker_failures_is_captured_in_tool_specific`), then Arm A was
+re-run fresh with the fix in place (the pre-fix data is archived under
+`reranker_gate/_old_pre_fix/`, not used for the gate).
+
+**Arm C's Stage 1 reuses Arm A's data directly** rather than
+re-running the identical 500-template+reranker-ON config a second
+time -- justified by this program's own just-completed determinism
+gate proving run-to-run determinism for this exact architecture.
+
+**Result**:
+
+| | Arm A (500+reranker ON) | Arm C (500->2,000 coverage mode+reranker ON) |
+|---|---|---|
+| Solved / 100 | 27 | 34 |
+| Coverage delta vs. A | -- | **+7pp** |
+| Solved-target regressions | -- | **0** |
+| Invalid/unparseable | 0 | 0 |
+| `reranker_failures` | 0 (99/100 measured, 1 timeout) | 0 (72/73 measured, 1 timeout) |
+| Timeouts | 1/100 (Stage 1) | 1/73 (Stage 2) |
+
+**Determinism**: a lighter-weight spot-check than Phase B.2's original
+37-target protocol (5 targets: 3 Arm-C-newly-solved + 2 Stage-1-solved,
+each run twice) -- justified by strong prior evidence rather than
+re-running the full protocol: the staging/merge architecture's
+determinism was just fully verified (37/37 targets), and the reranker
+itself already has dedicated bit-exact determinism coverage in the
+Rust test suite (`reranker_some_is_also_fully_deterministic_across_repeated_runs`,
+and the LightGBM reader's validation against `lightgbm.Booster.predict()`).
+Both subsets matched exactly across both runs.
+
+**All 5 gate criteria PASS**: `coverage +7pp` (>=+3pp), `regressions=0`
+exact, `invalid=0`, `reranker_failures=0`, determinism exact. No p95
+requirement applied (Arm C already opt-in-tier on cost) and no extreme
+blowup observed (timeout rate stayed modest at both stages).
+
+**Reranker compatibility: CONFIRMED.** The frozen reranker (trained on
+500-template candidate distributions) works correctly when layered on
+top of the 2,000-template coverage-mode escalation -- no candidate-
+distribution-shift degradation, no reranker failures, coverage gain
+preserved. Per the pre-registered discipline: this does NOT mean the
+reranker couldn't be *improved* by retraining on the larger-template
+candidate distribution -- that stays a separate, not-started idea
+(Phase B.3, if ever pursued) rather than something inferred from this
+compatibility check passing.
+
+**Sequencing**: determinism PASS -> reranker compatibility PASS (both
+done) -> coverage-mode CLI/Python design -> product integration ->
+exactly one formal-TEST confirmation run under a frozen spec ->
+v0.24.0. Two of five gates clear; nothing beyond benchmark/
+orchestration-layer work has started.

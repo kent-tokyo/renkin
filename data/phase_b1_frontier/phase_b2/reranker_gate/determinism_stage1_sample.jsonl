@@ -1,0 +1,2 @@
+{"canonical_smiles": "c1nc3c(cccc3N)cc1S(=O)(c2ccccc2)=O", "sample_key": null, "sample_rank": 0, "source_line_number": null, "target_id": "uspto50k_val#L4101"}
+{"canonical_smiles": "c1c(C(C)=O)c(Cl)ccc1Br", "sample_key": null, "sample_rank": 1, "source_line_number": null, "target_id": "uspto50k_val#L2832"}

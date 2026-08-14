@@ -1,34 +1,3 @@
-[renkin] rank=1 status=completed route_found=True
-[renkin] rank=2 status=completed route_found=False
-[renkin] rank=3 status=completed route_found=True
-[renkin] rank=4 status=completed route_found=False
-[renkin] rank=5 status=completed route_found=True
-[renkin] rank=6 status=completed route_found=True
-[renkin] rank=7 status=completed route_found=False
-[renkin] rank=8 status=completed route_found=True
-[renkin] rank=9 status=completed route_found=False
-[renkin] rank=10 status=completed route_found=False
-[renkin] rank=11 status=timeout route_found=None
-[renkin] rank=12 status=timeout route_found=None
-[renkin] rank=13 status=completed route_found=True
-[renkin] rank=14 status=completed route_found=False
-[renkin] rank=15 status=completed route_found=True
-[renkin] rank=16 status=completed route_found=True
-[renkin] rank=17 status=completed route_found=False
-[renkin] rank=18 status=completed route_found=False
-[renkin] rank=19 status=completed route_found=False
-[renkin] rank=20 status=completed route_found=True
-[renkin] rank=21 status=completed route_found=False
-[renkin] rank=22 status=completed route_found=True
-[renkin] rank=23 status=completed route_found=True
-[renkin] rank=24 status=completed route_found=True
-[renkin] rank=25 status=completed route_found=False
-[renkin] rank=26 status=completed route_found=True
-[renkin] rank=27 status=completed route_found=True
-[renkin] rank=28 status=completed route_found=True
-[renkin] rank=29 status=completed route_found=False
-[renkin] rank=30 status=completed route_found=True
-[renkin] rank=31 status=completed route_found=False
 {
   "best_route_depth_distribution": {
     "denominator_kind": "route_found_runs",

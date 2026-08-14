@@ -1009,14 +1009,41 @@ analysis) in `scripts/phase_b2_orchestrator.py` +
 `scripts/tests/test_phase_b2_orchestrator.py` (17 new tests, all
 passing alongside the existing 313) -- see `ROADMAP.md`'s Phase B.2
 section for the full design and the six specific invariants tested.
-Not yet committed (deferred along with all CPU-heavy work pending
-resume).
+Committed alongside the decision-run data (`1adab83`) and this
+determinism-run data.
 
-**Next after determinism PASS**: reranker compatibility gate on a new,
-third disjoint 100-target VAL sample -- Arm A (500-only + reranker ON)
-vs. Arm C (500->2,000 coverage mode + reranker ON), gate `coverage
->=+3pp`, `regressions=0`, `invalid=0`, `reranker_failures=0`, semantic
+**Determinism gate: RESULT (2026-08-15) -- PASS, 37/37 targets, both
+runs, exact match.**
+
+| subset | targets | run1 projection SHA-256 | run2 | match |
+|---|---|---|---|---|
+| Stage-2 (Arm C escalated) | 32 | `ab3a4537...fda95` | identical | **YES** |
+| Stage-1 (never escalated) | 5 | `ad859eec...ee4988` | identical | **YES** |
+
+Every one of the 37 targets' semantic projection (route
+found/shape/validator outcome, explicitly excluding wall-clock,
+timestamps, and temp paths) matched byte-for-byte across two
+independent runs, computed via `scripts/phase_b2_orchestrator.py`'s
+`merge_arm`/`projection_sha256` (the same code that enforces the
+Stage-1-never-overwritten and Stage-2-input-set-exact invariants, not
+a separate one-off comparison script). This closes the primary gate's
+fourth and final criterion.
+
+**Phase B.2 primary gate, final status: Arm C PASSES all four
+criteria** -- `route_to_configured_stock +8.5pp`, `regressions = 0`
+exact, `invalid/unparseable = 0`, `deterministic outcome` exact.
+**Arm C (500->2,000 coverage mode) is now formally frozen as the
+opt-in coverage-mode production candidate**, cost tier "opt-in
+coverage mode" (not default, `p95 5.72x`). Arm B (500->1,000) stays
+rejected on coverage alone (+2.5pp, never reached a determinism check
+since it failed earlier on a criterion that doesn't get waived).
+
+**Next**: reranker compatibility gate on a new, third disjoint
+100-target VAL sample -- Arm A (500-only + reranker ON) vs. Arm C
+(500->2,000 coverage mode + reranker ON), gate `coverage >=+3pp`,
+`regressions=0`, `invalid=0`, `reranker_failures=0`, semantic
 determinism exact (no `p95<=2.5x` requirement, already opt-in-tier on
 cost, but real numbers reported and an extreme blowup, e.g. `>=10x`,
 would stop productization pending investigation). Full design in
-`ROADMAP.md`.
+`ROADMAP.md`. Not started -- awaiting the user's GO, same discipline as
+every other phase transition in this program.

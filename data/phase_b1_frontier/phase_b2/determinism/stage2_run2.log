@@ -1,3 +1,4 @@
+[renkin] rank=0 status=completed route_found=True
 [renkin] rank=1 status=completed route_found=True
 [renkin] rank=2 status=completed route_found=False
 [renkin] rank=3 status=completed route_found=True
@@ -71,13 +72,13 @@
     "value": 0.0
   },
   "n_all_sampled": 32,
-  "new_rows_this_invocation": 15,
+  "new_rows_this_invocation": 1,
   "peak_rss_bytes_percentiles": {
     "denominator_kind": "measured_runs",
-    "max": 38518784,
+    "max": 38699008,
     "n": 30,
-    "p50": 14614528,
-    "p95": 34078720
+    "p50": 14696448,
+    "p95": 32899072
   },
   "reaction_steps_parseable_rate": {
     "denominator_kind": "parseable_routes",
@@ -112,10 +113,10 @@
   },
   "solved_only_total_elapsed_ms_percentiles": {
     "denominator_kind": "route_found_runs",
-    "max": 195236.3189579919,
+    "max": 182589.22254198114,
     "n": 17,
-    "p50": 16678.58825001167,
-    "p95": 195236.3189579919
+    "p50": 16917.54533300991,
+    "p95": 182589.22254198114
   },
   "target_elements_accounted_route_rate": {
     "denominator_kind": "all_sampled",
@@ -141,11 +142,11 @@
   "tool": "renkin",
   "total_elapsed_ms_percentiles": {
     "denominator_kind": "measured_runs",
-    "max": 600008.1163749855,
+    "max": 600006.361332984,
     "n": 32,
-    "p50": 42110.14629199053,
-    "p95": 600005.6054590095
+    "p50": 43442.48729199171,
+    "p95": 600005.6310829823
   },
   "total_rows_in_file": 32,
-  "wall_clock_total_sweep_s": 1289.52630912498
+  "wall_clock_total_sweep_s": 482.67636058398057
 }

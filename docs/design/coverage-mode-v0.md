@@ -146,7 +146,7 @@ Lives in `src/main.rs` and `src/python.rs`. **No `SearchConfig` or
 output, or behavior** — confirmed by Phase 41.18A's own test suite
 (`wrapper_matches_unlimited_control_exactly`), not just asserted here.
 Cancellation is a separate, additive API (`src/search.rs`,
-implemented and merged in Phase 41.18A):
+implemented in Phase 41.18A, PR #119):
 
 ```rust
 pub struct SearchControl { /* private field */ }
@@ -241,21 +241,50 @@ still-running search threads on every Stage-2 timeout. That is not an
 acceptable v0 property for a mode designed to be invoked this often,
 not an edge case to defer.
 
-**Implemented instead: `find_routes_with_control`'s frontier loop
-checks `SearchControl`'s deadline at three cooperative-cancellation
-checkpoints** — (1) the top of each frontier-loop iteration, (2)
-immediately after the one call per iteration that cannot be
-interrupted mid-flight (`raw_propose`, native chemistry matching, can
-itself take tens of milliseconds under a large template set), and (3)
-before the child-processing loop over that iteration's proposals
-(itself real work at high template counts). On expiry, the loop
-`break`s, returning whatever `routes`/`stats` had already accumulated
-with `SearchTermination::DeadlineExceeded` — no detached thread, no
-background work outlives the call, by construction (there is no
-thread spawned in this design at all). `SearchControl::unlimited()`
-(what `find_routes` uses) makes every one of these checks a cheap
-`Option::is_none` — no behavioral or measurable-cost change to the
-untimed path.
+**Implemented: `find_routes_with_control`'s frontier loop checks
+`SearchControl`'s deadline at three cooperative-cancellation
+checkpoints** (revised after independent review caught the original
+checkpoint 3 being provably redundant with checkpoint 2 -- mutation
+testing showed removing it changed nothing, since only a handful of
+trivial statements separated them):
+1. **Top of each frontier-loop iteration**, after `max_routes`
+   completion is checked (see the ordering note below) — the only
+   checkpoint reached on this loop's several `continue` paths (depth
+   cap, closed-set hit, an empty/unparseable frontier entry) that never
+   reach expansion at all.
+2. **Right after the expansion block completes** — on a cache miss this
+   follows template application (`raw_propose`), NN scoring
+   (`nn_rank`), and an active reranker's `CandidateReranker::score_pool`,
+   none of which are interruptible mid-call.
+3. **Per child, inside the child-processing loop** — not once before
+   it. `expansions` can hold thousands of raw proposals at high
+   template counts, and each one does real work (a fresh `compute_h`
+   heuristic call, path-node allocation) before the next outer
+   iteration's checkpoint 1 would ever be reached; checking once before
+   this loop (the original design) left the loop itself fully
+   uninterruptible regardless of its size. Breaking out of an inner
+   `for` loop back to the outer frontier loop requires a labeled break
+   (`break 'frontier;`), not a plain `break`.
+
+On expiry, the search stops, returning whatever `routes`/`stats` had
+already accumulated with `SearchTermination::DeadlineExceeded` — no
+detached thread, no background work outlives the call, by construction
+(there is no thread spawned in this design at all).
+`SearchControl::unlimited()` (what `find_routes` uses) makes every one
+of these checks a cheap `Option::is_none` (short-circuits before ever
+calling `Instant::now()`) — no behavioral or measurable-cost change to
+the untimed path.
+
+**Ordering: `max_routes` completion is checked before checkpoint 1**,
+not after. A search that already has everything it was asked for is
+`Completed`, never `DeadlineExceeded`, even if the deadline has also
+passed by the same instant — the work genuinely finished, and a caller
+auditing `termination` should be able to tell "got what it needed"
+apart from "ran out of time" without depending on which check happened
+to run first. Covered by a dedicated deterministic test
+(`max_routes_completion_wins_over_an_already_expired_deadline`, using
+`max_routes: 0` so the condition is true from the very first
+iteration, not dependent on racing real search progress).
 
 `Instant`-based timing is native-only: `with_timeout`/`with_deadline`
 are `#[cfg(not(target_arch = "wasm32"))]` (this crate's search loop
@@ -265,14 +294,20 @@ wasm targets). Nothing on the wasm-facing surface (`src/wasm.rs`) ever
 calls these; `unlimited()` and the rest of the API are available on
 every target.
 
-**Not a hard real-time guarantee, documented as such on
-`SearchTermination::DeadlineExceeded` itself**: a single `raw_propose`
-call can't be interrupted mid-flight, so the search can overshoot the
-deadline by up to one such call's duration before the next checkpoint
-actually observes the expiry. This is the in-process analogue of the
-external wrapper's `SIGTERM`-then-`SIGKILL` grace period every timeout
-in this program has used so far — a bounded, documented overshoot, not
-an open-ended one.
+**Not a hard real-time guarantee, documented in full on
+`SearchTermination::DeadlineExceeded` itself** (independent review
+caught the first draft of this doc understating it as "up to one
+`raw_propose` call"): between any two checkpoints, the search can run
+template application, NN scoring, an arbitrary reranker
+implementation's `score_pool`, and dedup/diagnostics bookkeeping,
+none of which this crate can interrupt mid-call or bound the runtime
+of (especially a reranker it does not own the implementation of). The
+true worst case is however long the slowest such stretch takes for
+the configuration in use — a soft, cooperative deadline, not a fixed
+bound. This is the in-process analogue of the external wrapper's
+`SIGTERM`-then-`SIGKILL` grace period every timeout in this program
+has used so far — bounded by "one stretch of synchronous work," not
+open-ended, but not a precise number either.
 
 ### The two-layer guarantee this design actually offers
 
@@ -427,19 +462,27 @@ tests, not just research-script coverage:
   `stage2_timeout: true`, not just eventually returning past
   `coverage_timeout_secs`.
 - `search::cooperative_cancellation_tests` (`src/search.rs`, Phase
-  41.18A, merged) — the `search.rs`-level regression coverage backing
+  41.18A, PR #119) — the `search.rs`-level regression coverage backing
   §4's core backward-compatibility and cancellation claims, already in
   place before any CLI/Python code exists: `wrapper_matches_unlimited_
   control_exactly` (byte-identical routes/stats between `find_routes`
   and `find_routes_with_control(unlimited)`, at three beam widths),
   `already_past_deadline_returns_deadline_exceeded_without_panicking`,
-  `valid_routes_found_before_deadline_are_not_discarded` (subset-of-
-  baseline invariant, sampled across several deadline fractions rather
-  than one fixed duration -- avoids the cross-machine timing flakiness
-  a hardcoded value would risk), `call_returns_promptly_after_deadline_
-  leaves_nothing_running`, `safe_with_and_without_reranker`,
-  `safe_with_beam_width_zero_and_nonzero`. Coverage-mode's own
-  CLI/Python-level tests below build on top of this, not instead of it.
+  `checkpoint_one_alone_catches_a_deadline_no_expansion_ever_reaches`
+  (isolates checkpoint 1 specifically via `max_depth: 0`, where
+  expansion -- and therefore checkpoints 2/3 -- is never reached;
+  independent review verified this via mutation testing: removing
+  checkpoint 1 makes exactly this test fail, reporting `Completed`
+  instead), `valid_routes_found_before_deadline_are_not_discarded`
+  (subset-of-baseline invariant, sampled across several deadline
+  fractions rather than one fixed duration -- avoids the cross-machine
+  timing flakiness a hardcoded value would risk),
+  `call_returns_promptly_after_deadline_leaves_nothing_running`,
+  `safe_with_and_without_reranker`, `safe_with_beam_width_zero_and_nonzero`,
+  `max_routes_completion_wins_over_an_already_expired_deadline`
+  (deterministic via `max_routes: 0`, not a real-time race -- see §4's
+  ordering note). Coverage-mode's own CLI/Python-level tests below
+  build on top of this, not instead of it.
 - `coverage_mode_reranker_failures_is_sum_across_invoked_stages` —
   Stage 1 + Stage 2 both reranker-active, both report nonzero via a
   test double/fault injection → top-level field equals the sum, not

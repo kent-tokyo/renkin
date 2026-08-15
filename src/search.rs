@@ -1181,12 +1181,24 @@ pub enum SearchTermination {
     /// stopping conditions [`find_routes`] has always had.
     Completed,
     /// [`SearchControl`]'s deadline passed at one of the search's
-    /// cooperative-cancellation checkpoints. **Not a hard real-time
-    /// guarantee**: a single `raw_propose` call cannot be interrupted
-    /// mid-flight (see its own doc), so the search can overshoot the
-    /// deadline by up to one such call's duration before the next
-    /// checkpoint actually observes the expiry and stops. Whatever valid
-    /// routes were found before the deadline are still returned, never
+    /// cooperative-cancellation checkpoints. **A soft, cooperative
+    /// deadline -- not a hard real-time bound.** Between any two
+    /// checkpoints, the search can run an unbounded (though normally
+    /// small) amount of synchronous, uninterruptible work depending on
+    /// `SearchConfig`: template application (`raw_propose`), NN template
+    /// scoring (`nn_rank`, `nn-scoring` feature), an active reranker's
+    /// `CandidateReranker::score_pool` (an arbitrary trait-object
+    /// implementation this crate does not control the runtime of),
+    /// dedup/diagnostics bookkeeping (`dedup_counts` and related
+    /// `crowd_out` updates), and the per-candidate cost/heuristic
+    /// computation each proposal goes through before being pushed onto
+    /// the frontier. None of these are individually interruptible
+    /// mid-call, so the true worst-case overshoot is "however long the
+    /// slowest stretch of synchronous work between two checkpoints
+    /// takes" for the configuration actually in use -- not a single
+    /// fixed operation, and not something this type can bound for a
+    /// reranker implementation it doesn't own. Whatever valid routes
+    /// were found before the deadline are still returned, never
     /// discarded.
     DeadlineExceeded,
 }
@@ -1325,18 +1337,29 @@ pub fn find_routes_with_control(
         trace_id: None,
     });
 
-    while let Some(node) = heap.pop() {
-        // Checkpoint 1/3 (main frontier-loop top): cheapest, most frequent
-        // check -- before any work happens for this popped node.
-        if control.is_expired() {
-            termination = SearchTermination::DeadlineExceeded;
-            break;
-        }
+    'frontier: while let Some(node) = heap.pop() {
         #[cfg(not(target_arch = "wasm32"))]
         {
             nodes_popped += 1;
         }
+        // `max_routes` completion is checked *before* the deadline
+        // (checkpoint 1 below): a search that already has everything it
+        // was asked for is `Completed`, never `DeadlineExceeded`, even if
+        // the clock happens to have also passed in the same instant --
+        // the work genuinely finished, and callers auditing `termination`
+        // should be able to tell "got what it needed" apart from "ran out
+        // of time" without a race on which check happened to run first.
         if routes.len() >= config.max_routes {
+            break;
+        }
+        // Checkpoint 1/3 (main frontier-loop top): cheapest, most frequent
+        // check -- before any work happens for this popped node. The only
+        // checkpoint reached on this loop's several `continue` paths
+        // (depth cap, closed-set hit, empty/unparseable frontier entry)
+        // that never reach checkpoint 2 or the child-processing check at
+        // all -- not just a redundant early copy of them.
+        if control.is_expired() {
+            termination = SearchTermination::DeadlineExceeded;
             break;
         }
 
@@ -1552,11 +1575,13 @@ pub fn find_routes_with_control(
             arc // no extra clone: Arc move
         };
 
-        // Checkpoint 2/3 (right after the expensive expansion completes):
-        // `raw_propose` above (cache-miss path) is the one call in this loop
-        // that cannot be interrupted mid-flight -- this is the earliest
-        // point after it returns where cancellation can be observed. On a
-        // cache hit this check is nearly free, same as checkpoint 1.
+        // Checkpoint 2/3 (right after the expansion block completes): on a
+        // cache miss this follows template application (`raw_propose`),
+        // NN scoring (`nn_rank`), and -- when a reranker is configured --
+        // `CandidateReranker::score_pool`, none of which are individually
+        // interruptible mid-call (see `SearchTermination::DeadlineExceeded`'s
+        // doc for the full list this checkpoint can trail). On a cache hit
+        // this check is nearly free, same as checkpoint 1.
         if control.is_expired() {
             termination = SearchTermination::DeadlineExceeded;
             break;
@@ -1569,17 +1594,23 @@ pub fn find_routes_with_control(
             depth_entry.children_produced += expansions.len() as u64;
         }
 
-        // Checkpoint 3/3 (before entering child processing): `expansions`
-        // can be large (thousands of raw proposals at high template
-        // counts), so this loop is real, non-negligible work in its own
-        // right even though no single call inside it is as expensive as
-        // `raw_propose` above.
-        if control.is_expired() {
-            termination = SearchTermination::DeadlineExceeded;
-            break;
-        }
-
         for entry in expansions.iter() {
+            // Checkpoint 3/3 (per child, before its heavier processing):
+            // `expansions` can hold thousands of raw proposals at high
+            // template counts, and each one below does real work (a fresh
+            // `compute_h` heuristic call, path-node allocation, an
+            // optional trace record) before ever reaching the next outer
+            // iteration's checkpoint 1 -- checked per entry, not once
+            // before the loop, so this loop itself stays boundable rather
+            // than being the one place nothing gets checked between
+            // outer-loop iterations. A labeled break is required here
+            // (plain `break` would only exit this inner `for`) to actually
+            // stop the search, not just this one node's expansion.
+            if control.is_expired() {
+                termination = SearchTermination::DeadlineExceeded;
+                break 'frontier;
+            }
+
             let new_frontier: SmallVec<[FEntry; 6]> = node
                 .frontier
                 .iter()
@@ -3248,6 +3279,29 @@ mod cooperative_cancellation_tests {
         assert_eq!(result.termination, SearchTermination::DeadlineExceeded);
     }
 
+    /// Isolates checkpoint 1 specifically: `max_depth: 0` means every
+    /// popped node hits the `node.depth >= config.max_depth` `continue`
+    /// path immediately -- expansion (and therefore checkpoints 2 and 3)
+    /// is never reached at all, for any node, for the whole search.
+    /// Checkpoint 1 is the *only* thing that can observe the deadline
+    /// here. If it were removed, this search would run to natural
+    /// completion (the heap empties after the one no-op root iteration)
+    /// and report `Completed` instead -- i.e. this test is expected to
+    /// fail under exactly that mutation, not just under "delete
+    /// everything."
+    #[test]
+    fn checkpoint_one_alone_catches_a_deadline_no_expansion_ever_reaches() {
+        let env = env();
+        let rules = default_rules();
+        let config = SearchConfig {
+            max_depth: 0,
+            ..cfg(0)
+        };
+        let control = SearchControl::with_deadline(std::time::Instant::now());
+        let result = find_routes_with_control(TARGET, &env, &rules, &config, &control).unwrap();
+        assert_eq!(result.termination, SearchTermination::DeadlineExceeded);
+    }
+
     /// Requirement 4 (panic-safety) again, on a config that guarantees
     /// several loop iterations run before the deadline check fires
     /// (`beam_width` unrestricted at `max_depth=5`) -- exercises more of
@@ -3444,5 +3498,35 @@ mod cooperative_cancellation_tests {
             .unwrap();
             assert_eq!(timed_out.termination, SearchTermination::DeadlineExceeded);
         }
+    }
+
+    /// Requirement (Finding 4): `max_routes` completion is classified
+    /// `Completed`, never `DeadlineExceeded`, even when the deadline has
+    /// also already passed by the time that's checked. Deterministic --
+    /// `max_routes: 0` means `routes.len() >= config.max_routes` is `true`
+    /// from the very first loop iteration, before any expansion, so this
+    /// doesn't depend on racing real search progress against a timing
+    /// window. Runs through the actual `find_routes_with_control` control
+    /// flow, not an extracted ordering-only helper.
+    #[test]
+    fn max_routes_completion_wins_over_an_already_expired_deadline() {
+        let env = env();
+        let rules = default_rules();
+        let config = SearchConfig {
+            max_routes: 0,
+            ..cfg(0)
+        };
+        // Already past by the time the loop's first iteration checks it --
+        // same deterministic reasoning as
+        // `already_past_deadline_returns_deadline_exceeded_without_panicking`.
+        let control = SearchControl::with_deadline(std::time::Instant::now());
+        let result = find_routes_with_control(TARGET, &env, &rules, &config, &control).unwrap();
+        assert_eq!(
+            result.termination,
+            SearchTermination::Completed,
+            "max_routes was already satisfied (trivially, at 0) -- must report Completed \
+             even though the deadline had also already passed"
+        );
+        assert!(result.routes.is_empty());
     }
 }

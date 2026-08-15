@@ -1,9 +1,9 @@
 # RENKIN Coverage Mode — Design Doc
 
-Status: **design-approved, Phase 41.18A (cooperative cancellation
-foundation) implemented and in review; CLI/Python coverage-mode
-surface (Phase 41.18B) not yet started.** Base commit: `df37005`
-(PR #118, **merged to `origin/master`** 2026-08-15).
+Status: **Phase 41.18A (cooperative cancellation foundation) merged.
+Phase 41.18B (shared Stage-1/Stage-2 orchestrator + CLI/Python surface)
+implemented and in review, this revision.** Base commit: `94782d7`
+(PR #119, merged to `origin/master` 2026-08-15).
 
 **Research gate this design depends on**: the reranker-arm extended
 determinism replay **FAILED as specified** -- 36/37 targets exact, 1
@@ -21,12 +21,16 @@ are permanent and recorded side by side, per PR #118 (merged).
 
 **Sequencing**: base-architecture determinism PASS -> reranker
 compatibility (4/5 PASS, extended replay FAILED permanently, Phase
-B.2d diagnostic PASSED separately) -> this design doc (done) -> **Phase
-41.18A: cooperative cancellation foundation (this revision -- additive
-`SearchControl`/`find_routes_with_control`, no `SearchConfig`/
-`SearchStats` changes, `find_routes` untouched)** -> Phase 41.18B:
-shared Stage-1/Stage-2 orchestrator + CLI/Python surface (not started)
--> product integration -> one formal-TEST confirmation -> v0.24.0.
+B.2d diagnostic PASSED separately) -> this design doc (done) -> Phase
+41.18A: cooperative cancellation foundation (merged, PR #119 --
+additive `SearchControl`/`find_routes_with_control`, no `SearchConfig`/
+`SearchStats` changes, `find_routes` untouched) -> **Phase 41.18B:
+shared Stage-1/Stage-2 orchestrator (`src/coverage_mode.rs`) + CLI
+(`--search-mode`/`--coverage-templates`/`--coverage-timeout-secs`) +
+Python (`search_mode`/`coverage_templates_path`/
+`coverage_timeout_seconds`/`top_templates`) surface -- this revision,
+in review** -> product integration (artifact distribution, formal-TEST
+confirmation) -> v0.24.0.
 
 ## 0. What this is, in one paragraph
 

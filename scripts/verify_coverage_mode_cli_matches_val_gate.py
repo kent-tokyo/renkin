@@ -147,7 +147,7 @@ def run_renkin_coverage(target_smiles: str) -> dict:
         "1",
         "--beam-width",
         "100",
-        "--stock",
+        "--building-blocks",
         STOCK,
         "--templates",
         TEMPLATES_500,

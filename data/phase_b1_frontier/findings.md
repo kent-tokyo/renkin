@@ -1121,8 +1121,82 @@ retraining on the larger-template candidate distribution -- that stays
 a separate, not-started idea (Phase B.3, if ever pursued) rather than
 something inferred from this compatibility check.
 
-**Sequencing**: determinism PASS -> reranker compatibility (4/5 PASS,
-determinism replay pending) -> coverage-mode CLI/Python design (may
-proceed in parallel, design-only, no implementation) -> product
-integration (blocked on the replay passing) -> exactly one
-formal-TEST confirmation run under a frozen spec -> v0.24.0.
+## Extended determinism replay (2026-08-15) -- FAIL, 36/37 exact
+
+Reuses the *same* fixed 37-target set as the decision-run determinism
+gate (17 newly-solved + 10 Stage-2-unsolved + 5 Stage-1-solved + 5
+latency-tail from the 200-target sample -- not a new sample carved
+from the 100-target reranker sample, which doesn't have enough
+newly-solved targets to fill that composition), re-run under the
+reranker-ON coverage-mode configuration (Stage 1: 500
+templates+reranker, 150s/10s; Stage 2: 2,000 templates+reranker,
+600s/20s), twice, merged and compared via
+`scripts/phase_b2_orchestrator.py`'s `merge_arm`/`projection_sha256`
+(extended this session with a `reranker_failures` field, `scripts/tests/
+test_phase_b2_orchestrator.py` +2 tests).
+
+**Result: 36/37 targets match exactly; 1 mismatch. Per the
+pre-registered "any single mismatch fails the gate" criterion, this is
+a FAIL, reported as one** -- not rounded up, not retried at a wider
+timeout and silently relabeled a pass. Binary SHA-256 verified
+identical across all four runs (`verify_consistent_binary`). Both
+Stage 2 runs needed one clean kill/resume each (environment-level
+kill, `--resume` flush/fsync, zero data loss).
+
+**The mismatch**: `uspto50k_val#L2330` -- run 1 hit the 600s wall
+(`total_elapsed_ms=600018`, `run_status=timeout`, semantic outcome
+genuinely **unmeasured**, not "the same as run 2"). Run 2 completed at
+`585214ms` (`route_found=false`, `reranker_failures=0`). Under the
+*original* no-reranker decision-run check, this same target completed
+comfortably in both runs (~360-364s, ~240s of margin). Reranker
+overhead measurably pushed this one target's true compute time from a
+comfortable zone to within ~15s of the 600s cutoff, where this
+session's observed system-load jitter (load average 6-22 on 10 cores)
+is enough to flip the classification.
+
+**Characterized before writing this up, not just diagnosed**:
+- **Isolated, not systemic**: L2330 is the *only* non-timeout
+  completion in either run landing within 60s of 600s. Next-closest:
+  481.4s and 406.8s. One flaky target, not evidence that 600s is
+  under-specified for reranker-ON Stage 2 generally -- a materially
+  different conclusion than if several targets had clustered near the
+  wall.
+- **The other two timeouts are stable**: `L2531`/`L2551` hit exactly
+  600s in *both* runs.
+- **Load jitter is real and large even where it changed nothing**:
+  among the 26 targets completing (non-timeout) in both runs, run-1-
+  vs-run-2 spread reaches 108.5s on one target (`L3574`: 372.9s vs.
+  481.4s), several others 30-90s. This system's variance genuinely
+  moves completion times by that much; L2330's margin to 600s was
+  simply smaller than that jitter.
+- **The Stage-1 partition held exactly**: all 37 targets got the same
+  `selected_stage` in both runs (same 8 Stage-1-solved, same 29
+  escalated). The architectural invariant Phase B.2 exists to
+  guarantee -- Stage-1-solved never re-enters a larger search -- held
+  perfectly. The mismatch is entirely downstream, in Stage 2's
+  harness-level wall-clock classification of one boundary-adjacent
+  target, not evidence against the staged-escalation design.
+
+**Protocol observation, recorded not acted on**: the semantic
+projection excludes `total_elapsed_ms` as non-deterministic but
+includes `run_status`/`is_timeout` -- both pure functions of wall-clock
+time crossing an external threshold, the same category of noise
+laundered through a boolean. Real, worth weighing if a next condition
+gets specified; not grounds to retroactively exclude `is_timeout` from
+*this* comparison and recompute a passing hash.
+
+**Left for the next explicit GO, not decided here**: a diagnostic-only
+re-run of L2330's Stage 2 alone at a longer timeout (twice) would
+isolate the mechanism cheaply, but per the Phase B.1b precedent any
+timeout change is a new experimental condition, not a silent fix --
+this FAIL stands permanently regardless of what a diagnostic shows.
+Whether to run that diagnostic, re-run the full 37 at a new timeout,
+or re-specify the protocol is the user's call.
+
+**Sequencing**: determinism PASS (base architecture) -> reranker
+compatibility (4/5 PASS, extended determinism replay **FAILED** --
+36/37 exact, one isolated boundary mismatch) -> coverage-mode
+CLI/Python design (design-only, completed in parallel, see
+`docs/design/coverage-mode-v0.md`) -> product integration (blocked,
+awaiting the user's decision on the determinism mismatch) -> exactly
+one formal-TEST confirmation run under a frozen spec -> v0.24.0.

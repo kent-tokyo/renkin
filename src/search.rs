@@ -1115,12 +1115,103 @@ fn nn_rank<'a>(
     None
 }
 
-pub fn find_routes(
+/// Cooperative cancellation budget for [`find_routes_with_control`]. Additive
+/// API (v0.24 coverage-mode foundation) -- deliberately a separate type
+/// rather than a new [`SearchConfig`] field, so existing struct-literal
+/// callers of `SearchConfig` (this crate's own and any external consumer's)
+/// never need to change, and [`find_routes`]'s signature and behaviour stay
+/// byte-identical to before this existed.
+///
+/// `Instant`-based deadlines only work where a monotonic clock is available.
+/// On `wasm32` (no safe `Instant::now()` in this crate's supported wasm
+/// targets -- see `find_routes`' own pre-existing `#[cfg(not(target_arch =
+/// "wasm32"))]`-gated timing locals), [`SearchControl::with_timeout`] and
+/// [`SearchControl::with_deadline`] are simply not compiled in: nothing on
+/// the wasm-facing surface (`src/wasm.rs`) ever needs cooperative
+/// cancellation, and silently accepting a timeout request there without
+/// ever honoring it would be a worse footgun than a compile error.
+#[derive(Debug, Clone, Copy)]
+pub struct SearchControl {
+    #[cfg(not(target_arch = "wasm32"))]
+    deadline: Option<std::time::Instant>,
+}
+
+impl SearchControl {
+    /// No deadline -- [`find_routes_with_control`] behaves identically to a
+    /// search with cooperative cancellation checks that never trip.
+    pub fn unlimited() -> Self {
+        Self {
+            #[cfg(not(target_arch = "wasm32"))]
+            deadline: None,
+        }
+    }
+
+    /// Deadline `timeout` from now (monotonic clock, native targets only).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn with_timeout(timeout: std::time::Duration) -> Self {
+        Self {
+            deadline: std::time::Instant::now().checked_add(timeout),
+        }
+    }
+
+    /// Explicit absolute deadline (native targets only).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn with_deadline(deadline: std::time::Instant) -> Self {
+        Self {
+            deadline: Some(deadline),
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn is_expired(&self) -> bool {
+        self.deadline
+            .is_some_and(|d| std::time::Instant::now() >= d)
+    }
+    #[cfg(target_arch = "wasm32")]
+    fn is_expired(&self) -> bool {
+        false
+    }
+}
+
+/// Why [`find_routes_with_control`] stopped popping frontier nodes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchTermination {
+    /// The frontier heap emptied or `max_routes` was reached -- same
+    /// stopping conditions [`find_routes`] has always had.
+    Completed,
+    /// [`SearchControl`]'s deadline passed at one of the search's
+    /// cooperative-cancellation checkpoints. **Not a hard real-time
+    /// guarantee**: a single `raw_propose` call cannot be interrupted
+    /// mid-flight (see its own doc), so the search can overshoot the
+    /// deadline by up to one such call's duration before the next
+    /// checkpoint actually observes the expiry and stops. Whatever valid
+    /// routes were found before the deadline are still returned, never
+    /// discarded.
+    DeadlineExceeded,
+}
+
+/// Return type of [`find_routes_with_control`] -- adds [`SearchTermination`]
+/// alongside the same `routes`/`stats` [`find_routes`] has always returned.
+#[derive(Debug)]
+pub struct SearchRunResult {
+    pub routes: Vec<Route>,
+    pub stats: SearchStats,
+    pub termination: SearchTermination,
+}
+
+/// Same search as [`find_routes`], with an explicit cooperative-cancellation
+/// budget (`control`). [`find_routes`] is a thin wrapper over this function
+/// using [`SearchControl::unlimited`] -- this is the one place the frontier
+/// loop actually lives; there is no separate/duplicated search
+/// implementation for the timed and untimed paths.
+pub fn find_routes_with_control(
     target_smiles: &str,
     env: &ChemEnv,
     rules: &[RetroRule],
     config: &SearchConfig,
-) -> Result<(Vec<Route>, SearchStats)> {
+    control: &SearchControl,
+) -> Result<SearchRunResult> {
     let target_mol = mol_from_smiles(target_smiles)?;
     let target_canonical = to_canonical(&target_mol);
 
@@ -1205,6 +1296,7 @@ pub fn find_routes(
     let mut ring_context_diagnostics = crate::ring_context::RingContextDiagnostics::default();
     let mut retro_cache_misses: u64 = 0;
     let mut crowd_out = CrowdOutDiagnostics::default();
+    let mut termination = SearchTermination::Completed;
 
     let mut routes: Vec<Route> = Vec::new();
     let mut closed: FxHashSet<u64> = FxHashSet::default();
@@ -1234,6 +1326,12 @@ pub fn find_routes(
     });
 
     while let Some(node) = heap.pop() {
+        // Checkpoint 1/3 (main frontier-loop top): cheapest, most frequent
+        // check -- before any work happens for this popped node.
+        if control.is_expired() {
+            termination = SearchTermination::DeadlineExceeded;
+            break;
+        }
         #[cfg(not(target_arch = "wasm32"))]
         {
             nodes_popped += 1;
@@ -1454,11 +1552,31 @@ pub fn find_routes(
             arc // no extra clone: Arc move
         };
 
+        // Checkpoint 2/3 (right after the expensive expansion completes):
+        // `raw_propose` above (cache-miss path) is the one call in this loop
+        // that cannot be interrupted mid-flight -- this is the earliest
+        // point after it returns where cancellation can be observed. On a
+        // cache hit this check is nearly free, same as checkpoint 1.
+        if control.is_expired() {
+            termination = SearchTermination::DeadlineExceeded;
+            break;
+        }
+
         matched_templates += expansions.len() as u64;
         {
             let depth_entry = crowd_out.branching_by_depth.entry(node.depth).or_default();
             depth_entry.nodes_expanded += 1;
             depth_entry.children_produced += expansions.len() as u64;
+        }
+
+        // Checkpoint 3/3 (before entering child processing): `expansions`
+        // can be large (thousands of raw proposals at high template
+        // counts), so this loop is real, non-negligible work in its own
+        // right even though no single call inside it is as expensive as
+        // `raw_propose` above.
+        if control.is_expired() {
+            termination = SearchTermination::DeadlineExceeded;
+            break;
         }
 
         for entry in expansions.iter() {
@@ -1714,9 +1832,9 @@ pub fn find_routes(
         });
     }
 
-    Ok((
+    Ok(SearchRunResult {
         routes,
-        SearchStats {
+        stats: SearchStats {
             nodes_expanded,
             max_depth_reached,
             beam_limit_hit,
@@ -1728,7 +1846,30 @@ pub fn find_routes(
             crowd_out,
             reranker_failures,
         },
-    ))
+        termination,
+    })
+}
+
+/// Find retrosynthetic routes for `target_smiles`, unchanged since before
+/// [`find_routes_with_control`] existed -- this signature, and every byte of
+/// its output, is untouched by the addition of cooperative cancellation.
+/// A thin wrapper over [`find_routes_with_control`] with
+/// [`SearchControl::unlimited`]; there is no separate search implementation
+/// behind this name.
+pub fn find_routes(
+    target_smiles: &str,
+    env: &ChemEnv,
+    rules: &[RetroRule],
+    config: &SearchConfig,
+) -> Result<(Vec<Route>, SearchStats)> {
+    let result = find_routes_with_control(
+        target_smiles,
+        env,
+        rules,
+        config,
+        &SearchControl::unlimited(),
+    )?;
+    Ok((result.routes, result.stats))
 }
 
 #[cfg(test)]
@@ -2999,5 +3140,309 @@ mod tests {
         );
         assert_eq!(stats_a.reranker_failures, 0);
         assert_eq!(stats_b.reranker_failures, 0);
+    }
+}
+
+/// Cooperative cancellation foundation (v0.24 coverage-mode Phase 41.18A):
+/// [`SearchControl`]/[`SearchTermination`]/[`SearchRunResult`]/
+/// [`find_routes_with_control`]. Additive-only -- these tests exist
+/// specifically to pin down that nothing about [`find_routes`]'s existing
+/// contract moved.
+#[cfg(test)]
+mod cooperative_cancellation_tests {
+    use super::*;
+    use crate::chem_env::{ChemEnv, default_rules};
+
+    fn env() -> ChemEnv {
+        ChemEnv::load("data/building_blocks.smi").unwrap_or_else(|_| {
+            ChemEnv::in_memory(&["CC(=O)O", "Oc1ccccc1C(=O)O", "c1ccccc1C(=O)O", "C", "O"])
+        })
+    }
+
+    fn cfg(beam_width: usize) -> SearchConfig {
+        SearchConfig {
+            max_depth: 5,
+            max_routes: 5,
+            beam_width,
+            ..Default::default()
+        }
+    }
+
+    const TARGET: &str = "CC(=O)Oc1ccccc1C(=O)O";
+
+    /// Requirement 1: the pre-existing `find_routes` wrapper and
+    /// `find_routes_with_control(.., &SearchControl::unlimited())` must
+    /// produce byte-identical routes and stats -- there is exactly one
+    /// search implementation, not two.
+    #[test]
+    fn wrapper_matches_unlimited_control_exactly() {
+        let env = env();
+        let rules = default_rules();
+        for beam_width in [0, 10, 100] {
+            let config = cfg(beam_width);
+            let (wrapper_routes, wrapper_stats) =
+                find_routes(TARGET, &env, &rules, &config).unwrap();
+            let controlled = find_routes_with_control(
+                TARGET,
+                &env,
+                &rules,
+                &config,
+                &SearchControl::unlimited(),
+            )
+            .unwrap();
+
+            assert_eq!(controlled.termination, SearchTermination::Completed);
+            assert_eq!(
+                serde_json::to_string(&wrapper_routes).unwrap(),
+                serde_json::to_string(&controlled.routes).unwrap(),
+                "wrapper vs. find_routes_with_control(unlimited) routes diverged at beam_width={beam_width}"
+            );
+            assert_eq!(
+                serde_json::to_string(&wrapper_stats).unwrap(),
+                serde_json::to_string(&controlled.stats).unwrap(),
+                "wrapper vs. find_routes_with_control(unlimited) stats diverged at beam_width={beam_width}"
+            );
+        }
+    }
+
+    /// Requirement 2: this file's pre-existing test suite (53 tests, none
+    /// modified by this change) is the golden/default-behavior regression
+    /// suite -- run alongside these as `cargo test --lib search::`. This
+    /// test adds one more direct check: unlimited-control search on a
+    /// known target reproduces a fixed expectation independent of how
+    /// `SearchControl` is threaded through.
+    #[test]
+    fn unlimited_control_reproduces_known_golden_result() {
+        let env = env();
+        let rules = default_rules();
+        let result =
+            find_routes_with_control(TARGET, &env, &rules, &cfg(0), &SearchControl::unlimited())
+                .unwrap();
+        assert_eq!(result.termination, SearchTermination::Completed);
+        assert!(
+            !result.routes.is_empty(),
+            "aspirin must find at least one route"
+        );
+        assert!(
+            result.routes.iter().any(|r| r.depth <= 2),
+            "must find a route with depth <= 2, same as aspirin_finds_route_depth1"
+        );
+    }
+
+    /// Requirement 3 + 4: a deadline already in the past trips immediately
+    /// (deterministic regardless of machine speed -- any nonzero code
+    /// execution between capturing `Instant::now()` and the first
+    /// checkpoint's own `Instant::now()` call strictly advances a
+    /// monotonic clock) and the call returns `Ok` rather than panicking.
+    #[test]
+    fn already_past_deadline_returns_deadline_exceeded_without_panicking() {
+        let env = env();
+        let rules = default_rules();
+        let control = SearchControl::with_deadline(std::time::Instant::now());
+        let result = find_routes_with_control(TARGET, &env, &rules, &cfg(0), &control);
+        assert!(
+            result.is_ok(),
+            "must not panic or error, even with zero budget"
+        );
+        let result = result.unwrap();
+        assert_eq!(result.termination, SearchTermination::DeadlineExceeded);
+    }
+
+    /// Requirement 4 (panic-safety) again, on a config that guarantees
+    /// several loop iterations run before the deadline check fires
+    /// (`beam_width` unrestricted at `max_depth=5`) -- exercises more of
+    /// the loop body, including the post-loop confidence/atom-economy/
+    /// convergency pass running over a partial or empty `routes`.
+    #[test]
+    fn microsecond_timeout_on_a_real_search_does_not_panic() {
+        let env = env();
+        let rules = default_rules();
+        let control = SearchControl::with_timeout(std::time::Duration::from_micros(1));
+        let result = find_routes_with_control(TARGET, &env, &rules, &cfg(0), &control);
+        assert!(result.is_ok());
+    }
+
+    /// Requirement 5: routes found before the deadline are never discarded.
+    /// Deliberately does not depend on hitting one exact wall-clock window
+    /// -- machine speed varies (this whole program has direct, repeated
+    /// evidence of that: load average swinging 4-22 on the same 10-core
+    /// box within a single session). Instead: sample several fractions of
+    /// a freshly-measured per-attempt baseline elapsed time, assert the
+    /// core invariant (never more routes than the full baseline, every
+    /// returned route genuinely exists in the baseline -- no fabrication)
+    /// unconditionally on every sample, and additionally require that at
+    /// least one sampled fraction actually caught a nonempty partial
+    /// result under `DeadlineExceeded` -- so the property this test exists
+    /// to check is positively exercised, not just vacuously not-violated.
+    #[test]
+    fn valid_routes_found_before_deadline_are_not_discarded() {
+        let env = env();
+        let rules = default_rules();
+        let config = cfg(0);
+
+        let baseline =
+            find_routes_with_control(TARGET, &env, &rules, &config, &SearchControl::unlimited())
+                .unwrap();
+        assert_eq!(baseline.termination, SearchTermination::Completed);
+        assert!(
+            !baseline.routes.is_empty(),
+            "fixture must find at least one route to be a meaningful test"
+        );
+
+        let mut saw_nonempty_partial = false;
+        for frac in [3u32, 4, 5, 6, 7, 8, 9] {
+            let t0 = std::time::Instant::now();
+            let _ = find_routes_with_control(
+                TARGET,
+                &env,
+                &rules,
+                &config,
+                &SearchControl::unlimited(),
+            )
+            .unwrap();
+            let baseline_elapsed = t0.elapsed();
+
+            let partial = find_routes_with_control(
+                TARGET,
+                &env,
+                &rules,
+                &config,
+                &SearchControl::with_timeout(baseline_elapsed * frac / 10),
+            )
+            .unwrap();
+
+            assert!(
+                partial.routes.len() <= baseline.routes.len(),
+                "must never return more routes than the full search finds (frac={frac})"
+            );
+            for r in &partial.routes {
+                assert!(
+                    baseline.routes.iter().any(|br| br.depth == r.depth
+                        && br.steps.len() == r.steps.len()
+                        && (br.score - r.score).abs() < 1e-9),
+                    "a route present in the deadline-cut result must also exist in the \
+                     unlimited baseline (no fabrication/corruption), frac={frac}"
+                );
+            }
+            if partial.termination == SearchTermination::DeadlineExceeded
+                && !partial.routes.is_empty()
+            {
+                saw_nonempty_partial = true;
+            }
+        }
+        assert!(
+            saw_nonempty_partial,
+            "expected at least one sampled deadline fraction to catch a nonempty partial \
+             route set before full completion -- if this ever flakes, the sampled fraction \
+             set may need widening for the machine it's running on"
+        );
+    }
+
+    /// Requirement 6: no thread/task survives past the call returning.
+    /// This design has no threading at all in the cancellation path itself
+    /// (a single blocking call per loop iteration, checked cooperatively
+    /// between calls -- never a spawned/detached thread), so there is
+    /// structurally nothing to leak. What's actually observable from a
+    /// test is that the call returns promptly once the deadline passes,
+    /// rather than continuing to block on unrelated background work: the
+    /// wall-clock time actually spent inside the call must not appreciably
+    /// outlive one worst-case checkpoint interval.
+    #[test]
+    fn call_returns_promptly_after_deadline_leaves_nothing_running() {
+        let env = env();
+        let rules = default_rules();
+        let control = SearchControl::with_timeout(std::time::Duration::from_micros(1));
+        let t0 = std::time::Instant::now();
+        let result = find_routes_with_control(TARGET, &env, &rules, &cfg(0), &control).unwrap();
+        let call_elapsed = t0.elapsed();
+        assert_eq!(result.termination, SearchTermination::DeadlineExceeded);
+        // Generous bound (this specific fixture's full unlimited search is
+        // on the order of tens of milliseconds, not seconds) -- this is a
+        // smoke check against "hung waiting on something," not a tight
+        // performance assertion.
+        assert!(
+            call_elapsed < std::time::Duration::from_secs(5),
+            "call took {call_elapsed:?} after an immediate deadline -- looks like it's \
+             blocking on something instead of returning promptly"
+        );
+    }
+
+    /// Minimal local reranker test double -- deliberately not reusing
+    /// `tests::DeterministicReranker` (private to its own module); this one
+    /// only needs to exercise the reranker-active code path, not match any
+    /// particular scoring behavior.
+    struct StubReranker;
+    impl crate::candidate::CandidateReranker for StubReranker {
+        fn score_pool(
+            &self,
+            _target: &str,
+            candidates: &mut [crate::candidate::ReactionCandidate],
+        ) -> anyhow::Result<()> {
+            for c in candidates.iter_mut() {
+                c.reranker_score = Some(c.precursor_smiles.join(".").len() as f64);
+            }
+            Ok(())
+        }
+    }
+
+    /// Requirement 7: safe (no panic, sensible termination) both with and
+    /// without a reranker configured.
+    #[test]
+    fn safe_with_and_without_reranker() {
+        let env = env();
+        let rules = default_rules();
+
+        let no_reranker = cfg(0);
+        let with_reranker = SearchConfig {
+            reranker: Some(std::sync::Arc::new(StubReranker)),
+            ..cfg(0)
+        };
+
+        for config in [&no_reranker, &with_reranker] {
+            let unlimited =
+                find_routes_with_control(TARGET, &env, &rules, config, &SearchControl::unlimited())
+                    .unwrap();
+            assert_eq!(unlimited.termination, SearchTermination::Completed);
+            assert_eq!(unlimited.stats.reranker_failures, 0);
+
+            let timed_out = find_routes_with_control(
+                TARGET,
+                &env,
+                &rules,
+                config,
+                &SearchControl::with_deadline(std::time::Instant::now()),
+            )
+            .unwrap();
+            assert_eq!(timed_out.termination, SearchTermination::DeadlineExceeded);
+        }
+    }
+
+    /// Requirement 8: both beam-limited and unlimited (A*) search modes.
+    #[test]
+    fn safe_with_beam_width_zero_and_nonzero() {
+        let env = env();
+        let rules = default_rules();
+        for beam_width in [0usize, 10, 100] {
+            let config = cfg(beam_width);
+            let unlimited = find_routes_with_control(
+                TARGET,
+                &env,
+                &rules,
+                &config,
+                &SearchControl::unlimited(),
+            )
+            .unwrap();
+            assert_eq!(unlimited.termination, SearchTermination::Completed);
+
+            let timed_out = find_routes_with_control(
+                TARGET,
+                &env,
+                &rules,
+                &config,
+                &SearchControl::with_deadline(std::time::Instant::now()),
+            )
+            .unwrap();
+            assert_eq!(timed_out.termination, SearchTermination::DeadlineExceeded);
+        }
     }
 }

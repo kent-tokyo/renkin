@@ -69,11 +69,20 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - uses: PyO3/maturin-action@v1
         with:
           command: build
           args: --release --features python --out dist
       - run: pip install dist/*.whl --force-reinstall
+      - name: Build CLI binary (for the CLI/Python coverage-mode field-parity test below)
+        # maturin's build above only produces the cdylib wheel, not the
+        # renkin bin target -- without this,
+        # test_cli_python_coverage_field_parity silently self-skips in CI
+        # ('requires a built renkin binary at .../target/release/renkin'),
+        # even though it passes locally.
+        run: cargo build --release --bin renkin
       - name: Smoke test from a non-repo directory
         # Deliberately NOT run from the repo root: find_routes with no
         # building_blocks argument looks for data/building_blocks.smi

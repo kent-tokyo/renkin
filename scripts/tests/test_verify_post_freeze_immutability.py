@@ -25,10 +25,27 @@ class IsAllowedTests(unittest.TestCase):
             )
         )
 
+    def test_results_v2_directory_glob(self):
+        self.assertTrue(
+            verify.is_allowed("data/coverage_mode_formal_test/results_v2/arm_a_rows.jsonl")
+        )
+        self.assertTrue(
+            verify.is_allowed(
+                "data/coverage_mode_formal_test/results_v2/nested/deep_file.json"
+            )
+        )
+        # A similarly-prefixed but genuinely different directory must not
+        # match by accident (distinct from "results/" matching a file that
+        # merely has "v2" in its name, which is legitimately allowed).
+        self.assertFalse(
+            verify.is_allowed("data/coverage_mode_formal_test/results_v2_other/rows.jsonl")
+        )
+
     def test_frozen_paths_not_allowed(self):
         self.assertFalse(verify.is_allowed("src/coverage_mode.rs"))
         self.assertFalse(verify.is_allowed("Cargo.toml"))
         self.assertFalse(verify.is_allowed("data/coverage_mode_formal_test/protocol.md"))
+        self.assertFalse(verify.is_allowed("data/coverage_mode_formal_test/protocol_v2.md"))
         self.assertFalse(verify.is_allowed("data/coverage_mode_formal_test/cohort_manifest.json"))
         self.assertFalse(verify.is_allowed("scripts/coverage_mode_formal_test_gate.py"))
         self.assertFalse(verify.is_allowed(".github/workflows/release.yml"))
@@ -183,6 +200,45 @@ class GitIntegrationTests(unittest.TestCase):
         self.assertIn(".github/workflows/release.yml", result["disallowed_changes"])
         mismatch_paths = [m["path"] for m in result["tree_hash_mismatches"]]
         self.assertIn(".github/workflows/release.yml", mismatch_paths)
+
+    def test_protocol_v2_change_after_freeze_is_a_violation(self):
+        self._write("Cargo.toml", "version = 1\n")
+        self._write(
+            "data/coverage_mode_formal_test/protocol_v2.md", "original v2 protocol\n"
+        )
+        self._git("add", ".")
+        self._git("commit", "-q", "-m", "freeze")
+        rc_sha = self._git("rev-parse", "HEAD")
+
+        self._write(
+            "data/coverage_mode_formal_test/protocol_v2.md", "quietly loosened v2 threshold\n"
+        )
+        self._git("add", ".")
+        self._git("commit", "-q", "-m", "sneaky change")
+
+        result = self._run_check(rc_sha)
+        self.assertFalse(result["immutable"])
+        self.assertIn(
+            "data/coverage_mode_formal_test/protocol_v2.md", result["disallowed_changes"]
+        )
+        mismatch_paths = [m["path"] for m in result["tree_hash_mismatches"]]
+        self.assertIn("data/coverage_mode_formal_test/protocol_v2.md", mismatch_paths)
+
+    def test_results_v2_file_added_stays_immutable(self):
+        self._write("Cargo.toml", "version = 1\n")
+        self._git("add", ".")
+        self._git("commit", "-q", "-m", "freeze")
+        rc_sha = self._git("rev-parse", "HEAD")
+
+        self._write(
+            "data/coverage_mode_formal_test/results_v2/arm_a_rows.jsonl", '{"a": 1}\n'
+        )
+        self._git("add", ".")
+        self._git("commit", "-q", "-m", "add v2 results")
+
+        result = self._run_check(rc_sha)
+        self.assertTrue(result["immutable"])
+        self.assertEqual(result["disallowed_changes"], [])
 
     def test_unallowlisted_new_file_is_a_violation(self):
         # A brand-new file in a path nobody allowlisted -- must fail

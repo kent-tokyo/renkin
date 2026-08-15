@@ -37,6 +37,7 @@ import sys
 # patterns end in "/**" and also match a bare directory prefix.
 ALLOWED_PATH_PATTERNS = [
     "data/coverage_mode_formal_test/results/**",
+    "data/coverage_mode_formal_test/results_v2/**",
     "CHANGELOG.md",
     "README.md",
     "README_ja.md",
@@ -57,6 +58,7 @@ FROZEN_PATHS = [
     ".github/workflows/release.yml",
     "data/phase_a5_template_scaling/templates",
     "data/coverage_mode_formal_test/protocol.md",
+    "data/coverage_mode_formal_test/protocol_v2.md",
     "data/coverage_mode_formal_test/cohort_manifest.json",
     "scripts/select_coverage_mode_formal_test_cohort.py",
     "scripts/fetch_coverage_templates.py",

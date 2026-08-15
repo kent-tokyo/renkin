@@ -1922,6 +1922,19 @@ pub fn bond_pairs_from_smirks(smirks: &str) -> Vec<(u8, u8)> {
             }
             b'(' => stack.push(prev),
             b')' => prev = stack.pop().flatten(),
+            b'.' => {
+                // Top-level component separator (never appears inside a
+                // bracket atom -- those bytes are already skipped above).
+                // Without this reset, the last atom of one disconnected
+                // fragment and the first atom of the next would be
+                // recorded as a bonded pair, which they are not --
+                // `TemplateBondIndex`'s AND/subset retrieval treats every
+                // returned pair as a hard requirement, so a spurious
+                // cross-fragment pair here would wrongly exclude targets
+                // that lack that nonexistent bond (a false negative).
+                prev = None;
+                stack.clear();
+            }
             _ => {}
         }
         i += 1;
@@ -1936,6 +1949,18 @@ pub fn bond_pairs_from_smirks(smirks: &str) -> Vec<(u8, u8)> {
 /// Indexes templates by the element-pair bonds their SMIRKS patterns can break.
 /// At search time, only templates relevant to bonds present in the target molecule
 /// are retrieved, avoiding unnecessary SMARTS matching for incompatible templates.
+///
+/// OR/union retrieval: a rule is retrieved if the target shares *any one*
+/// element-pair bond with it. Phase B.1 (2026-08-12) tried an AND/subset
+/// variant (require *every* pair present, not just one) to get more
+/// exclusion power at 5,000+ templates -- it worked (94.8-99.3% ->
+/// ~81% average retained) but not nearly enough to clear that program's
+/// speed gate (1.14x -> 1.18x, needed >=1.5x), and wasn't independently
+/// validated against this OR baseline at this feature's actual shipped
+/// usage point (500-template default, route search via `--bond-index`).
+/// Reverted rather than shipped as an unvalidated behavior change to an
+/// already-production flag -- see `data/phase_b1_frontier/findings.md`
+/// for the full negative-result writeup and cost attribution.
 pub struct TemplateBondIndex {
     index: FxHashMap<(u8, u8), Vec<usize>>,
     /// Graph-based rules (empty SMIRKS) — always included.
@@ -2253,6 +2278,23 @@ mod tests {
             a.content_sha256(),
             c.content_sha256(),
             "a different BB set must hash differently even under the same caller-supplied label"
+        );
+    }
+
+    #[test]
+    fn bond_pairs_from_smirks_resets_at_component_boundary() {
+        // Two disconnected LHS fragments (`.`-separated) must not produce
+        // a spurious bonded pair between the last atom of one fragment
+        // and the first atom of the next -- see the `.` handling in
+        // `bond_pairs_from_smirks`. Before that fix, `prev` carried across
+        // the `.` unchanged, so this SMIRKS would have wrongly recorded a
+        // Cl-N pair spanning the two disconnected fragments.
+        let pairs = bond_pairs_from_smirks("[C:1][Cl:2].[N:3][O:4]>>[C:1][N:3]");
+        assert!(pairs.contains(&(6, 17)), "C-Cl pair missing: {pairs:?}");
+        assert!(pairs.contains(&(7, 8)), "N-O pair missing: {pairs:?}");
+        assert!(
+            !pairs.contains(&(7, 17)),
+            "spurious Cl-N pair across '.' boundary: {pairs:?}"
         );
     }
 

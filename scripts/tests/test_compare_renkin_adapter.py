@@ -62,6 +62,53 @@ class TestRenkinAdapterSmoke(unittest.TestCase):
         self.assertIsNotNone(row.raw_output_sha256)
         self.assertGreater(row.total_elapsed_ms, 0)
 
+    def test_reranker_failures_is_captured_in_tool_specific(self):
+        model = REPO_ROOT / "data" / "phase3e_reranker_training" / "model.txt"
+        freq_table = REPO_ROOT / "data" / "phase3e_reranker_training" / "frequency_table.json"
+        if not (model.exists() and freq_table.exists()):
+            self.skipTest(f"requires frozen reranker artifacts at {model} / {freq_table}")
+        config = adapter.RenkinConfig(
+            binary_path=str(RENKIN_BIN),
+            building_blocks_path=str(BUILDING_BLOCKS),
+            templates_path=str(TEMPLATES),
+            depth=5,
+            beam_width=100,
+            max_routes=1,
+            external_timeout_s=30,
+            reranker_model=str(model),
+            reranker_freq_table=str(freq_table),
+        )
+        row = self._run(ASPIRIN, config=config)
+        self.assertEqual(row.run_status, "completed")
+        self.assertIn("reranker_failures", row.tool_specific["renkin"])
+        self.assertEqual(row.tool_specific["renkin"]["reranker_failures"], 0)
+
+    def test_cpu_time_is_captured_in_tool_specific_on_completed_run(self):
+        row = self._run(ASPIRIN)
+        self.assertEqual(row.run_status, "completed")
+        cpu_user_s = row.tool_specific["renkin"]["cpu_user_s"]
+        cpu_sys_s = row.tool_specific["renkin"]["cpu_sys_s"]
+        self.assertIsInstance(cpu_user_s, float)
+        self.assertIsInstance(cpu_sys_s, float)
+        self.assertGreaterEqual(cpu_user_s, 0.0)
+        self.assertGreaterEqual(cpu_sys_s, 0.0)
+
+    def test_cpu_time_is_captured_in_tool_specific_on_timeout(self):
+        config = adapter.RenkinConfig(
+            binary_path=str(RENKIN_BIN),
+            building_blocks_path=str(BUILDING_BLOCKS),
+            templates_path=str(TEMPLATES),
+            depth=5,
+            beam_width=100,
+            max_routes=1,
+            external_timeout_s=0.0005,
+            grace_s=1.0,
+        )
+        row = self._run(ASPIRIN, config=config)
+        self.assertEqual(row.run_status, "timeout")
+        self.assertIn("cpu_user_s", row.tool_specific["renkin"])
+        self.assertIn("cpu_sys_s", row.tool_specific["renkin"])
+
     def test_no_route_case_has_diagnostics_and_null_route_fields(self):
         config = adapter.RenkinConfig(
             binary_path=str(RENKIN_BIN),

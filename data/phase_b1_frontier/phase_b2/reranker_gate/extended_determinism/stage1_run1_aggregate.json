@@ -1,0 +1,120 @@
+{
+  "best_route_depth_distribution": {
+    "denominator_kind": "route_found_runs",
+    "max": 5,
+    "n": 8,
+    "p50": 4,
+    "p95": 5
+  },
+  "best_route_leaf_count_distribution": {
+    "denominator_kind": "parseable_routes",
+    "max": 6,
+    "n": 8,
+    "p50": 4,
+    "p95": 6
+  },
+  "best_route_step_count_distribution": {
+    "denominator_kind": "route_found_runs",
+    "max": 5,
+    "n": 8,
+    "p50": 4,
+    "p95": 5
+  },
+  "common_structural_warning_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 37,
+    "n_numerator": 4,
+    "value": 0.10810810810810811
+  },
+  "comparison_mode": "shared_stock",
+  "crash_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 37,
+    "n_numerator": 0,
+    "value": 0.0
+  },
+  "invalid_input_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 37,
+    "n_numerator": 0,
+    "value": 0.0
+  },
+  "n_all_sampled": 37,
+  "new_rows_this_invocation": 37,
+  "peak_rss_bytes_percentiles": {
+    "denominator_kind": "measured_runs",
+    "max": 19365888,
+    "n": 35,
+    "p50": 10600448,
+    "p95": 16941056
+  },
+  "reaction_steps_parseable_rate": {
+    "denominator_kind": "parseable_routes",
+    "n_denominator": 8,
+    "n_numerator": 8,
+    "value": 1.0
+  },
+  "route_found_but_tree_not_parseable_count": 0,
+  "route_found_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 37,
+    "n_numerator": 8,
+    "value": 0.21621621621621623
+  },
+  "route_to_configured_stock_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 37,
+    "n_numerator": 8,
+    "value": 0.21621621621621623
+  },
+  "route_tree_parseable_rate": {
+    "denominator_kind": "route_found_runs",
+    "n_denominator": 8,
+    "n_numerator": 8,
+    "value": 1.0
+  },
+  "setup_error_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 37,
+    "n_numerator": 0,
+    "value": 0.0
+  },
+  "solved_only_total_elapsed_ms_percentiles": {
+    "denominator_kind": "route_found_runs",
+    "max": 24964.045917004114,
+    "n": 8,
+    "p50": 2262.945750000654,
+    "p95": 24964.045917004114
+  },
+  "target_elements_accounted_route_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 37,
+    "n_numerator": 4,
+    "value": 0.10810810810810811
+  },
+  "time_to_first_route_ms_percentiles": {
+    "denominator_kind": "route_found_runs",
+    "max": null,
+    "n": 0,
+    "p50": null,
+    "p90": null,
+    "p95": null,
+    "p99": null
+  },
+  "timeout_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 37,
+    "n_numerator": 2,
+    "value": 0.05405405405405406
+  },
+  "tool": "renkin",
+  "total_elapsed_ms_percentiles": {
+    "denominator_kind": "measured_runs",
+    "max": 150008.14133300446,
+    "n": 37,
+    "p50": 14120.076291001169,
+    "p95": 150007.4342500011
+  },
+  "total_rows_in_file": 37,
+  "wall_clock_total_sweep_s": 1224.9648655829951
+}

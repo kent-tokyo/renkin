@@ -1,0 +1,100 @@
+{
+  "binary_sha256": "dddd027e47d3b9a813f455d7be9de657a2848ca8e6f40636de622b489437ab45",
+  "command_line": [
+    "scripts/compare_run.py",
+    "--tool",
+    "renkin",
+    "--comparison-mode",
+    "shared_stock",
+    "--sample-list",
+    "data/phase_b1_frontier/val_sample_full_sorted.jsonl",
+    "--sample-size",
+    "100",
+    "--templates",
+    "data/phase_a5_template_scaling/templates/templates_500.smi",
+    "--renkin-binary",
+    "target/release/renkin",
+    "--beam-width",
+    "100",
+    "--timeout-s",
+    "600",
+    "--grace-s",
+    "20",
+    "--resume",
+    "--output-rows",
+    "data/phase_b1_frontier/step7_widened_timeout/500_rows.jsonl",
+    "--output-aggregate",
+    "data/phase_b1_frontier/step7_widened_timeout/500_aggregate.json",
+    "--manifest-path",
+    "data/phase_b1_frontier/step7_widened_timeout/500_manifest.json"
+  ],
+  "comparison_mode": "shared_stock",
+  "docker_image": null,
+  "docker_image_digest": null,
+  "end_environment": {
+    "battery_raw": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22478947)\t83%; AC attached; not charging present: true",
+    "caffeinate_active": true,
+    "caffeinate_raw": "980 caffeinate -dimsu\n63359 caffeinate -i -t 300\n63559 caffeinate -i -t 300",
+    "cpu_count": 10,
+    "disk_free_raw": "Filesystem      Size    Used   Avail Capacity iused ifree %iused  Mounted on\n/dev/disk3s5   228Gi   196Gi   3.6Gi    99%    3.7M   38M    9%   /System/Volumes/Data",
+    "load_average": [
+      11.13525390625,
+      10.90966796875,
+      14.00244140625
+    ],
+    "os": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "power_source": "ac",
+    "ram_bytes": 17179869184,
+    "top_cpu_processes_raw": [
+      "PID  %CPU COMM",
+      " 7892  58.1 /System/Library/PrivateFrameworks/StorageManagement.framework/PlugIns/StorageManagementService",
+      " 7951  32.2 /System/Library/PrivateFrameworks/StorageManagement.framework/PlugIns/ApplicationsStorageExtension.appex/Contents/MacOS/ApplicationsStorageExtension",
+      "61428   7.3 claude",
+      " 8457   6.8 claude",
+      " 1039   0.6 /Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper.app/Contents/MacOS/Code Helper",
+      " 5946   0.3 /Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper (Renderer).app/Contents/MacOS/Code Helper (Renderer)",
+      " 1020   0.3 /Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper (Renderer).app/Contents/MacOS/Code Helper (Renderer)"
+    ]
+  },
+  "end_time_unix": 1786569610.871391,
+  "git_commit": "dbf3a1570f1618a03dfe22c99141aa138c3533ba",
+  "input_file_sha256": {
+    "sample_list": "882e8fe6a69e22a9838e12cf93368031d3bd3f8e6c6c1fd58d5be0e2c6ed276d",
+    "stock": "9046b2e234efd32a44c9209f1f80c4162ca35c1629deaf3b69d4dfcc82de38b9",
+    "templates": "9e78ed31ef2298aa8b1b5a878c118906598f3ac53e81e9b163c8c9d78be9b26c"
+  },
+  "input_file_sha256_at_end": {
+    "sample_list": "882e8fe6a69e22a9838e12cf93368031d3bd3f8e6c6c1fd58d5be0e2c6ed276d",
+    "stock": "9046b2e234efd32a44c9209f1f80c4162ca35c1629deaf3b69d4dfcc82de38b9",
+    "templates": "9e78ed31ef2298aa8b1b5a878c118906598f3ac53e81e9b163c8c9d78be9b26c"
+  },
+  "input_files_unchanged_during_run": true,
+  "ring_context_policy": "disabled",
+  "start_environment": {
+    "battery_raw": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=22478947)\t100%; discharging; 6:49 remaining present: true",
+    "caffeinate_active": true,
+    "caffeinate_raw": "980 caffeinate -dimsu\n20714 caffeinate -i -t 300\n20891 caffeinate -i -t 300\n21512 caffeinate -i -t 300\n21585 caffeinate -i -t 300",
+    "cpu_count": 10,
+    "disk_free_raw": "Filesystem      Size    Used   Avail Capacity iused ifree %iused  Mounted on\n/dev/disk3s5   228Gi   198Gi   2.9Gi    99%    3.6M   30M   11%   /System/Volumes/Data",
+    "load_average": [
+      6.80908203125,
+      10.00439453125,
+      8.42529296875
+    ],
+    "os": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "power_source": "battery",
+    "ram_bytes": 17179869184,
+    "top_cpu_processes_raw": [
+      "PID  %CPU COMM",
+      " 7951  68.6 /System/Library/PrivateFrameworks/StorageManagement.framework/PlugIns/ApplicationsStorageExtension.appex/Contents/MacOS/ApplicationsStorageExtension",
+      "  506  58.3 /usr/libexec/syspolicyd",
+      "21946  44.5 /Library/Frameworks/Python.framework/Versions/3.13/Resources/Python.app/Contents/MacOS/Python",
+      " 5946  32.6 /Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper (Renderer).app/Contents/MacOS/Code Helper (Renderer)",
+      "  402  28.9 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+      " 7892  25.0 /System/Library/PrivateFrameworks/StorageManagement.framework/PlugIns/StorageManagementService",
+      " 8457  21.2 claude"
+    ]
+  },
+  "start_time_unix": 1786566286.335673,
+  "tool": "renkin"
+}

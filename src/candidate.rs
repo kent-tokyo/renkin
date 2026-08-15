@@ -40,7 +40,11 @@
 //! `find_routes` computes.
 
 use std::collections::HashMap;
+#[cfg(feature = "perf-instrumentation")]
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
+#[cfg(feature = "perf-instrumentation")]
+use std::time::Instant;
 
 #[cfg(not(target_arch = "wasm32"))]
 use rayon::prelude::*;
@@ -1256,6 +1260,62 @@ pub(crate) fn merge_into_candidates(
         .collect()
 }
 
+#[cfg(feature = "perf-instrumentation")]
+static PHASE_SELECT_NANOS: AtomicU64 = AtomicU64::new(0);
+#[cfg(feature = "perf-instrumentation")]
+static PHASE_RAW_PROPOSE_NANOS: AtomicU64 = AtomicU64::new(0);
+#[cfg(feature = "perf-instrumentation")]
+static PHASE_MERGE_NANOS: AtomicU64 = AtomicU64::new(0);
+
+/// Coarse per-phase wall-clock breakdown of [`CandidateProposalContext::propose_one_step`]
+/// (and its free-standing [`propose_one_step`] wrapper), summed across every
+/// call since the last [`reset_propose_phase_nanos`]. Only tracked when the
+/// `perf-instrumentation` feature is enabled (off by default, same as
+/// `chem_env::apply_retro_call_count` -- no shared-atomic contention on the
+/// hot path in production).
+///
+/// `select` is rule selection ([`select_active_rules`] -- `Exhaustive`'s own
+/// filter, or `BondIndexed`'s [`TemplateBondIndex::retrieve`]).
+/// `raw_propose` is [`raw_propose`]'s parallel per-rule SMARTS-match +
+/// reaction-application work (chematic's `apply_retro_with_policy`, entered
+/// once per active rule); RENKIN does not instrument match vs. application
+/// separately inside that chematic call, so this bucket is the two
+/// combined, not two further-split numbers. `merge` is
+/// [`merge_into_candidates`]'s canonicalize/dedup pass. Each field is wall
+/// clock for that phase's call (parallel sections are timed as one wall-clock
+/// span, not summed per-thread), not CPU time.
+#[derive(Debug, Clone, Copy, Default, serde::Serialize)]
+pub struct ProposePhaseNanos {
+    pub select: u64,
+    pub raw_propose: u64,
+    pub merge: u64,
+}
+
+#[cfg(feature = "perf-instrumentation")]
+pub fn propose_phase_nanos() -> ProposePhaseNanos {
+    ProposePhaseNanos {
+        select: PHASE_SELECT_NANOS.load(Ordering::Relaxed),
+        raw_propose: PHASE_RAW_PROPOSE_NANOS.load(Ordering::Relaxed),
+        merge: PHASE_MERGE_NANOS.load(Ordering::Relaxed),
+    }
+}
+
+#[cfg(not(feature = "perf-instrumentation"))]
+pub fn propose_phase_nanos() -> ProposePhaseNanos {
+    ProposePhaseNanos::default()
+}
+
+/// Reset the counters above (e.g. between template-set arms in a profiling run).
+#[cfg(feature = "perf-instrumentation")]
+pub fn reset_propose_phase_nanos() {
+    PHASE_SELECT_NANOS.store(0, Ordering::Relaxed);
+    PHASE_RAW_PROPOSE_NANOS.store(0, Ordering::Relaxed);
+    PHASE_MERGE_NANOS.store(0, Ordering::Relaxed);
+}
+
+#[cfg(not(feature = "perf-instrumentation"))]
+pub fn reset_propose_phase_nanos() {}
+
 /// Reusable context for repeated one-step candidate proposal against one
 /// fixed `rules` set across many targets. Exists because
 /// `ProposalMode::BondIndexed`'s `TemplateBondIndex` is a pure function of
@@ -1315,19 +1375,33 @@ impl<'a> CandidateProposalContext<'a> {
         let target_mol = mol_from_smiles(target_smiles)?;
         let canonical_target = to_canonical(&target_mol);
 
+        #[cfg(feature = "perf-instrumentation")]
+        let t0 = Instant::now();
         let active_rules = select_active_rules(
             &target_mol,
             self.rules,
             &config.mode,
             self.bond_index.as_ref(),
         )?;
+        #[cfg(feature = "perf-instrumentation")]
+        PHASE_SELECT_NANOS.fetch_add(t0.elapsed().as_nanos() as u64, Ordering::Relaxed);
+
+        #[cfg(feature = "perf-instrumentation")]
+        let t1 = Instant::now();
         let (raw, _ring_diag) = raw_propose(
             &target_mol,
             &canonical_target,
             &active_rules,
             crate::ring_context::RingContextArgs::default(),
         );
+        #[cfg(feature = "perf-instrumentation")]
+        PHASE_RAW_PROPOSE_NANOS.fetch_add(t1.elapsed().as_nanos() as u64, Ordering::Relaxed);
+
+        #[cfg(feature = "perf-instrumentation")]
+        let t2 = Instant::now();
         let candidates = merge_into_candidates(&canonical_target, &raw)?;
+        #[cfg(feature = "perf-instrumentation")]
+        PHASE_MERGE_NANOS.fetch_add(t2.elapsed().as_nanos() as u64, Ordering::Relaxed);
 
         Ok(CandidatePool {
             group_id: group_id.to_string(),

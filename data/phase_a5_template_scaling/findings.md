@@ -299,6 +299,29 @@ tested size wins":
   prefilter)" in-progress ROADMAP item) as directly relevant to making a
   larger template count production-viable, independent of which count is
   ultimately chosen.
+  - **Addendum (2026-08-12, no new run): existing full-VAL arm data
+    already points the same way, without needing a profiling run to
+    start with.** Two derived ratios from this run's own
+    `full_val/*_metrics.json` (wall-clock, `n_candidate_rows`,
+    template count): wall-clock per *template* is nearly flat across the
+    20x template-count range (500->9,979: 0.84 -> 0.80 -> 0.93 -> 1.24 ->
+    1.16 s/template, a ~1.5x spread), while wall-clock per *merged
+    candidate row* (a proxy for merge/write volume) climbs steeply over
+    the same range (0.0031 -> 0.0038 -> 0.0072 -> 0.0189 -> 0.0267
+    s/row, a ~8.7x spread). If merge/write dominated, the per-row ratio
+    should stay roughly flat as template count grows; instead nearly all
+    of the added cost tracks template count directly and none of it
+    tracks the (sub-linearly growing) output volume. This is an
+    aggregate-counter inference, not a true instrumented profile (no
+    per-phase timers inside `renkin-pool-gen` splitting match vs.
+    merge/write time), and the 5,000/10,000 arms' chunked execution adds
+    minor per-chunk startup overhead (10 and 17 chunks respectively)
+    that a true single-shot run wouldn't have -- but that overhead is a
+    few seconds per chunk against totals of 6,214s/11,604s, too small to
+    explain an 8.7x spread. Net: match-time-dominated cost is already
+    well-supported by data in hand; a dedicated profiling run would only
+    be needed to go from "well-supported" to "precisely quantified," not
+    to establish the direction.
 - Only once a production template count is frozen from this analysis:
   one final formal-TEST route-search gate run to confirm the VAL-measured
   coverage gain survives into actual route-search outcomes (not just

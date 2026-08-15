@@ -1,0 +1,3 @@
+{"canonical_smiles": "c1ccc(-c4noc(c4)CNc3nc(Cl)cc(n3)Nc2cc(C(C)C)[nH]n2)cc1", "sample_key": null, "sample_rank": 0, "source_line_number": null, "target_id": "uspto50k_val#L2385"}
+{"canonical_smiles": "C(/[C@H](CC(=O)OCC)c2ccc(OC3CCCCO3)cc2)=C\\Cc1ccccc1", "sample_key": null, "sample_rank": 1, "source_line_number": null, "target_id": "uspto50k_val#L3175"}
+{"canonical_smiles": "c2cccc(c2)CC(C(=O)N[C@@H](CSCCc1ccccc1)C(OCC)=O)CSC(C)=O", "sample_key": null, "sample_rank": 2, "source_line_number": null, "target_id": "uspto50k_val#L1920"}

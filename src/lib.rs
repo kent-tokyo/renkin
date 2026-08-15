@@ -2,6 +2,8 @@
 
 pub mod candidate;
 pub mod chem_env;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod coverage_mode;
 pub mod display;
 pub mod evidence;
 pub mod evidence_match;

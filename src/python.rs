@@ -37,6 +37,27 @@ use crate::search::{SearchConfig, find_routes};
 ///     reranker_freq_table_path (str | None): Path to the TRAIN-frozen
 ///         template ``frequency_table.json`` for the reranker. Default:
 ///         ``None``.
+///     top_templates (int | None): If given, keep only the top-N
+///         ``templates_path`` templates by frequency weight. Applies only
+///         to Stage 1 (``templates_path``) -- coverage mode's Stage 2
+///         (``coverage_templates_path``) always uses its full template set
+///         unfiltered, matching the ``renkin`` CLI's ``--top-templates``
+///         exactly. Default: ``None`` (no filtering).
+///     search_mode (str): ``"standard"`` (default, unchanged behavior) or
+///         ``"coverage"``. In coverage mode, Stage 1 (``templates_path``)
+///         runs first; only if it finds nothing does Stage 2 run against
+///         ``coverage_templates_path`` (Phase 41.18B,
+///         ``docs/design/coverage-mode-v0.md``). A Stage-1 valid route is
+///         never overwritten.
+///     coverage_templates_path (str | None): Stage 2's template set;
+///         required when ``search_mode="coverage"``, validated (existence,
+///         readability, non-empty) before Stage 1 even runs. Default:
+///         ``None``.
+///     coverage_timeout_seconds (int | None): Optional positive-integer
+///         wall-clock budget for Stage 2 only (cooperative cancellation,
+///         not a hard real-time bound -- see ``SearchTermination::
+///         DeadlineExceeded``'s doc in ``src/search.rs``). ``0`` raises.
+///         Default: ``None`` (unlimited).
 ///
 ///     Passing only one of the two reranker paths, or the model failing to
 ///     load, falls back to legacy ordering with a message printed to
@@ -45,10 +66,24 @@ use crate::search::{SearchConfig, find_routes};
 ///     reranker is configured (either path given), the JSON output gains a
 ///     ``reranker_failures`` integer field -- ``0`` for a fully healthy
 ///     run, nonzero if inference degraded mid-search; the field is absent
-///     entirely (not ``null``) when no reranker was configured.
+///     entirely (not ``null``) when no reranker was configured. In coverage
+///     mode this is the sum across every stage that actually ran.
+///
+///     Coverage mode does not support ``--bond-index``/an ONNX
+///     ``--scorer``/an active ring-context policy in v0 -- none of these
+///     are exposed as Python parameters today, so this restriction has no
+///     practical effect from Python yet, but the same shared validation
+///     the ``renkin`` CLI uses (``renkin::coverage_mode::
+///     validate_coverage_mode_config``) still runs.
 ///
 /// Returns:
-///     str: JSON string with retrosynthesis routes.
+///     str: JSON string with retrosynthesis routes. In coverage mode, gains
+///     ``search_mode``, ``selected_stage``, ``stage2_invoked``,
+///     ``stage1_timeout``, ``stage2_timeout``, ``stage1_elapsed_ms``,
+///     ``stage2_elapsed_ms``, ``total_elapsed_ms`` -- identical field names
+///     and shapes to the ``renkin`` CLI's own coverage-mode JSON output.
+///     Absent (not ``null``) in standard mode, byte-for-byte the same
+///     output as before these fields existed.
 ///
 /// Example::
 ///
@@ -56,7 +91,7 @@ use crate::search::{SearchConfig, find_routes};
 ///     routes = json.loads(renkin.find_routes("CC(=O)Oc1ccccc1C(=O)O", depth=3))
 ///     print(routes["routes_found"])
 #[pyfunction]
-#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None))]
+#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None))]
 #[allow(clippy::too_many_arguments)]
 pub fn find_routes_py(
     target: &str,
@@ -72,7 +107,34 @@ pub fn find_routes_py(
     template_metadata_path: Option<&str>,
     reranker_model_path: Option<&str>,
     reranker_freq_table_path: Option<&str>,
+    top_templates: Option<usize>,
+    search_mode: &str,
+    coverage_templates_path: Option<&str>,
+    coverage_timeout_seconds: Option<u64>,
 ) -> PyResult<String> {
+    if search_mode != "standard" && search_mode != "coverage" {
+        return Err(PyValueError::new_err(format!(
+            "invalid search_mode {search_mode:?} (expected \"standard\" or \"coverage\")"
+        )));
+    }
+    if search_mode == "standard" {
+        if coverage_templates_path.is_some() {
+            return Err(PyValueError::new_err(
+                "coverage_templates_path requires search_mode=\"coverage\"",
+            ));
+        }
+        if coverage_timeout_seconds.is_some() {
+            return Err(PyValueError::new_err(
+                "coverage_timeout_seconds requires search_mode=\"coverage\"",
+            ));
+        }
+    }
+    if search_mode == "coverage" && coverage_timeout_seconds == Some(0) {
+        return Err(PyValueError::new_err(
+            "coverage_timeout_seconds must be a positive integer (got 0)",
+        ));
+    }
+
     let env = match building_blocks {
         Some(ref bbs) => {
             let refs: Vec<&str> = bbs.iter().map(|s| s.as_str()).collect();
@@ -84,7 +146,11 @@ pub fn find_routes_py(
 
     let mut rules = default_rules();
     if let Some(path) = templates_path {
-        rules.extend(load_rules_from_file(path));
+        let mut extra = load_rules_from_file(path);
+        if let Some(k) = top_templates {
+            extra = crate::chem_env::top_templates_by_weight(extra, k);
+        }
+        rules.extend(extra);
     }
 
     // Malformed metadata must fail before any search runs.
@@ -154,8 +220,62 @@ pub fn find_routes_py(
         reranker,
         ..Default::default()
     };
-    let (routes, stats) = find_routes(target, &env, &rules, &config)
+
+    struct CoverageModeMeta {
+        selected_stage: &'static str,
+        stage2_invoked: bool,
+        stage1_timeout: bool,
+        stage2_timeout: bool,
+        stage1_elapsed_ms: f64,
+        stage2_elapsed_ms: Option<f64>,
+        total_elapsed_ms: f64,
+        reranker_failures_summed: u64,
+    }
+
+    let (routes, stats, coverage_meta) = if search_mode == "coverage" {
+        let coverage_path = coverage_templates_path.ok_or_else(|| {
+            PyValueError::new_err("search_mode=\"coverage\" requires coverage_templates_path")
+        })?;
+        // Fail-loud validation before Stage 1 runs at all -- same contract
+        // as the renkin CLI's --search-mode coverage.
+        crate::coverage_mode::validate_coverage_mode_config(&config)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let coverage_rules = crate::coverage_mode::load_coverage_rules(coverage_path)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let coverage_timeout = coverage_timeout_seconds.map(std::time::Duration::from_secs);
+        let result = crate::coverage_mode::run_coverage_mode(
+            target,
+            &env,
+            &rules,
+            &config,
+            &coverage_rules,
+            coverage_timeout,
+        )
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let meta = CoverageModeMeta {
+            selected_stage: match result.selected_stage {
+                crate::coverage_mode::SelectedStage::Stage1 => "stage1",
+                crate::coverage_mode::SelectedStage::Stage2 => "stage2",
+            },
+            stage2_invoked: result.stage2_invoked,
+            stage1_timeout: result.stage1_timeout,
+            stage2_timeout: result.stage2_timeout,
+            stage1_elapsed_ms: result.stage1_elapsed_ms,
+            stage2_elapsed_ms: result.stage2_elapsed_ms,
+            total_elapsed_ms: result.total_elapsed_ms,
+            reranker_failures_summed: result.reranker_failures,
+        };
+        (result.routes, result.stats, Some(meta))
+    } else {
+        let (routes, stats) = find_routes(target, &env, &rules, &config)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        (routes, stats, None)
+    };
+
+    let reranker_failures_for_output = coverage_meta
+        .as_ref()
+        .map(|m| m.reranker_failures_summed)
+        .unwrap_or(stats.reranker_failures);
 
     let mut output = if routes.is_empty() {
         serde_json::json!({
@@ -174,9 +294,21 @@ pub fn find_routes_py(
     // Mirrors the `renkin` CLI's exact contract (src/main.rs) -- surfaced
     // unconditionally whenever a reranker was configured, since a graceful
     // mid-run degrade (never a hard error) has no other way to be detected
-    // by the caller.
+    // by the caller. In coverage mode this is the sum across every stage
+    // that actually ran, not just the selected one's.
     if config.reranker.is_some() {
-        output["reranker_failures"] = serde_json::Value::from(stats.reranker_failures);
+        output["reranker_failures"] = serde_json::Value::from(reranker_failures_for_output);
+    }
+    if let Some(ref m) = coverage_meta {
+        output["search_mode"] = serde_json::Value::from("coverage");
+        output["selected_stage"] = serde_json::Value::from(m.selected_stage);
+        output["stage2_invoked"] = serde_json::Value::from(m.stage2_invoked);
+        output["stage1_timeout"] = serde_json::Value::from(m.stage1_timeout);
+        output["stage2_timeout"] = serde_json::Value::from(m.stage2_timeout);
+        output["stage1_elapsed_ms"] = serde_json::Value::from(m.stage1_elapsed_ms);
+        output["stage2_elapsed_ms"] = serde_json::to_value(m.stage2_elapsed_ms)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        output["total_elapsed_ms"] = serde_json::Value::from(m.total_elapsed_ms);
     }
 
     serde_json::to_string(&output).map_err(|e| PyValueError::new_err(e.to_string()))

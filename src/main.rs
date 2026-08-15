@@ -37,6 +37,27 @@ struct Output {
     /// (a run that exits 0 either way).
     #[serde(skip_serializing_if = "Option::is_none")]
     reranker_failures: Option<u64>,
+    /// Phase 41.18B (coverage mode): present only when `--search-mode
+    /// coverage` was used -- omitted (not `null`) for standard mode, so
+    /// existing consumers see byte-identical output. When a reranker is
+    /// also configured, `reranker_failures` above is the sum across every
+    /// stage that actually ran, not just this one's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    search_mode: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    selected_stage: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stage2_invoked: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stage1_timeout: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stage2_timeout: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stage1_elapsed_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stage2_elapsed_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    total_elapsed_ms: Option<f64>,
 }
 
 // ..Default::default() is needed when nn-scoring feature is enabled (adds nn_scorer field).
@@ -81,6 +102,9 @@ fn main() -> Result<()> {
     let mut ring_context_sidecar_path: Option<String> = None;
     let mut reranker_model_path: Option<String> = None;
     let mut reranker_freq_table_path: Option<String> = None;
+    let mut search_mode_arg: Option<String> = None;
+    let mut coverage_templates_path: Option<String> = None;
+    let mut coverage_timeout_secs_arg: Option<String> = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -206,6 +230,27 @@ fn main() -> Result<()> {
                 };
                 reranker_freq_table_path = Some(v.clone());
             }
+            "--search-mode" => {
+                i += 1;
+                let Some(v) = args.get(i) else {
+                    bail!("--search-mode requires a <standard|coverage> value");
+                };
+                search_mode_arg = Some(v.clone());
+            }
+            "--coverage-templates" => {
+                i += 1;
+                let Some(v) = args.get(i) else {
+                    bail!("--coverage-templates requires a <path> value");
+                };
+                coverage_templates_path = Some(v.clone());
+            }
+            "--coverage-timeout-secs" => {
+                i += 1;
+                let Some(v) = args.get(i) else {
+                    bail!("--coverage-timeout-secs requires an <N> value");
+                };
+                coverage_timeout_secs_arg = Some(v.clone());
+            }
             "--bb-prices" => {
                 i += 1;
                 if i < args.len() {
@@ -275,7 +320,16 @@ fn main() -> Result<()> {
              --reranker-freq-table <path>  TRAIN-frozen template frequency_table.json for the \
              reranker\n  \
              (either flag missing, or the model fails to load, falls back to legacy ordering \
-             with a stderr warning -- never a hard error)"
+             with a stderr warning -- never a hard error)\n  \
+             --search-mode standard|coverage  standard (default): unchanged behavior. \
+             coverage: Stage 1 (--templates) runs first; only if it finds nothing does Stage 2 \
+             run against --coverage-templates (Phase 41.18B, docs/design/coverage-mode-v0.md)\n  \
+             --coverage-templates <path>   Stage 2's template set; required with \
+             --search-mode coverage, validated before Stage 1 runs\n  \
+             --coverage-timeout-secs <N>   Optional positive-integer wall-clock budget for \
+             Stage 2 only (cooperative cancellation, not a hard bound); default: unlimited\n  \
+             coverage mode does not support --bond-index, --scorer, or an active \
+             --ring-context-policy in v0 (fails loud before Stage 1 runs)"
         );
     };
 
@@ -453,7 +507,97 @@ fn main() -> Result<()> {
         reranker,
         ..Default::default()
     };
-    let (mut routes, stats) = search::find_routes(&target_smiles, &env, &rules, &config)?;
+
+    // Phase 41.18B: coverage mode. `search_mode_arg` absent or "standard"
+    // is byte-for-byte the pre-existing path below -- this whole block is
+    // additive.
+    enum SearchMode {
+        Standard,
+        Coverage,
+    }
+    let search_mode = match search_mode_arg.as_deref() {
+        None | Some("standard") => SearchMode::Standard,
+        Some("coverage") => SearchMode::Coverage,
+        Some(other) => bail!("invalid --search-mode '{other}' (expected standard|coverage)"),
+    };
+    match search_mode {
+        SearchMode::Standard => {
+            if coverage_templates_path.is_some() {
+                bail!("--coverage-templates requires --search-mode coverage");
+            }
+            if coverage_timeout_secs_arg.is_some() {
+                bail!("--coverage-timeout-secs requires --search-mode coverage");
+            }
+        }
+        SearchMode::Coverage => {}
+    }
+    let coverage_timeout: Option<std::time::Duration> = match coverage_timeout_secs_arg {
+        None => None,
+        Some(ref s) => {
+            let n: u64 = s.parse().map_err(|_| {
+                anyhow::anyhow!("--coverage-timeout-secs must be a positive integer, got {s:?}")
+            })?;
+            if n == 0 {
+                bail!("--coverage-timeout-secs must be a positive integer (got 0)");
+            }
+            Some(std::time::Duration::from_secs(n))
+        }
+    };
+
+    struct CoverageModeMeta {
+        selected_stage: &'static str,
+        stage2_invoked: bool,
+        stage1_timeout: bool,
+        stage2_timeout: bool,
+        stage1_elapsed_ms: f64,
+        stage2_elapsed_ms: Option<f64>,
+        total_elapsed_ms: f64,
+        reranker_failures_summed: u64,
+    }
+
+    let (mut routes, stats, coverage_meta): (
+        Vec<search::Route>,
+        search::SearchStats,
+        Option<CoverageModeMeta>,
+    ) = match search_mode {
+        SearchMode::Standard => {
+            let (routes, stats) = search::find_routes(&target_smiles, &env, &rules, &config)?;
+            (routes, stats, None)
+        }
+        SearchMode::Coverage => {
+            let Some(ref coverage_path) = coverage_templates_path else {
+                bail!("--search-mode coverage requires --coverage-templates <path>");
+            };
+            // Fail-loud validation happens before Stage 1 runs at all:
+            // an unsupported option combo or a bad --coverage-templates
+            // path is reported immediately, not only after Stage 1
+            // already ran and turned out to need Stage 2.
+            renkin::coverage_mode::validate_coverage_mode_config(&config)?;
+            let coverage_rules = renkin::coverage_mode::load_coverage_rules(coverage_path)?;
+            let result = renkin::coverage_mode::run_coverage_mode(
+                &target_smiles,
+                &env,
+                &rules,
+                &config,
+                &coverage_rules,
+                coverage_timeout,
+            )?;
+            let meta = CoverageModeMeta {
+                selected_stage: match result.selected_stage {
+                    renkin::coverage_mode::SelectedStage::Stage1 => "stage1",
+                    renkin::coverage_mode::SelectedStage::Stage2 => "stage2",
+                },
+                stage2_invoked: result.stage2_invoked,
+                stage1_timeout: result.stage1_timeout,
+                stage2_timeout: result.stage2_timeout,
+                stage1_elapsed_ms: result.stage1_elapsed_ms,
+                stage2_elapsed_ms: result.stage2_elapsed_ms,
+                total_elapsed_ms: result.total_elapsed_ms,
+                reranker_failures_summed: result.reranker_failures,
+            };
+            (result.routes, result.stats, Some(meta))
+        }
+    };
     apply_constraints(&mut routes, &constraints);
 
     match format.as_str() {
@@ -565,6 +709,10 @@ fn main() -> Result<()> {
             println!("{}", serde_json::to_string_pretty(&out)?);
         }
         _ => {
+            let reranker_failures_for_output = coverage_meta
+                .as_ref()
+                .map(|m| m.reranker_failures_summed)
+                .unwrap_or(stats.reranker_failures);
             if routes.is_empty() {
                 let (causes, suggestions) = diagnose(&stats, max_depth);
                 let mut out = serde_json::json!({
@@ -585,7 +733,17 @@ fn main() -> Result<()> {
                     out["search_diagnostics"] = serde_json::to_value(&stats.crowd_out)?;
                 }
                 if config.reranker.is_some() {
-                    out["reranker_failures"] = serde_json::to_value(stats.reranker_failures)?;
+                    out["reranker_failures"] = serde_json::to_value(reranker_failures_for_output)?;
+                }
+                if let Some(ref m) = coverage_meta {
+                    out["search_mode"] = serde_json::Value::from("coverage");
+                    out["selected_stage"] = serde_json::Value::from(m.selected_stage);
+                    out["stage2_invoked"] = serde_json::Value::from(m.stage2_invoked);
+                    out["stage1_timeout"] = serde_json::Value::from(m.stage1_timeout);
+                    out["stage2_timeout"] = serde_json::Value::from(m.stage2_timeout);
+                    out["stage1_elapsed_ms"] = serde_json::Value::from(m.stage1_elapsed_ms);
+                    out["stage2_elapsed_ms"] = serde_json::to_value(m.stage2_elapsed_ms)?;
+                    out["total_elapsed_ms"] = serde_json::Value::from(m.total_elapsed_ms);
                 }
                 println!("{}", serde_json::to_string_pretty(&out)?);
             } else {
@@ -599,7 +757,18 @@ fn main() -> Result<()> {
                     routes_found: routes.len(),
                     joint_success_probability,
                     search_diagnostics: search_diagnostics.then_some(stats.crowd_out),
-                    reranker_failures: config.reranker.is_some().then_some(stats.reranker_failures),
+                    reranker_failures: config
+                        .reranker
+                        .is_some()
+                        .then_some(reranker_failures_for_output),
+                    search_mode: coverage_meta.as_ref().map(|_| "coverage"),
+                    selected_stage: coverage_meta.as_ref().map(|m| m.selected_stage),
+                    stage2_invoked: coverage_meta.as_ref().map(|m| m.stage2_invoked),
+                    stage1_timeout: coverage_meta.as_ref().map(|m| m.stage1_timeout),
+                    stage2_timeout: coverage_meta.as_ref().map(|m| m.stage2_timeout),
+                    stage1_elapsed_ms: coverage_meta.as_ref().map(|m| m.stage1_elapsed_ms),
+                    stage2_elapsed_ms: coverage_meta.as_ref().and_then(|m| m.stage2_elapsed_ms),
+                    total_elapsed_ms: coverage_meta.as_ref().map(|m| m.total_elapsed_ms),
                     routes,
                 };
                 println!("{}", serde_json::to_string_pretty(&output)?);

@@ -67,33 +67,40 @@ pub struct CoverageModeResult {
     pub reranker_failures: u64,
 }
 
-/// Rejects `SearchConfig` combinations coverage mode does not support in
-/// v0: `bond_index`, an ONNX `--scorer` (`nn_scorer`), or an active
-/// `ring_context` policy. Each would need its own Stage-2-specific
-/// validation (a separate retrieval index built against the larger
-/// template set, a separate scorer vocabulary, a separate ring-context
-/// sidecar) that does not exist yet -- silently ignoring the option for
-/// Stage 2 while it's still active for Stage 1 would be a worse footgun
-/// than refusing to start. Standard mode is entirely unaffected; this is
-/// only ever called on the coverage-mode path.
-pub fn validate_coverage_mode_config(config: &SearchConfig) -> Result<()> {
-    if config.bond_index {
+/// Rejects unsupported option combinations by **flag presence alone** --
+/// `bond_index`, an ONNX `--scorer`, and an active `--ring-context-policy`
+/// each would need their own Stage-2-specific validation (a retrieval index
+/// / scorer vocabulary / ring-context sidecar built against the *coverage*
+/// template set) that does not exist yet in v0. Deliberately takes plain
+/// booleans, not a built [`SearchConfig`]/`RingContextConfig` -- an active
+/// ring-context policy or ONNX scorer is only reachable today by first
+/// *loading* a real sidecar/model file, and this check needs to fire
+/// **before** either of those loads happens (a `--search-mode coverage
+/// --ring-context-policy conservative` call with a bogus/nonexistent
+/// `--ring-context-sidecar` path must still be rejected for the
+/// combination itself, not fail with an unrelated "sidecar not found"
+/// error first). Callers (CLI, Python) compute presence from their own raw
+/// flags/kwargs, before doing any of that loading. Standard mode is
+/// entirely unaffected; this is only ever called on the coverage-mode
+/// path.
+pub fn validate_coverage_mode_flags(
+    bond_index: bool,
+    ring_context_policy_active: bool,
+    onnx_scorer_active: bool,
+) -> Result<()> {
+    if bond_index {
         bail!(
             "coverage mode does not support --bond-index in v0 -- Stage 2 would need its own, \
              separately validated retrieval index against the coverage template set"
         );
     }
-    #[cfg(feature = "nn-scoring")]
-    if config.nn_scorer.is_some() {
+    if onnx_scorer_active {
         bail!(
             "coverage mode does not support an ONNX --scorer in v0 -- Stage 2 would need its \
              own, separately validated scorer vocabulary against the coverage template set"
         );
     }
-    if !matches!(
-        config.ring_context,
-        crate::ring_context::RingContextConfig::Disabled
-    ) {
+    if ring_context_policy_active {
         bail!(
             "coverage mode does not support an active --ring-context-policy in v0 -- Stage 2 \
              would need its own, separately validated ring-context sidecar against the coverage \
@@ -101,6 +108,31 @@ pub fn validate_coverage_mode_config(config: &SearchConfig) -> Result<()> {
         );
     }
     Ok(())
+}
+
+/// Defensive backstop over [`validate_coverage_mode_flags`], checked
+/// internally by [`run_coverage_mode_with_configs`] against the already-
+/// built [`SearchConfig`] it was given -- catches a caller that skipped
+/// the early, pre-loading flag check above. By the time a `SearchConfig`
+/// exists, an active ring-context policy or ONNX scorer has *already* been
+/// loaded, so this can no longer prevent that load -- it exists purely as
+/// a second line of defense, not the primary mechanism (CLI/Python are
+/// expected to call [`validate_coverage_mode_flags`] on their raw
+/// flags/kwargs before doing any of that loading).
+pub fn validate_coverage_mode_config(config: &SearchConfig) -> Result<()> {
+    let ring_context_policy_active = !matches!(
+        config.ring_context,
+        crate::ring_context::RingContextConfig::Disabled
+    );
+    #[cfg(feature = "nn-scoring")]
+    let onnx_scorer_active = config.nn_scorer.is_some();
+    #[cfg(not(feature = "nn-scoring"))]
+    let onnx_scorer_active = false;
+    validate_coverage_mode_flags(
+        config.bond_index,
+        ring_context_policy_active,
+        onnx_scorer_active,
+    )
 }
 
 /// Loads and validates the Stage-2 rule set from `coverage_templates_path`,
@@ -128,6 +160,23 @@ pub fn load_coverage_rules(coverage_templates_path: &str) -> Result<Vec<RetroRul
     if !metadata.is_file() {
         bail!("--coverage-templates path is not a file: {coverage_templates_path}");
     }
+    // Explicit read-as-UTF-8 check, kept distinct from "parsed fine but
+    // found zero valid template lines" below.
+    // `chem_env::load_rules_from_file` itself swallows a read/decode
+    // failure into a stderr warning + empty `Vec` (the right default for
+    // the pre-existing `--templates` flag), which would otherwise make
+    // this function misreport a permission error or non-UTF-8 file
+    // content as "file contains no valid templates" -- a different,
+    // misleading failure mode from what actually happened. This does mean
+    // the file is read twice (here, and again inside
+    // `load_rules_from_file`'s own parse pass) -- accepted: this runs once
+    // per coverage-mode invocation, on a small text file, not a hot path.
+    std::fs::read_to_string(coverage_templates_path).with_context(|| {
+        format!(
+            "--coverage-templates path exists but could not be read as valid UTF-8 text \
+             (permission error or binary/non-UTF-8 content): {coverage_templates_path}"
+        )
+    })?;
     let extra = load_rules_from_file(coverage_templates_path);
     if extra.is_empty() {
         bail!("--coverage-templates file contains no valid templates: {coverage_templates_path}");
@@ -204,10 +253,41 @@ pub fn run_coverage_mode_with_configs(
         &control,
     )?;
     let stage2_elapsed_ms = stage2_start.elapsed().as_secs_f64() * 1000.0;
-    let stage2_timed_out = stage2_result.termination == SearchTermination::DeadlineExceeded;
-    let reranker_failures = stage1_stats.reranker_failures + stage2_result.stats.reranker_failures;
 
-    Ok(CoverageModeResult {
+    Ok(stage2_outcome_to_result(
+        stage2_result,
+        stage1_stats.reranker_failures,
+        stage1_elapsed_ms,
+        stage2_elapsed_ms,
+        total_start.elapsed().as_secs_f64() * 1000.0,
+    ))
+}
+
+/// Pure conversion from Stage 2's raw [`search::SearchRunResult`] into the
+/// Stage-2 half of a [`CoverageModeResult`] -- pulled out specifically so
+/// the "does the orchestrator faithfully relay whatever Stage 2 found,
+/// including a nonempty partial result on `DeadlineExceeded`" question can
+/// be tested deterministically, by constructing a synthetic
+/// `SearchRunResult` directly, instead of racing a real search against a
+/// wall-clock deadline to try to land mid-timeout. The underlying
+/// guarantee that a real search retains routes found before its deadline
+/// -- rather than discarding them -- is `find_routes_with_control`'s own
+/// responsibility, already exhaustively verified by
+/// `search::cooperative_cancellation_tests::
+/// valid_routes_found_before_deadline_are_not_discarded` (Phase 41.18A).
+/// This function's only job is to not lose or alter anything on the way
+/// through into a `CoverageModeResult` -- see
+/// `coverage_mode::tests::stage2_outcome_conversion_is_a_faithful_passthrough`.
+fn stage2_outcome_to_result(
+    stage2_result: search::SearchRunResult,
+    stage1_reranker_failures: u64,
+    stage1_elapsed_ms: f64,
+    stage2_elapsed_ms: f64,
+    total_elapsed_ms: f64,
+) -> CoverageModeResult {
+    let stage2_timed_out = stage2_result.termination == SearchTermination::DeadlineExceeded;
+    let reranker_failures = stage1_reranker_failures + stage2_result.stats.reranker_failures;
+    CoverageModeResult {
         routes: stage2_result.routes,
         selected_stage: SelectedStage::Stage2,
         stats: stage2_result.stats,
@@ -215,11 +295,11 @@ pub fn run_coverage_mode_with_configs(
         stage2_invoked: true,
         stage1_elapsed_ms,
         stage2_elapsed_ms: Some(stage2_elapsed_ms),
-        total_elapsed_ms: total_start.elapsed().as_secs_f64() * 1000.0,
+        total_elapsed_ms,
         stage1_timeout: false,
         stage2_timeout: stage2_timed_out,
         reranker_failures,
-    })
+    }
 }
 
 /// Production entry point: both stages share the identical `config` --
@@ -264,11 +344,51 @@ mod tests {
         }
     }
 
+    /// A shallower, beam-limited config specifically for
+    /// `SOLVABLE_ONLY_WITH_FIXTURE_TEMPLATES` -- that target is unsolvable
+    /// by `default_rules()` alone only at these narrower settings; at
+    /// `cfg()`'s depth=5/unlimited-beam, default_rules() alone eventually
+    /// solves it too (deeper, unconstrained search finds more), which
+    /// would make the "Stage 1 genuinely couldn't solve this" premise
+    /// false. Depth/beam-width here match the exact settings used to
+    /// choose this fixture (see `tests/coverage_mode_cli.rs`'s module doc).
+    fn shallow_beam_limited_cfg() -> SearchConfig {
+        SearchConfig {
+            max_depth: 2,
+            max_routes: 5,
+            beam_width: 100,
+            ..Default::default()
+        }
+    }
+
     const ASPIRIN: &str = "CC(=O)Oc1ccccc1C(=O)O";
+    // Solved by default_rules() alone (a real, nonempty rule set -- not an
+    // empty Vec) via friedel_crafts_acylation_retro at max_depth<=3. Used
+    // wherever a test needs Stage 1 to genuinely solve something using its
+    // *actual* rules, as opposed to trivially succeeding because it was
+    // handed nothing to fail with.
+    const SOLVABLE_BY_DEFAULT_RULES_ALONE: &str = "CCN(CC)C(=O)c1ccccc1F";
+    // Unsolved by default_rules() alone at shallow_beam_limited_cfg()'s
+    // settings (depth=2, beam_width=100 -- NOT at cfg()'s depth=5/
+    // unlimited-beam, where default_rules() alone eventually solves it
+    // too), solved once the fixture template
+    // (tests/fixtures/coverage_mode_templates.smi's two lines, loaded here
+    // directly since unit tests don't go through the CLI) is added -- see
+    // that fixture file's own header comment for provenance. Used
+    // wherever a test needs two *specific, genuinely different* nonempty
+    // rule sets where only one can solve the target, as opposed to "empty
+    // vs. nonempty" (which only proves "Stage 2 had *some* rules," not
+    // "Stage 2 had *its own* rules"). Always pair with
+    // `shallow_beam_limited_cfg()`, never `cfg()`.
+    const SOLVABLE_ONLY_WITH_FIXTURE_TEMPLATES: &str = "O=C1CCC(=O)N1c1ccccc1";
     // Deliberately unsolvable at any reasonable depth with an empty rule
     // set and no building-block match -- used to force Stage 1 to come
     // back empty so Stage 2 actually runs.
     const UNKNOWN: &str = "c1ccc2c(c1)c1ccccc1c1ccccc21"; // pyrene, not a building block
+
+    fn fixture_rules() -> Vec<RetroRule> {
+        load_rules_from_file("tests/fixtures/coverage_mode_templates.smi")
+    }
 
     struct PanicReranker;
     impl crate::candidate::CandidateReranker for PanicReranker {
@@ -281,18 +401,38 @@ mod tests {
         }
     }
 
-    struct CountingReranker(std::sync::Arc<std::sync::atomic::AtomicUsize>);
-    impl crate::candidate::CandidateReranker for CountingReranker {
+    /// Always fails, and counts how many times it was actually invoked.
+    /// Unlike a reranker that always succeeds (which can never distinguish
+    /// "summed across both stages" from "just the selected stage's count,"
+    /// since a healthy reranker's failure count is 0 either way), this
+    /// double guarantees each stage that invokes it contributes exactly 1
+    /// to that stage's own `reranker_failures` (the first failure disables
+    /// the reranker for the remainder of that stage's search, per
+    /// `search.rs`'s `active_reranker` degrade-once contract) -- so a
+    /// two-stage run's summed total is only correct if it's genuinely 2,
+    /// not 1.
+    struct FailingReranker(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+    impl crate::candidate::CandidateReranker for FailingReranker {
         fn score_pool(
             &self,
             _target: &str,
-            candidates: &mut [crate::candidate::ReactionCandidate],
+            _candidates: &mut [crate::candidate::ReactionCandidate],
         ) -> anyhow::Result<()> {
             self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            for c in candidates.iter_mut() {
-                c.reranker_score = Some(c.precursor_smiles.join(".").len() as f64);
-            }
-            Ok(())
+            anyhow::bail!("FailingReranker: deliberate failure for aggregation test")
+        }
+    }
+
+    fn synthetic_route() -> Route {
+        Route {
+            steps: vec![],
+            depth: 0,
+            score: 0.0,
+            building_blocks: vec![],
+            confidence: 1.0,
+            convergency: 1.0,
+            success_probability: 1.0,
+            route_cost: 0.0,
         }
     }
 
@@ -300,7 +440,11 @@ mod tests {
     // a Stage-2-only config carrying a reranker that panics if `score_pool`
     // is ever called -- not just checking `stage2_invoked` after the fact,
     // which could pass even if the implementation were subtly wrong about
-    // *which* function actually ran.
+    // *which* function actually ran. Independently mutation-verified (by
+    // hand, mirroring the method PR #119's review used): temporarily
+    // removed the Stage-1-solved early return in
+    // `run_coverage_mode_with_configs`, reran, confirmed this test fails
+    // with exactly the expected panic; restored, confirmed clean.
     #[test]
     fn stage1_solved_never_invokes_stage2() {
         let env = env();
@@ -348,31 +492,96 @@ mod tests {
         assert!(!result.routes.is_empty());
     }
 
+    // Requirement: Stage 1's valid route is never overwritten. Uses a
+    // target with a *real*, non-trivial (depth >= 1) Stage-1 route -- not
+    // a depth-0 building-block target, where "the route" is just the
+    // target itself and can't actually demonstrate anything about route
+    // *content* being preserved -- and asserts the coverage-mode result's
+    // route content is byte-identical to a fresh, direct `find_routes`
+    // baseline call using the exact same Stage-1 rules. `stage2_rules`
+    // here is default_rules() *plus* the fixture templates (genuinely
+    // more/different than Stage 1's rules, unlike an earlier version of
+    // this test which used the same rules for both stages and could not
+    // have detected an overwrite even if one occurred) -- Stage 2 never
+    // runs, so this is entirely about proving Stage 1's own output passes
+    // through unmodified, not about Stage 2's rules being distinct (that's
+    // `stage2_uses_its_own_rules_not_stage1_rules`'s job).
     #[test]
     fn stage1_valid_route_never_overwritten() {
         let env = env();
         let stage1_rules = default_rules();
-        // A hostile "coverage" rule set that would find a *different*
-        // route if it ever ran -- proves Stage 1's actual result, not
-        // some coincidentally-identical one, is what comes back.
-        let stage2_rules = default_rules();
-        let result =
-            run_coverage_mode("CC(=O)O", &env, &stage1_rules, &cfg(), &stage2_rules, None).unwrap();
+        let mut stage2_rules = default_rules();
+        stage2_rules.extend(fixture_rules());
+
+        let baseline =
+            search::find_routes(SOLVABLE_BY_DEFAULT_RULES_ALONE, &env, &stage1_rules, &cfg())
+                .unwrap();
+        assert!(
+            !baseline.0.is_empty(),
+            "fixture target must be Stage-1-solvable"
+        );
+
+        let result = run_coverage_mode(
+            SOLVABLE_BY_DEFAULT_RULES_ALONE,
+            &env,
+            &stage1_rules,
+            &cfg(),
+            &stage2_rules,
+            None,
+        )
+        .unwrap();
+
         assert_eq!(result.selected_stage, SelectedStage::Stage1);
-        assert!(result.routes.iter().any(|r| r.depth == 0));
+        assert!(!result.stage2_invoked);
+        assert_eq!(
+            serde_json::to_string(&result.routes).unwrap(),
+            serde_json::to_string(&baseline.0).unwrap(),
+            "coverage mode's Stage-1 result must be byte-identical to a direct find_routes call \
+             with the same Stage-1 rules -- anything else means it was altered on the way through"
+        );
     }
 
+    // Requirement: Stage 2 uses Stage 2's rules, not Stage 1's. Uses two
+    // genuinely different, both-nonempty rule sets (default_rules() alone
+    // vs. default_rules()+fixture) where only the larger one can solve the
+    // target -- proves Stage 2 used *its own, specific* rules, not merely
+    // "some nonempty rules" (which an empty-vs-nonempty version of this
+    // test could not distinguish from Stage 2 accidentally reusing Stage
+    // 1's rules, if Stage 1's rules had happened to be nonempty too).
     #[test]
-    fn stage2_uses_stage2_rules_not_stage1_rules() {
+    fn stage2_uses_its_own_rules_not_stage1_rules() {
         let env = env();
-        let stage1_rules: Vec<RetroRule> = vec![]; // Stage 1 cannot solve anything
-        let stage2_rules = default_rules(); // Stage 2 can solve aspirin
-        let result =
-            run_coverage_mode(ASPIRIN, &env, &stage1_rules, &cfg(), &stage2_rules, None).unwrap();
+        let stage1_rules = default_rules(); // real, nonempty, cannot solve this target
+        let mut stage2_rules = default_rules();
+        stage2_rules.extend(fixture_rules()); // real, nonempty, CAN solve this target
+
+        let stage1_only = search::find_routes(
+            SOLVABLE_ONLY_WITH_FIXTURE_TEMPLATES,
+            &env,
+            &stage1_rules,
+            &shallow_beam_limited_cfg(),
+        )
+        .unwrap();
+        assert!(
+            stage1_only.0.is_empty(),
+            "fixture target must NOT be solvable by Stage 1's rules alone"
+        );
+
+        let result = run_coverage_mode(
+            SOLVABLE_ONLY_WITH_FIXTURE_TEMPLATES,
+            &env,
+            &stage1_rules,
+            &shallow_beam_limited_cfg(),
+            &stage2_rules,
+            None,
+        )
+        .unwrap();
         assert!(result.stage2_invoked);
-        // If Stage 2 had (wrongly) used stage1_rules (empty), this would
-        // be empty too -- it isn't, so Stage 2 genuinely used its own rules.
-        assert!(!result.routes.is_empty());
+        assert_eq!(result.selected_stage, SelectedStage::Stage2);
+        assert!(
+            !result.routes.is_empty(),
+            "Stage 2 must have used its own (larger) rule set, not Stage 1's"
+        );
     }
 
     #[test]
@@ -393,52 +602,71 @@ mod tests {
         assert!(result.stage2_timeout);
     }
 
+    // Requirement: partial valid routes found before a Stage-2 timeout are
+    // retained. Deliberately NOT a wall-clock race (an earlier version of
+    // this test sampled fractions of a measured baseline duration, which
+    // review correctly flagged as exactly the flaky-test pattern this
+    // program has consistently avoided elsewhere). Instead: exercises
+    // `stage2_outcome_to_result` -- the pure function that converts
+    // Stage 2's raw `SearchRunResult` into a `CoverageModeResult` --
+    // directly, with a synthetic `DeadlineExceeded` result carrying
+    // nonempty routes. The underlying "does a real search actually retain
+    // routes found before its deadline" guarantee is
+    // `find_routes_with_control`'s own responsibility, already
+    // exhaustively verified by
+    // `search::cooperative_cancellation_tests::valid_routes_found_before_deadline_are_not_discarded`
+    // (Phase 41.18A) -- this test's only job is to prove the orchestrator
+    // doesn't drop or alter anything on the way through, which is
+    // deterministic and needs no timing at all.
     #[test]
-    fn partial_routes_found_before_stage2_timeout_are_retained() {
-        let env = env();
-        let stage1_rules: Vec<RetroRule> = vec![];
-        let stage2_rules = default_rules();
-
-        let baseline =
-            run_coverage_mode(ASPIRIN, &env, &stage1_rules, &cfg(), &stage2_rules, None).unwrap();
-        assert!(!baseline.routes.is_empty());
-
-        let mut saw_nonempty_partial = false;
-        for frac in [3u32, 4, 5, 6, 7, 8, 9] {
-            let t0 = Instant::now();
-            let _ = run_coverage_mode(ASPIRIN, &env, &stage1_rules, &cfg(), &stage2_rules, None)
-                .unwrap();
-            let baseline_elapsed = t0.elapsed();
-
-            let partial = run_coverage_mode(
-                ASPIRIN,
-                &env,
-                &stage1_rules,
-                &cfg(),
-                &stage2_rules,
-                Some(baseline_elapsed * frac / 10),
-            )
-            .unwrap();
-            assert!(partial.routes.len() <= baseline.routes.len());
-            if partial.stage2_timeout && !partial.routes.is_empty() {
-                saw_nonempty_partial = true;
-            }
-        }
-        assert!(
-            saw_nonempty_partial,
-            "expected at least one sampled deadline fraction to catch a nonempty partial \
-             route set before Stage 2 completed"
-        );
+    fn stage2_outcome_conversion_retains_partial_routes_on_timeout() {
+        let synthetic = search::SearchRunResult {
+            routes: vec![synthetic_route()],
+            stats: SearchStats::default(),
+            termination: SearchTermination::DeadlineExceeded,
+        };
+        let result = stage2_outcome_to_result(synthetic, 0, 10.0, 20.0, 30.0);
+        assert_eq!(result.routes.len(), 1);
+        assert!(result.stage2_timeout);
+        assert_eq!(result.selected_stage, SelectedStage::Stage2);
+        assert!(result.stage2_invoked);
+        assert_eq!(result.stage1_elapsed_ms, 10.0);
+        assert_eq!(result.stage2_elapsed_ms, Some(20.0));
+        assert_eq!(result.total_elapsed_ms, 30.0);
     }
 
     #[test]
+    fn stage2_outcome_conversion_preserves_completed_routes_too() {
+        let synthetic = search::SearchRunResult {
+            routes: vec![synthetic_route(), synthetic_route()],
+            stats: SearchStats::default(),
+            termination: SearchTermination::Completed,
+        };
+        let result = stage2_outcome_to_result(synthetic, 0, 1.0, 2.0, 3.0);
+        assert_eq!(result.routes.len(), 2);
+        assert!(!result.stage2_timeout);
+    }
+
+    // Requirement: reranker_failures summed across invoked stages.
+    // Distinguishes "sum" from "selected-stage-only" for real: a reranker
+    // that always fails contributes exactly 1 failure per stage that
+    // invokes it (the first failure disables it for that stage's
+    // remainder), so a correct two-stage run must report 2, while the
+    // selected (Stage 2) stage's own `stats.reranker_failures` is only 1 --
+    // if these two numbers were ever equal, this test would not have
+    // caught the earlier version's aggregation bug the way it's designed
+    // to. (Verified by hand: changing the sum to
+    // `stage2_result.stats.reranker_failures` alone reproduces exactly the
+    // vacuous-test failure mode review flagged -- `result.reranker_failures`
+    // drops to 1 and this assertion fails.)
+    #[test]
     fn reranker_failures_summed_across_invoked_stages() {
         let env = env();
-        let stage1_rules: Vec<RetroRule> = vec![]; // Stage 1 finds nothing -> escalates
-        let stage2_rules = default_rules();
-        let counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let stage1_rules: Vec<RetroRule> = vec![]; // Stage 1 attempts (0 candidates) -> escalates
+        let stage2_rules = default_rules(); // Stage 2 does real work
+        let call_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let stage_config = SearchConfig {
-            reranker: Some(std::sync::Arc::new(CountingReranker(counter.clone()))),
+            reranker: Some(std::sync::Arc::new(FailingReranker(call_count.clone()))),
             ..cfg()
         };
         let result = run_coverage_mode(
@@ -451,11 +679,18 @@ mod tests {
         )
         .unwrap();
         assert!(result.stage2_invoked);
-        // reranker_failures is always 0 for a healthy reranker (never
-        // errors) -- this asserts the *field exists and is well-formed*
-        // for a two-stage run, not a nonzero value (which would mean the
-        // reranker degraded, an unrelated failure mode).
-        assert_eq!(result.reranker_failures, 0);
+        assert_eq!(
+            result.stats.reranker_failures, 1,
+            "the selected (Stage 2) stage's own count must be exactly 1"
+        );
+        assert_eq!(
+            result.reranker_failures, 2,
+            "summed across both stages (1 + 1), not just the selected stage's own count"
+        );
+        assert!(
+            call_count.load(std::sync::atomic::Ordering::SeqCst) >= 2,
+            "the reranker must have actually been invoked by both stages, not just one"
+        );
     }
 
     #[test]
@@ -499,15 +734,33 @@ mod tests {
         assert!(validate_coverage_mode_config(&config).is_err());
     }
 
+    // Requirement: unsupported combinations fail loud. These check
+    // `validate_coverage_mode_flags` directly, on plain booleans -- no
+    // real `RingContextConfig::Guarded`/ONNX-scorer value needs to be
+    // constructed (deliberately: this is the whole point of the
+    // flags-based check existing separately from `validate_coverage_mode_config`,
+    // which needs an already-*loaded* config). An earlier version of this
+    // ring-context test was an empty function body with a comment
+    // claiming the check was covered elsewhere; it was not. Empty test
+    // bodies are not used in this module.
     #[test]
-    fn validate_config_rejects_active_ring_context() {
-        // Constructing a real `Guarded` variant needs a loaded guard file;
-        // this crate's ring_context module doesn't expose a trivial
-        // in-memory test double, so this test is deferred to the CLI-level
-        // integration test (`tests/coverage_mode_cli.rs`), which exercises
-        // it end to end via `--ring-context-policy`/`--ring-context-sidecar`.
-        // `validate_config_rejects_bond_index` above already proves the
-        // rejection *mechanism* (an early `bail!` before Stage 1 runs).
+    fn validate_flags_rejects_bond_index() {
+        assert!(validate_coverage_mode_flags(true, false, false).is_err());
+    }
+
+    #[test]
+    fn validate_flags_rejects_ring_context_active() {
+        assert!(validate_coverage_mode_flags(false, true, false).is_err());
+    }
+
+    #[test]
+    fn validate_flags_rejects_onnx_scorer_active() {
+        assert!(validate_coverage_mode_flags(false, false, true).is_err());
+    }
+
+    #[test]
+    fn validate_flags_accepts_all_inactive() {
+        assert!(validate_coverage_mode_flags(false, false, false).is_ok());
     }
 
     #[test]
@@ -533,6 +786,36 @@ mod tests {
         let result = load_coverage_rules(path.to_str().unwrap());
         let _ = std::fs::remove_file(&path);
         assert!(result.is_err());
+    }
+
+    // Requirement: an unreadable (not just missing) coverage-templates
+    // path fails loud, with an error message describing a *read* failure
+    // -- not "contains no valid templates" (a different, misleading
+    // failure mode). Uses invalid UTF-8 bytes rather than `chmod 000`:
+    // a `chmod`-based fixture is not deterministic across environments
+    // (root, and some CI runners, can still read a mode-000 file), while
+    // `std::fs::read_to_string` deterministically rejects non-UTF-8
+    // content regardless of who's reading it or what permissions say.
+    #[test]
+    fn unreadable_coverage_templates_path_reports_a_read_failure_not_missing_templates() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!(
+            "renkin_coverage_mode_test_invalid_utf8_{}.smi",
+            std::process::id()
+        ));
+        std::fs::write(&path, [0xFF, 0xFE, 0x00, 0xFF, 0xD8, 0x00]).unwrap();
+        let result = load_coverage_rules(path.to_str().unwrap());
+        let _ = std::fs::remove_file(&path);
+        let err = result.expect_err("invalid UTF-8 content must fail loud");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("could not be read as valid UTF-8"),
+            "error must describe a read failure, got: {msg}"
+        );
+        assert!(
+            !msg.contains("contains no valid templates"),
+            "must not be misreported as the empty-templates case: {msg}"
+        );
     }
 
     #[test]

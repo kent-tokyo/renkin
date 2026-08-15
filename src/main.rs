@@ -333,6 +333,63 @@ fn main() -> Result<()> {
         );
     };
 
+    // Phase 41.18B: coverage mode. `search_mode_arg` absent or "standard"
+    // is byte-for-byte the pre-existing path below -- this whole block is
+    // additive. Resolved and validated here, before any of the env/rules/
+    // scorer/ring-context loading below -- specifically so an unsupported
+    // option combination (--bond-index / --scorer / an active
+    // --ring-context-policy) is rejected by flag presence alone, before
+    // this process attempts to load a real ONNX model or ring-context
+    // sidecar file for a combination that's going to be rejected anyway.
+    enum SearchMode {
+        Standard,
+        Coverage,
+    }
+    let search_mode = match search_mode_arg.as_deref() {
+        None | Some("standard") => SearchMode::Standard,
+        Some("coverage") => SearchMode::Coverage,
+        Some(other) => bail!("invalid --search-mode '{other}' (expected standard|coverage)"),
+    };
+    match search_mode {
+        SearchMode::Standard => {
+            if coverage_templates_path.is_some() {
+                bail!("--coverage-templates requires --search-mode coverage");
+            }
+            if coverage_timeout_secs_arg.is_some() {
+                bail!("--coverage-timeout-secs requires --search-mode coverage");
+            }
+        }
+        SearchMode::Coverage => {
+            if coverage_templates_path.is_none() {
+                bail!("--search-mode coverage requires --coverage-templates <path>");
+            }
+            let ring_context_policy_active = ring_context_policy_arg
+                .as_deref()
+                .is_some_and(|p| p != "disabled");
+            #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
+            let onnx_scorer_active = scorer_path.is_some();
+            #[cfg(not(all(not(target_arch = "wasm32"), feature = "nn-scoring")))]
+            let onnx_scorer_active = false;
+            renkin::coverage_mode::validate_coverage_mode_flags(
+                bond_index,
+                ring_context_policy_active,
+                onnx_scorer_active,
+            )?;
+        }
+    }
+    let coverage_timeout: Option<std::time::Duration> = match coverage_timeout_secs_arg {
+        None => None,
+        Some(ref s) => {
+            let n: u64 = s.parse().map_err(|_| {
+                anyhow::anyhow!("--coverage-timeout-secs must be a positive integer, got {s:?}")
+            })?;
+            if n == 0 {
+                bail!("--coverage-timeout-secs must be a positive integer (got 0)");
+            }
+            Some(std::time::Duration::from_secs(n))
+        }
+    };
+
     // --stock overrides --building-blocks and --bb-prices
     let (env, bb_price_map) = if let Some(ref path) = stock_path {
         let entries = load_stock_csv(path);
@@ -508,42 +565,6 @@ fn main() -> Result<()> {
         ..Default::default()
     };
 
-    // Phase 41.18B: coverage mode. `search_mode_arg` absent or "standard"
-    // is byte-for-byte the pre-existing path below -- this whole block is
-    // additive.
-    enum SearchMode {
-        Standard,
-        Coverage,
-    }
-    let search_mode = match search_mode_arg.as_deref() {
-        None | Some("standard") => SearchMode::Standard,
-        Some("coverage") => SearchMode::Coverage,
-        Some(other) => bail!("invalid --search-mode '{other}' (expected standard|coverage)"),
-    };
-    match search_mode {
-        SearchMode::Standard => {
-            if coverage_templates_path.is_some() {
-                bail!("--coverage-templates requires --search-mode coverage");
-            }
-            if coverage_timeout_secs_arg.is_some() {
-                bail!("--coverage-timeout-secs requires --search-mode coverage");
-            }
-        }
-        SearchMode::Coverage => {}
-    }
-    let coverage_timeout: Option<std::time::Duration> = match coverage_timeout_secs_arg {
-        None => None,
-        Some(ref s) => {
-            let n: u64 = s.parse().map_err(|_| {
-                anyhow::anyhow!("--coverage-timeout-secs must be a positive integer, got {s:?}")
-            })?;
-            if n == 0 {
-                bail!("--coverage-timeout-secs must be a positive integer (got 0)");
-            }
-            Some(std::time::Duration::from_secs(n))
-        }
-    };
-
     struct CoverageModeMeta {
         selected_stage: &'static str,
         stage2_invoked: bool,
@@ -565,14 +586,13 @@ fn main() -> Result<()> {
             (routes, stats, None)
         }
         SearchMode::Coverage => {
-            let Some(ref coverage_path) = coverage_templates_path else {
-                bail!("--search-mode coverage requires --coverage-templates <path>");
-            };
-            // Fail-loud validation happens before Stage 1 runs at all:
-            // an unsupported option combo or a bad --coverage-templates
-            // path is reported immediately, not only after Stage 1
-            // already ran and turned out to need Stage 2.
-            renkin::coverage_mode::validate_coverage_mode_config(&config)?;
+            // Unsupported-combination and --coverage-templates-presence
+            // validation already happened above, before this process did
+            // any env/rules/scorer/ring-context loading -- only the
+            // asset load itself (fail-loud on a bad path) remains here.
+            let coverage_path = coverage_templates_path
+                .as_deref()
+                .expect("already validated above: SearchMode::Coverage implies Some");
             let coverage_rules = renkin::coverage_mode::load_coverage_rules(coverage_path)?;
             let result = renkin::coverage_mode::run_coverage_mode(
                 &target_smiles,

@@ -107,6 +107,12 @@ jobs:
           assert 'reranker_failures' not in json.loads(result), 'reranker_failures must be absent for a mismatched (one-None) reranker path pair too'
           print('ok:', renkin.__version__)
           "
+      - name: Coverage-mode Python tests (from repo checkout)
+        # Unlike the smoke test above, this one runs from the repo root
+        # deliberately: it needs tests/fixtures/coverage_mode_templates.smi
+        # to resolve via a repo-relative path. Same discover convention as
+        # the reranker-tests job above, scoped to just this file.
+        run: python3 -m unittest discover -s scripts/tests -p "test_python_coverage_mode.py" -v
 
   # Prevents documentation from silently drifting from reality (regression:
   # docs once claimed 31 rules / 509 building blocks / a non-existent

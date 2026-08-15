@@ -42,6 +42,9 @@ ALLOWED_PATH_PATTERNS = [
     "README_ja.md",
     "README_zh.md",
     "docs/design/coverage-mode-v0.md",
+    # date-released is updated by the PASS-path release steps themselves --
+    # cannot be frozen alongside the rest of the release metadata.
+    "CITATION.cff",
 ]
 
 # Explicitly frozen -- content-hash-checked directly, not just excluded
@@ -51,7 +54,7 @@ FROZEN_PATHS = [
     "Cargo.toml",
     "Cargo.lock",
     "pyproject.toml",
-    "CITATION.cff",
+    ".github/workflows/release.yml",
     "data/phase_a5_template_scaling/templates",
     "data/coverage_mode_formal_test/protocol.md",
     "data/coverage_mode_formal_test/cohort_manifest.json",

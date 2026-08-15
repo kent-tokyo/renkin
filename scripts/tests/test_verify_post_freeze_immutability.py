@@ -31,11 +31,19 @@ class IsAllowedTests(unittest.TestCase):
         self.assertFalse(verify.is_allowed("data/coverage_mode_formal_test/protocol.md"))
         self.assertFalse(verify.is_allowed("data/coverage_mode_formal_test/cohort_manifest.json"))
         self.assertFalse(verify.is_allowed("scripts/coverage_mode_formal_test_gate.py"))
+        self.assertFalse(verify.is_allowed(".github/workflows/release.yml"))
         self.assertFalse(
             verify.is_allowed(
                 "data/phase_a5_template_scaling/templates/coverage_templates_provenance_manifest.json"
             )
         )
+
+    def test_citation_cff_is_allowed(self):
+        # date-released is updated by the PASS-path release steps themselves
+        # (protocol's step 4) -- it cannot be tree-hash-frozen alongside the
+        # rest of the release metadata, or a legitimate release-day edit
+        # would itself be flagged as an immutability violation.
+        self.assertTrue(verify.is_allowed("CITATION.cff"))
 
     def test_similarly_named_but_different_path_not_allowed(self):
         # "results" is only allowed under the exact coverage_mode_formal_test
@@ -143,6 +151,38 @@ class GitIntegrationTests(unittest.TestCase):
         self.assertIn(
             "data/coverage_mode_formal_test/protocol.md", result["disallowed_changes"]
         )
+
+    def test_citation_cff_edit_after_freeze_is_allowed(self):
+        self._write("Cargo.toml", "version = 1\n")
+        self._write("CITATION.cff", "date-released: 2026-08-11\n")
+        self._git("add", ".")
+        self._git("commit", "-q", "-m", "freeze")
+        rc_sha = self._git("rev-parse", "HEAD")
+
+        self._write("CITATION.cff", "date-released: 2026-08-15\n")
+        self._git("add", ".")
+        self._git("commit", "-q", "-m", "release day date bump")
+
+        result = self._run_check(rc_sha)
+        self.assertTrue(result["immutable"])
+        self.assertEqual(result["disallowed_changes"], [])
+
+    def test_release_workflow_change_after_freeze_is_a_violation(self):
+        self._write("Cargo.toml", "version = 1\n")
+        self._write(".github/workflows/release.yml", "name: Release\n")
+        self._git("add", ".")
+        self._git("commit", "-q", "-m", "freeze")
+        rc_sha = self._git("rev-parse", "HEAD")
+
+        self._write(".github/workflows/release.yml", "name: Release (sneaky change)\n")
+        self._git("add", ".")
+        self._git("commit", "-q", "-m", "sneaky change")
+
+        result = self._run_check(rc_sha)
+        self.assertFalse(result["immutable"])
+        self.assertIn(".github/workflows/release.yml", result["disallowed_changes"])
+        mismatch_paths = [m["path"] for m in result["tree_hash_mismatches"]]
+        self.assertIn(".github/workflows/release.yml", mismatch_paths)
 
     def test_unallowlisted_new_file_is_a_violation(self):
         # A brand-new file in a path nobody allowlisted -- must fail

@@ -182,6 +182,7 @@ c1ccccc1-c2ccccc2
 | **稳定 template_id + evidence 元数据侧车** | 每个模板都有稳定的 `template_id`——手工规则为 `rule:<name>`，自动提取的模板为 `smirks-sha256:<hex>`（与文件顺序无关）。通过 `--template-metadata sidecar.json` 可以关联 DOI/专利、报告条件、报告收率和已知副反应警示；仅匹配到的步骤会获得 `evidence` 字段。自动收率/成功率预测和文献自动检索仍在范围之外（[#41](https://github.com/kent-tokyo/renkin/issues/41)） |
 | **Ring-context安全护栏** | `--ring-context-policy conservative --ring-context-sidecar <path>` — opt-in的match-level过滤器，当extracted template的训练数据从未观察到某环开闭断裂时予以拒绝。默认为`disabled`（既有行为不变）——详见[Issue #72](https://github.com/kent-tokyo/renkin/issues/72) |
 | **LightGBM candidate reranker** | `--reranker-model`/`--reranker-freq-table`（CLI）或 `reranker_model_path`/`reranker_freq_table_path`（Python）— opt-in且仅影响排序：绝不改变生成哪些候选，只改变搜索顺序，关闭时与legacy排序逐字节完全一致。Paired 100-target route-search门控结果：`route_to_configured_stock` 16→20（+4/-0）。用`python3 scripts/fetch_reranker_model.py`获取冻结模型（SHA-256验证，不随任何包分发——详见[路线图](#路线图)） |
+| **Coverage mode（opt-in）** | `--search-mode coverage --coverage-templates <path>`（CLI）或 `search_mode="coverage"`、`coverage_templates_path=...`（Python）—— 仅当默认模板集找不到路线时，才自动升级到另一个更大的模板集；可通过 `--coverage-timeout-secs` 协作式取消。未启用时标准模式输出逐字节不变。用 `python3 scripts/fetch_coverage_templates.py` 获取冻结的 2,000 条模板 Stage-2 模板集（SHA-256 验证，不随任何包分发，理由同 reranker 模型——详见[路线图](#路线图)） |
 | **路线评分** | `confidence`、`step_confidence`、`success_probability`（Retro-prob 风格）、`convergency`、`atom_economy`、`route_cost`（`Σ 起始原料成本 + 步数×0.5`，或通过`--bb-prices`/`--stock`使用真实价格）—— 重要说明见表格下方 |
 | **帕累托多目标搜索** | `--format pareto` 返回 `route_cost`、`success_probability`、`steps` 等指标上的帕累托前沿；可通过 `--objectives cost:min,success_probability:max,steps:min` 自定义目标函数 |
 | **约束 DSL** | `--constraints constraints.json` —— 元素过滤、步数限制、置信度阈值、优先反应族；支持 LLM → RENKIN 的调用流程 |
@@ -448,7 +449,8 @@ renkin/                          ← Cargo workspace 根目录
 
 ### 进行中
 
-- [ ] Candidate-generation coverage gap —— formal TEST 语料库中 33.0%（1,618/4,903）的目标 in-pool 候选数为零，这是重排序在原理上无法解决的天花板；已识别 template-diversity-scaling 与 higher-level-template 两个研究方向，尚未启动
+- [ ] Coverage mode（`--search-mode coverage`，[#101](https://github.com/kent-tokyo/renkin/issues/101)）—— opt-in 的 Stage-1/Stage-2 模板数量升级机制，用于应对下方的 candidate-generation coverage gap。CLI/Python 接口已合并到 `master`，但尚未打 tag/发布——还差最后一次一次性的 formal-TEST 确认 run（`data/coverage_mode_formal_test/protocol.md`，已预注册，尚未执行）。已发布范围详见上方核心特性表
+- [ ] Candidate-generation coverage gap —— formal TEST 语料库中 33.0%（1,618/4,903）的目标 in-pool 候选数为零，这是重排序在原理上无法解决的天花板；template-diversity-scaling 已确认是有效机制（Phase A.5/B.2，见上方 coverage mode），higher-level-template 研究方向尚未启动
 - [ ] 面向 5 万条模板集合的模板检索索引（元素位掩码 + 键中心预筛选）
 - [ ] 校准过的路线置信度（将 `success_probability` 映射到经验已解决率）
 

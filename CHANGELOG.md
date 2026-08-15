@@ -8,6 +8,72 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+**Headline: coverage mode, an opt-in Stage-1/Stage-2 escalation that
+trades cost for route-search coverage.** Phase B.2's benchmark result
+(`data/phase_b1_frontier/findings.md`) showed that escalating only
+targets a 500-template search failed to solve, into a second search
+against a larger 2,000-template set, converts real candidate-pool
+coverage gains into route coverage with zero regressions — at an
+opt-in cost tier (p95 5.72x vs. the 500-template baseline), not
+justified as a new default. This release ships that architecture as a
+real CLI/Python feature, not just a research finding.
+
+**Not yet released as a tagged version**: this entry documents what's
+implemented and merged to `master` ahead of the actual `v0.24.0` tag,
+which is gated on a still-pending one-shot formal-TEST confirmation
+run (`data/coverage_mode_formal_test/protocol.md`).
+
+### Added
+- **Coverage mode** — `--search-mode standard|coverage` /
+  `--coverage-templates <path>` / `--coverage-timeout-secs <N>` (CLI);
+  `search_mode` / `coverage_templates_path` / `coverage_timeout_seconds`
+  / `top_templates` (Python) ([#101](https://github.com/kent-tokyo/renkin/issues/101)).
+  Stage 1 runs unchanged (byte-identical to standard mode); only if it
+  finds nothing does Stage 2 run, cooperatively cancellable on
+  `--coverage-timeout-secs`, against a separately loaded, larger
+  template set. Stage 1's route is never overwritten by construction —
+  there is no merge step, Stage 2 only ever runs in the branch where
+  Stage 1 came back empty. Standard-mode output (CLI and Python) is
+  byte-for-byte unchanged: the new observability fields
+  (`search_mode`, `selected_stage`, `stage2_invoked`, `stage1_timeout`,
+  `stage2_timeout`, `stage1_elapsed_ms`, `stage2_elapsed_ms`,
+  `total_elapsed_ms`) are omitted, not `null`, outside coverage mode.
+  `--bond-index`, an ONNX `--scorer`, or an active
+  `--ring-context-policy` all fail loud in coverage mode in this
+  version — by flag presence alone, before any sidecar/model asset
+  loads — since Stage 2 would need its own, separately validated
+  retrieval index / scorer vocabulary / ring-context sidecar that
+  doesn't exist yet.
+- **`SearchControl` / `find_routes_with_control`** (`src/search.rs`) —
+  additive cooperative-cancellation foundation coverage mode's Stage 2
+  is built on: an optional deadline checked at three points in the
+  frontier loop, actually stopping the search on expiry rather than
+  merely eventually returning past it. No detached threads. Zero
+  change to `SearchConfig`, `SearchStats`, or `find_routes`'s existing
+  behavior — verified byte-identical, not just asserted.
+- **`scripts/fetch_coverage_templates.py`** — downloads and SHA-256
+  verifies the frozen Stage-2 template set (`templates_2000.smi`) from
+  a GitHub Release asset, mirroring `scripts/fetch_reranker_model.py`'s
+  established pattern. `templates_2000.smi` is derived from USPTO-50k
+  TRAIN (undocumented upstream license, same disclosed gap as the
+  reranker's `model.txt`), so it's excluded from the
+  crates.io/PyPI/npm packages and distributed as an opt-in asset
+  instead — not yet uploaded to any release as of this entry.
+
+### Fixed
+- An independent review round on the coverage-mode CLI/Python PR found
+  8 issues, several of them tests that passed without actually proving
+  the behavior they claimed to protect — not just weak tests, genuinely
+  non-provative ones counted as verified. All 8 fixed in the same PR
+  and mutation-verified, both by the implementer and, in a second
+  focused round, independently by the same review agent from a fresh
+  pull of the branch. See `data/coverage_mode_formal_test/protocol.md`'s
+  companion history and the PR itself for the full list.
+- A follow-up CI gap (a field-parity test silently self-skipping in CI
+  because the release binary wasn't built in that job) was found by
+  that same review round and fixed separately, confirmed via the
+  actual CI log that the test now runs for real.
+
 ## [0.23.0] — 2026-08-11
 
 **Headline: makes the reranker actually usable.** v0.22.0 proved the

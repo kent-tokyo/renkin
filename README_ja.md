@@ -316,6 +316,7 @@ CC-BY-SA-4.0であり、RENKIN本体コードのMITとは別ライセンスで�
 | **安定 template_id + evidence サイドカー** | すべてのテンプレートに安定した `template_id` を付与——hand-crafted ruleは `rule:<name>`、extracted templateは `smirks-sha256:<hex>`（ファイル内の並び順に依存しない）。`--template-metadata sidecar.json` でDOI・特許・報告済み条件・報告済み収率・既知の副反応警告を紐づけ可能。一致したステップにのみ `evidence` フィールドが付与される——詳細は下記「[テンプレート evidence メタデータ](#テンプレート-evidence-メタデータ)」参照。`schema_version: 2` サイドカーではさらに `examples`（exact substrate match、`--format explain` で優先表示）を紐づけ可能。収率・成功率の自動予測や文献自動検索は引き続きスコープ外（[#41](https://github.com/kent-tokyo/renkin/issues/41)） |
 | **Ring-context安全ガード** | `--ring-context-policy conservative --ring-context-sidecar <path>` — extracted templateの環開閉切断が、訓練データで一度も環結合として観測されていない場合に拒否するopt-inのmatch-levelフィルタ。デフォルトは `disabled`（既存挙動のまま） — [Issue #72](https://github.com/kent-tokyo/renkin/issues/72)参照 |
 | **LightGBM candidate reranker** | `--reranker-model`/`--reranker-freq-table`（CLI）または `reranker_model_path`/`reranker_freq_table_path`（Python）— opt-inかつordering-onlyな再順位付け。生成される候補そのものは一切変更されず探索順序のみが変わり、オフ時はレガシー順序とbyte単位で完全一致。Paired 100-target route-searchゲート: `route_to_configured_stock` 16→20（+4/-0）。`python3 scripts/fetch_reranker_model.py` で凍結モデルを取得（SHA-256検証つき、パッケージには同梱しない — [ロードマップ](#ロードマップ)参照） |
+| **Coverage mode（opt-in）** | `--search-mode coverage --coverage-templates <path>`（CLI）または `search_mode="coverage"`, `coverage_templates_path=...`（Python）— デフォルトのテンプレートセットでルートが見つからない場合のみ、自動的により大きな別テンプレートセットへエスカレーションする。`--coverage-timeout-secs` で協調的にキャンセル可能。未使用時の標準モード出力はbyte単位で完全不変。`python3 scripts/fetch_coverage_templates.py` で凍結済み2,000テンプレートのStage-2セットを取得（SHA-256検証つき、パッケージには同梱しない、rerankerモデルと同じ理由 — [ロードマップ](#ロードマップ)参照） |
 | **ルートスコアリング** | `confidence`, `step_confidence`, `success_probability`（Retro-prob方式）, `convergency`, `atom_economy`, `route_cost`（`Σ(BB価格) + ステップ数×0.5`、または`--bb-prices`/`--stock`で実価格）— 下の注記も参照 |
 | **ステップメタデータの出所表示** | 各ステップに `metadata_source`/`metadata_scope` を付与し、`conditions`/`reaction_family` がルール作者による既定値かそれ以上の根拠があるかを機械可読に区別。extracted templateには付与しない（捏造しない） |
 | **Pareto多目的探索** | `--format pareto` で `route_cost`・`success_probability`・`steps` 等のパレートフロントを返す；`--objectives` で目的関数をカスタム設定 |
@@ -548,7 +549,8 @@ renkin/                          ← Cargo workspace ルート
 
 ### 進行中
 
-- [ ] Candidate-generation coverage gap — formal TESTコーパスの33.0%（1,618/4,903）がpositive candidateゼロで、これはrerankingでは原理的に解決できない天井。template-diversity-scalingとhigher-level-templateの研究方向を特定済みだが未着手
+- [ ] Coverage mode（`--search-mode coverage`、[#101](https://github.com/kent-tokyo/renkin/issues/101)）— opt-inのStage-1/Stage-2テンプレート数エスカレーション、下記candidate-generation coverage gapへの対応。CLI/Python面は`master`へmerge済みだが、tag/リリースはまだ——残り1回の事前登録済みformal-TEST確認run（`data/coverage_mode_formal_test/protocol.md`、未実行）待ち。出荷済み範囲は上記の特徴表参照
+- [ ] Candidate-generation coverage gap — formal TESTコーパスの33.0%（1,618/4,903）がpositive candidateゼロで、これはrerankingでは原理的に解決できない天井。template-diversity-scalingは強いメカニズムであることを確認済み（Phase A.5/B.2、上記coverage mode参照）、higher-level-templateの研究方向はまだ未着手
 - [ ] 5万テンプレートセット向けのtemplate retrieval index（element bitmask + bond-center prefilter）
 - [ ] キャリブレーション済みroute confidence（`success_probability`を経験的solve rateへマッピング）
 

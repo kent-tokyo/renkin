@@ -1,0 +1,21 @@
+{
+  "_purpose": "Derivation-identity record for templates_2000.smi (the v0.24 coverage-mode Stage-2 template set, frozen as the production candidate by Phase B.2 -- see data/phase_b1_frontier/findings.md, 'FINAL STATUS'). Facts only, no license name or claim is asserted here -- see _license_status. Whole-file SHA-256 here is the provenance-identity check; download-authenticity against the actual GitHub Release upload is a separate manifest, coverage_templates_release_asset_manifest.json, matching the two-manifest split scripts/fetch_reranker_model.py already established for the reranker model asset.",
+  "asset_file": "templates_2000.smi",
+  "asset_sha256": "sha256:f1e2c7d9e5f5085fbac1f7eaf5daa1c53455d9ad4faa1125cb535bbe8ebfb6b5",
+  "template_count": 2000,
+  "derivation": {
+    "upstream_dataset": "bisectgroup/USPTO_50K (Hugging Face)",
+    "upstream_dataset_revision": "08a575f0546b2be57242997fd45f684d6814d5a9",
+    "upstream_split": "train",
+    "extraction_command": "scripts/extract_templates.py --split train --top 2000",
+    "extraction_method": "rdchiral.template_extractor.extract_from_reaction, then simplified to chematic-compatible basic SMARTS (element/H-count/aromaticity/atom-map kept; degree/charge-constraint/semicolons stripped) -- see scripts/extract_templates.py's own docstring/simplify_atom for the exact rule set",
+    "ranking": "top-2000 by extracted-template frequency count in the TRAIN split",
+    "regenerated": "re-extracted fresh (not reused from any earlier committed extraction) specifically for Phase A.5's template-count-scaling study, together with the 500/1,000/5,000/9,979(10,000-requested) nested arms, from the identical script invocation -- strict subset relation 500 ⊂ 1,000 ⊂ 2,000 ⊂ 5,000 ⊂ 9,979 confirmed, not just assumed. See data/phase_a5_template_scaling/findings.md, 'Provenance'.",
+    "provenance_record": "data/phase_a5_template_scaling/findings.md"
+  },
+  "_license_status": "USPTO-50k's own license/terms-of-use are not documented anywhere in this repository -- treated as a research-use academic artifact derived from public US patent text, not an unambiguously OSI-licensed dataset. This is an existing, disclosed gap (see docs/guides/open-source-retrosynthesis-comparison.md, 'Known gaps'), not something newly discovered or resolved by this file. No license name or terms are asserted for templates_2000.smi here; it is kept out of the crates.io/PyPI/npm packages for exactly this reason, distributed only as an opt-in GitHub Release asset fetched on request -- the same posture already applied to the reranker's model.txt (data/phase3e_reranker_training/freeze_manifest.json's own docstring precedent) and, before this file, to the pre-existing data/templates_extracted*.smi package-exclusion glob.",
+  "related_artifacts": {
+    "reranker_model_precedent": "data/phase3e_reranker_training/freeze_manifest.json",
+    "package_exclusion_precedent": "data/templates_extracted*.smi (Cargo.toml [package].exclude)"
+  }
+}

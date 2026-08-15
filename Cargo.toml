@@ -22,6 +22,7 @@ exclude       = [
     "data/uspto50k_test.smi",
     "data/uspto50k_benchmark_result*.json",
     "data/templates_extracted*.smi",
+    "data/phase_a5_template_scaling/templates/*.smi",
     "data/comparison/**",
     "data/ring_context_metadata_500.json",
     "docs/playground/**",

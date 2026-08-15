@@ -102,7 +102,14 @@ def compute_gate(arm_a_rows: list[dict], arm_c_rows: list[dict]) -> dict:
     regressions = sorted(arm_a_solved - arm_c_solved)
 
     def is_invalid(row: dict) -> bool:
-        return row["run_status"] in ("crashed", "invalid_input") or (
+        # setup_error grouped with crashed/invalid_input, matching
+        # scripts/compare_verify_arm.py's own established precedent for
+        # this exact three-way grouping -- RENKIN's adapter never actually
+        # emits setup_error today (only completed/timeout/crashed/
+        # invalid_input), but the schema allows it and a row silently
+        # passing through neither this check nor the anomaly check below
+        # would be a real gap if that ever changed.
+        return row["run_status"] in ("crashed", "invalid_input", "setup_error") or (
             row.get("route_found") and row.get("route_tree_parseable") is False
         )
 

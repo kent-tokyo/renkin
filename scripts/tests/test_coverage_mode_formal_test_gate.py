@@ -95,6 +95,17 @@ class ComputeGateTests(unittest.TestCase):
         self.assertEqual(v["invalid"], ["t3"])
         self.assertFalse(v["criteria"]["invalid_zero"])
 
+    def test_setup_error_counted_as_invalid_not_silently_dropped(self):
+        # setup_error is a valid run_status in compare_schema.py's
+        # vocabulary that RENKIN's adapter doesn't currently emit, but a
+        # row bearing it must not silently pass through neither the
+        # invalid check nor the anomaly check.
+        arm_a, arm_c = self._base_scenario()
+        arm_c[2] = make_row("t3", False, run_status="setup_error")
+        v = gate.compute_gate(arm_a, arm_c)
+        self.assertEqual(v["invalid"], ["t3"])
+        self.assertFalse(v["criteria"]["invalid_zero"])
+
     def test_reranker_failures_detected_in_either_arm(self):
         arm_a, arm_c = self._base_scenario()
         arm_a[0]["tool_specific"]["renkin"]["reranker_failures"] = 1

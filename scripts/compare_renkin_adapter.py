@@ -69,15 +69,22 @@ class RenkinConfig:
 
 
 _MAXRSS_RE = re.compile(r"^\s*(\d+)\s+maximum resident set size\s*$", re.MULTILINE)
+_CPU_TIME_RE = re.compile(
+    r"^\s*[\d.]+\s+real\s+([\d.]+)\s+user\s+([\d.]+)\s+sys\s*$", re.MULTILINE
+)
 
 
 def _run_with_time_wrapper(
     argv: list[str], timeout_s: float, grace_s: float
-) -> tuple[int | None, bytes, bytes, float, int | None, bool]:
+) -> tuple[int | None, bytes, bytes, float, int | None, bool, float | None, float | None]:
     """Runs argv under `/usr/bin/time -l`, enforcing an external wall-clock
     deadline authoritative over anything the tool itself does.
 
-    Returns (returncode, stdout, stderr, wall_clock_s, peak_rss_bytes, wrapper_killed).
+    Returns (returncode, stdout, stderr, wall_clock_s, peak_rss_bytes,
+    wrapper_killed, cpu_user_s, cpu_sys_s). CPU times come from the same
+    report already parsed for peak_rss -- captured even when the process
+    was killed for timing out, since CPU time consumed before a kill is
+    still meaningful diagnostic signal (see Phase B.2d, findings.md).
     """
     with tempfile.NamedTemporaryFile(delete=False) as time_out_f:
         time_report_path = time_out_f.name
@@ -104,14 +111,29 @@ def _run_with_time_wrapper(
         wall_clock_s = time.monotonic() - start
 
         peak_rss_bytes = None
+        cpu_user_s = None
+        cpu_sys_s = None
         if os.path.exists(time_report_path):
             with open(time_report_path, "r", encoding="utf-8", errors="replace") as f:
                 report_text = f.read()
             m = _MAXRSS_RE.search(report_text)
             if m:
                 peak_rss_bytes = int(m.group(1))
+            m = _CPU_TIME_RE.search(report_text)
+            if m:
+                cpu_user_s = float(m.group(1))
+                cpu_sys_s = float(m.group(2))
 
-        return proc.returncode, stdout, stderr, wall_clock_s, peak_rss_bytes, wrapper_killed
+        return (
+            proc.returncode,
+            stdout,
+            stderr,
+            wall_clock_s,
+            peak_rss_bytes,
+            wrapper_killed,
+            cpu_user_s,
+            cpu_sys_s,
+        )
     finally:
         if os.path.exists(time_report_path):
             os.unlink(time_report_path)
@@ -151,10 +173,18 @@ def run_one_target(
         argv += ["--reranker-model", config.reranker_model]
         argv += ["--reranker-freq-table", config.reranker_freq_table]
 
-    returncode, stdout, stderr, wall_clock_s, peak_rss_bytes, wrapper_killed = (
-        _run_with_time_wrapper(argv, config.external_timeout_s, config.grace_s)
-    )
+    (
+        returncode,
+        stdout,
+        stderr,
+        wall_clock_s,
+        peak_rss_bytes,
+        wrapper_killed,
+        cpu_user_s,
+        cpu_sys_s,
+    ) = _run_with_time_wrapper(argv, config.external_timeout_s, config.grace_s)
     total_elapsed_ms = wall_clock_s * 1000.0
+    cpu_time_tool_specific = {"cpu_user_s": cpu_user_s, "cpu_sys_s": cpu_sys_s}
 
     base = dict(
         target_id=target_id,
@@ -173,6 +203,7 @@ def run_one_target(
             run_status="timeout",
             total_elapsed_ms=total_elapsed_ms,
             peak_rss_bytes=peak_rss_bytes,
+            tool_specific={"renkin": cpu_time_tool_specific},
         )
 
     if returncode != 0:
@@ -220,6 +251,7 @@ def run_one_target(
                 "stock_hits": diagnostics.get("stock_hits"),
                 "reranker_failures": parsed.get("reranker_failures"),
                 "diagnostics_source": "single_per_target_cli_call",
+                **cpu_time_tool_specific,
             }
         }
         return PlannerComparisonRow(**row_kwargs)
@@ -238,6 +270,7 @@ def run_one_target(
             "joint_success_probability": parsed.get("joint_success_probability"),
             "reranker_failures": parsed.get("reranker_failures"),
             "diagnostics_source": "single_per_target_cli_call",
+            **cpu_time_tool_specific,
         }
     }
 

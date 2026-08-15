@@ -1,22 +1,32 @@
 # RENKIN Coverage Mode — Design Doc
 
-Status: **draft, design-only — no implementation yet.** Base commit:
-`135f62c66b5dcbca7c080c7c959adf0f2178a694` (`research/phase-b1-b2-progressive-escalation`,
-PR #118, not yet merged to `origin/master`).
+Status: **design-approved, Phase 41.18A (cooperative cancellation
+foundation) implemented and in review; CLI/Python coverage-mode
+surface (Phase 41.18B) not yet started.** Base commit: `df37005`
+(PR #118, **merged to `origin/master`** 2026-08-15).
 
-**Gate**: product integration (anything beyond this document) does not
-start until the reranker-arm extended determinism replay passes.
-**Current status: the replay FAILED as specified** -- 36/37 targets
-exact, 1 mismatch (`uspto50k_val#L2330`, a Stage-2 wall-clock timeout-
-boundary classification flip, characterized in full in
-`ROADMAP.md`/`findings.md`). This is not softened or waived. A
-follow-up diagnostic (Phase B.2d, `data/phase_b1_frontier/findings.md`)
-targets that one mismatch in isolation to distinguish two different
-questions the original gate conflated -- see §4 below, which this
-result directly motivated. The original 600s gate's FAIL stands
-permanently regardless of the diagnostic's outcome; it is never
-retroactively upgraded to a PASS. This document is itself Green/design
-work and does not depend on the diagnostic's result.
+**Research gate this design depends on**: the reranker-arm extended
+determinism replay **FAILED as specified** -- 36/37 targets exact, 1
+mismatch (`uspto50k_val#L2330`, a Stage-2 wall-clock timeout-boundary
+classification flip, characterized in full in `ROADMAP.md`/
+`findings.md`). This is not softened or waived and is never
+retroactively upgraded. A follow-up diagnostic (Phase B.2d) targeting
+that one mismatch in isolation **PASSED** (3/3 runs exact), confirming
+algorithmic semantic determinism as a property separate from
+operational wall-clock timeout classification -- exactly the
+distinction §4 below makes an explicit product-level contract, since
+this design's own cooperative-cancellation timeout inherits the same
+load-sensitive-near-a-deadline property by construction. Both results
+are permanent and recorded side by side, per PR #118 (merged).
+
+**Sequencing**: base-architecture determinism PASS -> reranker
+compatibility (4/5 PASS, extended replay FAILED permanently, Phase
+B.2d diagnostic PASSED separately) -> this design doc (done) -> **Phase
+41.18A: cooperative cancellation foundation (this revision -- additive
+`SearchControl`/`find_routes_with_control`, no `SearchConfig`/
+`SearchStats` changes, `find_routes` untouched)** -> Phase 41.18B:
+shared Stage-1/Stage-2 orchestrator + CLI/Python surface (not started)
+-> product integration -> one formal-TEST confirmation -> v0.24.0.
 
 ## 0. What this is, in one paragraph
 
@@ -131,9 +141,57 @@ CLI, since both surfaces call into the same core orchestration (§4).
 
 ## 4. Core orchestration boundary
 
-Lives in `src/main.rs` and `src/python.rs` only — **no new
-`search.rs`/`SearchConfig` fields, no change to `find_routes`'s
-signature or search loop.** Shape (illustrative, not final code):
+Lives in `src/main.rs` and `src/python.rs`. **No `SearchConfig` or
+`SearchStats` field changes, no change to `find_routes`'s signature,
+output, or behavior** — confirmed by Phase 41.18A's own test suite
+(`wrapper_matches_unlimited_control_exactly`), not just asserted here.
+Cancellation is a separate, additive API (`src/search.rs`,
+implemented in Phase 41.18A, PR #119):
+
+```rust
+pub struct SearchControl { /* private field */ }
+impl SearchControl {
+    pub fn unlimited() -> Self;
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn with_timeout(timeout: std::time::Duration) -> Self;
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn with_deadline(deadline: std::time::Instant) -> Self;
+}
+
+pub enum SearchTermination { Completed, DeadlineExceeded }
+
+pub struct SearchRunResult {
+    pub routes: Vec<Route>,
+    pub stats: SearchStats,
+    pub termination: SearchTermination,
+}
+
+pub fn find_routes_with_control(
+    target_smiles: &str, env: &ChemEnv, rules: &[RetroRule],
+    config: &SearchConfig, control: &SearchControl,
+) -> Result<SearchRunResult>;
+
+// find_routes (unchanged signature) is now a thin wrapper:
+pub fn find_routes(target_smiles: &str, env: &ChemEnv, rules: &[RetroRule], config: &SearchConfig)
+    -> Result<(Vec<Route>, SearchStats)>
+{
+    let r = find_routes_with_control(target_smiles, env, rules, config, &SearchControl::unlimited())?;
+    Ok((r.routes, r.stats))
+}
+```
+
+**Why a separate type instead of a `SearchConfig` field** (this
+revision's correction to an earlier draft that proposed exactly that):
+`SearchConfig` is a public, non-`#[non_exhaustive]` struct with many
+fields. Any external crate consumer constructing it via a plain struct
+literal (not `..Default::default()`) would fail to compile the moment
+a new field landed — an avoidable breaking change for a v0.24 feature
+whose whole premise is opt-in additivity. `SearchControl` sidesteps
+this entirely: existing callers of `SearchConfig` and `find_routes`
+need zero changes, in this crate or any external consumer's.
+
+Coverage mode's orchestration (Stage 1 always via `find_routes`
+unchanged; Stage 2 via `find_routes_with_control` when it runs):
 
 ```rust
 let (routes1, stats1) = search::find_routes(&target, &env, &rules_stage1, &config)?;
@@ -143,10 +201,10 @@ let (selected_routes, selected_stats, selected_stage, stage2_invoked, stage2_tim
         (routes1, stats1, Stage::Stage1, false, false)
     } else {
         let rules_stage2 = load_rules_from_file(&coverage_templates_path); // fail-loud if unreadable
-        match run_stage2_with_timeout(&target, &env, &rules_stage2, &config, coverage_timeout_secs) {
-            Ok((routes2, stats2)) => (routes2, stats2, Stage::Stage2, true, false),
-            Timeout => (vec![], stats1 /* or a synthetic empty-stats */, Stage::Stage2, true, true),
-        }
+        let control = SearchControl::with_timeout(coverage_timeout);
+        let result = search::find_routes_with_control(&target, &env, &rules_stage2, &config, &control)?;
+        let timed_out = result.termination == SearchTermination::DeadlineExceeded;
+        (result.routes, result.stats, Stage::Stage2, true, timed_out)
     };
 ```
 
@@ -161,12 +219,18 @@ the same control-flow shape, not from re-deriving the rule.
 
 **Stage 2 is a fully independent search call** — same as the
 pre-registered Phase B.2 constraint: no warm-start, no candidate reuse
-between stages, `find_routes` called fresh with `rules_stage2`.
+between stages, `find_routes_with_control` called fresh with
+`rules_stage2`. `result.routes` on a `DeadlineExceeded` termination is
+never empty *by policy* -- it is whatever the search's own cooperative-
+cancellation checkpoints had accumulated before stopping (possibly
+zero, possibly all of them, depending on how far the search got --
+Phase 41.18A's own test suite covers this exact "found some, then cut
+off, nothing discarded" case).
 
-**Timeout mechanism: cooperative cancellation, decided.** An earlier
-draft of this section recommended spawning Stage 2's `find_routes`
-call on a thread and racing it against `coverage_timeout_secs` via
-`mpsc::Receiver::recv_timeout`, leaving the thread detached (not
+**Timeout mechanism: cooperative cancellation, implemented in Phase
+41.18A.** An earlier draft of this section recommended spawning Stage
+2's search on a thread and racing it against `coverage_timeout_secs`
+via `mpsc::Receiver::recv_timeout`, leaving the thread detached (not
 joined) and still computing in the background on timeout. **Rejected.**
 A single CLI invocation, that's a one-time harmless leak. Coverage
 mode's own measured Stage-2 invocation rate is 83.5% (`findings.md`,
@@ -177,48 +241,77 @@ still-running search threads on every Stage-2 timeout. That is not an
 acceptable v0 property for a mode designed to be invoked this often,
 not an edge case to defer.
 
-**Decided instead: give `find_routes`'s main loop an optional
-deadline, checked periodically, that actually stops the search and
-returns whatever routes/stats it has so far when the deadline passes.**
-This does touch `search.rs` — a real change to the core search
-algorithm this document originally tried to avoid — but it is the
-correct product boundary for a mode whose whole value proposition is
-"call Stage 2 often." Shape (illustrative):
+**Implemented: `find_routes_with_control`'s frontier loop checks
+`SearchControl`'s deadline at three cooperative-cancellation
+checkpoints** (revised after independent review caught the original
+checkpoint 3 being provably redundant with checkpoint 2 -- mutation
+testing showed removing it changed nothing, since only a handful of
+trivial statements separated them):
+1. **Top of each frontier-loop iteration**, after `max_routes`
+   completion is checked (see the ordering note below) — the only
+   checkpoint reached on this loop's several `continue` paths (depth
+   cap, closed-set hit, an empty/unparseable frontier entry) that never
+   reach expansion at all.
+2. **Right after the expansion block completes** — on a cache miss this
+   follows template application (`raw_propose`), NN scoring
+   (`nn_rank`), and an active reranker's `CandidateReranker::score_pool`,
+   none of which are interruptible mid-call.
+3. **Per child, inside the child-processing loop** — not once before
+   it. `expansions` can hold thousands of raw proposals at high
+   template counts, and each one does real work (a fresh `compute_h`
+   heuristic call, path-node allocation) before the next outer
+   iteration's checkpoint 1 would ever be reached; checking once before
+   this loop (the original design) left the loop itself fully
+   uninterruptible regardless of its size. Breaking out of an inner
+   `for` loop back to the outer frontier loop requires a labeled break
+   (`break 'frontier;`), not a plain `break`.
 
-```rust
-pub struct SearchConfig {
-    // ...existing fields...
-    pub deadline: Option<std::time::Instant>,  // None = no cutoff (today's behavior, unchanged)
-}
+On expiry, the search stops, returning whatever `routes`/`stats` had
+already accumulated with `SearchTermination::DeadlineExceeded` — no
+detached thread, no background work outlives the call, by construction
+(there is no thread spawned in this design at all).
+`SearchControl::unlimited()` (what `find_routes` uses) makes every one
+of these checks a cheap `Option::is_none` (short-circuits before ever
+calling `Instant::now()`) — no behavioral or measurable-cost change to
+the untimed path.
 
-// inside find_routes's main frontier loop, checked once per iteration
-// (not per-candidate -- the loop iteration is already the natural,
-// cheap checkpoint; this is not a hot-path cost):
-if let Some(deadline) = config.deadline
-    && std::time::Instant::now() >= deadline
-{
-    stats.timed_out = true;
-    break;
-}
-```
+**Ordering: `max_routes` completion is checked before checkpoint 1**,
+not after. A search that already has everything it was asked for is
+`Completed`, never `DeadlineExceeded`, even if the deadline has also
+passed by the same instant — the work genuinely finished, and a caller
+auditing `termination` should be able to tell "got what it needed"
+apart from "ran out of time" without depending on which check happened
+to run first. Covered by a dedicated deterministic test
+(`max_routes_completion_wins_over_an_already_expired_deadline`, using
+`max_routes: 0` so the condition is true from the very first
+iteration, not dependent on racing real search progress).
 
-`config.deadline: None` (the default, matching every existing caller
-including standard mode and Stage 1) is **exactly today's behavior,
-byte-for-byte** — this is additive, not a change to any existing
-search's semantics. Coverage mode's Stage 2 is the only caller that
-ever sets it, computed from `coverage_timeout_secs` at call time.
+`Instant`-based timing is native-only: `with_timeout`/`with_deadline`
+are `#[cfg(not(target_arch = "wasm32"))]` (this crate's search loop
+already avoids unconditional `Instant::now()` on wasm32 elsewhere, for
+the same reason -- no safe monotonic clock on this crate's supported
+wasm targets). Nothing on the wasm-facing surface (`src/wasm.rs`) ever
+calls these; `unlimited()` and the rest of the API are available on
+every target.
 
-**Why this is not just "the same as the old approach but tidier"**:
-cooperative cancellation gives up the same wall-clock non-guarantee
-option 1 would have had (a deadline check once per loop iteration can
-still overshoot by however long one iteration takes), but it never
-leaves work running after the caller stops waiting for it — the
-in-process equivalent of the external wrapper's `SIGTERM`, done
-cleanly instead of by killing a subprocess.
+**Not a hard real-time guarantee, documented in full on
+`SearchTermination::DeadlineExceeded` itself** (independent review
+caught the first draft of this doc understating it as "up to one
+`raw_propose` call"): between any two checkpoints, the search can run
+template application, NN scoring, an arbitrary reranker
+implementation's `score_pool`, and dedup/diagnostics bookkeeping,
+none of which this crate can interrupt mid-call or bound the runtime
+of (especially a reranker it does not own the implementation of). The
+true worst case is however long the slowest such stretch takes for
+the configuration in use — a soft, cooperative deadline, not a fixed
+bound. This is the in-process analogue of the external wrapper's
+`SIGTERM`-then-`SIGKILL` grace period every timeout in this program
+has used so far — bounded by "one stretch of synchronous work," not
+open-ended, but not a precise number either.
 
 ### The two-layer guarantee this design actually offers
 
-Phase B.2d's diagnostic (see §0's Gate note and
+Phase B.2d's diagnostic (see the header's research-gate note and
 `data/phase_b1_frontier/findings.md`) exists because the original
 600s-gate mismatch conflated two genuinely different properties that
 this design keeps separate, in both the implementation and the product
@@ -368,16 +461,28 @@ tests, not just research-script coverage:
   deadline (§4) actually stops Stage 2's search loop and surfaces
   `stage2_timeout: true`, not just eventually returning past
   `coverage_timeout_secs`.
-- `find_routes_deadline_none_is_byte_identical_to_pre_deadline_behavior`
-  — `SearchConfig::deadline: None` (every existing caller, standard
-  mode, Stage 1) produces identical output to before this field
-  existed; regression-guards §4's core backward-compatibility claim at
-  the `search.rs` level, not just at the CLI/Python output-JSON level
-  (§6/§8's other tests).
-- `find_routes_deadline_stops_search_and_returns_partial_stats` — a
-  deadline in the past (or one that expires mid-search on a
-  deliberately slow synthetic case) causes the main loop to `break`
-  rather than run to natural completion, with `stats.timed_out: true`.
+- `search::cooperative_cancellation_tests` (`src/search.rs`, Phase
+  41.18A, PR #119) — the `search.rs`-level regression coverage backing
+  §4's core backward-compatibility and cancellation claims, already in
+  place before any CLI/Python code exists: `wrapper_matches_unlimited_
+  control_exactly` (byte-identical routes/stats between `find_routes`
+  and `find_routes_with_control(unlimited)`, at three beam widths),
+  `already_past_deadline_returns_deadline_exceeded_without_panicking`,
+  `checkpoint_one_alone_catches_a_deadline_no_expansion_ever_reaches`
+  (isolates checkpoint 1 specifically via `max_depth: 0`, where
+  expansion -- and therefore checkpoints 2/3 -- is never reached;
+  independent review verified this via mutation testing: removing
+  checkpoint 1 makes exactly this test fail, reporting `Completed`
+  instead), `valid_routes_found_before_deadline_are_not_discarded`
+  (subset-of-baseline invariant, sampled across several deadline
+  fractions rather than one fixed duration -- avoids the cross-machine
+  timing flakiness a hardcoded value would risk),
+  `call_returns_promptly_after_deadline_leaves_nothing_running`,
+  `safe_with_and_without_reranker`, `safe_with_beam_width_zero_and_nonzero`,
+  `max_routes_completion_wins_over_an_already_expired_deadline`
+  (deterministic via `max_routes: 0`, not a real-time race -- see §4's
+  ordering note). Coverage-mode's own CLI/Python-level tests below
+  build on top of this, not instead of it.
 - `coverage_mode_reranker_failures_is_sum_across_invoked_stages` —
   Stage 1 + Stage 2 both reranker-active, both report nonzero via a
   test double/fault injection → top-level field equals the sum, not

@@ -1,16 +1,22 @@
 # RENKIN Coverage Mode — Design Doc
 
 Status: **draft, design-only — no implementation yet.** Base commit:
-`ea62c50930ce370f4eb0eb0ee73512f9d7ab6d8a` (`research/phase-b1-b2-progressive-escalation`,
+`135f62c66b5dcbca7c080c7c959adf0f2178a694` (`research/phase-b1-b2-progressive-escalation`,
 PR #118, not yet merged to `origin/master`).
 
 **Gate**: product integration (anything beyond this document) does not
-start until the reranker-arm extended determinism replay passes (see
-`ROADMAP.md`'s Phase B.2 section — the base, no-reranker architecture's
-determinism gate already passed on the pre-registered 37-target
-protocol; the reranker-arm replay reusing that same 37-target set is
-in progress as of this writing). This document is itself Green/design
-work and does not depend on that gate.
+start until the reranker-arm extended determinism replay passes.
+**Current status: the replay FAILED as specified** -- 36/37 targets
+exact, 1 mismatch (`uspto50k_val#L2330`, a Stage-2 wall-clock timeout-
+boundary classification flip, characterized in full in
+`ROADMAP.md`/`findings.md`). This is not softened or waived. A
+follow-up diagnostic (Phase B.2d, `data/phase_b1_frontier/findings.md`)
+targets that one mismatch in isolation to distinguish two different
+questions the original gate conflated -- see §4 below, which this
+result directly motivated. The original 600s gate's FAIL stands
+permanently regardless of the diagnostic's outcome; it is never
+retroactively upgraded to a PASS. This document is itself Green/design
+work and does not depend on the diagnostic's result.
 
 ## 0. What this is, in one paragraph
 
@@ -157,35 +163,101 @@ the same control-flow shape, not from re-deriving the rule.
 pre-registered Phase B.2 constraint: no warm-start, no candidate reuse
 between stages, `find_routes` called fresh with `rules_stage2`.
 
-**Timeout mechanism (open design point, needs a decision before
-implementation, not resolved by this document alone)**: since Stage 1
-and Stage 2 both run inside the same process (not two CLI
-invocations), the external-process-wrapper pattern every timeout in
-this program has used so far (`/usr/bin/time` + `SIGTERM`/`SIGKILL`)
-doesn't directly apply to "just Stage 2 within one process." Two real
-options:
-1. **Spawn Stage 2's `find_routes` call on a thread, race it against
-   `coverage_timeout_secs` via `mpsc::Receiver::recv_timeout`.** Stdlib
-   only, no new dependency, minimal diff. The thread is **not** joined
-   on timeout — it keeps running to natural completion in the
-   background, detached, its result discarded. Acceptable but worth
-   stating plainly: this is `# ponytail: thread not joined on timeout,
-   may keep computing in the background; upgrade to cooperative
-   cancellation (a shared deadline check inside find_routes's main
-   loop) if repeated timeout-heavy production usage makes thread
-   accumulation a measured problem` — not free of cost, just cheap and
-   correct enough for v0 without touching the search loop.
-2. Add real cooperative cancellation to `find_routes`'s main loop (a
-   deadline parameter, checked per iteration). Correct and clean, but
-   a change to the core search algorithm this design deliberately
-   avoids for v0 — bigger surface, bigger risk, not needed to ship the
-   coverage-mode value proposition itself.
+**Timeout mechanism: cooperative cancellation, decided.** An earlier
+draft of this section recommended spawning Stage 2's `find_routes`
+call on a thread and racing it against `coverage_timeout_secs` via
+`mpsc::Receiver::recv_timeout`, leaving the thread detached (not
+joined) and still computing in the background on timeout. **Rejected.**
+A single CLI invocation, that's a one-time harmless leak. Coverage
+mode's own measured Stage-2 invocation rate is 83.5% (`findings.md`,
+Phase B.2) — most invocations escalate, so a long-lived caller (the
+Python module in a notebook loop, a server process, `renkin-mcp`)
+making repeated coverage-mode calls would accumulate detached,
+still-running search threads on every Stage-2 timeout. That is not an
+acceptable v0 property for a mode designed to be invoked this often,
+not an edge case to defer.
 
-**Recommendation: option 1 for v0.** It's the smaller, better-precedented
-diff, and the failure mode (a detached thread finishing after its
-caller already reported timeout) is harmless — CPU spent, no
-correctness or safety issue. Revisit option 2 only if usage data shows
-it matters.
+**Decided instead: give `find_routes`'s main loop an optional
+deadline, checked periodically, that actually stops the search and
+returns whatever routes/stats it has so far when the deadline passes.**
+This does touch `search.rs` — a real change to the core search
+algorithm this document originally tried to avoid — but it is the
+correct product boundary for a mode whose whole value proposition is
+"call Stage 2 often." Shape (illustrative):
+
+```rust
+pub struct SearchConfig {
+    // ...existing fields...
+    pub deadline: Option<std::time::Instant>,  // None = no cutoff (today's behavior, unchanged)
+}
+
+// inside find_routes's main frontier loop, checked once per iteration
+// (not per-candidate -- the loop iteration is already the natural,
+// cheap checkpoint; this is not a hot-path cost):
+if let Some(deadline) = config.deadline
+    && std::time::Instant::now() >= deadline
+{
+    stats.timed_out = true;
+    break;
+}
+```
+
+`config.deadline: None` (the default, matching every existing caller
+including standard mode and Stage 1) is **exactly today's behavior,
+byte-for-byte** — this is additive, not a change to any existing
+search's semantics. Coverage mode's Stage 2 is the only caller that
+ever sets it, computed from `coverage_timeout_secs` at call time.
+
+**Why this is not just "the same as the old approach but tidier"**:
+cooperative cancellation gives up the same wall-clock non-guarantee
+option 1 would have had (a deadline check once per loop iteration can
+still overshoot by however long one iteration takes), but it never
+leaves work running after the caller stops waiting for it — the
+in-process equivalent of the external wrapper's `SIGTERM`, done
+cleanly instead of by killing a subprocess.
+
+### The two-layer guarantee this design actually offers
+
+Phase B.2d's diagnostic (see §0's Gate note and
+`data/phase_b1_frontier/findings.md`) exists because the original
+600s-gate mismatch conflated two genuinely different properties that
+this design keeps separate, in both the implementation and the product
+contract documentation:
+
+1. **Algorithmic semantic determinism** — same target, same stock,
+   same templates, same config, **sufficient budget to actually
+   complete**: the result (`route_found`, canonical route/tree,
+   validator outcome, `reranker_failures`) is deterministic. This is
+   what `find_routes` itself guarantees and what every dedicated
+   determinism test in this codebase (`reranker_some_is_also_fully_
+   deterministic_across_repeated_runs`, the base-architecture 37/37
+   Phase B.2 determinism gate) actually verifies.
+2. **Operational timeout classification near the deadline** — whether
+   a given invocation completes or gets cut off by `coverage_timeout_secs`
+   is a wall-clock race against real elapsed time, and elapsed time for
+   a fixed amount of work varies with system load. Near the deadline,
+   two runs of the identical search can land on opposite sides of the
+   cutoff. **This is expected, not a bug, and coverage mode's product
+   contract says so explicitly** rather than implying every observable
+   result is deterministic.
+
+The original 600s gate's FAIL is not softened by this distinction —
+that gate is specified as a single check, mixing both properties by
+construction (comparing `run_status`/`is_timeout`, which are downstream
+of wall-clock classification, not just semantic outcome), and its
+result stands. The distinction matters for what the *product* promises
+callers, which is a separate question from what that one research gate
+measured.
+
+**Not proposed for v0**: a deterministic search budget
+(`max_nodes`/`max_expansions` instead of wall-clock) would let identical
+inputs produce identical timeout/no-timeout classification too, closing
+this gap at the algorithm level rather than accepting it as a product
+contract nuance. Real option, bigger change, not required to ship
+coverage mode's actual value (converting candidate-pool coverage into
+route coverage) — a candidate for a later iteration if operational
+timeout variability turns out to matter more in practice than this
+design currently expects.
 
 ## 5. Observability (output JSON — CLI and Python, same shape)
 
@@ -292,9 +364,20 @@ tests, not just research-script coverage:
   with a nonexistent path) errors before any search runs, never
   silently falls back to standard mode.
 - `coverage_mode_stage2_timeout_reports_stage1_result_if_any` and
-  `coverage_mode_stage2_timeout_flag_set` — the threaded-timeout
-  mechanism (§4) actually surfaces `stage2_timeout: true` and doesn't
-  hang the caller past `coverage_timeout_secs` plus scheduling slack.
+  `coverage_mode_stage2_timeout_flag_set` — the cooperative-cancellation
+  deadline (§4) actually stops Stage 2's search loop and surfaces
+  `stage2_timeout: true`, not just eventually returning past
+  `coverage_timeout_secs`.
+- `find_routes_deadline_none_is_byte_identical_to_pre_deadline_behavior`
+  — `SearchConfig::deadline: None` (every existing caller, standard
+  mode, Stage 1) produces identical output to before this field
+  existed; regression-guards §4's core backward-compatibility claim at
+  the `search.rs` level, not just at the CLI/Python output-JSON level
+  (§6/§8's other tests).
+- `find_routes_deadline_stops_search_and_returns_partial_stats` — a
+  deadline in the past (or one that expires mid-search on a
+  deliberately slow synthetic case) causes the main loop to `break`
+  rather than run to natural completion, with `stats.timed_out: true`.
 - `coverage_mode_reranker_failures_is_sum_across_invoked_stages` —
   Stage 1 + Stage 2 both reranker-active, both report nonzero via a
   test double/fault injection → top-level field equals the sum, not

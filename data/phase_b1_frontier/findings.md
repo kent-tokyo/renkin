@@ -1193,10 +1193,82 @@ this FAIL stands permanently regardless of what a diagnostic shows.
 Whether to run that diagnostic, re-run the full 37 at a new timeout,
 or re-specify the protocol is the user's call.
 
+## Phase B.2d -- uncensored L2330 semantic determinism diagnostic (2026-08-15) -- PASS
+
+Named and scoped separately from the 600s gate above by explicit user
+decision: **the original gate's FAIL is not retested, not retried at a
+new timeout, and not overwritten by this result** -- this diagnostic
+asks a narrower, different question (is the search's *semantic* result
+deterministic given enough time to actually observe it), not "does
+L2330 pass the 600s gate."
+
+**Design**: `uspto50k_val#L2330` only, 3 independent runs, identical
+binary SHA-256 (`6aafd9ea...`, confirmed unchanged since the extended
+replay -- no `.rs` files touched in between) / template file / reranker
+model+freq-table / stock / beam-width, external safety cap **1200s**
+(explicitly not a re-test of the 600s gate -- a diagnostic condition
+sized to comfortably observe the outcome rather than race it). Load
+average confirmed unremarkable before starting (4.4-8.1 range, no
+unrelated heavy process beyond routine OS background activity) and
+recorded at the start/end of every run.
+
+**PASS conditions (pre-registered before running)**: all 3 runs
+complete without hitting the safety cap; `reranker_failures = 0`; all
+3 runs' semantic projection SHA-256 exact; `route_found`/canonical
+route/validator outcome exact across all 3.
+
+**Result: PASS, cleanly.**
+
+| run | pre-start load avg | post-end load avg | `total_elapsed_ms` | `run_status` | `route_found` | `reranker_failures` | `cpu_user_s` |
+|---|---|---|---|---|---|---|---|
+| 1 | 4.36 | 15.52 | 360,606 (360.6s) | completed | false | 0 | 2008.9 |
+| 2 | 12.87 | 10.62 | 414,386 (414.4s) | completed | false | 0 | 2456.3 |
+| 3 | 9.09 | 15.59 | 477,722 (477.7s) | completed | false | 0 | 2426.2 |
+
+All 3 completed well inside the 1200s cap (and, notably, inside 600s
+too -- every one of these runs would have passed the *original* gate's
+timeout on this occasion; the 600s FAIL happened on a different
+occasion under different load, which is exactly the point). Semantic
+projection SHA-256 identical across all 3
+(`7a66f7c6...db6073`), computed via the same
+`phase_b2_orchestrator.semantic_projection`/`projection_sha256` used
+for every other determinism check in this program, extended this
+session to carry `reranker_failures`. `route_found=false` in all 3
+(consistent with the original no-reranker determinism check's result
+for this same target), all validator-outcome fields uniformly `None`
+(no route to validate), `reranker_failures=0` in all 3.
+
+**Interpretation, per the pre-registered decision rule**: 3/3 complete
+and exact -> **algorithmic semantic determinism is supported** for
+this target under this configuration. **The original 600s operational
+determinism gate remains recorded as FAILED (36/37 exact)** -- this
+diagnostic does not and cannot change that record; it answers a
+different, narrower question about the same target under a condition
+designed to let the outcome actually be observed.
+
+**Incidental finding worth keeping**: `cpu_user_s` (~2,009-2,456s) is
+5.6-6.8x larger than wall-clock `total_elapsed_ms` (360.6-477.7s)
+across all 3 runs -- direct confirmation that RENKIN's search is
+internally parallelized across multiple threads/cores, not evidence of
+anything wrong. This sharpens the mechanism hypothesis for the
+original mismatch: a wall-clock-bound multi-threaded search is exactly
+the shape of workload most sensitive to *how many cores are actually
+available* at any given moment, which is precisely what system load
+average measures -- more contention for cores stretches wall-clock
+completion time for the same amount of underlying work, without any
+change in the search's own semantic behavior. Consistent (though
+n=3 is too small to call this more than suggestive) with elapsed time
+loosely tracking load across the 3 runs (360.6s / 414.4s / 477.7s
+against roughly increasing average load).
+
 **Sequencing**: determinism PASS (base architecture) -> reranker
 compatibility (4/5 PASS, extended determinism replay **FAILED** --
-36/37 exact, one isolated boundary mismatch) -> coverage-mode
-CLI/Python design (design-only, completed in parallel, see
-`docs/design/coverage-mode-v0.md`) -> product integration (blocked,
-awaiting the user's decision on the determinism mismatch) -> exactly
-one formal-TEST confirmation run under a frozen spec -> v0.24.0.
+36/37 exact, one isolated boundary mismatch, **stands permanently**) ->
+Phase B.2d diagnostic (**PASS** -- algorithmic semantic determinism
+supported; does not upgrade the FAIL above) -> coverage-mode
+CLI/Python design (design-only, completed, `docs/design/coverage-mode-v0.md`
+now specifies cooperative-cancellation timeout as the official v0
+policy and separates algorithmic-determinism vs. operational-timeout-
+variability as two distinct product guarantees) -> product integration
+(next explicit GO required) -> exactly one formal-TEST confirmation
+run under a frozen spec -> v0.24.0.

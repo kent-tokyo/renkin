@@ -11,6 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 RENKIN_BIN = REPO_ROOT / "target" / "release" / "renkin"
 BUILDING_BLOCKS = REPO_ROOT / "data" / "building_blocks.smi"
 TEMPLATES = REPO_ROOT / "data" / "templates_extracted_500.smi"
+COVERAGE_FIXTURE_TEMPLATES = REPO_ROOT / "tests" / "fixtures" / "coverage_mode_templates.smi"
 
 requires_renkin_bin = unittest.skipUnless(
     RENKIN_BIN.exists(),
@@ -18,6 +19,8 @@ requires_renkin_bin = unittest.skipUnless(
 )
 
 ASPIRIN = "CC(=O)Oc1ccccc1C(=O)O"
+ACETIC_ACID = "CC(=O)O"  # depth-0 building block, matches tests/coverage_mode_cli.rs
+STAGE1_UNSOLVED_AT_FIXTURE = "O=C1CCC(=O)N1c1ccccc1"  # matches tests/coverage_mode_cli.rs
 
 
 def load_stock():
@@ -175,6 +178,61 @@ class TestRenkinAdapterSmoke(unittest.TestCase):
         )
         self.assertTrue(row.route_found)
         self.assertFalse(row.all_leaves_in_configured_stock)
+
+    def test_standard_mode_leaves_coverage_mode_fields_null(self):
+        row = self._run(ASPIRIN)
+        self.assertIsNone(row.tool_specific["renkin"]["search_mode"])
+        self.assertIsNone(row.tool_specific["renkin"]["selected_stage"])
+        self.assertIsNone(row.tool_specific["renkin"]["stage2_invoked"])
+
+    def test_coverage_mode_stage1_solved_reports_stage1_selected(self):
+        # v0.24 coverage mode (Issue #101, Phase 41.18B) -- additive
+        # RenkinConfig fields, used by the formal-TEST runner
+        # (data/coverage_mode_formal_test/protocol.md), not the Issue #66
+        # comparison protocol itself.
+        config = adapter.RenkinConfig(
+            binary_path=str(RENKIN_BIN),
+            building_blocks_path=str(BUILDING_BLOCKS),
+            templates_path=str(TEMPLATES),
+            depth=2,
+            beam_width=100,
+            max_routes=1,
+            external_timeout_s=30,
+            search_mode="coverage",
+            coverage_templates_path=str(COVERAGE_FIXTURE_TEMPLATES),
+        )
+        row = self._run(ACETIC_ACID, config=config, target_id="smoke#coverage_stage1")
+        self.assertEqual(row.run_status, "completed")
+        self.assertTrue(row.route_found)
+        self.assertEqual(row.tool_specific["renkin"]["search_mode"], "coverage")
+        self.assertEqual(row.tool_specific["renkin"]["selected_stage"], "stage1")
+        self.assertFalse(row.tool_specific["renkin"]["stage2_invoked"])
+
+    def test_coverage_mode_stage1_unsolved_escalates_to_stage2(self):
+        # Stage 1 deliberately uses NO --templates (default_rules() alone,
+        # matching tests/coverage_mode_cli.rs's own setup) -- with
+        # data/templates_extracted_500.smi as Stage 1's rule set instead,
+        # this target is already solvable at Stage 1 and never escalates.
+        config = adapter.RenkinConfig(
+            binary_path=str(RENKIN_BIN),
+            building_blocks_path=str(BUILDING_BLOCKS),
+            templates_path=None,
+            depth=2,
+            beam_width=100,
+            max_routes=1,
+            external_timeout_s=30,
+            search_mode="coverage",
+            coverage_templates_path=str(COVERAGE_FIXTURE_TEMPLATES),
+            coverage_timeout_secs=20,
+        )
+        row = self._run(
+            STAGE1_UNSOLVED_AT_FIXTURE, config=config, target_id="smoke#coverage_stage2"
+        )
+        self.assertEqual(row.run_status, "completed")
+        self.assertTrue(row.route_found)
+        self.assertEqual(row.tool_specific["renkin"]["selected_stage"], "stage2")
+        self.assertTrue(row.tool_specific["renkin"]["stage2_invoked"])
+        self.assertIsNotNone(row.normalized_route_sha256)
 
 
 if __name__ == "__main__":

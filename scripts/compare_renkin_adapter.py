@@ -66,6 +66,14 @@ class RenkinConfig:
     # fails -- this adapter doesn't duplicate that validation).
     reranker_model: str | None = None
     reranker_freq_table: str | None = None
+    # v0.24 coverage mode (Issue #101, Phase 41.18B) -- "coverage" requires
+    # coverage_templates_path; coverage_timeout_secs is optional (None means
+    # no cooperative-cancellation deadline on Stage 2). Not part of the
+    # Issue #66 open-source comparison protocol -- used by the coverage-mode
+    # formal-TEST runner (data/coverage_mode_formal_test/protocol.md) only.
+    search_mode: str = "standard"
+    coverage_templates_path: str | None = None
+    coverage_timeout_secs: int | None = None
 
 
 _MAXRSS_RE = re.compile(r"^\s*(\d+)\s+maximum resident set size\s*$", re.MULTILINE)
@@ -172,6 +180,10 @@ def run_one_target(
     if config.reranker_model and config.reranker_freq_table:
         argv += ["--reranker-model", config.reranker_model]
         argv += ["--reranker-freq-table", config.reranker_freq_table]
+    if config.search_mode == "coverage":
+        argv += ["--search-mode", "coverage", "--coverage-templates", config.coverage_templates_path]
+        if config.coverage_timeout_secs is not None:
+            argv += ["--coverage-timeout-secs", str(config.coverage_timeout_secs)]
 
     (
         returncode,
@@ -230,6 +242,21 @@ def run_one_target(
     routes_found = parsed.get("routes_found", 0)
     route_found = routes_found > 0
 
+    # Absent entirely on a standard-mode response (coverage_mode.rs never
+    # emits these keys outside coverage mode) -- parsed.get(...) is None
+    # for every field here in that case, exactly matching config.search_mode
+    # == "standard" and giving every row a consistent tool_specific shape
+    # regardless of which mode produced it.
+    coverage_mode_fields = {
+        "search_mode": parsed.get("search_mode"),
+        "selected_stage": parsed.get("selected_stage"),
+        "stage2_invoked": parsed.get("stage2_invoked"),
+        "stage1_timeout": parsed.get("stage1_timeout"),
+        "stage2_timeout": parsed.get("stage2_timeout"),
+        "stage1_elapsed_ms": parsed.get("stage1_elapsed_ms"),
+        "stage2_elapsed_ms": parsed.get("stage2_elapsed_ms"),
+    }
+
     row_kwargs = dict(
         **base,
         run_status="completed",
@@ -252,6 +279,7 @@ def run_one_target(
                 "reranker_failures": parsed.get("reranker_failures"),
                 "diagnostics_source": "single_per_target_cli_call",
                 **cpu_time_tool_specific,
+                **coverage_mode_fields,
             }
         }
         return PlannerComparisonRow(**row_kwargs)
@@ -271,6 +299,7 @@ def run_one_target(
             "reranker_failures": parsed.get("reranker_failures"),
             "diagnostics_source": "single_per_target_cli_call",
             **cpu_time_tool_specific,
+            **coverage_mode_fields,
         }
     }
 

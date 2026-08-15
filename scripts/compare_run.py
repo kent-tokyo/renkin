@@ -53,6 +53,9 @@ def renkin_config_and_id(args):
         ring_context_sidecar=args.ring_context_sidecar,
         reranker_model=args.reranker_model,
         reranker_freq_table=args.reranker_freq_table,
+        search_mode=args.search_mode,
+        coverage_templates_path=args.coverage_templates,
+        coverage_timeout_secs=args.coverage_timeout_secs,
     )
     policy_suffix = (
         f"-{args.ring_context_policy}"
@@ -62,9 +65,10 @@ def renkin_config_and_id(args):
     reranker_suffix = (
         "-reranker_on" if args.reranker_model and args.reranker_freq_table else ""
     )
+    coverage_suffix = "-coverage" if args.search_mode == "coverage" else ""
     configuration_id = (
         f"renkin-{args.comparison_mode}-d{args.depth}-b{args.beam_width}"
-        f"{policy_suffix}{reranker_suffix}"
+        f"{policy_suffix}{reranker_suffix}{coverage_suffix}"
     )
     return config, building_blocks_path, configuration_id
 
@@ -195,6 +199,27 @@ def main(argv: list[str] | None = None) -> int:
         "Requires --reranker-model.",
     )
     parser.add_argument(
+        "--search-mode",
+        choices=["standard", "coverage"],
+        default="standard",
+        help="RENKIN-only: v0.24 coverage mode (Issue #101, Phase 41.18B) -- invokes the "
+        "native --search-mode coverage CLI (Stage 1 = --templates, Stage 2 = "
+        "--coverage-templates, only if Stage 1 found nothing) instead of standard mode. "
+        "Requires --coverage-templates. Ignored for --tool aizynthfinder.",
+    )
+    parser.add_argument(
+        "--coverage-templates",
+        default=None,
+        help="RENKIN-only: Stage-2 template set for --search-mode coverage.",
+    )
+    parser.add_argument(
+        "--coverage-timeout-secs",
+        type=int,
+        default=None,
+        help="RENKIN-only: cooperative-cancellation deadline for --search-mode coverage's "
+        "Stage 2 (renkin's own --coverage-timeout-secs). None means no deadline.",
+    )
+    parser.add_argument(
         "--resume",
         action="store_true",
         help="Append to --output-rows if it exists, skipping target_ids already present, "
@@ -216,6 +241,8 @@ def main(argv: list[str] | None = None) -> int:
             "-- renkin's own CLI would silently fall back to legacy ordering on a mismatched "
             "pair, which this paired-comparison harness must not do unnoticed"
         )
+    if args.search_mode == "coverage" and not args.coverage_templates:
+        parser.error("--search-mode coverage requires --coverage-templates")
 
     sample = sampling.load_sample(args.sample_list, args.sample_size)
     sample_ids = [row["target_id"] for row in sample]
@@ -249,6 +276,8 @@ def main(argv: list[str] | None = None) -> int:
             input_files["reranker_model"] = args.reranker_model
         if args.reranker_freq_table:
             input_files["reranker_freq_table"] = args.reranker_freq_table
+        if args.search_mode == "coverage":
+            input_files["coverage_templates"] = args.coverage_templates
         if not os.path.exists(args.manifest_path):
             run_manifest = manifest_mod.capture_start_manifest(
                 tool=args.tool,
@@ -313,6 +342,8 @@ def main(argv: list[str] | None = None) -> int:
             input_files["reranker_model"] = args.reranker_model
         if args.reranker_freq_table:
             input_files["reranker_freq_table"] = args.reranker_freq_table
+        if args.search_mode == "coverage":
+            input_files["coverage_templates"] = args.coverage_templates
         run_manifest = manifest_mod.finalize_manifest(run_manifest, input_files)
         with open(args.manifest_path, "w", encoding="utf-8") as f:
             json.dump(run_manifest, f, indent=2, sort_keys=True, default=str)

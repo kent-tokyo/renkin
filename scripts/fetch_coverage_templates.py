@@ -39,11 +39,15 @@ Usage:
 """
 
 import argparse
-import hashlib
-import json
 import os
-import subprocess
 import sys
+
+from asset_fetch_common import (
+    check_asset_manifest_version,
+    fetch_and_verify,
+    load_json_manifest,
+    sha256_of,
+)
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_TEMPLATES_DIR = os.path.join(REPO_ROOT, "data/phase_a5_template_scaling/templates")
@@ -54,27 +58,6 @@ DEFAULT_ASSET_MANIFEST = os.path.join(
     DEFAULT_TEMPLATES_DIR, "coverage_templates_release_asset_manifest.json"
 )
 ASSET_FILENAME = "templates_2000.smi"
-
-
-def sha256_of(path):
-    """Whole-file SHA-256."""
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return f"sha256:{h.hexdigest()}"
-
-
-def load_json_manifest(path, label):
-    """Load a manifest JSON file, raising RuntimeError (not a raw
-    FileNotFoundError/JSONDecodeError traceback) on any failure."""
-    try:
-        with open(path, encoding="utf-8") as f:
-            return json.load(f)
-    except OSError as e:
-        raise RuntimeError(f"could not read {label} at {path}: {e}") from e
-    except (json.JSONDecodeError, UnicodeDecodeError) as e:
-        raise RuntimeError(f"{label} at {path} is not valid JSON: {e}") from e
 
 
 def build_checks(provenance_manifest, asset_manifest):
@@ -108,73 +91,6 @@ def build_checks(provenance_manifest, asset_manifest):
     ]
 
 
-def check_asset_manifest_version(asset_manifest, version):
-    """Raises RuntimeError if `asset_manifest` isn't pinned to `version` --
-    per its own immutability policy, a new release's assets get a new
-    manifest entry rather than reusing an old one."""
-    pinned = asset_manifest.get("release_tag")
-    if pinned != version:
-        raise RuntimeError(
-            f"coverage_templates_release_asset_manifest.json is pinned to "
-            f"release_tag={pinned!r}, but --version={version!r} was requested. "
-            "Per this manifest's own immutability policy, a new release's "
-            "assets get a new manifest entry rather than reusing an old one -- "
-            "pass --asset-manifest explicitly if you really mean to check a "
-            "different release's assets against this manifest."
-        )
-
-
-def fetch_one(url, dest_path):
-    """Download url to dest_path via curl, atomically (temp file + rename).
-
-    Raises RuntimeError on any failure; never leaves a partial file at
-    dest_path.
-    """
-    tmp_path = dest_path + ".part"
-    try:
-        result = subprocess.run(["curl", "-fsSL", "-o", tmp_path, url])
-    except FileNotFoundError:
-        raise RuntimeError("curl is required but was not found on PATH") from None
-    if result.returncode != 0:
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
-        raise RuntimeError(
-            f"download failed ({url}) -- curl exit code {result.returncode}. "
-            "Does the release at that URL actually have this asset attached?"
-        )
-    os.replace(tmp_path, dest_path)
-
-
-def fetch_and_verify(filename, checks, repo, version, output_dir):
-    """Download `filename`, run every (description, expected_sha256,
-    verifier) in `checks` against it in order, return the verified path.
-    Deletes the downloaded file and raises on the first failing check."""
-    dest_path = os.path.join(output_dir, filename)
-    url = f"https://github.com/{repo}/releases/download/{version}/{filename}"
-    print(f"Fetching {filename} from {url} ...")
-    fetch_one(url, dest_path)
-    for description, expected_sha256, verifier in checks:
-        try:
-            actual_sha256 = verifier(dest_path)
-        except Exception as e:
-            os.remove(dest_path)
-            if isinstance(e, RuntimeError):
-                raise
-            raise RuntimeError(
-                f"{filename} failed check ({description}) with an unexpected "
-                f"error: {e!r}. Deleted the downloaded file; NOT safe to use."
-            ) from e
-        if actual_sha256 != expected_sha256:
-            os.remove(dest_path)
-            raise RuntimeError(
-                f"{filename} failed check ({description}) -- expected "
-                f"{expected_sha256}, got {actual_sha256}. Deleted the "
-                "downloaded file; NOT safe to use."
-            )
-        print(f"  verified {filename}: {description}")
-    return dest_path
-
-
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -205,7 +121,9 @@ def main(argv=None):
             "coverage_templates_release_asset_manifest.json has no release_tag "
             "and --version was not given -- pass --version explicitly"
         )
-    check_asset_manifest_version(asset_manifest, version)
+    check_asset_manifest_version(
+        asset_manifest, version, "coverage_templates_release_asset_manifest.json"
+    )
 
     os.makedirs(args.output_dir, exist_ok=True)
     checks = build_checks(provenance_manifest, asset_manifest)

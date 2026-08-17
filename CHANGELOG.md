@@ -6,6 +6,36 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+Usability/auditability improvements on top of v0.24.0 — no search-algorithm,
+ranking, or route-output changes, so no formal-TEST re-measurement is
+required for any of this.
+
+### Fixed
+- **CLI/Python JSON schema parity** — `renkin.find_routes()` (Python) was
+  missing `joint_success_probability` entirely, had no way to request
+  `search_diagnostics`, and its empty-route `diagnostics` object had only 1
+  of the CLI's 7 fields. All three now match the `renkin` CLI's own
+  `--format json` output exactly, locked in by new strict schema-parity
+  tests (the previous test only checked a subset of fields, which is
+  exactly how this gap shipped unnoticed).
+
+### Added
+- `search_diagnostics` parameter for `renkin.find_routes()` (Python) —
+  identical to the CLI's `--search-diagnostics` flag.
+- `renkin-doctor` now verifies the reranker model/frequency-table and
+  coverage-mode template assets against their release-asset manifests'
+  SHA-256, not just checking for their presence.
+- A type stub (`renkin.pyi` + `py.typed`) ships alongside the compiled
+  Python extension in every wheel — editors/mypy/pyright pick up
+  `find_routes`/`predict_forward`/`validate_forward`'s real signatures
+  automatically, no configuration needed.
+- `docs/api/python.md` documents `search_mode`/`coverage_templates_path`/
+  `top_templates`/`coverage_timeout_seconds` (previously undocumented
+  despite being live since v0.24.0) and `search_diagnostics`, with a new
+  CI-run coverage-mode example (`examples/coverage_mode.py`).
+
 ## [0.24.0] — 2026-08-17
 
 **Headline: coverage mode, an opt-in Stage-1/Stage-2 escalation that

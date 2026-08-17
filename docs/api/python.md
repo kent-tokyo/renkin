@@ -22,6 +22,11 @@ renkin.find_routes(
     template_metadata_path: str | None = None,
     reranker_model_path: str | None = None,
     reranker_freq_table_path: str | None = None,
+    top_templates: int | None = None,
+    search_mode: str = "standard",
+    coverage_templates_path: str | None = None,
+    coverage_timeout_seconds: int | None = None,
+    search_diagnostics: bool = False,
 ) -> str
 ```
 
@@ -45,6 +50,11 @@ a `dict` — parse it with `json.loads()` before accessing fields.
 | `template_metadata_path` | `str \| None` | `None` | Path to a JSON evidence sidecar keyed by `template_id` (see [Template Evidence Metadata](https://github.com/kent-tokyo/renkin#template-evidence-metadata)). Matching steps get an `evidence` field; nothing is fabricated for unmatched templates |
 | `reranker_model_path` | `str \| None` | `None` | Path to a frozen LightGBM `model.txt` for candidate reranking. Requires `reranker_freq_table_path` too. Ordering-only — never changes which candidates are considered, only their order |
 | `reranker_freq_table_path` | `str \| None` | `None` | Path to the TRAIN-frozen template `frequency_table.json` the reranker needs alongside `reranker_model_path` |
+| `top_templates` | `int \| None` | `None` | Keep only the top-N `templates_path` templates by frequency weight. Applies only to Stage 1 (`templates_path`) — coverage mode's Stage 2 (`coverage_templates_path`) always uses its full template set unfiltered |
+| `search_mode` | `str` | `"standard"` | `"standard"` (unchanged behavior) or `"coverage"` — see [Coverage Mode](#coverage-mode) below |
+| `coverage_templates_path` | `str \| None` | `None` | Stage 2's template set; required when `search_mode="coverage"`, validated before Stage 1 even runs |
+| `coverage_timeout_seconds` | `int \| None` | `None` | Optional positive-integer wall-clock budget for Stage 2 only (cooperative cancellation, not a hard bound). `0` raises `ValueError` |
+| `search_diagnostics` | `bool` | `False` | Add a `search_diagnostics` block (beam eviction, cross-template dedup, branching factor) to the JSON output — identical field names/shape to the `renkin` CLI's own `--search-diagnostics` flag |
 
 **Returns:** a JSON string shaped like:
 
@@ -52,6 +62,10 @@ a `dict` — parse it with `json.loads()` before accessing fields.
 {
     "target": str,
     "routes_found": int,
+    # joint_success_probability is present only when routes_found > 0:
+    # 1 - Π(1 - route.success_probability) across every returned route --
+    # a frequency-derived score, not a calibrated experimental probability.
+    "joint_success_probability": float,
     "routes": [
         {
             "depth": int,
@@ -82,11 +96,56 @@ a `dict` — parse it with `json.loads()` before accessing fields.
 }
 ```
 
+When `routes_found == 0`, `routes` is `[]` and `joint_success_probability` is
+absent; instead there's a `diagnostics` object: `nodes_expanded` (int),
+`max_depth_reached`/`beam_limit_hit` (bool), `matched_templates`/`stock_hits`
+(int), `likely_causes` (`[str]`), `suggestions` (`[str]`) — identical shape to
+the `renkin` CLI's own empty-route JSON output.
+
+When `search_diagnostics=True`, a `search_diagnostics` object is added in
+both cases above (beam-prune/crowd-out counters — see the `renkin` CLI's
+`--search-diagnostics` flag for the full field list).
+
 **Example** (also run in CI — see `examples/quickstart.py`):
 
 ```python
 --8<-- "examples/quickstart.py"
 ```
+
+## Coverage Mode
+
+Opt-in Stage-1/Stage-2 escalation: only if the default `templates_path`
+search finds nothing does Stage 2 run, against a separately loaded, larger
+`coverage_templates_path` template set, cooperatively cancellable via
+`coverage_timeout_seconds`. See
+[the design doc](https://github.com/kent-tokyo/renkin/blob/master/docs/design/coverage-mode-v0.md)
+for the full rationale and the formal-TEST confirmation numbers.
+
+```python
+--8<-- "examples/coverage_mode.py"
+```
+
+Standard-mode output (the default) is byte-for-byte unchanged: the extra
+fields below are omitted entirely, not `null`, unless `search_mode="coverage"`
+is actually passed.
+
+**Returns**, in addition to everything above, when `search_mode="coverage"`:
+
+```python
+{
+    "search_mode": "coverage",
+    "selected_stage": "stage1" | "stage2",
+    "stage2_invoked": bool,
+    "stage1_timeout": bool,
+    "stage2_timeout": bool,
+    "stage1_elapsed_ms": float,
+    "stage2_elapsed_ms": float | None,  # None iff Stage 2 never ran
+    "total_elapsed_ms": float,
+}
+```
+
+Identical field names and shapes to the `renkin` CLI's own coverage-mode
+JSON output.
 
 ## `predict_forward`
 
@@ -139,6 +198,24 @@ Returns a JSON string:
 ```
 
 The version string is a module attribute, not a function.
+
+## Typed Usage
+
+RENKIN ships a type stub (`renkin.pyi` + `py.typed`) alongside the compiled
+extension in every published wheel. Editors and type checkers (mypy,
+pyright) pick it up automatically once `renkin` is installed — no extra
+import or configuration needed:
+
+```python
+import renkin
+
+result: str = renkin.find_routes("CC(=O)Oc1ccccc1C(=O)O", depth=3)  # type-checked
+```
+
+The stub only types the function signatures (arguments and the fact that
+every function returns `str`); it doesn't type the JSON *contents* of that
+string — parse with `json.loads()` and refer to the return-shape
+documentation above for the actual fields.
 
 ## Building Blocks
 

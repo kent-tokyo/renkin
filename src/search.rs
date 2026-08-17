@@ -224,6 +224,35 @@ pub struct SearchStats {
     pub reranker_failures: u64,
 }
 
+/// Human-readable "why no route was found" diagnosis for a zero-route
+/// search: likely causes plus actionable suggestions, derived from
+/// `stats`/`max_depth`. Shared by the `renkin` CLI and the `find_routes`
+/// Python binding's empty-route JSON output -- moved here (from the CLI
+/// binary, where it originated) so both can call it, since `src/python.rs`
+/// is part of this library crate and cannot reach a function defined only
+/// in the `renkin` binary crate.
+pub fn diagnose(stats: &SearchStats, max_depth: u32) -> (Vec<&'static str>, Vec<String>) {
+    let mut causes: Vec<&'static str> = Vec::new();
+    let mut suggestions: Vec<String> = Vec::new();
+    if stats.stock_hits == 0 {
+        causes.push("no matching building block in stock");
+        suggestions.push("add a custom stock file with --building-blocks".to_string());
+    }
+    if stats.max_depth_reached {
+        causes.push("search depth exhausted");
+        suggestions.push(format!("try --depth {}", max_depth + 2));
+    }
+    if stats.beam_limit_hit {
+        causes.push("beam width too narrow — candidates were pruned");
+        suggestions.push("try --beam-width 200".to_string());
+    }
+    if stats.matched_templates < 5 {
+        causes.push("few or no templates matched the target");
+        suggestions.push("try --templates data/templates_extracted_50000.smi".to_string());
+    }
+    (causes, suggestions)
+}
+
 /// Diagnostics-only counters (Issue #101): computing these does not change
 /// which candidates are expanded, scored, kept, or in what order --- only
 /// bookkeeping is added at points [`find_routes`] already visits. Not used

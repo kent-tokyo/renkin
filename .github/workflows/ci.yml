@@ -167,6 +167,8 @@ jobs:
         run: |
           pip install dist/*.whl --force-reinstall
           python3 examples/quickstart.py
+      - name: Run the Python coverage-mode example
+        run: python3 examples/coverage_mode.py
 
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh

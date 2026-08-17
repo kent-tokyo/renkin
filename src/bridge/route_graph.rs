@@ -15,9 +15,10 @@ use crate::search::Route;
 /// PR4 adds the AiZynthFinder JSON adapter that actually constructs an
 /// `AiZynthFinder`-sourced [`RouteDocument`]; this type exists now so
 /// `AuditReport::source` has a home for it ahead of that.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum RouteSource {
+    #[default]
     Renkin,
     AiZynthFinder,
 }
@@ -83,8 +84,14 @@ impl RouteDocument {
 /// `compare_route_graph.py`'s `ParseOutcome`: `document` is `Some` only
 /// when `defects` is empty -- a route with any defect is never partially
 /// trusted, even if a tree could technically be built around the defect.
+///
+/// `source` is carried here explicitly (set by whichever normalizer ran),
+/// not derived from `document` -- `document` is `None` on every failure
+/// path, which is exactly when a caller (e.g. `bridge::audit::audit`) most
+/// needs to know which tool's route just failed to parse.
 #[derive(Debug, Default)]
 pub struct ParseOutcome {
+    pub source: RouteSource,
     pub document: Option<RouteDocument>,
     pub parseable: bool,
     pub defects: Vec<AuditFindingCode>,
@@ -185,6 +192,7 @@ pub fn normalize_renkin_route(route: &Route, requested_target_smiles: &str) -> P
 
     if route.steps.is_empty() {
         return ParseOutcome {
+            source: RouteSource::Renkin,
             document: None,
             parseable: false,
             defects: vec![AuditFindingCode::MultipleOrZeroRoots],
@@ -193,6 +201,7 @@ pub fn normalize_renkin_route(route: &Route, requested_target_smiles: &str) -> P
 
     let Some(requested_canon) = canonicalize(requested_target_smiles) else {
         return ParseOutcome {
+            source: RouteSource::Renkin,
             document: None,
             parseable: false,
             defects: vec![AuditFindingCode::UnparseableSmilesInRoute],
@@ -241,6 +250,7 @@ pub fn normalize_renkin_route(route: &Route, requested_target_smiles: &str) -> P
         root: root_node,
     });
     ParseOutcome {
+        source: RouteSource::Renkin,
         document,
         parseable,
         defects,

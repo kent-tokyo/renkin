@@ -136,6 +136,12 @@ pub struct AuditReport {
     pub target_element_accounting_status: Option<crate::synthesizability::ElementAccountingStatus>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub normalized_route_sha256: Option<String>,
+    /// Empty `findings` under `status: NotEvaluable` means "this check
+    /// never ran" (e.g. no `configured_stock` was supplied, so
+    /// `validate_stock_leaves` never executed and could not have produced
+    /// a `LeafUnresolved`/`LeafClaimedStockNotMatched` finding either way),
+    /// not "this check ran and found nothing" -- always read `status`
+    /// before treating an empty list as a clean bill of health.
     pub findings: Vec<AuditFinding>,
 }
 
@@ -341,12 +347,7 @@ fn target_element_accounting(
 /// exists to represent honestly.
 pub fn audit(outcome: &ParseOutcome, configured_stock: Option<&HashSet<String>>) -> AuditReport {
     let (Some(document), true) = (&outcome.document, outcome.parseable) else {
-        let source = outcome
-            .document
-            .as_ref()
-            .map(|d| d.source)
-            .unwrap_or(RouteSource::Renkin);
-        return parse_failure_report(source, &outcome.defects);
+        return parse_failure_report(outcome.source, &outcome.defects);
     };
 
     audit_document(document, configured_stock)
@@ -592,6 +593,35 @@ mod tests {
                 .iter()
                 .any(|f| f.code == AuditFindingCode::MultipleOrZeroRoots)
         );
+        assert_eq!(
+            report.source,
+            RouteSource::Renkin,
+            "a real normalize_renkin_route() failure must report its actual source"
+        );
+    }
+
+    /// Regression: `audit()`'s failure path used to derive `source` from
+    /// `outcome.document` (`.map(|d| d.source).unwrap_or(Renkin)`) --
+    /// always `None` on this exact path by `ParseOutcome`'s own contract
+    /// (`document` is `Some` only when parseable), so every failed audit
+    /// silently reported `source: "renkin"` regardless of which tool the
+    /// route actually came from. `ParseOutcome::source` is now set by
+    /// whichever normalizer ran, independent of `document`; this
+    /// constructs a `ParseOutcome` directly (simulating what RENKIN Bridge
+    /// PR4's AiZynthFinder normalizer will eventually produce) to prove a
+    /// failed audit doesn't relabel a competitor's broken route as
+    /// RENKIN's own.
+    #[test]
+    fn failed_audit_preserves_a_non_renkin_source() {
+        let outcome = ParseOutcome {
+            source: RouteSource::AiZynthFinder,
+            document: None,
+            parseable: false,
+            defects: vec![AuditFindingCode::RawOutputNotDecodable],
+        };
+        let report = audit(&outcome, None);
+        assert_eq!(report.status, AuditStatus::Fail);
+        assert_eq!(report.source, RouteSource::AiZynthFinder);
     }
 
     #[test]

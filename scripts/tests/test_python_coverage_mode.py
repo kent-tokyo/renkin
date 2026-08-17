@@ -141,12 +141,10 @@ class TestPythonCoverageMode(unittest.TestCase):
             "Stage 2 (coverage_templates_path, unaffected by top_templates) must still solve it",
         )
 
-    # Requirement: CLI/Python parity for the fields coverage mode *adds* --
-    # not full top-level schema parity (Python's output has a pre-existing,
-    # unrelated gap where it lacks `joint_success_probability` on the
-    # route-found branch, nothing to do with coverage mode, not addressed
-    # here). Only the coverage-mode-added field names/types/omission rules
-    # need to match between CLI and Python.
+    # Requirement: CLI/Python parity for the fields coverage mode *adds*.
+    # Full top-level schema parity (every field, not just coverage mode's)
+    # is covered separately by test_cli_python_top_level_schema_parity_*
+    # below.
     def test_cli_python_coverage_field_parity(self):
         import subprocess
 
@@ -203,6 +201,70 @@ class TestPythonCoverageMode(unittest.TestCase):
                 f"Python={py_json[key]!r} ({type(py_json[key])})",
             )
         self.assertEqual(cli_json["selected_stage"], py_json["selected_stage"])
+
+    # Full top-level schema parity (all fields, standard mode -- no
+    # reranker/coverage flags, so the field set is at its smallest and most
+    # comparable). A subset check (`coverage_keys <= cli_json.keys()`, as
+    # above) is exactly what let joint_success_probability/search_diagnostics
+    # go missing from Python unnoticed -- these two use strict set equality
+    # instead, so any future field added to one side and not the other
+    # fails loudly here.
+    def test_cli_python_top_level_schema_parity_route_found(self):
+        import subprocess
+
+        cli_bin = REPO_ROOT / "target" / "release" / "renkin"
+        if not cli_bin.exists():
+            self.skipTest(f"requires a built renkin binary at {cli_bin}")
+        cli_out = subprocess.run(
+            [str(cli_bin), "--target", BUILDING_BLOCK, "--depth", "2", "--max-routes", "1"],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=str(REPO_ROOT),
+        ).stdout
+        cli_json = json.loads(cli_out)
+        py_json = self._find_routes(BUILDING_BLOCK, depth=2, max_routes=1)
+        self.assertGreater(cli_json["routes_found"], 0, "test fixture must be a route-found case")
+        self.assertEqual(
+            set(cli_json.keys()),
+            set(py_json.keys()),
+            f"CLI-only: {set(cli_json) - set(py_json)}; Python-only: {set(py_json) - set(cli_json)}",
+        )
+
+    def test_cli_python_top_level_schema_parity_empty_route(self):
+        import subprocess
+
+        cli_bin = REPO_ROOT / "target" / "release" / "renkin"
+        if not cli_bin.exists():
+            self.skipTest(f"requires a built renkin binary at {cli_bin}")
+        # A target with no plausible depth-1 disconnection and no custom
+        # templates/building_blocks -- genuinely unsolvable at this depth on
+        # both sides, unlike STAGE1_UNSOLVED_AT_FIXTURE above (which is
+        # stage-1-unsolved *by design*, meant to escalate to stage 2, not
+        # globally unsolvable -- the wrong fixture for this test).
+        empty_route_target = "COC(=O)c1ccc[n+]([O-])c1-c1ccc(F)cc1"
+        cli_out = subprocess.run(
+            [str(cli_bin), "--target", empty_route_target, "--depth", "1", "--max-routes", "1"],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=str(REPO_ROOT),
+        ).stdout
+        cli_json = json.loads(cli_out)
+        py_json = self._find_routes(empty_route_target, depth=1, max_routes=1)
+        self.assertEqual(cli_json["routes_found"], 0, "test fixture must be an empty-route case")
+        self.assertEqual(py_json["routes_found"], 0, "test fixture must be an empty-route case")
+        self.assertEqual(
+            set(cli_json.keys()),
+            set(py_json.keys()),
+            f"CLI-only: {set(cli_json) - set(py_json)}; Python-only: {set(py_json) - set(cli_json)}",
+        )
+        self.assertEqual(
+            set(cli_json["diagnostics"].keys()),
+            set(py_json["diagnostics"].keys()),
+            f"CLI-only: {set(cli_json['diagnostics']) - set(py_json['diagnostics'])}; "
+            f"Python-only: {set(py_json['diagnostics']) - set(cli_json['diagnostics'])}",
+        )
 
 
 if __name__ == "__main__":

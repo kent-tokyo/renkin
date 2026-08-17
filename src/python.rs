@@ -4,7 +4,7 @@ use pyo3::prelude::*;
 use crate::chem_env::{
     ChemEnv, default_rules, elem_symbols_to_mask, load_rules_from_file, mol_from_smiles,
 };
-use crate::search::{SearchConfig, find_routes};
+use crate::search::{SearchConfig, diagnose, find_routes};
 
 /// Find retrosynthetic routes for a target molecule.
 ///
@@ -58,6 +58,15 @@ use crate::search::{SearchConfig, find_routes};
 ///         not a hard real-time bound -- see ``SearchTermination::
 ///         DeadlineExceeded``'s doc in ``src/search.rs``). ``0`` raises.
 ///         Default: ``None`` (unlimited).
+///     search_diagnostics (bool): When ``True``, adds a
+///         ``search_diagnostics`` block (beam eviction, cross-template
+///         dedup, branching factor -- Issue #101) to the JSON output,
+///         identical field names/shape to the ``renkin`` CLI's own
+///         ``--search-diagnostics`` flag. Always accumulated internally
+///         regardless of this flag (negligible bookkeeping cost); this
+///         only controls whether it's serialized. Present on both the
+///         route-found and empty-route branches when requested. Default:
+///         ``False`` (omitted from the output, not present as ``null``).
 ///
 ///     Passing only one of the two reranker paths, or the model failing to
 ///     load, falls back to legacy ordering with a message printed to
@@ -77,13 +86,22 @@ use crate::search::{SearchConfig, find_routes};
 ///     validate_coverage_mode_config``) still runs.
 ///
 /// Returns:
-///     str: JSON string with retrosynthesis routes. In coverage mode, gains
-///     ``search_mode``, ``selected_stage``, ``stage2_invoked``,
-///     ``stage1_timeout``, ``stage2_timeout``, ``stage1_elapsed_ms``,
-///     ``stage2_elapsed_ms``, ``total_elapsed_ms`` -- identical field names
-///     and shapes to the ``renkin`` CLI's own coverage-mode JSON output.
-///     Absent (not ``null``) in standard mode, byte-for-byte the same
-///     output as before these fields existed.
+///     str: JSON string with retrosynthesis routes -- identical top-level
+///     field set to the ``renkin`` CLI's own ``--format json`` output (the
+///     two share the same underlying search code and JSON-assembly shape).
+///     When ``routes_found > 0``: also has ``joint_success_probability``
+///     (``1 - Π(1 - route.success_probability)`` across every returned
+///     route -- a frequency-derived score, not a calibrated experimental
+///     probability). When ``routes_found == 0``: ``diagnostics`` has
+///     ``nodes_expanded``, ``max_depth_reached``, ``beam_limit_hit``,
+///     ``matched_templates``, ``stock_hits``, ``likely_causes``,
+///     ``suggestions``. In coverage mode, gains ``search_mode``,
+///     ``selected_stage``, ``stage2_invoked``, ``stage1_timeout``,
+///     ``stage2_timeout``, ``stage1_elapsed_ms``, ``stage2_elapsed_ms``,
+///     ``total_elapsed_ms`` -- identical field names and shapes to the
+///     ``renkin`` CLI's own coverage-mode JSON output. Absent (not
+///     ``null``) in standard mode, byte-for-byte the same output as before
+///     these fields existed.
 ///
 /// Example::
 ///
@@ -91,7 +109,7 @@ use crate::search::{SearchConfig, find_routes};
 ///     routes = json.loads(renkin.find_routes("CC(=O)Oc1ccccc1C(=O)O", depth=3))
 ///     print(routes["routes_found"])
 #[pyfunction]
-#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None))]
+#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None, search_diagnostics=false))]
 #[allow(clippy::too_many_arguments)]
 pub fn find_routes_py(
     target: &str,
@@ -111,6 +129,7 @@ pub fn find_routes_py(
     search_mode: &str,
     coverage_templates_path: Option<&str>,
     coverage_timeout_seconds: Option<u64>,
+    search_diagnostics: bool,
 ) -> PyResult<String> {
     if search_mode != "standard" && search_mode != "coverage" {
         return Err(PyValueError::new_err(format!(
@@ -278,19 +297,38 @@ pub fn find_routes_py(
         .unwrap_or(stats.reranker_failures);
 
     let mut output = if routes.is_empty() {
+        let (causes, suggestions) = diagnose(&stats, depth);
         serde_json::json!({
             "target": target,
             "routes_found": 0,
             "routes": [],
-            "diagnostics": {"nodes_expanded": stats.nodes_expanded}
+            "diagnostics": {
+                "nodes_expanded":    stats.nodes_expanded,
+                "max_depth_reached": stats.max_depth_reached,
+                "beam_limit_hit":    stats.beam_limit_hit,
+                "matched_templates": stats.matched_templates,
+                "stock_hits":        stats.stock_hits,
+                "likely_causes":     causes,
+                "suggestions":       suggestions,
+            }
         })
     } else {
+        let joint_success_probability = 1.0
+            - routes
+                .iter()
+                .map(|r| 1.0 - r.success_probability)
+                .product::<f64>();
         serde_json::json!({
             "target": target,
             "routes_found": routes.len(),
             "routes": routes,
+            "joint_success_probability": joint_success_probability,
         })
     };
+    if search_diagnostics {
+        output["search_diagnostics"] = serde_json::to_value(&stats.crowd_out)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    }
     // Mirrors the `renkin` CLI's exact contract (src/main.rs) -- surfaced
     // unconditionally whenever a reranker was configured, since a graceful
     // mid-run degrade (never a hard error) has no other way to be detected

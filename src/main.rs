@@ -734,7 +734,7 @@ fn main() -> Result<()> {
                 .map(|m| m.reranker_failures_summed)
                 .unwrap_or(stats.reranker_failures);
             if routes.is_empty() {
-                let (causes, suggestions) = diagnose(&stats, max_depth);
+                let (causes, suggestions) = search::diagnose(&stats, max_depth);
                 let mut out = serde_json::json!({
                     "target": target_smiles,
                     "routes_found": 0,
@@ -796,28 +796,6 @@ fn main() -> Result<()> {
         }
     }
     Ok(())
-}
-
-fn diagnose(stats: &search::SearchStats, max_depth: u32) -> (Vec<&'static str>, Vec<String>) {
-    let mut causes: Vec<&'static str> = Vec::new();
-    let mut suggestions: Vec<String> = Vec::new();
-    if stats.stock_hits == 0 {
-        causes.push("no matching building block in stock");
-        suggestions.push("add a custom stock file with --building-blocks".to_string());
-    }
-    if stats.max_depth_reached {
-        causes.push("search depth exhausted");
-        suggestions.push(format!("try --depth {}", max_depth + 2));
-    }
-    if stats.beam_limit_hit {
-        causes.push("beam width too narrow — candidates were pruned");
-        suggestions.push("try --beam-width 200".to_string());
-    }
-    if stats.matched_templates < 5 {
-        causes.push("few or no templates matched the target");
-        suggestions.push("try --templates data/templates_extracted_50000.smi".to_string());
-    }
-    (causes, suggestions)
 }
 
 // ── Constraint DSL ────────────────────────────────────────────────────────

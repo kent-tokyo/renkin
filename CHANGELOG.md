@@ -12,7 +12,31 @@ Usability/auditability improvements on top of v0.24.0 — no search-algorithm,
 ranking, or route-output changes, so no formal-TEST re-measurement is
 required for any of this.
 
+RENKIN Bridge P0, in progress toward a future v0.25.0 "RENKIN Bridge
+Preview" — see `docs/design/` for the full plan once posted. This section
+accumulates across the Bridge PR sequence; no version bump until the
+release is actually cut.
+
 ### Fixed
+
+- **Completed routes are now validated before being returned, not just
+  before being searched from.** A new acceptance-boundary gate
+  (`route_integrity_defects` in `src/search.rs`) runs on every completed
+  candidate immediately before it becomes a returned `Route`: root-target
+  match, per-step SMILES parseability, non-empty precursor lists, cycle/
+  self-reference detection, root-reachability of every step, and target-
+  element heavy-atom accounting (reusing the existing, previously-
+  disconnected `synthesizability::compute_element_accounting`). A
+  structurally invalid candidate is discarded and the search continues;
+  `routes_found` is `0` only if nothing valid survives. Rejection counts
+  are always accumulated in the new `SearchStats::route_integrity` field
+  and summarized in the CLI's empty-route `likely_causes`/`suggestions`.
+  Confirmed against the real 500-template corpus: `uspto50k_test#L984`
+  (Issue #72's isoindolinone ring-disconnection case) currently returns 5
+  routes with the default `--ring-context-policy disabled`, every one of
+  them silently dropping the target's nitrogen (`extracted_9`:
+  "N-methylisoindolin-1-one" → "benzoic acid" alone) — this gate now
+  correctly rejects all 5 rather than surface any of them.
 - **CLI/Python JSON schema parity** — `renkin.find_routes()` (Python) was
   missing `joint_success_probability` entirely, had no way to request
   `search_diagnostics`, and its empty-route `diagnostics` object had only 1

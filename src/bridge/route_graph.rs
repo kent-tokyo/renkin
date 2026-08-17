@@ -23,6 +23,30 @@ pub enum RouteSource {
     AiZynthFinder,
 }
 
+/// Whatever reaction-identity evidence is available for a non-leaf node --
+/// tool-neutral in shape, source-specific in content. `None` on
+/// [`RouteNode::reaction_evidence`] means no evidence was attached (a leaf,
+/// or a step whose source didn't supply enough to identify a reaction at
+/// all -- e.g. an AiZynthFinder route whose reaction node metadata this
+/// codebase has no confirmed schema for; see `bridge::forward` module docs).
+/// Consumed by RENKIN Bridge PR4's forward-validation
+/// (`bridge::forward::validate_step_forward`) to resolve which single
+/// declared reaction to replay -- never a scan over alternatives.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReactionEvidence {
+    /// RENKIN-native: the `RetroRule` this step's search claimed to use.
+    /// `ReactionStep::template_id` is "Always populated", so every
+    /// RENKIN-sourced non-leaf node gets one of these.
+    RenkinTemplate { template_id: String },
+    /// AiZynthFinder-sourced: whatever reaction SMIRKS/SMILES the route
+    /// metadata carried, if present. No adapter in this codebase
+    /// constructs this from a real AiZynthFinder JSON export yet (RENKIN
+    /// Bridge PR4 scope note) -- only hand-built fixtures do, until a real
+    /// adapter is confirmed against actual `aizynthcli` output.
+    AiZynthFinderTemplate { smirks: String },
+}
+
 /// One node in the normalized, tool-neutral route tree. Mirrors
 /// `compare_route_graph.py`'s `RouteNode` exactly: `is_stock_leaf` is
 /// three-valued and never defaulted -- `None` (a leaf with no explicit
@@ -32,6 +56,7 @@ pub enum RouteSource {
 pub struct RouteNode {
     pub canonical_smiles: String,
     pub is_stock_leaf: Option<bool>,
+    pub reaction_evidence: Option<ReactionEvidence>,
     pub children: Vec<RouteNode>,
 }
 
@@ -44,6 +69,7 @@ pub struct RouteNode {
 pub struct RouteStep {
     pub target: String,
     pub precursors: Vec<String>,
+    pub reaction_evidence: Option<ReactionEvidence>,
 }
 
 /// A tool-neutral, normalized route -- the promoted form of
@@ -68,6 +94,7 @@ impl RouteDocument {
                         .iter()
                         .map(|c| c.canonical_smiles.clone())
                         .collect(),
+                    reaction_evidence: node.reaction_evidence.clone(),
                 });
             }
             for c in &node.children {
@@ -109,10 +136,20 @@ fn count_edges(node: &RouteNode) -> usize {
     total
 }
 
+/// A step's precursors plus its `template_id`, keyed by canonicalized
+/// target in [`build`]'s `steps_by_target` map -- carrying `template_id`
+/// through is what lets RENKIN Bridge PR4's forward-validation resolve
+/// which declared reaction to replay for a RENKIN-sourced node (see
+/// [`ReactionEvidence::RenkinTemplate`]).
+struct StepInfo<'a> {
+    precursors: &'a [String],
+    template_id: &'a str,
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build(
     canon_smiles: &str,
-    steps_by_target: &HashMap<String, &[String]>,
+    steps_by_target: &HashMap<String, StepInfo>,
     bb_canon: &HashSet<String>,
     on_stack: &mut HashSet<String>,
     defects: &mut Vec<AuditFindingCode>,
@@ -122,10 +159,11 @@ fn build(
         return RouteNode {
             canonical_smiles: canon_smiles.to_string(),
             is_stock_leaf: None,
+            reaction_evidence: None,
             children: vec![],
         };
     }
-    let Some(precursors) = steps_by_target.get(canon_smiles) else {
+    let Some(step_info) = steps_by_target.get(canon_smiles) else {
         if !bb_canon.contains(canon_smiles) {
             // A precursor that's neither a step's target nor a declared
             // building block -- the source tool's own invariant is broken.
@@ -133,19 +171,21 @@ fn build(
             return RouteNode {
                 canonical_smiles: canon_smiles.to_string(),
                 is_stock_leaf: None,
+                reaction_evidence: None,
                 children: vec![],
             };
         }
         return RouteNode {
             canonical_smiles: canon_smiles.to_string(),
             is_stock_leaf: Some(true),
+            reaction_evidence: None,
             children: vec![],
         };
     };
 
     on_stack.insert(canon_smiles.to_string());
     let mut children = Vec::new();
-    for precursor_raw in *precursors {
+    for precursor_raw in step_info.precursors {
         let Some(p_canon) = canonicalize(precursor_raw) else {
             defects.push(AuditFindingCode::UnparseableSmilesInRoute);
             continue;
@@ -169,6 +209,9 @@ fn build(
     RouteNode {
         canonical_smiles: canon_smiles.to_string(),
         is_stock_leaf: Some(false),
+        reaction_evidence: Some(ReactionEvidence::RenkinTemplate {
+            template_id: step_info.template_id.to_string(),
+        }),
         children,
     }
 }
@@ -218,11 +261,17 @@ pub fn normalize_renkin_route(route: &Route, requested_target_smiles: &str) -> P
         }
     }
 
-    let mut steps_by_target: HashMap<String, &[String]> = HashMap::new();
+    let mut steps_by_target: HashMap<String, StepInfo> = HashMap::new();
     for step in &route.steps {
         match canonicalize(&step.target) {
             Some(canon) => {
-                steps_by_target.insert(canon, step.precursors.as_slice());
+                steps_by_target.insert(
+                    canon,
+                    StepInfo {
+                        precursors: step.precursors.as_slice(),
+                        template_id: &step.template_id,
+                    },
+                );
             }
             None => defects.push(AuditFindingCode::UnparseableSmilesInRoute),
         }

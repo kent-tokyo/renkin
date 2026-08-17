@@ -46,7 +46,13 @@ use crate::chem_env::{Molecule, RetroRule, mol_from_smiles};
 /// either by canonical-string equality (fast path) or, failing that and
 /// absent any tetrahedral stereo marker on either side, by VF2 graph
 /// isomorphism against `target_query` (see module docs).
-fn matches_target(
+///
+/// `pub(crate)`: also reused by `bridge::forward`'s reason-coded forward
+/// validation (RENKIN Bridge PR4), which needs this same matching logic but
+/// a richer outcome than this module's `bool`-only public API -- see that
+/// module's doc comment for why the surrounding replay loop is duplicated
+/// rather than shared.
+pub(crate) fn matches_target(
     candidate: &Molecule,
     target_canon: &str,
     target_query: Option<&QueryMolecule>,

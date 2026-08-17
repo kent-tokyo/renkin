@@ -302,6 +302,32 @@ mod tests {
         assert!(result.reason.is_none());
     }
 
+    /// A multi-carbon precursor gives the rule's reversal more than one
+    /// place to attach the oxygen, so it can't reach a single deterministic
+    /// product to compare against a non-matching target -- discovered
+    /// empirically while building the fixtures above (this exact
+    /// precursor/target pair originally stood in for the plain Fail case
+    /// until it turned out to be ambiguous instead).
+    #[test]
+    fn multiple_distinct_non_matching_products_is_ambiguous_not_fail() {
+        let rule = co_aliphatic_cleavage();
+        let rules = vec![rule];
+        let by_id = index_rules_by_template_id(&rules).unwrap();
+        let evidence = ReactionEvidence::RenkinTemplate {
+            template_id: "t1".to_string(),
+        };
+        let precursors = vec![
+            "[CH3][NH]C(CO[CH2][CH3])=O".to_string(),
+            "O[CH2][CH3]".to_string(),
+        ];
+        let result = validate_step_forward("CCC", &precursors, Some(&evidence), Some(&by_id));
+        assert_eq!(result.status, CheckStatus::NotEvaluable, "{result:?}");
+        assert_eq!(
+            result.reason,
+            Some(ForwardNotEvaluableReason::AmbiguousExpectedProduct)
+        );
+    }
+
     #[test]
     fn aizynthfinder_step_with_no_evidence_is_not_evaluable() {
         let result = validate_step_forward("CCOC", &["CCO".to_string()], None, None);

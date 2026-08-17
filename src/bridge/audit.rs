@@ -507,6 +507,12 @@ pub fn audit_document(
         })
         .collect();
 
+    // Deliberately redundant with the Gating-findings check: stock/forward
+    // Fail already push a Gating finding (`LeafClaimedStockNotMatched`/
+    // `LeafUnresolved`/`ForwardReactionNotReproduced`), so this clause is
+    // belt-and-braces, not dead code -- the verdict is meant to be
+    // derivable directly from each check's own status, independent of
+    // whether findings-severity classification ever changes.
     let any_fail = !steps_ok
         || findings.iter().any(|f| f.severity == AuditSeverity::Gating)
         || stock_validation.status == CheckStatus::Fail

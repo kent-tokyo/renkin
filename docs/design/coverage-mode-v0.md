@@ -1,9 +1,17 @@
 # RENKIN Coverage Mode — Design Doc
 
-Status: **Phase 41.18A (cooperative cancellation foundation) merged.
-Phase 41.18B (shared Stage-1/Stage-2 orchestrator + CLI/Python surface)
-implemented and in review, this revision.** Base commit: `94782d7`
-(PR #119, merged to `origin/master` 2026-08-15).
+Status: **Phase 41.18A (cooperative cancellation foundation, PR #119)
+and Phase 41.18B (shared Stage-1/Stage-2 orchestrator + CLI/Python
+surface, PR #120 + follow-up PR #121) both merged to `origin/master`
+2026-08-15 (`63fd77a`). Shipped in v0.24.0**: coverage-templates asset
+distribution, docs, version bump, and the pre-registered 500-target
+formal-TEST confirmation (`data/coverage_mode_formal_test/protocol_v2.md`,
+`results_v2/`) — coverage +6.0pp, net gain +30, zero regressions, zero
+reranker failures, Stage-2 timeout rate 0.25%, all against pre-registered
+thresholds. One correctness defect the gate caught (a single target's
+Stage-2 route with an unparseable N-oxide precursor) was root-caused and
+fixed pre-release; see
+`data/coverage_mode_formal_test/corrective_verification_l4703/SUMMARY.md`.
 
 **Research gate this design depends on**: the reranker-arm extended
 determinism replay **FAILED as specified** -- 36/37 targets exact, 1
@@ -28,9 +36,9 @@ additive `SearchControl`/`find_routes_with_control`, no `SearchConfig`/
 shared Stage-1/Stage-2 orchestrator (`src/coverage_mode.rs`) + CLI
 (`--search-mode`/`--coverage-templates`/`--coverage-timeout-secs`) +
 Python (`search_mode`/`coverage_templates_path`/
-`coverage_timeout_seconds`/`top_templates`) surface -- this revision,
-in review** -> product integration (artifact distribution, formal-TEST
-confirmation) -> v0.24.0.
+`coverage_timeout_seconds`/`top_templates`) surface (merged, PR #120 +
+#121)** -> product integration (artifact distribution, formal-TEST
+confirmation) -- in progress, this revision -> v0.24.0.
 
 ## 0. What this is, in one paragraph
 
@@ -506,7 +514,11 @@ tests, not just research-script coverage:
 No formal-TEST-split test is proposed here — matches this whole
 program's VAL-only discipline; the one pre-registered formal-TEST
 confirmation run happens once, later, per the v0.24 sequencing in
-`ROADMAP.md`, not as part of unit/integration test coverage.
+`ROADMAP.md`, not as part of unit/integration test coverage. The
+protocol itself is now a committed, pre-registered artifact:
+`data/coverage_mode_formal_test/protocol.md` (500-target cohort, Arm
+A/Arm C, pass/fail criteria — not a verbatim copy of the VAL gate's
+thresholds, see that file's §0 for why).
 
 ## 9. Explicitly out of scope for this document
 

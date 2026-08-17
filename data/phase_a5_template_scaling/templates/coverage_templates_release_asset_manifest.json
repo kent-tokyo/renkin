@@ -1,0 +1,12 @@
+{
+  "_purpose": "Whole-file SHA-256 for templates_2000.smi as it must be uploaded to a GitHub Release, for scripts/fetch_coverage_templates.py's download-authenticity check. Distinct from coverage_templates_provenance_manifest.json, which records derivation identity, not release-asset identity -- for this particular file the two hashes happen to be numerically identical (both are whole-file hashes of the same already-frozen, unchanged content), but they are verified as two separate checks against two separate manifests anyway, matching the reranker asset's established two-manifest pattern.",
+  "_immutability_policy": "Once a release has this asset attached, it is never overwritten in place. If a mistake is ever found, ship a corrected asset under a new release version and update release_tag/sha256 here accordingly -- matching data/phase3e_reranker_training/release_asset_manifest.json's identical policy.",
+  "_upload_status": "NOT YET UPLOADED as of this manifest's commit. release_tag/sha256 below are the values this asset is expected to have once actually attached to the v0.24.0 GitHub Release -- the content (templates_2000.smi) is already frozen and committed, so its hash is already known; only the upload step itself remains, and is explicitly gated on a separate, later, explicit GO (this PR does not upload any asset).",
+  "release_tag": "v0.24.0",
+  "assets": {
+    "templates_2000.smi": {
+      "sha256": "sha256:f1e2c7d9e5f5085fbac1f7eaf5daa1c53455d9ad4faa1125cb535bbe8ebfb6b5",
+      "note": "Same value as coverage_templates_provenance_manifest.json's asset_sha256 -- included here too for a single complete record of what this release_tag's assets are, even though fetch_coverage_templates.py verifies the download against this manifest specifically, not the provenance one."
+    }
+  }
+}

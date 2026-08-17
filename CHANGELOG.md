@@ -6,7 +6,89 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [Unreleased]
+## [0.24.0] — 2026-08-17
+
+**Headline: coverage mode, an opt-in Stage-1/Stage-2 escalation that
+trades cost for route-search coverage.** Phase B.2's benchmark result
+(`data/phase_b1_frontier/findings.md`) showed that escalating only
+targets a 500-template search failed to solve, into a second search
+against a larger 2,000-template set, converts real candidate-pool
+coverage gains into route coverage with zero regressions — at an
+opt-in cost tier (p95 5.72x vs. the 500-template baseline), not
+justified as a new default. This release ships that architecture as a
+real CLI/Python feature, backed by a one-shot 500-target formal-TEST
+confirmation (`data/coverage_mode_formal_test/protocol_v2.md`,
+`results_v2/`): coverage +6.0pp, net gain +30, zero regressions, zero
+reranker failures, Stage-2 timeout rate 0.25% — all against
+pre-registered thresholds. One correctness defect the formal-TEST
+gate caught (a single target's Stage-2 route with an unparseable
+precursor SMILES, an N-oxide charge-handling bug in `[#N]` hash-atom
+template expansion) was root-caused and fixed pre-release; see
+`data/coverage_mode_formal_test/corrective_verification_l4703/SUMMARY.md`
+for the full root cause and verification record.
+
+### Added
+- **Coverage mode** — `--search-mode standard|coverage` /
+  `--coverage-templates <path>` / `--coverage-timeout-secs <N>` (CLI);
+  `search_mode` / `coverage_templates_path` / `coverage_timeout_seconds`
+  / `top_templates` (Python) ([#101](https://github.com/kent-tokyo/renkin/issues/101)).
+  Stage 1 runs unchanged (byte-identical to standard mode); only if it
+  finds nothing does Stage 2 run, cooperatively cancellable on
+  `--coverage-timeout-secs`, against a separately loaded, larger
+  template set. Stage 1's route is never overwritten by construction —
+  there is no merge step, Stage 2 only ever runs in the branch where
+  Stage 1 came back empty. Standard-mode output (CLI and Python) is
+  byte-for-byte unchanged: the new observability fields
+  (`search_mode`, `selected_stage`, `stage2_invoked`, `stage1_timeout`,
+  `stage2_timeout`, `stage1_elapsed_ms`, `stage2_elapsed_ms`,
+  `total_elapsed_ms`) are omitted, not `null`, outside coverage mode.
+  `--bond-index`, an ONNX `--scorer`, or an active
+  `--ring-context-policy` all fail loud in coverage mode in this
+  version — by flag presence alone, before any sidecar/model asset
+  loads — since Stage 2 would need its own, separately validated
+  retrieval index / scorer vocabulary / ring-context sidecar that
+  doesn't exist yet.
+- **`SearchControl` / `find_routes_with_control`** (`src/search.rs`) —
+  additive cooperative-cancellation foundation coverage mode's Stage 2
+  is built on: an optional deadline checked at three points in the
+  frontier loop, actually stopping the search on expiry rather than
+  merely eventually returning past it. No detached threads. Zero
+  change to `SearchConfig`, `SearchStats`, or `find_routes`'s existing
+  behavior — verified byte-identical, not just asserted.
+- **`scripts/fetch_coverage_templates.py`** — downloads and SHA-256
+  verifies the frozen Stage-2 template set (`templates_2000.smi`) from
+  a GitHub Release asset, mirroring `scripts/fetch_reranker_model.py`'s
+  established pattern. `templates_2000.smi` is derived from USPTO-50k
+  TRAIN (undocumented upstream license, same disclosed gap as the
+  reranker's `model.txt`), so it's excluded from the
+  crates.io/PyPI/npm packages and distributed as an opt-in asset on
+  the GitHub Release instead.
+
+### Fixed
+- **N-oxide/hash-atom charge loss in Stage-2 route construction** —
+  `[#N]` hash-atom SMIRKS expansion (`hash_atom_candidate_symbols`)
+  only offered neutral element spellings, so applying an expanded
+  template to a spectator atom that was actually charged in the real
+  substrate (e.g. a pyridine N-oxide's `[n+]`) built the output
+  precursor from the template's literal (neutral) spelling instead of
+  the real atom, producing a formally invalid, unkekulizable SMILES —
+  `route_found: true` but an unparseable route tree. Found by the
+  coverage-mode formal-TEST gate on one target out of 500
+  (`corrective_verification_l4703/SUMMARY.md` has the full root cause
+  and a VAL-scale locality check showing no other target's output
+  changed).
+- An independent review round on the coverage-mode CLI/Python PR found
+  8 issues, several of them tests that passed without actually proving
+  the behavior they claimed to protect — not just weak tests, genuinely
+  non-provative ones counted as verified. All 8 fixed in the same PR
+  and mutation-verified, both by the implementer and, in a second
+  focused round, independently by the same review agent from a fresh
+  pull of the branch. See `data/coverage_mode_formal_test/protocol.md`'s
+  companion history and the PR itself for the full list.
+- A follow-up CI gap (a field-parity test silently self-skipping in CI
+  because the release binary wasn't built in that job) was found by
+  that same review round and fixed separately, confirmed via the
+  actual CI log that the test now runs for real.
 
 ## [0.23.0] — 2026-08-11
 

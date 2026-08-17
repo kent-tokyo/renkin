@@ -1,5 +1,9 @@
-"""Tests for fetch_reranker_model.py's verification logic (no network calls
--- fetch_one/curl is mocked or bypassed entirely in every test here)."""
+"""Tests for fetch_reranker_model.py's asset-specific logic (embedded-hash
+verification, manifest_lookup, build_checks, main()'s CLI wiring). Shared
+verification/download primitives are tested in test_asset_fetch_common.py.
+
+No network calls in any test here -- fetch_one/curl is mocked or bypassed
+entirely."""
 
 import hashlib
 import json
@@ -10,19 +14,8 @@ import unittest
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import asset_fetch_common as afc  # noqa: E402
 import fetch_reranker_model as frm  # noqa: E402
-
-
-class Sha256OfTests(unittest.TestCase):
-    def test_matches_hashlib_directly(self):
-        with tempfile.NamedTemporaryFile(delete=False) as f:
-            f.write(b"hello world")
-            path = f.name
-        try:
-            expected = "sha256:" + hashlib.sha256(b"hello world").hexdigest()
-            self.assertEqual(frm.sha256_of(path), expected)
-        finally:
-            os.remove(path)
 
 
 class EmbeddedJsonSha256Tests(unittest.TestCase):
@@ -49,7 +42,7 @@ class EmbeddedJsonSha256Tests(unittest.TestCase):
         )
         try:
             self.assertEqual(frm.embedded_json_sha256(path), "sha256:deadbeef")
-            self.assertNotEqual(frm.embedded_json_sha256(path), frm.sha256_of(path))
+            self.assertNotEqual(frm.embedded_json_sha256(path), afc.sha256_of(path))
         finally:
             os.remove(path)
 
@@ -118,7 +111,7 @@ class BuildChecksTests(unittest.TestCase):
         self.assertEqual(len(checks["model.txt"]), 1)
         _, expected, verifier = checks["model.txt"][0]
         self.assertEqual(expected, "sha256:model-whole-file")
-        self.assertIs(verifier, frm.sha256_of)
+        self.assertIs(verifier, afc.sha256_of)
 
     def test_frequency_table_json_has_exactly_two_checks(self):
         checks = frm.build_checks(self.freeze_manifest, self.asset_manifest)
@@ -126,52 +119,12 @@ class BuildChecksTests(unittest.TestCase):
         expecteds = {expected for _, expected, _ in checks["frequency_table.json"]}
         self.assertEqual(expecteds, {"sha256:freq-whole-file", "sha256:freq-inner-table"})
         verifiers = {verifier for _, _, verifier in checks["frequency_table.json"]}
-        self.assertEqual(verifiers, {frm.sha256_of, frm.embedded_json_sha256})
+        self.assertEqual(verifiers, {afc.sha256_of, frm.embedded_json_sha256})
 
     def test_missing_asset_manifest_entry_raises_runtime_error(self):
         del self.asset_manifest["assets"]["frequency_table.json"]
         with self.assertRaises(RuntimeError):
             frm.build_checks(self.freeze_manifest, self.asset_manifest)
-
-
-class CheckAssetManifestVersionTests(unittest.TestCase):
-    def test_matching_tag_is_a_no_op(self):
-        frm.check_asset_manifest_version({"release_tag": "v0.22.0"}, "v0.22.0")  # no raise
-
-    def test_mismatched_tag_raises(self):
-        with self.assertRaises(RuntimeError):
-            frm.check_asset_manifest_version({"release_tag": "v0.22.0"}, "v0.23.0")
-
-
-class LoadJsonManifestTests(unittest.TestCase):
-    def test_missing_file_raises_runtime_error(self):
-        with self.assertRaises(RuntimeError):
-            frm.load_json_manifest("/nonexistent/path/manifest.json", "test manifest")
-
-    def test_invalid_json_raises_runtime_error(self):
-        tmp = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".json", delete=False, encoding="utf-8"
-        )
-        tmp.write("{not valid json")
-        tmp.close()
-        try:
-            with self.assertRaises(RuntimeError):
-                frm.load_json_manifest(tmp.name, "test manifest")
-        finally:
-            os.remove(tmp.name)
-
-    def test_valid_file_returns_parsed_json(self):
-        tmp = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".json", delete=False, encoding="utf-8"
-        )
-        json.dump({"key": "value"}, tmp)
-        tmp.close()
-        try:
-            self.assertEqual(
-                frm.load_json_manifest(tmp.name, "test manifest"), {"key": "value"}
-            )
-        finally:
-            os.remove(tmp.name)
 
 
 class MainDefaultVersionTests(unittest.TestCase):
@@ -233,7 +186,11 @@ class MainDefaultVersionTests(unittest.TestCase):
             with open(dest_path, "wb") as out:
                 out.write(content)
 
-        with mock.patch.object(frm, "fetch_one", side_effect=fake_fetch_one):
+        # fetch_reranker_model.main() -> asset_fetch_common.fetch_and_verify()
+        # -> asset_fetch_common.fetch_one() -- the patch target is where the
+        # name is looked up (asset_fetch_common's own module globals), not
+        # where main() happens to be defined.
+        with mock.patch.object(afc, "fetch_one", side_effect=fake_fetch_one):
             frm.main(
                 [
                     "--freeze-manifest",
@@ -253,121 +210,6 @@ class MainDefaultVersionTests(unittest.TestCase):
                 "the zero-arg invocation must use release_asset_manifest.json's "
                 "own release_tag, not Cargo.toml's crate version",
             )
-
-
-class FetchAndVerifyTests(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-
-    def tearDown(self):
-        self.tmp.cleanup()
-
-    def test_success_returns_verified_path(self):
-        content = b"a real model file"
-        expected = "sha256:" + hashlib.sha256(content).hexdigest()
-        checks = [("whole-file hash", expected, frm.sha256_of)]
-
-        def fake_fetch_one(url, dest_path):
-            with open(dest_path, "wb") as f:
-                f.write(content)
-
-        with mock.patch.object(frm, "fetch_one", side_effect=fake_fetch_one):
-            path = frm.fetch_and_verify(
-                "model.txt", checks, "kent-tokyo/renkin", "v0.23.0", self.tmp.name
-            )
-        self.assertEqual(path, os.path.join(self.tmp.name, "model.txt"))
-        self.assertTrue(os.path.exists(path))
-
-    def test_mismatch_raises_and_deletes_file(self):
-        expected = "sha256:" + hashlib.sha256(b"the real content").hexdigest()
-        checks = [("whole-file hash", expected, frm.sha256_of)]
-
-        def fake_fetch_one(url, dest_path):
-            with open(dest_path, "wb") as f:
-                f.write(b"corrupted or wrong content")
-
-        with mock.patch.object(frm, "fetch_one", side_effect=fake_fetch_one):
-            with self.assertRaises(RuntimeError) as ctx:
-                frm.fetch_and_verify(
-                    "model.txt", checks, "kent-tokyo/renkin", "v0.23.0", self.tmp.name
-                )
-        self.assertIn("failed check", str(ctx.exception))
-        self.assertFalse(
-            os.path.exists(os.path.join(self.tmp.name, "model.txt")),
-            "a mismatched download must not be left on disk",
-        )
-
-    def test_second_check_failing_also_deletes_file(self):
-        # First check passes, second doesn't -- must still clean up, not
-        # just on the first check's failure path.
-        content = b"looks right at first glance"
-        expected_first = "sha256:" + hashlib.sha256(content).hexdigest()
-        checks = [
-            ("whole-file hash", expected_first, frm.sha256_of),
-            ("a second, stricter check", "sha256:never-matches", lambda p: "sha256:nope"),
-        ]
-
-        def fake_fetch_one(url, dest_path):
-            with open(dest_path, "wb") as f:
-                f.write(content)
-
-        with mock.patch.object(frm, "fetch_one", side_effect=fake_fetch_one):
-            with self.assertRaises(RuntimeError):
-                frm.fetch_and_verify(
-                    "frequency_table.json",
-                    checks,
-                    "kent-tokyo/renkin",
-                    "v0.23.0",
-                    self.tmp.name,
-                )
-        self.assertFalse(
-            os.path.exists(os.path.join(self.tmp.name, "frequency_table.json"))
-        )
-
-    def test_non_runtime_error_from_verifier_still_deletes_file(self):
-        # A verifier can fail in ways other than a clean SHA-256 mismatch or
-        # a RuntimeError -- e.g. a corrupted download isn't valid UTF-8, and
-        # decoding it raises UnicodeDecodeError. Cleanup must not depend on
-        # the specific exception type, or a failed-verification file is left
-        # on disk, contradicting this function's own "never returns a path
-        # that failed any check" docstring promise.
-        def broken_verifier(path):
-            raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
-
-        checks = [("a verifier that raises something unexpected", "sha256:x", broken_verifier)]
-
-        def fake_fetch_one(url, dest_path):
-            with open(dest_path, "wb") as f:
-                f.write(b"\xff")
-
-        with mock.patch.object(frm, "fetch_one", side_effect=fake_fetch_one):
-            with self.assertRaises(RuntimeError):
-                frm.fetch_and_verify(
-                    "frequency_table.json",
-                    checks,
-                    "kent-tokyo/renkin",
-                    "v0.23.0",
-                    self.tmp.name,
-                )
-        self.assertFalse(
-            os.path.exists(os.path.join(self.tmp.name, "frequency_table.json")),
-            "a verifier crash must still delete the unverified download",
-        )
-
-
-class FetchOneTests(unittest.TestCase):
-    def test_failed_curl_leaves_no_partial_file(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            dest = os.path.join(tmp_dir, "model.txt")
-
-            class FakeResult:
-                returncode = 22  # curl's -f exit code for an HTTP error
-
-            with mock.patch.object(frm.subprocess, "run", return_value=FakeResult()):
-                with self.assertRaises(RuntimeError):
-                    frm.fetch_one("https://example.invalid/model.txt", dest)
-            self.assertFalse(os.path.exists(dest))
-            self.assertFalse(os.path.exists(dest + ".part"))
 
 
 if __name__ == "__main__":

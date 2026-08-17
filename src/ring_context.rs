@@ -725,17 +725,28 @@ pub fn apply_retro_with_policy(
 
     let Some(compiled) = guard.compiled.get(&rule.template_id) else {
         diagnostics.templates_missing_metadata += 1;
-        return if policy.ring_context == Enforcement::AuditOnly {
-            // ponytail: can't run the match-level pipeline at all without
-            // per-template metadata (no CompiledTemplate to classify
-            // against), so this falls back to fully unfiltered legacy
-            // output even under ElementOnly ablation -- element-accounting
-            // isn't independently enforceable here either without one.
-            // Unreachable on the real 500-template corpus today (sidecar
-            // coverage is verified template-by-template at load time, see
-            // `RingContextGuard::load`); upgrade path if it ever fires:
-            // synthesize a permissive all-Either `CompiledTemplate` instead
-            // of bypassing element-accounting too.
+        // Fail closed on *either* axis being `Enforce`: without a
+        // `CompiledTemplate` there is no match-level pipeline to run, so
+        // neither ring-context nor element-accounting can be independently
+        // enforced here. Only the pure-`AuditOnly` policy (both axes) may
+        // fall back to fully unfiltered legacy output -- `diagnostics.
+        // templates_missing_metadata` (incremented above, unconditionally)
+        // is that fallback's `not_evaluable` signal, since plain
+        // `apply_retro`'s `Vec<Vec<PrecursorMol>>` return has no per-outcome
+        // status field of its own to mark. `RingOnly`/`ElementOnly` used to
+        // be conflated with pure `AuditOnly` by checking only
+        // `policy.ring_context` -- `ElementOnly` (ring: AuditOnly, element:
+        // Enforce) was silently getting unfiltered output on this path,
+        // even though its element-accounting axis is `Enforce`.
+        // Unreachable on the real 500-template corpus today (sidecar
+        // coverage is verified template-by-template at load time, see
+        // `RingContextGuard::load`); local hardening for custom templates
+        // or future drift. Upgrade path if it ever fires for real: synthesize
+        // a permissive all-Either `CompiledTemplate` instead of bypassing
+        // element-accounting too.
+        return if policy.ring_context == Enforcement::AuditOnly
+            && policy.element_accounting == Enforcement::AuditOnly
+        {
             apply_retro(mol, rule)
         } else {
             vec![]
@@ -1728,6 +1739,57 @@ mod tests {
         let mut diag = RingContextDiagnostics::default();
         let result = apply_retro_with_policy(&mol, &rule, &config, &mut diag);
         assert_eq!(smiles_of(&legacy), smiles_of(&result));
+        assert_eq!(diag.templates_missing_metadata, 1);
+    }
+
+    // RENKIN Bridge PR2: `ElementOnly` (ring_context: AuditOnly,
+    // element_accounting: Enforce) used to be conflated with pure
+    // `AuditOnly` on this path -- the fallback check only looked at
+    // `policy.ring_context`, so a missing-metadata template got fully
+    // unfiltered legacy output even though its element-accounting axis is
+    // `Enforce`. This is the regression test for that fix: before the fix,
+    // this asserted `result.is_empty()` would have failed (the real
+    // behavior was `smiles_of(&legacy) == smiles_of(&result)`, i.e. an
+    // unfiltered pass-through -- see git history for the pre-fix branch).
+    #[test]
+    fn missing_topology_metadata_element_only_rejects_fail_closed() {
+        let guard = RingContextGuard {
+            compiled: FxHashMap::default(),
+        };
+        let config = guarded(guard, ExtractedTemplateSafetyPolicy::ELEMENT_ONLY);
+
+        let rule = extracted_9_rule();
+        let mol = mol_from_smiles(ACYCLIC_NONRING_CASE).unwrap();
+        let mut diag = RingContextDiagnostics::default();
+        let result = apply_retro_with_policy(&mol, &rule, &config, &mut diag);
+        assert!(
+            result.is_empty(),
+            "missing per-template metadata must fail closed under ElementOnly \
+             (its element-accounting axis is Enforce, even though ring_context \
+             is AuditOnly)"
+        );
+        assert_eq!(diag.templates_missing_metadata, 1);
+    }
+
+    // `RingOnly` (ring_context: Enforce, element_accounting: AuditOnly) was
+    // already correct before this fix (`policy.ring_context != AuditOnly`
+    // already took the fail-closed branch) -- pinned here so it stays that
+    // way.
+    #[test]
+    fn missing_topology_metadata_ring_only_rejects_fail_closed() {
+        let guard = RingContextGuard {
+            compiled: FxHashMap::default(),
+        };
+        let config = guarded(guard, ExtractedTemplateSafetyPolicy::RING_ONLY);
+
+        let rule = extracted_9_rule();
+        let mol = mol_from_smiles(ACYCLIC_NONRING_CASE).unwrap();
+        let mut diag = RingContextDiagnostics::default();
+        let result = apply_retro_with_policy(&mol, &rule, &config, &mut diag);
+        assert!(
+            result.is_empty(),
+            "missing per-template metadata must fail closed under RingOnly"
+        );
         assert_eq!(diag.templates_missing_metadata, 1);
     }
 

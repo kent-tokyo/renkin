@@ -37,6 +37,25 @@ release is actually cut.
   them silently dropping the target's nitrogen (`extracted_9`:
   "N-methylisoindolin-1-one" → "benzoic acid" alone) — this gate now
   correctly rejects all 5 rather than surface any of them.
+- **`apply_retro_with_policy` no longer silently bypasses element-accounting
+  enforcement when per-template ring-context metadata is missing.** The
+  missing-metadata fallback branch only checked `policy.ring_context ==
+  AuditOnly` before returning fully unfiltered legacy `apply_retro` output
+  -- under `ElementOnly` (`ring_context: AuditOnly, element_accounting:
+  Enforce`), this meant a missing-metadata template got unfiltered output
+  even though its element-accounting axis is `Enforce`. Now fallback is
+  only permitted when *both* axes are `AuditOnly` (matching the identical
+  condition already used a few lines below in the same function);
+  `Conservative`/`RingOnly` were already unaffected (their `ring_context`
+  axis is already `Enforce`, which already took the fail-closed branch).
+  `diagnostics.templates_missing_metadata` (already incremented
+  unconditionally) remains the `not_evaluable` signal for the still-allowed
+  pure-`AuditOnly` fallback -- `apply_retro`'s plain
+  `Vec<Vec<PrecursorMol>>` return has no per-outcome status field to mark.
+  Unreachable on the real 500-template corpus today (`RingContextGuard::
+  load` verifies sidecar coverage per-template at load time and hard-errors
+  on any gap); local hardening for custom templates or future drift, not a
+  behavior change any existing formal-TEST run could have observed.
 - **CLI/Python JSON schema parity** — `renkin.find_routes()` (Python) was
   missing `joint_success_probability` entirely, had no way to request
   `search_diagnostics`, and its empty-route `diagnostics` object had only 1

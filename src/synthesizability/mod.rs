@@ -16,4 +16,5 @@ mod schema;
 mod signals;
 
 pub use assessment::{AssessmentContext, assess_routes};
+pub(crate) use element_accounting::compute_element_accounting;
 pub use schema::*;

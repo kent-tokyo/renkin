@@ -13,6 +13,7 @@ use crate::chem_env::{
 };
 use crate::evidence::{EvidenceScope, MetadataSource, StepEvidence, TemplateMetadataEntry};
 use crate::score::{step_cost, template_bonus};
+use crate::synthesizability::{ElementAccountingStatus, compute_element_accounting};
 
 /// Cached expansion for one (target_smiles, rule) combination.
 struct RetroEntry {
@@ -191,6 +192,183 @@ pub struct Route {
     pub route_cost: f64,
 }
 
+/// Why a just-completed candidate was rejected at the acceptance boundary
+/// (RENKIN Bridge PR1, `fix(routes): reject structurally invalid completed
+/// routes`) -- the last check before a candidate becomes a returned
+/// [`Route`]. A rejected candidate is discarded, never surfaced; the search
+/// continues from the same node exactly as it would have otherwise (see
+/// `find_routes_with_control`'s frontier loop, which falls through to
+/// further expansion regardless of whether this push happened). Stock-leaf
+/// membership is deliberately NOT re-checked here: `n_unsolved == 0` (this
+/// gate's only call site) already re-verified every frontier leaf via
+/// `is_bb` under the same `env` in the same call, so re-checking it would
+/// be tautological, not a real defense.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RouteIntegrityDefect {
+    /// The reconstructed root step's target doesn't canonicalize to the
+    /// searched-for target.
+    RootMismatch,
+    /// A step's target or precursor SMILES fails to parse.
+    UnparseableSmiles,
+    /// A step recorded zero precursors -- a malformed/degenerate expansion.
+    EmptyPrecursorList,
+    /// A molecule reappears as its own descendant's precursor when the
+    /// flat step list is reconstructed into a tree (target/precursor
+    /// string matching, the same convention `display::build_tree` and
+    /// `extract_building_blocks` already use). Not prevented by
+    /// construction: `find_routes_with_control`'s `closed` set dedupes
+    /// whole-frontier states, not per-molecule path membership.
+    Cycle,
+    /// A step's target is never reachable from the route's root via that
+    /// same tree reconstruction -- would otherwise silently corrupt
+    /// `extract_building_blocks`/`display::build_tree`'s output rather
+    /// than fail loud.
+    Disconnected,
+    /// `synthesizability::compute_element_accounting` found a step where
+    /// the target needs more of some heavy element than its precursors
+    /// collectively supply (Issue #72/L984's real, still-reproducible
+    /// failure mode with the default `ring_context_policy = disabled`: an
+    /// extracted template mis-disconnects a ring bond and drops a whole
+    /// ring-fused fragment).
+    UnaccountedTargetElement,
+}
+
+/// Acceptance-boundary rejections of structurally invalid completed routes
+/// (RENKIN Bridge PR1). Always accumulated -- the checks are cheap and run
+/// once per completed candidate, not per search node -- so callers can tell
+/// "genuinely unsolved" apart from "every candidate found was structurally
+/// broken and discarded" even without `--search-diagnostics`.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct RouteIntegrityDiagnostics {
+    pub root_mismatch: u64,
+    pub unparseable_smiles: u64,
+    pub empty_precursor_list: u64,
+    pub cycle: u64,
+    pub disconnected: u64,
+    pub unaccounted_target_element: u64,
+    /// Completed candidates discarded for at least one of the above
+    /// reasons (a candidate with multiple defects still counts once here).
+    pub routes_rejected: u64,
+}
+
+impl RouteIntegrityDiagnostics {
+    fn record(&mut self, defects: &[RouteIntegrityDefect]) {
+        if defects.is_empty() {
+            return;
+        }
+        self.routes_rejected += 1;
+        for defect in defects {
+            match defect {
+                RouteIntegrityDefect::RootMismatch => self.root_mismatch += 1,
+                RouteIntegrityDefect::UnparseableSmiles => self.unparseable_smiles += 1,
+                RouteIntegrityDefect::EmptyPrecursorList => self.empty_precursor_list += 1,
+                RouteIntegrityDefect::Cycle => self.cycle += 1,
+                RouteIntegrityDefect::Disconnected => self.disconnected += 1,
+                RouteIntegrityDefect::UnaccountedTargetElement => {
+                    self.unaccounted_target_element += 1
+                }
+            }
+        }
+    }
+}
+
+/// Walks the route's implicit tree (target/precursor string matching, same
+/// reconstruction convention as `display::build_tree`) from `node`,
+/// recording every reachable target in `visited` and flagging `has_cycle`
+/// if `node` reappears among its own ancestors on this path.
+fn walk_route_tree<'a>(
+    step_map: &FxHashMap<&'a str, &'a [String]>,
+    node: &'a str,
+    visited: &mut FxHashSet<&'a str>,
+    on_path: &mut FxHashSet<&'a str>,
+    has_cycle: &mut bool,
+) {
+    if on_path.contains(node) {
+        *has_cycle = true;
+        return;
+    }
+    if !visited.insert(node) {
+        // Already fully explored via another branch (a shared leaf/BB
+        // reused by two steps) -- not a cycle.
+        return;
+    }
+    on_path.insert(node);
+    if let Some(precursors) = step_map.get(node) {
+        for p in *precursors {
+            walk_route_tree(step_map, p.as_str(), visited, on_path, has_cycle);
+        }
+    }
+    on_path.remove(node);
+}
+
+/// Acceptance-boundary integrity check for a just-completed candidate route
+/// (RENKIN Bridge PR1). `target_canonical` is the search's own root target,
+/// already canonicalized once at the top of `find_routes_with_control`.
+/// A depth-0 route (`route.steps` empty -- the target itself is already a
+/// stock leaf) has nothing to validate structurally and always passes.
+fn route_integrity_defects(route: &Route, target_canonical: &str) -> Vec<RouteIntegrityDefect> {
+    let mut defects = Vec::new();
+
+    if route.steps.is_empty() {
+        return defects;
+    }
+
+    match mol_from_smiles(&route.steps[0].target) {
+        Ok(m) if to_canonical(&m) == target_canonical => {}
+        _ => defects.push(RouteIntegrityDefect::RootMismatch),
+    }
+
+    let mut any_unparseable = false;
+    for step in &route.steps {
+        if mol_from_smiles(&step.target).is_err() {
+            any_unparseable = true;
+        }
+        if step.precursors.is_empty() {
+            defects.push(RouteIntegrityDefect::EmptyPrecursorList);
+        }
+        for p in &step.precursors {
+            if mol_from_smiles(p).is_err() {
+                any_unparseable = true;
+            }
+        }
+    }
+    if any_unparseable {
+        defects.push(RouteIntegrityDefect::UnparseableSmiles);
+    }
+
+    let step_map: FxHashMap<&str, &[String]> = route
+        .steps
+        .iter()
+        .map(|s| (s.target.as_str(), s.precursors.as_slice()))
+        .collect();
+    let mut visited: FxHashSet<&str> = FxHashSet::default();
+    let mut on_path: FxHashSet<&str> = FxHashSet::default();
+    let mut has_cycle = false;
+    walk_route_tree(
+        &step_map,
+        route.steps[0].target.as_str(),
+        &mut visited,
+        &mut on_path,
+        &mut has_cycle,
+    );
+    if has_cycle {
+        defects.push(RouteIntegrityDefect::Cycle);
+    }
+    // Every step's target must actually have been reached walking down
+    // from the root -- `visited` also contains leaf precursors that are
+    // never step targets themselves, so this can't be a length comparison.
+    if step_map.keys().any(|target| !visited.contains(target)) {
+        defects.push(RouteIntegrityDefect::Disconnected);
+    }
+
+    if compute_element_accounting(route).status == ElementAccountingStatus::UnaccountedTargetElement
+    {
+        defects.push(RouteIntegrityDefect::UnaccountedTargetElement);
+    }
+
+    defects
+}
+
 /// Statistics returned alongside routes from [`find_routes`].
 #[derive(Debug, Default, Serialize)]
 pub struct SearchStats {
@@ -209,6 +387,10 @@ pub struct SearchStats {
     /// every extracted-template application in this search. All-zero
     /// unless `SearchConfig::ring_context_policy` is not `Disabled`.
     pub ring_context_diagnostics: crate::ring_context::RingContextDiagnostics,
+    /// Acceptance-boundary rejections of structurally invalid completed
+    /// routes (RENKIN Bridge PR1). Always accumulated, independent of
+    /// `--search-diagnostics`.
+    pub route_integrity: RouteIntegrityDiagnostics,
     /// Beam/crowd-out diagnostics (Issue #101). Always accumulated (the
     /// bookkeeping cost is a handful of integer ops at points the search
     /// loop already visits); the CLI only *surfaces* this behind
@@ -249,6 +431,21 @@ pub fn diagnose(stats: &SearchStats, max_depth: u32) -> (Vec<&'static str>, Vec<
     if stats.matched_templates < 5 {
         causes.push("few or no templates matched the target");
         suggestions.push("try --templates data/templates_extracted_50000.smi".to_string());
+    }
+    if stats.route_integrity.routes_rejected > 0 {
+        causes.push(
+            "completed candidate route(s) failed the structural-integrity check and were discarded",
+        );
+        suggestions.push(format!(
+            "{} candidate route(s) were rejected (unaccounted_target_element={}, cycle={}, disconnected={}, unparseable_smiles={}, empty_precursor_list={}, root_mismatch={})",
+            stats.route_integrity.routes_rejected,
+            stats.route_integrity.unaccounted_target_element,
+            stats.route_integrity.cycle,
+            stats.route_integrity.disconnected,
+            stats.route_integrity.unparseable_smiles,
+            stats.route_integrity.empty_precursor_list,
+            stats.route_integrity.root_mismatch,
+        ));
     }
     (causes, suggestions)
 }
@@ -1337,6 +1534,7 @@ pub fn find_routes_with_control(
     let mut ring_context_diagnostics = crate::ring_context::RingContextDiagnostics::default();
     let mut retro_cache_misses: u64 = 0;
     let mut crowd_out = CrowdOutDiagnostics::default();
+    let mut route_integrity = RouteIntegrityDiagnostics::default();
     let mut termination = SearchTermination::Completed;
 
     let mut routes: Vec<Route> = Vec::new();
@@ -1349,7 +1547,7 @@ pub fn find_routes_with_control(
     let mut retro_cache: RetroCache = FxHashMap::default();
 
     let initial: SmallVec<[FEntry; 6]> = smallvec![FEntry {
-        smiles: target_canonical,
+        smiles: target_canonical.clone(),
     }];
     let h0 = compute_h(
         &initial,
@@ -1411,7 +1609,7 @@ pub fn find_routes_with_control(
         if n_unsolved == 0 {
             let steps = collect_path(node.path.as_ref());
             let building_blocks = extract_building_blocks(&steps);
-            routes.push(Route {
+            let candidate = Route {
                 steps,
                 depth: node.depth,
                 score: node.g,
@@ -1420,7 +1618,18 @@ pub fn find_routes_with_control(
                 convergency: 0.0,         // computed below
                 success_probability: 0.0, // computed below
                 route_cost: 0.0,          // computed below
-            });
+            };
+            // Acceptance boundary (RENKIN Bridge PR1): a structurally
+            // invalid candidate is discarded here and only here -- the
+            // search itself is untouched, so it falls through to the same
+            // depth-cap/expansion logic below exactly as an accepted
+            // candidate would, and keeps looking for a valid one.
+            let defects = route_integrity_defects(&candidate, &target_canonical);
+            if defects.is_empty() {
+                routes.push(candidate);
+            } else {
+                route_integrity.record(&defects);
+            }
         }
 
         if node.depth >= config.max_depth {
@@ -1904,6 +2113,7 @@ pub fn find_routes_with_control(
             retro_cache_misses,
             ring_context_diagnostics,
             crowd_out,
+            route_integrity,
             reranker_failures,
         },
         termination,
@@ -2854,24 +3064,31 @@ mod tests {
     // injected prior/estimator to force the exact pop order needed to prove
     // the mechanism:
     //
-    //   T (ClCCI) --r_direct (bonus 0)--------------> M (BrCCBr)  [g≈1.09]
+    //   T (ClCCI) --r_direct (bonus 0)--------------> M (BrCCBr)
     //   T (ClCCI) --r_step1  (bonus 5)--> Y (BrCCI)
-    //                 Y      --r_step2  (bonus 5)--> M (BrCCBr)  [g≈-7.79]
+    //                 Y      --r_step2  (bonus 5)--> M (BrCCBr)
     //   M --r_final--------------------------------> Z (FCCF, the only BB)
     //
-    // h(Y) is set artificially high (100) so the direct T->M arrival (g≈1.09)
-    // pops and closes state {M} *before* the much cheaper T->Y->M arrival
-    // (g≈-7.79) is even generated. When the cheaper arrival is later popped,
-    // it finds {M} already closed and is discarded without expansion — the
-    // true-optimal route (T->Y->M->Z, g≈-6.76) is never found; only the
-    // worse route (T->M->Z, g≈2.13) is returned.
+    // h(Y) is set artificially high (100) so the direct T->M arrival pops
+    // and closes state {M} *before* the much cheaper T->Y->M arrival is even
+    // generated. When the cheaper arrival is later popped, it finds {M}
+    // already closed and is discarded without expansion — the true-optimal
+    // route (T->Y->M->Z, deeply negative g) is never found; only the worse
+    // route (T->M->Z, g≈2.29) is returned.
+    //
+    // (RENKIN Bridge PR1: each rule below now also emits its displaced
+    // halogen as an explicit byproduct fragment, per that test's own
+    // comment further down -- this shifted every g value from the numbers
+    // originally hand-derived for the E2 investigation below by a constant
+    // per-hop offset, without changing the mechanism being demonstrated.
+    // `best_score`'s new value is verified experimentally, not hand-derived;
+    // the deeply-negative-optimum claim two paragraphs up is qualitative.)
     //
     // NOTE for whoever implements the E2 fix: this test asserts the CURRENT
     // (buggy) behavior and will start FAILING once the closed set reopens on
-    // a lower g (verified experimentally: swapping `closed` for a
-    // `FxHashMap<u64, f64>` best-g map with a reopen check makes
-    // `best_score` land at -6.755613, matching the hand-derived optimum). At
-    // that point, invert the assertions below to pin the fixed behavior.
+    // a lower g. At that point, invert the assertions below to pin the
+    // fixed behavior (re-derive the new optimum experimentally; the
+    // pre-PR1 hand-derived value of -6.755613 no longer applies).
     #[test]
     fn closed_set_discards_better_path_reaching_same_state() {
         fn rr(name: &str, smirks: &str) -> RetroRule {
@@ -2884,11 +3101,19 @@ mod tests {
             }
         }
 
+        // Each halogen swap explicitly tracks its displaced halogen as a
+        // second output fragment (bare "Cl"/"Br"/"I" -- implicit-H SMILES
+        // for HCl/HBr/HI) so every step is heavy-atom-conserving: RENKIN
+        // Bridge PR1's completed-route integrity gate rejects any candidate
+        // where `synthesizability::compute_element_accounting` finds a step
+        // whose target needs a heavy element its precursors don't jointly
+        // supply, and the original single-fragment "just relabel the
+        // halogen" rules below tripped exactly that (correctly -- see PR1).
         let rules = vec![
-            rr("r_direct", "[Cl][C:1][C:2][I]>>[Br][C:1][C:2][Br]"),
-            rr("r_step1", "[Cl][C:1][C:2][I]>>[Br][C:1][C:2][I]"),
-            rr("r_step2", "[Br][C:1][C:2][I]>>[Br][C:1][C:2][Br]"),
-            rr("r_final", "[Br][C:1][C:2][Br]>>[F][C:1][C:2][F]"),
+            rr("r_direct", "[Cl][C:1][C:2][I]>>[Br][C:1][C:2][Br].Cl.I"),
+            rr("r_step1", "[Cl][C:1][C:2][I]>>[Br][C:1][C:2][I].Cl"),
+            rr("r_step2", "[Br][C:1][C:2][I]>>[Br][C:1][C:2][Br].I"),
+            rr("r_final", "[Br][C:1][C:2][Br]>>[F][C:1][C:2][F].Br.Br"),
         ];
 
         // Discover Y's canonical SMILES dynamically — don't hardcode a
@@ -2897,7 +3122,10 @@ mod tests {
         let t_mol = mol_from_smiles("ClCCI").unwrap();
         let y_smiles = apply_retro(&t_mol, &rules[1])[0][0].smiles.clone();
 
-        let env = ChemEnv::in_memory(&["FCCF"]); // the only building block
+        // FCCF is the target chain's terminal building block; Cl/Br/I
+        // (HCl/HBr/HI) are the displaced-halogen byproducts every step now
+        // emits -- trivially depth-0 stock hits, same as FCCF.
+        let env = ChemEnv::in_memory(&["FCCF", "Cl", "Br", "I"]);
 
         struct FixedPrior;
         impl ReactionPrior for FixedPrior {
@@ -2934,19 +3162,20 @@ mod tests {
         assert!(!routes.is_empty(), "must find at least the direct route");
         let best_score = routes.iter().map(|r| r.score).fold(f64::INFINITY, f64::min);
 
-        // The true optimum (T->Y->M->Z) has g ≈ -6.76. If the closed set
-        // reopened on a better g, `best_score` would be deeply negative.
-        // Instead only the worse direct route (g ≈ 2.13) is ever recorded —
-        // proving the cheaper re-arrival at {M} was discarded unexpanded.
+        // The true optimum (T->Y->M->Z) is deeply negative (dominated by the
+        // two 5.0 template bonuses on r_step1/r_step2). If the closed set
+        // reopened on a better g, `best_score` would land there. Instead
+        // only the worse direct route (g ≈ 2.29) is ever recorded — proving
+        // the cheaper re-arrival at {M} was discarded unexpanded.
         assert!(
             best_score > -1.0,
             "expected the boolean closed-set bug to discard the better \
-             (g≈-6.76) route, leaving only the worse (g≈2.13) route — but \
-             best_score={best_score} suggests the optimal route WAS found \
-             (bug fixed, or test assumptions stale)"
+             (deeply negative g) route, leaving only the worse (g≈2.29) \
+             route — but best_score={best_score} suggests the optimal \
+             route WAS found (bug fixed, or test assumptions stale)"
         );
         assert!(
-            (best_score - 2.127).abs() < 0.05,
+            (best_score - 2.290).abs() < 0.05,
             "expected the only recorded route to be the direct-path route \
              (g≈2.13), got best_score={best_score}"
         );
@@ -3557,5 +3786,191 @@ mod cooperative_cancellation_tests {
              even though the deadline had also already passed"
         );
         assert!(result.routes.is_empty());
+    }
+}
+
+/// RENKIN Bridge PR1: completed-route structural-integrity gate
+/// (`RouteIntegrityDefect`/`RouteIntegrityDiagnostics`/
+/// `route_integrity_defects`) -- the acceptance-boundary check wired into
+/// `find_routes_with_control`'s frontier loop.
+#[cfg(test)]
+mod route_integrity_tests {
+    use super::*;
+
+    /// The gate compares canonical forms, not raw strings -- fixtures below
+    /// always canonicalize their own root so a hand-written (possibly
+    /// non-canonical) SMILES literal never trips a spurious `RootMismatch`.
+    fn canon(smiles: &str) -> String {
+        to_canonical(&mol_from_smiles(smiles).unwrap())
+    }
+
+    fn step(target: &str, precursors: &[&str]) -> ReactionStep {
+        ReactionStep {
+            rule: "test_rule".to_string(),
+            template_id: "rule:test_rule".to_string(),
+            target: target.to_string(),
+            precursors: precursors.iter().map(|s| s.to_string()).collect(),
+            conditions: None,
+            atom_economy: None,
+            atom_economy_raw_percent: None,
+            atom_economy_status: AtomEconomyStatus::NotEvaluable,
+            step_confidence: 1.0,
+            procedure_hint: None,
+            reaction_family: None,
+            metadata_source: None,
+            metadata_scope: None,
+            evidence: None,
+        }
+    }
+
+    fn route(steps: Vec<ReactionStep>) -> Route {
+        Route {
+            steps,
+            depth: 1,
+            score: 0.0,
+            building_blocks: vec![],
+            confidence: 1.0,
+            convergency: 1.0,
+            success_probability: 1.0,
+            route_cost: 1.0,
+        }
+    }
+
+    #[test]
+    fn clean_route_has_no_defects() {
+        // Ester hydrolysis, same fixture as
+        // `synthesizability::element_accounting`'s own clean case: root
+        // matches, both fragments parse, no cycle, both precursors are
+        // unreachable-as-a-step-target (leaves), every heavy element is
+        // accounted for.
+        let root = canon("CC(=O)Oc1ccccc1");
+        let r = route(vec![step(&root, &["CC(=O)O", "Oc1ccccc1"])]);
+        let defects = route_integrity_defects(&r, &root);
+        assert!(defects.is_empty(), "expected no defects, got {defects:?}");
+    }
+
+    #[test]
+    fn empty_steps_is_depth_zero_and_always_passes() {
+        let r = route(vec![]);
+        assert!(route_integrity_defects(&r, &canon("CC(=O)O")).is_empty());
+    }
+
+    #[test]
+    fn flags_root_mismatch() {
+        // The route's first step decomposes a molecule that isn't the
+        // searched-for target at all.
+        let r = route(vec![step("CCO", &["CC=O"])]);
+        let defects = route_integrity_defects(&r, &canon("c1ccccc1"));
+        assert!(defects.contains(&RouteIntegrityDefect::RootMismatch));
+    }
+
+    #[test]
+    fn flags_unparseable_target_smiles() {
+        // Unclosed bracket -- guaranteed parser rejection, same convention
+        // as `element_accounting`'s own tests.
+        let r = route(vec![step("[C(", &["CCO"])]);
+        let defects = route_integrity_defects(&r, "[C(");
+        assert!(defects.contains(&RouteIntegrityDefect::UnparseableSmiles));
+    }
+
+    #[test]
+    fn flags_unparseable_precursor_smiles() {
+        let root = canon("CC(=O)O");
+        let r = route(vec![step(&root, &["[C(", "O"])]);
+        let defects = route_integrity_defects(&r, &root);
+        assert!(defects.contains(&RouteIntegrityDefect::UnparseableSmiles));
+    }
+
+    #[test]
+    fn flags_empty_precursor_list() {
+        let root = canon("CC(=O)O");
+        let r = route(vec![step(&root, &[])]);
+        let defects = route_integrity_defects(&r, &root);
+        assert!(defects.contains(&RouteIntegrityDefect::EmptyPrecursorList));
+    }
+
+    #[test]
+    fn flags_cycle() {
+        // A (target) decomposes to B, and B is later (mis)decomposed back
+        // to A -- a molecule reappearing as its own descendant's
+        // precursor. Not prevented by construction (see
+        // `RouteIntegrityDefect::Cycle`'s doc comment) and would otherwise
+        // infinite-loop `display::build_tree`'s unguarded recursion.
+        let a = canon("CCO");
+        let b = canon("CC=O");
+        let r = route(vec![step(&a, &[b.as_str()]), step(&b, &[a.as_str()])]);
+        let defects = route_integrity_defects(&r, &a);
+        assert!(defects.contains(&RouteIntegrityDefect::Cycle));
+    }
+
+    #[test]
+    fn flags_disconnected_step() {
+        // Second step's target ("c1ccccc1") is never referenced as any
+        // ancestor's precursor -- unreachable from the root by the same
+        // target/precursor string-matching walk `extract_building_blocks`
+        // and `display::build_tree` already rely on.
+        let root = canon("CC(=O)Oc1ccccc1");
+        let orphan = canon("c1ccccc1");
+        let r = route(vec![
+            step(&root, &["CC(=O)O", "Oc1ccccc1"]),
+            step(&orphan, &["C1=CC=CC=C1"]),
+        ]);
+        let defects = route_integrity_defects(&r, &root);
+        assert!(defects.contains(&RouteIntegrityDefect::Disconnected));
+    }
+
+    #[test]
+    fn flags_unaccounted_target_element() {
+        // Same "clear violation" fixture as
+        // `synthesizability::element_accounting`'s own test: target
+        // carries a bromine no precursor supplies.
+        let root = canon("Brc1ccccc1");
+        let r = route(vec![step(&root, &["c1ccccc1"])]);
+        let defects = route_integrity_defects(&r, &root);
+        assert!(defects.contains(&RouteIntegrityDefect::UnaccountedTargetElement));
+    }
+
+    /// End-to-end regression for Issue #72/L984 (`uspto50k_test#L984`,
+    /// the isoindolinone ring-disconnection case): reproduced live
+    /// against the real 500-template corpus with the default
+    /// `ring_context_policy = Disabled` (Issue #72's match-level guard
+    /// is opt-in, not on by default), confirming this is not a
+    /// hypothetical failure mode. Before this gate existed, this target
+    /// returned 5 routes, top-ranked by `extracted_9` --
+    /// "N-methylisoindolin-1-one" -> "benzoic acid" alone, silently
+    /// dropping the target's nitrogen and its whole ring-fused CH2
+    /// extension. Every one of the 5 candidates this corpus finds at
+    /// this depth/beam has the same defect, so the gate correctly
+    /// abstains (`routes_found: 0`) rather than surface any of them.
+    #[test]
+    fn isoindolinone_ring_disconnection_is_rejected_not_returned() {
+        let env = ChemEnv::load("data/building_blocks.smi").unwrap_or_else(|_| {
+            ChemEnv::in_memory(&["CC(=O)O", "Oc1ccccc1C(=O)O", "c1ccccc1C(=O)O", "C", "O"])
+        });
+        let rules = crate::chem_env::load_rules_from_file("data/templates_extracted_500.smi");
+        assert!(
+            !rules.is_empty(),
+            "requires the committed 500-template corpus"
+        );
+        let config = SearchConfig {
+            max_depth: 2,
+            max_routes: 5,
+            beam_width: 50,
+            ..Default::default()
+        };
+        let (routes, stats) = find_routes("O=C1N(C)Cc2ccccc21", &env, &rules, &config).unwrap();
+        assert!(
+            routes.is_empty(),
+            "every candidate at this depth/beam is known to drop the \
+                 target's nitrogen -- the gate must reject all of them, \
+                 got {} routes",
+            routes.len()
+        );
+        assert!(
+            stats.route_integrity.unaccounted_target_element > 0,
+            "rejection must be attributed to unaccounted_target_element, \
+                 got {:?}",
+            stats.route_integrity
+        );
     }
 }

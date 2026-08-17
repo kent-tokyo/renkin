@@ -3,11 +3,15 @@
 Status: **Phase 41.18A (cooperative cancellation foundation, PR #119)
 and Phase 41.18B (shared Stage-1/Stage-2 orchestrator + CLI/Python
 surface, PR #120 + follow-up PR #121) both merged to `origin/master`
-2026-08-15 (`63fd77a`). Now in the v0.24.0 release-candidate phase**:
-coverage-templates asset distribution, docs, version bump, and the one
-pre-registered formal-TEST confirmation
-(`data/coverage_mode_formal_test/protocol.md`) — implementation only
-so far, not yet run.
+2026-08-15 (`63fd77a`). Shipped in v0.24.0**: coverage-templates asset
+distribution, docs, version bump, and the pre-registered 500-target
+formal-TEST confirmation (`data/coverage_mode_formal_test/protocol_v2.md`,
+`results_v2/`) — coverage +6.0pp, net gain +30, zero regressions, zero
+reranker failures, Stage-2 timeout rate 0.25%, all against pre-registered
+thresholds. One correctness defect the gate caught (a single target's
+Stage-2 route with an unparseable N-oxide precursor) was root-caused and
+fixed pre-release; see
+`data/coverage_mode_formal_test/corrective_verification_l4703/SUMMARY.md`.
 
 **Research gate this design depends on**: the reranker-arm extended
 determinism replay **FAILED as specified** -- 36/37 targets exact, 1

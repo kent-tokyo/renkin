@@ -546,10 +546,10 @@ renkin/                          ← Cargo workspace ルート
 - [x] 500-target規模のRENKIN vs AiZynthFinder正式比較（[#66](https://github.com/kent-tokyo/renkin/issues/66)）— 固定500-targetサンプル・共有393化合物ストック・各ツールの設定下で、RENKIN Conservativeの`route_to_shared_stock`はAiZynthFinderより9.8ポイント高く（73/500 対 24/500、95% CI [7.0, 12.8]、exact McNemar p≈1.9e-11）、このプロトコル下で統計的に有意なペア差だった——一般的な探索能力の優位性を主張するものではない。各ツール本来のnative構成では逆方向に乖離し、ストックサイズ差を含む未統制条件が支配的。詳細は[比較ガイド](docs/guides/open-source-retrosynthesis-comparison.md)（英語）の限定的な解釈を参照
 - [x] extracted template向けRing-context安全ガード（[#72](https://github.com/kent-tokyo/renkin/issues/72)/[#242](https://github.com/kent-tokyo/renkin/pull/242)）— opt-inの `--ring-context-policy`/`--ring-context-sidecar`。訓練データで環結合として一度も観測されていない環開閉切断のテンプレート誤適用を検出。デフォルトは引き続き `disabled`（既存挙動のまま）
 - [x] `atom_economy` の100%への暗黙クランプを廃止（[#79](https://github.com/kent-tokyo/renkin/issues/79)）— ルートの精製物集合が対象の全質量を説明できない場合、新設の `atom_economy_status` フィールド（`normal`/`above_expected_range`/`not_evaluable`）で明示的に報告
+- [x] Coverage mode（`--search-mode coverage`、[#101](https://github.com/kent-tokyo/renkin/issues/101)、v0.24.0で出荷）— opt-inのStage-1/Stage-2テンプレート数エスカレーション、下記candidate-generation coverage gapへの対応。500-target規模の一度限りのformal-TESTで確認済み（`data/coverage_mode_formal_test/protocol_v2.md`）：coverage +6.0pp、net gain +30、regression 0、reranker failure 0、Stage-2 timeout率0.25%——いずれも事前登録済み閾値に対して。出荷済み範囲は上記の特徴表参照
 
 ### 進行中
 
-- [ ] Coverage mode（`--search-mode coverage`、[#101](https://github.com/kent-tokyo/renkin/issues/101)）— opt-inのStage-1/Stage-2テンプレート数エスカレーション、下記candidate-generation coverage gapへの対応。CLI/Python面は`master`へmerge済みだが、tag/リリースはまだ——残り1回の事前登録済みformal-TEST確認run（`data/coverage_mode_formal_test/protocol.md`、未実行）待ち。出荷済み範囲は上記の特徴表参照
 - [ ] Candidate-generation coverage gap — formal TESTコーパスの33.0%（1,618/4,903）がpositive candidateゼロで、これはrerankingでは原理的に解決できない天井。template-diversity-scalingは強いメカニズムであることを確認済み（Phase A.5/B.2、上記coverage mode参照）、higher-level-templateの研究方向はまだ未着手
 - [ ] 5万テンプレートセット向けのtemplate retrieval index（element bitmask + bond-center prefilter）
 - [ ] キャリブレーション済みroute confidence（`success_probability`を経験的solve rateへマッピング）

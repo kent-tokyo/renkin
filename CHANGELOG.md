@@ -6,7 +6,7 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [Unreleased]
+## [0.24.0] — 2026-08-17
 
 **Headline: coverage mode, an opt-in Stage-1/Stage-2 escalation that
 trades cost for route-search coverage.** Phase B.2's benchmark result
@@ -16,12 +16,16 @@ against a larger 2,000-template set, converts real candidate-pool
 coverage gains into route coverage with zero regressions — at an
 opt-in cost tier (p95 5.72x vs. the 500-template baseline), not
 justified as a new default. This release ships that architecture as a
-real CLI/Python feature, not just a research finding.
-
-**Not yet released as a tagged version**: this entry documents what's
-implemented and merged to `master` ahead of the actual `v0.24.0` tag,
-which is gated on a still-pending one-shot formal-TEST confirmation
-run (`data/coverage_mode_formal_test/protocol.md`).
+real CLI/Python feature, backed by a one-shot 500-target formal-TEST
+confirmation (`data/coverage_mode_formal_test/protocol_v2.md`,
+`results_v2/`): coverage +6.0pp, net gain +30, zero regressions, zero
+reranker failures, Stage-2 timeout rate 0.25% — all against
+pre-registered thresholds. One correctness defect the formal-TEST
+gate caught (a single target's Stage-2 route with an unparseable
+precursor SMILES, an N-oxide charge-handling bug in `[#N]` hash-atom
+template expansion) was root-caused and fixed pre-release; see
+`data/coverage_mode_formal_test/corrective_verification_l4703/SUMMARY.md`
+for the full root cause and verification record.
 
 ### Added
 - **Coverage mode** — `--search-mode standard|coverage` /
@@ -57,10 +61,22 @@ run (`data/coverage_mode_formal_test/protocol.md`).
   established pattern. `templates_2000.smi` is derived from USPTO-50k
   TRAIN (undocumented upstream license, same disclosed gap as the
   reranker's `model.txt`), so it's excluded from the
-  crates.io/PyPI/npm packages and distributed as an opt-in asset
-  instead — not yet uploaded to any release as of this entry.
+  crates.io/PyPI/npm packages and distributed as an opt-in asset on
+  the GitHub Release instead.
 
 ### Fixed
+- **N-oxide/hash-atom charge loss in Stage-2 route construction** —
+  `[#N]` hash-atom SMIRKS expansion (`hash_atom_candidate_symbols`)
+  only offered neutral element spellings, so applying an expanded
+  template to a spectator atom that was actually charged in the real
+  substrate (e.g. a pyridine N-oxide's `[n+]`) built the output
+  precursor from the template's literal (neutral) spelling instead of
+  the real atom, producing a formally invalid, unkekulizable SMILES —
+  `route_found: true` but an unparseable route tree. Found by the
+  coverage-mode formal-TEST gate on one target out of 500
+  (`corrective_verification_l4703/SUMMARY.md` has the full root cause
+  and a VAL-scale locality check showing no other target's output
+  changed).
 - An independent review round on the coverage-mode CLI/Python PR found
   8 issues, several of them tests that passed without actually proving
   the behavior they claimed to protect — not just weak tests, genuinely

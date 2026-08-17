@@ -446,10 +446,10 @@ renkin/                          ← Cargo workspace 根目录
 - [x] 500-target规模的RENKIN vs AiZynthFinder正式比较（[#66](https://github.com/kent-tokyo/renkin/issues/66)）— 在固定500-target样本、共享393化合物库存、各工具自身配置下，RENKIN Conservative的`route_to_shared_stock`比AiZynthFinder高9.8个百分点（73/500对24/500，95% CI [7.0, 12.8]，exact McNemar p≈1.9e-11）——在该协议下具有统计显著性的配对差异，并非泛化的搜索能力优越性主张。各工具原生配置下方向相反，主要受库存规模等未受控条件支配。详见[比较指南](docs/guides/open-source-retrosynthesis-comparison.md)（英文）
 - [x] extracted template的Ring-context安全护栏（[#72](https://github.com/kent-tokyo/renkin/issues/72)/[#242](https://github.com/kent-tokyo/renkin/pull/242)）— opt-in的`--ring-context-policy`/`--ring-context-sidecar`，检测训练数据中从未观察到环结合的环开闭断裂被extracted template误用的情况。默认仍为`disabled`（既有行为不变）
 - [x] `atom_economy`不再隐式钳制为100%（[#79](https://github.com/kent-tokyo/renkin/issues/79)）— 当路线的呈现前体集合无法解释目标全部质量时，新增`atom_economy_status`字段（`normal`/`above_expected_range`/`not_evaluable`）明确报告
+- [x] Coverage mode（`--search-mode coverage`，[#101](https://github.com/kent-tokyo/renkin/issues/101)，v0.24.0 发布）—— opt-in 的 Stage-1/Stage-2 模板数量升级机制，用于应对下方的 candidate-generation coverage gap。已通过一次性 500-target 规模的 formal-TEST 确认（`data/coverage_mode_formal_test/protocol_v2.md`）：coverage +6.0pp、net gain +30、regression 0、reranker failure 0、Stage-2 timeout 率 0.25%——均达到预注册阈值。已发布范围详见上方核心特性表
 
 ### 进行中
 
-- [ ] Coverage mode（`--search-mode coverage`，[#101](https://github.com/kent-tokyo/renkin/issues/101)）—— opt-in 的 Stage-1/Stage-2 模板数量升级机制，用于应对下方的 candidate-generation coverage gap。CLI/Python 接口已合并到 `master`，但尚未打 tag/发布——还差最后一次一次性的 formal-TEST 确认 run（`data/coverage_mode_formal_test/protocol.md`，已预注册，尚未执行）。已发布范围详见上方核心特性表
 - [ ] Candidate-generation coverage gap —— formal TEST 语料库中 33.0%（1,618/4,903）的目标 in-pool 候选数为零，这是重排序在原理上无法解决的天花板；template-diversity-scaling 已确认是有效机制（Phase A.5/B.2，见上方 coverage mode），higher-level-template 研究方向尚未启动
 - [ ] 面向 5 万条模板集合的模板检索索引（元素位掩码 + 键中心预筛选）
 - [ ] 校准过的路线置信度（将 `success_probability` 映射到经验已解决率）

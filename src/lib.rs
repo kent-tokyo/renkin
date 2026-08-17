@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+pub mod bridge;
 pub mod candidate;
 pub mod chem_env;
 #[cfg(not(target_arch = "wasm32"))]

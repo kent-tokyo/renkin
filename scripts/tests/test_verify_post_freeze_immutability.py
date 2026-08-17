@@ -41,6 +41,23 @@ class IsAllowedTests(unittest.TestCase):
             verify.is_allowed("data/coverage_mode_formal_test/results_v2_other/rows.jsonl")
         )
 
+    def test_corrective_verification_l4703_directory_glob(self):
+        self.assertTrue(
+            verify.is_allowed(
+                "data/coverage_mode_formal_test/corrective_verification_l4703/val25_before_rows.jsonl"
+            )
+        )
+        self.assertTrue(
+            verify.is_allowed(
+                "data/coverage_mode_formal_test/corrective_verification_l4703/nested/deep_file.json"
+            )
+        )
+        self.assertFalse(
+            verify.is_allowed(
+                "data/coverage_mode_formal_test/corrective_verification_l4703_other/rows.jsonl"
+            )
+        )
+
     def test_frozen_paths_not_allowed(self):
         self.assertFalse(verify.is_allowed("src/coverage_mode.rs"))
         self.assertFalse(verify.is_allowed("Cargo.toml"))

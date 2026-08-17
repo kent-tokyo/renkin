@@ -897,6 +897,53 @@ pub fn reset_apply_retro_call_count() {
 #[cfg(not(feature = "perf-instrumentation"))]
 pub fn reset_apply_retro_call_count() {}
 
+/// Repair a specific charge-loss defect in `[#N]` hash-atom template
+/// application (see `hash_atom_candidate_symbols`): expanding a spectator
+/// `[#7:m]`/`[#15:m]` into the literal, always-neutral candidate `N`/`n`/
+/// `P`/`p` discards the real matched atom's formal charge, because
+/// `run_reactants` builds the output atom from the template's literal
+/// spelling, not from the real substrate atom it stood in for (confirmed:
+/// `run_reactants`'s output atoms never carry `atom_map`, so there is no
+/// way to recover the real atom's own charge from the public API -- see
+/// the L4703 root-cause investigation, Issue #106).
+///
+/// The one narrow, ring-size-independent invariant this restores: an
+/// aromatic N/P bonded, via a non-aromatic bond, to an exocyclic O/S atom
+/// carrying a negative charge, must itself carry a positive charge -- the
+/// standard N-oxide/phosphine-oxide-anion charge-separation pair (e.g.
+/// pyridine N-oxide's `[n+]...[O-]`). Without the matching `+`, the ring is
+/// unkekulizable and round-trips as invalid SMILES in any strict external
+/// parser (RDKit), even though chematic's own looser kekulization heuristic
+/// (which treats a neutral substituted aromatic N as a lone-pair donor,
+/// same as N-alkylpyrrole) accepts it silently.
+///
+/// Deliberately does NOT key on substituent degree or ring size -- only on
+/// the O/S⁻ neighbor -- so it cannot fire on N-alkyl/N-aryl-substituted
+/// azoles (pyrrole, indole, caffeine's N-methyl, ...), whose exocyclic
+/// substituent is carbon, not an anionic heteroatom.
+fn repair_spectator_oxide_charge(mol: &mut Molecule) {
+    let mut to_charge: Vec<AtomIdx> = Vec::new();
+    for (idx, atom) in mol.atoms() {
+        if !atom.aromatic || atom.charge != 0 {
+            continue;
+        }
+        if !matches!(atom.element.atomic_number(), 7 | 15) {
+            continue;
+        }
+        let has_negative_oxide_neighbor = mol.neighbors(idx).any(|(nidx, bidx)| {
+            mol.bond(bidx).order != BondOrder::Aromatic
+                && matches!(mol.atom(nidx).element.atomic_number(), 8 | 16)
+                && mol.atom(nidx).charge < 0
+        });
+        if has_negative_oxide_neighbor {
+            to_charge.push(idx);
+        }
+    }
+    for idx in to_charge {
+        mol.set_charge(idx, 1);
+    }
+}
+
 /// Apply a single retro-rule to a molecule.
 /// Returns all possible precursor sets as (canonical_smiles, Molecule) pairs.
 ///
@@ -942,7 +989,10 @@ pub fn apply_retro(mol: &Molecule, rule: &RetroRule) -> Vec<Vec<PrecursorMol>> {
     let mut outcomes: Vec<Vec<PrecursorMol>> = Vec::new();
     let mut seen_signatures: FxHashSet<Vec<String>> = FxHashSet::default();
     for variant in variants.iter() {
-        for products in run_reactants(variant, &[mol]).unwrap_or_default() {
+        for mut products in run_reactants(variant, &[mol]).unwrap_or_default() {
+            for product_mol in products.iter_mut() {
+                repair_spectator_oxide_charge(product_mol);
+            }
             // Fail-closed: reject the whole outcome if any raw product
             // molecule (before split_fragments' own text round-trip, which
             // can silently repair or reject the same defect -- see
@@ -2302,6 +2352,128 @@ mod tests {
     fn parse_aspirin_roundtrip() {
         let mol = mol_from_smiles("CC(=O)Oc1ccccc1C(=O)O").unwrap();
         assert_eq!(mol.atom_count(), 13);
+    }
+
+    // ── Spectator N/P-oxide charge repair (Issue #106 / L4703) ──────────
+    //
+    // Root cause: `hash_atom_candidate_symbols` only offers "N"/"n" for
+    // atomic number 7 -- expanding a spectator `[#7:m]` always produces a
+    // literal, always-neutral output atom, even when the real matched
+    // substrate atom is charged (e.g. pyridine N-oxide's `[n+]`).
+    // `run_reactants` builds the output atom from that literal spelling,
+    // not from the real atom it stood in for, and its output atoms never
+    // carry `atom_map` (confirmed via a direct dump), so there is no way
+    // to recover the real charge from `run_reactants`'s public API. The
+    // repair instead restores the one narrow, ring-size-independent
+    // invariant that was broken: an aromatic N/P bonded (non-aromatically)
+    // to a negatively-charged exocyclic O/S must itself be positive.
+
+    #[test]
+    fn repair_spectator_oxide_charge_fixes_broken_n_oxide_fragment() {
+        // The exact defective precursor fragment `run_reactants` produced
+        // for uspto50k_test#L4703 before this fix: a pyridine-N-oxide ring
+        // written with a neutral `n` despite still carrying its `[O-]`
+        // substituent -- unkekulizable, rejected by RDKit
+        // (`compare_route_graph.py`'s validator) as `unparseable_smiles_in_route`.
+        let mut mol = mol_from_smiles("n1(cc(C(=O)OC)ccc1)[O-]").unwrap();
+        repair_spectator_oxide_charge(&mut mol);
+        let fixed = canonical_smiles(&mol);
+        assert!(
+            mol_from_smiles(&fixed).is_ok(),
+            "repaired fragment must itself round-trip through chematic's own parser: {fixed}"
+        );
+        let n_charge = mol
+            .atoms()
+            .find(|(_, a)| a.element.atomic_number() == 7)
+            .map(|(_, a)| a.charge);
+        assert_eq!(n_charge, Some(1), "ring N must now carry +1: {fixed}");
+    }
+
+    #[test]
+    fn repair_spectator_oxide_charge_is_idempotent_on_already_correct_n_oxide() {
+        let mut mol = mol_from_smiles("COC(=O)c1ccc[n+]([O-])c1-c1ccc(F)cc1").unwrap();
+        let before = canonical_smiles(&mol);
+        repair_spectator_oxide_charge(&mut mol);
+        assert_eq!(
+            canonical_smiles(&mol),
+            before,
+            "an already-correctly-charged N-oxide must be left unchanged"
+        );
+    }
+
+    #[test]
+    fn repair_spectator_oxide_charge_ignores_n_methylpyrrole() {
+        // N-alkyl substitution on a genuine lone-pair-donor ring nitrogen
+        // (5-membered azole) must NOT be touched -- its exocyclic
+        // substituent is carbon, not a negatively-charged O/S, so the
+        // repair's neighbor check never fires.
+        let mut mol = mol_from_smiles("Cn1cccc1").unwrap();
+        let before = canonical_smiles(&mol);
+        repair_spectator_oxide_charge(&mut mol);
+        assert_eq!(
+            canonical_smiles(&mol),
+            before,
+            "N-methylpyrrole must stay neutral"
+        );
+    }
+
+    #[test]
+    fn repair_spectator_oxide_charge_ignores_n_methylindole() {
+        let mut mol = mol_from_smiles("Cn1ccc2ccccc21").unwrap();
+        let before = canonical_smiles(&mol);
+        repair_spectator_oxide_charge(&mut mol);
+        assert_eq!(
+            canonical_smiles(&mol),
+            before,
+            "N-methylindole must stay neutral"
+        );
+    }
+
+    #[test]
+    fn repair_spectator_oxide_charge_ignores_n_arylpyrrole() {
+        let mut mol = mol_from_smiles("c1ccccc1n1cccc1").unwrap();
+        let before = canonical_smiles(&mol);
+        repair_spectator_oxide_charge(&mut mol);
+        assert_eq!(
+            canonical_smiles(&mol),
+            before,
+            "N-phenylpyrrole must stay neutral"
+        );
+    }
+
+    #[test]
+    fn apply_retro_l4703_biaryl_stille_disconnection_produces_parseable_n_oxide_precursor() {
+        // End-to-end regression for uspto50k_test#L4703: the exact SMIRKS
+        // (templates_2000.smi entry `extracted_1312`) applied to the exact
+        // target must now produce a precursor set whose N-oxide fragment
+        // round-trips, instead of the pre-fix `n1(...)[O-]` defect.
+        let smirks = "[#7:5]:[c:4](-[c:1](:[c:2]):[c:3]):[c:6]>>Br-[c:1](:[c:2]):[c:3].C-C-C-[CH2]-[Sn](-[CH2]-C-C-C)(-[CH2]-C-C-C)-[c:4](:[#7:5]):[c:6]";
+        let rule = rr("extracted_1312", smirks);
+        let mol = mol_from_smiles("COC(=O)c1ccc[n+]([O-])c1-c1ccc(F)cc1").unwrap();
+        let outcomes = apply_retro(&mol, &rule);
+        assert!(
+            !outcomes.is_empty(),
+            "the Stille disconnection must still be found"
+        );
+        let n_oxide_precursor = outcomes
+            .iter()
+            .flatten()
+            .find(|p| p.smiles.contains("[n+]") || p.smiles.contains("[Sn]"))
+            .unwrap_or_else(|| {
+                panic!(
+                    "no N-oxide/Sn precursor among outcomes: {outcomes:?}",
+                    outcomes = outcomes
+                        .iter()
+                        .flatten()
+                        .map(|p| &p.smiles)
+                        .collect::<Vec<_>>()
+                )
+            });
+        assert!(
+            mol_from_smiles(&n_oxide_precursor.smiles).is_ok(),
+            "precursor must round-trip: {}",
+            n_oxide_precursor.smiles
+        );
     }
 
     // ── Hash-atom ([#N]) wildcard: application-time compatibility ──────

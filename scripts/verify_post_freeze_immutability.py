@@ -38,6 +38,7 @@ import sys
 ALLOWED_PATH_PATTERNS = [
     "data/coverage_mode_formal_test/results/**",
     "data/coverage_mode_formal_test/results_v2/**",
+    "data/coverage_mode_formal_test/corrective_verification_l4703/**",
     "CHANGELOG.md",
     "README.md",
     "README_ja.md",

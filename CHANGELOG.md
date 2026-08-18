@@ -65,6 +65,34 @@ release is actually cut.
   exactly how this gap shipped unnoticed).
 
 ### Added
+- **A tool-neutral route audit model** (`src/bridge/`): promotes
+  `scripts/compare_route_graph.py` (tool-agnostic route DAG normalization)
+  and `scripts/compare_validation.py` (post-hoc route validation) -- the
+  Python research harness built for the Issue #66 open-source planner
+  comparison -- into first-class Rust product types.
+  `bridge::route_graph::normalize_renkin_route` turns a completed RENKIN
+  `Route` into a tool-neutral `RouteDocument`/`RouteNode` tree (same defect
+  taxonomy as the Python reference: root mismatch, cycle, disconnected
+  step, unparseable SMILES, childless non-leaf, ambiguous leaf status,
+  degenerate self-referential step). `bridge::audit::audit` then runs a
+  three-valued `AuditStatus` (`pass`/`fail`/`not_evaluable` -- never a
+  boolean, so a check that couldn't run reports `not_evaluable` instead of
+  a silently force-passed `pass`) against that document: stock-leaf
+  verification, and target-element heavy-atom accounting (reusing
+  `synthesizability::heavy_atom_counts`), plus two informational-only
+  findings (charge imbalance, stereocenter-count mismatch) that never gate
+  the verdict. `RouteSource` is a closed 2-variant enum (`Renkin`/
+  `AiZynthFinder`); only the `Renkin` path is wired up here.
+  Fixture-parity oracle: 20 new tests mirror
+  `scripts/tests/test_compare_route_graph.py` and
+  `scripts/tests/test_compare_validation.py`'s cases directly (same
+  SMILES literals, same expected finding codes) -- not byte-identical
+  serialized output (RDKit vs. chematic canonicalization differ, so
+  `normalized_route_sha256` is never asserted equal across languages, only
+  stable/order-independent/disconnection-sensitive within Rust).
+  Not yet implemented (RENKIN Bridge PR4): the `renkin audit-route` CLI
+  subcommand and the AiZynthFinder JSON adapter that would actually
+  construct an `AiZynthFinder`-sourced `RouteDocument`.
 - `search_diagnostics` parameter for `renkin.find_routes()` (Python) —
   identical to the CLI's `--search-diagnostics` flag.
 - `renkin-doctor` now verifies the reranker model/frequency-table and

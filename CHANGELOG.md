@@ -6,109 +6,13 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [Unreleased]
-
-Usability/auditability improvements on top of v0.24.0 — no search-algorithm,
-ranking, or route-output changes, so no formal-TEST re-measurement is
-required for any of this.
-
-RENKIN Bridge P0, in progress toward a future v0.25.0 "RENKIN Bridge
-Preview" — see `docs/design/` for the full plan once posted. This section
-accumulates across the Bridge PR sequence; no version bump until the
-release is actually cut.
-
-### Fixed
-
-- **Completed routes are now validated before being returned, not just
-  before being searched from.** A new acceptance-boundary gate
-  (`route_integrity_defects` in `src/search.rs`) runs on every completed
-  candidate immediately before it becomes a returned `Route`: root-target
-  match, per-step SMILES parseability, non-empty precursor lists, cycle/
-  self-reference detection, root-reachability of every step, and target-
-  element heavy-atom accounting (reusing the existing, previously-
-  disconnected `synthesizability::compute_element_accounting`). A
-  structurally invalid candidate is discarded and the search continues;
-  `routes_found` is `0` only if nothing valid survives. Rejection counts
-  are always accumulated in the new `SearchStats::route_integrity` field
-  and summarized in the CLI's empty-route `likely_causes`/`suggestions`.
-  Confirmed against the real 500-template corpus: `uspto50k_test#L984`
-  (Issue #72's isoindolinone ring-disconnection case) currently returns 5
-  routes with the default `--ring-context-policy disabled`, every one of
-  them silently dropping the target's nitrogen (`extracted_9`:
-  "N-methylisoindolin-1-one" → "benzoic acid" alone) — this gate now
-  correctly rejects all 5 rather than surface any of them.
-- **`apply_retro_with_policy` no longer silently bypasses element-accounting
-  enforcement when per-template ring-context metadata is missing.** The
-  missing-metadata fallback branch only checked `policy.ring_context ==
-  AuditOnly` before returning fully unfiltered legacy `apply_retro` output
-  -- under `ElementOnly` (`ring_context: AuditOnly, element_accounting:
-  Enforce`), this meant a missing-metadata template got unfiltered output
-  even though its element-accounting axis is `Enforce`. Now fallback is
-  only permitted when *both* axes are `AuditOnly` (matching the identical
-  condition already used a few lines below in the same function);
-  `Conservative`/`RingOnly` were already unaffected (their `ring_context`
-  axis is already `Enforce`, which already took the fail-closed branch).
-  `diagnostics.templates_missing_metadata` (already incremented
-  unconditionally) remains the `not_evaluable` signal for the still-allowed
-  pure-`AuditOnly` fallback -- `apply_retro`'s plain
-  `Vec<Vec<PrecursorMol>>` return has no per-outcome status field to mark.
-  Unreachable on the real 500-template corpus today (`RingContextGuard::
-  load` verifies sidecar coverage per-template at load time and hard-errors
-  on any gap); local hardening for custom templates or future drift, not a
-  behavior change any existing formal-TEST run could have observed.
-- **CLI/Python JSON schema parity** — `renkin.find_routes()` (Python) was
-  missing `joint_success_probability` entirely, had no way to request
-  `search_diagnostics`, and its empty-route `diagnostics` object had only 1
-  of the CLI's 7 fields. All three now match the `renkin` CLI's own
-  `--format json` output exactly, locked in by new strict schema-parity
-  tests (the previous test only checked a subset of fields, which is
-  exactly how this gap shipped unnoticed).
+## [0.25.0] - 2026-08-18
 
 ### Added
-- **A tool-neutral route audit model** (`src/bridge/`): promotes
-  `scripts/compare_route_graph.py` (tool-agnostic route DAG normalization)
-  and `scripts/compare_validation.py` (post-hoc route validation) -- the
-  Python research harness built for the Issue #66 open-source planner
-  comparison -- into first-class Rust product types.
-  `bridge::route_graph::normalize_renkin_route` turns a completed RENKIN
-  `Route` into a tool-neutral `RouteDocument`/`RouteNode` tree (same defect
-  taxonomy as the Python reference: root mismatch, cycle, disconnected
-  step, unparseable SMILES, childless non-leaf, ambiguous leaf status,
-  degenerate self-referential step). `bridge::audit::audit` then runs a
-  three-valued `AuditStatus` (`pass`/`fail`/`not_evaluable` -- never a
-  boolean, so a check that couldn't run reports `not_evaluable` instead of
-  a silently force-passed `pass`) against that document: stock-leaf
-  verification, and target-element heavy-atom accounting (reusing
-  `synthesizability::heavy_atom_counts`), plus two informational-only
-  findings (charge imbalance, stereocenter-count mismatch) that never gate
-  the verdict. `RouteSource` is a closed 2-variant enum (`Renkin`/
-  `AiZynthFinder`); only the `Renkin` path is wired up here.
-  Fixture-parity oracle: 20 new tests mirror
-  `scripts/tests/test_compare_route_graph.py` and
-  `scripts/tests/test_compare_validation.py`'s cases directly (same
-  SMILES literals, same expected finding codes) -- not byte-identical
-  serialized output (RDKit vs. chematic canonicalization differ, so
-  `normalized_route_sha256` is never asserted equal across languages, only
-  stable/order-independent/disconnection-sensitive within Rust).
-  Not yet implemented (RENKIN Bridge PR4): the `renkin audit-route` CLI
-  subcommand and the AiZynthFinder JSON adapter that would actually
-  construct an `AiZynthFinder`-sourced `RouteDocument`.
-- **`renkin audit-route <PATH>`** (RENKIN Bridge PR5): the first
-  user-facing entry point into the Bridge audit model. RENKIN-native JSON
-  input only (`--format auto|renkin`; no AiZynthFinder adapter yet, see PR3
-  above); `--stock <PATH>` is optional (absence reports each route's stock
-  check as `not_evaluable: stock_not_provided`, never a silent pass);
-  `--output human|json`. Every route in the input file is audited and
-  aggregated into one report: `{"schema_version": 1, "source_format":
-  "renkin", "summary": {"routes_total", "pass", "fail", "partial"},
-  "routes": [...]}`, each entry the same `AuditReport` shape PR3/PR4
-  already produce (structural/stock/forward results as independent fields,
-  stable string finding/reason codes). stdout carries only the report;
-  nothing else is printed there. Exit code matches the rest of this CLI's
-  own convention: `0` whenever the program produced a report at all
-  (including a `fail`/`partial` verdict -- that's a completed audit, not a
-  program error), non-zero only for usage/input errors (bad flags,
-  unreadable or malformed input).
+- `renkin audit-route` for auditing RENKIN-native route JSON.
+- Tool-neutral route audit model.
+- Per-step declared-reaction forward replay.
+- Machine-readable pass/fail/partial reports.
 - `search_diagnostics` parameter for `renkin.find_routes()` (Python) —
   identical to the CLI's `--search-diagnostics` flag.
 - `renkin-doctor` now verifies the reranker model/frequency-table and
@@ -122,6 +26,18 @@ release is actually cut.
   `top_templates`/`coverage_timeout_seconds` (previously undocumented
   despite being live since v0.24.0) and `search_diagnostics`, with a new
   CI-run coverage-mode example (`examples/coverage_mode.py`).
+
+### Changed
+- Completed routes now fail closed on structural integrity defects.
+- Guarded ring-context policies fail closed when metadata is unavailable.
+
+### Fixed
+- Stock `.smi` files containing names are parsed using the SMILES token only.
+- CLI/Python JSON schema parity — `renkin.find_routes()` (Python) was
+  missing `joint_success_probability` entirely, had no way to request
+  `search_diagnostics`, and its empty-route `diagnostics` object had only 1
+  of the CLI's 7 fields. All three now match the `renkin` CLI's own
+  `--format json` output exactly.
 
 ## [0.24.0] — 2026-08-17
 

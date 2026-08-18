@@ -16,7 +16,7 @@ use chematic::core::Element;
 use serde::Serialize;
 
 use crate::bridge::route_graph::{ParseOutcome, RouteDocument, RouteNode, RouteSource};
-use crate::chem_env::mol_from_smiles;
+use crate::chem_env::{RetroRule, mol_from_smiles};
 use crate::synthesizability::heavy_atom_counts;
 
 /// The finding taxonomy, closed set. Mirrors the constants defined across
@@ -50,6 +50,15 @@ pub enum AuditFindingCode {
     UnaccountedTargetElement,
     ChargeImbalance,
     StereoCenterCountMismatch,
+    /// RENKIN Bridge PR4: a step's declared-reaction replay ran but its
+    /// product didn't reproduce the recorded parent molecule.
+    ForwardReactionNotReproduced,
+    /// RENKIN Bridge PR4: a step's forward validation couldn't reach a
+    /// pass/fail verdict -- see the step's own `forward_validation.reason`
+    /// on [`AuditedStep`] for which of the six not-evaluable causes applied;
+    /// this finding code stays generic on purpose (the specific reason
+    /// already lives there, not duplicated into six finding codes).
+    ForwardValidationNotEvaluable,
 }
 
 /// Whether a finding can fail [`AuditStatus`] on its own, or is purely
@@ -66,9 +75,15 @@ pub enum AuditSeverity {
 impl AuditFindingCode {
     fn severity(self) -> AuditSeverity {
         match self {
-            AuditFindingCode::ChargeImbalance | AuditFindingCode::StereoCenterCountMismatch => {
-                AuditSeverity::Informational
-            }
+            AuditFindingCode::ChargeImbalance
+            | AuditFindingCode::StereoCenterCountMismatch
+            // Informational: a not-evaluable forward result must only ever
+            // contribute to `AuditStatus::Partial`, derived separately from
+            // each step's own status (see `audit_document`) -- never to a
+            // `Fail` via this finding merely being present, the same way
+            // element-accounting's own `NotEvaluable` never pushes a gating
+            // finding either.
+            | AuditFindingCode::ForwardValidationNotEvaluable => AuditSeverity::Informational,
             _ => AuditSeverity::Gating,
         }
     }
@@ -103,17 +118,67 @@ impl AuditFinding {
     }
 }
 
-/// Non-negotiable three-valued verdict -- never a boolean. A route whose
-/// audit couldn't fully run (e.g. no configured stock to verify leaves
-/// against) reports `NotEvaluable`, never a force-passed `Pass`: passing
-/// silently on missing data would make "we couldn't check" look identical
-/// to "we checked and it's fine".
+/// Non-negotiable three-valued route-level verdict -- never a boolean.
+/// `Fail` when structural parsing, stock, or forward validation has a clear
+/// FAIL anywhere. `Partial` when nothing failed outright but at least one
+/// check (stock, element-accounting, or any step's forward validation)
+/// remains `not_evaluable` -- e.g. no configured stock to verify leaves
+/// against, or a step whose declared reaction couldn't be replayed. Never
+/// force-passed to `Pass` on missing data: that would make "we couldn't
+/// check" look identical to "we checked and it's fine". RENKIN Bridge PR4
+/// renamed this from a `NotEvaluable` variant covering the whole report to
+/// `Partial` covering the whole *route* -- see [`CheckStatus`] for the
+/// equivalent per-check (not route-level) three-valued outcome that
+/// individual checks like [`StockValidationResult`] and
+/// `bridge::forward::ForwardValidationResult` now use instead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AuditStatus {
     Pass,
     Fail,
+    Partial,
+}
+
+/// Generic three-valued outcome for one independent audit check -- distinct
+/// from [`AuditStatus`], which is the route-level *aggregate* verdict.
+/// Shared between [`StockValidationResult`] and
+/// `bridge::forward::ForwardValidationResult` so both report the same
+/// pass/fail/not_evaluable vocabulary the user asked for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckStatus {
+    Pass,
+    Fail,
     NotEvaluable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StockNotEvaluableReason {
+    StockNotProvided,
+}
+
+/// Independent of forward validation's own not-evaluable reasons (kept in a
+/// separate field on each [`AuditedStep`]) -- stock-audit ("can the leaves
+/// be obtained") and forward-audit ("can the parent really be reconstructed
+/// from those precursors") are orthogonal checks, so their not-evaluable
+/// causes must never be conflated into one field.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct StockValidationResult {
+    pub status: CheckStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<StockNotEvaluableReason>,
+}
+
+/// One decomposition step plus its forward-validation outcome, the shape
+/// [`AuditReport::steps`] serializes -- matches the P0 spec's per-step JSON
+/// exactly: `{"target": ..., "precursors": [...], "forward_validation":
+/// {"status": ..., "method": ..., "reason": ...}}`.
+#[derive(Debug, Clone, Serialize)]
+pub struct AuditedStep {
+    pub target: String,
+    pub precursors: Vec<String>,
+    pub forward_validation: crate::bridge::forward::ForwardValidationResult,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -126,18 +191,23 @@ pub struct AuditReport {
     /// identical nullability contract.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reaction_steps_parseable: Option<bool>,
-    /// `None` when not parseable, or when no stock was supplied to check
-    /// against (`configured_stock: None` in [`audit`]).
+    /// `None` when `route_tree_parseable` is false -- there is no tree to
+    /// walk. Independent of forward validation's own not-evaluable field on
+    /// each [`AuditedStep`] (see [`StockValidationResult`]'s doc comment for
+    /// why the two must never be conflated).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub all_leaves_in_configured_stock: Option<bool>,
+    pub stock_validation: Option<StockValidationResult>,
     /// `"accounted"` | `"unaccounted_target_element"` | `"not_evaluable"`,
     /// reusing `synthesizability::ElementAccountingStatus`'s exact values.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_element_accounting_status: Option<crate::synthesizability::ElementAccountingStatus>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub normalized_route_sha256: Option<String>,
-    /// Empty `findings` under `status: NotEvaluable` means "this check
-    /// never ran" (e.g. no `configured_stock` was supplied, so
+    /// Every decomposition step with its forward-validation outcome. Empty
+    /// when `route_tree_parseable` is false -- there is no tree to walk.
+    pub steps: Vec<AuditedStep>,
+    /// Empty `findings` under `status: Partial` means "this check never
+    /// ran" (e.g. no `configured_stock` was supplied, so
     /// `validate_stock_leaves` never executed and could not have produced
     /// a `LeafUnresolved`/`LeafClaimedStockNotMatched` finding either way),
     /// not "this check ran and found nothing" -- always read `status`
@@ -151,9 +221,10 @@ fn parse_failure_report(source: RouteSource, defects: &[AuditFindingCode]) -> Au
         status: AuditStatus::Fail,
         route_tree_parseable: false,
         reaction_steps_parseable: None,
-        all_leaves_in_configured_stock: None,
+        stock_validation: None,
         target_element_accounting_status: None,
         normalized_route_sha256: None,
+        steps: Vec::new(),
         findings: defects.iter().copied().map(AuditFinding::new).collect(),
     }
 }
@@ -341,16 +412,27 @@ fn target_element_accounting(
 /// PR4's AiZynthFinder equivalent) is always a separate, prior step.
 ///
 /// `configured_stock`: canonical SMILES of the stock actually configured
-/// for this audit. `None` means "no stock to check against" -- leaf
-/// resolution is left `NotEvaluable`, never force-passed as `Pass`, exactly
-/// the "competitor output missing data" case this module's `AuditStatus`
-/// exists to represent honestly.
-pub fn audit(outcome: &ParseOutcome, configured_stock: Option<&HashSet<String>>) -> AuditReport {
+/// for this audit. `None` means "no stock to check against" -- stock
+/// validation is left `NotEvaluable: stock_not_provided`, never force-passed
+/// as `Pass`, exactly the "competitor output missing data" case this
+/// module's `AuditStatus` exists to represent honestly.
+///
+/// `rules`: RENKIN's own rule corpus, needed to resolve a RENKIN-sourced
+/// step's `template_id` to its SMIRKS for forward validation
+/// (`bridge::forward::validate_step_forward`). `None` (e.g. auditing an
+/// AiZynthFinder route in isolation) leaves every RENKIN-evidenced step
+/// `not_evaluable: missing_reaction_representation`; AiZynthFinder-evidenced
+/// steps are unaffected either way.
+pub fn audit(
+    outcome: &ParseOutcome,
+    configured_stock: Option<&HashSet<String>>,
+    rules: Option<&[RetroRule]>,
+) -> AuditReport {
     let (Some(document), true) = (&outcome.document, outcome.parseable) else {
         return parse_failure_report(outcome.source, &outcome.defects);
     };
 
-    audit_document(document, configured_stock)
+    audit_document(document, configured_stock, rules)
 }
 
 /// Same as [`audit`], but for a [`RouteDocument`] the caller already has in
@@ -359,6 +441,7 @@ pub fn audit(outcome: &ParseOutcome, configured_stock: Option<&HashSet<String>>)
 pub fn audit_document(
     document: &RouteDocument,
     configured_stock: Option<&HashSet<String>>,
+    rules: Option<&[RetroRule]>,
 ) -> AuditReport {
     let mut findings = Vec::new();
 
@@ -369,25 +452,82 @@ pub fn audit_document(
         ));
     }
 
-    let (all_leaves_ok, stock_findings) = match configured_stock {
+    let stock_validation = match configured_stock {
         Some(stock) => {
             let (ok, f) = validate_stock_leaves(&document.root, stock);
-            (Some(ok), f)
+            findings.extend(f);
+            StockValidationResult {
+                status: if ok {
+                    CheckStatus::Pass
+                } else {
+                    CheckStatus::Fail
+                },
+                reason: None,
+            }
         }
-        None => (None, Vec::new()),
+        None => StockValidationResult {
+            status: CheckStatus::NotEvaluable,
+            reason: Some(StockNotEvaluableReason::StockNotProvided),
+        },
     };
-    findings.extend(stock_findings);
 
     let (element_status, element_findings) = target_element_accounting(&document.root);
     findings.extend(element_findings);
 
-    let has_gating_finding = findings.iter().any(|f| f.severity == AuditSeverity::Gating);
-    let status = if !steps_ok || has_gating_finding {
-        AuditStatus::Fail
-    } else if all_leaves_ok.is_none()
+    // Indexed once, reused for every step -- keeps forward-validation's cost
+    // proportional to step count, not `steps * rules`.
+    let rules_by_template_id =
+        rules.and_then(|rs| crate::candidate::index_rules_by_template_id(rs).ok());
+    let steps: Vec<AuditedStep> = document
+        .steps()
+        .into_iter()
+        .map(|step| {
+            let forward_validation = crate::bridge::forward::validate_step_forward(
+                &step.target,
+                &step.precursors,
+                step.reaction_evidence.as_ref(),
+                rules_by_template_id.as_ref(),
+            );
+            match forward_validation.status {
+                CheckStatus::Fail => findings.push(AuditFinding::at(
+                    AuditFindingCode::ForwardReactionNotReproduced,
+                    step.target.clone(),
+                )),
+                CheckStatus::NotEvaluable => findings.push(AuditFinding::at(
+                    AuditFindingCode::ForwardValidationNotEvaluable,
+                    step.target.clone(),
+                )),
+                CheckStatus::Pass => {}
+            }
+            AuditedStep {
+                target: step.target,
+                precursors: step.precursors,
+                forward_validation,
+            }
+        })
+        .collect();
+
+    // Deliberately redundant with the Gating-findings check: stock/forward
+    // Fail already push a Gating finding (`LeafClaimedStockNotMatched`/
+    // `LeafUnresolved`/`ForwardReactionNotReproduced`), so this clause is
+    // belt-and-braces, not dead code -- the verdict is meant to be
+    // derivable directly from each check's own status, independent of
+    // whether findings-severity classification ever changes.
+    let any_fail = !steps_ok
+        || findings.iter().any(|f| f.severity == AuditSeverity::Gating)
+        || stock_validation.status == CheckStatus::Fail
+        || steps
+            .iter()
+            .any(|s| s.forward_validation.status == CheckStatus::Fail);
+    let any_not_evaluable = stock_validation.status == CheckStatus::NotEvaluable
         || element_status == crate::synthesizability::ElementAccountingStatus::NotEvaluable
-    {
-        AuditStatus::NotEvaluable
+        || steps
+            .iter()
+            .any(|s| s.forward_validation.status == CheckStatus::NotEvaluable);
+    let status = if any_fail {
+        AuditStatus::Fail
+    } else if any_not_evaluable {
+        AuditStatus::Partial
     } else {
         AuditStatus::Pass
     };
@@ -397,11 +537,12 @@ pub fn audit_document(
         status,
         route_tree_parseable: true,
         reaction_steps_parseable: Some(steps_ok),
-        all_leaves_in_configured_stock: all_leaves_ok,
+        stock_validation: Some(stock_validation),
         target_element_accounting_status: Some(element_status),
         normalized_route_sha256: Some(crate::bridge::route_graph::normalized_route_sha256(
             document,
         )),
+        steps,
         findings,
     }
 }
@@ -466,14 +607,31 @@ mod tests {
     }
 
     #[test]
-    fn all_leaves_matched_and_element_accounted_is_pass() {
+    fn all_leaves_matched_and_element_accounted_is_partial_without_forward_rules() {
         let outcome = normalize_renkin_route(&single_step_route(), TARGET);
-        let report = audit(&outcome, Some(&stock(&[ETHANOL, BENZOIC_ACID, "CCN"])));
-        assert_eq!(report.status, AuditStatus::Pass);
-        assert_eq!(report.all_leaves_in_configured_stock, Some(true));
+        // RENKIN Bridge PR4: with no rule corpus supplied, the step's
+        // forward validation can't be evaluated (its `template_id` can't be
+        // resolved to a SMIRKS) -- stock and element-accounting alone are no
+        // longer sufficient for a route-level `Pass`, exactly the
+        // independence the forward-validation axis exists to enforce (see
+        // `bridge::forward` module docs).
+        let report = audit(
+            &outcome,
+            Some(&stock(&[ETHANOL, BENZOIC_ACID, "CCN"])),
+            None,
+        );
+        assert_eq!(report.status, AuditStatus::Partial);
+        assert_eq!(
+            report.stock_validation.as_ref().map(|s| s.status),
+            Some(CheckStatus::Pass)
+        );
         assert_eq!(
             report.target_element_accounting_status,
             Some(ElementAccountingStatus::Accounted)
+        );
+        assert_eq!(
+            report.steps[0].forward_validation.status,
+            CheckStatus::NotEvaluable
         );
     }
 
@@ -481,9 +639,12 @@ mod tests {
     fn leaf_claimed_stock_but_not_configured_fails() {
         let outcome = normalize_renkin_route(&single_step_route(), TARGET);
         // Configured stock (e.g. shared_stock mode) doesn't include benzoic acid.
-        let report = audit(&outcome, Some(&stock(&[ETHANOL])));
+        let report = audit(&outcome, Some(&stock(&[ETHANOL])), None);
         assert_eq!(report.status, AuditStatus::Fail);
-        assert_eq!(report.all_leaves_in_configured_stock, Some(false));
+        assert_eq!(
+            report.stock_validation.as_ref().map(|s| s.status),
+            Some(CheckStatus::Fail)
+        );
         assert!(
             report
                 .findings
@@ -494,11 +655,16 @@ mod tests {
     }
 
     #[test]
-    fn no_configured_stock_is_not_evaluable_not_a_silent_pass() {
+    fn no_configured_stock_is_partial_not_a_silent_pass() {
         let outcome = normalize_renkin_route(&single_step_route(), TARGET);
-        let report = audit(&outcome, None);
-        assert_eq!(report.status, AuditStatus::NotEvaluable);
-        assert_eq!(report.all_leaves_in_configured_stock, None);
+        let report = audit(&outcome, None, None);
+        assert_eq!(report.status, AuditStatus::Partial);
+        let stock_validation = report.stock_validation.expect("stock check always runs");
+        assert_eq!(stock_validation.status, CheckStatus::NotEvaluable);
+        assert_eq!(
+            stock_validation.reason,
+            Some(StockNotEvaluableReason::StockNotProvided)
+        );
     }
 
     #[test]
@@ -509,7 +675,7 @@ mod tests {
         let r = route(vec![step("Clc1ccccc1", &["Brc1ccccc1"])], &["Brc1ccccc1"]);
         let outcome = normalize_renkin_route(&r, "Clc1ccccc1");
         assert!(outcome.parseable, "{:?}", outcome.defects);
-        let report = audit(&outcome, Some(&stock(&["Brc1ccccc1"])));
+        let report = audit(&outcome, Some(&stock(&["Brc1ccccc1"])), None);
         assert_eq!(report.status, AuditStatus::Fail);
         assert_eq!(
             report.target_element_accounting_status,
@@ -532,6 +698,7 @@ mod tests {
         let leaf = RouteNode {
             canonical_smiles: canon(TARGET),
             is_stock_leaf: Some(true),
+            reaction_evidence: None,
             children: vec![],
         };
         let (status, findings) = target_element_accounting(&leaf);
@@ -540,19 +707,25 @@ mod tests {
     }
 
     #[test]
-    fn informational_findings_never_gate_status() {
+    fn informational_findings_never_gate_status_to_fail() {
         // Constructed directly: a target/precursor pair with the same
         // heavy-atom counts (so element-accounting passes) but a net
         // charge difference, to isolate that ChargeImbalance alone must
-        // not fail the route.
+        // not fail the route. This node carries no `reaction_evidence`
+        // (hand-built, not from `normalize_renkin_route`), so forward
+        // validation is legitimately `not_evaluable` here too -- the route
+        // lands on `Partial`, not `Pass`, but the assertion that matters is
+        // that an Informational finding alone never pushes it to `Fail`.
         let target = "[NH4+]";
         let precursor = "N";
         let root = RouteNode {
             canonical_smiles: canon(target),
             is_stock_leaf: Some(false),
+            reaction_evidence: None,
             children: vec![RouteNode {
                 canonical_smiles: canon(precursor),
                 is_stock_leaf: Some(true),
+                reaction_evidence: None,
                 children: vec![],
             }],
         };
@@ -561,7 +734,7 @@ mod tests {
             step_count_collapsed_edges: 1,
             root,
         };
-        let report = audit_document(&document, Some(&stock(&[precursor])));
+        let report = audit_document(&document, Some(&stock(&[precursor])), None);
         assert!(
             report
                 .findings
@@ -570,10 +743,10 @@ mod tests {
             "expected a ChargeImbalance finding, got {:?}",
             report.findings
         );
-        assert_eq!(
+        assert_ne!(
             report.status,
-            AuditStatus::Pass,
-            "an Informational-severity finding must never gate AuditStatus, got {:?}",
+            AuditStatus::Fail,
+            "an Informational-severity finding must never gate AuditStatus to Fail, got {:?}",
             report
         );
     }
@@ -582,11 +755,13 @@ mod tests {
     fn unparseable_route_reports_fail_with_tree_not_parseable() {
         let r = route(vec![], &[]);
         let outcome = normalize_renkin_route(&r, TARGET);
-        let report = audit(&outcome, None);
+        let report = audit(&outcome, None, None);
         assert_eq!(report.status, AuditStatus::Fail);
         assert!(!report.route_tree_parseable);
         assert_eq!(report.reaction_steps_parseable, None);
         assert_eq!(report.normalized_route_sha256, None);
+        assert!(report.steps.is_empty());
+        assert!(report.stock_validation.is_none());
         assert!(
             report
                 .findings
@@ -619,7 +794,7 @@ mod tests {
             parseable: false,
             defects: vec![AuditFindingCode::RawOutputNotDecodable],
         };
-        let report = audit(&outcome, None);
+        let report = audit(&outcome, None, None);
         assert_eq!(report.status, AuditStatus::Fail);
         assert_eq!(report.source, RouteSource::AiZynthFinder);
     }
@@ -629,5 +804,117 @@ mod tests {
         let outcome = normalize_renkin_route(&single_step_route(), TARGET);
         let document = outcome.document.unwrap();
         assert!(reaction_steps_parseable(&document.root));
+    }
+
+    // ── RENKIN Bridge PR4: forward validation folded into the route audit ──
+
+    fn co_aliphatic_cleavage_rule() -> RetroRule {
+        RetroRule {
+            name: "co_aliphatic_cleavage".to_string(),
+            template_id: "t1".to_string(),
+            smirks: "[C:1][O:2]>>[C:1].[O:2]".to_string(),
+            ..Default::default()
+        }
+    }
+
+    /// Structural audit PASS + stock PASS + forward FAIL must coexist:
+    /// proves the three axes are genuinely independent, not one gating the
+    /// others. Formaldehyde ("C=O") has the same heavy-atom counts as
+    /// methanol ("CO"), so element-accounting is satisfied even though
+    /// `co_aliphatic_cleavage`'s forward replay of methane + water
+    /// deterministically produces methanol, never formaldehyde.
+    #[test]
+    fn independence_structural_and_stock_pass_while_forward_fails() {
+        let methane = canon("C");
+        let water = canon("O");
+        let root = RouteNode {
+            canonical_smiles: canon("C=O"),
+            is_stock_leaf: Some(false),
+            reaction_evidence: Some(
+                crate::bridge::route_graph::ReactionEvidence::RenkinTemplate {
+                    template_id: "t1".to_string(),
+                },
+            ),
+            children: vec![
+                RouteNode {
+                    canonical_smiles: methane.clone(),
+                    is_stock_leaf: Some(true),
+                    reaction_evidence: None,
+                    children: vec![],
+                },
+                RouteNode {
+                    canonical_smiles: water.clone(),
+                    is_stock_leaf: Some(true),
+                    reaction_evidence: None,
+                    children: vec![],
+                },
+            ],
+        };
+        let document = RouteDocument {
+            source: RouteSource::Renkin,
+            step_count_collapsed_edges: 1,
+            root,
+        };
+        let rules = vec![co_aliphatic_cleavage_rule()];
+        let stock: HashSet<String> = [methane, water].into_iter().collect();
+        let report = audit_document(&document, Some(&stock), Some(&rules));
+
+        assert_eq!(
+            report.stock_validation.as_ref().map(|s| s.status),
+            Some(CheckStatus::Pass),
+            "{report:?}"
+        );
+        assert_eq!(
+            report.target_element_accounting_status,
+            Some(ElementAccountingStatus::Accounted),
+            "{report:?}"
+        );
+        assert_eq!(report.steps[0].forward_validation.status, CheckStatus::Fail);
+        assert_eq!(
+            report.status,
+            AuditStatus::Fail,
+            "a clear forward FAIL must fail the route even though stock and \
+             structural checks independently pass"
+        );
+    }
+
+    /// Forward validation being `not_evaluable` must never lose or corrupt
+    /// the structural/stock/element-accounting parts of the report -- a
+    /// regression this codebase's own design principle (three-valued,
+    /// never silently collapsed) is meant to prevent, but only a direct
+    /// assertion on every field catches an accidental early-return.
+    #[test]
+    fn forward_not_evaluable_does_not_corrupt_other_audit_fields() {
+        let outcome = normalize_renkin_route(&single_step_route(), TARGET);
+        // No rule corpus supplied -> every step's forward_validation is
+        // not_evaluable, but nothing else about the audit should change.
+        let report = audit(
+            &outcome,
+            Some(&stock(&[ETHANOL, BENZOIC_ACID, "CCN"])),
+            None,
+        );
+
+        assert!(report.route_tree_parseable);
+        assert_eq!(report.reaction_steps_parseable, Some(true));
+        assert_eq!(
+            report.stock_validation.as_ref().map(|s| s.status),
+            Some(CheckStatus::Pass)
+        );
+        assert_eq!(
+            report.target_element_accounting_status,
+            Some(ElementAccountingStatus::Accounted)
+        );
+        assert!(report.normalized_route_sha256.is_some());
+        assert_eq!(report.steps.len(), 1);
+        assert_eq!(
+            report.steps[0].forward_validation.status,
+            CheckStatus::NotEvaluable
+        );
+        assert_eq!(
+            report.status,
+            AuditStatus::Partial,
+            "not_evaluable forward validation alone must yield Partial, \
+             never silently Pass and never Fail"
+        );
     }
 }

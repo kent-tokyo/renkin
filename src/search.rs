@@ -3601,52 +3601,75 @@ mod cooperative_cancellation_tests {
             "fixture must find at least one route to be a meaningful test"
         );
 
+        // Percent-of-baseline fractions, deliberately dense in the 50-90%
+        // band: empirically, that's where a nonempty `DeadlineExceeded`
+        // partial actually lands for this fixture -- below ~50% nothing has
+        // been found yet (empty partial, doesn't count), above ~90% the
+        // search has usually already finished (`Completed`, also doesn't
+        // count). More samples in the productive band raises the odds that
+        // at least one lands there in any single sweep.
+        //
+        // Still a wall-clock race in the end (this whole test's premise is
+        // timing-based), so under heavy scheduling contention a single
+        // sweep can still miss the window entirely -- confirmed empirically
+        // under this project's own repeated runs (Issue #130). Retrying the
+        // whole sweep with a fresh baseline measurement, rather than
+        // widening the fraction set further, directly targets that failure
+        // mode: an unlucky sweep coinciding with a contention spike, not a
+        // logic error in the search or the deadline mechanism itself.
+        const FRACTIONS: [u32; 11] = [30, 40, 50, 55, 60, 65, 70, 75, 80, 85, 90];
+        const MAX_SWEEPS: u32 = 3;
         let mut saw_nonempty_partial = false;
-        for frac in [3u32, 4, 5, 6, 7, 8, 9] {
-            let t0 = std::time::Instant::now();
-            let _ = find_routes_with_control(
-                TARGET,
-                &env,
-                &rules,
-                &config,
-                &SearchControl::unlimited(),
-            )
-            .unwrap();
-            let baseline_elapsed = t0.elapsed();
+        for _sweep in 0..MAX_SWEEPS {
+            for frac in FRACTIONS {
+                let t0 = std::time::Instant::now();
+                let _ = find_routes_with_control(
+                    TARGET,
+                    &env,
+                    &rules,
+                    &config,
+                    &SearchControl::unlimited(),
+                )
+                .unwrap();
+                let baseline_elapsed = t0.elapsed();
 
-            let partial = find_routes_with_control(
-                TARGET,
-                &env,
-                &rules,
-                &config,
-                &SearchControl::with_timeout(baseline_elapsed * frac / 10),
-            )
-            .unwrap();
+                let partial = find_routes_with_control(
+                    TARGET,
+                    &env,
+                    &rules,
+                    &config,
+                    &SearchControl::with_timeout(baseline_elapsed * frac / 100),
+                )
+                .unwrap();
 
-            assert!(
-                partial.routes.len() <= baseline.routes.len(),
-                "must never return more routes than the full search finds (frac={frac})"
-            );
-            for r in &partial.routes {
                 assert!(
-                    baseline.routes.iter().any(|br| br.depth == r.depth
-                        && br.steps.len() == r.steps.len()
-                        && (br.score - r.score).abs() < 1e-9),
-                    "a route present in the deadline-cut result must also exist in the \
-                     unlimited baseline (no fabrication/corruption), frac={frac}"
+                    partial.routes.len() <= baseline.routes.len(),
+                    "must never return more routes than the full search finds (frac={frac})"
                 );
+                for r in &partial.routes {
+                    assert!(
+                        baseline.routes.iter().any(|br| br.depth == r.depth
+                            && br.steps.len() == r.steps.len()
+                            && (br.score - r.score).abs() < 1e-9),
+                        "a route present in the deadline-cut result must also exist in the \
+                         unlimited baseline (no fabrication/corruption), frac={frac}"
+                    );
+                }
+                if partial.termination == SearchTermination::DeadlineExceeded
+                    && !partial.routes.is_empty()
+                {
+                    saw_nonempty_partial = true;
+                }
             }
-            if partial.termination == SearchTermination::DeadlineExceeded
-                && !partial.routes.is_empty()
-            {
-                saw_nonempty_partial = true;
+            if saw_nonempty_partial {
+                break;
             }
         }
         assert!(
             saw_nonempty_partial,
-            "expected at least one sampled deadline fraction to catch a nonempty partial \
-             route set before full completion -- if this ever flakes, the sampled fraction \
-             set may need widening for the machine it's running on"
+            "expected at least one sampled deadline fraction, across up to {MAX_SWEEPS} sweeps, \
+             to catch a nonempty partial route set before full completion -- if this ever \
+             flakes, the sampled fraction set may need widening for the machine it's running on"
         );
     }
 

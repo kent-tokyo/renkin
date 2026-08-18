@@ -97,7 +97,7 @@ perf-instrumentation = ["dep:chematic-rxn"]
 # (chematic#193, https://github.com/kent-tokyo/chematic/pull/193, merged as
 # 3e45f55) which resolves the apply_retro/run_reactants combinatorial
 # regression this crate previously worked around with a git-pinned commit.
-chematic = { version = "0.11", features = ["smiles", "chem", "smarts", "rxn"] }
+chematic = { version = "0.16", features = ["smiles", "chem", "smarts", "rxn"] }
 # Same registry release as `chematic` above (required: they must resolve to the
 # same chematic-core/etc. instance). Only for perf_counters -- normal builds
 # reach run_reactants via the chematic facade, not this direct dependency.

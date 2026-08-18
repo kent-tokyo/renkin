@@ -22,18 +22,23 @@
 //! asserted, mirroring what `test_compare_route_graph.py` itself checks
 //! within Python).
 //!
-//! RENKIN Bridge PR4 adds declared-reaction-replay forward validation
+//! RENKIN Bridge PR4 added declared-reaction-replay forward validation
 //! (`forward` submodule): per-step `pass`/`fail`/`not_evaluable` verdicts
 //! folded into the route-level `AuditStatus` (now `Pass`/`Fail`/`Partial`,
 //! `Partial` covering any not-evaluable check with no outright failure).
-//! Deliberately narrow scope, not yet implemented here: the `renkin
-//! audit-route` CLI subcommand and a real AiZynthFinder JSON adapter (its
-//! reaction-node metadata schema has no confirmed shape in this codebase --
-//! `RouteSource`/`ReactionEvidence` already have an `AiZynthFinder` variant
-//! so those types have a home for it, but nothing here parses real
-//! `aizynthcli` output yet; forward-validation's AiZynthFinder path is
-//! exercised only via hand-built `ReactionEvidence::AiZynthFinderTemplate`
-//! fixtures until that adapter exists).
+//!
+//! RENKIN Bridge PR5 adds the `renkin audit-route <PATH>` CLI subcommand
+//! (`src/main.rs::run_audit_route`), RENKIN-native JSON input only.
+//! Deliberately still not implemented: a real AiZynthFinder JSON adapter --
+//! its reaction-node metadata schema has no confirmed shape in this
+//! codebase (`RouteSource`/`ReactionEvidence` already have an
+//! `AiZynthFinder` variant so those types have a home for it, but nothing
+//! here parses real `aizynthcli` output yet; forward-validation's
+//! AiZynthFinder path is exercised only via hand-built
+//! `ReactionEvidence::AiZynthFinderTemplate` fixtures until that adapter
+//! exists) -- also HTML output, DOI/condition/yield reporting, and
+//! alternative-disconnection suggestions, none of which are in scope for
+//! this audit model at all, not just deferred.
 
 pub mod audit;
 pub mod forward;
@@ -46,4 +51,5 @@ pub use audit::{
 pub use forward::{ForwardNotEvaluableReason, ForwardValidationResult, validate_step_forward};
 pub use route_graph::{
     ParseOutcome, ReactionEvidence, RouteDocument, RouteNode, RouteSource, RouteStep,
+    normalize_renkin_route,
 };

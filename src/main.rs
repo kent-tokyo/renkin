@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 use renkin::DEFAULT_BUILDING_BLOCKS;
+use renkin::bridge;
 use renkin::chem_env;
 use renkin::display;
 use renkin::evidence_match;
@@ -75,6 +76,9 @@ fn main() -> Result<()> {
     }
     if args.get(1).map(|s| s.as_str()) == Some("evidence") {
         return run_evidence(&args[2..]);
+    }
+    if args.get(1).map(|s| s.as_str()) == Some("audit-route") {
+        return run_audit_route(&args[2..]);
     }
 
     let mut target: Option<String> = None;
@@ -982,6 +986,213 @@ fn evidence_validate_sidecar(args: &[String]) -> Result<()> {
     renkin::evidence::load_template_metadata(path)
         .with_context(|| format!("sidecar {path} failed validation"))?;
     println!("OK: {path}");
+    Ok(())
+}
+
+/// Minimal `#[derive(Deserialize)]` view of RENKIN's own `--format json`
+/// route output (`main.rs`'s `Output` struct is `Serialize`-only, by
+/// design -- see `bridge` module docs for why round-tripping through a
+/// purpose-built partial type is preferred over adding `Deserialize` to
+/// the search-output types themselves). Declares only the fields
+/// `bridge::route_graph::normalize_renkin_route` actually reads; every
+/// other field in a real RENKIN JSON file (`score`, `confidence`,
+/// `atom_economy`, ...) is silently ignored by serde, not an error.
+#[derive(Deserialize)]
+struct AuditRouteInput {
+    target: String,
+    #[serde(default)]
+    routes: Vec<AuditRouteEntry>,
+}
+
+#[derive(Deserialize)]
+struct AuditRouteEntry {
+    steps: Vec<AuditRouteStepInput>,
+    #[serde(default)]
+    building_blocks: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct AuditRouteStepInput {
+    target: String,
+    precursors: Vec<String>,
+    template_id: String,
+}
+
+/// Rebuilds a `search::Route` from the minimal parsed input -- every field
+/// `normalize_renkin_route` doesn't read (`rule`, `depth`, `score`,
+/// `confidence`, `atom_economy_status`, ...) is defaulted, mirroring the
+/// same defaulting convention `bridge::route_graph`'s and `bridge::audit`'s
+/// own test fixtures already use for hand-built routes.
+fn route_from_audit_input(entry: AuditRouteEntry) -> search::Route {
+    search::Route {
+        steps: entry
+            .steps
+            .into_iter()
+            .map(|s| search::ReactionStep {
+                rule: String::new(),
+                template_id: s.template_id,
+                target: s.target,
+                precursors: s.precursors,
+                conditions: None,
+                atom_economy: None,
+                atom_economy_raw_percent: None,
+                atom_economy_status: search::AtomEconomyStatus::NotEvaluable,
+                step_confidence: 1.0,
+                procedure_hint: None,
+                reaction_family: None,
+                metadata_source: None,
+                metadata_scope: None,
+                evidence: None,
+            })
+            .collect(),
+        depth: 0,
+        score: 0.0,
+        building_blocks: entry.building_blocks,
+        confidence: 0.0,
+        convergency: 0.0,
+        success_probability: 0.0,
+        route_cost: 0.0,
+    }
+}
+
+/// Loads a plain `.smi` stock file (`SMILES<whitespace>name` per line,
+/// `#`-comments and blank lines skipped -- the same convention as
+/// `data/building_blocks.smi`, mirrored from `ChemEnv::load`'s own line-
+/// parsing) into the canonical-SMILES set `bridge::audit::audit`'s
+/// `configured_stock` expects. Uses plain `to_canonical`
+/// (`chem_env::canonical_smiles`), NOT `ChemEnv`'s specialized
+/// `canonical_stock_identity` -- `bridge::route_graph::canonicalize` (which
+/// produces every `RouteNode::canonical_smiles` this gets compared against)
+/// uses plain `to_canonical` too, and the two canonicalizations are a
+/// documented non-invariant of each other, so this must match whichever one
+/// `bridge` itself uses internally, not `ChemEnv`'s. Unparseable lines are
+/// skipped, not a hard error -- an audit should still run against whatever
+/// of the stock file *did* parse, rather than refusing to audit at all over
+/// one bad line.
+fn load_audit_stock(path: &str) -> Result<std::collections::HashSet<String>> {
+    let content =
+        std::fs::read_to_string(path).with_context(|| format!("failed to read --stock {path}"))?;
+    Ok(content
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .filter_map(|l| l.split_whitespace().next())
+        .filter_map(|smi| chem_env::mol_from_smiles(smi).ok())
+        .map(|m| chem_env::to_canonical(&m))
+        .collect())
+}
+
+#[derive(Serialize)]
+struct AuditRouteReport {
+    schema_version: u32,
+    source_format: &'static str,
+    summary: AuditRouteSummary,
+    routes: Vec<bridge::AuditReport>,
+}
+
+#[derive(Serialize, Default)]
+struct AuditRouteSummary {
+    routes_total: usize,
+    pass: usize,
+    fail: usize,
+    partial: usize,
+}
+
+/// `renkin audit-route <PATH> [--format auto|renkin] [--stock <PATH>]
+/// [--output human|json]` -- audits every route in a RENKIN `--format json`
+/// output file via `bridge::route_graph::normalize_renkin_route` +
+/// `bridge::audit::audit`. RENKIN-native input only: no AiZynthFinder
+/// adapter, no HTML/DOI/condition/yield output, no alternative-
+/// disconnection suggestions -- see `bridge` module docs for why those stay
+/// out of scope here. stdout carries only the report (human text or JSON,
+/// per `--output`); nothing else is printed to stdout. Exit code matches
+/// the rest of this CLI's own convention (`main.rs`'s JSON route-search
+/// path): 0 whenever the program ran to completion and produced a report,
+/// including a `fail`/`partial` verdict -- that's a completed audit, not a
+/// program error -- and non-zero only for usage/input errors (bad flags,
+/// unreadable/malformed input).
+fn run_audit_route(args: &[String]) -> Result<()> {
+    let path = args
+        .iter()
+        .find(|a| !a.starts_with("--"))
+        .cloned()
+        .context("renkin audit-route: <PATH> is required (usage: renkin audit-route <PATH> [--format auto|renkin] [--stock <PATH>] [--output human|json])")?;
+    let format = flag_value(args, "--format").unwrap_or("auto");
+    if format != "auto" && format != "renkin" {
+        bail!("renkin audit-route: unsupported --format {format:?} (only auto|renkin supported)");
+    }
+    let output_format = flag_value(args, "--output").unwrap_or("human");
+    if output_format != "human" && output_format != "json" {
+        bail!(
+            "renkin audit-route: unsupported --output {output_format:?} (only human|json supported)"
+        );
+    }
+
+    let content =
+        std::fs::read_to_string(&path).with_context(|| format!("failed to read {path}"))?;
+    let input: AuditRouteInput = serde_json::from_str(&content).with_context(|| {
+        format!(
+            "{path}: not a recognized RENKIN route JSON (only --format renkin is supported today)"
+        )
+    })?;
+
+    let stock = flag_value(args, "--stock")
+        .map(load_audit_stock)
+        .transpose()?;
+    let rules = chem_env::default_rules();
+
+    let mut summary = AuditRouteSummary::default();
+    let mut reports = Vec::with_capacity(input.routes.len());
+    for entry in input.routes {
+        let route = route_from_audit_input(entry);
+        let outcome = bridge::normalize_renkin_route(&route, &input.target);
+        let report = bridge::audit(&outcome, stock.as_ref(), Some(&rules));
+        match report.status {
+            bridge::AuditStatus::Pass => summary.pass += 1,
+            bridge::AuditStatus::Fail => summary.fail += 1,
+            bridge::AuditStatus::Partial => summary.partial += 1,
+        }
+        summary.routes_total += 1;
+        reports.push(report);
+    }
+
+    let out = AuditRouteReport {
+        schema_version: 1,
+        source_format: "renkin",
+        summary,
+        routes: reports,
+    };
+
+    if output_format == "json" {
+        println!("{}", serde_json::to_string_pretty(&out)?);
+    } else {
+        println!(
+            "{} routes audited — {} pass, {} fail, {} partial",
+            out.summary.routes_total, out.summary.pass, out.summary.fail, out.summary.partial
+        );
+        for (i, report) in out.routes.iter().enumerate() {
+            let status = match report.status {
+                bridge::AuditStatus::Pass => "PASS",
+                bridge::AuditStatus::Fail => "FAIL",
+                bridge::AuditStatus::Partial => "PARTIAL",
+            };
+            println!("route {}/{}: {status}", i + 1, out.summary.routes_total);
+            for finding in &report.findings {
+                println!("  - {:?}", finding.code);
+            }
+            if let Some(stock_validation) = &report.stock_validation
+                && let Some(reason) = &stock_validation.reason
+            {
+                println!("  - stock: {reason:?}");
+            }
+            for step in &report.steps {
+                if let Some(reason) = &step.forward_validation.reason {
+                    println!("  - forward: {reason:?}");
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 

@@ -128,7 +128,10 @@ fn canonicalize(smiles: &str) -> Option<String> {
     mol_from_smiles(smiles).ok().map(|m| to_canonical(&m))
 }
 
-fn count_edges(node: &RouteNode) -> usize {
+/// `pub(crate)`: also used by `bridge::aizynthfinder`'s normalizer, which
+/// builds a [`RouteDocument`] from a different raw shape but needs the same
+/// edge-count convention.
+pub(crate) fn count_edges(node: &RouteNode) -> usize {
     let mut total = usize::from(!node.children.is_empty());
     for c in &node.children {
         total += count_edges(c);

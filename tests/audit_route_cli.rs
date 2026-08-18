@@ -172,8 +172,31 @@ fn rejects_unreadable_path() {
 
 #[test]
 fn rejects_malformed_json_with_context() {
+    // RENKIN Bridge PR6: format auto-detection parses a generic
+    // `serde_json::Value` first, so syntactically invalid JSON now fails at
+    // that stage with "not valid JSON" -- before any format-specific
+    // (RENKIN/AiZynthFinder) deserialize ever runs.
     let path = unique_temp_path("malformed");
     std::fs::write(&path, "not json").unwrap();
+    let out = run(&["audit-route", path.to_str().unwrap()]);
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("not valid JSON"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    std::fs::remove_file(&path).ok();
+}
+
+#[test]
+fn rejects_valid_json_that_fails_the_renkin_schema_with_context() {
+    // Valid JSON with the top-level shape `detect_audit_route_format` reads
+    // as RENKIN (`target` + `routes` keys present), but `routes` isn't the
+    // expected array-of-route-entries shape -- must fail at the
+    // RENKIN-specific deserialize step with schema-specific context, not a
+    // generic JSON-syntax error.
+    let path = unique_temp_path("bad_renkin_schema");
+    std::fs::write(&path, r#"{"target": "CCO", "routes": "not an array"}"#).unwrap();
     let out = run(&["audit-route", path.to_str().unwrap()]);
     assert!(!out.status.success());
     assert!(

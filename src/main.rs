@@ -1098,6 +1098,17 @@ struct AuditRouteSummary {
     partial: usize,
 }
 
+impl AuditRouteSummary {
+    fn record(&mut self, status: bridge::AuditStatus) {
+        match status {
+            bridge::AuditStatus::Pass => self.pass += 1,
+            bridge::AuditStatus::Fail => self.fail += 1,
+            bridge::AuditStatus::Partial => self.partial += 1,
+        }
+        self.routes_total += 1;
+    }
+}
+
 /// `renkin audit-route <PATH> [--format auto|renkin] [--stock <PATH>]
 /// [--output human|json]` -- audits every route in a RENKIN `--format json`
 /// output file via `bridge::route_graph::normalize_renkin_route` +
@@ -1111,15 +1122,95 @@ struct AuditRouteSummary {
 /// including a `fail`/`partial` verdict -- that's a completed audit, not a
 /// program error -- and non-zero only for usage/input errors (bad flags,
 /// unreadable/malformed input).
+/// Reads `path`, transparently gzip-decompressing if the content starts
+/// with the gzip magic bytes (`1f 8b`) regardless of file extension --
+/// `aizynthcli`'s own batch output is `.json.gz` by convention, but nothing
+/// enforces the extension actually matches the content, so this sniffs the
+/// real bytes rather than trusting the filename.
+fn read_maybe_gzip(path: &str) -> Result<String> {
+    let bytes = std::fs::read(path).with_context(|| format!("failed to read {path}"))?;
+    if bytes.starts_with(&[0x1f, 0x8b]) {
+        use std::io::Read;
+        let mut decoder = flate2::read::GzDecoder::new(&bytes[..]);
+        let mut out = String::new();
+        decoder
+            .read_to_string(&mut out)
+            .with_context(|| format!("{path}: failed to gzip-decompress"))?;
+        Ok(out)
+    } else {
+        String::from_utf8(bytes).with_context(|| format!("{path}: not valid UTF-8"))
+    }
+}
+
+/// One row of a real `aizynthcli` batch output file (`--output out.json.gz`
+/// over a multi-target `--smiles targets.smi` run): Pandas
+/// `to_json(orient="table")`, `{"schema": {...}, "data": [...]}`, one row
+/// per target. `trees` is declared `"type": "string"` in the `schema`
+/// block (a Pandas quirk for object-dtype columns) but is a real nested
+/// JSON array in `data` itself, confirmed against a real capture -- see
+/// `tests/fixtures/aizynthfinder/v4.4.1/PROVENANCE.md`. Every other schema
+/// column (`search_time`, `is_solved`, `profiling`, ...) is ignored here,
+/// same forward-compatible convention as `bridge::aizynthfinder::AzfNode`.
+#[derive(Deserialize)]
+struct AzfBatchOutput {
+    data: Vec<AzfBatchRow>,
+}
+
+#[derive(Deserialize)]
+struct AzfBatchRow {
+    #[serde(default)]
+    trees: Vec<bridge::AzfNode>,
+}
+
+enum AuditRouteFormat {
+    Renkin,
+    AiZynthFinderSingle,
+    AiZynthFinderBatch,
+}
+
+/// `--format auto`'s sniff: RENKIN's own shape is a top-level object with
+/// `target`+`routes`; a real AiZynthFinder single-target `aizynthcli
+/// --output trees.json` is a top-level array of route dicts (each a `"type":
+/// "mol"` root node); a real batch output is Pandas' `"schema"`+`"data"`
+/// object. Anything else is an error, never a guess.
+fn detect_audit_route_format(value: &serde_json::Value) -> Result<AuditRouteFormat> {
+    match value {
+        serde_json::Value::Array(items) => {
+            if items.is_empty() || items[0].get("type").and_then(|t| t.as_str()) == Some("mol") {
+                Ok(AuditRouteFormat::AiZynthFinderSingle)
+            } else {
+                bail!(
+                    "renkin audit-route: --format auto could not identify this top-level JSON array (expected AiZynthFinder route dicts, each with \"type\": \"mol\")"
+                )
+            }
+        }
+        serde_json::Value::Object(map)
+            if map.contains_key("schema") && map.contains_key("data") =>
+        {
+            Ok(AuditRouteFormat::AiZynthFinderBatch)
+        }
+        serde_json::Value::Object(map)
+            if map.contains_key("target") && map.contains_key("routes") =>
+        {
+            Ok(AuditRouteFormat::Renkin)
+        }
+        _ => bail!(
+            "renkin audit-route: --format auto could not identify this input -- recognized shapes are RENKIN (\"target\"+\"routes\" object), AiZynthFinder single-target (top-level array), AiZynthFinder batch (Pandas \"schema\"+\"data\" object). Pass --format explicitly if this is a supported shape auto-detection doesn't recognize."
+        ),
+    }
+}
+
 fn run_audit_route(args: &[String]) -> Result<()> {
     let path = args
         .iter()
         .find(|a| !a.starts_with("--"))
         .cloned()
-        .context("renkin audit-route: <PATH> is required (usage: renkin audit-route <PATH> [--format auto|renkin] [--stock <PATH>] [--output human|json])")?;
+        .context("renkin audit-route: <PATH> is required (usage: renkin audit-route <PATH> [--format auto|renkin|aizynthfinder] [--stock <PATH>] [--output human|json])")?;
     let format = flag_value(args, "--format").unwrap_or("auto");
-    if format != "auto" && format != "renkin" {
-        bail!("renkin audit-route: unsupported --format {format:?} (only auto|renkin supported)");
+    if !["auto", "renkin", "aizynthfinder"].contains(&format) {
+        bail!(
+            "renkin audit-route: unsupported --format {format:?} (only auto|renkin|aizynthfinder supported)"
+        );
     }
     let output_format = flag_value(args, "--output").unwrap_or("human");
     if output_format != "human" && output_format != "json" {
@@ -1128,13 +1219,23 @@ fn run_audit_route(args: &[String]) -> Result<()> {
         );
     }
 
-    let content =
-        std::fs::read_to_string(&path).with_context(|| format!("failed to read {path}"))?;
-    let input: AuditRouteInput = serde_json::from_str(&content).with_context(|| {
-        format!(
-            "{path}: not a recognized RENKIN route JSON (only --format renkin is supported today)"
-        )
-    })?;
+    let content = read_maybe_gzip(&path)?;
+    let value: serde_json::Value =
+        serde_json::from_str(&content).with_context(|| format!("{path}: not valid JSON"))?;
+
+    let resolved_format = match format {
+        "renkin" => AuditRouteFormat::Renkin,
+        "aizynthfinder" => match &value {
+            serde_json::Value::Array(_) => AuditRouteFormat::AiZynthFinderSingle,
+            serde_json::Value::Object(map) if map.contains_key("data") => {
+                AuditRouteFormat::AiZynthFinderBatch
+            }
+            _ => bail!(
+                "renkin audit-route: --format aizynthfinder given but {path} isn't a recognized AiZynthFinder shape (top-level array, or Pandas \"schema\"+\"data\" object)"
+            ),
+        },
+        _ => detect_audit_route_format(&value)?,
+    };
 
     let stock = flag_value(args, "--stock")
         .map(load_audit_stock)
@@ -1142,23 +1243,49 @@ fn run_audit_route(args: &[String]) -> Result<()> {
     let rules = chem_env::default_rules();
 
     let mut summary = AuditRouteSummary::default();
-    let mut reports = Vec::with_capacity(input.routes.len());
-    for entry in input.routes {
-        let route = route_from_audit_input(entry);
-        let outcome = bridge::normalize_renkin_route(&route, &input.target);
-        let report = bridge::audit(&outcome, stock.as_ref(), Some(&rules));
-        match report.status {
-            bridge::AuditStatus::Pass => summary.pass += 1,
-            bridge::AuditStatus::Fail => summary.fail += 1,
-            bridge::AuditStatus::Partial => summary.partial += 1,
+    let mut reports = Vec::new();
+    let source_format = match resolved_format {
+        AuditRouteFormat::Renkin => {
+            let input: AuditRouteInput = serde_json::from_value(value)
+                .with_context(|| format!("{path}: not a recognized RENKIN route JSON"))?;
+            for entry in input.routes {
+                let route = route_from_audit_input(entry);
+                let outcome = bridge::normalize_renkin_route(&route, &input.target);
+                let report = bridge::audit(&outcome, stock.as_ref(), Some(&rules));
+                summary.record(report.status);
+                reports.push(report);
+            }
+            "renkin"
         }
-        summary.routes_total += 1;
-        reports.push(report);
-    }
+        AuditRouteFormat::AiZynthFinderSingle => {
+            let routes: Vec<bridge::AzfNode> = serde_json::from_value(value)
+                .with_context(|| format!("{path}: not a recognized AiZynthFinder route JSON"))?;
+            for node in &routes {
+                let outcome = bridge::normalize_aizynthfinder_route(node);
+                let report = bridge::audit(&outcome, stock.as_ref(), Some(&rules));
+                summary.record(report.status);
+                reports.push(report);
+            }
+            "aizynthfinder"
+        }
+        AuditRouteFormat::AiZynthFinderBatch => {
+            let batch: AzfBatchOutput = serde_json::from_value(value)
+                .with_context(|| format!("{path}: not a recognized AiZynthFinder batch output"))?;
+            for row in &batch.data {
+                for node in &row.trees {
+                    let outcome = bridge::normalize_aizynthfinder_route(node);
+                    let report = bridge::audit(&outcome, stock.as_ref(), Some(&rules));
+                    summary.record(report.status);
+                    reports.push(report);
+                }
+            }
+            "aizynthfinder"
+        }
+    };
 
     let out = AuditRouteReport {
         schema_version: 1,
-        source_format: "renkin",
+        source_format,
         summary,
         routes: reports,
     };

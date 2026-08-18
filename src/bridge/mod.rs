@@ -27,23 +27,22 @@
 //! folded into the route-level `AuditStatus` (now `Pass`/`Fail`/`Partial`,
 //! `Partial` covering any not-evaluable check with no outright failure).
 //!
-//! RENKIN Bridge PR5 adds the `renkin audit-route <PATH>` CLI subcommand
+//! RENKIN Bridge PR5 added the `renkin audit-route <PATH>` CLI subcommand
 //! (`src/main.rs::run_audit_route`), RENKIN-native JSON input only.
-//! Deliberately still not implemented: a real AiZynthFinder JSON adapter --
-//! its reaction-node metadata schema has no confirmed shape in this
-//! codebase (`RouteSource`/`ReactionEvidence` already have an
-//! `AiZynthFinder` variant so those types have a home for it, but nothing
-//! here parses real `aizynthcli` output yet; forward-validation's
-//! AiZynthFinder path is exercised only via hand-built
-//! `ReactionEvidence::AiZynthFinderTemplate` fixtures until that adapter
-//! exists) -- also HTML output, DOI/condition/yield reporting, and
-//! alternative-disconnection suggestions, none of which are in scope for
-//! this audit model at all, not just deferred.
+//!
+//! RENKIN Bridge PR6 adds a real AiZynthFinder JSON adapter
+//! (`aizynthfinder` submodule, `--format aizynthfinder`/`auto` on the CLI):
+//! confirmed against real `aizynthcli 4.4.1` output (see
+//! `tests/fixtures/aizynthfinder/v4.4.1/PROVENANCE.md`), not guessed. Still
+//! out of scope, not just deferred: HTML output, DOI/condition/yield
+//! reporting, and alternative-disconnection suggestions.
 
+pub mod aizynthfinder;
 pub mod audit;
 pub mod forward;
 pub mod route_graph;
 
+pub use aizynthfinder::{AzfMetadata, AzfNode, normalize_aizynthfinder_route};
 pub use audit::{
     AuditFinding, AuditFindingCode, AuditReport, AuditSeverity, AuditStatus, AuditedStep,
     CheckStatus, StockNotEvaluableReason, StockValidationResult, audit,

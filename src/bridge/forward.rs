@@ -137,6 +137,44 @@ fn declared_smirks<'a>(
 /// whose storage direction this codebase has no confirmed schema for --
 /// trying both is still replaying the single declared reaction, not a
 /// search over alternatives.
+/// `run_reactants` matches each `.`-separated SMIRKS reactant-side
+/// component against the input reactant list *positionally*, not as an
+/// unordered set -- confirmed empirically against a real AiZynthFinder
+/// route (`tests/fixtures/aizynthfinder/v4.4.1/PROVENANCE.md`'s benzocaine
+/// fixture): the exact same molecules, same SMIRKS, produced zero results
+/// in one precursor order and the correct target in the other. A route's
+/// own precursor list order is not semantically meaningful (it's a set),
+/// so every orientation is tried against every precursor permutation, not
+/// just the order the route happened to list them in -- this is still
+/// replaying the one declared reaction, not searching alternatives: the
+/// SMIRKS and the reactant set are both fixed, only their pairing varies.
+/// Capped at `MAX_PERMUTE_LEN` reactants (6! = 720) to keep cost bounded;
+/// a real per-step reactant count beyond that would be exceptional, and
+/// only the as-given order is tried past the cap.
+const MAX_PERMUTE_LEN: usize = 6;
+
+fn index_permutations(n: usize) -> Vec<Vec<usize>> {
+    if n > MAX_PERMUTE_LEN {
+        return vec![(0..n).collect()];
+    }
+    fn permute(prefix: &mut Vec<usize>, remaining: &mut Vec<usize>, out: &mut Vec<Vec<usize>>) {
+        if remaining.is_empty() {
+            out.push(prefix.clone());
+            return;
+        }
+        for i in 0..remaining.len() {
+            let item = remaining.remove(i);
+            prefix.push(item);
+            permute(prefix, remaining, out);
+            prefix.pop();
+            remaining.insert(i, item);
+        }
+    }
+    let mut out = Vec::new();
+    permute(&mut Vec::new(), &mut (0..n).collect(), &mut out);
+    out
+}
+
 fn replay_orientations(
     orientations: &[String],
     target_canon: &str,
@@ -147,24 +185,28 @@ fn replay_orientations(
     let mut ran_successfully = false;
     let mut last_error = ForwardNotEvaluableReason::ReactionApplicationError;
     let mut distinct_products: Vec<String> = Vec::new();
+    let permutations = index_permutations(precursor_mols.len());
 
     for fwd in orientations {
-        match run_reactants(fwd, precursor_mols) {
-            Err(TransformError::SmirksParse(_)) => {
-                last_error = ForwardNotEvaluableReason::UnsupportedTemplateSyntax;
-            }
-            Err(TransformError::ReactantCountMismatch { .. }) => {
-                last_error = ForwardNotEvaluableReason::ReactionApplicationError;
-            }
-            Ok(results) => {
-                ran_successfully = true;
-                for m in results.into_iter().flatten() {
-                    if matches_target(&m, target_canon, target_query, target_atom_count) {
-                        return Ok(true);
-                    }
-                    let canon = canonical_smiles(&m);
-                    if !distinct_products.contains(&canon) {
-                        distinct_products.push(canon);
+        for perm in &permutations {
+            let ordered: Vec<&Molecule> = perm.iter().map(|&i| precursor_mols[i]).collect();
+            match run_reactants(fwd, &ordered) {
+                Err(TransformError::SmirksParse(_)) => {
+                    last_error = ForwardNotEvaluableReason::UnsupportedTemplateSyntax;
+                }
+                Err(TransformError::ReactantCountMismatch { .. }) => {
+                    last_error = ForwardNotEvaluableReason::ReactionApplicationError;
+                }
+                Ok(results) => {
+                    ran_successfully = true;
+                    for m in results.into_iter().flatten() {
+                        if matches_target(&m, target_canon, target_query, target_atom_count) {
+                            return Ok(true);
+                        }
+                        let canon = canonical_smiles(&m);
+                        if !distinct_products.contains(&canon) {
+                            distinct_products.push(canon);
+                        }
                     }
                 }
             }
@@ -267,6 +309,40 @@ mod tests {
     const METHANE: &str = "C";
     const WATER: &str = "O";
     const METHANOL: &str = "CO";
+
+    /// Regression for a real bug found while building the AiZynthFinder
+    /// adapter (RENKIN Bridge PR6): `run_reactants` matches SMIRKS reactant
+    /// components positionally, not as a set. This exact target/precursor
+    /// pair (order: ethanol, then the amino-acid) comes verbatim from a
+    /// real `aizynthcli 4.4.1` route
+    /// (`tests/fixtures/aizynthfinder/v4.4.1/single_trees.json`, route
+    /// index 1's outer step) and, before the permutation fix, failed to
+    /// reproduce the target purely because of precursor list order -- a
+    /// spurious FAIL on a route AiZynthFinder itself confirms is valid.
+    /// Swapping the precursor order below must not change the verdict:
+    /// this affects RENKIN-native routes too, not just AiZynthFinder ones,
+    /// since `replay_orientations` is shared by both.
+    #[test]
+    fn precursor_order_does_not_affect_the_verdict() {
+        let evidence = ReactionEvidence::AiZynthFinderTemplate {
+            smirks: "[CH3:1][CH2:2][O:3][C:4](=[O:5])[c:6]1[cH:7][cH:8][c:9]([NH2:10])[cH:11][cH:12]1>>[C:4](=[O:5])([c:6]1[cH:7][cH:8][c:9]([NH2:10])[cH:11][cH:12]1)[OH:13].[CH3:1][CH2:2][OH:3]".to_string(),
+        };
+        let target = "CCOC(=O)c1ccc(N)cc1";
+        let ethanol = "CCO".to_string();
+        let amino_acid = "Nc1ccc(C(=O)O)cc1".to_string();
+
+        let as_listed_by_aizynthfinder = vec![ethanol.clone(), amino_acid.clone()];
+        let reversed = vec![amino_acid, ethanol];
+
+        for precursors in [as_listed_by_aizynthfinder, reversed] {
+            let result = validate_step_forward(target, &precursors, Some(&evidence), None);
+            assert_eq!(
+                result.status,
+                CheckStatus::Pass,
+                "precursor order must not change the verdict: {result:?} for {precursors:?}"
+            );
+        }
+    }
 
     #[test]
     fn renkin_native_step_that_replays_correctly_passes() {

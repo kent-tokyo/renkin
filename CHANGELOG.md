@@ -93,6 +93,22 @@ release is actually cut.
   Not yet implemented (RENKIN Bridge PR4): the `renkin audit-route` CLI
   subcommand and the AiZynthFinder JSON adapter that would actually
   construct an `AiZynthFinder`-sourced `RouteDocument`.
+- **`renkin audit-route <PATH>`** (RENKIN Bridge PR5): the first
+  user-facing entry point into the Bridge audit model. RENKIN-native JSON
+  input only (`--format auto|renkin`; no AiZynthFinder adapter yet, see PR3
+  above); `--stock <PATH>` is optional (absence reports each route's stock
+  check as `not_evaluable: stock_not_provided`, never a silent pass);
+  `--output human|json`. Every route in the input file is audited and
+  aggregated into one report: `{"schema_version": 1, "source_format":
+  "renkin", "summary": {"routes_total", "pass", "fail", "partial"},
+  "routes": [...]}`, each entry the same `AuditReport` shape PR3/PR4
+  already produce (structural/stock/forward results as independent fields,
+  stable string finding/reason codes). stdout carries only the report;
+  nothing else is printed there. Exit code matches the rest of this CLI's
+  own convention: `0` whenever the program produced a report at all
+  (including a `fail`/`partial` verdict -- that's a completed audit, not a
+  program error), non-zero only for usage/input errors (bad flags,
+  unreadable or malformed input).
 - `search_diagnostics` parameter for `renkin.find_routes()` (Python) —
   identical to the CLI's `--search-diagnostics` flag.
 - `renkin-doctor` now verifies the reranker model/frequency-table and

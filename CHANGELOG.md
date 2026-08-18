@@ -6,6 +6,18 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.26.0] - 2026-08-19
+
+### Added
+- Audit real AiZynthFinder v4.4.1 single-target route JSON.
+- Audit AiZynthFinder batch JSON and gzip-compressed output.
+- Strict automatic detection of RENKIN and AiZynthFinder route formats.
+- Cross-tool route auditing through the same tool-neutral pipeline.
+- Captured real-output fixtures with reproducible provenance.
+
+### Fixed
+- Forward replay no longer depends on precursor component ordering.
+
 ## [0.25.0] - 2026-08-18
 
 ### Added

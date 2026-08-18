@@ -100,7 +100,7 @@ interface Step {
 function version(): string
 ```
 
-Returns the RENKIN version string (e.g., `"0.25.0"`).
+Returns the RENKIN version string (e.g., `"0.26.0"`).
 
 ## Minimal Node.js Example (CI-verified)
 

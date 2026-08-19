@@ -346,7 +346,7 @@ for the full acceptance criteria and licensing split.
 | **Ring-context safety guard** | `--ring-context-policy conservative --ring-context-sidecar <path>` — opt-in match-level filter that rejects an extracted template's ring-opening/closing disconnection when its historical training data never observed that bond as ring-forming/-breaking; default `disabled` (unchanged legacy behavior) — see [Issue #72](https://github.com/kent-tokyo/renkin/issues/72) |
 | **LightGBM candidate reranker** | `--reranker-model`/`--reranker-freq-table` (CLI) or `reranker_model_path`/`reranker_freq_table_path` (Python) — opt-in, ordering-only re-ranking via a frozen LightGBM model; never changes which candidates are generated, only their order, and reproduces legacy ordering byte-for-byte when off. Paired 100-target route-search gate: `route_to_configured_stock` 16→20 (+4/-0). `python3 scripts/fetch_reranker_model.py` fetches the frozen model (SHA-256-verified, not bundled in any package — see [Roadmap](#roadmap)) |
 | **Coverage mode** (opt-in) | `--search-mode coverage --coverage-templates <path>` (CLI) or `search_mode="coverage"`, `coverage_templates_path=...` (Python) — if the default template set finds no route, automatically escalates to a larger, separately loaded template set, cooperatively cancellable via `--coverage-timeout-secs`. Standard-mode output is byte-for-byte unchanged when not used. `python3 scripts/fetch_coverage_templates.py` fetches the frozen 2,000-template Stage-2 set (SHA-256-verified, not bundled in any package, same reasoning as the reranker model — see [Roadmap](#roadmap)) |
-| **RENKIN Bridge / `audit-route`** | `renkin audit-route route.json [--format auto\|renkin\|aizynthfinder] [--stock stock.smi] [--output human\|json]` — tool-neutral route audit: structural integrity, stock, and declared-reaction forward-replay validation, each reported independently as `pass`/`fail`/`not_evaluable`, rolled up into a route-level `pass`/`fail`/`partial` verdict. Reads RENKIN-native route JSON (v0.25.0) and real AiZynthFinder route JSON — single-target and gzip-compressed batch output, verified against AiZynthFinder v4.4.1 specifically, not claimed for every version (v0.26.0); `--format auto` detects the input shape and hard-errors rather than guessing on anything ambiguous |
+| **RENKIN Bridge / `audit-route`** | `renkin audit-route route.json [--format auto\|renkin\|aizynthfinder] [--stock stock.smi] [--output human\|json]` — tool-neutral route audit: structural integrity, stock, and declared-reaction forward-replay validation, each reported independently as `pass`/`fail`/`not_evaluable`, rolled up into a route-level `pass`/`fail`/`partial` verdict. Reads RENKIN-native route JSON (v0.25.0) and real AiZynthFinder route JSON — single-target and gzip-compressed batch output, verified against AiZynthFinder v4.4.1 specifically, not claimed for every version (v0.26.0); `--format auto` detects the input shape and hard-errors rather than guessing on anything ambiguous. [5-minute walkthrough with real output →](https://kent-tokyo.github.io/renkin/guides/aizynthfinder-audit-demo/) |
 | **Route scoring** | `confidence`, `step_confidence`, `success_probability` (Retro-prob style), `convergency`, `atom_economy`, `route_cost` (`Σ BB cost + steps×0.5`, or actual prices via `--bb-prices`/`--stock`) per step/route — see caveat below the table |
 | **Step metadata provenance** | Each step reports `metadata_source`/`metadata_scope` so it's machine-readable whether `conditions`/`reaction_family` came from a rule-author default vs. something more grounded; absent (not fabricated) for extracted templates |
 | **Pareto multi-objective search** | `--format pareto` returns a Pareto front across `route_cost`/`success_probability`/`steps`; objectives configurable via `--objectives` |
@@ -384,15 +384,17 @@ renkin -t "CC(=O)Oc1ccccc1C(=O)O" --format json | renkin-forward validate
 # Faster template retrieval with bond-center index (~24% speedup)
 renkin -t "c1ccc(NC(=O)c2ccccc2)cc1" --templates data/templates_extracted_5000.smi --bond-index
 
-# Audit a real AiZynthFinder route export with RENKIN
-renkin audit-route trees.json \
+# Audit a real AiZynthFinder route export with RENKIN (see the full walkthrough:
+# https://kent-tokyo.github.io/renkin/guides/aizynthfinder-audit-demo/)
+renkin audit-route tests/fixtures/aizynthfinder/v4.4.1/single_trees.json \
   --format aizynthfinder \
-  --stock building_blocks.smi \
+  --stock data/building_blocks.smi \
   --output human
 
-# Same audit pipeline, either source — --format auto also detects this correctly
-renkin audit-route renkin-routes.json --format renkin
-renkin audit-route aizynthfinder-trees.json --format aizynthfinder
+# Same audit pipeline, either source — --format auto also detects both correctly
+renkin -t "CC(=O)Oc1ccccc1C(=O)O" --format json > /tmp/renkin-route.json
+renkin audit-route /tmp/renkin-route.json --format renkin
+renkin audit-route tests/fixtures/aizynthfinder/v4.4.1/single_trees.json --format aizynthfinder
 ```
 
 ---

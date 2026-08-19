@@ -1,0 +1,71 @@
+name: RENKIN Bridge adapter compatibility
+description: Report route JSON from AiZynthFinder (or another planner) that renkin audit-route rejects, misreads, or scores unexpectedly.
+title: "[adapter] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is specifically for `renkin audit-route` input-compatibility problems --
+        route JSON it fails to parse, misclassifies, or audits differently than
+        expected. See the [compatibility matrix](https://kent-tokyo.github.io/renkin/guides/aizynthfinder-audit-demo/#compatibility)
+        for what's currently verified. What you report here is exactly what turns
+        into the next test fixture.
+  - type: input
+    id: planner
+    attributes:
+      label: Planner name and version
+      description: e.g. "AiZynthFinder 4.4.1", "AiZynthFinder 4.2.0", "some other tool"
+      placeholder: AiZynthFinder 4.4.1
+    validations:
+      required: true
+  - type: dropdown
+    id: output-format
+    attributes:
+      label: Output format
+      options:
+        - Single-target JSON (top-level array of route trees)
+        - Batch JSON (Pandas orient="table")
+        - Batch JSON, gzip-compressed (.json.gz)
+        - Something else (describe below)
+    validations:
+      required: true
+  - type: input
+    id: command
+    attributes:
+      label: Exact command you ran
+      placeholder: renkin audit-route trees.json --format aizynthfinder --stock stock.smi --output json
+    validations:
+      required: true
+  - type: dropdown
+    id: format-flag
+    attributes:
+      label: --format used
+      options:
+        - "auto (default -- format was detected, not specified)"
+        - "explicit (--format renkin / aizynthfinder passed directly)"
+    validations:
+      required: true
+  - type: textarea
+    id: minimal-json
+    attributes:
+      label: Minimal route JSON that reproduces the problem
+      description: >-
+        Trim to the smallest input that still shows the issue (ideally one route,
+        one or two steps). Remove any proprietary substrates, internal template
+        IDs, or other data you can't share publicly.
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: expected-vs-actual
+    attributes:
+      label: Expected result vs. actual result
+      description: >-
+        What did you expect audit-route to report (e.g. "should parse and audit
+        this 2-step route"), and what did it actually do (e.g. "exited with 'not a
+        recognized AiZynthFinder shape'", "reported not_evaluable when I expected
+        pass", "wrong leaf multiset")?
+    validations:
+      required: true

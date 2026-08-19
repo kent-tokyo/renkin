@@ -15,6 +15,10 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Cross-tool route auditing through the same tool-neutral pipeline.
 - Captured real-output fixtures with reproducible provenance.
 
+### Changed
+- Updated PyO3 to 0.29.2.
+- Updated chematic and chematic-rxn to 0.16.0.
+
 ### Fixed
 - Forward replay no longer depends on precursor component ordering.
 

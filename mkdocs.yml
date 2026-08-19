@@ -70,6 +70,7 @@ nav:
     - Reaction Evidence Metadata: guides/reaction-evidence.md
     - Candidate Pools and Reranker Training: guides/reranker-candidate-pools.md
     - Open-Source Retrosynthesis Comparison: guides/open-source-retrosynthesis-comparison.md
+    - Audit a Real AiZynthFinder Route: guides/aizynthfinder-audit-demo.md
   - API Reference:
     - Rust API: api/rust.md
     - Python API: api/python.md

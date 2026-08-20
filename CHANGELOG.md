@@ -6,6 +6,20 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Added
+- Playground `[ Audit a Route ]` tab: paste or upload a RENKIN or
+  AiZynthFinder route export (and optionally a stock list) and get the
+  same pass/fail/partial verdict `renkin audit-route` produces, entirely
+  client-side via a new `audit_route` WASM export.
+
+### Changed
+- `renkin audit-route`'s report-building pipeline (format detection,
+  parsing, manifest/summary assembly) is now shared between the CLI and
+  the playground's WASM export (`bridge::audit_route`), not maintained as
+  two copies.
+
 ## [0.27.0] - 2026-08-20 "Reproducible Route Audit"
 
 Reproduce what was audited, from which input, with which stock and policy.

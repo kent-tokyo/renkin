@@ -94,6 +94,45 @@ interface Step {
 }
 ```
 
+## `audit_route`
+
+```typescript
+function audit_route(
+  content: string,    // Route export JSON text (RENKIN or AiZynthFinder)
+  format: string,      // "auto" | "renkin" | "aizynthfinder"
+  stockText: string     // "" for no stock, else one SMILES per line (.smi-style)
+): string  // JSON-encoded AuditRouteReport, or {"error": "..."}
+```
+
+The browser counterpart to `renkin audit-route` (see
+[Audit Reproducibility and Compatibility Contract](../guides/audit-reproducibility-contract.md)
+for the full `AuditRouteReport`/`audit_manifest` shape and the three-valued
+`pass`/`fail`/`partial` verdict semantics) — calls the identical
+`bridge::build_audit_route_report` pipeline the CLI uses, so a route
+audited in the browser gets exactly the same verdict the CLI would produce
+for the same input. Unlike the CLI, `content` must already be plain JSON
+text — there is no gzip support in the browser (a paste or file upload
+never needs it).
+
+```js
+import init, { audit_route } from './node_modules/renkin/renkin.js';
+
+await init();
+const routeJson = JSON.stringify({
+  target: "CCOC(=O)c1ccccc1",
+  routes: [{
+    steps: [{ target: "CCOC(=O)c1ccccc1", precursors: ["CCO", "O=C(O)c1ccccc1"], template_id: "co_aliphatic_cleavage" }],
+    building_blocks: ["CCO", "O=C(O)c1ccccc1"],
+  }],
+});
+const report = JSON.parse(audit_route(routeJson, "auto", ""));
+console.log(report.routes[0].status); // "pass" | "fail" | "partial"
+```
+
+Also available from the [Live Playground](../playground/){ target="_blank" }'s
+`[ Audit a Route ]` tab — paste or upload a route (and optionally a stock
+list), entirely client-side.
+
 ## `version`
 
 ```typescript

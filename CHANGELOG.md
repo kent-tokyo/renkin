@@ -9,6 +9,10 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- `audit_manifest` on `renkin audit-route --output json` reports: RENKIN
+  version, report schema version, source format, source-tool version (when
+  determinable), input/stock content SHA-256 hashes, and audit policy — so
+  the same audit can be verified as reproducible later.
 - WASM: `find_routes_v2` (adds working `avoid_elements`/`require_elements`
   element filtering to the browser build) and `capabilities()` (real
   building-block/reaction-rule counts for UI display).

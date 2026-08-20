@@ -10,7 +10,6 @@ use renkin::search::{self, SearchConfig};
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 #[derive(Serialize)]
 struct Output {
@@ -990,183 +989,15 @@ fn evidence_validate_sidecar(args: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// Minimal `#[derive(Deserialize)]` view of RENKIN's own `--format json`
-/// route output (`main.rs`'s `Output` struct is `Serialize`-only, by
-/// design -- see `bridge` module docs for why round-tripping through a
-/// purpose-built partial type is preferred over adding `Deserialize` to
-/// the search-output types themselves). Declares only the fields
-/// `bridge::route_graph::normalize_renkin_route` actually reads; every
-/// other field in a real RENKIN JSON file (`score`, `confidence`,
-/// `atom_economy`, ...) is silently ignored by serde, not an error.
-#[derive(Deserialize)]
-struct AuditRouteInput {
-    target: String,
-    #[serde(default)]
-    routes: Vec<AuditRouteEntry>,
-}
-
-#[derive(Deserialize)]
-struct AuditRouteEntry {
-    steps: Vec<AuditRouteStepInput>,
-    #[serde(default)]
-    building_blocks: Vec<String>,
-}
-
-#[derive(Deserialize)]
-struct AuditRouteStepInput {
-    target: String,
-    precursors: Vec<String>,
-    template_id: String,
-}
-
-/// Rebuilds a `search::Route` from the minimal parsed input -- every field
-/// `normalize_renkin_route` doesn't read (`rule`, `depth`, `score`,
-/// `confidence`, `atom_economy_status`, ...) is defaulted, mirroring the
-/// same defaulting convention `bridge::route_graph`'s and `bridge::audit`'s
-/// own test fixtures already use for hand-built routes.
-fn route_from_audit_input(entry: AuditRouteEntry) -> search::Route {
-    search::Route {
-        steps: entry
-            .steps
-            .into_iter()
-            .map(|s| search::ReactionStep {
-                rule: String::new(),
-                template_id: s.template_id,
-                target: s.target,
-                precursors: s.precursors,
-                conditions: None,
-                atom_economy: None,
-                atom_economy_raw_percent: None,
-                atom_economy_status: search::AtomEconomyStatus::NotEvaluable,
-                step_confidence: 1.0,
-                procedure_hint: None,
-                reaction_family: None,
-                metadata_source: None,
-                metadata_scope: None,
-                evidence: None,
-            })
-            .collect(),
-        depth: 0,
-        score: 0.0,
-        building_blocks: entry.building_blocks,
-        confidence: 0.0,
-        convergency: 0.0,
-        success_probability: 0.0,
-        route_cost: 0.0,
-    }
-}
-
-/// Loads a plain `.smi` stock file (`SMILES<whitespace>name` per line,
-/// `#`-comments and blank lines skipped -- the same convention as
-/// `data/building_blocks.smi`, mirrored from `ChemEnv::load`'s own line-
-/// parsing) into the canonical-SMILES set `bridge::audit::audit`'s
-/// `configured_stock` expects. Uses plain `to_canonical`
-/// (`chem_env::canonical_smiles`), NOT `ChemEnv`'s specialized
-/// `canonical_stock_identity` -- `bridge::route_graph::canonicalize` (which
-/// produces every `RouteNode::canonical_smiles` this gets compared against)
-/// uses plain `to_canonical` too, and the two canonicalizations are a
-/// documented non-invariant of each other, so this must match whichever one
-/// `bridge` itself uses internally, not `ChemEnv`'s. Unparseable lines are
-/// skipped, not a hard error -- an audit should still run against whatever
-/// of the stock file *did* parse, rather than refusing to audit at all over
-/// one bad line.
+/// Loads a plain `.smi` stock file into the canonical-SMILES set
+/// `bridge::audit_route::build_audit_route_report`'s `stock` expects --
+/// thin file-reading wrapper around `bridge::parse_stock_text`, which owns
+/// the actual line-parsing so the CLI's `--stock <PATH>` and the
+/// playground's pasted/uploaded stock text share identical parsing.
 fn load_audit_stock(path: &str) -> Result<std::collections::HashSet<String>> {
     let content =
         std::fs::read_to_string(path).with_context(|| format!("failed to read --stock {path}"))?;
-    Ok(content
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty() && !l.starts_with('#'))
-        .filter_map(|l| l.split_whitespace().next())
-        .filter_map(|smi| chem_env::mol_from_smiles(smi).ok())
-        .map(|m| chem_env::to_canonical(&m))
-        .collect())
-}
-
-/// v0.27.0 "Reproducible Route Audit": records what was audited and under
-/// what conditions, so the same audit can be reproduced/verified later.
-/// `report_schema_version`/`source_format` duplicate the pre-existing flat
-/// `AuditRouteReport` fields of the same meaning below -- an explicit design
-/// choice (both were named in the v0.27.0 spec), not an oversight; the flat
-/// fields are kept for backward compatibility, not deprecated yet.
-#[derive(Serialize)]
-struct AuditManifest {
-    renkin_version: &'static str,
-    report_schema_version: u32,
-    source_format: &'static str,
-    /// Always `null` today: no adapter in this codebase captures a
-    /// self-reported source-tool version from route input yet (`RouteSource`
-    /// is a bare `Renkin`/`AiZynthFinder` enum with no version field) --
-    /// genuinely unknown, not a placeholder for a future removal.
-    source_version: Option<String>,
-    input_sha256: String,
-    /// `None` when no `--stock` was given -- distinct from "unknown", stock
-    /// validation genuinely did not run.
-    stock_sha256: Option<String>,
-    /// Fixed at `"standard"` for now -- no policy engine exists yet (P1).
-    /// Matches what `audit-route` already does today: every finding is
-    /// reported in full, nothing hidden.
-    policy: &'static str,
-}
-
-/// Hashes the decompressed route-input text actually parsed and audited,
-/// not the raw on-disk bytes -- a gzip vs. plain copy of identical JSON
-/// content hashes identically. Mirrors `ChemEnv::content_sha256`'s own
-/// "hash what was actually used, not incidental encoding" reasoning.
-fn input_content_sha256(content: &str) -> String {
-    let digest = Sha256::digest(content.as_bytes());
-    format!("sha256:{}", renkin::sha256_hex(digest))
-}
-
-/// Hashes the canonicalized stock set actually loaded and checked against
-/// (sorted + length-prefixed, so it's order-independent and unambiguous) --
-/// same recipe as `ChemEnv::content_sha256`, applied to the CLI's own
-/// `--stock` loader output rather than a `ChemEnv`.
-fn stock_set_sha256(stock: &std::collections::HashSet<String>) -> String {
-    let mut sorted: Vec<&str> = stock.iter().map(String::as_str).collect();
-    sorted.sort_unstable();
-    let mut hasher = Sha256::new();
-    hasher.update(b"renkin-audit-manifest-stock-v1\0");
-    hasher.update((sorted.len() as u64).to_be_bytes());
-    for smi in sorted {
-        hasher.update((smi.len() as u64).to_be_bytes());
-        hasher.update(smi.as_bytes());
-    }
-    format!("sha256:{}", renkin::sha256_hex(hasher.finalize()))
-}
-
-#[derive(Serialize)]
-struct AuditRouteReport {
-    /// Pre-existing field, kept for backward compatibility -- see
-    /// [`AuditManifest`]'s doc comment for why this duplicates
-    /// `audit_manifest.report_schema_version`.
-    schema_version: u32,
-    /// Pre-existing field, kept for backward compatibility -- see
-    /// [`AuditManifest`]'s doc comment for why this duplicates
-    /// `audit_manifest.source_format`.
-    source_format: &'static str,
-    audit_manifest: AuditManifest,
-    summary: AuditRouteSummary,
-    routes: Vec<bridge::AuditReport>,
-}
-
-#[derive(Serialize, Default)]
-struct AuditRouteSummary {
-    routes_total: usize,
-    pass: usize,
-    fail: usize,
-    partial: usize,
-}
-
-impl AuditRouteSummary {
-    fn record(&mut self, status: bridge::AuditStatus) {
-        match status {
-            bridge::AuditStatus::Pass => self.pass += 1,
-            bridge::AuditStatus::Fail => self.fail += 1,
-            bridge::AuditStatus::Partial => self.partial += 1,
-        }
-        self.routes_total += 1;
-    }
+    Ok(bridge::parse_stock_text(&content))
 }
 
 /// `renkin audit-route <PATH> [--format auto|renkin] [--stock <PATH>]
@@ -1202,64 +1033,6 @@ fn read_maybe_gzip(path: &str) -> Result<String> {
     }
 }
 
-/// One row of a real `aizynthcli` batch output file (`--output out.json.gz`
-/// over a multi-target `--smiles targets.smi` run): Pandas
-/// `to_json(orient="table")`, `{"schema": {...}, "data": [...]}`, one row
-/// per target. `trees` is declared `"type": "string"` in the `schema`
-/// block (a Pandas quirk for object-dtype columns) but is a real nested
-/// JSON array in `data` itself, confirmed against a real capture -- see
-/// `tests/fixtures/aizynthfinder/v4.4.1/PROVENANCE.md`. Every other schema
-/// column (`search_time`, `is_solved`, `profiling`, ...) is ignored here,
-/// same forward-compatible convention as `bridge::aizynthfinder::AzfNode`.
-#[derive(Deserialize)]
-struct AzfBatchOutput {
-    data: Vec<AzfBatchRow>,
-}
-
-#[derive(Deserialize)]
-struct AzfBatchRow {
-    #[serde(default)]
-    trees: Vec<bridge::AzfNode>,
-}
-
-enum AuditRouteFormat {
-    Renkin,
-    AiZynthFinderSingle,
-    AiZynthFinderBatch,
-}
-
-/// `--format auto`'s sniff: RENKIN's own shape is a top-level object with
-/// `target`+`routes`; a real AiZynthFinder single-target `aizynthcli
-/// --output trees.json` is a top-level array of route dicts (each a `"type":
-/// "mol"` root node); a real batch output is Pandas' `"schema"`+`"data"`
-/// object. Anything else is an error, never a guess.
-fn detect_audit_route_format(value: &serde_json::Value) -> Result<AuditRouteFormat> {
-    match value {
-        serde_json::Value::Array(items) => {
-            if items.is_empty() || items[0].get("type").and_then(|t| t.as_str()) == Some("mol") {
-                Ok(AuditRouteFormat::AiZynthFinderSingle)
-            } else {
-                bail!(
-                    "renkin audit-route: --format auto could not identify this top-level JSON array (expected AiZynthFinder route dicts, each with \"type\": \"mol\")"
-                )
-            }
-        }
-        serde_json::Value::Object(map)
-            if map.contains_key("schema") && map.contains_key("data") =>
-        {
-            Ok(AuditRouteFormat::AiZynthFinderBatch)
-        }
-        serde_json::Value::Object(map)
-            if map.contains_key("target") && map.contains_key("routes") =>
-        {
-            Ok(AuditRouteFormat::Renkin)
-        }
-        _ => bail!(
-            "renkin audit-route: --format auto could not identify this input -- recognized shapes are RENKIN (\"target\"+\"routes\" object), AiZynthFinder single-target (top-level array), AiZynthFinder batch (Pandas \"schema\"+\"data\" object). Pass --format explicitly if this is a supported shape auto-detection doesn't recognize."
-        ),
-    }
-}
-
 fn run_audit_route(args: &[String]) -> Result<()> {
     let path = args
         .iter()
@@ -1280,86 +1053,13 @@ fn run_audit_route(args: &[String]) -> Result<()> {
     }
 
     let content = read_maybe_gzip(&path)?;
-    let value: serde_json::Value =
-        serde_json::from_str(&content).with_context(|| format!("{path}: not valid JSON"))?;
-
-    let resolved_format = match format {
-        "renkin" => AuditRouteFormat::Renkin,
-        "aizynthfinder" => match &value {
-            serde_json::Value::Array(_) => AuditRouteFormat::AiZynthFinderSingle,
-            serde_json::Value::Object(map) if map.contains_key("data") => {
-                AuditRouteFormat::AiZynthFinderBatch
-            }
-            _ => bail!(
-                "renkin audit-route: --format aizynthfinder given but {path} isn't a recognized AiZynthFinder shape (top-level array, or Pandas \"schema\"+\"data\" object)"
-            ),
-        },
-        _ => detect_audit_route_format(&value)?,
-    };
-
     let stock = flag_value(args, "--stock")
         .map(load_audit_stock)
         .transpose()?;
     let rules = chem_env::default_rules();
 
-    let mut summary = AuditRouteSummary::default();
-    let mut reports = Vec::new();
-    let source_format = match resolved_format {
-        AuditRouteFormat::Renkin => {
-            let input: AuditRouteInput = serde_json::from_value(value)
-                .with_context(|| format!("{path}: not a recognized RENKIN route JSON"))?;
-            for entry in input.routes {
-                let route = route_from_audit_input(entry);
-                let outcome = bridge::normalize_renkin_route(&route, &input.target);
-                let report = bridge::audit(&outcome, stock.as_ref(), Some(&rules));
-                summary.record(report.status);
-                reports.push(report);
-            }
-            "renkin"
-        }
-        AuditRouteFormat::AiZynthFinderSingle => {
-            let routes: Vec<bridge::AzfNode> = serde_json::from_value(value)
-                .with_context(|| format!("{path}: not a recognized AiZynthFinder route JSON"))?;
-            for node in &routes {
-                let outcome = bridge::normalize_aizynthfinder_route(node);
-                let report = bridge::audit(&outcome, stock.as_ref(), Some(&rules));
-                summary.record(report.status);
-                reports.push(report);
-            }
-            "aizynthfinder"
-        }
-        AuditRouteFormat::AiZynthFinderBatch => {
-            let batch: AzfBatchOutput = serde_json::from_value(value)
-                .with_context(|| format!("{path}: not a recognized AiZynthFinder batch output"))?;
-            for row in &batch.data {
-                for node in &row.trees {
-                    let outcome = bridge::normalize_aizynthfinder_route(node);
-                    let report = bridge::audit(&outcome, stock.as_ref(), Some(&rules));
-                    summary.record(report.status);
-                    reports.push(report);
-                }
-            }
-            "aizynthfinder"
-        }
-    };
-
-    let manifest = AuditManifest {
-        renkin_version: env!("CARGO_PKG_VERSION"),
-        report_schema_version: 1,
-        source_format,
-        source_version: None,
-        input_sha256: input_content_sha256(&content),
-        stock_sha256: stock.as_ref().map(stock_set_sha256),
-        policy: "standard",
-    };
-
-    let out = AuditRouteReport {
-        schema_version: 1,
-        source_format,
-        audit_manifest: manifest,
-        summary,
-        routes: reports,
-    };
+    let out = bridge::build_audit_route_report(&content, format, stock.as_ref(), &rules)
+        .with_context(|| format!("{path}: audit input rejected"))?;
 
     if output_format == "json" {
         println!("{}", serde_json::to_string_pretty(&out)?);

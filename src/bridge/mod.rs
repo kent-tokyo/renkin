@@ -36,9 +36,17 @@
 //! `tests/fixtures/aizynthfinder/v4.4.1/PROVENANCE.md`), not guessed. Still
 //! out of scope, not just deferred: HTML output, DOI/condition/yield
 //! reporting, and alternative-disconnection suggestions.
+//!
+//! v0.28.0 "Audit Playground" extracted the multi-route report pipeline
+//! previously inlined in `src/main.rs::run_audit_route` into the
+//! `audit_route` submodule, so both the CLI and the playground's WASM
+//! `audit_route` export (`src/wasm.rs`) call the identical
+//! [`build_audit_route_report`] rather than maintaining two copies of
+//! format-detection/parsing/manifest logic.
 
 pub mod aizynthfinder;
 pub mod audit;
+pub mod audit_route;
 pub mod forward;
 pub mod route_graph;
 
@@ -46,6 +54,9 @@ pub use aizynthfinder::{AzfMetadata, AzfNode, normalize_aizynthfinder_route};
 pub use audit::{
     AuditFinding, AuditFindingCode, AuditReport, AuditSeverity, AuditStatus, AuditedStep,
     CheckStatus, StockNotEvaluableReason, StockValidationResult, audit,
+};
+pub use audit_route::{
+    AuditManifest, AuditRouteReport, AuditRouteSummary, build_audit_route_report, parse_stock_text,
 };
 pub use forward::{ForwardNotEvaluableReason, ForwardValidationResult, validate_step_forward};
 pub use route_graph::{

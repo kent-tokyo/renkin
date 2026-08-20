@@ -130,3 +130,36 @@ pub fn capabilities() -> String {
     })
     .to_string()
 }
+
+/// Audit a pasted/uploaded route export (WASM entry point) -- the browser
+/// counterpart to `renkin audit-route`, calling the identical
+/// `bridge::build_audit_route_report` pipeline so a route audited in the
+/// playground gets exactly the same pass/fail/partial verdict the CLI would
+/// produce for the same input, not a separately-maintained copy.
+///
+/// # Arguments
+/// * `content`    - Route export JSON text (RENKIN `--format json` output,
+///                   or an AiZynthFinder single-route/batch export). Plain
+///                   JSON only -- unlike the CLI, this has no gzip support;
+///                   a browser paste/upload never needs it.
+/// * `format`     - `"auto" | "renkin" | "aizynthfinder"`, same vocabulary
+///                   as the CLI's `--format` flag.
+/// * `stock_text` - Optional `.smi`-style stock listing (one SMILES per
+///                   line, `#`-comments allowed), or `""` for "no stock to
+///                   check against".
+///
+/// Returns a JSON string: either the `AuditRouteReport` shape (same as
+/// `renkin audit-route --output json`) or `{"error": "..."}` on a bad
+/// input (malformed JSON, unrecognized format, ...).
+#[wasm_bindgen]
+pub fn audit_route(content: &str, format: &str, stock_text: &str) -> String {
+    let stock =
+        (!stock_text.trim().is_empty()).then(|| crate::bridge::parse_stock_text(stock_text));
+    let rules = default_rules();
+    match crate::bridge::build_audit_route_report(content, format, stock.as_ref(), &rules) {
+        Ok(report) => serde_json::to_string(&report)
+            .unwrap_or_else(|e| format!(r#"{{"error":"serialization: {e}"}}"#)),
+        Err(e) => serde_json::to_string(&serde_json::json!({ "error": format!("{e:#}") }))
+            .unwrap_or_else(|_| r#"{"error":"audit failed"}"#.to_string()),
+    }
+}

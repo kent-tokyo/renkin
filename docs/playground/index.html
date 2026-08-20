@@ -47,6 +47,14 @@
     .panel-title { font-size:0.85rem; text-transform:uppercase; letter-spacing:0.08em;
       color:var(--muted); margin-bottom:1rem; display:flex; align-items:center; gap:0.5rem; }
 
+    /* ── Tabs (PR3: Plan / Audit) ──────────────────────────────────── */
+    .tabs { display:flex; gap:0.4rem; margin-bottom:1.25rem; border-bottom:1px solid var(--border); }
+    .tab-btn { background:transparent; color:var(--muted); border:none; border-bottom:2px solid transparent;
+      border-radius:0; padding:0.6rem 0.9rem; font-size:0.88rem; font-weight:600; height:auto;
+      align-self:auto; }
+    .tab-btn:hover { color:var(--text); opacity:1; }
+    .tab-btn.active { color:var(--text); border-bottom-color:var(--accent); }
+
     /* ── Form fields ─────────────────────────────────────────────── */
     .field { display:flex; flex-direction:column; gap:0.35rem; }
     .field label { font-size:0.78rem; color:var(--muted); }
@@ -54,6 +62,12 @@
       color:var(--text); padding:0.55rem 0.75rem; border-radius:6px;
       font-size:0.9rem; font-family:inherit; transition:border-color 0.15s; }
     .field input:focus,.field select:focus { outline:none; border-color:var(--accent); }
+    .field textarea { background:var(--bg); border:1px solid var(--border); color:var(--text);
+      padding:0.55rem 0.75rem; border-radius:6px; font-size:0.82rem; font-family:var(--mono);
+      resize:vertical; min-height:110px; transition:border-color 0.15s; }
+    .field textarea:focus { outline:none; border-color:var(--accent); }
+    .field input[type="file"] { padding:0.35rem 0; border:none; background:none;
+      color:var(--muted); font-size:0.8rem; }
     #smiles-input { font-family:var(--mono); font-size:0.85rem; }
     .search-row { display:flex; gap:0.75rem; align-items:flex-end; margin-top:0.75rem; flex-wrap:wrap; }
     .search-row .field { flex:1; min-width:160px; }
@@ -78,7 +92,7 @@
       border-radius:6px; padding:0.5rem 0.75rem; }
 
     /* ── Status ──────────────────────────────────────────────────── */
-    #status-bar { display:flex; align-items:center; gap:0.75rem; font-size:0.85rem;
+    #status-bar, #audit-status-bar { display:flex; align-items:center; gap:0.75rem; font-size:0.85rem;
       color:var(--muted); min-height:1.5rem; margin-bottom:1rem; }
     .spinner { width:14px; height:14px; border:2px solid var(--border);
       border-top-color:var(--accent); border-radius:50%;
@@ -172,6 +186,23 @@
     .error-box { background:rgba(224,92,92,0.08); border:1px solid rgba(224,92,92,0.3);
       color:var(--error); padding:0.9rem 1rem; border-radius:8px; font-size:0.85rem; }
 
+    /* ── Audit results (PR3) ───────────────────────────────────────── */
+    .audit-summary-row { display:flex; align-items:center; justify-content:space-between;
+      gap:1rem; margin-bottom:1rem; flex-wrap:wrap; font-size:0.9rem; }
+    .audit-badge { font-size:0.75rem; font-weight:700; padding:0.2rem 0.7rem; border-radius:999px;
+      text-transform:uppercase; letter-spacing:0.04em; margin-left:auto; }
+    .audit-badge.pass { color:var(--success); background:rgba(76,175,125,0.1); border:1px solid rgba(76,175,125,0.3); }
+    .audit-badge.fail { color:var(--error); background:rgba(224,92,92,0.1); border:1px solid rgba(224,92,92,0.3); }
+    .audit-badge.partial { color:var(--warn); background:rgba(240,160,75,0.1); border:1px solid rgba(240,160,75,0.3); }
+    .audit-checks { padding:0.6rem 1rem; font-size:0.8rem; color:var(--muted);
+      border-bottom:1px solid var(--border); }
+    .audit-check-row { padding:0.15rem 0; }
+    .audit-findings { font-family:var(--mono); font-size:0.78rem; padding:0.75rem 1rem;
+      display:flex; flex-direction:column; gap:0.3rem; border-top:1px solid var(--border);
+      word-break:break-all; }
+    .audit-finding-gating { color:var(--error); }
+    .audit-finding-informational { color:var(--muted); }
+
     /* ── Tooltip ─────────────────────────────────────────────────── */
     [data-tip] { position:relative; cursor:help;
       border-bottom:1px dashed var(--warn); display:inline-block; }
@@ -244,6 +275,12 @@
   <div id="wasm-status" class="wasm-status loading" data-i18n="wasm_loading">Loading WebAssembly module…</div>
   <div id="capabilities-banner" class="wasm-status ready" style="display:none"></div>
 
+  <div class="tabs" role="tablist">
+    <button class="tab-btn active" id="tab-plan-btn" role="tab" aria-selected="true" data-i18n="tab_plan">Plan a Route</button>
+    <button class="tab-btn" id="tab-audit-btn" role="tab" aria-selected="false" data-i18n="tab_audit">Audit a Route</button>
+  </div>
+
+  <div id="plan-tab" class="tab-pane">
   <div class="panel">
     <div class="panel-title">
       <span data-i18n="panel_title">Target Molecule</span>
@@ -350,6 +387,50 @@
   </div>
 
   <div id="results"></div>
+  </div><!-- /#plan-tab -->
+
+  <div id="audit-tab" class="tab-pane" style="display:none">
+  <div class="panel">
+    <div class="panel-title">
+      <span data-i18n="audit_panel_title">Route to Audit</span>
+      <span class="help-icon" tabindex="0" data-i18n-tip="tip_audit" data-tip="Audits an already-completed route (RENKIN or AiZynthFinder export) for structural integrity, stock coverage, element accounting, and forward-reaction reproducibility — a pass/fail/partial verdict, entirely in your browser.">?</span>
+    </div>
+
+    <div class="field">
+      <label for="audit-format-select" data-i18n="audit_format_label">Format</label>
+      <select id="audit-format-select">
+        <option value="auto" data-i18n="audit_format_auto">Auto-detect</option>
+        <option value="renkin" data-i18n="audit_format_renkin">RENKIN</option>
+        <option value="aizynthfinder" data-i18n="audit_format_aizynthfinder">AiZynthFinder</option>
+      </select>
+    </div>
+
+    <div class="field" style="margin-top:0.85rem">
+      <label for="audit-route-input" data-i18n="audit_route_label">Route JSON (paste or upload)</label>
+      <textarea id="audit-route-input" spellcheck="false" data-i18n-ph="audit_route_placeholder"
+        placeholder='e.g. {"target": "...", "routes": [...]}'></textarea>
+      <input id="audit-route-file" type="file" accept=".json,application/json">
+    </div>
+
+    <div class="field" style="margin-top:0.6rem">
+      <label for="audit-stock-input" data-i18n="audit_stock_label">Stock (optional — one SMILES per line, .smi-style)</label>
+      <textarea id="audit-stock-input" spellcheck="false" data-i18n-ph="audit_stock_placeholder"
+        placeholder="CCO ethanol"></textarea>
+      <input id="audit-stock-file" type="file" accept=".smi,.txt,text/plain">
+    </div>
+
+    <div class="search-row">
+      <button id="audit-btn" disabled data-i18n="audit_btn">Audit</button>
+    </div>
+  </div>
+
+  <div id="audit-status-bar">
+    <div class="spinner" id="audit-spinner"></div>
+    <span id="audit-status-text" data-i18n="audit_status_init">Paste or upload a route, then click Audit.</span>
+  </div>
+
+  <div id="audit-results"></div>
+  </div><!-- /#audit-tab -->
 </main>
 
 <!-- Zoom modal -->
@@ -442,6 +523,27 @@
       status_worker_reinit: 'Restarting search worker…',
       status_cancelled: 'Search cancelled.',
       status_timeout: 'Search cancelled — exceeded the {budget}s time budget. Try a larger time budget, a smaller Beam, or a lower Depth.',
+      tab_plan: 'Plan a Route',
+      tab_audit: 'Audit a Route',
+      audit_panel_title: 'Route to Audit',
+      tip_audit: 'Audits an already-completed route (RENKIN or AiZynthFinder export) for structural integrity, stock coverage, element accounting, and forward-reaction reproducibility — a pass/fail/partial verdict, entirely in your browser.',
+      audit_format_label: 'Format',
+      audit_format_auto: 'Auto-detect',
+      audit_format_renkin: 'RENKIN',
+      audit_format_aizynthfinder: 'AiZynthFinder',
+      audit_route_label: 'Route JSON (paste or upload)',
+      audit_route_placeholder: 'e.g. {"target": "...", "routes": [...]}',
+      audit_stock_label: 'Stock (optional — one SMILES per line, .smi-style)',
+      audit_stock_placeholder: 'CCO ethanol',
+      audit_btn: 'Audit',
+      audit_status_init: 'Paste or upload a route, then click Audit.',
+      audit_status_running: 'Auditing…',
+      audit_status_error: 'Error.',
+      audit_summary: '{total} routes audited — {pass} pass, {fail} fail, {partial} partial',
+      audit_download_btn: 'Download report (JSON)',
+      audit_check_stock: 'Stock',
+      audit_check_elements: 'Element accounting',
+      audit_check_forward: 'forward validation',
     },
     ja: {
       tagline: 'Retrosynthesis Engine for Knowledge-Informed Navigation',
@@ -513,6 +615,27 @@
       status_worker_reinit: '探索ワーカーを再起動中…',
       status_cancelled: '探索をキャンセルしました。',
       status_timeout: '探索をキャンセルしました — タイムバジェット{budget}秒を超過しました。タイムバジェットを増やす、ビーム幅を小さくする、または深さを減らしてお試しください。',
+      tab_plan: 'ルートを計画',
+      tab_audit: 'ルートを監査',
+      audit_panel_title: '監査対象ルート',
+      tip_audit: '既に完成したルート（RENKINまたはAiZynthFinderのエクスポート）を、構造的整合性・在庫充足・元素収支・順方向反応の再現性について監査し、pass/fail/partialの判定を返します — すべてブラウザ内で完結します。',
+      audit_format_label: '形式',
+      audit_format_auto: '自動判定',
+      audit_format_renkin: 'RENKIN',
+      audit_format_aizynthfinder: 'AiZynthFinder',
+      audit_route_label: 'ルート JSON（貼り付けまたはアップロード）',
+      audit_route_placeholder: '例: {"target": "...", "routes": [...]}',
+      audit_stock_label: '在庫（任意 — 1行に1SMILES、.smi形式）',
+      audit_stock_placeholder: 'CCO エタノール',
+      audit_btn: '監査',
+      audit_status_init: 'ルートを貼り付けまたはアップロードして「監査」をクリック。',
+      audit_status_running: '監査中…',
+      audit_status_error: 'エラー。',
+      audit_summary: '{total}件のルートを監査 — 合格{pass}、不合格{fail}、部分的{partial}',
+      audit_download_btn: 'レポートをダウンロード（JSON）',
+      audit_check_stock: '在庫',
+      audit_check_elements: '元素収支',
+      audit_check_forward: '順方向検証',
     },
     zh: {
       tagline: 'Retrosynthesis Engine for Knowledge-Informed Navigation',
@@ -584,6 +707,27 @@
       status_worker_reinit: '正在重启搜索工作线程…',
       status_cancelled: '搜索已取消。',
       status_timeout: '搜索已取消 — 超过了{budget}秒的时间预算。请尝试增大时间预算、减小束宽或降低深度。',
+      tab_plan: '规划路径',
+      tab_audit: '审计路径',
+      audit_panel_title: '待审计路径',
+      tip_audit: '审计一条已完成的合成路径（RENKIN 或 AiZynthFinder 导出）— 检查结构完整性、原料库存、元素守恒和正向反应可重现性，给出 pass/fail/partial 判定，全部在浏览器内完成。',
+      audit_format_label: '格式',
+      audit_format_auto: '自动检测',
+      audit_format_renkin: 'RENKIN',
+      audit_format_aizynthfinder: 'AiZynthFinder',
+      audit_route_label: '路径 JSON（粘贴或上传）',
+      audit_route_placeholder: '例如: {"target": "...", "routes": [...]}',
+      audit_stock_label: '库存（可选 — 每行一个 SMILES，.smi 格式）',
+      audit_stock_placeholder: 'CCO 乙醇',
+      audit_btn: '审计',
+      audit_status_init: '粘贴或上传路径，然后点击"审计"。',
+      audit_status_running: '审计中…',
+      audit_status_error: '错误。',
+      audit_summary: '已审计{total}条路径 — 通过{pass}，失败{fail}，部分{partial}',
+      audit_download_btn: '下载报告（JSON）',
+      audit_check_stock: '库存',
+      audit_check_elements: '元素守恒',
+      audit_check_forward: '正向验证',
     },
   };
 
@@ -703,6 +847,11 @@
     if (typeof renderResults === 'function' && lastRenderArgs) {
       renderResults(...lastRenderArgs);
     }
+    // Same reasoning for already-displayed audit results (PR3): status
+    // badges/check labels are built dynamically, not data-i18n elements.
+    if (typeof renderAuditResults === 'function' && lastAuditReport) {
+      renderAuditResults(lastAuditReport);
+    }
   };
 
   // ── WASM init ──────────────────────────────────────────────────────────────
@@ -714,6 +863,49 @@
   const resultsEl     = document.getElementById('results');
   const examplesEl    = document.getElementById('examples-select');
   const smilesEl      = document.getElementById('smiles-input');
+
+  // ── Tabs (PR3) ─────────────────────────────────────────────────────────
+  const tabPlanBtn  = document.getElementById('tab-plan-btn');
+  const tabAuditBtn = document.getElementById('tab-audit-btn');
+  const planTab     = document.getElementById('plan-tab');
+  const auditTab    = document.getElementById('audit-tab');
+  function switchTab(which) {
+    const isPlan = which === 'plan';
+    planTab.style.display = isPlan ? '' : 'none';
+    auditTab.style.display = isPlan ? 'none' : '';
+    tabPlanBtn.classList.toggle('active', isPlan);
+    tabAuditBtn.classList.toggle('active', !isPlan);
+    tabPlanBtn.setAttribute('aria-selected', String(isPlan));
+    tabAuditBtn.setAttribute('aria-selected', String(!isPlan));
+  }
+  tabPlanBtn.addEventListener('click', () => switchTab('plan'));
+  tabAuditBtn.addEventListener('click', () => switchTab('audit'));
+
+  // ── Audit tab (PR3) element refs ──────────────────────────────────────
+  const auditBtn          = document.getElementById('audit-btn');
+  const auditFormatSelect = document.getElementById('audit-format-select');
+  const auditRouteInput   = document.getElementById('audit-route-input');
+  const auditStockInput   = document.getElementById('audit-stock-input');
+  const auditSpinner      = document.getElementById('audit-spinner');
+  const auditStatusTextEl = document.getElementById('audit-status-text');
+  const auditResultsEl    = document.getElementById('audit-results');
+
+  // A file upload and the paste textarea converge on one source of truth --
+  // uploading a file just fills the textarea, so paste and upload are
+  // handled identically by everything downstream.
+  function wireFileToTextarea(fileInputId, textareaId) {
+    const fileInput = document.getElementById(fileInputId);
+    const textarea = document.getElementById(textareaId);
+    fileInput.addEventListener('change', () => {
+      const file = fileInput.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => { textarea.value = reader.result; };
+      reader.readAsText(file);
+    });
+  }
+  wireFileToTextarea('audit-route-file', 'audit-route-input');
+  wireFileToTextarea('audit-stock-file', 'audit-stock-input');
 
   // find_routes_v2 (target, depth, max_routes, beam_width, avoid_elements,
   // require_elements) is a real, distinct WASM export (src/wasm.rs) — no
@@ -742,6 +934,7 @@
   let worker = null;
   let pendingInit = null;   // {resolve, reject} for the in-flight init/reinit
   let pendingSearch = null; // {id, resolve, reject} for the in-flight search
+  let pendingAudit = null;  // {id, resolve, reject} for the in-flight audit (PR3)
   let nextRequestId = 1;
 
   function attachWorkerHandlers(w) {
@@ -763,6 +956,16 @@
           pendingSearch.reject(new Error(data.error));
           pendingSearch = null;
         }
+      } else if (data.type === 'audit-result') {
+        if (pendingAudit && pendingAudit.id === data.id) {
+          pendingAudit.resolve(data.raw);
+          pendingAudit = null;
+        }
+      } else if (data.type === 'audit-error') {
+        if (pendingAudit && pendingAudit.id === data.id) {
+          pendingAudit.reject(new Error(data.error));
+          pendingAudit = null;
+        }
       }
     };
     w.onerror = (err) => {
@@ -772,6 +975,7 @@
       const e2 = new Error((err && err.message) || 'worker error');
       if (pendingInit) { pendingInit.reject(e2); pendingInit = null; }
       if (pendingSearch) { pendingSearch.reject(e2); pendingSearch = null; }
+      if (pendingAudit) { pendingAudit.reject(e2); pendingAudit = null; }
     };
   }
 
@@ -788,6 +992,7 @@
   function terminateAndRespawn() {
     if (worker) { worker.terminate(); worker = null; }
     pendingSearch = null;
+    pendingAudit = null;
     return spawnWorker();
   }
 
@@ -796,6 +1001,17 @@
       const id = nextRequestId++;
       pendingSearch = { id, resolve, reject };
       worker.postMessage({ type: 'search', id, payload });
+    });
+  }
+
+  // Shares the same worker/module instance as searchInWorker -- audit_route
+  // is a second export on the identical already-loaded WASM module, not a
+  // reason to spawn a second worker.
+  function auditInWorker(payload) {
+    return new Promise((resolve, reject) => {
+      const id = nextRequestId++;
+      pendingAudit = { id, resolve, reject };
+      worker.postMessage({ type: 'audit', id, payload });
     });
   }
 
@@ -808,6 +1024,7 @@
       capBannerEl.style.display = '';
     }
     searchBtn.disabled = false;
+    auditBtn.disabled = false;
     statusTextEl.dataset.state = 'status_init';
     statusTextEl.textContent = t('status_init');
   } catch (e) {
@@ -1330,6 +1547,157 @@
     body.appendChild(precRow);
     stepEl.appendChild(conn); stepEl.appendChild(body);
     return stepEl;
+  }
+
+  // ── Audit (PR3) ────────────────────────────────────────────────────────────
+  // Same worker/module as search (auditInWorker above); audit_route is a
+  // bounded structural walk, not open-ended search, so no cancel/time-budget
+  // handling is needed here (see worker.js's own comment).
+  let lastAuditReport = null;
+
+  auditBtn.addEventListener('click', runAudit);
+
+  async function runAudit() {
+    if (!worker) return;
+    // Not trimmed: input_sha256 must hash exactly what was uploaded/pasted,
+    // the same way the CLI hashes the raw file text it read (no trimming)
+    // -- auditing the same file via the CLI and via a browser upload must
+    // produce the same audit_manifest.input_sha256, not just the same
+    // verdict. Only the emptiness check below needs a trimmed view.
+    const content = auditRouteInput.value;
+    if (!content.trim()) return;
+    const format = auditFormatSelect.value;
+    const stockText = auditStockInput.value;
+
+    auditBtn.disabled = true;
+    auditSpinner.classList.add('active');
+    auditStatusTextEl.textContent = t('audit_status_running');
+    auditResultsEl.textContent = '';
+
+    let raw;
+    try {
+      raw = await auditInWorker({ content, format, stockText });
+    } catch (err) {
+      showAuditError(String(err.message || err));
+      auditBtn.disabled = false;
+      auditSpinner.classList.remove('active');
+      return;
+    }
+    auditBtn.disabled = false;
+    auditSpinner.classList.remove('active');
+
+    let report;
+    try { report = JSON.parse(raw); }
+    catch (err) { showAuditError(`Internal: ${err.message}`); return; }
+    if (report.error) { showAuditError(report.error); return; }
+
+    auditStatusTextEl.textContent = '';
+    lastAuditReport = report;
+    renderAuditResults(report);
+  }
+
+  function showAuditError(msg) {
+    auditStatusTextEl.textContent = t('audit_status_error');
+    auditResultsEl.textContent = '';
+    const box = document.createElement('div');
+    box.className = 'error-box';
+    box.textContent = msg;
+    auditResultsEl.appendChild(box);
+  }
+
+  function renderAuditResults(report) {
+    auditResultsEl.textContent = '';
+    const summary = report.summary;
+
+    const summaryRow = document.createElement('div'); summaryRow.className = 'audit-summary-row';
+    const summaryTxt = document.createElement('div');
+    summaryTxt.textContent = t('audit_summary')
+      .replace('{total}', summary.routes_total)
+      .replace('{pass}', summary.pass)
+      .replace('{fail}', summary.fail)
+      .replace('{partial}', summary.partial);
+    summaryRow.appendChild(summaryTxt);
+
+    const downloadBtn = document.createElement('button');
+    downloadBtn.className = 'copy-btn';
+    downloadBtn.textContent = t('audit_download_btn');
+    downloadBtn.addEventListener('click', () => downloadAuditReport(report));
+    summaryRow.appendChild(downloadBtn);
+    auditResultsEl.appendChild(summaryRow);
+
+    report.routes.forEach((route, i) => auditResultsEl.appendChild(buildAuditRouteCard(route, i + 1)));
+  }
+
+  function downloadAuditReport(report) {
+    const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `renkin-audit-${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  // Text-only (no rendered structures) by design for this round -- SMILES,
+  // finding codes, and validation reasons all render as plain monospace
+  // identifiers, same as `renkin audit-route`'s own JSON output.
+  function buildAuditRouteCard(route, num) {
+    const card = document.createElement('div'); card.className = 'route-card';
+
+    const header = document.createElement('div'); header.className = 'route-header';
+    const nb = document.createElement('div'); nb.className = 'route-num'; nb.textContent = num;
+    const title = document.createElement('strong');
+    title.textContent = `${t('route_label')} ${num}`;
+    const statusBadge = document.createElement('div');
+    statusBadge.className = `audit-badge ${route.status}`;
+    statusBadge.textContent = route.status.toUpperCase();
+    header.appendChild(nb); header.appendChild(title); header.appendChild(statusBadge);
+    card.appendChild(header);
+
+    const checkLines = [];
+    if (route.stock_validation) {
+      checkLines.push(`${t('audit_check_stock')}: ${route.stock_validation.status}` +
+        (route.stock_validation.reason ? ` (${route.stock_validation.reason})` : ''));
+    }
+    if (route.target_element_accounting_status) {
+      checkLines.push(`${t('audit_check_elements')}: ${route.target_element_accounting_status}`);
+    }
+    if (checkLines.length > 0) {
+      const checks = document.createElement('div'); checks.className = 'audit-checks';
+      checkLines.forEach(line => {
+        const row = document.createElement('div'); row.className = 'audit-check-row';
+        row.textContent = line;
+        checks.appendChild(row);
+      });
+      card.appendChild(checks);
+    }
+
+    if (route.steps && route.steps.length > 0) {
+      const stepList = document.createElement('div'); stepList.className = 'audit-findings';
+      route.steps.forEach(step => {
+        const row = document.createElement('div');
+        row.textContent = `${step.target} <- ${step.precursors.join(' + ')} — ` +
+          `${t('audit_check_forward')}: ${step.forward_validation.status}` +
+          (step.forward_validation.reason ? ` (${step.forward_validation.reason})` : '');
+        stepList.appendChild(row);
+      });
+      card.appendChild(stepList);
+    }
+
+    if (route.findings && route.findings.length > 0) {
+      const findingsList = document.createElement('div'); findingsList.className = 'audit-findings';
+      route.findings.forEach(f => {
+        const row = document.createElement('div');
+        row.className = f.severity === 'gating' ? 'audit-finding-gating' : 'audit-finding-informational';
+        row.textContent = f.node ? `${f.code} — ${f.node}` : f.code;
+        findingsList.appendChild(row);
+      });
+      card.appendChild(findingsList);
+    }
+
+    return card;
   }
 
   // ── Copy helper ────────────────────────────────────────────────────────────

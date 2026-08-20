@@ -302,3 +302,66 @@ fn rejects_valid_json_that_fails_the_renkin_schema_with_context() {
     );
     std::fs::remove_file(&path).ok();
 }
+
+/// v0.27.0 P0 item 2 (adapter conformance): unknown/future fields at every
+/// level of a RENKIN route JSON must be silently ignored, never a parse
+/// error -- the same forward-compatibility contract
+/// `bridge::aizynthfinder`'s own module docs already state for the
+/// AiZynthFinder side (`AzfNode` has no `deny_unknown_fields` either).
+/// Confirmed empirically (not just asserted from reading the derive), by
+/// process-spawning the real CLI against real extra fields at the
+/// top-level, route-entry, and step levels simultaneously.
+#[test]
+fn unknown_extra_fields_in_renkin_input_are_tolerated_not_rejected() {
+    let path = unique_temp_path("unknown_fields");
+    std::fs::write(
+        &path,
+        r#"{
+            "target": "CCO",
+            "a_field_from_a_future_renkin_version": 123,
+            "routes": [{
+                "steps": [{
+                    "target": "CCO",
+                    "precursors": ["CC=O"],
+                    "template_id": "test_reduction",
+                    "an_unexpected_step_field": true
+                }],
+                "building_blocks": ["CC=O"],
+                "an_unexpected_entry_field": ["x", "y"]
+            }]
+        }"#,
+    )
+    .unwrap();
+    let out = run(&["audit-route", path.to_str().unwrap(), "--output", "json"]);
+    assert!(
+        out.status.success(),
+        "unknown fields must not be a parse error: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("stdout must be valid JSON");
+    assert_eq!(report["summary"]["routes_total"], 1, "{report}");
+    std::fs::remove_file(&path).ok();
+}
+
+/// v0.27.0 P0 item 2: valid JSON that matches none of the recognized
+/// shapes (RENKIN, AiZynthFinder single-target, AiZynthFinder batch) must
+/// be a clean, explicit `--format auto` detection failure -- never a guess
+/// at which format was probably meant. Distinct from
+/// `rejects_valid_json_that_fails_the_renkin_schema_with_context` above:
+/// that case DOES match the RENKIN shape (has `target`+`routes` keys) and
+/// fails at the RENKIN-specific deserialize step; this one matches nothing
+/// at the detection step itself.
+#[test]
+fn rejects_ambiguous_input_matching_no_known_format() {
+    let path = unique_temp_path("ambiguous_format");
+    std::fs::write(&path, r#"{"foo": "bar"}"#).unwrap();
+    let out = run(&["audit-route", path.to_str().unwrap()]);
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("could not identify"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    std::fs::remove_file(&path).ok();
+}

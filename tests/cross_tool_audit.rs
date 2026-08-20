@@ -21,8 +21,10 @@ use std::collections::HashSet;
 use renkin::bridge::{
     AuditFindingCode, AuditStatus, AzfNode, CheckStatus, ParseOutcome, ReactionEvidence,
     RouteDocument, RouteNode, RouteSource, audit, normalize_aizynthfinder_route,
+    normalize_renkin_route,
 };
 use renkin::chem_env::{RetroRule, mol_from_smiles, to_canonical};
+use renkin::search;
 
 fn canon(smiles: &str) -> String {
     to_canonical(&mol_from_smiles(smiles).expect(smiles))
@@ -211,4 +213,243 @@ fn renkin_and_aizynthfinder_audits_of_the_same_reaction_agree_structurally() {
 
     assert_eq!(renkin_report.status, AuditStatus::Pass);
     assert_eq!(azf_report.status, AuditStatus::Pass);
+}
+
+// ── v0.27.0 "Reproducible Route Audit" P0 item 2: adapter conformance ──
+//
+// Extends the single hand-picked equivalence check above with targeted
+// scenarios from the shared fixture contract (linear route is already
+// covered above). Per this file's own established honest-degradation
+// principle: scenarios about audit *outcomes* (branched, malformed
+// hierarchy) assert genuine cross-tool agreement on a chemically
+// equivalent input; scenarios about *missing evidence* assert both sides
+// reach the same NotEvaluable/never-silently-Pass contract even though the
+// two tools express "missing" through different, tool-specific reasons
+// (RENKIN: an unresolved template_id; AiZynthFinder: an absent
+// mapped_reaction_smiles) -- forcing byte-identical reasons here would
+// misrepresent a real, documented difference as a bug. "No stock given" is
+// already covered by `partial_without_stock_reports_stock_not_provided_not_a_silent_pass`
+// in `tests/audit_route_cli.rs` (CLI layer) and not duplicated here.
+
+/// Minimal `search::Route` builder mirroring `main.rs`'s own
+/// `route_from_audit_input` -- every field `normalize_renkin_route` doesn't
+/// read is defaulted, since this file tests normalization/audit logic, not
+/// the search algorithm that would normally populate them.
+fn renkin_route(steps: &[(&str, &[&str], &str)], building_blocks: &[&str]) -> search::Route {
+    search::Route {
+        steps: steps
+            .iter()
+            .map(|(target, precursors, template_id)| search::ReactionStep {
+                rule: String::new(),
+                template_id: template_id.to_string(),
+                target: target.to_string(),
+                precursors: precursors.iter().map(|s| s.to_string()).collect(),
+                conditions: None,
+                atom_economy: None,
+                atom_economy_raw_percent: None,
+                atom_economy_status: search::AtomEconomyStatus::NotEvaluable,
+                step_confidence: 1.0,
+                procedure_hint: None,
+                reaction_family: None,
+                metadata_source: None,
+                metadata_scope: None,
+                evidence: None,
+            })
+            .collect(),
+        depth: 0,
+        score: 0.0,
+        building_blocks: building_blocks.iter().map(|s| s.to_string()).collect(),
+        confidence: 0.0,
+        convergency: 0.0,
+        success_probability: 0.0,
+        route_cost: 0.0,
+    }
+}
+
+/// A generic aliphatic C-O cleavage, reused verbatim from
+/// `bridge::audit`'s own already-proven test rule (`co_aliphatic_cleavage`
+/// there) -- deliberately not inventing new chemistry per this program's
+/// own "reuse what exists" constraint for this release.
+fn co_aliphatic_cleavage_rule() -> RetroRule {
+    RetroRule {
+        name: "co_aliphatic_cleavage".to_string(),
+        template_id: "co_aliphatic_cleavage".to_string(),
+        smirks: "[C:1][O:2]>>[C:1].[O:2]".to_string(),
+        ..Default::default()
+    }
+}
+
+fn azf_mol(smiles: &str, in_stock: Option<bool>, children: Vec<AzfNode>) -> AzfNode {
+    AzfNode {
+        node_type: "mol".to_string(),
+        smiles: smiles.to_string(),
+        in_stock,
+        metadata: None,
+        children,
+    }
+}
+
+fn azf_reaction(mapped_reaction_smiles: Option<&str>, precursors: Vec<AzfNode>) -> AzfNode {
+    AzfNode {
+        node_type: "reaction".to_string(),
+        smiles: String::new(),
+        in_stock: None,
+        metadata: Some(renkin::bridge::AzfMetadata {
+            mapped_reaction_smiles: mapped_reaction_smiles.map(str::to_string),
+        }),
+        children: precursors,
+    }
+}
+
+/// Branched route: one step producing 2 non-trivial precursors (methanol
+/// -> methane + water), not the linear single-child shape the test above
+/// already covers. Both sides use the exact same reaction (retro-direction
+/// SMIRKS on the RENKIN side, forward-direction `mapped_reaction_smiles` on
+/// the AiZynthFinder side, same convention this file's module docs already
+/// establish), so a genuine cross-tool structural comparison is meaningful
+/// here, not a strained pairing.
+#[test]
+fn branched_route_agrees_structurally_across_tools() {
+    let stock: HashSet<String> = [canon("C"), canon("O")].into_iter().collect();
+
+    let renkin_input = renkin_route(&[("CO", &["C", "O"], "co_aliphatic_cleavage")], &["C", "O"]);
+    let renkin_outcome = normalize_renkin_route(&renkin_input, "CO");
+    assert!(renkin_outcome.parseable, "{:?}", renkin_outcome.defects);
+    let renkin_report = audit(
+        &renkin_outcome,
+        Some(&stock),
+        Some(&[co_aliphatic_cleavage_rule()]),
+    );
+
+    let azf_node = azf_mol(
+        "CO",
+        Some(false),
+        vec![azf_reaction(
+            // Atom-mapped, matching `co_aliphatic_cleavage_rule`'s own
+            // SMIRKS exactly -- an unmapped SMILES here triggers AiZynthFinder
+            // forward validation's own `MissingAtomMapping` not_evaluable
+            // path, which isn't what this test is exercising.
+            Some("[C:1][O:2]>>[C:1].[O:2]"),
+            vec![
+                azf_mol("C", Some(true), vec![]),
+                azf_mol("O", Some(true), vec![]),
+            ],
+        )],
+    );
+    let azf_outcome = normalize_aizynthfinder_route(&azf_node);
+    assert!(azf_outcome.parseable, "{:?}", azf_outcome.defects);
+    let azf_report = audit(&azf_outcome, Some(&stock), None);
+
+    let renkin_doc = renkin_outcome.document.as_ref().unwrap();
+    let azf_doc = azf_outcome.document.as_ref().unwrap();
+
+    assert_eq!(
+        renkin_doc.root.children.len(),
+        2,
+        "genuinely branched, not linear"
+    );
+    assert_eq!(renkin_doc.root.children.len(), azf_doc.root.children.len());
+
+    let mut renkin_leaves = Vec::new();
+    leaf_multiset(&renkin_doc.root, &mut renkin_leaves);
+    let mut azf_leaves = Vec::new();
+    leaf_multiset(&azf_doc.root, &mut azf_leaves);
+    renkin_leaves.sort();
+    azf_leaves.sort();
+    assert_eq!(renkin_leaves, azf_leaves);
+
+    assert_eq!(renkin_report.status, AuditStatus::Pass, "{renkin_report:?}");
+    assert_eq!(azf_report.status, AuditStatus::Pass, "{azf_report:?}");
+}
+
+/// Malformed hierarchy: a precursor identical to its own product (a
+/// self-loop). Both adapters detect this via the exact same
+/// `AuditFindingCode::DegenerateSelfReferentialStep` code (confirmed by
+/// reading both `normalize_renkin_route` and `normalize_aizynthfinder_route`
+/// before writing this test, not assumed) -- a real shared vocabulary, not
+/// a coincidence this test invents.
+#[test]
+fn self_referential_hierarchy_fails_identically_across_tools() {
+    let renkin_input = renkin_route(&[("CO", &["CO"], "self_loop")], &[]);
+    let renkin_outcome = normalize_renkin_route(&renkin_input, "CO");
+    assert!(!renkin_outcome.parseable);
+    assert!(
+        renkin_outcome
+            .defects
+            .contains(&AuditFindingCode::DegenerateSelfReferentialStep),
+        "{:?}",
+        renkin_outcome.defects
+    );
+
+    let azf_node = azf_mol(
+        "CO",
+        Some(false),
+        vec![azf_reaction(
+            Some("CO>>CO"),
+            vec![azf_mol("CO", None, vec![])],
+        )],
+    );
+    let azf_outcome = normalize_aizynthfinder_route(&azf_node);
+    assert!(!azf_outcome.parseable);
+    assert!(
+        azf_outcome
+            .defects
+            .contains(&AuditFindingCode::DegenerateSelfReferentialStep),
+        "{:?}",
+        azf_outcome.defects
+    );
+
+    let renkin_report = audit(&renkin_outcome, None, None);
+    let azf_report = audit(&azf_outcome, None, None);
+    assert_eq!(renkin_report.status, AuditStatus::Fail);
+    assert_eq!(azf_report.status, AuditStatus::Fail);
+}
+
+/// Missing reaction evidence: RENKIN's mechanism (a `template_id` with no
+/// matching `RetroRule` supplied to `audit`) and AiZynthFinder's mechanism
+/// (a `reaction` node with no `mapped_reaction_smiles`, using the real
+/// `single_trees_missing_atom_mapping.json` fixture -- see that file's own
+/// `PROVENANCE.md` entry) are different by construction, so this
+/// deliberately does NOT assert identical reasons. What both tools must
+/// agree on: forward validation reports `not_evaluable`, never silently
+/// `pass` and never `fail` -- the shared contract, not a shared cause.
+#[test]
+fn missing_reaction_evidence_is_not_evaluable_never_silently_resolved_on_either_tool() {
+    let renkin_input = renkin_route(
+        &[("CO", &["C", "O"], "template_not_in_ruleset")],
+        &["C", "O"],
+    );
+    let renkin_outcome = normalize_renkin_route(&renkin_input, "CO");
+    assert!(renkin_outcome.parseable, "{:?}", renkin_outcome.defects);
+    let renkin_report = audit(&renkin_outcome, None, Some(&[])); // no rules supplied at all
+    assert_eq!(
+        renkin_report.steps[0].forward_validation.status,
+        CheckStatus::NotEvaluable,
+        "{renkin_report:?}"
+    );
+
+    let path = format!(
+        "{}/tests/fixtures/aizynthfinder/v4.4.1/single_trees_missing_atom_mapping.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let content = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let mut routes: Vec<AzfNode> =
+        serde_json::from_str(&content).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let azf_outcome = normalize_aizynthfinder_route(&routes.remove(0));
+    assert!(azf_outcome.parseable, "{:?}", azf_outcome.defects);
+    let azf_report = audit(&azf_outcome, None, None);
+    assert!(
+        azf_report
+            .steps
+            .iter()
+            .any(|s| s.forward_validation.status == CheckStatus::NotEvaluable),
+        "the step with the deliberately-removed mapped_reaction_smiles must be not_evaluable: {azf_report:?}"
+    );
+    assert!(
+        azf_report
+            .steps
+            .iter()
+            .all(|s| s.forward_validation.status != CheckStatus::Fail),
+        "missing evidence must never be misreported as a forward FAIL: {azf_report:?}"
+    );
 }

@@ -6,7 +6,9 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [Unreleased]
+## [0.28.0] - 2026-08-21 "Audit Playground"
+
+Audit a route in your browser — the same pipeline, the same verdict, zero network calls.
 
 ### Added
 - Playground `[ Audit a Route ]` tab: paste or upload a RENKIN or

@@ -139,7 +139,7 @@ list), entirely client-side.
 function version(): string
 ```
 
-Returns the RENKIN version string (e.g., `"0.27.0"`).
+Returns the RENKIN version string (e.g., `"0.28.0"`).
 
 ## Minimal Node.js Example (CI-verified)
 

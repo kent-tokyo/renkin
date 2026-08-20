@@ -66,7 +66,7 @@ jobs:
         run: |
           cp -r wasm-out site/pkg
           mkdir -p site/playground
-          cp docs/playground/index.html site/playground/index.html
+          cp docs/playground/*.html docs/playground/*.js site/playground/
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5

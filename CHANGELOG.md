@@ -6,6 +6,40 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Added
+- WASM: `find_routes_v2` (adds working `avoid_elements`/`require_elements`
+  element filtering to the browser build) and `capabilities()` (real
+  building-block/reaction-rule counts for UI display).
+
+### Fixed
+- Playground: molecule structures are now rendered entirely in-browser by
+  default (SmilesDrawer only); a target/precursor SMILES is never sent to
+  the third-party CDK Depict service unless the user explicitly clicks
+  that molecule's own "render externally" option. Previously every
+  molecule card and the zoom modal sent the SMILES to CDK Depict
+  automatically.
+- Playground: the "Avoid elements"/"Require element" search filters now
+  actually take effect — they previously called a WASM function signature
+  that never existed and silently fell back to an unfiltered search on
+  every use.
+- Playground: Copy CLI/Python and the new Session JSON download now
+  reproduce the exact search that was run (beam width and element
+  filters included), not just target/depth/max-routes.
+
+### Changed
+- Playground: search now runs in a background Web Worker (`worker.js`,
+  new file) instead of blocking the main thread — the page (scrolling,
+  typing, other buttons) stays responsive during a search, and it no
+  longer looks "frozen" on a complex molecule. Added a Cancel button and
+  a selectable time budget (10s/30s/60s/no limit, default 30s); both
+  work by terminating the search worker and starting a fresh one, since
+  there's no cooperative cancellation at the WASM call boundary. Beam
+  width moved into a collapsed "Advanced settings" section, default
+  changed from unlimited (0) to 50, with a warning shown if unlimited is
+  selected explicitly.
+
 ## [0.26.0] - 2026-08-19
 
 ### Added

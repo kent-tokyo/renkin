@@ -64,6 +64,18 @@
     button:hover { opacity:0.85; }
     button:active { transform:scale(0.97); }
     button:disabled { opacity:0.4; cursor:default; }
+    .cancel-btn { background:transparent; border:1px solid var(--error); color:var(--error); }
+    .cancel-btn:hover { opacity:1; background:rgba(224,92,92,0.1); }
+
+    /* ── Advanced settings ──────────────────────────────────────── */
+    .advanced-details { margin-top:0.85rem; }
+    .advanced-details summary { cursor:pointer; font-size:0.8rem; color:var(--muted);
+      user-select:none; }
+    .advanced-details summary:hover { color:var(--text); }
+    .advanced-details[open] summary { margin-bottom:0.3rem; }
+    .beam-warning { font-size:0.78rem; color:var(--warn); margin-top:0.6rem;
+      background:rgba(240,160,75,0.08); border:1px solid rgba(240,160,75,0.25);
+      border-radius:6px; padding:0.5rem 0.75rem; }
 
     /* ── Status ──────────────────────────────────────────────────── */
     #status-bar { display:flex; align-items:center; gap:0.75rem; font-size:0.85rem;
@@ -115,7 +127,9 @@
       background:none; border:none; color:#888; font-size:1.2rem; cursor:pointer;
       height:auto; padding:0.2rem 0.4rem; line-height:1; }
     #mol-modal-close:hover { color:#333; }
-    #mol-modal-img { display:block; max-width:100%; border-radius:4px; }
+    #mol-modal-imgwrap { display:flex; align-items:center; justify-content:center;
+      background:var(--mol-bg); border-radius:4px; overflow:hidden; max-width:100%; }
+    #mol-modal-imgwrap svg, #mol-modal-imgwrap img { display:block; max-width:100%; }
     #mol-modal-smiles { font-family:monospace; font-size:0.8rem; color:#555;
       word-break:break-all; text-align:center; max-width:520px; }
     #mol-modal-copy { font-size:0.78rem; color:#7c6af7; background:none; border:1px solid #7c6af7;
@@ -170,7 +184,7 @@
       white-space:normal; max-width:280px; line-height:1.5; z-index:200;
       pointer-events:none; opacity:0; transition:opacity 0.15s;
       box-shadow:0 4px 12px rgba(0,0,0,0.4); }
-    [data-tip]:hover::after { opacity:1; }
+    [data-tip]:hover::after, [data-tip]:focus-visible::after { opacity:1; }
 
     /* ── Rule name chip ──────────────────────────────────────────── */
     .step-rule { font-size:0.72rem; text-transform:uppercase; letter-spacing:0.06em;
@@ -228,11 +242,12 @@
 
 <main>
   <div id="wasm-status" class="wasm-status loading" data-i18n="wasm_loading">Loading WebAssembly module…</div>
+  <div id="capabilities-banner" class="wasm-status ready" style="display:none"></div>
 
   <div class="panel">
     <div class="panel-title">
       <span data-i18n="panel_title">Target Molecule</span>
-      <span class="help-icon" data-tip="Retrosynthesis works backwards from a target molecule to find commercial starting materials. Each arrow = one bond disconnection. End nodes = commercially available building blocks (building blocks).">?</span>
+      <span class="help-icon" tabindex="0" data-i18n-tip="tip_retro" data-tip="Retrosynthesis works backwards from a target molecule to find commercial starting materials. Each arrow = one bond disconnection. End nodes = commercially available building blocks (building blocks).">?</span>
     </div>
 
     <div class="field">
@@ -274,7 +289,7 @@
       <div class="field num-field">
         <label for="depth-input">
           <span data-i18n="depth_label">Depth</span>
-          <span class="help-icon" data-tip="Maximum synthesis steps. Deeper = more complex routes, but slower." style="margin-left:3px">?</span>
+          <span class="help-icon" tabindex="0" data-i18n-tip="tip_depth" data-tip="Maximum synthesis steps. Deeper = more complex routes, but slower." style="margin-left:3px">?</span>
         </label>
         <input id="depth-input" type="number" value="5" min="1" max="10">
       </div>
@@ -282,31 +297,51 @@
         <label for="routes-input" data-i18n="routes_label">Max routes</label>
         <input id="routes-input" type="number" value="5" min="1" max="20">
       </div>
-      <div class="field num-field">
-        <label for="beam-input">
-          <span data-i18n="beam_label">Beam (0=∞)</span>
-          <span class="help-icon" data-tip="Beam width limits parallel search paths. 0 = unlimited A*. Smaller = faster but may miss routes." style="margin-left:3px">?</span>
-        </label>
-        <input id="beam-input" type="number" value="0" min="0" max="500">
-      </div>
       <div class="field" style="min-width:110px">
         <label for="avoid-input">
-          Avoid elements
-          <span class="help-icon" data-tip="Comma-separated elements to ban from building blocks (e.g. Br,I)" style="margin-left:3px">?</span>
+          <span data-i18n="avoid_label">Avoid elements</span>
+          <span class="help-icon" tabindex="0" data-i18n-tip="tip_avoid" data-tip="Comma-separated elements to ban from building blocks (e.g. Br,I)" style="margin-left:3px">?</span>
         </label>
         <input id="avoid-input" type="text" placeholder="e.g. Br,I" spellcheck="false"
           style="font-family:var(--mono);font-size:0.82rem">
       </div>
       <div class="field" style="min-width:110px">
         <label for="require-input">
-          Require element
-          <span class="help-icon" data-tip="Element that must appear in ≥1 building block (e.g. B for boronic acids)" style="margin-left:3px">?</span>
+          <span data-i18n="require_label">Require element</span>
+          <span class="help-icon" tabindex="0" data-i18n-tip="tip_require" data-tip="Element that must appear in ≥1 building block (e.g. B for boronic acids)" style="margin-left:3px">?</span>
         </label>
         <input id="require-input" type="text" placeholder="e.g. B" spellcheck="false"
           style="font-family:var(--mono);font-size:0.82rem">
       </div>
       <button id="search-btn" disabled data-i18n="search_btn">Search</button>
+      <button id="cancel-btn" class="cancel-btn" style="display:none" data-i18n="cancel_btn">Cancel</button>
     </div>
+
+    <details class="advanced-details">
+      <summary data-i18n="advanced_label">Advanced settings</summary>
+      <div class="search-row" style="margin-top:0.6rem">
+        <div class="field num-field">
+          <label for="beam-input">
+            <span data-i18n="beam_label">Beam (0=∞)</span>
+            <span class="help-icon" tabindex="0" data-i18n-tip="tip_beam" data-tip="Beam width limits parallel search paths. 0 = unlimited A*. Smaller = faster but may miss routes." style="margin-left:3px">?</span>
+          </label>
+          <input id="beam-input" type="number" value="50" min="0" max="500">
+        </div>
+        <div class="field" style="min-width:150px">
+          <label for="time-budget-select">
+            <span data-i18n="time_budget_label">Time budget</span>
+            <span class="help-icon" tabindex="0" data-i18n-tip="tip_time_budget" data-tip="Search runs in a background worker and is automatically cancelled if it exceeds this. Applies regardless of Beam." style="margin-left:3px">?</span>
+          </label>
+          <select id="time-budget-select">
+            <option value="10" data-i18n="time_budget_10">10s</option>
+            <option value="30" data-i18n="time_budget_30" selected>30s</option>
+            <option value="60" data-i18n="time_budget_60">60s</option>
+            <option value="0" data-i18n="time_budget_none">No limit</option>
+          </select>
+        </div>
+      </div>
+      <div id="beam-warning" class="beam-warning" style="display:none" data-i18n="beam_unlimited_warning"></div>
+    </details>
   </div>
 
   <div id="status-bar">
@@ -321,7 +356,7 @@
 <div id="mol-modal" role="dialog" aria-modal="true">
   <div id="mol-modal-inner" onclick="event.stopPropagation()">
     <button id="mol-modal-close" aria-label="Close">✕</button>
-    <img id="mol-modal-img" alt="">
+    <div id="mol-modal-imgwrap"></div>
     <div id="mol-modal-smiles"></div>
     <button id="mol-modal-copy">Copy SMILES</button>
   </div>
@@ -329,8 +364,7 @@
 
 <footer>
   RENKIN · Pure Rust + WebAssembly ·
-  <span data-i18n="footer_rendering">Structure rendering by</span>
-  <a href="https://www.simolecule.com/cdkdepict/">CDK Depict</a> ·
+  <span data-i18n="footer_rendering">Search and structure rendering run entirely in your browser — nothing is sent anywhere unless you explicitly click a molecule's own "render externally" option.</span>
   <a href="https://github.com/kent-tokyo/renkin">GitHub</a> ·
   <a href="../" data-i18n="footer_docs">Documentation</a>
 </footer>
@@ -361,9 +395,9 @@
       step_s: 'step', steps_s: 'steps',
       target_lbl: 'Target:',
       bb_msg: '✓ Commercially available — buy directly.',
-      no_routes: 'No routes found. Try increasing Depth or Beam (0 = unlimited A*).',
+      no_routes: 'No routes found ({nodes} candidate disconnections evaluated). Most likely: the browser edition\'s limited building-block/rule set doesn\'t cover this target, or Depth/Beam is too restrictive. Try increasing Depth or Beam (0 = unlimited A*), removing element filters, or the native CLI/Python package for the full dataset.',
       copied: 'Copied!',
-      footer_rendering: 'Structure rendering by',
+      footer_rendering: 'Search and structure rendering run entirely in your browser — nothing is sent anywhere unless you explicitly click a molecule\'s own "render externally" option.',
       footer_docs: 'Documentation',
       grp_pharma: 'Pharmaceuticals',
       grp_cc: 'C-C Coupling Products',
@@ -374,6 +408,40 @@
       tip_retro: 'Retrosynthesis works backwards from a target molecule to find commercial starting materials. Each arrow = one bond disconnection. End nodes = commercially available building blocks.',
       tip_depth: 'Maximum synthesis steps. Deeper = more complex routes, but slower.',
       tip_beam: 'Beam width limits parallel search paths. 0 = unlimited A*. Smaller = faster but may miss routes.',
+      avoid_label: 'Avoid elements',
+      tip_avoid: 'Comma-separated elements to ban from building blocks (e.g. Br,I)',
+      require_label: 'Require element',
+      tip_require: 'Element that must appear in ≥1 building block (e.g. B for boronic acids)',
+      copy_label: 'Copy:',
+      copy_session: 'Session JSON',
+      browser_edition_label: 'Browser edition',
+      browser_edition_bb: 'embedded building blocks',
+      browser_edition_rules: 'curated rules',
+      browser_edition_note: 'The CLI and Python package support the full dataset and additional workflows.',
+      render_externally: 'Render via CDK Depict (sends this SMILES to simolecule.com)',
+      metric_score: 'score',
+      metric_confidence: 'confidence',
+      metric_success_p: 'success P',
+      metric_cost: 'cost',
+      metric_conv: 'conv.',
+      tip_metric_score: 'Overall route ranking score (heuristic, higher is better) — combines the metrics below. Not a calibrated probability.',
+      tip_metric_confidence: 'Template-match confidence for this route\'s steps (heuristic, 0–1, higher is better). Not a measured or predicted experimental success rate.',
+      tip_metric_success_p: 'Combined per-step template-frequency ranking score (0–1, higher is better) — a heuristic ranking signal, NOT a calibrated or guaranteed experimental success probability.',
+      tip_metric_cost: 'Estimated relative route cost (heuristic, lower is generally better).',
+      tip_metric_conv: 'Convergency: how much this route reuses/combines branches vs. a purely linear sequence (0–1, higher = more convergent).',
+      cancel_btn: 'Cancel',
+      advanced_label: 'Advanced settings',
+      time_budget_label: 'Time budget',
+      tip_time_budget: 'Search runs in a background worker and is automatically cancelled if it exceeds this. Applies regardless of Beam.',
+      time_budget_10: '10s',
+      time_budget_30: '30s',
+      time_budget_60: '60s',
+      time_budget_none: 'No limit',
+      beam_unlimited_warning: '⚠ Beam 0 (unlimited A*) can be slow on complex molecules — the browser tab stays responsive, but the search itself may take much longer or hit the time budget above.',
+      status_worker_init: 'Starting search worker…',
+      status_worker_reinit: 'Restarting search worker…',
+      status_cancelled: 'Search cancelled.',
+      status_timeout: 'Search cancelled — exceeded the {budget}s time budget. Try a larger time budget, a smaller Beam, or a lower Depth.',
     },
     ja: {
       tagline: 'Retrosynthesis Engine for Knowledge-Informed Navigation',
@@ -398,9 +466,9 @@
       step_s: 'ステップ', steps_s: 'ステップ',
       target_lbl: '目標:',
       bb_msg: '✓ 市販原料 — 直接購入可能。',
-      no_routes: '経路が見つかりません。「深さ」またはビーム幅（0=無制限）を増やしてください。',
+      no_routes: '経路が見つかりません（候補となる切断を{nodes}件評価）。多くの場合、ブラウザ版の限られた原料・ルール集合ではこの目標分子をカバーできないか、深さ/ビーム幅が制限的すぎます。深さやビーム幅（0=無制限）を増やす、元素フィルタを外す、またはネイティブCLI/Pythonパッケージ（全データセット）をお試しください。',
       copied: 'コピー済み!',
-      footer_rendering: '構造式描画:',
+      footer_rendering: '探索・構造式描画はすべてブラウザ内で完結します — 分子カードの「外部で描画」を明示的にクリックしない限り、どこにも送信されません。',
       footer_docs: 'ドキュメント',
       grp_pharma: '医薬品',
       grp_cc: 'C-Cカップリング生成物',
@@ -411,6 +479,40 @@
       tip_retro: '逆合成は目標分子から出発して市販原料へと逆向きに経路を設計する手法です。各矢印=1つの結合切断（逆反応）、末端ノード=市販原料（ビルディングブロック）。',
       tip_depth: '合成ステップの最大数。深くするほど複雑な経路が見つかりますが時間がかかります。',
       tip_beam: 'ビーム幅は並列探索パス数の上限。0=無制限（A*）。小さいほど高速ですが経路を見逃す可能性あり。',
+      avoid_label: '除外元素',
+      tip_avoid: '原料から除外する元素をカンマ区切りで指定（例: Br,I）',
+      require_label: '必須元素',
+      tip_require: '少なくとも1つの原料に含まれるべき元素（例: ボロン酸ならB）',
+      copy_label: 'コピー:',
+      copy_session: 'セッションJSON',
+      browser_edition_label: 'ブラウザ版',
+      browser_edition_bb: '件の内蔵原料',
+      browser_edition_rules: '件の厳選ルール',
+      browser_edition_note: 'CLI・Pythonパッケージは全データセットと追加のワークフローに対応しています。',
+      render_externally: 'CDK Depictで描画（このSMILESをsimolecule.comへ送信）',
+      metric_score: 'スコア',
+      metric_confidence: '確信度',
+      metric_success_p: '成功確率P',
+      metric_cost: 'コスト',
+      metric_conv: '収束度',
+      tip_metric_score: '経路全体のランキングスコア（ヒューリスティック、高いほど良い）— 以下の指標を組み合わせたもの。較正済みの確率ではありません。',
+      tip_metric_confidence: 'この経路の各ステップのテンプレート一致確信度（ヒューリスティック、0〜1、高いほど良い）。実測または予測された実験成功率ではありません。',
+      tip_metric_success_p: '各ステップのテンプレート頻度ランキングスコアを組み合わせた値（0〜1、高いほど良い）— あくまでヒューリスティックなランキング信号であり、較正済みまたは保証された実験成功確率ではありません。',
+      tip_metric_cost: '推定される相対的な経路コスト（ヒューリスティック、一般に低いほど良い）。',
+      tip_metric_conv: '収束度: 純粋な直線的合成と比べて、この経路が分岐をどれだけ再利用・統合しているか（0〜1、高いほど収束的）。',
+      cancel_btn: 'キャンセル',
+      advanced_label: '高度な設定',
+      time_budget_label: 'タイムバジェット',
+      tip_time_budget: '探索はバックグラウンドワーカーで実行され、これを超えると自動的にキャンセルされます。ビーム幅の設定に関わらず適用されます。',
+      time_budget_10: '10秒',
+      time_budget_30: '30秒',
+      time_budget_60: '60秒',
+      time_budget_none: '無制限',
+      beam_unlimited_warning: '⚠ ビーム幅0（無制限A*）は複雑な分子で遅くなる場合があります — ブラウザタブ自体は操作可能なままですが、探索自体は大幅に時間がかかったり、上記のタイムバジェットに達する可能性があります。',
+      status_worker_init: '探索ワーカーを起動中…',
+      status_worker_reinit: '探索ワーカーを再起動中…',
+      status_cancelled: '探索をキャンセルしました。',
+      status_timeout: '探索をキャンセルしました — タイムバジェット{budget}秒を超過しました。タイムバジェットを増やす、ビーム幅を小さくする、または深さを減らしてお試しください。',
     },
     zh: {
       tagline: 'Retrosynthesis Engine for Knowledge-Informed Navigation',
@@ -435,9 +537,9 @@
       step_s: '步', steps_s: '步',
       target_lbl: '目标:',
       bb_msg: '✓ 商业可购 — 可直接购买。',
-      no_routes: '未找到合成路径。请增大"深度"或束宽（0=无限制）。',
+      no_routes: '未找到合成路径（已评估{nodes}个候选断键）。最可能的原因：浏览器版有限的原料/规则集合无法覆盖此目标分子，或深度/束宽限制过严。请尝试增大深度或束宽（0=无限制）、移除元素过滤条件，或使用原生 CLI/Python 包（完整数据集）。',
       copied: '已复制!',
-      footer_rendering: '结构渲染:',
+      footer_rendering: '搜索和结构渲染完全在您的浏览器内完成 — 除非您明确点击分子卡片上的"外部渲染"选项，否则不会向任何地方发送任何数据。',
       footer_docs: '文档',
       grp_pharma: '药物',
       grp_cc: 'C-C 偶联产物',
@@ -448,6 +550,40 @@
       tip_retro: '逆合成从目标分子出发，追溯到商业可购原料的合成路径。每个箭头=一次化学键断裂（逆反应），末端节点=商业可购原料（构建块）。',
       tip_depth: '合成步骤的最大数目。越深找到路径越复杂，但速度越慢。',
       tip_beam: '束宽限制并行探索路径数。0=无限制（A*）。值越小速度越快，但可能遗漏路径。',
+      avoid_label: '排除元素',
+      tip_avoid: '要从原料中排除的元素，以逗号分隔（如 Br,I）',
+      require_label: '必需元素',
+      tip_require: '至少一个原料中必须包含的元素（如硼酸类为 B）',
+      copy_label: '复制:',
+      copy_session: '会话 JSON',
+      browser_edition_label: '浏览器版',
+      browser_edition_bb: '个内置原料',
+      browser_edition_rules: '个精选规则',
+      browser_edition_note: 'CLI 和 Python 包支持完整数据集及更多工作流程。',
+      render_externally: '通过 CDK Depict 渲染（将此 SMILES 发送至 simolecule.com）',
+      metric_score: '得分',
+      metric_confidence: '置信度',
+      metric_success_p: '成功率P',
+      metric_cost: '成本',
+      metric_conv: '收敛度',
+      tip_metric_score: '路径总体排名得分（启发式，越高越好）— 综合以下各指标。并非经过校准的概率。',
+      tip_metric_confidence: '该路径各步骤的模板匹配置信度（启发式，0–1，越高越好）。并非实测或预测的实验成功率。',
+      tip_metric_success_p: '各步骤模板频率排名得分的组合值（0–1，越高越好）— 仅为启发式排名信号，并非经过校准或保证的实验成功概率。',
+      tip_metric_cost: '估算的相对路径成本（启发式，通常越低越好）。',
+      tip_metric_conv: '收敛度：与纯线性合成相比，该路径重用/合并分支的程度（0–1，越高表示越收敛）。',
+      cancel_btn: '取消',
+      advanced_label: '高级设置',
+      time_budget_label: '时间预算',
+      tip_time_budget: '搜索在后台工作线程中运行，超过此时间将自动取消。无论束宽如何设置均适用。',
+      time_budget_10: '10秒',
+      time_budget_30: '30秒',
+      time_budget_60: '60秒',
+      time_budget_none: '无限制',
+      beam_unlimited_warning: '⚠ 束宽为0（无限制A*）在复杂分子上可能较慢 — 浏览器标签页本身仍可操作，但搜索本身可能耗时更长或达到上方的时间预算限制。',
+      status_worker_init: '正在启动搜索工作线程…',
+      status_worker_reinit: '正在重启搜索工作线程…',
+      status_cancelled: '搜索已取消。',
+      status_timeout: '搜索已取消 — 超过了{budget}秒的时间预算。请尝试增大时间预算、减小束宽或降低深度。',
     },
   };
 
@@ -554,34 +690,123 @@
     document.querySelectorAll('[data-i18n-tip]').forEach(el => {
       el.dataset.tip = t(el.dataset.i18nTip);
     });
+    // Capabilities banner (built dynamically from real WASM data, not a
+    // plain data-i18n text swap)
+    if (typeof renderCapabilitiesBanner === 'function') renderCapabilitiesBanner();
     // Dynamic status text (only if it matches known states)
     const st = document.getElementById('status-text');
     if (st && st.dataset.state) st.textContent = t(st.dataset.state);
+    // Re-render already-displayed results (route cards' Copy label, metric
+    // labels/tooltips, step labels, etc. are built dynamically and aren't
+    // data-i18n elements, so they need an explicit rebuild, not just a
+    // text-content swap).
+    if (typeof renderResults === 'function' && lastRenderArgs) {
+      renderResults(...lastRenderArgs);
+    }
   };
 
   // ── WASM init ──────────────────────────────────────────────────────────────
-  const wasmStatusEl = document.getElementById('wasm-status');
-  const statusTextEl = document.getElementById('status-text');
-  const spinner      = document.getElementById('spinner');
-  const searchBtn    = document.getElementById('search-btn');
-  const resultsEl    = document.getElementById('results');
-  const examplesEl   = document.getElementById('examples-select');
-  const smilesEl     = document.getElementById('smiles-input');
+  const wasmStatusEl  = document.getElementById('wasm-status');
+  const capBannerEl   = document.getElementById('capabilities-banner');
+  const statusTextEl  = document.getElementById('status-text');
+  const spinner       = document.getElementById('spinner');
+  const searchBtn     = document.getElementById('search-btn');
+  const resultsEl     = document.getElementById('results');
+  const examplesEl    = document.getElementById('examples-select');
+  const smilesEl      = document.getElementById('smiles-input');
 
-  let findRoutesFn = null;
+  // find_routes_v2 (target, depth, max_routes, beam_width, avoid_elements,
+  // require_elements) is a real, distinct WASM export (src/wasm.rs) — no
+  // try/catch-based argument-count fallback needed. A prior version of this
+  // page called a nonexistent 6-arg overload of `find_routes` and silently
+  // discarded the resulting exception, which meant the "Avoid elements" /
+  // "Require element" inputs never actually took effect against any real
+  // WASM build. `capabilities()` returns real, freshly-read building-block/
+  // rule counts (never hardcoded UI text that can drift from what shipped).
+  let wasmCapabilities = null;
+  let wasmVersion = null;
+  // Args of the last renderResults() call, so setLang() can re-render
+  // already-displayed results in the new language — dynamically-built
+  // route-card text (Copy label, metric labels/tooltips, step labels)
+  // isn't marked data-i18n and wouldn't otherwise update on a language
+  // switch after a search has already run.
+  let lastRenderArgs = null;
+
+  // ── Search worker (PR2) ───────────────────────────────────────────────
+  // find_routes_v2 runs inside worker.js, off the main thread, so the page
+  // stays responsive during a search. There is no cooperative cancellation
+  // at the WASM boundary (find_routes_v2 is one opaque synchronous call);
+  // "cancel" and the time-budget timeout both work by terminating this
+  // whole worker and spawning a fresh one -- see worker.js's own comment
+  // for why that's the right amount of complexity here, not a smaller hack.
+  let worker = null;
+  let pendingInit = null;   // {resolve, reject} for the in-flight init/reinit
+  let pendingSearch = null; // {id, resolve, reject} for the in-flight search
+  let nextRequestId = 1;
+
+  function attachWorkerHandlers(w) {
+    w.onmessage = (e) => {
+      const data = e.data;
+      if (data.type === 'ready') {
+        wasmVersion = data.version;
+        wasmCapabilities = data.capabilities ? JSON.parse(data.capabilities) : null;
+        if (pendingInit) { pendingInit.resolve(); pendingInit = null; }
+      } else if (data.type === 'init-error') {
+        if (pendingInit) { pendingInit.reject(new Error(data.error)); pendingInit = null; }
+      } else if (data.type === 'search-result') {
+        if (pendingSearch && pendingSearch.id === data.id) {
+          pendingSearch.resolve(data.raw);
+          pendingSearch = null;
+        }
+      } else if (data.type === 'search-error') {
+        if (pendingSearch && pendingSearch.id === data.id) {
+          pendingSearch.reject(new Error(data.error));
+          pendingSearch = null;
+        }
+      }
+    };
+    w.onerror = (err) => {
+      // A hard worker-level failure (e.g. worker.js/pkg failed to load) --
+      // reject whichever operation is in flight so the UI never hangs
+      // silently waiting for a message that will never arrive.
+      const e2 = new Error((err && err.message) || 'worker error');
+      if (pendingInit) { pendingInit.reject(e2); pendingInit = null; }
+      if (pendingSearch) { pendingSearch.reject(e2); pendingSearch = null; }
+    };
+  }
+
+  function spawnWorker() {
+    return new Promise((resolve, reject) => {
+      pendingInit = { resolve, reject };
+      const w = new Worker('worker.js', { type: 'module' });
+      attachWorkerHandlers(w);
+      w.postMessage({ type: 'init' });
+      worker = w;
+    });
+  }
+
+  function terminateAndRespawn() {
+    if (worker) { worker.terminate(); worker = null; }
+    pendingSearch = null;
+    return spawnWorker();
+  }
+
+  function searchInWorker(payload) {
+    return new Promise((resolve, reject) => {
+      const id = nextRequestId++;
+      pendingSearch = { id, resolve, reject };
+      worker.postMessage({ type: 'search', id, payload });
+    });
+  }
 
   try {
-    const mod = await import('../pkg/renkin.js');
-    await mod.default();
-    findRoutesFn = mod.find_routes;
-    const ver = mod.version ? mod.version() : 'renkin';
-    // 152 unique canonical SMILES (DEFAULT_BUILDING_BLOCKS, the compiled-in WASM
-    // fallback set) and 28 hand-crafted rules -- verified against src/lib.rs's
-    // _BB_COUNT_CHECK comment and chem_env::default_rules().len(). The full
-    // 402-compound data/building_blocks.smi and extracted templates are CLI/Python
-    // only -- WASM has no file-loading capability in-browser.
-    wasmStatusEl.textContent = `WASM ready — ${ver} · 152 building blocks · 28 reaction rules`;
+    await spawnWorker();
+    wasmStatusEl.textContent = `WASM ready — ${wasmVersion}`;
     wasmStatusEl.className = 'wasm-status ready';
+    if (wasmCapabilities) {
+      renderCapabilitiesBanner();
+      capBannerEl.style.display = '';
+    }
     searchBtn.disabled = false;
     statusTextEl.dataset.state = 'status_init';
     statusTextEl.textContent = t('status_init');
@@ -595,38 +820,115 @@
     wasmStatusEl.appendChild(document.createTextNode(String(e.message)));
   }
 
-  // ── SmilesDrawer v2.x init (SvgDrawer) ────────────────────────────────────
-  // Correct API (from official playground source smiles-website.js):
+  function renderCapabilitiesBanner() {
+    if (!wasmCapabilities) return;
+    capBannerEl.textContent =
+      `${t('browser_edition_label')}: ${wasmCapabilities.building_blocks} ${t('browser_edition_bb')} / ` +
+      `${wasmCapabilities.reaction_rules} ${t('browser_edition_rules')}. ${t('browser_edition_note')}`;
+  }
+
+  // ── Local structure rendering (SmilesDrawer, 100% in-browser) ────────────
+  // Privacy: a target/precursor SMILES typed in here can be an unpublished
+  // compound. Every molecule is drawn locally by default; nothing is sent
+  // anywhere unless the user explicitly clicks that molecule's own
+  // "render externally" button (see externalRenderButton below).
+  //
+  // Correct SmilesDrawer API (from official playground source smiles-website.js):
   //   svgDrawer.draw(tree, svgElement, 'light', null, false)  ← 5 args
-  // Previously we used 4 args with false as 4th — that was wrong.
   const ns = 'http://www.w3.org/2000/svg';
+  const SD_BASE = { padding:10, bondThickness:1.0, fontSizeSmall:7, fontSize:9,
+    themes:{ light:{ C:'#222',O:'#c0392b',N:'#2980b9',S:'#b7950b',F:'#16a085',
+                     Cl:'#1a5276',Br:'#6e2f8a',I:'#4a235a',P:'#784212',BACKGROUND:'#f4f5f8' }}};
   let sdDrawer = null, sdDrawerLg = null;
   if (typeof SmilesDrawer !== 'undefined') {
-    const base = { padding:10, bondThickness:1.0, fontSizeSmall:7, fontSize:9,
-      themes:{ light:{ C:'#222',O:'#c0392b',N:'#2980b9',S:'#b7950b',F:'#16a085',
-                       Cl:'#1a5276',Br:'#6e2f8a',I:'#4a235a',P:'#784212',BACKGROUND:'#f4f5f8' }}};
-    sdDrawer   = new SmilesDrawer.SvgDrawer({ ...base, width:220, height:160 });
-    sdDrawerLg = new SmilesDrawer.SvgDrawer({ ...base, width:300, height:220,
+    sdDrawer   = new SmilesDrawer.SvgDrawer({ ...SD_BASE, width:220, height:160 });
+    sdDrawerLg = new SmilesDrawer.SvgDrawer({ ...SD_BASE, width:300, height:220,
       bondThickness:1.1, fontSize:10, fontSizeSmall:8 });
   }
 
-  // ── CDK Depict fallback ────────────────────────────────────────────────────
+  // Third-party fallback — NEVER requested automatically. Only used from
+  // inside externalRenderButton's own click handler, i.e. only after the
+  // user has explicitly opted in for that specific molecule.
   const DEPICT = 'https://www.simolecule.com/cdkdepict/depict/cow/svg';
 
-  // Zoom modal
-  const modal      = document.getElementById('mol-modal');
-  const modalImg   = document.getElementById('mol-modal-img');
-  const modalSmi   = document.getElementById('mol-modal-smiles');
-  const modalCopy  = document.getElementById('mol-modal-copy');
-  const modalClose = document.getElementById('mol-modal-close');
+  function drawLocal(smiles, svgEl, drawer, onDone) {
+    if (!drawer) { onDone(false); return; }
+    SmilesDrawer.parse(smiles,
+      tree => {
+        // Correct 5-arg API from official playground source (smiles-website.js):
+        // draw(tree, svgElement, theme, successCallback, isStereochemistry)
+        drawer.draw(tree, svgEl, 'light', null, false);
+        onDone(svgEl.childElementCount > 0);
+      },
+      () => onDone(false)
+    );
+  }
+
+  // Small opt-in control shown only when local rendering fails. Clicking it
+  // is the explicit user action that authorizes sending this one SMILES to
+  // CDK Depict (simolecule.com) — the SMILES never leaves the browser
+  // before this click.
+  function externalRenderButton(smiles, w, h, onRendered) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'copy-btn';
+    btn.textContent = t('render_externally');
+    btn.title = t('render_externally');
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const img = document.createElement('img');
+      img.width = w; img.height = h; img.style.display = 'block';
+      img.alt = smiles;
+      img.src = `${DEPICT}?smi=${encodeURIComponent(smiles)}&w=${w}&h=${h}&zoom=3`;
+      onRendered(img);
+      btn.remove();
+    });
+    return btn;
+  }
+
+  function textFallback(smiles) {
+    const fb = document.createElement('div');
+    fb.style.cssText = 'font:8px monospace;color:#666;padding:6px;word-break:break-all;text-align:center;display:flex;align-items:center;justify-content:center;height:100%';
+    fb.textContent = smiles;
+    return fb;
+  }
+
+  // Zoom modal — re-renders locally too (large SmilesDrawer instance sized
+  // to the modal's own responsive width/height), never CDK Depict by default.
+  const modal         = document.getElementById('mol-modal');
+  const modalImgWrap  = document.getElementById('mol-modal-imgwrap');
+  const modalSmi       = document.getElementById('mol-modal-smiles');
+  const modalCopy       = document.getElementById('mol-modal-copy');
+  const modalClose       = document.getElementById('mol-modal-close');
 
   let _zoomSmiles = '';
   function openZoom(smiles) {
     _zoomSmiles = smiles;
     const mw = Math.min(560, window.innerWidth - 40);
     const mh = Math.round(mw * 0.7);
-    modalImg.src = `${DEPICT}?smi=${encodeURIComponent(smiles)}&w=${mw}&h=${mh}&zoom=3`;
-    modalImg.width = mw; modalImg.height = mh;
+    modalImgWrap.textContent = '';
+    modalImgWrap.style.width = `${mw}px`;
+    modalImgWrap.style.height = `${mh}px`;
+
+    const svgEl = document.createElementNS(ns, 'svg');
+    svgEl.setAttribute('xmlns', ns);
+    svgEl.setAttribute('width', String(mw));
+    svgEl.setAttribute('height', String(mh));
+    modalImgWrap.appendChild(svgEl);
+
+    const modalDrawer = typeof SmilesDrawer !== 'undefined'
+      ? new SmilesDrawer.SvgDrawer({ ...SD_BASE, width: mw, height: mh, bondThickness: 1.2, fontSize: 12, fontSizeSmall: 9 })
+      : null;
+    drawLocal(smiles, svgEl, modalDrawer, ok => {
+      if (!ok) {
+        svgEl.replaceWith(textFallback(smiles));
+        modalImgWrap.appendChild(externalRenderButton(smiles, mw, mh, img => {
+          modalImgWrap.textContent = '';
+          modalImgWrap.appendChild(img);
+        }));
+      }
+    });
+
     modalSmi.textContent = smiles;
     modalCopy.textContent = t('copied').replace('!','') + ' SMILES';
     modal.classList.add('open');
@@ -656,46 +958,25 @@
     const w = large ? 300 : 220;
     const h = large ? 220 : 160;
 
-    // CDK Depict <img> — shown initially, hidden if SmilesDrawer succeeds
-    const img = document.createElement('img');
-    img.width = w; img.height = h; img.style.display = 'block';
-    img.alt = smiles;
-    img.src = `${DEPICT}?smi=${encodeURIComponent(smiles)}&w=${w}&h=${h}&zoom=3`;
-    img.onerror = () => {
-      const fb = document.createElement('div');
-      fb.style.cssText = 'font:8px monospace;color:#666;padding:6px;word-break:break-all;text-align:center;display:flex;align-items:center;justify-content:center;height:100%';
-      fb.textContent = smiles;
-      img.replaceWith(fb);
-    };
-
-    // SmilesDrawer SVG — hidden initially, shown on successful draw
     const svgEl = document.createElementNS(ns, 'svg');
     svgEl.setAttribute('xmlns', ns);
     svgEl.setAttribute('width',  String(w));
     svgEl.setAttribute('height', String(h));
-    svgEl.style.display = 'none';
-
-    wrap.appendChild(img);
     wrap.appendChild(svgEl);
 
-    // Attempt SmilesDrawer after DOM insertion (setTimeout ensures card is in document)
-    if (sdDrawer) {
-      const drawer = large ? sdDrawerLg : sdDrawer;
-      setTimeout(() => {
-        SmilesDrawer.parse(smiles,
-          tree => {
-            // Correct 5-arg API from official playground source (smiles-website.js):
-            // draw(tree, svgElement, theme, successCallback, isStereochemistry)
-            drawer.draw(tree, svgEl, 'light', null, false);
-            if (svgEl.childElementCount > 0) {
-              img.style.display   = 'none';
-              svgEl.style.display = 'block';
-            }
-          },
-          () => { /* parse failed — CDK Depict img stays visible */ }
-        );
-      }, 0);
-    }
+    // Draw after DOM insertion (setTimeout ensures the card is in the
+    // document, which SmilesDrawer's SVG measurement needs).
+    setTimeout(() => {
+      drawLocal(smiles, svgEl, large ? sdDrawerLg : sdDrawer, ok => {
+        if (!ok) {
+          svgEl.replaceWith(textFallback(smiles));
+          card.appendChild(externalRenderButton(smiles, w, h, img => {
+            wrap.textContent = '';
+            wrap.appendChild(img);
+          }));
+        }
+      });
+    }, 0);
 
     // Click image/svg → zoom modal
     wrap.addEventListener('click', () => openZoom(smiles));
@@ -730,49 +1011,113 @@
   }
 
   // ── Search ─────────────────────────────────────────────────────────────────
+  const cancelBtn        = document.getElementById('cancel-btn');
+  const beamInputEl      = document.getElementById('beam-input');
+  const beamWarningEl    = document.getElementById('beam-warning');
+  const timeBudgetSelect = document.getElementById('time-budget-select');
+
   examplesEl.addEventListener('change', () => { if (examplesEl.value) smilesEl.value = examplesEl.value; });
   searchBtn.addEventListener('click', runSearch);
   smilesEl.addEventListener('keydown', e => { if (e.key === 'Enter') runSearch(); });
 
-  function runSearch() {
-    if (!findRoutesFn) return;
+  function updateBeamWarning() {
+    beamWarningEl.style.display = (parseInt(beamInputEl.value) || 0) === 0 ? '' : 'none';
+  }
+  beamInputEl.addEventListener('input', updateBeamWarning);
+  updateBeamWarning();
+
+  let searchTimeoutHandle = null;
+
+  cancelBtn.addEventListener('click', () => {
+    if (searchTimeoutHandle) { clearTimeout(searchTimeoutHandle); searchTimeoutHandle = null; }
+    if (pendingSearch) {
+      const err = new Error('cancelled');
+      err.__cancelled = true;
+      pendingSearch.reject(err);
+      pendingSearch = null;
+    }
+  });
+
+  function timeoutRejection(sec) {
+    return new Promise((_, reject) => {
+      searchTimeoutHandle = setTimeout(() => {
+        const err = new Error('timeout');
+        err.__timedOut = true;
+        reject(err);
+      }, sec * 1000);
+    });
+  }
+
+  async function runSearch() {
+    if (!worker) return;
     const target     = smilesEl.value.trim();
     const depth      = parseInt(document.getElementById('depth-input').value) || 5;
     const maxRoutes  = parseInt(document.getElementById('routes-input').value) || 5;
-    const beamWidth  = parseInt(document.getElementById('beam-input').value) || 0;
+    const beamWidth  = parseInt(beamInputEl.value) || 0;
     const avoidEls   = (document.getElementById('avoid-input').value || '').trim();
     const requireEls = (document.getElementById('require-input').value || '').trim();
+    const budgetSec  = parseInt(timeBudgetSelect.value) || 0;
     if (!target) return;
 
     searchBtn.disabled = true;
+    cancelBtn.style.display = '';
+    cancelBtn.disabled = false;
     spinner.classList.add('active');
     statusTextEl.dataset.state = 'status_searching';
     statusTextEl.textContent = t('status_searching');
     resultsEl.textContent = '';
 
-    setTimeout(() => {
-      const t0 = performance.now();
-      let raw;
-      try { raw = findRoutesFn(target, depth, maxRoutes, beamWidth, avoidEls, requireEls); }
-      catch (_) {
-        // WASM may not accept extra args — fall back to 4-arg call
-        try { raw = findRoutesFn(target, depth, maxRoutes, beamWidth); }
-        catch (err) { showError(`SMILES: ${err.message}`); done(); return; }
+    const t0 = performance.now();
+    let raw;
+    try {
+      // Runs in worker.js, off the main thread -- the page stays
+      // responsive for the whole duration of this await.
+      const searchPromise = searchInWorker({ target, depth, maxRoutes, beamWidth, avoidEls, requireEls });
+      raw = budgetSec > 0 ? await Promise.race([searchPromise, timeoutRejection(budgetSec)]) : await searchPromise;
+    } catch (err) {
+      if (err && (err.__timedOut || err.__cancelled)) {
+        // Neither cancellation nor a timeout can interrupt an in-progress
+        // WASM call from here -- the only real way to stop it is to kill
+        // the worker outright and start a fresh one for the next search.
+        cancelBtn.disabled = true;
+        statusTextEl.textContent = t('status_worker_reinit');
+        try {
+          await terminateAndRespawn();
+        } catch (reinitErr) {
+          showError(String(reinitErr.message || reinitErr));
+          done();
+          return;
+        }
+        statusTextEl.textContent = err.__timedOut
+          ? t('status_timeout').replace('{budget}', budgetSec)
+          : t('status_cancelled');
+        done();
+        return;
       }
-      const elapsed = (performance.now() - t0).toFixed(1);
-      let data;
-      try { data = JSON.parse(raw); }
-      catch (err) { showError(`Internal: ${err.message}`); done(); return; }
-      // stash search params for copy buttons
-      data._searchTarget = target;
-      data._searchDepth  = depth;
-      data._searchRoutes = maxRoutes;
-      renderResults(data, elapsed, target);
+      showError(`${err.message}`);
       done();
-    }, 10);
+      return;
+    }
+    const elapsed = (performance.now() - t0).toFixed(1);
+    let data;
+    try { data = JSON.parse(raw); }
+    catch (err) { showError(`Internal: ${err.message}`); done(); return; }
+    if (data.error) { showError(data.error); done(); return; }
+    // stash the exact search params used — Copy CLI/Python/Session JSON
+    // read these, so they always reproduce the search that was actually run.
+    data._search = { target, depth, maxRoutes, beamWidth, avoidEls, requireEls };
+    lastRenderArgs = [data, elapsed, target];
+    renderResults(data, elapsed, target);
+    done();
   }
 
-  function done() { searchBtn.disabled = false; spinner.classList.remove('active'); }
+  function done() {
+    searchBtn.disabled = false;
+    cancelBtn.style.display = 'none';
+    cancelBtn.disabled = false;
+    spinner.classList.remove('active');
+    if (searchTimeoutHandle) { clearTimeout(searchTimeoutHandle); searchTimeoutHandle = null; }
+  }
 
   function showError(msg) {
     statusTextEl.textContent = 'Error.';
@@ -800,7 +1145,8 @@
     if (n === 0) {
       const msg = document.createElement('div'); msg.className = 'panel';
       const inner = document.createElement('div'); inner.className = 'no-routes';
-      inner.textContent = t('no_routes');
+      const nodes = data.diagnostics ? data.diagnostics.nodes_expanded : 0;
+      inner.textContent = t('no_routes').replace('{nodes}', nodes);
       msg.appendChild(inner); resultsEl.appendChild(msg);
       return;
     }
@@ -814,10 +1160,11 @@
       stat.appendChild(v); stat.appendChild(l); statsRow.appendChild(stat);
     });
     resultsEl.appendChild(statsRow);
-    data.routes.forEach((route, i) => resultsEl.appendChild(buildRouteCard(route, i + 1, data._searchTarget || targetSmiles, data._searchDepth || 5, data._searchRoutes || 5)));
+    const search = data._search || { target: targetSmiles, depth: 5, maxRoutes: 5, beamWidth: 0, avoidEls: '', requireEls: '' };
+    data.routes.forEach((route, i) => resultsEl.appendChild(buildRouteCard(route, i + 1, search)));
   }
 
-  function buildRouteCard(route, num, smiles, depth, maxRoutes) {
+  function buildRouteCard(route, num, search) {
     const card = document.createElement('div'); card.className = 'route-card';
 
     // ── Header ──────────────────────────────────────────────────────
@@ -832,16 +1179,19 @@
 
     // ── Metrics bar ─────────────────────────────────────────────────
     const metrics = [
-      { label: 'score',      val: route.score.toFixed(2),              cls: '' },
-      { label: 'confidence', val: route.confidence.toFixed(2),         cls: route.confidence >= 0.8 ? 'good' : route.confidence < 0.4 ? 'bad' : 'warn' },
-      { label: 'success P',  val: route.success_probability.toFixed(2),cls: route.success_probability >= 0.7 ? 'good' : route.success_probability < 0.5 ? 'bad' : 'warn' },
-      { label: 'cost',       val: route.route_cost.toFixed(2),         cls: '' },
-      { label: 'conv.',      val: route.convergency.toFixed(2),        cls: route.convergency >= 0.8 && route.depth > 1 ? 'good' : '' },
+      { key: 'score',      label: t('metric_score'),      tip: t('tip_metric_score'),      val: route.score.toFixed(2),              cls: '' },
+      { key: 'confidence', label: t('metric_confidence'), tip: t('tip_metric_confidence'), val: route.confidence.toFixed(2),         cls: route.confidence >= 0.8 ? 'good' : route.confidence < 0.4 ? 'bad' : 'warn' },
+      { key: 'success_p',  label: t('metric_success_p'),  tip: t('tip_metric_success_p'),  val: route.success_probability.toFixed(2),cls: route.success_probability >= 0.7 ? 'good' : route.success_probability < 0.5 ? 'bad' : 'warn' },
+      { key: 'cost',       label: t('metric_cost'),       tip: t('tip_metric_cost'),       val: route.route_cost.toFixed(2),         cls: '' },
+      { key: 'conv',       label: t('metric_conv'),       tip: t('tip_metric_conv'),       val: route.convergency.toFixed(2),        cls: route.convergency >= 0.8 && route.depth > 1 ? 'good' : '' },
     ];
     const metricsRow = document.createElement('div'); metricsRow.className = 'route-metrics';
     metrics.forEach(m => {
       const wrap = document.createElement('div'); wrap.className = 'metric';
-      const lbl = document.createElement('div'); lbl.className = 'metric-label'; lbl.textContent = m.label;
+      const lbl = document.createElement('div'); lbl.className = 'metric-label help-icon';
+      lbl.dataset.tip = m.tip;
+      lbl.setAttribute('tabindex', '0');
+      lbl.textContent = m.label;
       const val = document.createElement('div'); val.className = `metric-val${m.cls ? ' ' + m.cls : ''}`; val.textContent = m.val;
       wrap.appendChild(lbl); wrap.appendChild(val);
       metricsRow.appendChild(wrap);
@@ -860,29 +1210,86 @@
     }
 
     // ── Copy actions ─────────────────────────────────────────────────
+    // CLI/Python/session JSON all reproduce the EXACT search that was run
+    // (including beam width and element filters, not just target/depth/
+    // max-routes) — a search reconstructed from these must behave the same.
     const actions = document.createElement('div'); actions.className = 'route-actions';
-    const lbl = document.createElement('span'); lbl.className = 'route-actions-label'; lbl.textContent = 'Copy:';
+    const lbl = document.createElement('span'); lbl.className = 'route-actions-label'; lbl.textContent = t('copy_label');
     actions.appendChild(lbl);
 
     const btnJSON = document.createElement('button'); btnJSON.className = 'copy-btn'; btnJSON.textContent = 'JSON';
     btnJSON.addEventListener('click', () => copyToClipboard(JSON.stringify(route, null, 2), btnJSON));
 
     const btnCLI = document.createElement('button'); btnCLI.className = 'copy-btn'; btnCLI.textContent = 'CLI';
-    btnCLI.addEventListener('click', () => copyToClipboard(
-      `renkin --target "${smiles}" --depth ${depth || 5} --max-routes ${maxRoutes || 5}`, btnCLI));
+    btnCLI.addEventListener('click', () => copyToClipboard(buildCliCommand(search), btnCLI));
 
     const btnMermaid = document.createElement('button'); btnMermaid.className = 'copy-btn'; btnMermaid.textContent = 'Mermaid';
-    btnMermaid.addEventListener('click', () => copyToClipboard(routeToMermaid(route, smiles, num), btnMermaid));
+    btnMermaid.addEventListener('click', () => copyToClipboard(routeToMermaid(route, search.target, num), btnMermaid));
 
     const btnPython = document.createElement('button'); btnPython.className = 'copy-btn'; btnPython.textContent = 'Python';
-    btnPython.addEventListener('click', () => copyToClipboard(
-      `import renkin\nresults = renkin.find_routes("${smiles}", depth=${depth || 5}, max_routes=${maxRoutes || 5})\nprint(results)`, btnPython));
+    btnPython.addEventListener('click', () => copyToClipboard(buildPythonSnippet(search), btnPython));
+
+    const btnSession = document.createElement('button'); btnSession.className = 'copy-btn'; btnSession.textContent = t('copy_session');
+    btnSession.addEventListener('click', () => downloadSessionJson(route, search));
 
     actions.appendChild(btnJSON); actions.appendChild(btnCLI);
     actions.appendChild(btnMermaid); actions.appendChild(btnPython);
+    actions.appendChild(btnSession);
     card.appendChild(actions);
 
     return card;
+  }
+
+  // Only include a filter flag/kwarg when it's actually non-default, so
+  // the reproduced command stays as close to what the user would have
+  // typed by hand as possible.
+  function buildCliCommand(search) {
+    let cmd = `renkin --target "${search.target}" --depth ${search.depth} --max-routes ${search.maxRoutes}`;
+    if (search.beamWidth) cmd += ` --beam-width ${search.beamWidth}`;
+    if (search.avoidEls) cmd += ` --avoid-elements ${search.avoidEls}`;
+    if (search.requireEls) cmd += ` --require-elements ${search.requireEls}`;
+    return cmd;
+  }
+
+  function buildPythonSnippet(search) {
+    const args = [`"${search.target}"`, `depth=${search.depth}`, `max_routes=${search.maxRoutes}`];
+    if (search.beamWidth) args.push(`beam_width=${search.beamWidth}`);
+    if (search.avoidEls) args.push(`avoid_elements="${search.avoidEls}"`);
+    if (search.requireEls) args.push(`require_elements="${search.requireEls}"`);
+    return `import renkin\nresults = renkin.find_routes(${args.join(', ')})\nprint(results)`;
+  }
+
+  // A self-contained record of what was searched, under what settings,
+  // against which browser-edition capabilities, plus the actual result —
+  // pairs with the exact CLI/Python commands above for full reproducibility.
+  function buildSessionJson(route, search) {
+    return JSON.stringify({
+      renkin_version: wasmVersion,
+      playground_schema_version: 1,
+      target: search.target,
+      settings: {
+        depth: search.depth,
+        max_routes: search.maxRoutes,
+        beam: search.beamWidth,
+        avoid_elements: search.avoidEls ? search.avoidEls.split(',').map(s => s.trim()).filter(Boolean) : [],
+        require_element: search.requireEls || null,
+      },
+      capabilities: wasmCapabilities || {},
+      result: route,
+    }, null, 2);
+  }
+
+  function downloadSessionJson(route, search) {
+    const json = buildSessionJson(route, search);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `renkin-session-${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   }
 
   function buildStep(step, idx, total) {

@@ -79,6 +79,102 @@ fn passes_when_stock_and_forward_replay_succeed() {
     std::fs::remove_file(&route_path).ok();
 }
 
+/// v0.27.0 "Reproducible Route Audit": `audit_manifest` must record real,
+/// verifiable provenance -- not just be present. Recomputes the expected
+/// `input_sha256` independently (same recipe as `input_content_sha256` in
+/// `main.rs`, over the exact bytes on disk that were audited) rather than
+/// only checking the field exists, so a manifest hashing the wrong thing
+/// (or a hardcoded placeholder) would fail this test.
+#[test]
+fn audit_manifest_records_verifiable_reproducibility_metadata() {
+    let route_path = generate_route_fixture();
+    let out = run(&[
+        "audit-route",
+        route_path.to_str().unwrap(),
+        "--stock",
+        "data/building_blocks.smi",
+        "--output",
+        "json",
+    ]);
+    assert!(out.status.success());
+    let report: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("stdout must be valid JSON");
+    let manifest = &report["audit_manifest"];
+
+    assert_eq!(manifest["report_schema_version"], report["schema_version"]);
+    assert_eq!(manifest["source_format"], report["source_format"]);
+    assert_eq!(manifest["source_version"], serde_json::Value::Null);
+    assert_eq!(manifest["policy"], "standard");
+    assert!(
+        !manifest["renkin_version"].as_str().unwrap_or("").is_empty(),
+        "{report}"
+    );
+
+    let raw_bytes = std::fs::read(&route_path).unwrap();
+    let expected_input_sha256 = format!("sha256:{}", sha256_hex(&raw_bytes));
+    assert_eq!(manifest["input_sha256"], expected_input_sha256, "{report}");
+
+    let stock_sha256 = manifest["stock_sha256"]
+        .as_str()
+        .expect("stock_sha256 must be present when --stock was given");
+    assert!(stock_sha256.starts_with("sha256:"), "{report}");
+
+    std::fs::remove_file(&route_path).ok();
+}
+
+#[test]
+fn stock_sha256_is_null_without_stock_flag() {
+    let route_path = generate_route_fixture();
+    let out = run(&[
+        "audit-route",
+        route_path.to_str().unwrap(),
+        "--output",
+        "json",
+    ]);
+    assert!(out.status.success());
+    let report: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("stdout must be valid JSON");
+    assert_eq!(
+        report["audit_manifest"]["stock_sha256"],
+        serde_json::Value::Null,
+        "{report}"
+    );
+    std::fs::remove_file(&route_path).ok();
+}
+
+/// v0.27.0 P0 item 4: same input audited twice must produce identical
+/// output. Audits the SAME already-generated route file twice (rather than
+/// regenerating the route each time), so this isolates `audit-route`'s own
+/// determinism from the separate question of search determinism.
+#[test]
+fn auditing_the_same_input_twice_is_byte_identical() {
+    let route_path = generate_route_fixture();
+    let args = [
+        "audit-route",
+        route_path.to_str().unwrap(),
+        "--stock",
+        "data/building_blocks.smi",
+        "--output",
+        "json",
+    ];
+    let out1 = run(&args);
+    let out2 = run(&args);
+    assert!(out1.status.success() && out2.status.success());
+    assert_eq!(
+        out1.stdout, out2.stdout,
+        "auditing identical input twice must be byte-identical"
+    );
+    std::fs::remove_file(&route_path).ok();
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
 #[test]
 fn partial_without_stock_reports_stock_not_provided_not_a_silent_pass() {
     let route_path = generate_route_fixture();
@@ -201,6 +297,69 @@ fn rejects_valid_json_that_fails_the_renkin_schema_with_context() {
     assert!(!out.status.success());
     assert!(
         String::from_utf8_lossy(&out.stderr).contains("not a recognized RENKIN route JSON"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    std::fs::remove_file(&path).ok();
+}
+
+/// v0.27.0 P0 item 2 (adapter conformance): unknown/future fields at every
+/// level of a RENKIN route JSON must be silently ignored, never a parse
+/// error -- the same forward-compatibility contract
+/// `bridge::aizynthfinder`'s own module docs already state for the
+/// AiZynthFinder side (`AzfNode` has no `deny_unknown_fields` either).
+/// Confirmed empirically (not just asserted from reading the derive), by
+/// process-spawning the real CLI against real extra fields at the
+/// top-level, route-entry, and step levels simultaneously.
+#[test]
+fn unknown_extra_fields_in_renkin_input_are_tolerated_not_rejected() {
+    let path = unique_temp_path("unknown_fields");
+    std::fs::write(
+        &path,
+        r#"{
+            "target": "CCO",
+            "a_field_from_a_future_renkin_version": 123,
+            "routes": [{
+                "steps": [{
+                    "target": "CCO",
+                    "precursors": ["CC=O"],
+                    "template_id": "test_reduction",
+                    "an_unexpected_step_field": true
+                }],
+                "building_blocks": ["CC=O"],
+                "an_unexpected_entry_field": ["x", "y"]
+            }]
+        }"#,
+    )
+    .unwrap();
+    let out = run(&["audit-route", path.to_str().unwrap(), "--output", "json"]);
+    assert!(
+        out.status.success(),
+        "unknown fields must not be a parse error: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("stdout must be valid JSON");
+    assert_eq!(report["summary"]["routes_total"], 1, "{report}");
+    std::fs::remove_file(&path).ok();
+}
+
+/// v0.27.0 P0 item 2: valid JSON that matches none of the recognized
+/// shapes (RENKIN, AiZynthFinder single-target, AiZynthFinder batch) must
+/// be a clean, explicit `--format auto` detection failure -- never a guess
+/// at which format was probably meant. Distinct from
+/// `rejects_valid_json_that_fails_the_renkin_schema_with_context` above:
+/// that case DOES match the RENKIN shape (has `target`+`routes` keys) and
+/// fails at the RENKIN-specific deserialize step; this one matches nothing
+/// at the detection step itself.
+#[test]
+fn rejects_ambiguous_input_matching_no_known_format() {
+    let path = unique_temp_path("ambiguous_format");
+    std::fs::write(&path, r#"{"foo": "bar"}"#).unwrap();
+    let out = run(&["audit-route", path.to_str().unwrap()]);
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("could not identify"),
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );

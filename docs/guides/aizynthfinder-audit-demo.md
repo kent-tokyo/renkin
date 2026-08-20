@@ -79,9 +79,12 @@ a real, informative disagreement about what counts as "available," not a
 parsing or adapter defect.
 
 `--output json` gives the same verdicts as a machine-readable report
-(`schema_version`, per-route `status`/`stock_validation`/`steps`/`findings`,
-a route-level `summary`) — pipe it to `jq`/`python -m json.tool`/whatever you
-already use for the RENKIN-native report shape.
+(`schema_version`, an `audit_manifest` recording what was audited and
+under what conditions — RENKIN version, source format, input/stock
+content hashes, audit policy — for reproducing the same audit later,
+per-route `status`/`stock_validation`/`steps`/`findings`, and a
+route-level `summary`) — pipe it to `jq`/`python -m json.tool`/whatever
+you already use for the RENKIN-native report shape.
 
 ## What `--format auto` does here
 
@@ -104,7 +107,11 @@ than guessing.
 
 "Verified against" is deliberate phrasing, not "supported" — this adapter is
 confirmed against real `aizynthcli 4.4.1` output specifically (see
-`PROVENANCE.md`), not claimed to work with every AiZynthFinder release.
+`PROVENANCE.md`), not claimed to work with every AiZynthFinder release. This
+is one instance of a general rule every adapter follows — see the
+[Audit Reproducibility and Compatibility Contract](audit-reproducibility-contract.md)
+for the full set, including what `audit_manifest` guarantees and how a new
+adapter or fixture is added.
 
 ## Hit a compatibility problem?
 

@@ -10,6 +10,7 @@ use renkin::search::{self, SearchConfig};
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 #[derive(Serialize)]
 struct Output {
@@ -1082,10 +1083,69 @@ fn load_audit_stock(path: &str) -> Result<std::collections::HashSet<String>> {
         .collect())
 }
 
+/// v0.27.0 "Reproducible Route Audit": records what was audited and under
+/// what conditions, so the same audit can be reproduced/verified later.
+/// `report_schema_version`/`source_format` duplicate the pre-existing flat
+/// `AuditRouteReport` fields of the same meaning below -- an explicit design
+/// choice (both were named in the v0.27.0 spec), not an oversight; the flat
+/// fields are kept for backward compatibility, not deprecated yet.
+#[derive(Serialize)]
+struct AuditManifest {
+    renkin_version: &'static str,
+    report_schema_version: u32,
+    source_format: &'static str,
+    /// Always `null` today: no adapter in this codebase captures a
+    /// self-reported source-tool version from route input yet (`RouteSource`
+    /// is a bare `Renkin`/`AiZynthFinder` enum with no version field) --
+    /// genuinely unknown, not a placeholder for a future removal.
+    source_version: Option<String>,
+    input_sha256: String,
+    /// `None` when no `--stock` was given -- distinct from "unknown", stock
+    /// validation genuinely did not run.
+    stock_sha256: Option<String>,
+    /// Fixed at `"standard"` for now -- no policy engine exists yet (P1).
+    /// Matches what `audit-route` already does today: every finding is
+    /// reported in full, nothing hidden.
+    policy: &'static str,
+}
+
+/// Hashes the decompressed route-input text actually parsed and audited,
+/// not the raw on-disk bytes -- a gzip vs. plain copy of identical JSON
+/// content hashes identically. Mirrors `ChemEnv::content_sha256`'s own
+/// "hash what was actually used, not incidental encoding" reasoning.
+fn input_content_sha256(content: &str) -> String {
+    let digest = Sha256::digest(content.as_bytes());
+    format!("sha256:{}", renkin::sha256_hex(digest))
+}
+
+/// Hashes the canonicalized stock set actually loaded and checked against
+/// (sorted + length-prefixed, so it's order-independent and unambiguous) --
+/// same recipe as `ChemEnv::content_sha256`, applied to the CLI's own
+/// `--stock` loader output rather than a `ChemEnv`.
+fn stock_set_sha256(stock: &std::collections::HashSet<String>) -> String {
+    let mut sorted: Vec<&str> = stock.iter().map(String::as_str).collect();
+    sorted.sort_unstable();
+    let mut hasher = Sha256::new();
+    hasher.update(b"renkin-audit-manifest-stock-v1\0");
+    hasher.update((sorted.len() as u64).to_be_bytes());
+    for smi in sorted {
+        hasher.update((smi.len() as u64).to_be_bytes());
+        hasher.update(smi.as_bytes());
+    }
+    format!("sha256:{}", renkin::sha256_hex(hasher.finalize()))
+}
+
 #[derive(Serialize)]
 struct AuditRouteReport {
+    /// Pre-existing field, kept for backward compatibility -- see
+    /// [`AuditManifest`]'s doc comment for why this duplicates
+    /// `audit_manifest.report_schema_version`.
     schema_version: u32,
+    /// Pre-existing field, kept for backward compatibility -- see
+    /// [`AuditManifest`]'s doc comment for why this duplicates
+    /// `audit_manifest.source_format`.
     source_format: &'static str,
+    audit_manifest: AuditManifest,
     summary: AuditRouteSummary,
     routes: Vec<bridge::AuditReport>,
 }
@@ -1283,9 +1343,20 @@ fn run_audit_route(args: &[String]) -> Result<()> {
         }
     };
 
+    let manifest = AuditManifest {
+        renkin_version: env!("CARGO_PKG_VERSION"),
+        report_schema_version: 1,
+        source_format,
+        source_version: None,
+        input_sha256: input_content_sha256(&content),
+        stock_sha256: stock.as_ref().map(stock_set_sha256),
+        policy: "standard",
+    };
+
     let out = AuditRouteReport {
         schema_version: 1,
         source_format,
+        audit_manifest: manifest,
         summary,
         routes: reports,
     };

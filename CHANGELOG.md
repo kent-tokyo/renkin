@@ -13,6 +13,10 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   version, report schema version, source format, source-tool version (when
   determinable), input/stock content SHA-256 hashes, and audit policy — so
   the same audit can be verified as reproducible later.
+- Docs: [Audit Reproducibility and Compatibility Contract](https://kent-tokyo.github.io/renkin/guides/audit-reproducibility-contract/)
+  — the audit-manifest guarantees, planned audit-policy semantics
+  (`informational`/`standard`/`strict`; only `standard` is implemented
+  today), and the compatibility rules every RENKIN Bridge adapter follows.
 - WASM: `find_routes_v2` (adds working `avoid_elements`/`require_elements`
   element filtering to the browser build) and `capabilities()` (real
   building-block/reaction-rule counts for UI display).

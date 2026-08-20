@@ -107,7 +107,11 @@ than guessing.
 
 "Verified against" is deliberate phrasing, not "supported" — this adapter is
 confirmed against real `aizynthcli 4.4.1` output specifically (see
-`PROVENANCE.md`), not claimed to work with every AiZynthFinder release.
+`PROVENANCE.md`), not claimed to work with every AiZynthFinder release. This
+is one instance of a general rule every adapter follows — see the
+[Audit Reproducibility and Compatibility Contract](audit-reproducibility-contract.md)
+for the full set, including what `audit_manifest` guarantees and how a new
+adapter or fixture is added.
 
 ## Hit a compatibility problem?
 

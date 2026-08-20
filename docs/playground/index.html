@@ -64,6 +64,18 @@
     button:hover { opacity:0.85; }
     button:active { transform:scale(0.97); }
     button:disabled { opacity:0.4; cursor:default; }
+    .cancel-btn { background:transparent; border:1px solid var(--error); color:var(--error); }
+    .cancel-btn:hover { opacity:1; background:rgba(224,92,92,0.1); }
+
+    /* ── Advanced settings ──────────────────────────────────────── */
+    .advanced-details { margin-top:0.85rem; }
+    .advanced-details summary { cursor:pointer; font-size:0.8rem; color:var(--muted);
+      user-select:none; }
+    .advanced-details summary:hover { color:var(--text); }
+    .advanced-details[open] summary { margin-bottom:0.3rem; }
+    .beam-warning { font-size:0.78rem; color:var(--warn); margin-top:0.6rem;
+      background:rgba(240,160,75,0.08); border:1px solid rgba(240,160,75,0.25);
+      border-radius:6px; padding:0.5rem 0.75rem; }
 
     /* ── Status ──────────────────────────────────────────────────── */
     #status-bar { display:flex; align-items:center; gap:0.75rem; font-size:0.85rem;
@@ -285,13 +297,6 @@
         <label for="routes-input" data-i18n="routes_label">Max routes</label>
         <input id="routes-input" type="number" value="5" min="1" max="20">
       </div>
-      <div class="field num-field">
-        <label for="beam-input">
-          <span data-i18n="beam_label">Beam (0=∞)</span>
-          <span class="help-icon" tabindex="0" data-i18n-tip="tip_beam" data-tip="Beam width limits parallel search paths. 0 = unlimited A*. Smaller = faster but may miss routes." style="margin-left:3px">?</span>
-        </label>
-        <input id="beam-input" type="number" value="0" min="0" max="500">
-      </div>
       <div class="field" style="min-width:110px">
         <label for="avoid-input">
           <span data-i18n="avoid_label">Avoid elements</span>
@@ -309,7 +314,34 @@
           style="font-family:var(--mono);font-size:0.82rem">
       </div>
       <button id="search-btn" disabled data-i18n="search_btn">Search</button>
+      <button id="cancel-btn" class="cancel-btn" style="display:none" data-i18n="cancel_btn">Cancel</button>
     </div>
+
+    <details class="advanced-details">
+      <summary data-i18n="advanced_label">Advanced settings</summary>
+      <div class="search-row" style="margin-top:0.6rem">
+        <div class="field num-field">
+          <label for="beam-input">
+            <span data-i18n="beam_label">Beam (0=∞)</span>
+            <span class="help-icon" tabindex="0" data-i18n-tip="tip_beam" data-tip="Beam width limits parallel search paths. 0 = unlimited A*. Smaller = faster but may miss routes." style="margin-left:3px">?</span>
+          </label>
+          <input id="beam-input" type="number" value="50" min="0" max="500">
+        </div>
+        <div class="field" style="min-width:150px">
+          <label for="time-budget-select">
+            <span data-i18n="time_budget_label">Time budget</span>
+            <span class="help-icon" tabindex="0" data-i18n-tip="tip_time_budget" data-tip="Search runs in a background worker and is automatically cancelled if it exceeds this. Applies regardless of Beam." style="margin-left:3px">?</span>
+          </label>
+          <select id="time-budget-select">
+            <option value="10" data-i18n="time_budget_10">10s</option>
+            <option value="30" data-i18n="time_budget_30" selected>30s</option>
+            <option value="60" data-i18n="time_budget_60">60s</option>
+            <option value="0" data-i18n="time_budget_none">No limit</option>
+          </select>
+        </div>
+      </div>
+      <div id="beam-warning" class="beam-warning" style="display:none" data-i18n="beam_unlimited_warning"></div>
+    </details>
   </div>
 
   <div id="status-bar">
@@ -397,6 +429,19 @@
       tip_metric_success_p: 'Combined per-step template-frequency ranking score (0–1, higher is better) — a heuristic ranking signal, NOT a calibrated or guaranteed experimental success probability.',
       tip_metric_cost: 'Estimated relative route cost (heuristic, lower is generally better).',
       tip_metric_conv: 'Convergency: how much this route reuses/combines branches vs. a purely linear sequence (0–1, higher = more convergent).',
+      cancel_btn: 'Cancel',
+      advanced_label: 'Advanced settings',
+      time_budget_label: 'Time budget',
+      tip_time_budget: 'Search runs in a background worker and is automatically cancelled if it exceeds this. Applies regardless of Beam.',
+      time_budget_10: '10s',
+      time_budget_30: '30s',
+      time_budget_60: '60s',
+      time_budget_none: 'No limit',
+      beam_unlimited_warning: '⚠ Beam 0 (unlimited A*) can be slow on complex molecules — the browser tab stays responsive, but the search itself may take much longer or hit the time budget above.',
+      status_worker_init: 'Starting search worker…',
+      status_worker_reinit: 'Restarting search worker…',
+      status_cancelled: 'Search cancelled.',
+      status_timeout: 'Search cancelled — exceeded the {budget}s time budget. Try a larger time budget, a smaller Beam, or a lower Depth.',
     },
     ja: {
       tagline: 'Retrosynthesis Engine for Knowledge-Informed Navigation',
@@ -455,6 +500,19 @@
       tip_metric_success_p: '各ステップのテンプレート頻度ランキングスコアを組み合わせた値（0〜1、高いほど良い）— あくまでヒューリスティックなランキング信号であり、較正済みまたは保証された実験成功確率ではありません。',
       tip_metric_cost: '推定される相対的な経路コスト（ヒューリスティック、一般に低いほど良い）。',
       tip_metric_conv: '収束度: 純粋な直線的合成と比べて、この経路が分岐をどれだけ再利用・統合しているか（0〜1、高いほど収束的）。',
+      cancel_btn: 'キャンセル',
+      advanced_label: '高度な設定',
+      time_budget_label: 'タイムバジェット',
+      tip_time_budget: '探索はバックグラウンドワーカーで実行され、これを超えると自動的にキャンセルされます。ビーム幅の設定に関わらず適用されます。',
+      time_budget_10: '10秒',
+      time_budget_30: '30秒',
+      time_budget_60: '60秒',
+      time_budget_none: '無制限',
+      beam_unlimited_warning: '⚠ ビーム幅0（無制限A*）は複雑な分子で遅くなる場合があります — ブラウザタブ自体は操作可能なままですが、探索自体は大幅に時間がかかったり、上記のタイムバジェットに達する可能性があります。',
+      status_worker_init: '探索ワーカーを起動中…',
+      status_worker_reinit: '探索ワーカーを再起動中…',
+      status_cancelled: '探索をキャンセルしました。',
+      status_timeout: '探索をキャンセルしました — タイムバジェット{budget}秒を超過しました。タイムバジェットを増やす、ビーム幅を小さくする、または深さを減らしてお試しください。',
     },
     zh: {
       tagline: 'Retrosynthesis Engine for Knowledge-Informed Navigation',
@@ -513,6 +571,19 @@
       tip_metric_success_p: '各步骤模板频率排名得分的组合值（0–1，越高越好）— 仅为启发式排名信号，并非经过校准或保证的实验成功概率。',
       tip_metric_cost: '估算的相对路径成本（启发式，通常越低越好）。',
       tip_metric_conv: '收敛度：与纯线性合成相比，该路径重用/合并分支的程度（0–1，越高表示越收敛）。',
+      cancel_btn: '取消',
+      advanced_label: '高级设置',
+      time_budget_label: '时间预算',
+      tip_time_budget: '搜索在后台工作线程中运行，超过此时间将自动取消。无论束宽如何设置均适用。',
+      time_budget_10: '10秒',
+      time_budget_30: '30秒',
+      time_budget_60: '60秒',
+      time_budget_none: '无限制',
+      beam_unlimited_warning: '⚠ 束宽为0（无限制A*）在复杂分子上可能较慢 — 浏览器标签页本身仍可操作，但搜索本身可能耗时更长或达到上方的时间预算限制。',
+      status_worker_init: '正在启动搜索工作线程…',
+      status_worker_reinit: '正在重启搜索工作线程…',
+      status_cancelled: '搜索已取消。',
+      status_timeout: '搜索已取消 — 超过了{budget}秒的时间预算。请尝试增大时间预算、减小束宽或降低深度。',
     },
   };
 
@@ -652,7 +723,6 @@
   // "Require element" inputs never actually took effect against any real
   // WASM build. `capabilities()` returns real, freshly-read building-block/
   // rule counts (never hardcoded UI text that can drift from what shipped).
-  let findRoutesFn = null;
   let wasmCapabilities = null;
   let wasmVersion = null;
   // Args of the last renderResults() call, so setLang() can re-render
@@ -662,12 +732,75 @@
   // switch after a search has already run.
   let lastRenderArgs = null;
 
+  // ── Search worker (PR2) ───────────────────────────────────────────────
+  // find_routes_v2 runs inside worker.js, off the main thread, so the page
+  // stays responsive during a search. There is no cooperative cancellation
+  // at the WASM boundary (find_routes_v2 is one opaque synchronous call);
+  // "cancel" and the time-budget timeout both work by terminating this
+  // whole worker and spawning a fresh one -- see worker.js's own comment
+  // for why that's the right amount of complexity here, not a smaller hack.
+  let worker = null;
+  let pendingInit = null;   // {resolve, reject} for the in-flight init/reinit
+  let pendingSearch = null; // {id, resolve, reject} for the in-flight search
+  let nextRequestId = 1;
+
+  function attachWorkerHandlers(w) {
+    w.onmessage = (e) => {
+      const data = e.data;
+      if (data.type === 'ready') {
+        wasmVersion = data.version;
+        wasmCapabilities = data.capabilities ? JSON.parse(data.capabilities) : null;
+        if (pendingInit) { pendingInit.resolve(); pendingInit = null; }
+      } else if (data.type === 'init-error') {
+        if (pendingInit) { pendingInit.reject(new Error(data.error)); pendingInit = null; }
+      } else if (data.type === 'search-result') {
+        if (pendingSearch && pendingSearch.id === data.id) {
+          pendingSearch.resolve(data.raw);
+          pendingSearch = null;
+        }
+      } else if (data.type === 'search-error') {
+        if (pendingSearch && pendingSearch.id === data.id) {
+          pendingSearch.reject(new Error(data.error));
+          pendingSearch = null;
+        }
+      }
+    };
+    w.onerror = (err) => {
+      // A hard worker-level failure (e.g. worker.js/pkg failed to load) --
+      // reject whichever operation is in flight so the UI never hangs
+      // silently waiting for a message that will never arrive.
+      const e2 = new Error((err && err.message) || 'worker error');
+      if (pendingInit) { pendingInit.reject(e2); pendingInit = null; }
+      if (pendingSearch) { pendingSearch.reject(e2); pendingSearch = null; }
+    };
+  }
+
+  function spawnWorker() {
+    return new Promise((resolve, reject) => {
+      pendingInit = { resolve, reject };
+      const w = new Worker('worker.js', { type: 'module' });
+      attachWorkerHandlers(w);
+      w.postMessage({ type: 'init' });
+      worker = w;
+    });
+  }
+
+  function terminateAndRespawn() {
+    if (worker) { worker.terminate(); worker = null; }
+    pendingSearch = null;
+    return spawnWorker();
+  }
+
+  function searchInWorker(payload) {
+    return new Promise((resolve, reject) => {
+      const id = nextRequestId++;
+      pendingSearch = { id, resolve, reject };
+      worker.postMessage({ type: 'search', id, payload });
+    });
+  }
+
   try {
-    const mod = await import('../pkg/renkin.js');
-    await mod.default();
-    findRoutesFn = mod.find_routes_v2;
-    wasmVersion = mod.version ? mod.version() : 'renkin';
-    wasmCapabilities = mod.capabilities ? JSON.parse(mod.capabilities()) : null;
+    await spawnWorker();
     wasmStatusEl.textContent = `WASM ready — ${wasmVersion}`;
     wasmStatusEl.className = 'wasm-status ready';
     if (wasmCapabilities) {
@@ -878,50 +1011,113 @@
   }
 
   // ── Search ─────────────────────────────────────────────────────────────────
+  const cancelBtn        = document.getElementById('cancel-btn');
+  const beamInputEl      = document.getElementById('beam-input');
+  const beamWarningEl    = document.getElementById('beam-warning');
+  const timeBudgetSelect = document.getElementById('time-budget-select');
+
   examplesEl.addEventListener('change', () => { if (examplesEl.value) smilesEl.value = examplesEl.value; });
   searchBtn.addEventListener('click', runSearch);
   smilesEl.addEventListener('keydown', e => { if (e.key === 'Enter') runSearch(); });
 
-  function runSearch() {
-    if (!findRoutesFn) return;
+  function updateBeamWarning() {
+    beamWarningEl.style.display = (parseInt(beamInputEl.value) || 0) === 0 ? '' : 'none';
+  }
+  beamInputEl.addEventListener('input', updateBeamWarning);
+  updateBeamWarning();
+
+  let searchTimeoutHandle = null;
+
+  cancelBtn.addEventListener('click', () => {
+    if (searchTimeoutHandle) { clearTimeout(searchTimeoutHandle); searchTimeoutHandle = null; }
+    if (pendingSearch) {
+      const err = new Error('cancelled');
+      err.__cancelled = true;
+      pendingSearch.reject(err);
+      pendingSearch = null;
+    }
+  });
+
+  function timeoutRejection(sec) {
+    return new Promise((_, reject) => {
+      searchTimeoutHandle = setTimeout(() => {
+        const err = new Error('timeout');
+        err.__timedOut = true;
+        reject(err);
+      }, sec * 1000);
+    });
+  }
+
+  async function runSearch() {
+    if (!worker) return;
     const target     = smilesEl.value.trim();
     const depth      = parseInt(document.getElementById('depth-input').value) || 5;
     const maxRoutes  = parseInt(document.getElementById('routes-input').value) || 5;
-    const beamWidth  = parseInt(document.getElementById('beam-input').value) || 0;
+    const beamWidth  = parseInt(beamInputEl.value) || 0;
     const avoidEls   = (document.getElementById('avoid-input').value || '').trim();
     const requireEls = (document.getElementById('require-input').value || '').trim();
+    const budgetSec  = parseInt(timeBudgetSelect.value) || 0;
     if (!target) return;
 
     searchBtn.disabled = true;
+    cancelBtn.style.display = '';
+    cancelBtn.disabled = false;
     spinner.classList.add('active');
     statusTextEl.dataset.state = 'status_searching';
     statusTextEl.textContent = t('status_searching');
     resultsEl.textContent = '';
 
-    setTimeout(() => {
-      const t0 = performance.now();
-      let raw;
-      // No try/catch-based argument-count fallback — find_routes_v2 is a
-      // real, always-present export (see the WASM-init comment above), so
-      // a thrown exception here is a genuine problem (e.g. a WASM trap)
-      // and should surface, not be silently retried against a different API.
-      try { raw = findRoutesFn(target, depth, maxRoutes, beamWidth, avoidEls, requireEls); }
-      catch (err) { showError(`${err.message}`); done(); return; }
-      const elapsed = (performance.now() - t0).toFixed(1);
-      let data;
-      try { data = JSON.parse(raw); }
-      catch (err) { showError(`Internal: ${err.message}`); done(); return; }
-      if (data.error) { showError(data.error); done(); return; }
-      // stash the exact search params used — Copy CLI/Python/Session JSON
-      // read these, so they always reproduce the search that was actually run.
-      data._search = { target, depth, maxRoutes, beamWidth, avoidEls, requireEls };
-      lastRenderArgs = [data, elapsed, target];
-      renderResults(data, elapsed, target);
+    const t0 = performance.now();
+    let raw;
+    try {
+      // Runs in worker.js, off the main thread -- the page stays
+      // responsive for the whole duration of this await.
+      const searchPromise = searchInWorker({ target, depth, maxRoutes, beamWidth, avoidEls, requireEls });
+      raw = budgetSec > 0 ? await Promise.race([searchPromise, timeoutRejection(budgetSec)]) : await searchPromise;
+    } catch (err) {
+      if (err && (err.__timedOut || err.__cancelled)) {
+        // Neither cancellation nor a timeout can interrupt an in-progress
+        // WASM call from here -- the only real way to stop it is to kill
+        // the worker outright and start a fresh one for the next search.
+        cancelBtn.disabled = true;
+        statusTextEl.textContent = t('status_worker_reinit');
+        try {
+          await terminateAndRespawn();
+        } catch (reinitErr) {
+          showError(String(reinitErr.message || reinitErr));
+          done();
+          return;
+        }
+        statusTextEl.textContent = err.__timedOut
+          ? t('status_timeout').replace('{budget}', budgetSec)
+          : t('status_cancelled');
+        done();
+        return;
+      }
+      showError(`${err.message}`);
       done();
-    }, 10);
+      return;
+    }
+    const elapsed = (performance.now() - t0).toFixed(1);
+    let data;
+    try { data = JSON.parse(raw); }
+    catch (err) { showError(`Internal: ${err.message}`); done(); return; }
+    if (data.error) { showError(data.error); done(); return; }
+    // stash the exact search params used — Copy CLI/Python/Session JSON
+    // read these, so they always reproduce the search that was actually run.
+    data._search = { target, depth, maxRoutes, beamWidth, avoidEls, requireEls };
+    lastRenderArgs = [data, elapsed, target];
+    renderResults(data, elapsed, target);
+    done();
   }
 
-  function done() { searchBtn.disabled = false; spinner.classList.remove('active'); }
+  function done() {
+    searchBtn.disabled = false;
+    cancelBtn.style.display = 'none';
+    cancelBtn.disabled = false;
+    spinner.classList.remove('active');
+    if (searchTimeoutHandle) { clearTimeout(searchTimeoutHandle); searchTimeoutHandle = null; }
+  }
 
   function showError(msg) {
     statusTextEl.textContent = 'Error.';

@@ -6,47 +6,25 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [Unreleased]
+## [0.27.0] - 2026-08-20 "Reproducible Route Audit"
+
+Reproduce what was audited, from which input, with which stock and policy.
 
 ### Added
-- `audit_manifest` on `renkin audit-route --output json` reports: RENKIN
-  version, report schema version, source format, source-tool version (when
-  determinable), input/stock content SHA-256 hashes, and audit policy — so
-  the same audit can be verified as reproducible later.
-- Docs: [Audit Reproducibility and Compatibility Contract](https://kent-tokyo.github.io/renkin/guides/audit-reproducibility-contract/)
-  — the audit-manifest guarantees, planned audit-policy semantics
-  (`informational`/`standard`/`strict`; only `standard` is implemented
-  today), and the compatibility rules every RENKIN Bridge adapter follows.
-- WASM: `find_routes_v2` (adds working `avoid_elements`/`require_elements`
-  element filtering to the browser build) and `capabilities()` (real
-  building-block/reaction-rule counts for UI display).
-
-### Fixed
-- Playground: molecule structures are now rendered entirely in-browser by
-  default (SmilesDrawer only); a target/precursor SMILES is never sent to
-  the third-party CDK Depict service unless the user explicitly clicks
-  that molecule's own "render externally" option. Previously every
-  molecule card and the zoom modal sent the SMILES to CDK Depict
-  automatically.
-- Playground: the "Avoid elements"/"Require element" search filters now
-  actually take effect — they previously called a WASM function signature
-  that never existed and silently fell back to an unfiltered search on
-  every use.
-- Playground: Copy CLI/Python and the new Session JSON download now
-  reproduce the exact search that was run (beam width and element
-  filters included), not just target/depth/max-routes.
+- Audit Manifest with RENKIN version, report schema version, source
+  format/version, input SHA-256, stock SHA-256 and audit policy.
+- Adapter conformance coverage shared by RENKIN-native and AiZynthFinder
+  route inputs.
+- Reproducibility and compatibility contract documentation.
 
 ### Changed
-- Playground: search now runs in a background Web Worker (`worker.js`,
-  new file) instead of blocking the main thread — the page (scrolling,
-  typing, other buttons) stays responsive during a search, and it no
-  longer looks "frozen" on a complex molecule. Added a Cancel button and
-  a selectable time budget (10s/30s/60s/no limit, default 30s); both
-  work by terminating the search worker and starting a fresh one, since
-  there's no cooperative cancellation at the WASM call boundary. Beam
-  width moved into a collapsed "Advanced settings" section, default
-  changed from unlimited (0) to 50, with a warning shown if unlimited is
-  selected explicitly.
+- Playground searches now run in a Web Worker.
+- Playground searches support cancellation and explicit time budgets.
+- Browser search defaults to a bounded beam width of 50.
+- Playground structure rendering keeps molecular SMILES local during
+  normal operation.
+- Search settings can be reproduced through exact exports/copy actions.
+- Playground EN/JA/ZH interface coverage was completed.
 
 ## [0.26.0] - 2026-08-19
 

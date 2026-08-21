@@ -6,6 +6,27 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.29.0] - 2026-08-22 "Audit Policy Profiles"
+
+Audit the same route under informational, standard, or strict policy — without hiding or changing the underlying findings.
+
+### Added
+- `--policy informational|standard|strict` on `renkin audit-route`,
+  consistent across the CLI, Rust API, Python, and WASM — policy never
+  hides or changes a finding, only how the overall pass/fail/partial
+  verdict is derived from findings already collected.
+- First Python binding for route auditing: `renkin.audit_route()`.
+- WASM `audit_route_v2()` (policy-aware); the existing `audit_route()`
+  remains as a `standard`-policy wrapper, unchanged.
+- Playground Audit tab gained a policy selector.
+
+### Changed
+- `audit_manifest.policy` now records the actual policy used for each
+  audit, instead of a fixed `"standard"`.
+- npm package README corrected: documents actual browser/bundler usage
+  instead of a plain-Node.js example that never worked against the
+  published package.
+
 ## [0.28.0] - 2026-08-21 "Audit Playground"
 
 Audit a route in your browser — the same pipeline, the same verdict, zero network calls.

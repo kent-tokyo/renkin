@@ -101,28 +101,31 @@ interface Step {
 }
 ```
 
-## `audit_route`
+## `audit_route_v2`
 
 ```typescript
-function audit_route(
+function audit_route_v2(
   content: string,    // Route export JSON text (RENKIN or AiZynthFinder)
   format: string,      // "auto" | "renkin" | "aizynthfinder"
-  stockText: string     // "" for no stock, else one SMILES per line (.smi-style)
+  stockText: string,    // "" for no stock, else one SMILES per line (.smi-style)
+  policy: string         // "informational" | "standard" | "strict"
 ): string  // JSON-encoded AuditRouteReport, or {"error": "..."}
 ```
 
 The browser counterpart to `renkin audit-route` (see
 [Audit Reproducibility and Compatibility Contract](../guides/audit-reproducibility-contract.md)
-for the full `AuditRouteReport`/`audit_manifest` shape and the three-valued
-`pass`/`fail`/`partial` verdict semantics) — calls the identical
-`bridge::build_audit_route_report` pipeline the CLI uses, so a route
-audited in the browser gets exactly the same verdict the CLI would produce
-for the same input. Unlike the CLI, `content` must already be plain JSON
-text — there is no gzip support in the browser (a paste or file upload
-never needs it).
+for the full `AuditRouteReport`/`audit_manifest` shape, and what each
+`policy` value means) — calls the identical
+`bridge::build_audit_route_report_with_policy` pipeline the CLI uses, so a
+route audited in the browser gets exactly the same verdict the CLI would
+produce for the same input and policy. Unlike the CLI, `content` must
+already be plain JSON text — there is no gzip support in the browser (a
+paste or file upload never needs it). `policy` controls only how each
+route's `status` is derived from findings already collected — never which
+findings are detected or reported.
 
 ```js
-import init, { audit_route } from './node_modules/renkin/renkin.js';
+import init, { audit_route_v2 } from './node_modules/renkin/renkin.js';
 
 await init();
 const routeJson = JSON.stringify({
@@ -132,13 +135,25 @@ const routeJson = JSON.stringify({
     building_blocks: ["CCO", "O=C(O)c1ccccc1"],
   }],
 });
-const report = JSON.parse(audit_route(routeJson, "auto", ""));
+const report = JSON.parse(audit_route_v2(routeJson, "auto", "", "strict"));
 console.log(report.routes[0].status); // "pass" | "fail" | "partial"
 ```
 
 Also available from the [Live Playground](../playground/){ target="_blank" }'s
 `[ Audit a Route ]` tab — paste or upload a route (and optionally a stock
-list), entirely client-side.
+list) with a policy selector, entirely client-side.
+
+## `audit_route`
+
+```typescript
+function audit_route(content: string, format: string, stockText: string): string
+```
+
+The original (v0.28.0) 3-argument export, kept unchanged for backward
+compatibility — a thin `policy: "standard"` wrapper around
+[`audit_route_v2`](#audit_route_v2). New code should call `audit_route_v2`
+directly; `audit_route` exists only so a build predating v0.29.0's policy
+parameter keeps working exactly as before.
 
 ## `version`
 

@@ -40,3 +40,9 @@ def validate_forward(
     templates_path: str | None = None,
     max_results: int = 5,
 ) -> str: ...
+def audit_route(
+    content: str,
+    format: str = "auto",
+    stock_text: str = "",
+    policy: str = "standard",
+) -> str: ...

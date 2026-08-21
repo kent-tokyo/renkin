@@ -153,10 +153,37 @@ pub fn capabilities() -> String {
 /// input (malformed JSON, unrecognized format, ...).
 #[wasm_bindgen]
 pub fn audit_route(content: &str, format: &str, stock_text: &str) -> String {
+    audit_route_v2(content, format, stock_text, "standard")
+}
+
+/// Same as [`audit_route`], plus `policy` (v0.29.0 Audit Policy Profiles):
+/// `"informational" | "standard" | "strict"`, same vocabulary as the CLI's
+/// `--policy` flag -- controls only how each route's `status` is derived
+/// from findings already collected, never which findings are detected or
+/// reported. A distinct function name rather than a 4th parameter on
+/// `audit_route`, so a caller on a pre-v0.29.0 build gets a real "no such
+/// export" `TypeError` instead of a silently-ignored argument -- the same
+/// reasoning `find_routes_v2` already established in this codebase.
+/// `audit_route` itself is now a thin `"standard"` wrapper around this.
+#[wasm_bindgen]
+pub fn audit_route_v2(content: &str, format: &str, stock_text: &str, policy: &str) -> String {
+    let policy = match policy.parse::<crate::bridge::AuditPolicy>() {
+        Ok(p) => p,
+        Err(e) => {
+            return serde_json::to_string(&serde_json::json!({ "error": e }))
+                .unwrap_or_else(|_| r#"{"error":"invalid policy"}"#.to_string());
+        }
+    };
     let stock =
         (!stock_text.trim().is_empty()).then(|| crate::bridge::parse_stock_text(stock_text));
     let rules = default_rules();
-    match crate::bridge::build_audit_route_report(content, format, stock.as_ref(), &rules) {
+    match crate::bridge::build_audit_route_report_with_policy(
+        content,
+        format,
+        stock.as_ref(),
+        &rules,
+        policy,
+    ) {
         Ok(report) => serde_json::to_string(&report)
             .unwrap_or_else(|e| format!(r#"{{"error":"serialization: {e}"}}"#)),
         Err(e) => serde_json::to_string(&serde_json::json!({ "error": format!("{e:#}") }))

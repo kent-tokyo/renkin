@@ -1,6 +1,7 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
+use crate::bridge;
 use crate::chem_env::{
     ChemEnv, default_rules, elem_symbols_to_mask, load_rules_from_file, mol_from_smiles,
 };
@@ -495,12 +496,83 @@ pub fn validate_forward_py(
     serde_json::to_string(&results).map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
+/// Audit an already-completed retrosynthesis route (RENKIN or AiZynthFinder
+/// export) for structural integrity, stock coverage, element accounting,
+/// and forward-reaction reproducibility -- the first Python binding for
+/// ``renkin audit-route`` (v0.29.0 Audit Policy Profiles), calling the
+/// identical ``bridge::build_audit_route_report_with_policy`` pipeline the
+/// CLI and WASM ``audit_route_v2`` use, so the same input+policy gets the
+/// same verdict from every surface.
+///
+/// A thin binding on purpose: the caller reads any file (including a
+/// gzip-compressed AiZynthFinder batch export) and passes the decoded
+/// text in -- this function never touches the filesystem itself, matching
+/// ``find_routes``'s own "pass data in, get a JSON string back" contract.
+///
+/// Args:
+///     content (str): Route export JSON text -- a RENKIN ``--format json``
+///         output, or an AiZynthFinder single-route/batch export.
+///     format (str): ``"auto"`` (default), ``"renkin"``, or
+///         ``"aizynthfinder"`` -- same vocabulary as the CLI's ``--format``
+///         flag.
+///     stock_text (str): Optional ``.smi``-style stock listing (one SMILES
+///         per line, ``#``-comments allowed). Default: ``""`` (no stock
+///         configured -- stock validation reports ``not_evaluable``, never
+///         a silent pass).
+///     policy (str): ``"informational"``, ``"standard"`` (default), or
+///         ``"strict"`` -- controls only how each route's ``status`` is
+///         derived from findings already collected; never which findings
+///         are detected or reported. See
+///         ``docs/guides/audit-reproducibility-contract.md``.
+///
+/// Returns:
+///     str: JSON string, the same ``AuditRouteReport`` shape
+///     ``renkin audit-route --output json`` and the playground's
+///     ``audit_route_v2`` WASM export both produce, including
+///     ``audit_manifest.policy`` recording the policy actually used.
+///
+/// Raises:
+///     ValueError: malformed JSON, an unrecognized route shape, or an
+///         invalid ``format``/``policy`` value -- fail-loud, never a
+///         partial or guessed result.
+///
+/// Example::
+///
+///     import json, renkin
+///     with open("trees.json", encoding="utf-8") as f:
+///         report = json.loads(
+///             renkin.audit_route(f.read(), format="aizynthfinder", policy="strict")
+///         )
+///     print(report["summary"])
+#[pyfunction]
+#[pyo3(name = "audit_route", signature = (content, format="auto", stock_text="", policy="standard"))]
+pub fn audit_route_py(
+    content: &str,
+    format: &str,
+    stock_text: &str,
+    policy: &str,
+) -> PyResult<String> {
+    let policy: bridge::AuditPolicy = policy.parse().map_err(PyValueError::new_err)?;
+    let stock = (!stock_text.trim().is_empty()).then(|| bridge::parse_stock_text(stock_text));
+    let rules = default_rules();
+    let report = bridge::build_audit_route_report_with_policy(
+        content,
+        format,
+        stock.as_ref(),
+        &rules,
+        policy,
+    )
+    .map_err(|e| PyValueError::new_err(format!("{e:#}")))?;
+    serde_json::to_string(&report).map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
 /// RENKIN Python module.
 #[pymodule]
 pub fn renkin(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(find_routes_py, m)?)?;
     m.add_function(wrap_pyfunction!(predict_forward_py, m)?)?;
     m.add_function(wrap_pyfunction!(validate_forward_py, m)?)?;
+    m.add_function(wrap_pyfunction!(audit_route_py, m)?)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }

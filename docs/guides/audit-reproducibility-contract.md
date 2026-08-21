@@ -1,6 +1,6 @@
 ---
 title: "RENKIN Bridge: Audit Reproducibility and Compatibility Contract"
-description: "What the audit_manifest guarantees, the planned audit-policy semantics, and the compatibility rules every RENKIN Bridge adapter follows."
+description: "What the audit_manifest guarantees, the informational/standard/strict audit-policy semantics, and the compatibility rules every RENKIN Bridge adapter follows."
 ---
 
 # Audit Reproducibility and Compatibility Contract
@@ -54,12 +54,15 @@ produces byte-identical output. This is a tested property
 
 ## Audit policy
 
-**Only `standard` is implemented today** — it's the only value
-`audit_manifest.policy` can currently report, and it's exactly today's
-existing verdict computation (unchanged by v0.27.0). `informational` and
-`strict` below are the *target design* for a future CLI/Python `--policy`
-flag, specified now so the manifest field and any future implementation
-agree on meaning — do not assume either is selectable yet.
+**All three policies are implemented as of v0.29.0** (Audit Policy
+Profiles) — `informational`/`standard`/`strict` are all selectable via
+`--policy` on the CLI, `policy=` on `renkin.audit_route()` in Python, and
+the 4th argument to the WASM
+[`audit_route_v2`](../api/wasm.md#audit_route_v2) export (also the
+playground's Audit tab policy selector). `standard` remains the default
+everywhere — omitting `--policy`/`policy`/passing `"standard"` explicitly
+reproduces exactly the same verdict computation this project has always
+had, unchanged.
 
 The rule that constrains all three: **policy never hides a finding.**
 Every individual finding (`AuditFinding`, per-step
@@ -70,7 +73,7 @@ full, at every policy level. Only the *derived* `AuditStatus`
 | Policy | A route with only `not_evaluable` checks (nothing outright fails) | A route with a gating finding present |
 |---|---|---|
 | `informational` | `partial` | `partial` (never `fail`) |
-| `standard` (only one shipped) | `partial` | `fail` |
+| `standard` (the default) | `partial` | `fail` |
 | `strict` | `fail` (not_evaluable is not good enough) | `fail` |
 
 `informational` is for exploratory triage where a hard stop isn't wanted;

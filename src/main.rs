@@ -1001,7 +1001,8 @@ fn load_audit_stock(path: &str) -> Result<std::collections::HashSet<String>> {
 }
 
 /// `renkin audit-route <PATH> [--format auto|renkin] [--stock <PATH>]
-/// [--output human|json]` -- audits every route in a RENKIN `--format json`
+/// [--policy informational|standard|strict] [--output human|json]` --
+/// audits every route in a RENKIN `--format json`
 /// output file via `bridge::route_graph::normalize_renkin_route` +
 /// `bridge::audit::audit`. RENKIN-native input only: no AiZynthFinder
 /// adapter, no HTML/DOI/condition/yield output, no alternative-
@@ -1038,7 +1039,7 @@ fn run_audit_route(args: &[String]) -> Result<()> {
         .iter()
         .find(|a| !a.starts_with("--"))
         .cloned()
-        .context("renkin audit-route: <PATH> is required (usage: renkin audit-route <PATH> [--format auto|renkin|aizynthfinder] [--stock <PATH>] [--output human|json])")?;
+        .context("renkin audit-route: <PATH> is required (usage: renkin audit-route <PATH> [--format auto|renkin|aizynthfinder] [--stock <PATH>] [--policy informational|standard|strict] [--output human|json])")?;
     let format = flag_value(args, "--format").unwrap_or("auto");
     if !["auto", "renkin", "aizynthfinder"].contains(&format) {
         bail!(
@@ -1051,6 +1052,12 @@ fn run_audit_route(args: &[String]) -> Result<()> {
             "renkin audit-route: unsupported --output {output_format:?} (only human|json supported)"
         );
     }
+    let policy_str = flag_value(args, "--policy").unwrap_or("standard");
+    let policy: bridge::AuditPolicy = policy_str.parse().map_err(|_| {
+        anyhow::anyhow!(
+            "renkin audit-route: unsupported --policy {policy_str:?} (only informational|standard|strict supported)"
+        )
+    })?;
 
     let content = read_maybe_gzip(&path)?;
     let stock = flag_value(args, "--stock")
@@ -1058,8 +1065,14 @@ fn run_audit_route(args: &[String]) -> Result<()> {
         .transpose()?;
     let rules = chem_env::default_rules();
 
-    let out = bridge::build_audit_route_report(&content, format, stock.as_ref(), &rules)
-        .with_context(|| format!("{path}: audit input rejected"))?;
+    let out = bridge::build_audit_route_report_with_policy(
+        &content,
+        format,
+        stock.as_ref(),
+        &rules,
+        policy,
+    )
+    .with_context(|| format!("{path}: audit input rejected"))?;
 
     if output_format == "json" {
         println!("{}", serde_json::to_string_pretty(&out)?);

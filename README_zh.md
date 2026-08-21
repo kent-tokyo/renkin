@@ -34,7 +34,7 @@ RENKIN 是一个开源的**逆合成引擎（retrosynthesis engine）**，用于
 ```bash
 pip install renkin          # Python
 cargo add renkin            # Rust
-npm install renkin          # JavaScript / Node.js
+npm install renkin          # JavaScript (browser / bundler -- see docs/api/wasm.md)
 ```
 
 ---

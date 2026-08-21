@@ -1,6 +1,6 @@
 ---
 title: "Browser-Based Retrosynthesis with RENKIN WebAssembly"
-description: "Run RENKIN's retrosynthesis search entirely in the browser or Node.js via WebAssembly -- no server, no installation. API reference and examples."
+description: "Run RENKIN's retrosynthesis search entirely in the browser via WebAssembly -- no server, no installation. API reference, bundler support, and examples."
 ---
 
 # WASM / JavaScript API
@@ -31,19 +31,26 @@ npm install renkin
 </script>
 ```
 
-## Node.js
+## Browser and bundler usage
 
-```javascript
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
+The npm package is currently built with `wasm-pack build --target web`.
 
-// Node.js usage (sync WASM load)
-const renkin = require('renkin');
-await renkin.default();  // initialize WASM
+**Supported:**
 
-const raw = renkin.find_routes("c1ccc(-c2ccccc2)cc1", 5, 3, 0);
-const result = JSON.parse(raw);
-```
+- Native browser ES modules
+- Vite
+- Webpack
+- Rollup and compatible bundlers
+
+**Not currently supported:**
+
+- Plain Node.js `require()`
+- Direct Node.js execution without a bundler
+
+To exercise the WASM API from a plain Node.js script (not through a
+bundler), build a `--target nodejs` package from source instead — see
+[Minimal Node.js Example](#minimal-nodejs-example-ci-verified) below,
+which is verified this way, not against the published npm package.
 
 ## `find_routes`
 
@@ -142,6 +149,13 @@ function version(): string
 Returns the RENKIN version string (e.g., `"0.28.0"`).
 
 ## Minimal Node.js Example (CI-verified)
+
+This example runs against a package built locally with
+`wasm-pack build --target nodejs` — a different build target from the
+published npm package (`--target web`, browser/bundler only; see
+[Browser and bundler usage](#browser-and-bundler-usage) above). It's the
+from-source path for using RENKIN's WASM bindings in a plain Node.js
+script; `npm install renkin` alone does not give you this.
 
 `examples/quickstart.mjs` is run against a `wasm-pack build --target nodejs`
 output as part of CI, so this call shape can't silently drift from the real API:

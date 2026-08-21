@@ -36,7 +36,7 @@ RENKINは、RENKIN自身またはAiZynthFinderが生成した逆合成routeを�
 ```bash
 pip install renkin          # Python
 cargo add renkin            # Rust
-npm install renkin          # JavaScript / Node.js
+npm install renkin          # JavaScript (browser / bundler -- see docs/api/wasm.md)
 ```
 
 ---

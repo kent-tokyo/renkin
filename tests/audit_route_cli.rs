@@ -365,3 +365,119 @@ fn rejects_ambiguous_input_matching_no_known_format() {
     );
     std::fs::remove_file(&path).ok();
 }
+
+// ── v0.29.0 Audit Policy Profiles (PR2: CLI --policy) ────────────────────
+
+#[test]
+fn rejects_unsupported_policy() {
+    let route_path = generate_route_fixture();
+    let out = run(&[
+        "audit-route",
+        route_path.to_str().unwrap(),
+        "--policy",
+        "bogus",
+    ]);
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("--policy"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    std::fs::remove_file(&route_path).ok();
+}
+
+/// Same not-evaluable-only fixture as
+/// `partial_without_stock_reports_stock_not_provided_not_a_silent_pass`
+/// (no `--stock` given at all) -- confirms `--policy strict` hardens this
+/// from `partial` to `fail`, per the published policy table, while
+/// `informational`/`standard` (the default) both stay `partial`.
+#[test]
+fn policy_strict_hardens_not_evaluable_only_to_fail() {
+    let route_path = generate_route_fixture();
+    for (policy, expected) in [
+        (None, "partial"),
+        (Some("informational"), "partial"),
+        (Some("standard"), "partial"),
+        (Some("strict"), "fail"),
+    ] {
+        let mut args = vec![
+            "audit-route",
+            route_path.to_str().unwrap(),
+            "--output",
+            "json",
+        ];
+        if let Some(p) = policy {
+            args.push("--policy");
+            args.push(p);
+        }
+        let out = run(&args);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let report: serde_json::Value =
+            serde_json::from_slice(&out.stdout).expect("stdout must be valid JSON");
+        assert_eq!(
+            report["routes"][0]["status"], expected,
+            "policy {policy:?}: {report}"
+        );
+        assert_eq!(
+            report["audit_manifest"]["policy"],
+            policy.unwrap_or("standard"),
+            "audit_manifest.policy must record the policy actually used"
+        );
+    }
+    std::fs::remove_file(&route_path).ok();
+}
+
+/// A gating finding present (stock configured but missing the real leaf)
+/// -- confirms `--policy informational` softens `fail` to `partial` while
+/// `standard` (the default) and `strict` both stay `fail`.
+#[test]
+fn policy_informational_softens_gating_finding_to_partial() {
+    let route_path = generate_route_fixture();
+    let empty_stock_path = unique_temp_path("empty_stock");
+    std::fs::write(&empty_stock_path, "CCO ethanol_only_not_the_real_leaves\n").unwrap();
+
+    for (policy, expected) in [
+        (None, "fail"),
+        (Some("informational"), "partial"),
+        (Some("standard"), "fail"),
+        (Some("strict"), "fail"),
+    ] {
+        let mut args = vec![
+            "audit-route",
+            route_path.to_str().unwrap(),
+            "--stock",
+            empty_stock_path.to_str().unwrap(),
+            "--output",
+            "json",
+        ];
+        if let Some(p) = policy {
+            args.push("--policy");
+            args.push(p);
+        }
+        let out = run(&args);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let report: serde_json::Value =
+            serde_json::from_slice(&out.stdout).expect("stdout must be valid JSON");
+        assert_eq!(
+            report["routes"][0]["status"], expected,
+            "policy {policy:?}: {report}"
+        );
+        // Findings must be identical regardless of policy -- only status differs.
+        assert!(
+            report["routes"][0]["findings"]
+                .as_array()
+                .is_some_and(|f| !f.is_empty()),
+            "expected at least one gating finding: {report}"
+        );
+    }
+    std::fs::remove_file(&route_path).ok();
+    std::fs::remove_file(&empty_stock_path).ok();
+}

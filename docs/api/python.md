@@ -1,6 +1,6 @@
 ---
 title: "Python Retrosynthesis with RENKIN: API Reference and Examples"
-description: "Full Python API reference for RENKIN's find_routes, predict_forward, and validate_forward functions, including parameters, return shapes, and error handling."
+description: "Full Python API reference for RENKIN's find_routes, predict_forward, validate_forward, and audit_route functions, including parameters, return shapes, and error handling."
 ---
 
 # Python API
@@ -188,6 +188,52 @@ validation = json.loads(renkin.validate_forward(route_json))
 
 Returns a JSON string:
 `[{"step_index": int, "target": str, "verified": bool, "top_predictions": [...]}, ...]`.
+
+## `audit_route`
+
+```python
+renkin.audit_route(
+    content: str,
+    format: str = "auto",
+    stock_text: str = "",
+    policy: str = "standard",
+) -> str
+```
+
+Audits an already-completed retrosynthesis route (a RENKIN `--format json`
+export or an AiZynthFinder single-route/batch export) for structural
+integrity, stock coverage, element accounting, and forward-reaction
+reproducibility -- the Python binding for `renkin audit-route`, calling the
+identical pipeline the CLI and the [WASM `audit_route_v2`](wasm.md#audit_route_v2)
+export use, so the same input and policy get the same verdict from every
+surface. See
+[Audit Reproducibility and Compatibility Contract](../guides/audit-reproducibility-contract.md)
+for the full `audit_manifest`/report shape and what each policy means.
+
+A thin binding on purpose: `content` is JSON text you already have in hand
+(read any file yourself, including a gzip-compressed AiZynthFinder batch
+export -- decompress it before passing it in, this function never touches
+the filesystem). `format` is `"auto"` (default) / `"renkin"` /
+`"aizynthfinder"`. `stock_text` is an optional `.smi`-style listing (one
+SMILES per line, `#`-comments allowed); omitted, stock validation reports
+`not_evaluable`, never a silent pass. `policy` is `"informational"` /
+`"standard"` (default) / `"strict"` -- controls only how each route's
+`status` is derived from findings already collected, never which findings
+are detected or reported.
+
+```python
+with open("trees.json", encoding="utf-8") as f:
+    report = json.loads(
+        renkin.audit_route(f.read(), format="aizynthfinder", policy="strict")
+    )
+print(report["summary"])
+```
+
+Returns a JSON string: the same `AuditRouteReport` shape
+`renkin audit-route --output json` produces, including
+`audit_manifest.policy` recording the policy actually used. Raises
+`ValueError` on malformed JSON, an unrecognized route shape, or an invalid
+`format`/`policy` value -- fail-loud, never a partial or guessed result.
 
 ## `__version__`
 

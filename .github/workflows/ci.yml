@@ -100,6 +100,7 @@ jobs:
           assert callable(renkin.find_routes), 'find_routes missing'
           assert callable(renkin.predict_forward), 'predict_forward missing'
           assert callable(renkin.validate_forward), 'validate_forward missing'
+          assert callable(renkin.audit_route), 'audit_route missing'
           result = renkin.find_routes('c1ccccc1', 3, 1, 0)
           assert result, 'find_routes returned empty'
           result = renkin.find_routes('c1ccccc1', depth=3, max_routes=1, beam_width=0, template_metadata_path=None)
@@ -122,6 +123,13 @@ jobs:
         # to resolve via a repo-relative path. Same discover convention as
         # the reranker-tests job above, scoped to just this file.
         run: python3 -m unittest discover -s scripts/tests -p "test_python_coverage_mode.py" -v
+      - name: Audit-route Python tests (from repo checkout, v0.29.0 PR2)
+        # Same reasoning as the coverage-mode step above: needs the repo
+        # root as cwd (its own CLI/Python parity check spawns
+        # target/release/renkin, built above) and a dedicated discover so
+        # it actually runs rather than silently self-skipping under the
+        # broader `test_*.py` discovery (that job has no renkin installed).
+        run: python3 -m unittest discover -s scripts/tests -p "test_python_audit_route.py" -v
 
   # Prevents documentation from silently drifting from reality (regression:
   # docs once claimed 31 rules / 509 building blocks / a non-existent

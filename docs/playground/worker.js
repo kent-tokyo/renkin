@@ -62,7 +62,7 @@ self.onmessage = async (e) => {
       return;
     }
     try {
-      const raw = mod.audit_route(payload.content, payload.format, payload.stockText);
+      const raw = mod.audit_route_v2(payload.content, payload.format, payload.stockText, payload.policy);
       self.postMessage({ type: 'audit-result', id, raw });
     } catch (err) {
       self.postMessage({ type: 'audit-error', id, error: String((err && err.message) || err) });

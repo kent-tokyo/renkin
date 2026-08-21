@@ -396,13 +396,26 @@
       <span class="help-icon" tabindex="0" data-i18n-tip="tip_audit" data-tip="Audits an already-completed route (RENKIN or AiZynthFinder export) for structural integrity, stock coverage, element accounting, and forward-reaction reproducibility — a pass/fail/partial verdict, entirely in your browser.">?</span>
     </div>
 
-    <div class="field">
-      <label for="audit-format-select" data-i18n="audit_format_label">Format</label>
-      <select id="audit-format-select">
-        <option value="auto" data-i18n="audit_format_auto">Auto-detect</option>
-        <option value="renkin" data-i18n="audit_format_renkin">RENKIN</option>
-        <option value="aizynthfinder" data-i18n="audit_format_aizynthfinder">AiZynthFinder</option>
-      </select>
+    <div class="search-row" style="margin-top:0">
+      <div class="field">
+        <label for="audit-format-select" data-i18n="audit_format_label">Format</label>
+        <select id="audit-format-select">
+          <option value="auto" data-i18n="audit_format_auto">Auto-detect</option>
+          <option value="renkin" data-i18n="audit_format_renkin">RENKIN</option>
+          <option value="aizynthfinder" data-i18n="audit_format_aizynthfinder">AiZynthFinder</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="audit-policy-select">
+          <span data-i18n="audit_policy_label">Policy</span>
+          <span class="help-icon" tabindex="0" data-i18n-tip="tip_audit_policy" data-tip="Policy never hides a finding — it only changes how the overall pass/fail/partial verdict is derived from findings already collected." style="margin-left:3px">?</span>
+        </label>
+        <select id="audit-policy-select">
+          <option value="informational" data-i18n="audit_policy_informational">Informational</option>
+          <option value="standard" selected data-i18n="audit_policy_standard">Standard</option>
+          <option value="strict" data-i18n="audit_policy_strict">Strict</option>
+        </select>
+      </div>
     </div>
 
     <div class="field" style="margin-top:0.85rem">
@@ -531,6 +544,11 @@
       audit_format_auto: 'Auto-detect',
       audit_format_renkin: 'RENKIN',
       audit_format_aizynthfinder: 'AiZynthFinder',
+      audit_policy_label: 'Policy',
+      tip_audit_policy: 'Policy never hides a finding — it only changes how the overall pass/fail/partial verdict is derived from findings already collected.',
+      audit_policy_informational: 'Informational',
+      audit_policy_standard: 'Standard',
+      audit_policy_strict: 'Strict',
       audit_route_label: 'Route JSON (paste or upload)',
       audit_route_placeholder: 'e.g. {"target": "...", "routes": [...]}',
       audit_stock_label: 'Stock (optional — one SMILES per line, .smi-style)',
@@ -623,6 +641,11 @@
       audit_format_auto: '自動判定',
       audit_format_renkin: 'RENKIN',
       audit_format_aizynthfinder: 'AiZynthFinder',
+      audit_policy_label: 'ポリシー',
+      tip_audit_policy: 'ポリシーはfindingを隠しません — 既に収集されたfindingから全体のpass/fail/partial判定をどう導出するかだけが変わります。',
+      audit_policy_informational: 'Informational',
+      audit_policy_standard: 'Standard',
+      audit_policy_strict: 'Strict',
       audit_route_label: 'ルート JSON（貼り付けまたはアップロード）',
       audit_route_placeholder: '例: {"target": "...", "routes": [...]}',
       audit_stock_label: '在庫（任意 — 1行に1SMILES、.smi形式）',
@@ -715,6 +738,11 @@
       audit_format_auto: '自动检测',
       audit_format_renkin: 'RENKIN',
       audit_format_aizynthfinder: 'AiZynthFinder',
+      audit_policy_label: '策略',
+      tip_audit_policy: '策略不会隐藏任何finding — 只改变如何从已收集的finding推导出整体的pass/fail/partial判定。',
+      audit_policy_informational: 'Informational',
+      audit_policy_standard: 'Standard',
+      audit_policy_strict: 'Strict',
       audit_route_label: '路径 JSON（粘贴或上传）',
       audit_route_placeholder: '例如: {"target": "...", "routes": [...]}',
       audit_stock_label: '库存（可选 — 每行一个 SMILES，.smi 格式）',
@@ -884,6 +912,7 @@
   // ── Audit tab (PR3) element refs ──────────────────────────────────────
   const auditBtn          = document.getElementById('audit-btn');
   const auditFormatSelect = document.getElementById('audit-format-select');
+  const auditPolicySelect = document.getElementById('audit-policy-select');
   const auditRouteInput   = document.getElementById('audit-route-input');
   const auditStockInput   = document.getElementById('audit-stock-input');
   const auditSpinner      = document.getElementById('audit-spinner');
@@ -1568,6 +1597,7 @@
     if (!content.trim()) return;
     const format = auditFormatSelect.value;
     const stockText = auditStockInput.value;
+    const policy = auditPolicySelect.value;
 
     auditBtn.disabled = true;
     auditSpinner.classList.add('active');
@@ -1576,7 +1606,7 @@
 
     let raw;
     try {
-      raw = await auditInWorker({ content, format, stockText });
+      raw = await auditInWorker({ content, format, stockText, policy });
     } catch (err) {
       showAuditError(String(err.message || err));
       auditBtn.disabled = false;
@@ -1617,6 +1647,11 @@
       .replace('{fail}', summary.fail)
       .replace('{partial}', summary.partial);
     summaryRow.appendChild(summaryTxt);
+
+    const policyChip = document.createElement('span');
+    policyChip.className = 'badge';
+    policyChip.textContent = `${t('audit_policy_label')}: ${report.audit_manifest.policy}`;
+    summaryRow.appendChild(policyChip);
 
     const downloadBtn = document.createElement('button');
     downloadBtn.className = 'copy-btn';

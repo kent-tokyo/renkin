@@ -43,6 +43,18 @@
 //! `audit_route` export (`src/wasm.rs`) call the identical
 //! [`build_audit_route_report`] rather than maintaining two copies of
 //! format-detection/parsing/manifest logic.
+//!
+//! v0.29.0 Audit Policy Profiles (PR1: core policy model) added
+//! [`AuditPolicy`] and `_with_policy` variants of every function that
+//! derives [`AuditStatus`] (`audit_with_policy`, `audit_document_with_policy`,
+//! `build_audit_route_report_with_policy`) -- the pre-existing functions
+//! (`audit`, `audit_document`, `build_audit_route_report`) are kept as
+//! `AuditPolicy::Standard` wrappers, unchanged in signature, since all
+//! three were already published (crates.io/PyPI/npm) before this policy
+//! parameter existed. Policy only ever changes how the route-level
+//! `status` is derived from findings/checks already collected -- never
+//! which findings are detected or reported. See
+//! `docs/design/audit-policy-profiles-v0.md` for the full design.
 
 pub mod aizynthfinder;
 pub mod audit;
@@ -52,11 +64,13 @@ pub mod route_graph;
 
 pub use aizynthfinder::{AzfMetadata, AzfNode, normalize_aizynthfinder_route};
 pub use audit::{
-    AuditFinding, AuditFindingCode, AuditReport, AuditSeverity, AuditStatus, AuditedStep,
-    CheckStatus, StockNotEvaluableReason, StockValidationResult, audit,
+    AuditFinding, AuditFindingCode, AuditPolicy, AuditReport, AuditSeverity, AuditStatus,
+    AuditedStep, CheckStatus, StockNotEvaluableReason, StockValidationResult, audit,
+    audit_document, audit_document_with_policy, audit_with_policy,
 };
 pub use audit_route::{
-    AuditManifest, AuditRouteReport, AuditRouteSummary, build_audit_route_report, parse_stock_text,
+    AuditManifest, AuditRouteReport, AuditRouteSummary, build_audit_route_report,
+    build_audit_route_report_with_policy, parse_stock_text,
 };
 pub use forward::{ForwardNotEvaluableReason, ForwardValidationResult, validate_step_forward};
 pub use route_graph::{

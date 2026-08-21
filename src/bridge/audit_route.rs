@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::bridge::aizynthfinder::{AzfNode, normalize_aizynthfinder_route};
-use crate::bridge::audit::{self, AuditReport, AuditStatus};
+use crate::bridge::audit::{self, AuditPolicy, AuditReport, AuditStatus};
 use crate::bridge::route_graph::normalize_renkin_route;
 use crate::chem_env::RetroRule;
 use crate::search;
@@ -138,9 +138,10 @@ pub struct AuditManifest {
     /// `None` when no stock was given -- distinct from "unknown", stock
     /// validation genuinely did not run.
     stock_sha256: Option<String>,
-    /// Fixed at `"standard"` for now -- no policy engine exists yet (P1).
-    /// Matches what `audit-route`/the playground's Audit tab already do
-    /// today: every finding is reported in full, nothing hidden.
+    /// The actual [`AuditPolicy`] this report was derived under (v0.29.0
+    /// Audit Policy Profiles). Policy only ever changes how `status` is
+    /// derived -- every finding is reported in full regardless, matching
+    /// what `audit-route`/the playground's Audit tab have always done.
     policy: &'static str,
 }
 
@@ -274,11 +275,30 @@ fn detect_audit_route_format(value: &serde_json::Value) -> anyhow::Result<AuditR
 /// (left `not_evaluable`, never force-passed -- see [`audit::audit`]'s own
 /// doc comment). `rules`: RENKIN's own rule corpus, needed to resolve a
 /// RENKIN-sourced step's `template_id` for forward validation.
+///
+/// Backward-compatible `AuditPolicy::Standard` wrapper around
+/// [`build_audit_route_report_with_policy`] -- this function's signature
+/// was already published (crates.io v0.28.0) by the time v0.29.0 Audit
+/// Policy Profiles added the policy parameter, so it stays unchanged.
 pub fn build_audit_route_report(
     content: &str,
     format: &str,
     stock: Option<&HashSet<String>>,
     rules: &[RetroRule],
+) -> anyhow::Result<AuditRouteReport> {
+    build_audit_route_report_with_policy(content, format, stock, rules, AuditPolicy::Standard)
+}
+
+/// Same as [`build_audit_route_report`], with an explicit [`AuditPolicy`]
+/// controlling only how each route's `status` is derived -- every route's
+/// `findings` stay the full, undiminished result regardless of policy; see
+/// [`audit::audit_with_policy`]'s doc comment.
+pub fn build_audit_route_report_with_policy(
+    content: &str,
+    format: &str,
+    stock: Option<&HashSet<String>>,
+    rules: &[RetroRule],
+    policy: AuditPolicy,
 ) -> anyhow::Result<AuditRouteReport> {
     use anyhow::{Context, bail};
 
@@ -314,7 +334,7 @@ pub fn build_audit_route_report(
             for entry in input.routes {
                 let route = route_from_audit_input(entry);
                 let outcome = normalize_renkin_route(&route, &input.target);
-                let report = audit::audit(&outcome, stock, Some(rules));
+                let report = audit::audit_with_policy(&outcome, stock, Some(rules), policy);
                 summary.record(report.status);
                 reports.push(report);
             }
@@ -325,7 +345,7 @@ pub fn build_audit_route_report(
                 .context("input: not a recognized AiZynthFinder route JSON")?;
             for node in &routes {
                 let outcome = normalize_aizynthfinder_route(node);
-                let report = audit::audit(&outcome, stock, Some(rules));
+                let report = audit::audit_with_policy(&outcome, stock, Some(rules), policy);
                 summary.record(report.status);
                 reports.push(report);
             }
@@ -337,7 +357,7 @@ pub fn build_audit_route_report(
             for row in &batch.data {
                 for node in &row.trees {
                     let outcome = normalize_aizynthfinder_route(node);
-                    let report = audit::audit(&outcome, stock, Some(rules));
+                    let report = audit::audit_with_policy(&outcome, stock, Some(rules), policy);
                     summary.record(report.status);
                     reports.push(report);
                 }
@@ -353,7 +373,7 @@ pub fn build_audit_route_report(
         source_version: None,
         input_sha256: input_content_sha256(content),
         stock_sha256: stock.map(stock_set_sha256),
-        policy: "standard",
+        policy: policy.as_str(),
     };
 
     Ok(AuditRouteReport {

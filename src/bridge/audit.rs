@@ -139,6 +139,86 @@ pub enum AuditStatus {
     Partial,
 }
 
+/// v0.29.0 Audit Policy Profiles: controls how [`AuditStatus`] is *derived*
+/// from the findings/checks `audit_document` already collects -- never
+/// which findings are detected or reported. See
+/// `docs/design/audit-policy-profiles-v0.md` for the design rationale and
+/// `docs/guides/audit-reproducibility-contract.md` for the user-facing
+/// semantics (published back in v0.27.0, `Standard` was the only policy
+/// actually implemented until now). [`derive_status`] is the single
+/// function this policy controls.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AuditPolicy {
+    /// A gating finding present is `Partial`, not `Fail` -- an observation
+    /// mode that never hides a problem but never force-fails on one either.
+    /// Not "anything goes": a `not_evaluable` check is still `Partial`
+    /// here too, same as under `Standard` -- there is no policy under
+    /// which missing evidence (e.g. no configured stock) silently reads as
+    /// `Pass`. See `no_configured_stock_is_partial_not_a_silent_pass`.
+    Informational,
+    /// Today's only implemented behavior prior to v0.29.0, unchanged by
+    /// this policy's introduction: a gating finding is `Fail`; a
+    /// `not_evaluable` check with no outright failure is `Partial`.
+    #[default]
+    Standard,
+    /// `not_evaluable` is not good enough -- treated the same as an
+    /// outright `Fail`, on top of `Standard`'s existing gating-finding
+    /// `Fail`.
+    Strict,
+}
+
+impl AuditPolicy {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Informational => "informational",
+            Self::Standard => "standard",
+            Self::Strict => "strict",
+        }
+    }
+}
+
+impl std::str::FromStr for AuditPolicy {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "informational" => Ok(Self::Informational),
+            "standard" => Ok(Self::Standard),
+            "strict" => Ok(Self::Strict),
+            _ => Err(format!(
+                "unsupported policy {s:?} (only informational|standard|strict supported)"
+            )),
+        }
+    }
+}
+
+/// The single function [`AuditPolicy`] controls -- maps the two aggregate
+/// booleans `audit_document`/`parse_failure_report` already compute onto
+/// [`AuditStatus`], per policy. `any_gating`: at least one `Gating`-severity
+/// finding is present (or the route failed to parse at all -- every defect
+/// code a failed normalization can produce is `Gating`-severity, so a
+/// parse failure is just this function's `any_gating = true` case with no
+/// tree to further evaluate). `any_not_evaluable`: at least one
+/// independent check (stock validation, element accounting, or any step's
+/// forward validation) is `not_evaluable`, with nothing else outright
+/// failing. Neither input's meaning changes with policy -- only which
+/// [`AuditStatus`] each combination maps to does.
+fn derive_status(any_gating: bool, any_not_evaluable: bool, policy: AuditPolicy) -> AuditStatus {
+    if any_gating {
+        return match policy {
+            AuditPolicy::Informational => AuditStatus::Partial,
+            AuditPolicy::Standard | AuditPolicy::Strict => AuditStatus::Fail,
+        };
+    }
+    if any_not_evaluable {
+        return match policy {
+            AuditPolicy::Informational | AuditPolicy::Standard => AuditStatus::Partial,
+            AuditPolicy::Strict => AuditStatus::Fail,
+        };
+    }
+    AuditStatus::Pass
+}
+
 /// Generic three-valued outcome for one independent audit check -- distinct
 /// from [`AuditStatus`], which is the route-level *aggregate* verdict.
 /// Shared between [`StockValidationResult`] and
@@ -215,10 +295,23 @@ pub struct AuditReport {
     pub findings: Vec<AuditFinding>,
 }
 
-fn parse_failure_report(source: RouteSource, defects: &[AuditFindingCode]) -> AuditReport {
+/// `any_gating` is derived from `defects` itself, not assumed -- every
+/// defect code an actual normalizer failure can produce is `Gating`-severity
+/// today, but computing it directly (rather than hardcoding `true`) keeps
+/// this in lockstep with [`AuditFindingCode::severity`] if that ever
+/// changes, the same belt-and-braces reasoning `audit_document`'s own
+/// `any_fail` computation already uses.
+fn parse_failure_report(
+    source: RouteSource,
+    defects: &[AuditFindingCode],
+    policy: AuditPolicy,
+) -> AuditReport {
+    let any_gating = defects
+        .iter()
+        .any(|d| d.severity() == AuditSeverity::Gating);
     AuditReport {
         source,
-        status: AuditStatus::Fail,
+        status: derive_status(any_gating, false, policy),
         route_tree_parseable: false,
         reaction_steps_parseable: None,
         stock_validation: None,
@@ -423,25 +516,58 @@ fn target_element_accounting(
 /// AiZynthFinder route in isolation) leaves every RENKIN-evidenced step
 /// `not_evaluable: missing_reaction_representation`; AiZynthFinder-evidenced
 /// steps are unaffected either way.
+///
+/// Backward-compatible `AuditPolicy::Standard` wrapper around
+/// [`audit_with_policy`] -- v0.29.0 Audit Policy Profiles added the policy
+/// parameter without changing this existing public function's signature,
+/// so no caller published before v0.29.0 (crates.io, PyPI, npm) breaks.
 pub fn audit(
     outcome: &ParseOutcome,
     configured_stock: Option<&HashSet<String>>,
     rules: Option<&[RetroRule]>,
 ) -> AuditReport {
+    audit_with_policy(outcome, configured_stock, rules, AuditPolicy::Standard)
+}
+
+/// Same as [`audit`], with an explicit [`AuditPolicy`] controlling only how
+/// [`AuditReport::status`] is derived -- `findings`/`steps`/every other
+/// field are policy-independent, always the full, undiminished result.
+pub fn audit_with_policy(
+    outcome: &ParseOutcome,
+    configured_stock: Option<&HashSet<String>>,
+    rules: Option<&[RetroRule]>,
+    policy: AuditPolicy,
+) -> AuditReport {
     let (Some(document), true) = (&outcome.document, outcome.parseable) else {
-        return parse_failure_report(outcome.source, &outcome.defects);
+        return parse_failure_report(outcome.source, &outcome.defects, policy);
     };
 
-    audit_document(document, configured_stock, rules)
+    audit_document_with_policy(document, configured_stock, rules, policy)
 }
 
 /// Same as [`audit`], but for a [`RouteDocument`] the caller already has in
 /// hand (e.g. built directly by RENKIN Bridge PR4's AiZynthFinder adapter,
 /// which may not always route through a [`ParseOutcome`]).
+///
+/// Backward-compatible `AuditPolicy::Standard` wrapper around
+/// [`audit_document_with_policy`] -- same non-breaking-signature reasoning
+/// as [`audit`] above.
 pub fn audit_document(
     document: &RouteDocument,
     configured_stock: Option<&HashSet<String>>,
     rules: Option<&[RetroRule]>,
+) -> AuditReport {
+    audit_document_with_policy(document, configured_stock, rules, AuditPolicy::Standard)
+}
+
+/// Same as [`audit_document`], with an explicit [`AuditPolicy`] -- see
+/// [`audit_with_policy`]'s doc comment for what policy does and does not
+/// affect.
+pub fn audit_document_with_policy(
+    document: &RouteDocument,
+    configured_stock: Option<&HashSet<String>>,
+    rules: Option<&[RetroRule]>,
+    policy: AuditPolicy,
 ) -> AuditReport {
     let mut findings = Vec::new();
 
@@ -524,13 +650,7 @@ pub fn audit_document(
         || steps
             .iter()
             .any(|s| s.forward_validation.status == CheckStatus::NotEvaluable);
-    let status = if any_fail {
-        AuditStatus::Fail
-    } else if any_not_evaluable {
-        AuditStatus::Partial
-    } else {
-        AuditStatus::Pass
-    };
+    let status = derive_status(any_fail, any_not_evaluable, policy);
 
     AuditReport {
         source: document.source,
@@ -915,6 +1035,213 @@ mod tests {
             AuditStatus::Partial,
             "not_evaluable forward validation alone must yield Partial, \
              never silently Pass and never Fail"
+        );
+    }
+
+    // ── v0.29.0 Audit Policy Profiles (PR1: core policy model) ──────────
+
+    #[test]
+    fn derive_status_matches_the_published_policy_table_for_every_combination() {
+        use AuditPolicy::{Informational, Standard, Strict};
+        // (any_gating, any_not_evaluable, policy) -> expected AuditStatus,
+        // exactly the table confirmed in docs/design/audit-policy-profiles-v0.md.
+        let cases = [
+            (true, true, Informational, AuditStatus::Partial),
+            (true, false, Informational, AuditStatus::Partial),
+            (true, true, Standard, AuditStatus::Fail),
+            (true, false, Standard, AuditStatus::Fail),
+            (true, true, Strict, AuditStatus::Fail),
+            (true, false, Strict, AuditStatus::Fail),
+            (false, true, Informational, AuditStatus::Partial),
+            (false, true, Standard, AuditStatus::Partial),
+            (false, true, Strict, AuditStatus::Fail),
+            (false, false, Informational, AuditStatus::Pass),
+            (false, false, Standard, AuditStatus::Pass),
+            (false, false, Strict, AuditStatus::Pass),
+        ];
+        for (any_gating, any_not_evaluable, policy, expected) in cases {
+            assert_eq!(
+                derive_status(any_gating, any_not_evaluable, policy),
+                expected,
+                "derive_status({any_gating}, {any_not_evaluable}, {policy:?}) should be {expected:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn audit_policy_from_str_round_trips_and_rejects_unknown_values() {
+        assert_eq!(
+            "informational".parse::<AuditPolicy>(),
+            Ok(AuditPolicy::Informational)
+        );
+        assert_eq!("standard".parse::<AuditPolicy>(), Ok(AuditPolicy::Standard));
+        assert_eq!("strict".parse::<AuditPolicy>(), Ok(AuditPolicy::Strict));
+        assert_eq!(AuditPolicy::default(), AuditPolicy::Standard);
+        for p in [
+            AuditPolicy::Informational,
+            AuditPolicy::Standard,
+            AuditPolicy::Strict,
+        ] {
+            assert_eq!(p.as_str().parse::<AuditPolicy>(), Ok(p));
+        }
+        let err = "bogus".parse::<AuditPolicy>().unwrap_err();
+        assert!(err.contains("unsupported policy"), "{err}");
+    }
+
+    #[test]
+    fn standard_policy_wrapper_is_byte_identical_to_explicit_standard() {
+        // audit_document(...) must keep producing exactly what
+        // audit_document_with_policy(..., AuditPolicy::Standard) does --
+        // the whole point of the wrapper is that no caller published
+        // before v0.29.0 sees any behavior change.
+        let outcome = normalize_renkin_route(&single_step_route(), TARGET);
+        let document = outcome.document.unwrap();
+        let via_wrapper = audit_document(&document, Some(&stock(&[ETHANOL, BENZOIC_ACID])), None);
+        let via_explicit = audit_document_with_policy(
+            &document,
+            Some(&stock(&[ETHANOL, BENZOIC_ACID])),
+            None,
+            AuditPolicy::Standard,
+        );
+        assert_eq!(via_wrapper.status, via_explicit.status);
+        assert_eq!(
+            serde_json::to_string(&via_wrapper).unwrap(),
+            serde_json::to_string(&via_explicit).unwrap()
+        );
+    }
+
+    #[test]
+    fn policy_never_changes_the_finding_set_only_the_gating_case_status() {
+        // Fixture with a gating finding present: benzoic acid claimed as
+        // stock but not actually configured -> LeafClaimedStockNotMatched.
+        let outcome = normalize_renkin_route(&single_step_route(), TARGET);
+        let document = outcome.document.unwrap();
+        let configured = Some(stock(&[ETHANOL]));
+
+        let informational = audit_document_with_policy(
+            &document,
+            configured.as_ref(),
+            None,
+            AuditPolicy::Informational,
+        );
+        let standard =
+            audit_document_with_policy(&document, configured.as_ref(), None, AuditPolicy::Standard);
+        let strict =
+            audit_document_with_policy(&document, configured.as_ref(), None, AuditPolicy::Strict);
+
+        // Findings, steps, and every non-status field: identical across
+        // all three policies -- policy only ever changes `status`.
+        let strip_status = |mut v: serde_json::Value| {
+            v.as_object_mut().unwrap().remove("status");
+            v
+        };
+        let a = strip_status(serde_json::to_value(&informational).unwrap());
+        let b = strip_status(serde_json::to_value(&standard).unwrap());
+        let c = strip_status(serde_json::to_value(&strict).unwrap());
+        assert_eq!(a, b, "informational vs standard: only status may differ");
+        assert_eq!(a, c, "informational vs strict: only status may differ");
+
+        // A gating finding is present here (LeafClaimedStockNotMatched) --
+        // per the published policy table: informational softens to
+        // Partial, standard and strict both stay Fail.
+        assert_eq!(informational.status, AuditStatus::Partial);
+        assert_eq!(standard.status, AuditStatus::Fail);
+        assert_eq!(strict.status, AuditStatus::Fail);
+    }
+
+    #[test]
+    fn policy_never_changes_the_finding_set_only_the_not_evaluable_case_status() {
+        // No configured stock at all -> stock_validation is not_evaluable,
+        // no gating finding anywhere in this fixture.
+        let outcome = normalize_renkin_route(&single_step_route(), TARGET);
+        let document = outcome.document.unwrap();
+
+        let informational =
+            audit_document_with_policy(&document, None, None, AuditPolicy::Informational);
+        let standard = audit_document_with_policy(&document, None, None, AuditPolicy::Standard);
+        let strict = audit_document_with_policy(&document, None, None, AuditPolicy::Strict);
+
+        let strip_status = |mut v: serde_json::Value| {
+            v.as_object_mut().unwrap().remove("status");
+            v
+        };
+        let a = strip_status(serde_json::to_value(&informational).unwrap());
+        let b = strip_status(serde_json::to_value(&standard).unwrap());
+        let c = strip_status(serde_json::to_value(&strict).unwrap());
+        assert_eq!(a, b, "informational vs standard: only status may differ");
+        assert_eq!(a, c, "informational vs strict: only status may differ");
+
+        // "stock not provided" is never a silent Pass under ANY policy --
+        // per Decision 1, no reason code gets a special pass/notice
+        // carve-out. Strict alone hardens not_evaluable-only to Fail.
+        assert_eq!(informational.status, AuditStatus::Partial);
+        assert_eq!(standard.status, AuditStatus::Partial);
+        assert_eq!(strict.status, AuditStatus::Fail);
+    }
+
+    #[test]
+    fn a_route_with_nothing_wrong_passes_under_every_policy() {
+        // Reuses the exact methanol -> methane + water fixture already
+        // proven to forward-validate correctly
+        // (bridge::forward::tests::renkin_native_step_that_replays_correctly_passes)
+        // rather than a newly hand-derived SMIRKS this test can't otherwise
+        // verify by inspection.
+        const METHANOL: &str = "CO";
+        const METHANE: &str = "C";
+        const WATER: &str = "O";
+        let rule = RetroRule {
+            name: "co_aliphatic_cleavage".to_string(),
+            template_id: "t1".to_string(),
+            smirks: "[C:1][O:2]>>[C:1].[O:2]".to_string(),
+            ..Default::default()
+        };
+        let r = route(vec![step(METHANOL, &[METHANE, WATER])], &[METHANE, WATER]);
+        let outcome = normalize_renkin_route(&r, METHANOL);
+        let document = outcome.document.unwrap();
+        let configured = stock(&[METHANE, WATER]);
+        for policy in [
+            AuditPolicy::Informational,
+            AuditPolicy::Standard,
+            AuditPolicy::Strict,
+        ] {
+            let report = audit_document_with_policy(
+                &document,
+                Some(&configured),
+                Some(std::slice::from_ref(&rule)),
+                policy,
+            );
+            assert_eq!(
+                report.status,
+                AuditStatus::Pass,
+                "a fully-clean route must Pass under every policy, got {report:?} for {policy:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_failure_is_also_policy_aware_not_hardcoded_fail() {
+        // An empty-steps route fails to normalize at all -- MultipleOrZeroRoots,
+        // a Gating-severity defect, so this exercises parse_failure_report's
+        // own policy handling, not audit_document's.
+        let empty = route(vec![], &[]);
+        let outcome = normalize_renkin_route(&empty, TARGET);
+        assert!(!outcome.parseable);
+
+        let informational = audit_with_policy(&outcome, None, None, AuditPolicy::Informational);
+        let standard = audit_with_policy(&outcome, None, None, AuditPolicy::Standard);
+        let strict = audit_with_policy(&outcome, None, None, AuditPolicy::Strict);
+
+        assert_eq!(informational.status, AuditStatus::Partial);
+        assert_eq!(standard.status, AuditStatus::Fail);
+        assert_eq!(strict.status, AuditStatus::Fail);
+        // findings (the MultipleOrZeroRoots defect) identical across all three
+        assert_eq!(
+            serde_json::to_string(&informational.findings).unwrap(),
+            serde_json::to_string(&standard.findings).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_string(&informational.findings).unwrap(),
+            serde_json::to_string(&strict.findings).unwrap()
         );
     }
 }

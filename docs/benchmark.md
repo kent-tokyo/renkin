@@ -131,7 +131,9 @@ The +3.8 pp difference on approved drugs is consistent with the hypothesis that 
 
 ### Improving the success rate
 
-1. **Cascade search** — re-run unsolved targets with higher beam/depth (`--depth 7 --beam-width 300`). Failure taxonomy shows this is the primary lever.
+> ⚠️ **Point 1 below cites the invalidated failure taxonomy above (pre-31.11/31.12, not re-measured against the corrected rule set).** The general levers still apply, but "primary lever" is not re-confirmed evidence.
+
+1. **Cascade search** — re-run unsolved targets with higher beam/depth (`--depth 7 --beam-width 300`). The (invalidated, pre-fix) failure taxonomy above indicated this was the primary lever.
 2. **Expand the building block database** — supply eMolecules, ZINC, or your internal stock via `--building-blocks`
 3. **Add more templates** — extract additional templates from the full USPTO training set (`--templates data/templates_extracted_5000.smi`)
 

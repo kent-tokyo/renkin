@@ -87,8 +87,8 @@
     "top_cpu_processes_raw": [
       "PID  %CPU COMM",
       "  506  63.7 /usr/libexec/syspolicyd",
-      "63870  40.2 /Users/k_tanabe/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc",
-      "63871  36.1 /Users/k_tanabe/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc",
+      "63870  40.2 /Users/<redacted-user>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc",
+      "63871  36.1 /Users/<redacted-user>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc",
       "63874  30.9 /Library/Frameworks/Python.framework/Versions/3.13/Resources/Python.app/Contents/MacOS/Python",
       " 5946  21.6 /Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper (Renderer).app/Contents/MacOS/Code Helper (Renderer)",
       "  412  13.9 /usr/libexec/trustd",

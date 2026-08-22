@@ -35,6 +35,15 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   [AiZynthFinder audit demo](https://github.com/kent-tokyo/renkin/blob/master/docs/guides/aizynthfinder-audit-demo.md#compatibility)
   for the updated compatibility table.
 
+### Fixed
+- Removed `aryl_amine_retro` from `default_rules()` (v0.33.0, issue #77):
+  it deleted a ring-fused nitrogen outright instead of returning it as
+  part of a second (amine) precursor fragment, on targets where the
+  nitrogen is shared between the aromatic ring and a fused saturated
+  ring. Confirmed on `uspto50k_test#L2263`. Root cause not yet isolated;
+  disabled per the same atom-loss policy already applied to the 31.11
+  halide-rule removals, pending further investigation.
+
 ## [0.31.0] - 2026-08-22 "Syntheseus 0.8 Compatibility"
 
 Verified against Syntheseus `0.8.0`, not just `0.7.2` — and RENKIN Bridge finally leads the README instead of being buried under it.

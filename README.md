@@ -551,7 +551,7 @@ The JSON output includes `avg_nodes_expanded`, `avg_confidence`, `avg_convergenc
 | `plan_with_constraints` | Constraint-DSL planning (element filters, step limits, confidence thresholds) |
 | `estimate_diversity` | Route diversity and coverage metrics |
 
-The server auto-detects `data/building_blocks.smi` and `data/templates_extracted_5000.smi` in the working directory. Falls back to the embedded `DEFAULT_BUILDING_BLOCKS` / `default_rules()` defaults if not found (152 unique building blocks per `ChemEnv::bb_count()`, 28 handcrafted rules — verified 2026-07-22; a "509-BB / 20-rule" figure was previously documented here without verification).
+The server auto-detects `data/building_blocks.smi` and `data/templates_extracted_5000.smi` in the working directory. Falls back to the embedded `DEFAULT_BUILDING_BLOCKS` / `default_rules()` defaults if not found (152 unique building blocks per `ChemEnv::bb_count()`, 27 handcrafted rules — verified 2026-08-22, after `aryl_amine_retro`'s removal (issue #77) dropped the count from 28; a "509-BB / 20-rule" figure was previously documented here without verification).
 
 ```bash
 cargo build --release

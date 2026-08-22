@@ -6,6 +6,19 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Added
+- `renkin.audit_route_report(...) -> AuditRouteReport` (v0.32.0 Phase 2A):
+  a typed Python counterpart to `renkin.audit_route(...) -> str`, which
+  stays completely unchanged. Pure-Python (`python/renkin/audit_report.py`),
+  no Rust/CLI/WASM changes -- calls the existing string API and parses its
+  JSON into attribute-accessible dataclasses
+  (`report.audit_manifest.policy`, `report.routes[0].findings`,
+  `report.routes[0].steps[0].forward_validation`). See
+  [Typed Reports](https://github.com/kent-tokyo/renkin/blob/master/docs/api/python.md#audit_route_report)
+  for the full field reference and the documented absent-vs-null collapse.
+
 ## [0.31.0] - 2026-08-22 "Syntheseus 0.8 Compatibility"
 
 Verified against Syntheseus `0.8.0`, not just `0.7.2` — and RENKIN Bridge finally leads the README instead of being buried under it.

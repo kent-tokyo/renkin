@@ -6,6 +6,52 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.31.0] - 2026-08-22 "Syntheseus 0.8 Compatibility"
+
+Verified against Syntheseus `0.8.0`, not just `0.7.2` — and RENKIN Bridge finally leads the README instead of being buried under it.
+
+### Added
+- Syntheseus `0.8.0` compatibility, independently verified against `0.7.2`
+  via a real dual-version spike
+  ([`docs/design/syntheseus-0.8-compatibility-spike.md`](https://github.com/kent-tokyo/renkin/blob/master/docs/design/syntheseus-0.8-compatibility-spike.md)):
+  artifact-pinned wheel + sdist provenance (SHA-256), a reusable public-API
+  introspection tool (`scripts/syntheseus_compat_introspect.py`), and a
+  byte-level exporter-output diff across both versions.
+- `pip install renkin[syntheseus]` now declares
+  `syntheseus>=0.7.2,<=0.8.0` (previously an exact `==0.7.2` pin).
+  Individually verified against real PyPI artifacts: only `0.7.2` and
+  `0.8.0`. The interval admits any intermediate release too (a
+  hypothetical future `0.7.3`, for instance) — it isn't restricted to
+  exactly the two named versions. The upper bound stays capped at
+  `0.8.0`, not an open-ended `<0.9`: an unverified release above the
+  verified range (`0.8.1`, `0.9.0`, ...) isn't silently accepted just
+  because it would likely still work — verified and supported are not
+  the same claim.
+- CI: a `syntheseus-compat-matrix` job runs the full exporter test suite
+  against each verified version independently (exact pins, separate
+  jobs); a `syntheseus-dependency-resolution` job runs real `pip install`
+  resolver smoke tests in two clean venvs (default resolution resolves to
+  the newest verified version; a pre-installed lower endpoint is
+  preserved, not force-upgraded), plus wheel `METADATA` structural tests
+  (`Provides-Extra`, `Requires-Dist`, no stale exact pin survives).
+- Playground Audit tab: three example-loading buttons (AiZynthFinder /
+  Syntheseus / a deliberately failing route), each loading a real
+  committed fixture with zero outbound network requests, plus shareable
+  `?demo=aizynthfinder|syntheseus|failing` URLs.
+
+### Changed
+- README/PyPI description now leads with RENKIN Bridge ("audit any route
+  from any planner") instead of burying it below the engine's own
+  feature table; new "Audit a Route" section with corrected, real
+  (`dumps_syntheseus_route_v1`-based) example code.
+
+**Compatibility-verified does not mean forward-validation-capable.**
+Forward validation stays `not_evaluable` (`MissingAtomMapping`) for every
+real Syntheseus route on both verified versions — `reaction_smiles`
+carries no atom mapping on either `0.7.2` or `0.8.0`, confirmed
+independently by the same compatibility spike. RENKIN never fabricates a
+mapping to force a pass.
+
 ## [0.30.0] - 2026-08-22 "Syntheseus Bridge"
 
 Syntheseus has no route export. RENKIN built one — and audits it exactly like every other adapter.

@@ -240,7 +240,7 @@ Returns a JSON string: the same `AuditRouteReport` shape
 ```python
 >>> import renkin
 >>> renkin.__version__
-'0.30.0'
+'0.31.0'
 ```
 
 The version string is a module attribute, not a function.

@@ -8,6 +8,15 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-08-23 "Chemical Integrity & Reproducible Templates"
+
+Reproducibility and diagnostics for the template-extraction pipeline, plus
+a privacy fix -- no shipped-package chemistry behavior changes beyond the
+CLI diagnostic below. `aryl_amine_retro`'s removal (issue #77) and the
+benchmark-page accuracy fix already shipped in
+[0.32.0](#0320---2026-08-22-typed-reports--verified-planner-matrix); not
+recounted here.
+
 ### Added
 - CLI: a loaded `--templates` file with hash-atom (`[#N]`) templates that
   are `Unsupported` for concrete application (issue #99) now reports a
@@ -17,7 +26,41 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   inconsistent_element=1`. Silent when there's nothing to report (both
   checked-in corpora currently have zero unsupported templates); previously
   the only way to see this was the offline `examples/hashatom_corpus_stats.rs`
-  audit tool, run separately against a template file.
+  audit tool, run separately against a template file. This is the only
+  change in this release that affects the shipped `renkin` binary/package;
+  everything else below is dev-tooling (`scripts/`) or repository data.
+- `scripts/extract_templates.py --dataset-revision`/`--resolve-latest`
+  (issue #100): pins a HuggingFace dataset revision by default
+  (`PINNED_DATASET_REVISION`, mirroring `generate_ring_context_metadata.py`'s
+  existing pattern) instead of always resolving to whatever HEAD happens to
+  be at generation time. The output file's `# Source:` header now records
+  `{dataset_id}@{revision}`. Forward-looking only -- does not recover the
+  exact dataset revision or package versions that produced the existing,
+  gitignored `data/templates_extracted_5000.smi` (that history is genuinely
+  unrecoverable; see the new `data/templates_extracted_5000.smi.PROVENANCE.md`
+  for what is and isn't known about that file). Issue #100 stays open.
+
+### Fixed
+- `scripts/extract_templates.py` (issue #98): rejects a disconnected-fragment
+  reactant SMARTS (`A.B>>...`) at extraction time instead of letting RDKit's
+  looser proxy check wave it through. Confirmed by reading `chematic-smarts`
+  0.16.0's actual parser source: a reactant-side `.` always fails to load in
+  chematic, unconditionally. Forward-looking only -- the one already-affected
+  line in the existing, gitignored `data/templates_extracted_5000.smi` is
+  untouched by design. Issue #98 stays open.
+- Privacy: redacted the local machine username that had leaked into 12
+  committed manifest JSON files (`data/coverage_mode_formal_test/`,
+  `data/phase_b1_frontier/`) via `ps`'s full-executable-path output and
+  captured command-line arguments. Root-caused and fixed in
+  `scripts/compare_manifest.py` (`redact_home_dir`, derived from
+  `os.path.expanduser("~")` at call time, never a hardcoded name) so future
+  manifests can't leak it the same way. Content-only redaction; git history
+  itself was left untouched at the user's explicit instruction.
+
+### Changed
+- `huggingface_hub` pinned to `1.28.0` in `scripts/requirements-ring-context.txt`
+  -- an optional dependency of the local, gitignored template-extraction
+  tooling, not a runtime dependency of the shipped `renkin` package.
 
 ## [0.32.0] - 2026-08-22 "Typed Reports & Verified Planner Matrix"
 

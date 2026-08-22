@@ -214,7 +214,7 @@ A thin binding on purpose: `content` is JSON text you already have in hand
 (read any file yourself, including a gzip-compressed AiZynthFinder batch
 export -- decompress it before passing it in, this function never touches
 the filesystem). `format` is `"auto"` (default) / `"renkin"` /
-`"aizynthfinder"`. `stock_text` is an optional `.smi`-style listing (one
+`"aizynthfinder"` / `"syntheseus"`. `stock_text` is an optional `.smi`-style listing (one
 SMILES per line, `#`-comments allowed); omitted, stock validation reports
 `not_evaluable`, never a silent pass. `policy` is `"informational"` /
 `"standard"` (default) / `"strict"` -- controls only how each route's

@@ -105,8 +105,8 @@ interface Step {
 
 ```typescript
 function audit_route_v2(
-  content: string,    // Route export JSON text (RENKIN or AiZynthFinder)
-  format: string,      // "auto" | "renkin" | "aizynthfinder"
+  content: string,    // Route export JSON text (RENKIN, AiZynthFinder, or Syntheseus)
+  format: string,      // "auto" | "renkin" | "aizynthfinder" | "syntheseus"
   stockText: string,    // "" for no stock, else one SMILES per line (.smi-style)
   policy: string         // "informational" | "standard" | "strict"
 ): string  // JSON-encoded AuditRouteReport, or {"error": "..."}

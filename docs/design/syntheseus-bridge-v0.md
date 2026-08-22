@@ -1,14 +1,14 @@
 # RENKIN Syntheseus Bridge — Design Doc
 
-Status: **Phase 0 (feasibility and schema) and Phase 1 (Python exporter)
-merged. Phase 2 (Rust normalizer + `--format syntheseus` CLI flag) is
-implemented, pending merge approval. Phase 3 (conformance suite,
-Playground, docs) and Phase 4 (release: version bump, publish) not
-started, each its own future round requiring separate approval.** Real
+Status: **Phase 0-3 complete (feasibility+schema, Python exporter, Rust
+normalizer + `--format syntheseus` CLI flag, 3-way conformance suite +
+Playground + docs). Phase 4 (release: version bump, publish) not
+started, its own future round requiring separate approval.** Real
 fixtures generated for Phase 0 live at `tests/fixtures/syntheseus/0.7.2/`
 (see that directory's own `PROVENANCE.md` for exact construction/
 reproduction detail); §7 records how Phase 1-2's open questions were
-resolved.
+resolved. Phase 3's own demo walkthrough:
+[Audit a Syntheseus Route](../guides/syntheseus-audit-demo.md).
 
 ## 0. What this is, in one paragraph
 

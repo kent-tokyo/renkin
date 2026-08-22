@@ -6,6 +6,19 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Added
+- CLI: a loaded `--templates` file with hash-atom (`[#N]`) templates that
+  are `Unsupported` for concrete application (issue #99) now reports a
+  reason-broken-down count to stderr right after the existing "Loaded N
+  templates" line -- e.g. `1 of 1 loaded templates are unsupported for
+  concrete application (will never produce a route):
+  inconsistent_element=1`. Silent when there's nothing to report (both
+  checked-in corpora currently have zero unsupported templates); previously
+  the only way to see this was the offline `examples/hashatom_corpus_stats.rs`
+  audit tool, run separately against a template file.
+
 ## [0.32.0] - 2026-08-22 "Typed Reports & Verified Planner Matrix"
 
 A typed Python report API, a wider verified AiZynthFinder range, and a

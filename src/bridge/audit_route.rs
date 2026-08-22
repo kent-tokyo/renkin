@@ -21,6 +21,7 @@ use sha2::{Digest, Sha256};
 use crate::bridge::aizynthfinder::{AzfNode, normalize_aizynthfinder_route};
 use crate::bridge::audit::{self, AuditPolicy, AuditReport, AuditStatus};
 use crate::bridge::route_graph::normalize_renkin_route;
+use crate::bridge::syntheseus::{SyntheseusRouteV1, normalize_syntheseus_route};
 use crate::chem_env::RetroRule;
 use crate::search;
 
@@ -229,13 +230,17 @@ enum AuditRouteFormat {
     Renkin,
     AiZynthFinderSingle,
     AiZynthFinderBatch,
+    Syntheseus,
 }
 
 /// `format: "auto"`'s sniff: RENKIN's own shape is a top-level object with
 /// `target`+`routes`; a real AiZynthFinder single-target `aizynthcli
 /// --output trees.json` is a top-level array of route dicts (each a `"type":
 /// "mol"` root node); a real batch output is Pandas' `"schema"`+`"data"`
-/// object. Anything else is an error, never a guess.
+/// object; a `syntheseus-route-v1` document is a top-level object with
+/// `"source_tool": "syntheseus"` -- checked ahead of the RENKIN
+/// `target`+`routes` check since both are top-level objects and this is the
+/// more specific signal. Anything else is an error, never a guess.
 fn detect_audit_route_format(value: &serde_json::Value) -> anyhow::Result<AuditRouteFormat> {
     use anyhow::bail;
     match value {
@@ -254,12 +259,17 @@ fn detect_audit_route_format(value: &serde_json::Value) -> anyhow::Result<AuditR
             Ok(AuditRouteFormat::AiZynthFinderBatch)
         }
         serde_json::Value::Object(map)
+            if map.get("source_tool").and_then(|v| v.as_str()) == Some("syntheseus") =>
+        {
+            Ok(AuditRouteFormat::Syntheseus)
+        }
+        serde_json::Value::Object(map)
             if map.contains_key("target") && map.contains_key("routes") =>
         {
             Ok(AuditRouteFormat::Renkin)
         }
         _ => bail!(
-            "renkin audit-route: --format auto could not identify this input -- recognized shapes are RENKIN (\"target\"+\"routes\" object), AiZynthFinder single-target (top-level array), AiZynthFinder batch (Pandas \"schema\"+\"data\" object). Pass --format explicitly if this is a supported shape auto-detection doesn't recognize."
+            "renkin audit-route: --format auto could not identify this input -- recognized shapes are RENKIN (\"target\"+\"routes\" object), AiZynthFinder single-target (top-level array), AiZynthFinder batch (Pandas \"schema\"+\"data\" object), Syntheseus (\"source_tool\": \"syntheseus\" object). Pass --format explicitly if this is a supported shape auto-detection doesn't recognize."
         ),
     }
 }
@@ -302,9 +312,9 @@ pub fn build_audit_route_report_with_policy(
 ) -> anyhow::Result<AuditRouteReport> {
     use anyhow::{Context, bail};
 
-    if !["auto", "renkin", "aizynthfinder"].contains(&format) {
+    if !["auto", "renkin", "aizynthfinder", "syntheseus"].contains(&format) {
         bail!(
-            "renkin audit-route: unsupported --format {format:?} (only auto|renkin|aizynthfinder supported)"
+            "renkin audit-route: unsupported --format {format:?} (only auto|renkin|aizynthfinder|syntheseus supported)"
         );
     }
 
@@ -322,6 +332,7 @@ pub fn build_audit_route_report_with_policy(
                 "renkin audit-route: --format aizynthfinder given but input isn't a recognized AiZynthFinder shape (top-level array, or Pandas \"schema\"+\"data\" object)"
             ),
         },
+        "syntheseus" => AuditRouteFormat::Syntheseus,
         _ => detect_audit_route_format(&value)?,
     };
 
@@ -363,6 +374,15 @@ pub fn build_audit_route_report_with_policy(
                 }
             }
             "aizynthfinder"
+        }
+        AuditRouteFormat::Syntheseus => {
+            let input: SyntheseusRouteV1 = serde_json::from_value(value)
+                .context("input: not a recognized syntheseus-route-v1 JSON")?;
+            let outcome = normalize_syntheseus_route(&input);
+            let report = audit::audit_with_policy(&outcome, stock, Some(rules), policy);
+            summary.record(report.status);
+            reports.push(report);
+            "syntheseus"
         }
     };
 

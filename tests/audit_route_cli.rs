@@ -481,3 +481,108 @@ fn policy_informational_softens_gating_finding_to_partial() {
     std::fs::remove_file(&route_path).ok();
     std::fs::remove_file(&empty_stock_path).ok();
 }
+
+// ── Syntheseus Bridge, Phase 2 (v0.30.0) -- real, committed Phase 0
+// fixtures, not hand-authored JSON. See
+// tests/fixtures/syntheseus/0.7.2/PROVENANCE.md for exact provenance. ──
+
+#[test]
+fn syntheseus_explicit_format_audits_the_real_linear_fixture() {
+    let out = run(&[
+        "audit-route",
+        "tests/fixtures/syntheseus/0.7.2/linear_two_leaf_route.json",
+        "--format",
+        "syntheseus",
+        "--output",
+        "json",
+    ]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("stdout must be valid JSON");
+    assert_eq!(report["audit_manifest"]["source_format"], "syntheseus");
+    assert_eq!(report["routes"][0]["source"], "syntheseus");
+    // No stock given -> not_evaluable -> partial, never a silent pass.
+    assert_eq!(report["routes"][0]["status"], "partial");
+}
+
+#[test]
+fn syntheseus_auto_detected_via_source_tool_field() {
+    let out = run(&[
+        "audit-route",
+        "tests/fixtures/syntheseus/0.7.2/linear_two_leaf_route.json",
+        "--output",
+        "json",
+    ]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("stdout must be valid JSON");
+    assert_eq!(report["audit_manifest"]["source_format"], "syntheseus");
+}
+
+#[test]
+fn syntheseus_stock_matching_the_real_leaves_passes_stock_validation() {
+    let stock_path = unique_temp_path("syntheseus_stock");
+    std::fs::write(&stock_path, "CCO ethanol\nO=C(O)c1ccccc1 benzoic_acid\n").unwrap();
+    let out = run(&[
+        "audit-route",
+        "tests/fixtures/syntheseus/0.7.2/linear_two_leaf_route.json",
+        "--format",
+        "syntheseus",
+        "--stock",
+        stock_path.to_str().unwrap(),
+        "--output",
+        "json",
+    ]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("stdout must be valid JSON");
+    assert_eq!(report["routes"][0]["stock_validation"]["status"], "pass");
+    std::fs::remove_file(&stock_path).ok();
+}
+
+#[test]
+fn syntheseus_convergent_fixtures_ambiguous_leaf_fails_with_two_findings() {
+    // Fixture B's own CC leaf genuinely has no is_purchasable claim --
+    // duplicated once per parent by build()'s duplication-on-flatten
+    // (docs/design/syntheseus-bridge-v0.md sec 7.1's resolved open
+    // question), so it must surface twice, not be deduplicated away.
+    let out = run(&[
+        "audit-route",
+        "tests/fixtures/syntheseus/0.7.2/convergent_route.json",
+        "--format",
+        "syntheseus",
+        "--output",
+        "json",
+    ]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("stdout must be valid JSON");
+    assert_eq!(report["routes"][0]["status"], "fail");
+    let codes: Vec<&str> = report["routes"][0]["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["code"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        codes,
+        vec!["ambiguous_leaf_status", "ambiguous_leaf_status"],
+        "{report}"
+    );
+}

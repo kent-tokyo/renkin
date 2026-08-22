@@ -61,6 +61,7 @@ pub mod audit;
 pub mod audit_route;
 pub mod forward;
 pub mod route_graph;
+pub mod syntheseus;
 
 pub use aizynthfinder::{AzfMetadata, AzfNode, normalize_aizynthfinder_route};
 pub use audit::{
@@ -77,3 +78,4 @@ pub use route_graph::{
     ParseOutcome, ReactionEvidence, RouteDocument, RouteNode, RouteSource, RouteStep,
     normalize_renkin_route,
 };
+pub use syntheseus::{SyntheseusRouteV1, normalize_syntheseus_route};

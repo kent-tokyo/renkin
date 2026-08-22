@@ -119,6 +119,20 @@ fn declared_smirks<'a>(
             }
             Ok((smirks.as_str(), true))
         }
+        // Syntheseus's `reaction_smiles` is a plain `reactants>>product`
+        // string (a computed property, never atom-mapped) -- same
+        // as-declared orientation as AiZynthFinder's own metadata, so this
+        // reuses the identical two-orientation retry. The downstream
+        // `has_atom_mapping` gate then correctly reports `NotEvaluable
+        // (MissingAtomMapping)` for every real Syntheseus route today: not a
+        // gap, an honest reflection of what the source data actually
+        // carries (no adapter here invents atom-mapping that isn't there).
+        ReactionEvidence::SyntheseusReaction { reaction_smiles } => {
+            if reaction_smiles.is_empty() {
+                return Err(MissingReactionRepresentation);
+            }
+            Ok((reaction_smiles.as_str(), true))
+        }
     }
 }
 

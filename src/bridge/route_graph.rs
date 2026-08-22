@@ -21,6 +21,11 @@ pub enum RouteSource {
     #[default]
     Renkin,
     AiZynthFinder,
+    /// v0.30.0 Syntheseus Bridge, Phase 2: a `syntheseus-route-v1` document
+    /// (`bridge::syntheseus::normalize_syntheseus_route`) -- not Syntheseus
+    /// output directly, since Syntheseus has no native route export (see
+    /// `docs/design/syntheseus-bridge-v0.md`).
+    Syntheseus,
 }
 
 /// Whatever reaction-identity evidence is available for a non-leaf node --
@@ -45,6 +50,11 @@ pub enum ReactionEvidence {
     /// Bridge PR4 scope note) -- only hand-built fixtures do, until a real
     /// adapter is confirmed against actual `aizynthcli` output.
     AiZynthFinderTemplate { smirks: String },
+    /// Syntheseus-sourced (v0.30.0 Phase 2): a step's `reaction_smiles`,
+    /// always present on a real `syntheseus-route-v1` document (a computed
+    /// property on every Syntheseus `Reaction` object -- see the schema doc,
+    /// safe to treat as required rather than optional).
+    SyntheseusReaction { reaction_smiles: String },
 }
 
 /// One node in the normalized, tool-neutral route tree. Mirrors
@@ -139,21 +149,36 @@ pub(crate) fn count_edges(node: &RouteNode) -> usize {
     total
 }
 
-/// A step's precursors plus its `template_id`, keyed by canonicalized
-/// target in [`build`]'s `steps_by_target` map -- carrying `template_id`
-/// through is what lets RENKIN Bridge PR4's forward-validation resolve
-/// which declared reaction to replay for a RENKIN-sourced node (see
-/// [`ReactionEvidence::RenkinTemplate`]).
-struct StepInfo<'a> {
-    precursors: &'a [String],
-    template_id: &'a str,
+/// A step's precursors plus its already-constructed [`ReactionEvidence`],
+/// keyed by canonicalized target in [`build`]'s `steps_by_target` map.
+/// `pub(crate)`: shared by every flat-step-list adapter (`normalize_renkin_route`,
+/// `bridge::syntheseus::normalize_syntheseus_route`) -- evidence is
+/// constructed by each adapter's own caller (source-specific), not by
+/// [`build`] itself, which stays source-agnostic.
+pub(crate) struct StepInfo<'a> {
+    pub precursors: &'a [String],
+    pub reaction_evidence: ReactionEvidence,
 }
 
-#[allow(clippy::too_many_arguments)]
-fn build(
+/// Returns `(is_stock_leaf, defect_if_any)` for a canonical SMILES that
+/// isn't any step's own target -- see [`build`]'s `resolve_leaf` parameter.
+type LeafResolver<'a> = dyn Fn(&str) -> (Option<bool>, Option<AuditFindingCode>) + 'a;
+
+/// Recursive flat-steps-to-tree builder, shared by every adapter whose raw
+/// shape is a flat step list (unlike AiZynthFinder's already-nested tree,
+/// which has its own walker in `bridge::aizynthfinder`). Cycle detection,
+/// self-reference rejection, and childless-non-leaf detection are
+/// source-agnostic and live here; leaf classification is not (RENKIN's own
+/// `building_blocks` are an unconditional true/false claim, while
+/// Syntheseus's `starting_molecules`/`molecule_metadata.is_purchasable`
+/// carry a tri-state purchasability claim like AiZynthFinder's `in_stock`)
+/// -- `resolve_leaf` is called for any canonical SMILES that isn't some
+/// step's own target, and returns `(is_stock_leaf, defect_if_any)` for the
+/// caller's own policy to decide.
+pub(crate) fn build(
     canon_smiles: &str,
     steps_by_target: &HashMap<String, StepInfo>,
-    bb_canon: &HashSet<String>,
+    resolve_leaf: &LeafResolver,
     on_stack: &mut HashSet<String>,
     defects: &mut Vec<AuditFindingCode>,
 ) -> RouteNode {
@@ -167,20 +192,13 @@ fn build(
         };
     }
     let Some(step_info) = steps_by_target.get(canon_smiles) else {
-        if !bb_canon.contains(canon_smiles) {
-            // A precursor that's neither a step's target nor a declared
-            // building block -- the source tool's own invariant is broken.
-            defects.push(AuditFindingCode::AmbiguousLeafStatus);
-            return RouteNode {
-                canonical_smiles: canon_smiles.to_string(),
-                is_stock_leaf: None,
-                reaction_evidence: None,
-                children: vec![],
-            };
+        let (is_stock_leaf, defect) = resolve_leaf(canon_smiles);
+        if let Some(d) = defect {
+            defects.push(d);
         }
         return RouteNode {
             canonical_smiles: canon_smiles.to_string(),
-            is_stock_leaf: Some(true),
+            is_stock_leaf,
             reaction_evidence: None,
             children: vec![],
         };
@@ -200,7 +218,7 @@ fn build(
         children.push(build(
             &p_canon,
             steps_by_target,
-            bb_canon,
+            resolve_leaf,
             on_stack,
             defects,
         ));
@@ -212,9 +230,7 @@ fn build(
     RouteNode {
         canonical_smiles: canon_smiles.to_string(),
         is_stock_leaf: Some(false),
-        reaction_evidence: Some(ReactionEvidence::RenkinTemplate {
-            template_id: step_info.template_id.to_string(),
-        }),
+        reaction_evidence: Some(step_info.reaction_evidence.clone()),
         children,
     }
 }
@@ -272,7 +288,9 @@ pub fn normalize_renkin_route(route: &Route, requested_target_smiles: &str) -> P
                     canon,
                     StepInfo {
                         precursors: step.precursors.as_slice(),
-                        template_id: &step.template_id,
+                        reaction_evidence: ReactionEvidence::RenkinTemplate {
+                            template_id: step.template_id.clone(),
+                        },
                     },
                 );
             }
@@ -285,12 +303,23 @@ pub fn normalize_renkin_route(route: &Route, requested_target_smiles: &str) -> P
         defects.push(AuditFindingCode::RootMismatch);
     }
 
+    // A precursor that's neither a step's target nor a declared building
+    // block breaks RENKIN's own invariant -- unconditionally ambiguous,
+    // never guessed.
+    let resolve_leaf = |smi: &str| -> (Option<bool>, Option<AuditFindingCode>) {
+        if bb_canon.contains(smi) {
+            (Some(true), None)
+        } else {
+            (None, Some(AuditFindingCode::AmbiguousLeafStatus))
+        }
+    };
+
     let mut on_stack: HashSet<String> = HashSet::new();
     let root_start = root_canon.unwrap_or(requested_canon);
     let root_node = build(
         &root_start,
         &steps_by_target,
-        &bb_canon,
+        &resolve_leaf,
         &mut on_stack,
         &mut defects,
     );

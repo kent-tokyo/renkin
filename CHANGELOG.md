@@ -6,6 +6,22 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Added
+- `renkin audit-route --format syntheseus` (also auto-detected): a third
+  route adapter (`bridge::syntheseus::normalize_syntheseus_route`, v0.30.0
+  Syntheseus Bridge Phase 2), alongside RENKIN-native and AiZynthFinder.
+  Convergent/non-tree Syntheseus routes are handled by duplicating the
+  shared sub-tree under each parent, the same behavior the RENKIN-native
+  adapter already has.
+
+### Changed
+- `bridge::route_graph::build` (the flat-steps-to-tree algorithm) is now
+  shared by both the RENKIN-native and Syntheseus adapters, parameterized
+  by a leaf-classification closure instead of hardcoding RENKIN's own
+  `building_blocks` policy.
+
 ## [0.29.0] - 2026-08-22 "Audit Policy Profiles"
 
 Audit the same route under informational, standard, or strict policy — without hiding or changing the underlying findings.

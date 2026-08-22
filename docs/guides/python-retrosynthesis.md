@@ -56,7 +56,7 @@ can't match as a leaf building block.
 
 ## Extracted Templates
 
-The built-in rule set is 28 hand-crafted, human-readable disconnections
+The built-in rule set is 27 hand-crafted, human-readable disconnections
 (ester cleavage, Suzuki, Buchwald-Hartwig, and so on). For broader reaction
 coverage, load additional SMIRKS templates auto-extracted from USPTO-50k/MIT
 via rdchiral:
@@ -142,7 +142,7 @@ distinction and how to attach real cited evidence.
 ## Current Limitations
 
 - The default stock (402 compounds when running from a repo checkout, 152
-  otherwise — see [Building Blocks](../api/python.md#building-blocks)) and 28
+  otherwise — see [Building Blocks](../api/python.md#building-blocks)) and 27
   hand-crafted rules cover common pharmaceutical disconnections well, but broader reaction space needs
   the larger extracted-template files or your own stock.
 - No literature/patent auto-search, no automatic side-reaction prediction, no

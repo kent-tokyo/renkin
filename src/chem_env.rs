@@ -1806,8 +1806,19 @@ pub fn default_rules() -> Vec<RetroRule> {
             "aryl_carboxylation_retro",
             "[c:1][C:2](=O)[OH]>>[c:1].[C:2](=O)O",
         ),
-        // Ar-N → Ar-H + amine (retro-SNAr / retro-Chan-Lam)
-        rr("aryl_amine_retro", "[c:1][N:2]>>[c:1].[N:2]"),
+        // `aryl_amine_retro` ("[c:1][N:2]>>[c:1].[N:2]") was removed: on a
+        // ring-fused nitrogen (N shared between the aromatic ring and a
+        // fused saturated ring, e.g. an indoline-like bicyclic target), it
+        // deletes the nitrogen outright instead of returning it as part of
+        // a second precursor fragment — a genuine atom-loss defect, not an
+        // intentional reagent omission (see `reagent_omission_template_allowlist`
+        // in `synthesizability/schema.rs`, which already excluded this rule).
+        // Confirmed on `uspto50k_test#L2263` (issue #77). Root cause not yet
+        // isolated (SMIRKS-pattern vs. `split_fragments`/BFS-leakage pipeline
+        // artifact); disabled per project policy pending that investigation,
+        // the same policy applied to the halide rules above (31.11). See
+        // `aryl_amine_retro_removed_from_default_rules` below.
+        //
         // Ar-N → Ar-Br + amine (retro-Buchwald-Hartwig; gives halide BB)
         rr("buchwald_hartwig_retro", "[c:1][N:2]>>[c:1]Br.[N:2]"),
         // Ar-O → Ar-OH + leaving fragment (retro-Ullmann ether synthesis)
@@ -3516,13 +3527,12 @@ mod tests {
             target: "CCC(O)(C)CC",                   // 3-methylpentan-3-ol
             expected_preserved_fragment: "CCC(C)=O", // butan-2-one
         },
-        SubstituentPreservationCase {
-            // The ethylamine substituent must survive as a standalone amine,
-            // not be discarded when the aryl ring is cut away.
-            rule_name: "aryl_amine_retro",
-            target: "c1ccccc1NCC",              // N-phenylethylamine
-            expected_preserved_fragment: "CCN", // ethylamine
-        },
+        // aryl_amine_retro's case was removed here along with the rule
+        // itself (issue #77) — it passed for this plain acyclic substrate,
+        // but the rule loses the nitrogen outright on ring-fused targets,
+        // so it was disabled entirely rather than kept for the subset of
+        // inputs it handles correctly. See
+        // `aryl_amine_retro_removed_from_default_rules` below.
     ];
 
     /// Molecular formula fingerprint (element -> count, including implicit H).
@@ -3984,6 +3994,22 @@ mod tests {
                 "{removed} must not be present in default_rules() (31.11: atom-loss, no tracked reagent)"
             );
         }
+    }
+
+    // Issue #77: aryl_amine_retro deletes a ring-fused nitrogen outright
+    // instead of returning it as part of a second (amine) precursor
+    // fragment — a genuine target-atom-loss defect, not the accepted
+    // reagent-omission class covered by `reagent_omission_template_allowlist`
+    // (synthesizability/schema.rs). Disabled pending root-cause, same policy
+    // as the 31.11 halide-rule removals above.
+    #[test]
+    fn aryl_amine_retro_removed_from_default_rules() {
+        let rules = default_rules();
+        assert!(
+            rules.iter().all(|r| r.name != "aryl_amine_retro"),
+            "aryl_amine_retro must not be present in default_rules() (issue #77: \
+             deletes ring-fused nitrogen with no tracked second precursor)"
+        );
     }
 
     // Guards the invariant `search::is_extracted_template` depends on: it

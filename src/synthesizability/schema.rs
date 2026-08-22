@@ -324,10 +324,11 @@ pub enum ValidationGap {
     /// deliberately kept separate from the genuine-extraction-defect and
     /// fragment-filter-artifact classes, and applies regardless of
     /// `AccountingFailurePolicy` -- an allowlisted template is never a
-    /// hard failure, even under `conservative()`. See issue #73
-    /// (unresolved as of this design) for why `rule:aryl_amine_retro` is
-    /// *not* on the default allowlist, and therefore a matching failure on
-    /// that template does not land here.
+    /// hard failure, even under `conservative()`. `rule:aryl_amine_retro`
+    /// was deliberately *not* on the default allowlist (issue #73: not the
+    /// same accepted-omission class as Boc/Cbz) and has since been removed
+    /// from `default_rules()` outright as a genuine atom-loss defect (issue
+    /// #77), so a matching failure on that template does not land here.
     ReagentOmissionAccountingGap {
         step_index: usize,
         template_id: String,
@@ -460,10 +461,12 @@ pub struct SynthesizabilityConfig {
     /// failure -- because the omission is by construction, not a
     /// search-quality question (design doc §4.5). Default:
     /// `["rule:boc_deprotection_retro", "rule:cbz_deprotection_retro"]`.
-    /// Deliberately does **not** include `rule:aryl_amine_retro` by
-    /// default -- see issue #73 (unresolved): unlike Boc/Cbz, it has no
-    /// existing graph-rule exact-formula carve-out and is not assumed to
-    /// be the same class.
+    /// Deliberately does **not** include `rule:aryl_amine_retro` -- unlike
+    /// Boc/Cbz, it had no existing graph-rule exact-formula carve-out and
+    /// was not the same class (issue #73). It was a genuine atom-loss
+    /// defect (issue #77) and has since been removed from `default_rules()`
+    /// entirely (`chem_env.rs`), so this allowlist exclusion is now belt-
+    /// and-suspenders rather than load-bearing.
     pub reagent_omission_template_allowlist: Vec<String>,
     /// How a **non-allowlisted** accounting failure is classified -- see
     /// [`AccountingFailurePolicy`]. This is the field that actually

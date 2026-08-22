@@ -78,9 +78,20 @@ def _fill_missing_keys_with_none(test_case, reference, target):
     Also asserts the reference's own value is actually `None` wherever a
     key gets filled in this way -- if the typed side ever has a non-None
     value for a field the raw JSON never sent, that's a real bug this
-    must catch, not silently accept.
+    must catch, not silently accept. And asserts `target` carries no key
+    `reference` lacks entirely -- the collapse only goes one direction
+    (typed side has the field, raw side may omit it), never the other;
+    an unmodeled real field in the raw JSON is drift, not a variant of
+    the documented simplification.
     """
     if isinstance(reference, dict) and isinstance(target, dict):
+        extra = set(target) - set(reference)
+        test_case.assertFalse(
+            extra,
+            f"raw JSON carries key(s) {sorted(extra)} the typed model "
+            "doesn't represent at all -- this is real drift, not the "
+            "documented absent-vs-null collapse",
+        )
         filled = {}
         for key, ref_val in reference.items():
             if key in target:

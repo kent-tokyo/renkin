@@ -130,6 +130,14 @@ jobs:
         # it actually runs rather than silently self-skipping under the
         # broader `test_*.py` discovery (that job has no renkin installed).
         run: python3 -m unittest discover -s scripts/tests -p "test_python_audit_route.py" -v
+      - name: Typed audit report Python tests (from repo checkout, v0.32.0 Phase 2A)
+        # Same reasoning as the audit-route step above: this needs both
+        # the wheel installed (AiZynthFinder/Syntheseus fixture cases) and
+        # target/release/renkin built (RENKIN-native cases), so it gets
+        # its own dedicated discover in this job rather than relying on
+        # the reranker-tests job's broader `test_*.py` discovery, which
+        # has no renkin wheel installed and would silently self-skip.
+        run: python3 -m unittest discover -s scripts/tests -p "test_python_audit_report.py" -v
 
   # v0.31.0 Syntheseus 0.8 compatibility spike: runs the exact same
   # test_python_syntheseus_exporter.py against BOTH real, artifact-pinned

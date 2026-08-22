@@ -16,8 +16,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   JSON into attribute-accessible dataclasses
   (`report.audit_manifest.policy`, `report.routes[0].findings`,
   `report.routes[0].steps[0].forward_validation`). See
-  [Typed Reports](docs/api/python.md#audit_route_report) for the full
-  field reference and the documented absent-vs-null collapse.
+  [Typed Reports](https://github.com/kent-tokyo/renkin/blob/master/docs/api/python.md#audit_route_report)
+  for the full field reference and the documented absent-vs-null collapse.
 
 ## [0.31.0] - 2026-08-22 "Syntheseus 0.8 Compatibility"
 

@@ -160,8 +160,9 @@ that fix and are invalidated. RENKIN does not predict yields, calibrated
 experimental success probabilities, or side reactions, and does not search
 the literature automatically (`success_probability` is a template-frequency
 search-ranking score, not a calibrated prediction — see
-[Benchmark](https://kent-tokyo.github.io/renkin/benchmark/) for the current
-corrected numbers, full methodology, and known limitations).
+[Benchmark](https://kent-tokyo.github.io/renkin/benchmark/) for the corrected
+historical baseline, full methodology, and known limitations — that page is a
+frozen, single-commit measurement, not a live number).
 
 ---
 
@@ -697,7 +698,7 @@ see "Earlier milestones" below for older shipped work.
 Percentage figures below are historical milestones at the time each was
 shipped, not current performance — several predate the validator-accuracy
 fix noted in [Current Limitations](#current-limitations) and are invalidated;
-see [Benchmark](#benchmark) for the current corrected numbers.
+see [Benchmark](#benchmark) for the corrected historical baseline.
 
 - [x] Reranker made actually usable: Python exposure + batteries-included model distribution ([#101](https://github.com/kent-tokyo/renkin/issues/101), v0.23.0) — see "Recently shipped" above for the current-cycle summary; full detail in [`CHANGELOG.md`](CHANGELOG.md)
 - [x] Stable `template_id` (`rule:<name>` / `smirks-sha256:<hex>`) + `--template-metadata` evidence sidecar + `renkin template ids` ([#41](https://github.com/kent-tokyo/renkin/issues/41) phase 1)

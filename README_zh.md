@@ -154,7 +154,7 @@ OC(=O)c1ccccc1OC(=O)C
 
 ## 当前局限
 
-⚠️ 基准测试数值正在经历validator准确性修复后的重新测量——本仓库其他位置出现的78.0%/95.9%/81.8%（ChEMBL）均为修复前的历史数值，已被判定无效。RENKIN不预测收率、经过实验校准的成功概率或副反应，也不会自动检索文献（`success_probability` 是基于模板频率的搜索排序分数，并非经过校准的预测值）。当前修正后的数值、完整方法说明与已知局限请参见[基准测试](https://kent-tokyo.github.io/renkin/benchmark/)。
+⚠️ 基准测试数值正在经历validator准确性修复后的重新测量——本仓库其他位置出现的78.0%/95.9%/81.8%（ChEMBL）均为修复前的历史数值，已被判定无效。RENKIN不预测收率、经过实验校准的成功概率或副反应，也不会自动检索文献（`success_probability` 是基于模板频率的搜索排序分数，并非经过校准的预测值）。修正后的历史测量数值、完整方法说明与已知局限请参见[基准测试](https://kent-tokyo.github.io/renkin/benchmark/)（该页面是单个commit时点的冻结历史测量，并非实时数值）。
 
 ---
 
@@ -510,7 +510,7 @@ renkin/                          ← Cargo workspace 根目录
 <details>
 <summary>更早的里程碑</summary>
 
-以下百分比数字是各里程碑达成时的历史数据，并非当前性能——部分早于[当前局限](#当前局限)中提到的validator精度修复，已失效；当前修正后的数字见[基准测试](#基准测试)。
+以下百分比数字是各里程碑达成时的历史数据，并非当前性能——部分早于[当前局限](#当前局限)中提到的validator精度修复，已失效；修正后的历史数字见[基准测试](#基准测试)。
 
 - [x] `renkin-forward enumerate` — 从单一已知反应物加明确partner库进行有界、template引导的正向枚举（[#64](https://github.com/kent-tokyo/renkin/issues/64)）
 - [x] `renkin-forward hints` — 无需partner输入的检索提示（匹配的template slot、缺失partner的SMARTS、结合变化），不预测具体产物（[#64](https://github.com/kent-tokyo/renkin/issues/64) phase 2）

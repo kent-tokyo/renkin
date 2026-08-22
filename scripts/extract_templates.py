@@ -17,6 +17,7 @@ Output format (one template per line, tab-separated):
 
 import argparse
 import re
+import sys
 from collections import Counter
 
 try:
@@ -223,6 +224,14 @@ def extract_templates(top_n: int, output_path: str,
 
 
 def main() -> None:
+    if not HAVE_DEPS:
+        print(
+            "Missing dependencies: datasets, rdchiral, rdkit "
+            "(see scripts/requirements-ring-context.txt).",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--top", type=int, default=300,
                         help="Number of most frequent templates to keep (default: 300)")

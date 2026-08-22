@@ -76,9 +76,13 @@ class TestSyntheseusExtraMetadata(unittest.TestCase):
         dep_part, _, marker_part = lines[0].partition(";")
         self.assertIn(">=0.7.2", dep_part, dep_part)
         self.assertIn("<=0.8.0", dep_part, dep_part)
-        # Explicitly NOT an open-ended upper bound -- verified and
-        # supported are not the same claim, an unverified future version
-        # must not be silently accepted.
+        # Explicitly NOT an open-ended upper bound -- a release above the
+        # verified range (0.8.1, 0.9.0, ...) must not be silently accepted
+        # just because it would likely still work; verified and supported
+        # are not the same claim. (The interval still admits any
+        # intermediate release between 0.7.2 and 0.8.0, e.g. a
+        # hypothetical future 0.7.3 -- that's expected, not a gap this
+        # assertion is checking for.)
         self.assertNotIn("<0.9", dep_part, dep_part)
         self.assertIn("extra ==", marker_part, marker_part)
         self.assertIn("syntheseus", marker_part, marker_part)

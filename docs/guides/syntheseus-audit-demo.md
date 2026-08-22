@@ -140,13 +140,19 @@ these are two different claims, not one:**
   `syntheseus>=0.7.2,<=0.8.0`. This is what pip's resolver will actually
   install.
 - Individually verified against real, artifact-pinned PyPI packages:
-  **`0.7.2`** (the original named target) and **`0.8.0`** (added in
+  **only `0.7.2`** (the original named target) **and `0.8.0`** (added in
   v0.31.0 Phase 1 after a real dual-version compatibility spike — see
   [`docs/design/syntheseus-0.8-compatibility-spike.md`](https://github.com/kent-tokyo/renkin/blob/master/docs/design/syntheseus-0.8-compatibility-spike.md)
   for the full report). The interval's upper bound is deliberately
-  `<=0.8.0`, not an open-ended `<0.9` — an unverified future release
-  isn't silently accepted just because it would likely still work.
-  "Verified" and "supported" are not the same claim; see the
+  capped at `<=0.8.0`, not an open-ended `<0.9` — an unverified release
+  *above* the verified range (`0.8.1`, `0.9.0`, ...) isn't silently
+  accepted just because it would likely still work. Note the interval
+  still admits any intermediate release too (a hypothetical future
+  `0.7.3`, for instance) — it's not restricted to exactly the two named
+  versions; an intermediate release, if one is ever published, falls
+  within the declared interval but is not individually verified unless
+  it's later added to the exact-version CI matrix. "Verified" and
+  "supported" are not the same claim; see the
   [Audit Reproducibility and Compatibility Contract](audit-reproducibility-contract.md).
 - `renkin.syntheseus_exporter`'s own production code is byte-for-byte
   identical for both verified versions — no `0.8.0`-specific branch,

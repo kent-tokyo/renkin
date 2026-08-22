@@ -72,14 +72,14 @@ Building blocks: **402** unique compounds actually loaded by `ChemEnv::load("dat
 
 ### Comparison: Single-Step Top-1 Models (different metric)
 
-> **⚠️ Different metric.** These measure single-step top-1 prediction accuracy (does the model's top-1 prediction match the known reaction?), **not** multi-step planning success rate. Direct comparison with RENKIN's multi-step figures above, or with the literature citations in the previous section, is not valid.
+> **⚠️ Different metric.** These measure single-step top-1 prediction accuracy (does the model's top-1 prediction match the known reaction?), **not** multi-step planning success rate. Direct comparison with RENKIN's multi-step figures above is not valid.
 
 | System | Single-Step Top-1 | Source |
 |--------|------------------|--------|
 | LocalRetro | 53.4% | Chen et al., ACS Cent. Sci. 2021 |
 
-!!! note "Condition differences"
-    RENKIN's 20.09% uses only **402 building blocks** and **~5,000 templates**, while systems like AiZynthFinder use 6M-compound databases and 50k templates. RENKIN's strength is **portability**: Pure Rust, zero C/C++ dependencies, WASM + Python + CLI from one binary.
+!!! note "RENKIN's configuration"
+    RENKIN's 20.09% search-to-stock rate above uses only **402 building blocks** and **~5,000 templates**. RENKIN's strength is **portability**: Pure Rust, zero C/C++ dependencies, WASM + Python + CLI from one binary.
 
 ### What RENKIN solves well
 

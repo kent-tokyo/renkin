@@ -6,34 +6,36 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [Unreleased]
+## [0.30.0] - 2026-08-22 "Syntheseus Bridge"
+
+Syntheseus has no route export. RENKIN built one — and audits it exactly like every other adapter.
 
 ### Added
 - `renkin.syntheseus_exporter` (optional, `pip install renkin[syntheseus]`):
   exports a Syntheseus `SynthesisGraph` to the `syntheseus-route-v1` JSON
-  interchange format (v0.30.0 Syntheseus Bridge, Phase 1). Public-API-only,
-  fail-loud on unsupported object shapes, deterministic and byte-stable
-  output.
+  interchange format. Public-API-only, fail-loud on unsupported object
+  shapes, deterministic and byte-stable output.
 - `renkin audit-route --format syntheseus` (also auto-detected): a third
-  route adapter (`bridge::syntheseus::normalize_syntheseus_route`, v0.30.0
-  Syntheseus Bridge Phase 2), alongside RENKIN-native and AiZynthFinder.
-  Convergent/non-tree Syntheseus routes are handled by duplicating the
-  shared sub-tree under each parent, the same behavior the RENKIN-native
-  adapter already has.
-- Playground Audit tab gained Syntheseus as a third format option
-  (v0.30.0 Phase 3) — audits entirely client-side via the existing
-  `audit_route_v2` WASM export, no new export needed.
+  route adapter (`bridge::syntheseus::normalize_syntheseus_route`),
+  alongside RENKIN-native and AiZynthFinder. Convergent/non-tree
+  Syntheseus routes are handled by duplicating the shared sub-tree under
+  each parent, the same behavior the RENKIN-native adapter already has.
+  Forward validation reports `not_evaluable` for every real Syntheseus
+  route today — Syntheseus's `reaction_smiles` carries no atom mapping,
+  so RENKIN honestly reports "can't verify" rather than fabricating a
+  pass (see the [Syntheseus audit demo](https://github.com/kent-tokyo/renkin/blob/master/docs/guides/syntheseus-audit-demo.md#step-3-why-forward-validation-stays-not_evaluable)).
+- Playground Audit tab gained Syntheseus as a third format option —
+  audits entirely client-side via the existing `audit_route_v2` WASM
+  export, no new export needed.
 - [Audit a Syntheseus Route](https://github.com/kent-tokyo/renkin/blob/master/docs/guides/syntheseus-audit-demo.md):
-  a 5-minute walkthrough against the real committed Phase 0 fixtures,
-  including why forward validation stays `not_evaluable` for every real
-  Syntheseus route today (`reaction_smiles` carries no atom mapping).
+  a 5-minute walkthrough against the real committed fixtures.
 - 3-way (RENKIN-native/AiZynthFinder/Syntheseus) structural and
   policy-verdict parity tests in `tests/cross_tool_audit.rs`, extending
   the existing 2-way cross-tool conformance suite.
 
 ### Changed
 - Python package moved to maturin's mixed Rust/Python layout
-  (`python/renkin/`) to host this pure-Python module alongside the
+  (`python/renkin/`) to host the pure-Python exporter alongside the
   compiled extension. `import renkin` and every existing binding
   (`find_routes`, `predict_forward`, `validate_forward`, `audit_route`)
   are unaffected.

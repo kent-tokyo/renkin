@@ -130,16 +130,38 @@ jobs:
         # it actually runs rather than silently self-skipping under the
         # broader `test_*.py` discovery (that job has no renkin installed).
         run: python3 -m unittest discover -s scripts/tests -p "test_python_audit_route.py" -v
-      - name: Syntheseus exporter Python tests (from repo checkout, v0.30.0 Phase 1)
-        # syntheseus is an optional extra (`renkin[syntheseus]`), installed
-        # separately here rather than via the wheel's extras syntax (the
-        # dist/*.whl filename has version/platform tags that don't glob
-        # cleanly with an extras suffix). Pinned to match pyproject.toml's
-        # own optional-dependencies pin, so this is exactly what a real
-        # `pip install renkin[syntheseus]` user gets.
-        run: |
-          pip install "syntheseus==0.7.2"
-          python3 -m unittest discover -s scripts/tests -p "test_python_syntheseus_exporter.py" -v
+
+  # v0.31.0 Syntheseus 0.8 compatibility spike: runs the exact same
+  # test_python_syntheseus_exporter.py against BOTH real, artifact-pinned
+  # syntheseus versions in separate jobs (not a single job installing one
+  # then the other -- that would leave stale site-packages from the first
+  # install around). FIXTURE_DIR in that test file resolves from
+  # importlib.metadata.version("syntheseus"), so the identical test body
+  # verifies both tests/fixtures/syntheseus/0.7.2/ and .../0.8.0/ without
+  # duplicating test code. See docs/design/syntheseus-0.8-compatibility-spike.md.
+  syntheseus-compat-matrix:
+    name: Syntheseus compat · ${{ matrix.syntheseus-version }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        syntheseus-version: ["0.7.2", "0.8.0"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --features python --out dist
+      - run: pip install dist/*.whl --force-reinstall
+      # Pinned to an exact matrix value, not a range -- this job's whole
+      # point is verifying each real version individually, not whatever
+      # `pip` happens to resolve within pyproject.toml's declared extra.
+      - run: pip install "syntheseus==${{ matrix.syntheseus-version }}"
+      - run: python3 -m unittest discover -s scripts/tests -p "test_python_syntheseus_exporter.py" -v
 
   # Prevents documentation from silently drifting from reality (regression:
   # docs once claimed 31 rules / 509 building blocks / a non-existent

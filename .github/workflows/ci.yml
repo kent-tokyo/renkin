@@ -130,6 +130,16 @@ jobs:
         # it actually runs rather than silently self-skipping under the
         # broader `test_*.py` discovery (that job has no renkin installed).
         run: python3 -m unittest discover -s scripts/tests -p "test_python_audit_route.py" -v
+      - name: Syntheseus exporter Python tests (from repo checkout, v0.30.0 Phase 1)
+        # syntheseus is an optional extra (`renkin[syntheseus]`), installed
+        # separately here rather than via the wheel's extras syntax (the
+        # dist/*.whl filename has version/platform tags that don't glob
+        # cleanly with an extras suffix). Pinned to match pyproject.toml's
+        # own optional-dependencies pin, so this is exactly what a real
+        # `pip install renkin[syntheseus]` user gets.
+        run: |
+          pip install "syntheseus==0.7.2"
+          python3 -m unittest discover -s scripts/tests -p "test_python_syntheseus_exporter.py" -v
 
   # Prevents documentation from silently drifting from reality (regression:
   # docs once claimed 31 rules / 509 building blocks / a non-existent

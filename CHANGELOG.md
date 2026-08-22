@@ -6,6 +6,22 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Added
+- `renkin.syntheseus_exporter` (optional, `pip install renkin[syntheseus]`):
+  exports a Syntheseus `SynthesisGraph` to the `syntheseus-route-v1` JSON
+  interchange format (v0.30.0 Syntheseus Bridge, Phase 1). Public-API-only,
+  fail-loud on unsupported object shapes, deterministic and byte-stable
+  output. Not yet consumed by the CLI/audit pipeline — that's Phase 2.
+
+### Changed
+- Python package moved to maturin's mixed Rust/Python layout
+  (`python/renkin/`) to host this pure-Python module alongside the
+  compiled extension. `import renkin` and every existing binding
+  (`find_routes`, `predict_forward`, `validate_forward`, `audit_route`)
+  are unaffected.
+
 ## [0.29.0] - 2026-08-22 "Audit Policy Profiles"
 
 Audit the same route under informational, standard, or strict policy — without hiding or changing the underlying findings.

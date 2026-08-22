@@ -24,6 +24,9 @@ classifiers = [
     "Programming Language :: Rust",
 ]
 
+[project.optional-dependencies]
+syntheseus = ["syntheseus==0.7.2"]
+
 [project.urls]
 Homepage   = "https://github.com/kent-tokyo/renkin"
 Repository = "https://github.com/kent-tokyo/renkin"
@@ -32,3 +35,4 @@ Issues     = "https://github.com/kent-tokyo/renkin/issues"
 [tool.maturin]
 features      = ["python"]
 module-name   = "renkin"
+python-source = "python"

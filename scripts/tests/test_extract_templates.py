@@ -1,6 +1,7 @@
 import os
 import sys
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -59,6 +60,33 @@ class TestIsValidForChematic(unittest.TestCase):
         # unconditionally so this file always has at least one real check
         # of is_valid_for_chematic, regardless of local environment.
         self.assertFalse(et.is_valid_for_chematic("not-a-valid-smirks"))
+
+
+class TestResolveDatasetRevision(unittest.TestCase):
+    """Issue #100: dataset revision pinning -- mirrors
+    generate_ring_context_metadata.py's already-reviewed
+    resolve_dataset_revision exactly. No network/heavy deps needed: the
+    pinned-default and user-provided branches never touch HfApi, and the
+    resolve-latest branch is exercised against a mocked HfApi below."""
+
+    def test_default_revision_is_pinned(self):
+        revision, method = et.resolve_dataset_revision("x", None, False)
+        self.assertEqual(revision, et.PINNED_DATASET_REVISION)
+        self.assertEqual(method, "pinned-default")
+
+    def test_user_revision_wins(self):
+        revision, method = et.resolve_dataset_revision("x", "abc123", False)
+        self.assertEqual(revision, "abc123")
+        self.assertEqual(method, "user-provided")
+
+    @patch("extract_templates.HfApi", create=True)
+    def test_resolve_latest_uses_hub_result(self, mock_hfapi_cls):
+        # create=True: HfApi may not exist as a module attribute at all
+        # when HAVE_DEPS is False (it's only bound inside the try block).
+        mock_hfapi_cls.return_value.dataset_info.return_value.sha = "latest-sha-456"
+        revision, method = et.resolve_dataset_revision("x", None, True)
+        self.assertEqual(revision, "latest-sha-456")
+        self.assertIn("resolve", method.lower())
 
 
 if __name__ == "__main__":

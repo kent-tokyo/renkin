@@ -9,6 +9,15 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- `renkin.audit_route_report(...) -> AuditRouteReport` (v0.32.0 Phase 2A):
+  a typed Python counterpart to `renkin.audit_route(...) -> str`, which
+  stays completely unchanged. Pure-Python (`python/renkin/audit_report.py`),
+  no Rust/CLI/WASM changes -- calls the existing string API and parses its
+  JSON into attribute-accessible dataclasses
+  (`report.audit_manifest.policy`, `report.routes[0].findings`,
+  `report.routes[0].steps[0].forward_validation`). See
+  [Typed Reports](https://github.com/kent-tokyo/renkin/blob/master/docs/api/python.md#audit_route_report)
+  for the full field reference and the documented absent-vs-null collapse.
 - AiZynthFinder version matrix (v0.32.0 Phase 2B): individually verified
   against real, artifact-captured `aizynthcli` output from `4.3.2` and
   `4.4.0`, alongside the existing `4.4.1` verification —

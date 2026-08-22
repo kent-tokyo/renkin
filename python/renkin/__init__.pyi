@@ -4,10 +4,24 @@ Lives at ``python/renkin/__init__.pyi``, stubbing ``renkin/__init__.py``'s
 ``from .renkin import *`` re-export of the PyO3 extension submodule
 (mixed Rust/Python maturin layout, since v0.30.0 added a pure-Python
 ``renkin.syntheseus_exporter`` alongside the compiled bindings). Every
-function here returns a JSON *string*; parse it yourself with
+compiled function here returns a JSON *string*; parse it yourself with
 ``json.loads()``. See ``docs/api/python.md`` for the full field-by-field
 return-shape documentation this stub deliberately doesn't duplicate.
+``audit_route_report`` (v0.32.0, pure Python, defined in
+``audit_report.py``) is the one exception -- it returns the typed
+``AuditRouteReport`` dataclass directly.
 """
+
+from .audit_report import (
+    AuditedStep as AuditedStep,
+    AuditFinding as AuditFinding,
+    AuditManifest as AuditManifest,
+    AuditReport as AuditReport,
+    AuditRouteReport as AuditRouteReport,
+    AuditRouteSummary as AuditRouteSummary,
+    ForwardValidationResult as ForwardValidationResult,
+    StockValidationResult as StockValidationResult,
+)
 
 __version__: str
 
@@ -47,3 +61,9 @@ def audit_route(
     stock_text: str = "",
     policy: str = "standard",
 ) -> str: ...
+def audit_route_report(
+    content: str,
+    format: str = "auto",
+    stock_text: str = "",
+    policy: str = "standard",
+) -> AuditRouteReport: ...

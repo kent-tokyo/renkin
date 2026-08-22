@@ -235,6 +235,83 @@ Returns a JSON string: the same `AuditRouteReport` shape
 `ValueError` on malformed JSON, an unrecognized route shape, or an invalid
 `format`/`policy` value -- fail-loud, never a partial or guessed result.
 
+## `audit_route_report`
+
+```python
+renkin.audit_route_report(
+    content: str,
+    format: str = "auto",
+    stock_text: str = "",
+    policy: str = "standard",
+) -> AuditRouteReport
+```
+
+Same arguments, same validation, same `ValueError`s as `audit_route()` --
+the only difference is the return type. `audit_route()` itself is
+completely unchanged by this: it's still there, still returns a plain
+`str`, for anyone who wants the raw JSON. `audit_route_report()` is a
+pure-Python convenience layer on top (`python/renkin/audit_report.py`,
+defined outside the compiled extension) that calls `audit_route()`,
+`json.loads()`s it, and hands back attribute-accessible dataclasses
+instead of a dict-of-dicts:
+
+```python
+report = renkin.audit_route_report(content, format="aizynthfinder", policy="strict")
+print(report.audit_manifest.policy)
+print(report.routes[0].status)
+for finding in report.routes[0].findings:
+    print(finding.code, finding.severity)
+print(report.routes[0].steps[0].forward_validation.status)
+```
+
+Returns an `AuditRouteReport`:
+
+| Field | Type |
+|---|---|
+| `schema_version` | `int` |
+| `source_format` | `str` |
+| `audit_manifest` | `AuditManifest` |
+| `summary` | `AuditRouteSummary` |
+| `routes` | `list[AuditReport]` |
+
+`AuditManifest`: `renkin_version`, `report_schema_version` (`int`),
+`source_format`, `input_sha256`, `policy` (all `str`), plus
+`source_version: str | None` and `stock_sha256: str | None`.
+
+`AuditRouteSummary`: `routes_total`, `passed`, `fail`, `partial` (all
+`int`) -- note `passed`, not `pass`: the wire JSON's key really is
+`"pass"`, renamed here since `pass` is a Python reserved word.
+
+`AuditReport` (one per audited route): `source`, `status` (`str`),
+`route_tree_parseable` (`bool`), `reaction_steps_parseable: bool | None`,
+`stock_validation: StockValidationResult | None`,
+`target_element_accounting_status: str | None`,
+`normalized_route_sha256: str | None`, `steps: list[AuditedStep]`,
+`findings: list[AuditFinding]`.
+
+`AuditedStep`: `target: str`, `precursors: list[str]`,
+`forward_validation: ForwardValidationResult`.
+
+`ForwardValidationResult`: `status: str`, `method: str`,
+`reason: str | None`. `StockValidationResult`: `status: str`,
+`reason: str | None`. `AuditFinding`: `code: str`, `severity: str`,
+`node: str | None`.
+
+**Every `str | None` field here collapses two different wire-level
+states into one Python value.** In the raw JSON, some optional fields
+are an explicit `null` and some are entirely *absent* keys (Rust's
+`skip_serializing_if`) -- both mean "not applicable here", and both
+become `None` on the typed side. This loses no information that matters
+to a caller of this convenience API; anyone who genuinely needs to tell
+"explicit null" apart from "key absent" should use `audit_route()`
+(the string API) and inspect the parsed JSON directly instead.
+
+**Status/code/severity fields stay plain `str`, not a Python `Enum`.**
+A real `Enum` would raise the moment a future RENKIN version ships a new
+variant value this stub doesn't know about yet; `str` degrades
+gracefully. The current closed set of values for each is documented in
+[Audit Reproducibility and Compatibility Contract](../guides/audit-reproducibility-contract.md).
+
 ## `__version__`
 
 ```python

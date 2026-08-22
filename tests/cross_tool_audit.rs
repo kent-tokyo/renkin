@@ -6,6 +6,12 @@
 //! multiset, step count, the set of structural finding codes, target
 //! element accounting, and the configured-stock verdict.
 //!
+//! v0.30.0 Syntheseus Bridge, Phase 3 extends this to a third tool
+//! (`syntheseus_route_agrees_structurally_with_renkin_and_aizynthfinder`,
+//! `policy_verdict_invariance_holds_across_all_three_tools`) -- same
+//! honest-degradation principle, same "tool-neutral structure must agree,
+//! tool-specific evidence need not" contract.
+//!
 //! Forward validation is deliberately NOT required to match step-for-step:
 //! it's only required to agree when both sides have sufficient evidence to
 //! reach a verdict at all. The RENKIN side is built with a `RetroRule`
@@ -18,10 +24,14 @@
 
 use std::collections::HashSet;
 
+use renkin::bridge::syntheseus::{
+    SyntheseusMoleculeMetadata, SyntheseusReactionMetadata, SyntheseusStep,
+};
 use renkin::bridge::{
-    AuditFindingCode, AuditStatus, AzfNode, CheckStatus, ParseOutcome, ReactionEvidence,
-    RouteDocument, RouteNode, RouteSource, audit, normalize_aizynthfinder_route,
-    normalize_renkin_route,
+    AuditFindingCode, AuditPolicy, AuditStatus, AzfNode, CheckStatus, ParseOutcome,
+    ReactionEvidence, RouteDocument, RouteNode, RouteSource, SyntheseusRouteV1, audit,
+    audit_with_policy, normalize_aizynthfinder_route, normalize_renkin_route,
+    normalize_syntheseus_route,
 };
 use renkin::chem_env::{RetroRule, mol_from_smiles, to_canonical};
 use renkin::search;
@@ -452,4 +462,210 @@ fn missing_reaction_evidence_is_not_evaluable_never_silently_resolved_on_either_
             .all(|s| s.forward_validation.status != CheckStatus::Fail),
         "missing evidence must never be misreported as a forward FAIL: {azf_report:?}"
     );
+}
+
+// ── v0.30.0 Syntheseus Bridge, Phase 3: extends the above to a third tool ──
+
+/// Builds a single-step `SyntheseusRouteV1` -- `starting_leaves` is
+/// `(smiles, is_purchasable)`, mirroring `azf_mol`'s `in_stock` parameter
+/// (`None` is the genuinely-ambiguous case, never guessed).
+fn syntheseus_route(
+    target: &str,
+    reactants: &[&str],
+    starting_leaves: &[(&str, Option<bool>)],
+) -> SyntheseusRouteV1 {
+    SyntheseusRouteV1 {
+        schema_version: Some(1),
+        target: target.to_string(),
+        steps: vec![SyntheseusStep {
+            product: target.to_string(),
+            reactants: reactants.iter().map(|s| s.to_string()).collect(),
+            reaction_metadata: SyntheseusReactionMetadata {
+                reaction_smiles: format!("{}>>{target}", reactants.join(".")),
+            },
+        }],
+        starting_molecules: starting_leaves.iter().map(|(s, _)| s.to_string()).collect(),
+        molecule_metadata: starting_leaves
+            .iter()
+            .map(|(s, purchasable)| {
+                (
+                    s.to_string(),
+                    SyntheseusMoleculeMetadata {
+                        is_purchasable: *purchasable,
+                    },
+                )
+            })
+            .collect(),
+    }
+}
+
+/// Same "CO -> C + O" reaction as `branched_route_agrees_structurally_across_tools`,
+/// described a third way -- a genuine 3-way structural comparison, not a
+/// strained pairing, since all three sides describe the identical chemistry.
+#[test]
+fn syntheseus_route_agrees_structurally_with_renkin_and_aizynthfinder() {
+    let stock: HashSet<String> = [canon("C"), canon("O")].into_iter().collect();
+
+    let renkin_input = renkin_route(&[("CO", &["C", "O"], "co_aliphatic_cleavage")], &["C", "O"]);
+    let renkin_outcome = normalize_renkin_route(&renkin_input, "CO");
+    assert!(renkin_outcome.parseable, "{:?}", renkin_outcome.defects);
+    let renkin_report = audit(
+        &renkin_outcome,
+        Some(&stock),
+        Some(&[co_aliphatic_cleavage_rule()]),
+    );
+
+    let azf_node = azf_mol(
+        "CO",
+        Some(false),
+        vec![azf_reaction(
+            Some("[C:1][O:2]>>[C:1].[O:2]"),
+            vec![
+                azf_mol("C", Some(true), vec![]),
+                azf_mol("O", Some(true), vec![]),
+            ],
+        )],
+    );
+    let azf_outcome = normalize_aizynthfinder_route(&azf_node);
+    assert!(azf_outcome.parseable, "{:?}", azf_outcome.defects);
+    let azf_report = audit(&azf_outcome, Some(&stock), None);
+
+    let syn_input = syntheseus_route("CO", &["C", "O"], &[("C", Some(true)), ("O", Some(true))]);
+    let syn_outcome = normalize_syntheseus_route(&syn_input);
+    assert!(syn_outcome.parseable, "{:?}", syn_outcome.defects);
+    let syn_report = audit(&syn_outcome, Some(&stock), None);
+
+    let renkin_doc = renkin_outcome.document.as_ref().unwrap();
+    let azf_doc = azf_outcome.document.as_ref().unwrap();
+    let syn_doc = syn_outcome.document.as_ref().unwrap();
+
+    // Canonical root, agreed by all three.
+    for doc in [azf_doc, syn_doc] {
+        assert_eq!(renkin_doc.root.canonical_smiles, doc.root.canonical_smiles);
+    }
+
+    // Leaf multiset, agreed by all three.
+    let leaves_of = |doc: &RouteDocument| {
+        let mut out = Vec::new();
+        leaf_multiset(&doc.root, &mut out);
+        out.sort();
+        out
+    };
+    let renkin_leaves = leaves_of(renkin_doc);
+    assert_eq!(renkin_leaves, leaves_of(azf_doc));
+    assert_eq!(renkin_leaves, leaves_of(syn_doc));
+
+    // Step count, agreed by all three.
+    for doc in [azf_doc, syn_doc] {
+        assert_eq!(
+            renkin_doc.step_count_collapsed_edges,
+            doc.step_count_collapsed_edges
+        );
+    }
+
+    // Structural findings: empty on every side for this clean, equivalent
+    // route (forward-related codes excluded, same convention as the
+    // 2-way test above).
+    fn structural_codes(findings: &[renkin::bridge::AuditFinding]) -> Vec<AuditFindingCode> {
+        let mut codes: Vec<AuditFindingCode> = findings
+            .iter()
+            .map(|f| f.code)
+            .filter(|c| {
+                !matches!(
+                    c,
+                    AuditFindingCode::ForwardReactionNotReproduced
+                        | AuditFindingCode::ForwardValidationNotEvaluable
+                )
+            })
+            .collect();
+        codes.sort_by_key(|c| *c as u8);
+        codes.dedup();
+        codes
+    }
+    for report in [&azf_report, &syn_report] {
+        assert_eq!(
+            structural_codes(&renkin_report.findings),
+            structural_codes(&report.findings)
+        );
+    }
+    assert!(structural_codes(&renkin_report.findings).is_empty());
+
+    // Target element accounting, agreed by all three.
+    for report in [&azf_report, &syn_report] {
+        assert_eq!(
+            renkin_report.target_element_accounting_status,
+            report.target_element_accounting_status
+        );
+    }
+
+    // Configured stock result, agreed by all three -- all leaves are in
+    // `stock`, so every side passes.
+    for report in [&renkin_report, &azf_report, &syn_report] {
+        assert_eq!(
+            report.stock_validation.as_ref().map(|s| s.status),
+            Some(CheckStatus::Pass),
+            "{report:?}"
+        );
+    }
+}
+
+/// The `derive_status` policy table (`AuditPolicy::{Informational,Standard,
+/// Strict}` under a genuine gating finding: `informational` softens to
+/// `partial`, `standard`/`strict` stay `fail`) already has an exhaustive,
+/// adapter-agnostic proof in `bridge::audit`'s own tests. What's new here:
+/// confirming that table holds for real, adapter-specific *input* on all
+/// three tools at once, from the same underlying "one leaf's purchasability
+/// is genuinely unknown" condition expressed three different ways
+/// (RENKIN: absent from `building_blocks`; AiZynthFinder: `in_stock: None`;
+/// Syntheseus: `is_purchasable: None`) -- the same finding-set-invariance
+/// property v0.29.0 proved per-adapter, now confirmed to generalize across
+/// every adapter uniformly, not just each one in isolation.
+#[test]
+fn policy_verdict_invariance_holds_across_all_three_tools() {
+    let renkin_input = renkin_route(&[("CO", &["C", "O"], "co_aliphatic_cleavage")], &["C"]);
+    let renkin_outcome = normalize_renkin_route(&renkin_input, "CO");
+    assert!(!renkin_outcome.parseable);
+    assert!(
+        renkin_outcome
+            .defects
+            .contains(&AuditFindingCode::AmbiguousLeafStatus)
+    );
+
+    let azf_node = azf_mol(
+        "CO",
+        Some(false),
+        vec![azf_reaction(
+            Some("[C:1][O:2]>>[C:1].[O:2]"),
+            vec![azf_mol("C", Some(true), vec![]), azf_mol("O", None, vec![])],
+        )],
+    );
+    let azf_outcome = normalize_aizynthfinder_route(&azf_node);
+    assert!(!azf_outcome.parseable);
+    assert!(
+        azf_outcome
+            .defects
+            .contains(&AuditFindingCode::AmbiguousLeafStatus)
+    );
+
+    let syn_input = syntheseus_route("CO", &["C", "O"], &[("C", Some(true)), ("O", None)]);
+    let syn_outcome = normalize_syntheseus_route(&syn_input);
+    assert!(!syn_outcome.parseable);
+    assert!(
+        syn_outcome
+            .defects
+            .contains(&AuditFindingCode::AmbiguousLeafStatus)
+    );
+
+    for (policy, expected) in [
+        (AuditPolicy::Informational, AuditStatus::Partial),
+        (AuditPolicy::Standard, AuditStatus::Fail),
+        (AuditPolicy::Strict, AuditStatus::Fail),
+    ] {
+        let renkin_report = audit_with_policy(&renkin_outcome, None, None, policy);
+        let azf_report = audit_with_policy(&azf_outcome, None, None, policy);
+        let syn_report = audit_with_policy(&syn_outcome, None, None, policy);
+        assert_eq!(renkin_report.status, expected, "renkin, {policy:?}");
+        assert_eq!(azf_report.status, expected, "aizynthfinder, {policy:?}");
+        assert_eq!(syn_report.status, expected, "syntheseus, {policy:?}");
+    }
 }

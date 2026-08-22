@@ -20,6 +20,16 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Convergent/non-tree Syntheseus routes are handled by duplicating the
   shared sub-tree under each parent, the same behavior the RENKIN-native
   adapter already has.
+- Playground Audit tab gained Syntheseus as a third format option
+  (v0.30.0 Phase 3) — audits entirely client-side via the existing
+  `audit_route_v2` WASM export, no new export needed.
+- [Audit a Syntheseus Route](https://github.com/kent-tokyo/renkin/blob/master/docs/guides/syntheseus-audit-demo.md):
+  a 5-minute walkthrough against the real committed Phase 0 fixtures,
+  including why forward validation stays `not_evaluable` for every real
+  Syntheseus route today (`reaction_smiles` carries no atom mapping).
+- 3-way (RENKIN-native/AiZynthFinder/Syntheseus) structural and
+  policy-verdict parity tests in `tests/cross_tool_audit.rs`, extending
+  the existing 2-way cross-tool conformance suite.
 
 ### Changed
 - Python package moved to maturin's mixed Rust/Python layout

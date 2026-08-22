@@ -393,7 +393,7 @@
   <div class="panel">
     <div class="panel-title">
       <span data-i18n="audit_panel_title">Route to Audit</span>
-      <span class="help-icon" tabindex="0" data-i18n-tip="tip_audit" data-tip="Audits an already-completed route (RENKIN or AiZynthFinder export) for structural integrity, stock coverage, element accounting, and forward-reaction reproducibility — a pass/fail/partial verdict, entirely in your browser.">?</span>
+      <span class="help-icon" tabindex="0" data-i18n-tip="tip_audit" data-tip="Audits an already-completed route (RENKIN, AiZynthFinder, or Syntheseus export) for structural integrity, stock coverage, element accounting, and forward-reaction reproducibility — a pass/fail/partial verdict, entirely in your browser.">?</span>
     </div>
 
     <div class="search-row" style="margin-top:0">
@@ -403,6 +403,7 @@
           <option value="auto" data-i18n="audit_format_auto">Auto-detect</option>
           <option value="renkin" data-i18n="audit_format_renkin">RENKIN</option>
           <option value="aizynthfinder" data-i18n="audit_format_aizynthfinder">AiZynthFinder</option>
+          <option value="syntheseus" data-i18n="audit_format_syntheseus">Syntheseus</option>
         </select>
       </div>
       <div class="field">
@@ -539,11 +540,12 @@
       tab_plan: 'Plan a Route',
       tab_audit: 'Audit a Route',
       audit_panel_title: 'Route to Audit',
-      tip_audit: 'Audits an already-completed route (RENKIN or AiZynthFinder export) for structural integrity, stock coverage, element accounting, and forward-reaction reproducibility — a pass/fail/partial verdict, entirely in your browser.',
+      tip_audit: 'Audits an already-completed route (RENKIN, AiZynthFinder, or Syntheseus export) for structural integrity, stock coverage, element accounting, and forward-reaction reproducibility — a pass/fail/partial verdict, entirely in your browser.',
       audit_format_label: 'Format',
       audit_format_auto: 'Auto-detect',
       audit_format_renkin: 'RENKIN',
       audit_format_aizynthfinder: 'AiZynthFinder',
+      audit_format_syntheseus: 'Syntheseus',
       audit_policy_label: 'Policy',
       tip_audit_policy: 'Policy never hides a finding — it only changes how the overall pass/fail/partial verdict is derived from findings already collected.',
       audit_policy_informational: 'Informational',
@@ -636,11 +638,12 @@
       tab_plan: 'ルートを計画',
       tab_audit: 'ルートを監査',
       audit_panel_title: '監査対象ルート',
-      tip_audit: '既に完成したルート（RENKINまたはAiZynthFinderのエクスポート）を、構造的整合性・在庫充足・元素収支・順方向反応の再現性について監査し、pass/fail/partialの判定を返します — すべてブラウザ内で完結します。',
+      tip_audit: '既に完成したルート（RENKIN、AiZynthFinder、またはSyntheseusのエクスポート）を、構造的整合性・在庫充足・元素収支・順方向反応の再現性について監査し、pass/fail/partialの判定を返します — すべてブラウザ内で完結します。',
       audit_format_label: '形式',
       audit_format_auto: '自動判定',
       audit_format_renkin: 'RENKIN',
       audit_format_aizynthfinder: 'AiZynthFinder',
+      audit_format_syntheseus: 'Syntheseus',
       audit_policy_label: 'ポリシー',
       tip_audit_policy: 'ポリシーはfindingを隠しません — 既に収集されたfindingから全体のpass/fail/partial判定をどう導出するかだけが変わります。',
       audit_policy_informational: 'Informational',
@@ -733,11 +736,12 @@
       tab_plan: '规划路径',
       tab_audit: '审计路径',
       audit_panel_title: '待审计路径',
-      tip_audit: '审计一条已完成的合成路径（RENKIN 或 AiZynthFinder 导出）— 检查结构完整性、原料库存、元素守恒和正向反应可重现性，给出 pass/fail/partial 判定，全部在浏览器内完成。',
+      tip_audit: '审计一条已完成的合成路径（RENKIN、AiZynthFinder 或 Syntheseus 导出）— 检查结构完整性、原料库存、元素守恒和正向反应可重现性，给出 pass/fail/partial 判定，全部在浏览器内完成。',
       audit_format_label: '格式',
       audit_format_auto: '自动检测',
       audit_format_renkin: 'RENKIN',
       audit_format_aizynthfinder: 'AiZynthFinder',
+      audit_format_syntheseus: 'Syntheseus',
       audit_policy_label: '策略',
       tip_audit_policy: '策略不会隐藏任何finding — 只改变如何从已收集的finding推导出整体的pass/fail/partial判定。',
       audit_policy_informational: 'Informational',

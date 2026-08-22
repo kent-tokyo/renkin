@@ -7,11 +7,12 @@ description: "What the audit_manifest guarantees, the informational/standard/str
 
 This page documents two things introduced in v0.27.0 ("Reproducible Route
 Audit"): what `audit_manifest` guarantees, and the compatibility rules every
-`renkin audit-route` adapter (RENKIN-native, AiZynthFinder, and any future
-one) follows. It's the general, tool-neutral reference; adapter-specific
-walkthroughs like
-[Audit a Real AiZynthFinder Route](aizynthfinder-audit-demo.md) link back
-here rather than repeating this content.
+`renkin audit-route` adapter (RENKIN-native, AiZynthFinder, Syntheseus, and
+any future one) follows. It's the general, tool-neutral reference;
+adapter-specific walkthroughs like
+[Audit a Real AiZynthFinder Route](aizynthfinder-audit-demo.md) and
+[Audit a Syntheseus Route](syntheseus-audit-demo.md) link back here rather
+than repeating this content.
 
 ## Audit manifest
 
@@ -82,8 +83,8 @@ the same as "this is wrong."
 
 ## Compatibility rules
 
-These apply to every adapter (RENKIN-native, AiZynthFinder, and any future
-one), not just one:
+These apply to every adapter (RENKIN-native, AiZynthFinder, Syntheseus, and
+any future one), not just one:
 
 1. **"Verified against" is not "supported."** Documentation states an
    adapter is confirmed against one specific real captured tool version
@@ -92,9 +93,10 @@ one), not just one:
 2. **Unknown/future input fields are tolerated, never rejected.** Every
    adapter's input struct (`AzfNode` for AiZynthFinder,
    `AuditRouteInput`/`AuditRouteEntry`/`AuditRouteStepInput` for
-   RENKIN-native) derives `Deserialize` without `deny_unknown_fields` on
-   purpose, so a field from a future tool version — or a caller's own
-   extra metadata — is silently ignored rather than a parse error.
+   RENKIN-native, `SyntheseusRouteV1` for Syntheseus) derives `Deserialize`
+   without `deny_unknown_fields` on purpose, so a field from a future tool
+   version — or a caller's own extra metadata — is silently ignored rather
+   than a parse error.
    (`unknown_extra_fields_in_renkin_input_are_tolerated_not_rejected` in
    `tests/audit_route_cli.rs` tests this directly.)
 3. **A corrupted/malformed tree shape fails loud, never silently coerced.**

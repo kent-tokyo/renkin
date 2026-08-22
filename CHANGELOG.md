@@ -9,6 +9,11 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- `renkin.syntheseus_exporter` (optional, `pip install renkin[syntheseus]`):
+  exports a Syntheseus `SynthesisGraph` to the `syntheseus-route-v1` JSON
+  interchange format (v0.30.0 Syntheseus Bridge, Phase 1). Public-API-only,
+  fail-loud on unsupported object shapes, deterministic and byte-stable
+  output.
 - `renkin audit-route --format syntheseus` (also auto-detected): a third
   route adapter (`bridge::syntheseus::normalize_syntheseus_route`, v0.30.0
   Syntheseus Bridge Phase 2), alongside RENKIN-native and AiZynthFinder.
@@ -17,6 +22,11 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   adapter already has.
 
 ### Changed
+- Python package moved to maturin's mixed Rust/Python layout
+  (`python/renkin/`) to host this pure-Python module alongside the
+  compiled extension. `import renkin` and every existing binding
+  (`find_routes`, `predict_forward`, `validate_forward`, `audit_route`)
+  are unaffected.
 - `bridge::route_graph::build` (the flat-steps-to-tree algorithm) is now
   shared by both the RENKIN-native and Syntheseus adapters, parameterized
   by a leaf-classification closure instead of hardcoding RENKIN's own

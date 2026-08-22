@@ -1,9 +1,10 @@
-"""Type stubs for the ``renkin`` PyO3 extension module.
+"""Type stubs for the ``renkin`` package's compiled functions.
 
-Picked up automatically by maturin (a root-level ``<module-name>.pyi`` next
-to a pure-extension-layout ``pyproject.toml``) and included in the wheel
-alongside a generated ``py.typed`` marker -- no ``pyproject.toml`` change
-needed. Every function here returns a JSON *string*; parse it yourself with
+Lives at ``python/renkin/__init__.pyi``, stubbing ``renkin/__init__.py``'s
+``from .renkin import *`` re-export of the PyO3 extension submodule
+(mixed Rust/Python maturin layout, since v0.30.0 added a pure-Python
+``renkin.syntheseus_exporter`` alongside the compiled bindings). Every
+function here returns a JSON *string*; parse it yourself with
 ``json.loads()``. See ``docs/api/python.md`` for the full field-by-field
 return-shape documentation this stub deliberately doesn't duplicate.
 """

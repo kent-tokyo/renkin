@@ -1,0 +1,210 @@
+[
+  {
+    "type": "mol",
+    "hide": false,
+    "smiles": "CCOC(=O)c1ccc(N)cc1",
+    "is_chemical": true,
+    "in_stock": false,
+    "children": [
+      {
+        "type": "reaction",
+        "hide": false,
+        "smiles": "[N:1][cH3:2]>>O=[N:1]([O-])[cH3:2]",
+        "is_reaction": true,
+        "metadata": {
+          "template_hash": "664f7756f7526ad6c07e82dd3b3c15f7aabccbc99837dd22105068a2cfc385b5",
+          "classification": "0.0 Unrecognized",
+          "library_occurence": 33350,
+          "policy_probability": 0.42239999771118164,
+          "policy_probability_rank": 0,
+          "policy_name": "uspto",
+          "template_code": 17064,
+          "template": "[NH2;D1;+0:1]-[c:2]>>O=[N+;H0;D3:1](-[O-])-[c:2]",
+          "mapped_reaction_smiles": "[CH3:1][CH2:2][O:3][C:4](=[O:5])[c:6]1[cH:7][cH:8][c:9]([NH2:10])[cH:11][cH:12]1>>[CH3:1][CH2:2][O:3][C:4](=[O:5])[c:6]1[cH:7][cH:8][c:9]([N+:10](=[O:13])[O-:14])[cH:11][cH:12]1"
+        },
+        "children": [
+          {
+            "type": "mol",
+            "hide": false,
+            "smiles": "CCOC(=O)c1ccc([N+](=O)[O-])cc1",
+            "is_chemical": true,
+            "in_stock": true
+          }
+        ]
+      }
+    ],
+    "scores": {
+      "state score": 0.9976287063411217,
+      "number of reactions": 1,
+      "number of pre-cursors": 1,
+      "number of pre-cursors in stock": 1,
+      "average template occurrence": 33350.0
+    },
+    "metadata": {
+      "created_at_iteration": 1,
+      "is_solved": true
+    }
+  },
+  {
+    "type": "mol",
+    "hide": false,
+    "smiles": "CCOC(=O)c1ccc(N)cc1",
+    "is_chemical": true,
+    "in_stock": false,
+    "children": [
+      {
+        "type": "reaction",
+        "hide": false,
+        "smiles": "[C:1](=[O:2])([cH3:3])[O:5][CH3:4]>>O[C:1](=[O:2])[cH3:3].[CH3:4][O:5]",
+        "is_reaction": true,
+        "metadata": {
+          "template_hash": "bf6bd9047791f3252d0082f87523bda9bf230f930fe417ac7de9fa8c502cbf89",
+          "classification": "0.0 Unrecognized",
+          "library_occurence": 6214,
+          "policy_probability": 0.1680999994277954,
+          "policy_probability_rank": 2,
+          "policy_name": "uspto",
+          "template_code": 31869,
+          "template": "[C:4]-[O;H0;D2;+0:5]-[C;H0;D3;+0:1](=[O;D1;H0:2])-[c:3]>>O-[C;H0;D3;+0:1](=[O;D1;H0:2])-[c:3].[C:4]-[OH;D1;+0:5]",
+          "mapped_reaction_smiles": "[CH3:1][CH2:2][O:3][C:4](=[O:5])[c:6]1[cH:7][cH:8][c:9]([NH2:10])[cH:11][cH:12]1>>[C:4](=[O:5])([c:6]1[cH:7][cH:8][c:9]([NH2:10])[cH:11][cH:12]1)[OH:13].[CH3:1][CH2:2][OH:3]"
+        },
+        "children": [
+          {
+            "type": "mol",
+            "hide": false,
+            "smiles": "CCO",
+            "is_chemical": true,
+            "in_stock": false,
+            "children": [
+              {
+                "type": "reaction",
+                "hide": false,
+                "smiles": "[C:1]([CH3:2])[OH:3]>>O=[C:1]([CH3:2])[OH:3]",
+                "is_reaction": true,
+                "metadata": {
+                  "template_hash": "c42f96a0658c03bc12dc20efce06e66daaeccc675d73631eea24ea610a7227b8",
+                  "classification": "0.0 Unrecognized",
+                  "library_occurence": 3921,
+                  "policy_probability": 0.09149999916553497,
+                  "policy_probability_rank": 0,
+                  "policy_name": "uspto",
+                  "template_code": 32658,
+                  "template": "[C:2]-[CH2;D2;+0:1]-[O;D1;H1:3]>>O=[C;H0;D3;+0:1](-[C:2])-[O;D1;H1:3]",
+                  "mapped_reaction_smiles": "[CH3:1][CH2:2][OH:3]>>[CH3:1][C:2]([OH:3])=[O:4]"
+                },
+                "children": [
+                  {
+                    "type": "mol",
+                    "hide": false,
+                    "smiles": "CC(=O)O",
+                    "is_chemical": true,
+                    "in_stock": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "mol",
+            "hide": false,
+            "smiles": "Nc1ccc(C(=O)O)cc1",
+            "is_chemical": true,
+            "in_stock": true
+          }
+        ]
+      }
+    ],
+    "scores": {
+      "state score": 0.994039853898894,
+      "number of reactions": 2,
+      "number of pre-cursors": 2,
+      "number of pre-cursors in stock": 2,
+      "average template occurrence": 5067.5
+    },
+    "metadata": {
+      "created_at_iteration": 3,
+      "is_solved": true
+    }
+  },
+  {
+    "type": "mol",
+    "hide": false,
+    "smiles": "CCOC(=O)c1ccc(N)cc1",
+    "is_chemical": true,
+    "in_stock": false,
+    "children": [
+      {
+        "type": "reaction",
+        "hide": false,
+        "smiles": "[C:1](=[O:2])([cH3:3])[O:5][CH3:4]>>O[C:1](=[O:2])[cH3:3].[CH3:4][O:5]",
+        "is_reaction": true,
+        "metadata": {
+          "template_hash": "bf6bd9047791f3252d0082f87523bda9bf230f930fe417ac7de9fa8c502cbf89",
+          "classification": "0.0 Unrecognized",
+          "library_occurence": 6214,
+          "policy_probability": 0.1680999994277954,
+          "policy_probability_rank": 2,
+          "policy_name": "uspto",
+          "template_code": 31869,
+          "template": "[C:4]-[O;H0;D2;+0:5]-[C;H0;D3;+0:1](=[O;D1;H0:2])-[c:3]>>O-[C;H0;D3;+0:1](=[O;D1;H0:2])-[c:3].[C:4]-[OH;D1;+0:5]",
+          "mapped_reaction_smiles": "[CH3:1][CH2:2][O:3][C:4](=[O:5])[c:6]1[cH:7][cH:8][c:9]([NH2:10])[cH:11][cH:12]1>>[C:4](=[O:5])([c:6]1[cH:7][cH:8][c:9]([NH2:10])[cH:11][cH:12]1)[OH:13].[CH3:1][CH2:2][OH:3]"
+        },
+        "children": [
+          {
+            "type": "mol",
+            "hide": false,
+            "smiles": "CCO",
+            "is_chemical": true,
+            "in_stock": false,
+            "children": [
+              {
+                "type": "reaction",
+                "hide": false,
+                "smiles": "[O:1][C:2][CH3:3]>>C[O:1][C:2](=O)[CH3:3]",
+                "is_reaction": true,
+                "metadata": {
+                  "template_hash": "fa0d851e142c3b477b32521aea18d9f060fb648ef723206a28e37b25b71593bd",
+                  "classification": "0.0 Unrecognized",
+                  "library_occurence": 2881,
+                  "policy_probability": 0.020099999383091927,
+                  "policy_probability_rank": 5,
+                  "policy_name": "uspto",
+                  "template_code": 41576,
+                  "template": "[C:3]-[CH2;D2;+0:2]-[OH;D1;+0:1]>>C-[O;H0;D2;+0:1]-[C;H0;D3;+0:2](=O)-[C:3]",
+                  "mapped_reaction_smiles": "[CH3:1][CH2:2][OH:3]>>[CH3:1][C:2]([O:3][CH3:4])=[O:5]"
+                },
+                "children": [
+                  {
+                    "type": "mol",
+                    "hide": false,
+                    "smiles": "COC(C)=O",
+                    "is_chemical": true,
+                    "in_stock": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "mol",
+            "hide": false,
+            "smiles": "Nc1ccc(C(=O)O)cc1",
+            "is_chemical": true,
+            "in_stock": true
+          }
+        ]
+      }
+    ],
+    "scores": {
+      "state score": 0.994039853898894,
+      "number of reactions": 2,
+      "number of pre-cursors": 2,
+      "number of pre-cursors in stock": 2,
+      "average template occurrence": 4547.5
+    },
+    "metadata": {
+      "created_at_iteration": 18,
+      "is_solved": true
+    }
+  }
+]

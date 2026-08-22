@@ -5,11 +5,19 @@ build-backend = "maturin"
 [project]
 name = "renkin"
 version = "0.30.0"
-description = "Ultra-fast retrosynthesis engine for computer-aided synthesis planning (CASP) — pure Rust, Python bindings via PyO3"
+description = "Local retrosynthesis route auditor and planning engine for AiZynthFinder, Syntheseus and RENKIN"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.8"
-keywords = ["retrosynthesis", "cheminformatics", "chemistry", "drug-discovery", "casp"]
+keywords = [
+    "retrosynthesis",
+    "route-audit",
+    "route-validation",
+    "aizynthfinder",
+    "syntheseus",
+    "casp",
+    "cheminformatics",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",

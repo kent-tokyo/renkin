@@ -19,10 +19,14 @@ import argparse
 import re
 from collections import Counter
 
-from datasets import load_dataset
-from rdchiral.template_extractor import extract_from_reaction
-from rdkit import Chem
-from rdkit.Chem import AllChem
+try:
+    from datasets import load_dataset
+    from rdchiral.template_extractor import extract_from_reaction
+    from rdkit import Chem
+
+    HAVE_DEPS = True
+except ImportError:  # pragma: no cover -- exercised by scripts/tests without the deps installed
+    HAVE_DEPS = False
 
 
 def simplify_atom(atom_smarts: str) -> str:
@@ -83,16 +87,50 @@ def simplify_smirks(smirks: str) -> str:
     return re.sub(r'\[[^\]]+\]', replace_bracket, smirks)
 
 
+def _has_top_level_dot(smarts: str) -> bool:
+    """True if `smarts` contains a `.` (disconnected-fragment separator)
+    outside any [...]/(...) nesting. Issue #98: chematic-smarts 0.16.0's
+    `parse_smarts` (verified by reading its actual source,
+    chematic-smarts-0.16.0/src/parser.rs::Parser::parse) calls
+    `parse_chain` exactly once and then treats ANY leftover non-whitespace
+    character as `SmartsError::UnexpectedChar` -- there is no code path
+    that consumes a second, disconnected fragment. A reactant-side `.`
+    therefore always fails to load, unconditionally, not just for the one
+    template this issue originally reported. This is reactant-only by
+    design: a retro-template's reactant side matches a single target
+    molecule (one connected structure, by the nature of retrosynthesis),
+    while its product side routinely and correctly has multiple
+    `.`-separated precursor fragments -- that's the whole point of a
+    disconnection template, and chematic parses that side differently
+    (see chem_env.rs's own SMIRKS split), so this check must never be
+    applied there.
+    """
+    depth = 0
+    for ch in smarts:
+        if ch in "[(":
+            depth += 1
+        elif ch in "])":
+            depth -= 1
+        elif ch == "." and depth == 0:
+            return True
+    return False
+
+
 def is_valid_for_chematic(smirks: str) -> bool:
     """
     Quick heuristic check: does the simplified SMIRKS look parseable?
-    We try RDKit as a proxy (chematic subset overlaps with basic RDKit SMARTS).
+    We try RDKit as a proxy (chematic subset overlaps with basic RDKit SMARTS) --
+    but RDKit's SMARTS parser accepts a disconnected-fragment reactant that
+    chematic's never does (issue #98), so that specific case is checked
+    directly rather than trusted to the RDKit proxy.
     """
     try:
         parts = smirks.split('>>')
         if len(parts) != 2:
             return False
         reactant = parts[0]
+        if _has_top_level_dot(reactant):
+            return False
         # Try parsing reactant side with RDKit
         mol = Chem.MolFromSmarts(reactant)
         return mol is not None

@@ -18,6 +18,22 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `report.routes[0].steps[0].forward_validation`). See
   [Typed Reports](https://github.com/kent-tokyo/renkin/blob/master/docs/api/python.md#audit_route_report)
   for the full field reference and the documented absent-vs-null collapse.
+- AiZynthFinder version matrix (v0.32.0 Phase 2B): individually verified
+  against real, artifact-captured `aizynthcli` output from `4.3.2` and
+  `4.4.0`, alongside the existing `4.4.1` verification —
+  `tests/fixtures/aizynthfinder/v4.3.2/` and `.../v4.4.0/`, each with its
+  own `PROVENANCE.md` (SHA-256-pinned public data bundle, real capture
+  commands, real search results). All three versions ran against a
+  byte-identical public model/stock data bundle and the identical target
+  molecules, so the comparison isolates real package-level differences.
+  New `tests/aizynthfinder_version_matrix.rs` asserts all three produce
+  identical audit verdicts for the same real routes. One confirmed,
+  harmless cross-version JSON difference was found: `4.3.2`'s route
+  `scores` object carries an extra `"average template occurrence"` field
+  absent from `4.4.0`/`4.4.1` — outside the tree structure RENKIN's
+  normalizer reads, so it doesn't affect any verdict. See
+  [AiZynthFinder audit demo](https://github.com/kent-tokyo/renkin/blob/master/docs/guides/aizynthfinder-audit-demo.md#compatibility)
+  for the updated compatibility table.
 
 ## [0.31.0] - 2026-08-22 "Syntheseus 0.8 Compatibility"
 

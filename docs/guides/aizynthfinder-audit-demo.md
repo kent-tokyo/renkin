@@ -102,7 +102,7 @@ than guessing.
 | Source | Verified version | Input |
 |---|---|---|
 | RENKIN | 0.26.0 | native JSON |
-| AiZynthFinder | 4.4.1 | single-target JSON, batch JSON, gzip-compressed batch JSON |
+| AiZynthFinder | 4.3.2, 4.4.0, 4.4.1 | single-target JSON, batch JSON, gzip-compressed batch JSON |
 | Other planners / other AiZynthFinder versions | unverified | unknown fields are tolerated (forward-compatible); a shape RENKIN doesn't recognize is a hard error, never a guess |
 
 Syntheseus is also a verified adapter (`--format syntheseus`) — see the
@@ -110,9 +110,23 @@ Syntheseus is also a verified adapter (`--format syntheseus`) — see the
 and compatibility row.
 
 "Verified against" is deliberate phrasing, not "supported" — this adapter is
-confirmed against real `aizynthcli 4.4.1` output specifically (see
-`PROVENANCE.md`), not claimed to work with every AiZynthFinder release. This
-is one instance of a general rule every adapter follows — see the
+confirmed against real, individually captured `aizynthcli` output from
+three separate versions specifically (`4.3.2`, `4.4.0`, `4.4.1` — see each
+version's own `tests/fixtures/aizynthfinder/vX.Y.Z/PROVENANCE.md`), not
+claimed to work with every AiZynthFinder release. All three versions were
+run against the identical public model/stock data bundle (confirmed
+byte-identical by SHA-256 across all three captures) and the identical
+target molecules, so any behavioral difference found is attributable to
+the `aizynthfinder` package itself, not to different inputs —
+[`tests/aizynthfinder_version_matrix.rs`](https://github.com/kent-tokyo/renkin/blob/master/tests/aizynthfinder_version_matrix.rs)
+asserts all three produce identical audit verdicts for the same real
+routes. One confirmed, harmless cross-version JSON difference was found in
+the process: `4.3.2`'s route `scores` object carries an extra
+`"average template occurrence"` field absent from `4.4.0`/`4.4.1`'s
+output — outside the tree structure RENKIN's normalizer reads, so it
+doesn't affect any verdict (see `v4.3.2`'s own `PROVENANCE.md` for the
+full finding). This is one instance of a general rule every adapter
+follows — see the
 [Audit Reproducibility and Compatibility Contract](audit-reproducibility-contract.md)
 for the full set, including what `audit_manifest` guarantees and how a new
 adapter or fixture is added.

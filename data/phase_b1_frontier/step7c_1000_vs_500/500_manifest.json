@@ -92,7 +92,7 @@
       " 1018  39.1 /Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper (Renderer).app/Contents/MacOS/Code Helper (Renderer)",
       "  402  34.2 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
       " 4591  26.3 claude",
-      "18918  23.6 /Users/k_tanabe/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+      "18918  23.6 /Users/<redacted-user>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
     ]
   },
   "start_time_unix": 1786613441.210625,

@@ -95,7 +95,7 @@
     "top_cpu_processes_raw": [
       "PID  %CPU COMM",
       "  358  74.5 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds",
-      "97838  63.6 /Users/k_tanabe/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc",
+      "97838  63.6 /Users/<redacted-user>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc",
       "  506  53.0 /usr/libexec/syspolicyd",
       "  514  44.4 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds_stores",
       "44268  29.4 /Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper (Renderer).app/Contents/MacOS/Code Helper (Renderer)",

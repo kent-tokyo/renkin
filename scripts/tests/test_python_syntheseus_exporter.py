@@ -1,16 +1,25 @@
-"""Tests for `renkin.syntheseus_exporter` (v0.30.0 Syntheseus Bridge, Phase 1).
+"""Tests for `renkin.syntheseus_exporter` (v0.30.0 Syntheseus Bridge, Phase 1;
+dual-version compatibility spike, v0.31.0 Phase 1 PR1).
 
 Skips entirely unless both `renkin` (maturin develop) and `syntheseus`
 (`pip install renkin[syntheseus]`) are importable, mirroring
 `test_python_audit_route.py`'s `requires_renkin_module` pattern.
 
 Fixture-parity tests reconstruct the exact objects documented in
-`tests/fixtures/syntheseus/0.7.2/PROVENANCE.md` and assert the packaged
-exporter's output is byte-identical to the committed Phase 0 fixtures --
-this is what proves the production module didn't silently drift from the
-spike script it replaced.
+`tests/fixtures/syntheseus/<installed version>/PROVENANCE.md` and assert
+the packaged exporter's output is byte-identical to the committed
+fixtures for *whichever syntheseus version is actually installed* --
+`FIXTURE_DIR` is resolved from `importlib.metadata.version("syntheseus")`,
+not hardcoded, so the same test file verifies both `0.7.2` and `0.8.0`
+(run once per version -- see `.github/workflows/ci.yml`'s
+`syntheseus-compat-matrix` job) without duplicating the test bodies. An
+installed version with no committed fixture directory skips only the two
+fixture-parity tests (nothing to compare against yet), not the whole
+suite -- the construction/determinism/rejection tests still verify the
+exporter behaves correctly against real objects either way.
 """
 
+import importlib.metadata
 import json
 import unittest
 from pathlib import Path
@@ -30,11 +39,21 @@ except ImportError:
 requires_syntheseus = unittest.skipUnless(
     SYNTHESEUS_IMPORTABLE,
     "requires renkin[syntheseus] installed (maturin develop --features python "
-    "&& pip install syntheseus==0.7.2)",
+    "&& pip install syntheseus==0.7.2 or 0.8.0)",
 )
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-FIXTURE_DIR = REPO_ROOT / "tests" / "fixtures" / "syntheseus" / "0.7.2"
+INSTALLED_SYNTHESEUS_VERSION = (
+    importlib.metadata.version("syntheseus") if SYNTHESEUS_IMPORTABLE else None
+)
+FIXTURE_DIR = (
+    REPO_ROOT / "tests" / "fixtures" / "syntheseus" / str(INSTALLED_SYNTHESEUS_VERSION)
+)
+requires_verified_fixture_version = unittest.skipUnless(
+    SYNTHESEUS_IMPORTABLE and FIXTURE_DIR.is_dir(),
+    f"no committed fixtures for installed syntheseus {INSTALLED_SYNTHESEUS_VERSION!r} "
+    "(verified versions: 0.7.2, 0.8.0)",
+)
 
 
 @requires_syntheseus
@@ -90,11 +109,13 @@ class TestSyntheseusExporter(unittest.TestCase):
         self.assertIn("CC", doc["molecule_metadata"])
         self.assertIsNone(doc["molecule_metadata"]["CC"]["is_purchasable"])
 
+    @requires_verified_fixture_version
     def test_linear_fixture_matches_committed_provenance_output(self):
         expected = (FIXTURE_DIR / "linear_two_leaf_route.json").read_text(encoding="utf-8")
         actual = syn_exporter.dumps_syntheseus_route_v1(self._linear_graph())
         self.assertEqual(json.loads(actual), json.loads(expected))
 
+    @requires_verified_fixture_version
     def test_convergent_fixture_matches_committed_provenance_output(self):
         expected = (FIXTURE_DIR / "convergent_route.json").read_text(encoding="utf-8")
         actual = syn_exporter.dumps_syntheseus_route_v1(self._convergent_graph())

@@ -1,0 +1,39 @@
+{
+  "molecule_metadata": {
+    "CCO": {
+      "is_purchasable": true
+    },
+    "O=C(O)c1ccccc1": {
+      "cost": 12.5,
+      "is_purchasable": true,
+      "supplier": "TestSupplierCo"
+    }
+  },
+  "schema_version": 1,
+  "source_metadata": {
+    "exporter_schema": "syntheseus-route-v1",
+    "note": "Generated from a real syntheseus.search.graph.route.SynthesisGraph object via the public interface (Molecule/Bag/SingleProductReaction/SynthesisGraph) -- no model inference, search algorithm, checkpoint, or GPU was used to construct this route."
+  },
+  "source_tool": "syntheseus",
+  "source_version": "0.8.0",
+  "starting_molecules": [
+    "CCO",
+    "O=C(O)c1ccccc1"
+  ],
+  "steps": [
+    {
+      "product": "CCOC(=O)c1ccccc1",
+      "reactants": [
+        "CCO",
+        "O=C(O)c1ccccc1"
+      ],
+      "reaction_metadata": {
+        "identifier": "step1",
+        "reaction_smiles": "CCO.O=C(O)c1ccccc1>>CCOC(=O)c1ccccc1",
+        "source": "renkin-syntheseus-spike-fixture",
+        "template": "esterification_retro"
+      }
+    }
+  ],
+  "target": "CCOC(=O)c1ccccc1"
+}

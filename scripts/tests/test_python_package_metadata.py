@@ -68,7 +68,7 @@ class TestSyntheseusExtraMetadata(unittest.TestCase):
         extras = self.metadata.get_all("Provides-Extra") or []
         self.assertIn("syntheseus", extras, f"Provides-Extra values: {extras}")
 
-    def test_requires_dist_declares_the_verified_interval(self):
+    def test_requires_dist_declares_the_expected_interval(self):
         lines = self._syntheseus_requires_dist_lines()
         self.assertEqual(
             len(lines), 1, f"expected exactly one syntheseus Requires-Dist line, got {lines}"

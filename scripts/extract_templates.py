@@ -20,8 +20,34 @@ import re
 from collections import Counter
 
 from datasets import load_dataset
+from huggingface_hub import HfApi
 from rdchiral.template_extractor import extract_from_reaction
 from rdkit import Chem
+
+# Issue #100: prior runs of this script never pinned a dataset revision, so
+# a corpus generated today from --dataset bisectgroup/USPTO_50K --split train
+# is not reproducible even with the exact same command -- "whatever HEAD
+# happens to be right now" drifts. Mirrors the exact pattern
+# scripts/generate_ring_context_metadata.py already uses for the same
+# dataset. This is the revision that dataset resolved to as of this fix
+# (2026-08-22) -- NOT verified to be the revision any specific already-generated
+# corpus (e.g. the local, gitignored data/templates_extracted_5000.smi) was
+# actually built from; that file predates this pinning and its exact
+# revision could not be reconstructed (see
+# data/templates_extracted_5000.smi.PROVENANCE.md). Use --resolve-latest to
+# deliberately re-baseline against upstream drift instead.
+PINNED_DATASET_REVISION = "08a575f0546b2be57242997fd45f684d6814d5a9"
+
+
+def resolve_dataset_revision(dataset_id: str, requested: str | None, resolve_latest: bool) -> tuple:
+    """Returns (revision, resolution_method). Mirrors
+    generate_ring_context_metadata.py's function of the same name exactly."""
+    if requested:
+        return requested, "user-provided"
+    if resolve_latest:
+        info = HfApi().dataset_info(dataset_id)
+        return info.sha, "resolved-via-HfApi.dataset_info-at-generation-time (--resolve-latest)"
+    return PINNED_DATASET_REVISION, "pinned-default"
 from rdkit.Chem import AllChem
 
 
@@ -124,16 +150,22 @@ def load_reactions_from_file(path: str) -> list:
 def extract_templates(top_n: int, output_path: str,
                       reactions_path: str | None = None,
                       dataset_id: str = "bisectgroup/USPTO_50K",
-                      split: str = "train") -> None:
+                      split: str = "train",
+                      dataset_revision: str | None = None,
+                      resolve_latest: bool = False) -> None:
     if reactions_path:
         print(f"Loading reactions from {reactions_path}...", flush=True)
         rows = load_reactions_from_file(reactions_path)
         source_desc = reactions_path
     else:
+        revision, revision_resolution = resolve_dataset_revision(
+            dataset_id, dataset_revision, resolve_latest
+        )
+        print(f"Pinned dataset revision: {revision} ({revision_resolution})", flush=True)
         print(f"Loading {dataset_id} ({split} split)...", flush=True)
-        ds = load_dataset(dataset_id, split=split)
+        ds = load_dataset(dataset_id, split=split, revision=revision)
         rows = ds
-        source_desc = f"{dataset_id} ({split} split, {len(ds)} reactions)"
+        source_desc = f"{dataset_id}@{revision} ({split} split, {len(ds)} reactions)"
     print(f"  {len(rows)} reactions loaded", flush=True)
 
     counts: Counter = Counter()
@@ -197,12 +229,22 @@ def main() -> None:
                         help="HuggingFace dataset ID (default: bisectgroup/USPTO_50K)")
     parser.add_argument("--split", default="train",
                         help="HuggingFace dataset split (default: train)")
+    parser.add_argument("--dataset-revision", default=None,
+                        help=f"Exact HF dataset commit SHA to pin. If omitted, defaults to "
+                             f"PINNED_DATASET_REVISION ({PINNED_DATASET_REVISION}) unless "
+                             f"--resolve-latest is given. Ignored when --reactions is used.")
+    parser.add_argument("--resolve-latest", action="store_true",
+                        help="Resolve and pin the CURRENT HEAD revision via the Hub API "
+                             "instead of PINNED_DATASET_REVISION. Only for a deliberate "
+                             "re-baseline against upstream drift.")
     args = parser.parse_args()
 
     extract_templates(args.top, args.output,
                       reactions_path=args.reactions,
                       dataset_id=args.dataset,
-                      split=args.split)
+                      split=args.split,
+                      dataset_revision=args.dataset_revision,
+                      resolve_latest=args.resolve_latest)
 
 
 if __name__ == "__main__":

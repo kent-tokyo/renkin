@@ -1,13 +1,14 @@
 # RENKIN Syntheseus Bridge — Design Doc
 
-Status: **Phase 0 (feasibility and schema) complete, per explicit user
-scope: this document and its fixtures are the deliverable for this
-round. No Rust code, no Python exporter package, no CLI flag, no
-version bump, no PR merge — those are Phase 1-4, each its own future
-round requiring separate approval.** Real fixtures generated for this
-document live at `tests/fixtures/syntheseus/0.7.2/` (see that
-directory's own `PROVENANCE.md` for exact construction/reproduction
-detail).
+Status: **Phase 0 (feasibility and schema) and Phase 1 (Python exporter)
+merged. Phase 2 (Rust normalizer + `--format syntheseus` CLI flag) is
+implemented, pending merge approval. Phase 3 (conformance suite,
+Playground, docs) and Phase 4 (release: version bump, publish) not
+started, each its own future round requiring separate approval.** Real
+fixtures generated for Phase 0 live at `tests/fixtures/syntheseus/0.7.2/`
+(see that directory's own `PROVENANCE.md` for exact construction/
+reproduction detail); §7 records how Phase 1-2's open questions were
+resolved.
 
 ## 0. What this is, in one paragraph
 
@@ -268,30 +269,42 @@ trace to a real object via a real, documented exporter run, matching
 the same bar `tests/fixtures/aizynthfinder/v4.4.1/`'s real captures
 already set.
 
-## 7. Open questions for Phase 1-2 (need resolution before implementation, not decided here)
+## 7. Open questions for Phase 1-2 (resolution record)
 
 1. **Convergent/non-tree routes: how should `normalize_syntheseus_route`
-   handle them?** Fixture B (§4) proves this is a real, reachable case,
+   handle them?** **Resolved in Phase 2, as recommended below**: `build()`
+   (`bridge::route_graph`) re-expands the shared molecule's sub-tree
+   independently under each parent, no special-casing — confirmed against
+   the real `convergent_route.json` fixture
+   (`bridge::syntheseus::tests::real_convergent_route_normalizes_by_duplicating_the_shared_subtree`,
+   `tests/audit_route_cli.rs::syntheseus_convergent_fixtures_ambiguous_leaf_fails_with_two_findings`).
+   Original reasoning kept below for context.
+
+   Fixture B (§4) proves this is a real, reachable case,
    not hypothetical. §1's grounding note shows
    `normalize_renkin_route`'s existing `build()` already has a de facto
    answer — re-expand the shared molecule's sub-tree independently under
    each parent, no error, no special representation — simply by not
-   doing anything special. **Recommendation: Phase 2 inherits this
-   behavior unchanged** (smallest diff, consistent with existing
-   design, `RouteNode`'s own tree shape has no way to represent a DAG
-   node with two parents anyway, so duplication-on-flatten is the only
-   representable outcome without a bigger `RouteNode` schema change).
-   Flagged for confirmation rather than assumed, since it does change
-   what a Syntheseus-sourced `AuditReport` can look like (the same
-   underlying reaction step could appear twice in `steps[]`) in a way
-   neither existing adapter's own fixtures have ever exercised.
-2. **`._graph.add_edge` is a private-looking attribute.** §5 already
-   flags this — Phase 1 needs an explicit decision on how much
-   version-pinning/compatibility-testing rigor to apply here (e.g.,
-   should the Phase 1 exporter's own test suite re-run against `0.8.0`
-   too, to catch a future internal-attribute rename before it breaks a
-   real user, even though `0.7.2` is the named target version?).
+   doing anything special. `RouteNode`'s own tree shape has no way to
+   represent a DAG node with two parents, so duplication-on-flatten is the
+   only representable outcome without a bigger `RouteNode` schema change.
+   This does change what a Syntheseus-sourced `AuditReport` can look like
+   (the same underlying reaction step can appear twice in `steps[]`) in a
+   way neither existing adapter's own fixtures have ever exercised on
+   their own inputs.
+2. **`._graph.add_edge` is a private-looking attribute.** **Resolved in
+   Phase 1**: the production exporter (`renkin.syntheseus_exporter`) never
+   touches `._graph` at all — it only reads an already-built
+   `SynthesisGraph` via public methods (`root_node`, `successors()`,
+   `get_starting_molecules()`, `assert_validity()`). Only the exporter's
+   own *test* fixtures need `._graph.add_edge`, to construct multi-step
+   graphs for testing (Syntheseus exposes no public multi-step
+   constructor) — a test-only concern, not a production compatibility
+   risk. No dual-version (`0.7.2`/`0.8.0`) test matrix was added this
+   round; revisit if a real compatibility report comes in.
 3. **Version target: `0.7.2` (named) vs. `0.8.0` (actual latest).**
-   Not resolved here — recorded in §2 for the user's awareness before
-   Phase 1 locks in which version(s) the compatibility matrix will
-   claim "Verified against."
+   **Resolved**: `0.7.2`, matching the Phase 0 fixtures and the user's
+   named target. `source_version` in every export still records the real
+   installed version via `importlib.metadata.version`, never a hardcoded
+   string, so a user on `0.8.0` gets an honest, self-reported value
+   either way.

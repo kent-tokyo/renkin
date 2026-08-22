@@ -1000,7 +1000,7 @@ fn load_audit_stock(path: &str) -> Result<std::collections::HashSet<String>> {
     Ok(bridge::parse_stock_text(&content))
 }
 
-/// `renkin audit-route <PATH> [--format auto|renkin] [--stock <PATH>]
+/// `renkin audit-route <PATH> [--format auto|renkin|aizynthfinder|syntheseus] [--stock <PATH>]
 /// [--policy informational|standard|strict] [--output human|json]` --
 /// audits every route in a RENKIN `--format json`
 /// output file via `bridge::route_graph::normalize_renkin_route` +
@@ -1039,11 +1039,11 @@ fn run_audit_route(args: &[String]) -> Result<()> {
         .iter()
         .find(|a| !a.starts_with("--"))
         .cloned()
-        .context("renkin audit-route: <PATH> is required (usage: renkin audit-route <PATH> [--format auto|renkin|aizynthfinder] [--stock <PATH>] [--policy informational|standard|strict] [--output human|json])")?;
+        .context("renkin audit-route: <PATH> is required (usage: renkin audit-route <PATH> [--format auto|renkin|aizynthfinder|syntheseus] [--stock <PATH>] [--policy informational|standard|strict] [--output human|json])")?;
     let format = flag_value(args, "--format").unwrap_or("auto");
-    if !["auto", "renkin", "aizynthfinder"].contains(&format) {
+    if !["auto", "renkin", "aizynthfinder", "syntheseus"].contains(&format) {
         bail!(
-            "renkin audit-route: unsupported --format {format:?} (only auto|renkin|aizynthfinder supported)"
+            "renkin audit-route: unsupported --format {format:?} (only auto|renkin|aizynthfinder|syntheseus supported)"
         );
     }
     let output_format = flag_value(args, "--output").unwrap_or("human");

@@ -61,6 +61,60 @@ struct Output {
     total_elapsed_ms: Option<f64>,
 }
 
+/// Issue #99: which loaded templates are `Unsupported` for concrete
+/// application (their `[#N]` hash-atoms have no usable concrete-element
+/// reading, so they can never produce a route), grouped by reason. Pure
+/// classification, no I/O -- see `report_hash_atom_unsupported` for the
+/// load-time stderr summary this backs.
+fn count_hash_atom_unsupported(
+    rules: &[chem_env::RetroRule],
+) -> std::collections::BTreeMap<&'static str, usize> {
+    let mut by_reason: std::collections::BTreeMap<&'static str, usize> =
+        std::collections::BTreeMap::new();
+    for rule in rules {
+        if let chem_env::ConcreteApplicationStatus::Unsupported { reason } =
+            chem_env::concrete_application_status(&rule.smirks)
+        {
+            let key = match reason {
+                chem_env::HashAtomUnsupportedReason::UnhandledSyntax => "unhandled_syntax",
+                chem_env::HashAtomUnsupportedReason::InconsistentElement => "inconsistent_element",
+                chem_env::HashAtomUnsupportedReason::VariantLimitExceeded { .. } => {
+                    "variant_limit_exceeded"
+                }
+                chem_env::HashAtomUnsupportedReason::NoValidVariant => "no_valid_variant",
+            };
+            *by_reason.entry(key).or_insert(0) += 1;
+        }
+    }
+    by_reason
+}
+
+/// Issue #99: a normal search run had no in-band signal that some loaded
+/// templates are unsupported for concrete application — the only way to
+/// see this was `examples/hashatom_corpus_stats.rs`, run offline against a
+/// template file directly. Silent when there's nothing to report (both
+/// checked-in corpora currently have zero unsupported templates); prints a
+/// reason-broken-down summary otherwise, right after the existing
+/// unconditional "Loaded N templates" line — load-time, not requiring a
+/// search to actually run one to completion.
+fn report_hash_atom_unsupported(rules: &[chem_env::RetroRule]) {
+    let by_reason = count_hash_atom_unsupported(rules);
+    let total: usize = by_reason.values().sum();
+    if total == 0 {
+        return;
+    }
+    let breakdown = by_reason
+        .iter()
+        .map(|(reason, count)| format!("{reason}={count}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    eprintln!(
+        "  {total} of {} loaded templates are unsupported for concrete application \
+         (will never produce a route): {breakdown}",
+        rules.len()
+    );
+}
+
 // ..Default::default() is needed when nn-scoring feature is enabled (adds nn_scorer field).
 // When the feature is off, all fields are explicit, making the spread redundant — suppress lint.
 #[allow(clippy::needless_update)]
@@ -422,6 +476,7 @@ fn main() -> Result<()> {
             extra = chem_env::top_templates_by_weight(extra, k);
         }
         eprintln!("Loaded {} templates from {path}", extra.len());
+        report_hash_atom_unsupported(&extra);
         rules.extend(extra);
     }
 
@@ -2071,5 +2126,50 @@ mod evidence_cli_tests {
         let args = vec!["--metadata".to_string(), path.clone()];
         assert!(evidence_validate_sidecar(&args).is_err());
         std::fs::remove_file(&path).ok();
+    }
+}
+
+#[cfg(test)]
+mod hash_atom_unsupported_report_tests {
+    use super::*;
+
+    fn rule(name: &str, smirks: &str) -> chem_env::RetroRule {
+        chem_env::RetroRule {
+            name: name.to_string(),
+            template_id: chem_env::template_id_for_smirks(smirks),
+            smirks: smirks.to_string(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn no_unsupported_templates_yields_empty_map() {
+        let rules = vec![rule(
+            "ester_cleavage",
+            "[O:3]=[C:2]-[OH:1]>>C-[O:1]-[C:2]=[O:3]",
+        )];
+        assert!(count_hash_atom_unsupported(&rules).is_empty());
+    }
+
+    #[test]
+    fn inconsistent_element_is_classified_and_counted() {
+        // Same atom-map number (1) resolves to carbon on the reactant side
+        // and nitrogen on the product side -- internally inconsistent.
+        let rules = vec![rule("bad", "[#6:1]>>[#7:1]")];
+        let by_reason = count_hash_atom_unsupported(&rules);
+        assert_eq!(by_reason.get("inconsistent_element"), Some(&1));
+        assert_eq!(by_reason.values().sum::<usize>(), 1);
+    }
+
+    #[test]
+    fn multiple_unsupported_rules_of_the_same_reason_accumulate() {
+        let rules = vec![
+            rule("bad1", "[#6:1]>>[#7:1]"),
+            rule("bad2", "[#8:2]>>[#9:2]"),
+            rule("ok", "[O:3]=[C:2]-[OH:1]>>C-[O:1]-[C:2]=[O:3]"),
+        ];
+        let by_reason = count_hash_atom_unsupported(&rules);
+        assert_eq!(by_reason.get("inconsistent_element"), Some(&2));
+        assert_eq!(by_reason.values().sum::<usize>(), 2);
     }
 }

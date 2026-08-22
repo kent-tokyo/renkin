@@ -6,10 +6,13 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [Unreleased]
+## [0.32.0] - 2026-08-22 "Typed Reports & Verified Planner Matrix"
+
+A typed Python report API, a wider verified AiZynthFinder range, and a
+chemical-integrity fix that drops a rule caught deleting a target atom.
 
 ### Added
-- `renkin.audit_route_report(...) -> AuditRouteReport` (v0.32.0 Phase 2A):
+- `renkin.audit_route_report(...) -> AuditRouteReport` (Phase 2A):
   a typed Python counterpart to `renkin.audit_route(...) -> str`, which
   stays completely unchanged. Pure-Python (`python/renkin/audit_report.py`),
   no Rust/CLI/WASM changes -- calls the existing string API and parses its
@@ -18,7 +21,7 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `report.routes[0].steps[0].forward_validation`). See
   [Typed Reports](https://github.com/kent-tokyo/renkin/blob/master/docs/api/python.md#audit_route_report)
   for the full field reference and the documented absent-vs-null collapse.
-- AiZynthFinder version matrix (v0.32.0 Phase 2B): individually verified
+- AiZynthFinder version matrix (Phase 2B): individually verified
   against real, artifact-captured `aizynthcli` output from `4.3.2` and
   `4.4.0`, alongside the existing `4.4.1` verification —
   `tests/fixtures/aizynthfinder/v4.3.2/` and `.../v4.4.0/`, each with its
@@ -36,13 +39,19 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   for the updated compatibility table.
 
 ### Fixed
-- Removed `aryl_amine_retro` from `default_rules()` (v0.33.0, issue #77):
-  it deleted a ring-fused nitrogen outright instead of returning it as
-  part of a second (amine) precursor fragment, on targets where the
-  nitrogen is shared between the aromatic ring and a fused saturated
-  ring. Confirmed on `uspto50k_test#L2263`. Root cause not yet isolated;
+- Removed `aryl_amine_retro` from `default_rules()` (issue #77): it
+  deleted a ring-fused nitrogen outright instead of returning it as part
+  of a second (amine) precursor fragment, on targets where the nitrogen
+  is shared between the aromatic ring and a fused saturated ring.
+  Confirmed on `uspto50k_test#L2263`. Root cause not yet isolated;
   disabled per the same atom-loss policy already applied to the 31.11
-  halide-rule removals, pending further investigation.
+  halide-rule removals, pending further investigation. **The
+  hand-crafted rule count drops from 28 to 27** — any route search that
+  previously depended on this rule for a Chan-Lam-type Ar-N
+  disconnection will no longer find that route; this is a correctness
+  fix (the routes it removed could be chemically invalid), not a
+  regression. Issue #77 stays open pending root cause and a possible
+  safe replacement.
 
 ## [0.31.0] - 2026-08-22 "Syntheseus 0.8 Compatibility"
 

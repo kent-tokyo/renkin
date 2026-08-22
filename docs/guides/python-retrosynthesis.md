@@ -148,8 +148,11 @@ distinction and how to attach real cited evidence.
 - No literature/patent auto-search, no automatic side-reaction prediction, no
   yield prediction — see [Reaction Evidence Metadata](reaction-evidence.md)
   for exactly what curated evidence is and isn't.
-- Current benchmark numbers are still being re-measured after a validator fix
-  — see the [Benchmark page](../benchmark.md) before citing a success rate.
+- Historical benchmark numbers on this repo predate a validator-accuracy fix
+  and are invalidated — see the frozen [Benchmark page](../benchmark.md) for
+  the corrected historical baseline, or the
+  [Open-Source Retrosynthesis Comparison](open-source-retrosynthesis-comparison.md)
+  guide for current, matched-condition results, before citing a success rate.
 
 ## Next Steps
 

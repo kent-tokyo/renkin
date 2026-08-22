@@ -142,7 +142,7 @@ OC(=O)c1ccccc1OC(=O)C
 
 ## 現在の制約
 
-⚠️ ベンチマーク数値はvalidator精度修正後、再計測が進行中です——このリポジトリの他箇所にある78.0%/95.9%/81.8%(ChEMBL)はこの修正より前の値であり、無効化されています。RENKINは収率・実験的に較正された成功確率・副反応を予測せず、文献の自動検索も行いません（`success_probability`はtemplate頻度由来の探索スコアであり、較正された予測値ではありません）。現行の修正済み数値・詳細な手法・既知の制約は[ベンチマーク](https://kent-tokyo.github.io/renkin/benchmark/)を参照してください。
+⚠️ ベンチマーク数値はvalidator精度修正後、再計測が進行中です——このリポジトリの他箇所にある78.0%/95.9%/81.8%(ChEMBL)はこの修正より前の値であり、無効化されています。RENKINは収率・実験的に較正された成功確率・副反応を予測せず、文献の自動検索も行いません（`success_probability`はtemplate頻度由来の探索スコアであり、較正された予測値ではありません）。修正済みの過去計測値・詳細な手法・既知の制約は[ベンチマーク](https://kent-tokyo.github.io/renkin/benchmark/)を参照してください（このページは単一commit時点で凍結された過去の計測であり、リアルタイムの数値ではありません）。
 
 ---
 
@@ -616,7 +616,7 @@ renkin/                          ← Cargo workspace ルート
 <details>
 <summary>過去のマイルストーン</summary>
 
-以下のパーセント数値はその時点でのマイルストーンであり現在の性能ではない——一部は[現在の制約](#現在の制約)に記載のvalidator精度修正より前の数値で無効化済み。現在の修正済み数値は[ベンチマーク](#ベンチマーク)参照。
+以下のパーセント数値はその時点でのマイルストーンであり現在の性能ではない——一部は[現在の制約](#現在の制約)に記載のvalidator精度修正より前の数値で無効化済み。修正済みの過去計測値は[ベンチマーク](#ベンチマーク)参照。
 
 - [x] 安定 `template_id`（`rule:<name>` / `smirks-sha256:<hex>`）+ `--template-metadata` evidence サイドカー + `renkin template ids`（[#41](https://github.com/kent-tokyo/renkin/issues/41) phase 1）
 - [x] 基質固有の `examples`（`schema_version: 2`）— ステップごとに「exact substrate match」か「同一テンプレート・別基質」かを解決し、`--format explain` に表示、JSONでは `match_kind` フィールドとして提供（[#41](https://github.com/kent-tokyo/renkin/issues/41) phase 2）

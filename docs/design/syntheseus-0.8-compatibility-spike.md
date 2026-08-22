@@ -1,12 +1,25 @@
 # Syntheseus 0.8.0 Compatibility Spike — v0.31.0 Phase 1
 
-Status: **Compatibility spike complete. This is PR1's own report — a
-test/verification round only, no production code change.** Scope is
-exactly what was authorized: artifact provenance, dual-version API audit,
-an atom-mapping feasibility spike, real-object fixtures for `0.8.0`, and
-this report. No exporter code change, no mapping model, no version bump,
-no merge/tag/publish this round — those are PR2-4, each a separate future
-approval.
+Status: **PR1 (this report) merged. PR2 (dependency-spec change)
+implemented and CI-green, pending merge.** PR1: artifact provenance,
+dual-version API audit, an atom-mapping feasibility spike, real-object
+fixtures for `0.8.0` — a test/verification round only, no production
+code change. PR2: `pyproject.toml`'s `syntheseus` extra widened to the
+declared interval `>=0.7.2,<=0.8.0` — deliberately capped at `0.8.0`
+rather than an open-ended `<0.9`, but note this interval still admits
+any intermediate release (e.g. a hypothetical future `0.7.3`), not just
+the two endpoints. **Individually verified against real artifacts:
+only `0.7.2` and `0.8.0`** — an intermediate release, if one is ever
+published, falls within the declared interval but is not individually
+verified unless added to the exact-version CI matrix (§7). PR2 also
+adds wheel-METADATA structural tests and a resolver smoke test (default
+resolution picks `0.8.0`; an already-installed `0.7.2` is not
+force-upgraded). No exporter code change in PR2 either. No mapping
+model, no version bump, no merge-to-release, no publish this round —
+PR3 (forward-evaluable Syntheseus routes) has no green light per §5's
+own finding, and PR4 is this doc plus
+`docs/guides/syntheseus-audit-demo.md`'s compatibility table, already
+updated alongside PR2.
 
 ## 0. Why this round exists
 
@@ -200,15 +213,19 @@ without re-deriving it from scratch.
 unmodified `renkin.syntheseus_exporter` requires zero code changes to
 support `0.8.0` — every class/method it touches is public and unchanged
 between the two versions, and real-object output is semantically
-identical. Widening `pyproject.toml`'s `syntheseus` extra pin (currently
-`==0.7.2`) is now backed by real, dual-version evidence rather than an
-assumption — left for PR2 per this round's explicit scope (no production
-change in PR1). No path to Syntheseus forward-evaluability was found
-within the base package in either version; that remains an honestly
-unresolved gap, not silently declared fixed.
+identical. `pyproject.toml`'s `syntheseus` extra now declares the
+interval `>=0.7.2,<=0.8.0` (PR2) — backed by this round's real,
+dual-version evidence, not an assumption. The interval's upper bound is
+deliberately capped at `0.8.0` rather than an open-ended `<0.9`, but the
+interval itself still admits any intermediate release (a hypothetical
+future `0.7.3`, for instance) — **only `0.7.2` and `0.8.0` are
+individually verified**; an intermediate release is not, unless it's
+later added to the exact-version CI matrix. No path to Syntheseus
+forward-evaluability was found within the base package in either
+version; that remains an honestly unresolved gap, not silently declared
+fixed.
 
-Phase 1 can continue: no blocker found for PR2 (support `0.8.0` in the
-published pin) or PR4 (docs). PR3 (forward-evaluable Syntheseus routes)
-has no green light — per this round's own success condition, it should
-not be opened until a genuine mapping-provenance path is secured, which
-this spike did not find within scope.
+PR3 (forward-evaluable Syntheseus routes) still has no green light —
+per this round's own success condition, it should not be opened until a
+genuine mapping-provenance path is secured, which this spike did not
+find within scope.

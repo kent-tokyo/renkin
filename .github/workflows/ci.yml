@@ -163,6 +163,26 @@ jobs:
       - run: pip install "syntheseus==${{ matrix.syntheseus-version }}"
       - run: python3 -m unittest discover -s scripts/tests -p "test_python_syntheseus_exporter.py" -v
 
+  # v0.31.0 Phase 1 PR2: does pip's own resolver actually honor the
+  # declared syntheseus>=0.7.2,<=0.8.0 interval the way pyproject.toml
+  # claims, on a real wheel -- not inferred from reading the spec file.
+  # Also covers the wheel METADATA structural checks (Provides-Extra,
+  # Requires-Dist, no stale exact pin, base install ungated).
+  syntheseus-dependency-resolution:
+    name: Syntheseus dependency resolution
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: pip install maturin
+      - name: Wheel METADATA structural checks
+        run: python3 -m unittest discover -s scripts/tests -p "test_python_package_metadata.py" -v
+      - name: "Resolver smoke (Case A: default resolution, Case B: 0.7.2 preserved)"
+        run: python3 scripts/check_syntheseus_dependency_resolution.py
+
   # Prevents documentation from silently drifting from reality (regression:
   # docs once claimed 31 rules / 509 building blocks / a non-existent
   # renkin.version() function after the real API had already moved on).

@@ -51,8 +51,8 @@
     "ram_bytes": 17179869184,
     "top_cpu_processes_raw": [
       "PID  %CPU COMM",
-      "64009  89.0 /Users/k_tanabe/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustfmt",
-      "63976  88.8 /Users/k_tanabe/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc",
+      "64009  89.0 /Users/<redacted-user>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustfmt",
+      "63976  88.8 /Users/<redacted-user>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc",
       " 7892  47.5 /System/Library/PrivateFrameworks/StorageManagement.framework/PlugIns/StorageManagementService",
       "80347   3.4 /usr/libexec/PerfPowerServices",
       " 5051   3.1 claude",

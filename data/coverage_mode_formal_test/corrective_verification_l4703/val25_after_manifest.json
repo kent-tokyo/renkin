@@ -7,7 +7,7 @@
     "--comparison-mode",
     "shared_stock",
     "--sample-list",
-    "/private/tmp/claude-501/-Users-k-tanabe-Documents-Documents-rd-project-renkin/e0a01fc7-2c55-46c0-879e-00dbc77a0e0b/scratchpad/val25_sample_list.jsonl",
+    "/private/tmp/claude-501/<redacted-scratchpad-session>/scratchpad/val25_sample_list.jsonl",
     "--sample-size",
     "25",
     "--depth",
@@ -31,11 +31,11 @@
     "--grace-s",
     "10",
     "--output-rows",
-    "/private/tmp/claude-501/-Users-k-tanabe-Documents-Documents-rd-project-renkin/e0a01fc7-2c55-46c0-879e-00dbc77a0e0b/scratchpad/val25_after_rows.jsonl",
+    "/private/tmp/claude-501/<redacted-scratchpad-session>/scratchpad/val25_after_rows.jsonl",
     "--output-aggregate",
-    "/private/tmp/claude-501/-Users-k-tanabe-Documents-Documents-rd-project-renkin/e0a01fc7-2c55-46c0-879e-00dbc77a0e0b/scratchpad/val25_after_aggregate.json",
+    "/private/tmp/claude-501/<redacted-scratchpad-session>/scratchpad/val25_after_aggregate.json",
     "--manifest-path",
-    "/private/tmp/claude-501/-Users-k-tanabe-Documents-Documents-rd-project-renkin/e0a01fc7-2c55-46c0-879e-00dbc77a0e0b/scratchpad/val25_after_manifest.json"
+    "/private/tmp/claude-501/<redacted-scratchpad-session>/scratchpad/val25_after_manifest.json"
   ],
   "comparison_mode": "shared_stock",
   "docker_image": null,
@@ -101,11 +101,11 @@
     "ram_bytes": 17179869184,
     "top_cpu_processes_raw": [
       "PID  %CPU COMM",
-      "77386 332.0 /Users/k_tanabe/Documents/Documents/oss_rust/chematic/.claude/worktrees/agent-a756082cc89c85bb7/target/debug/deps/chematic_3d-4904fed1a7831fa6",
+      "77386 332.0 /Users/<redacted-user>/Documents/Documents/oss_rust/chematic/.claude/worktrees/agent-a756082cc89c85bb7/target/debug/deps/chematic_3d-4904fed1a7831fa6",
       "29258  48.2 /Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper (Renderer).app/Contents/MacOS/Code Helper (Renderer)",
       "77446  47.4 /Library/Frameworks/Python.framework/Versions/3.13/Resources/Python.app/Contents/MacOS/Python",
       "13173  40.2 /Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper (Renderer).app/Contents/MacOS/Code Helper (Renderer)",
-      "77409  38.2 /Users/k_tanabe/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustfmt",
+      "77409  38.2 /Users/<redacted-user>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustfmt",
       " 1416  37.9 /Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper (Plugin).app/Contents/MacOS/Code Helper (Plugin)",
       "  402  36.0 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
     ]

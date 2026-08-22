@@ -25,7 +25,13 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-syntheseus = ["syntheseus==0.7.2"]
+# Declared interval: >=0.7.2,<=0.8.0 -- the two endpoints, and only the
+# two endpoints, individually verified against real PyPI artifacts (see
+# docs/design/syntheseus-0.8-compatibility-spike.md). Deliberately NOT
+# <0.9 or unpinned: an unverified future 0.8.1/0.9.0 must not be silently
+# accepted just because it would likely still work -- verified and
+# supported are not the same claim.
+syntheseus = ["syntheseus>=0.7.2,<=0.8.0"]
 
 [project.urls]
 Homepage   = "https://github.com/kent-tokyo/renkin"

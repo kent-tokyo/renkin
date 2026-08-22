@@ -131,17 +131,36 @@ since both are top-level objects and this is the more specific signal.
 
 | Source | Verified version | Input |
 |---|---|---|
-| Syntheseus | `0.7.2` (via `renkin.syntheseus_exporter`'s `syntheseus-route-v1` JSON) | single-route document only — no batch format exists for this adapter |
+| Syntheseus | `0.7.2` and `0.8.0` (via `renkin.syntheseus_exporter`'s `syntheseus-route-v1` JSON) | single-route document only — no batch format exists for this adapter |
 
-"Verified against" is deliberate phrasing, not "supported" — see the
-[Audit Reproducibility and Compatibility Contract](audit-reproducibility-contract.md)
-for the full rule set every adapter follows, and the
-[AiZynthFinder demo](aizynthfinder-audit-demo.md) for that adapter's own
-compatibility row. `0.7.2` was the named target version at the time this
-adapter was built; PyPI's own latest at that time was already `0.8.0` — the
-exporter records the real installed version via
-`importlib.metadata.version("syntheseus")` on every export, so this isn't a
-silent claim either way.
+**Declared dependency interval vs. individually verified versions —
+these are two different claims, not one:**
+
+- `pip install renkin[syntheseus]` declares
+  `syntheseus>=0.7.2,<=0.8.0`. This is what pip's resolver will actually
+  install.
+- Individually verified against real, artifact-pinned PyPI packages:
+  **`0.7.2`** (the original named target) and **`0.8.0`** (added in
+  v0.31.0 Phase 1 after a real dual-version compatibility spike — see
+  [`docs/design/syntheseus-0.8-compatibility-spike.md`](https://github.com/kent-tokyo/renkin/blob/master/docs/design/syntheseus-0.8-compatibility-spike.md)
+  for the full report). The interval's upper bound is deliberately
+  `<=0.8.0`, not an open-ended `<0.9` — an unverified future release
+  isn't silently accepted just because it would likely still work.
+  "Verified" and "supported" are not the same claim; see the
+  [Audit Reproducibility and Compatibility Contract](audit-reproducibility-contract.md).
+- `renkin.syntheseus_exporter`'s own production code is byte-for-byte
+  identical for both verified versions — no `0.8.0`-specific branch,
+  fallback, or private-attribute dependency exists anywhere in it.
+- **Compatibility-verified does not mean forward-validation-capable.**
+  Forward validation stays `not_evaluable`
+  (`MissingAtomMapping`) for every real Syntheseus route on *both*
+  verified versions — see [Step 3 above](#step-3-why-forward-validation-stays-not_evaluable)
+  for why, confirmed independently for `0.8.0` by the same compatibility
+  spike (its own atom-mapping feasibility investigation reached the
+  identical conclusion for both versions).
+
+See the [AiZynthFinder demo](aizynthfinder-audit-demo.md) for that
+adapter's own compatibility row.
 
 ## Hit a compatibility problem?
 

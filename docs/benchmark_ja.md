@@ -70,26 +70,6 @@ USPTO-50kは主に**単一ステップ**逆合成のベンチマークとして�
 
 *状態: 無効化された過去の計測値——上記の注記を参照。*
 
-### 条件の異なる文献値（旧「Table B」）
-
-> **⚠️ これは比較ではありません。** RENKIN v0.30.0以降で文書化されているAiZynthFinderとの比較は、現在すべて
-> [Open-Source Retrosynthesis Comparison](guides/open-source-retrosynthesis-comparison.md#500-target-results)
-> ガイドにあります（同一ターゲット集合、同一ハードウェア、shared stock、統計的検定）。
-> 以下の表は過去の引用一覧としてのみ保持しています——どの行もターゲット集合・在庫・探索budget・
-> ツールversionを揃えておらず、少なくとも1行の引用数値は出典論文自体と一致しません：
-> Genheden et al. 2020自身の100件のChEMBL化合物によるillustrationでは、AiZynthFinderは**55/100**
-> （同条件でASKCOSは62/100）と報告されており、論文自身がこれをベンチマーク結果ではなく
-> capacityのillustrationだと明記しています——以前ここに記載していた「45–53%」は、
-> その論文の具体的などの数値に対応するのか追跡できませんでした。以下のいずれの数値も、
-> RENKINのこれらのツールに対する相対的な位置付けを示すものとして引用しないでください。
-
-| システム | 割合 | 出典 | 備考 |
-|--------|------|------|------|
-| AiZynthFinder | 55/100（ChEMBL illustration） | Genheden et al., J. Cheminform. 2020 | 論文自身の位置付け：illustrationであり、benchmarkではない |
-| ASKCOS | 62/100（同一ChEMBL集合） | Genheden et al., J. Cheminform. 2020 | AiZynthFinder論文自身の比較内の記載 |
-| Retro\* | 44.3% | Chen et al., NeurIPS 2020 | ターゲット集合・在庫・budgetをRENKINと揃えていない |
-| ASKCOS | 約41% | Coley et al., Science 2019 | ターゲット集合・在庫・budgetをRENKINと揃えていない。上記ChEMBL行とは別の計測 |
-
 ### 比較: 単一ステップTop-1モデル（異なる指標）
 
 > **⚠️ 異なる指標です。** これらは単一ステップのtop-1予測精度（モデルのtop-1予測が既知の反応と一致するか）を測定するものであり、多段階プランニングの成功率では**ありません**。上記のRENKINの多段階成功率、および前セクションの文献値との直接比較は妥当ではありません。
@@ -97,7 +77,6 @@ USPTO-50kは主に**単一ステップ**逆合成のベンチマークとして�
 | システム | 単一ステップTop-1 | 出典 |
 |--------|------------------|--------|
 | LocalRetro | 53.4% | Chen et al., ACS Cent. Sci. 2021 |
-| GLN | 58.0% | Yu et al., NeurIPS 2022 |
 
 !!! note "条件の違い"
     RENKIN の 20.09% は **402種類の市販試薬のみ**・**約5,000テンプレート**で達成しています。一方 AiZynthFinder のようなシステムは600万化合物データベースと5万テンプレートを使用しています。RENKIN の強みは**移植性**です：Pure Rust、ゼロ C/C++ 依存、単一バイナリで WASM + Python + CLI に対応します。

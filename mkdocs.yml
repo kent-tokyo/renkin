@@ -84,7 +84,7 @@ nav:
     - Open-Source Retrosynthesis Tools: comparison/open-source-retrosynthesis-tools.md
     - "ASKCOS Feasibility (Issue #66)": comparison/askcos-feasibility-issue-66.md
   - Playground: playground/index.html
-  - Benchmark:
+  - Historical Benchmark (Frozen):
     - Results (EN): benchmark.md
     - 結果 (JA): benchmark_ja.md
 

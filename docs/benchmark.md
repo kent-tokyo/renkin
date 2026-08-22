@@ -70,30 +70,6 @@ Building blocks: **402** unique compounds actually loaded by `ChemEnv::load("dat
 
 *Status: invalidated historical measurement — see notice above.*
 
-### Literature numbers under unrelated, unverified conditions (formerly "Table B")
-
-> **⚠️ This is not a comparison.** The RENKIN v0.30.0-and-later documented
-> comparison against AiZynthFinder now lives entirely in the
-> [Open-Source Retrosynthesis Comparison](guides/open-source-retrosynthesis-comparison.md#500-target-results)
-> guide (matched target set, matched hardware, shared stock, statistical
-> testing). The table below is kept only as a historical citation list —
-> it does not report a matched target set, stock, search budget, or tool
-> version for any row, and at least one row's cited number does not match
-> its own source paper: Genheden et al. 2020's own 100-ChEMBL-compound
-> illustration reports **55/100** for AiZynthFinder (with ASKCOS at
-> 62/100 on the same set), a number the paper itself frames as an
-> illustration of capacity, not a benchmark result — not the "45–53%"
-> previously stated here, which could not be traced to a specific figure
-> in that paper. Do not cite any number below as representing RENKIN's
-> relative standing versus these tools.
-
-| System | Rate | Source | Note |
-|--------|------|--------|------|
-| AiZynthFinder | 55/100 (ChEMBL illustration) | Genheden et al., J. Cheminform. 2020 | Paper's own framing: illustrative, not a benchmark |
-| ASKCOS | 62/100 (same ChEMBL set) | Genheden et al., J. Cheminform. 2020 | As reported in the AiZynthFinder paper's own comparison |
-| Retro\* | 44.3% | Chen et al., NeurIPS 2020 | Target set/stock/budget not reconciled with RENKIN's |
-| ASKCOS | ~41% | Coley et al., Science 2019 | Target set/stock/budget not reconciled with RENKIN's; different run than the ChEMBL row above |
-
 ### Comparison: Single-Step Top-1 Models (different metric)
 
 > **⚠️ Different metric.** These measure single-step top-1 prediction accuracy (does the model's top-1 prediction match the known reaction?), **not** multi-step planning success rate. Direct comparison with RENKIN's multi-step figures above, or with the literature citations in the previous section, is not valid.
@@ -101,7 +77,6 @@ Building blocks: **402** unique compounds actually loaded by `ChemEnv::load("dat
 | System | Single-Step Top-1 | Source |
 |--------|------------------|--------|
 | LocalRetro | 53.4% | Chen et al., ACS Cent. Sci. 2021 |
-| GLG | 58.0% | Yu et al., NeurIPS 2022 |
 
 !!! note "Condition differences"
     RENKIN's 20.09% uses only **402 building blocks** and **~5,000 templates**, while systems like AiZynthFinder use 6M-compound databases and 50k templates. RENKIN's strength is **portability**: Pure Rust, zero C/C++ dependencies, WASM + Python + CLI from one binary.

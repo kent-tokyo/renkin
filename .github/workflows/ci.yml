@@ -180,7 +180,7 @@ jobs:
       - run: pip install maturin
       - name: Wheel METADATA structural checks
         run: python3 -m unittest discover -s scripts/tests -p "test_python_package_metadata.py" -v
-      - name: Resolver smoke (Case A: default resolution, Case B: 0.7.2 preserved)
+      - name: "Resolver smoke (Case A: default resolution, Case B: 0.7.2 preserved)"
         run: python3 scripts/check_syntheseus_dependency_resolution.py
 
   # Prevents documentation from silently drifting from reality (regression:

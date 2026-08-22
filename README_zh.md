@@ -21,9 +21,17 @@
 
 ---
 
+**Keep your planner. Audit every route.** 审计来自 AiZynthFinder、Syntheseus 或 RENKIN 的逆合成路径——本地运行、结果可复现，且分子结构绝不外传。
+
+[**在浏览器中审计路径 →**](https://kent-tokyo.github.io/renkin/playground/) · [**Python 快速开始 ↓**](#审计一条路径) · [**路径规划引擎 ↓**](#快速开始)
+
+---
+
 ## 什么是 RENKIN？
 
-RENKIN 是一个开源的**逆合成引擎（retrosynthesis engine）**，用于**计算机辅助合成路线设计（CASP）**，能够自动从目标分子出发，逆向发现通向廉价、可商购起始原料的最优化学反应路线。
+RENKIN Bridge 是一个工具无关的**路径审计器**：对来自 **AiZynthFinder**、**Syntheseus** 或 RENKIN 自身规划引擎的路径，检查结构完整性、原料库存和正向反应重现性——无论路径来自哪个工具，都走完全相同的 `pass`/`fail`/`partial` 判定流程，完全在本地完成、结果可复现（每次审计都会记录可验证的 [`audit_manifest`](https://kent-tokyo.github.io/renkin/guides/audit-reproducibility-contract/)），除非你主动要求，否则分子结构不会离开你的机器。
+
+RENKIN 本身也是一个开源的**逆合成引擎（retrosynthesis engine）**，用于**计算机辅助合成路线设计（CASP）**，能够自动从目标分子出发，逆向发现通向廉价、可商购起始原料的化学反应路线。
 
 完全基于 Rust 构建，使用 [`chematic`](https://docs.rs/chematic/) 化学信息学 crate——零 C/C++ 依赖，所有 crate 均启用 `#![forbid(unsafe_code)]`。同一套代码库可编译为原生 CLI、Rust 库、Python wheel（PyO3），以及完全在浏览器端运行的 WebAssembly 模块。
 
@@ -37,6 +45,10 @@ cargo add renkin            # Rust
 npm install renkin          # JavaScript (browser / bundler -- see docs/api/wasm.md)
 ```
 
+审计 Syntheseus 路径还需要一个可选依赖：
+`pip install renkin[syntheseus]`（已针对 Syntheseus `0.7.2` 与 `0.8.0` 验证——详见
+[兼容性 spike 报告](https://github.com/kent-tokyo/renkin/blob/master/docs/design/syntheseus-0.8-compatibility-spike.md)）。
+
 ---
 
 ## 在线 Playground
@@ -45,7 +57,43 @@ npm install renkin          # JavaScript (browser / bundler -- see docs/api/wasm
 
 ---
 
+## 审计一条路径
+
+带上你已经用其他工具规划好的路径——下面每条路径都会经过完全相同的审计流程：无论路径来自哪个工具，也无论你是通过 CLI、Python 还是浏览器标签页运行，都会得到相同的 `pass`/`fail`/`partial` 判定。
+
+**AiZynthFinder**
+
+```python
+import json
+import renkin
+
+report = json.loads(
+    renkin.audit_route(open("trees.json").read(), format="aizynthfinder")
+)
+print(report["summary"])
+```
+
+**Syntheseus**（`pip install renkin[syntheseus]`）
+
+```python
+import json
+import renkin
+from renkin.syntheseus_exporter import dumps_syntheseus_route_v1
+
+route_json = dumps_syntheseus_route_v1(my_synthesis_graph)
+report = json.loads(renkin.audit_route(route_json, format="syntheseus"))
+print(report["summary"])
+```
+
+**在浏览器中** — 无需安装、无需上传、无需服务器：[**试用 Playground →**](https://kent-tokyo.github.io/renkin/playground/)
+
+完整的实物输出演示：[AiZynthFinder](https://kent-tokyo.github.io/renkin/guides/aizynthfinder-audit-demo/)（英文）· [Syntheseus](https://kent-tokyo.github.io/renkin/guides/syntheseus-audit-demo/)（英文）。
+
+---
+
 ## 快速开始
+
+*从零开始规划一条路径——若要审计手头已有的路径，请参见上方「[审计一条路径](#审计一条路径)」。*
 
 ```python
 import json

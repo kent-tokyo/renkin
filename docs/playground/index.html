@@ -80,6 +80,9 @@
     button:disabled { opacity:0.4; cursor:default; }
     .cancel-btn { background:transparent; border:1px solid var(--error); color:var(--error); }
     .cancel-btn:hover { opacity:1; background:rgba(224,92,92,0.1); }
+    .example-btn { background:var(--surface); border:1px solid var(--border); color:var(--muted);
+      font-weight:500; font-size:0.8rem; padding:0.4rem 0.85rem; height:auto; align-self:auto; }
+    .example-btn:hover { opacity:1; color:var(--text); border-color:var(--accent2); }
 
     /* ── Advanced settings ──────────────────────────────────────── */
     .advanced-details { margin-top:0.85rem; }
@@ -396,6 +399,12 @@
       <span class="help-icon" tabindex="0" data-i18n-tip="tip_audit" data-tip="Audits an already-completed route (RENKIN, AiZynthFinder, or Syntheseus export) for structural integrity, stock coverage, element accounting, and forward-reaction reproducibility — a pass/fail/partial verdict, entirely in your browser.">?</span>
     </div>
 
+    <div class="search-row" style="margin-top:0.5rem">
+      <button type="button" class="example-btn" id="audit-example-aizynthfinder" data-i18n="audit_example_aizynthfinder">Load AiZynthFinder example</button>
+      <button type="button" class="example-btn" id="audit-example-syntheseus" data-i18n="audit_example_syntheseus">Load Syntheseus example</button>
+      <button type="button" class="example-btn" id="audit-example-failing" data-i18n="audit_example_failing">Load failing route example</button>
+    </div>
+
     <div class="search-row" style="margin-top:0">
       <div class="field">
         <label for="audit-format-select" data-i18n="audit_format_label">Format</label>
@@ -546,6 +555,9 @@
       audit_format_renkin: 'RENKIN',
       audit_format_aizynthfinder: 'AiZynthFinder',
       audit_format_syntheseus: 'Syntheseus',
+      audit_example_aizynthfinder: 'Load AiZynthFinder example',
+      audit_example_syntheseus: 'Load Syntheseus example',
+      audit_example_failing: 'Load failing route example',
       audit_policy_label: 'Policy',
       tip_audit_policy: 'Policy never hides a finding — it only changes how the overall pass/fail/partial verdict is derived from findings already collected.',
       audit_policy_informational: 'Informational',
@@ -644,6 +656,9 @@
       audit_format_renkin: 'RENKIN',
       audit_format_aizynthfinder: 'AiZynthFinder',
       audit_format_syntheseus: 'Syntheseus',
+      audit_example_aizynthfinder: 'AiZynthFinderの例を読み込む',
+      audit_example_syntheseus: 'Syntheseusの例を読み込む',
+      audit_example_failing: '失敗する例を読み込む',
       audit_policy_label: 'ポリシー',
       tip_audit_policy: 'ポリシーはfindingを隠しません — 既に収集されたfindingから全体のpass/fail/partial判定をどう導出するかだけが変わります。',
       audit_policy_informational: 'Informational',
@@ -742,6 +757,9 @@
       audit_format_renkin: 'RENKIN',
       audit_format_aizynthfinder: 'AiZynthFinder',
       audit_format_syntheseus: 'Syntheseus',
+      audit_example_aizynthfinder: '加载 AiZynthFinder 示例',
+      audit_example_syntheseus: '加载 Syntheseus 示例',
+      audit_example_failing: '加载失败路径示例',
       audit_policy_label: '策略',
       tip_audit_policy: '策略不会隐藏任何finding — 只改变如何从已收集的finding推导出整体的pass/fail/partial判定。',
       audit_policy_informational: 'Informational',
@@ -940,6 +958,55 @@
   wireFileToTextarea('audit-route-file', 'audit-route-input');
   wireFileToTextarea('audit-stock-file', 'audit-stock-input');
 
+  // ── Audit examples: real, committed fixtures embedded verbatim (byte-
+  // identical to tests/fixtures/{aizynthfinder/v4.4.1,syntheseus/0.7.2}/),
+  // not invented JSON -- so "load and run" always shows the exact same
+  // verdict the CLI/demo docs already document for these same fixtures.
+  // Embedded rather than fetched: this page makes zero outbound requests
+  // by design (see the footer note), and a fetched example would be the
+  // one exception.
+  const AUDIT_EXAMPLES = {
+    aizynthfinder: {
+      format: 'aizynthfinder',
+      // tests/fixtures/aizynthfinder/v4.4.1/single_trees.json, route 0
+      // (nitro-reduction retro step) wrapped in its own single-element
+      // array -- the real --format aizynthfinder single-target shape.
+      content: '[{"type":"mol","hide":false,"smiles":"CCOC(=O)c1ccc(N)cc1","is_chemical":true,"in_stock":false,"children":[{"type":"reaction","hide":false,"smiles":"[N:1][cH3:2]>>O=[N:1]([O-])[cH3:2]","is_reaction":true,"metadata":{"template_hash":"664f7756f7526ad6c07e82dd3b3c15f7aabccbc99837dd22105068a2cfc385b5","classification":"0.0 Unrecognized","library_occurence":33350,"policy_probability":0.42239999771118164,"policy_probability_rank":0,"policy_name":"uspto","template_code":17064,"template":"[NH2;D1;+0:1]-[c:2]>>O=[N+;H0;D3:1](-[O-])-[c:2]","mapped_reaction_smiles":"[CH3:1][CH2:2][O:3][C:4](=[O:5])[c:6]1[cH:7][cH:8][c:9]([NH2:10])[cH:11][cH:12]1>>[CH3:1][CH2:2][O:3][C:4](=[O:5])[c:6]1[cH:7][cH:8][c:9]([N+:10](=[O:13])[O-:14])[cH:11][cH:12]1"},"children":[{"type":"mol","hide":false,"smiles":"CCOC(=O)c1ccc([N+](=O)[O-])cc1","is_chemical":true,"in_stock":true}]}],"scores":{"state score":0.9976287063411217,"number of reactions":1,"number of pre-cursors":1,"number of pre-cursors in stock":1},"metadata":{"created_at_iteration":1,"is_solved":true}}]',
+    },
+    syntheseus: {
+      format: 'syntheseus',
+      // tests/fixtures/syntheseus/0.7.2/linear_two_leaf_route.json verbatim.
+      content: '{"molecule_metadata":{"CCO":{"is_purchasable":true},"O=C(O)c1ccccc1":{"cost":12.5,"is_purchasable":true,"supplier":"TestSupplierCo"}},"schema_version":1,"source_metadata":{"exporter_schema":"syntheseus-route-v1","note":"Generated from a real syntheseus.search.graph.route.SynthesisGraph object via the public interface (Molecule/Bag/SingleProductReaction/SynthesisGraph) -- no model inference, search algorithm, checkpoint, or GPU was used to construct this route."},"source_tool":"syntheseus","source_version":"0.7.2","starting_molecules":["CCO","O=C(O)c1ccccc1"],"steps":[{"product":"CCOC(=O)c1ccccc1","reactants":["CCO","O=C(O)c1ccccc1"],"reaction_metadata":{"identifier":"step1","reaction_smiles":"CCO.O=C(O)c1ccccc1>>CCOC(=O)c1ccccc1","source":"renkin-syntheseus-spike-fixture","template":"esterification_retro"}}],"target":"CCOC(=O)c1ccccc1"}',
+    },
+    failing: {
+      format: 'syntheseus',
+      // tests/fixtures/syntheseus/0.7.2/convergent_route.json verbatim --
+      // deliberately non-tree, and its one true leaf ("CC") carries no
+      // is_purchasable claim at all, so this always audits FAIL with two
+      // ambiguous_leaf_status findings (see docs/guides/syntheseus-audit-
+      // demo.md's own walkthrough of this exact fixture).
+      content: '{"molecule_metadata":{"CC":{"is_purchasable":null}},"schema_version":1,"source_metadata":{"exporter_schema":"syntheseus-route-v1","note":"Generated from a real syntheseus.search.graph.route.SynthesisGraph object via the public interface (Molecule/Bag/SingleProductReaction/SynthesisGraph) -- no model inference, search algorithm, checkpoint, or GPU was used to construct this route."},"source_tool":"syntheseus","source_version":"0.7.2","starting_molecules":["CC"],"steps":[{"product":"COCS","reactants":["CO","CS"],"reaction_metadata":{"identifier":"cocs_from_co_cs","reaction_smiles":"CO.CS>>COCS"}},{"product":"CO","reactants":["CC"],"reaction_metadata":{"identifier":"co_from_cc","reaction_smiles":"CC>>CO"}},{"product":"CS","reactants":["CO"],"reaction_metadata":{"identifier":"cs_from_co","reaction_smiles":"CO>>CS"}}],"target":"COCS"}',
+    },
+  };
+
+  // Switches to the Audit tab, fills the format/route fields from a real
+  // embedded fixture, clears any stock text (these examples are meant to
+  // be run exactly as committed, not mixed with a leftover paste), and
+  // runs the audit immediately -- one click (or one shared URL) to a real
+  // verdict, no second "now click Audit" step.
+  function loadAuditExample(name) {
+    const example = AUDIT_EXAMPLES[name];
+    if (!example) return;
+    switchTab('audit');
+    auditFormatSelect.value = example.format;
+    auditRouteInput.value = example.content;
+    auditStockInput.value = '';
+    if (!auditBtn.disabled) runAudit();
+  }
+  document.getElementById('audit-example-aizynthfinder').addEventListener('click', () => loadAuditExample('aizynthfinder'));
+  document.getElementById('audit-example-syntheseus').addEventListener('click', () => loadAuditExample('syntheseus'));
+  document.getElementById('audit-example-failing').addEventListener('click', () => loadAuditExample('failing'));
+
   // find_routes_v2 (target, depth, max_routes, beam_width, avoid_elements,
   // require_elements) is a real, distinct WASM export (src/wasm.rs) — no
   // try/catch-based argument-count fallback needed. A prior version of this
@@ -1060,6 +1127,15 @@
     auditBtn.disabled = false;
     statusTextEl.dataset.state = 'status_init';
     statusTextEl.textContent = t('status_init');
+
+    // Shareable one-click demo links -- ?demo=aizynthfinder|syntheseus|failing
+    // switches to the Audit tab, loads the matching real fixture, and runs
+    // it immediately, so a README/social link can land straight on a real
+    // verdict without the visitor pasting anything themselves.
+    const demoParam = new URLSearchParams(location.search).get('demo');
+    if (demoParam && AUDIT_EXAMPLES[demoParam]) {
+      loadAuditExample(demoParam);
+    }
   } catch (e) {
     wasmStatusEl.className = 'wasm-status failed';
     const errTitle = document.createElement('strong');

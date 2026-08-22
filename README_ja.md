@@ -21,13 +21,19 @@
 
 ---
 
+**Keep your planner. Audit every route.** AiZynthFinder・Syntheseus・RENKIN——どのツールで生成したrouteでも、ローカルで・再現可能な形で・分子構造を一切外部送信せずに監査できます。
+
+[**ブラウザでrouteを監査 →**](https://kent-tokyo.github.io/renkin/playground/) · [**Pythonクイックスタート ↓**](#routeを監査する) · [**route計画エンジン ↓**](#クイックスタート)
+
+---
+
 ## RENKINとは
 
-RENKINは、目標分子（ゴール）から逆算して市販の安価な原料へと至る最適な化学反応経路を自動発見する**逆合成（Retrosynthesis）エンジン**です。**創薬・医薬化学・ケモインフォマティクス**において中心的な問題を解きます。
+RENKIN Bridgeは、ツール非依存の**route監査ツール**です。**AiZynthFinder**・**Syntheseus**・RENKIN自身のplanner——どのツールが生成したrouteでも、構造整合性・stock充足・宣言済み反応のforward-replay検証を、全く同じ`pass`/`fail`/`partial`パイプラインで判定します。完全にローカルで完結し、監査ごとに検証可能な[`audit_manifest`](https://kent-tokyo.github.io/renkin/guides/audit-reproducibility-contract/)を記録——明示的に指定しない限り、分子構造がお使いのマシンの外へ出ることはありません。
+
+RENKINはそれ自体、目標分子（ゴール）から逆算して市販の安価な原料へと至る化学反応経路を自動発見する、独立した**逆合成（Retrosynthesis）エンジン**でもあります。**創薬・医薬化学・ケモインフォマティクス**において中心的な問題を解きます。
 
 Rust言語と [`chematic`](https://docs.rs/chematic/) クレートで実装された純粋なRust製エンジン——C/C++依存ゼロ、全クレートに `#![forbid(unsafe_code)]` を適用。単一のコードベースがネイティブCLI・Rustライブラリ・Pythonホイール（PyO3）・ブラウザ上で完全にクライアントサイド動作するWebAssemblyモジュールへとコンパイルされます。
-
-RENKINは、RENKIN自身またはAiZynthFinderが生成した逆合成routeを検証する、独立した監査レイヤーとしても使えます——下記「[特徴](#特徴)」の RENKIN Bridge / `audit-route` 参照。
 
 ---
 
@@ -39,6 +45,10 @@ cargo add renkin            # Rust
 npm install renkin          # JavaScript (browser / bundler -- see docs/api/wasm.md)
 ```
 
+Syntheseus routeの監査には、もう一つ任意パッケージが必要です：
+`pip install renkin[syntheseus]`（Syntheseus `0.7.2`・`0.8.0`で検証済み——詳細は
+[互換性spikeレポート](https://github.com/kent-tokyo/renkin/blob/master/docs/design/syntheseus-0.8-compatibility-spike.md)を参照）。
+
 ---
 
 ## ライブプレイグラウンド
@@ -47,7 +57,43 @@ npm install renkin          # JavaScript (browser / bundler -- see docs/api/wasm
 
 ---
 
+## Routeを監査する
+
+すでに手元にあるrouteを、どのツールで計画したものでも持ち込めます——以下のどの経路も全く同じ監査パイプラインを通るため、どのツールが生成したrouteでも、CLI・Python・ブラウザタブのどれで実行しても、同じ`pass`/`fail`/`partial`判定が返ります。
+
+**AiZynthFinder**
+
+```python
+import json
+import renkin
+
+report = json.loads(
+    renkin.audit_route(open("trees.json").read(), format="aizynthfinder")
+)
+print(report["summary"])
+```
+
+**Syntheseus**（`pip install renkin[syntheseus]`）
+
+```python
+import json
+import renkin
+from renkin.syntheseus_exporter import dumps_syntheseus_route_v1
+
+route_json = dumps_syntheseus_route_v1(my_synthesis_graph)
+report = json.loads(renkin.audit_route(route_json, format="syntheseus"))
+print(report["summary"])
+```
+
+**ブラウザで** — インストール不要、アップロード不要、サーバー不要：[**Playgroundを試す →**](https://kent-tokyo.github.io/renkin/playground/)
+
+実物出力による完全なウォークスルー：[AiZynthFinder](https://kent-tokyo.github.io/renkin/guides/aizynthfinder-audit-demo/)（英語）・[Syntheseus](https://kent-tokyo.github.io/renkin/guides/syntheseus-audit-demo/)（英語）。
+
+---
+
 ## クイックスタート
+
+*ゼロからrouteを計画する場合はこちら。すでに手元にあるrouteを監査したい場合は上記「[Routeを監査する](#routeを監査する)」を参照。*
 
 ```python
 import json

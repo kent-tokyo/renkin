@@ -7,7 +7,7 @@
     "--comparison-mode",
     "shared_stock",
     "--sample-list",
-    "/private/tmp/claude-501/-Users-k-tanabe-Documents-Documents-rd-project-renkin/e0a01fc7-2c55-46c0-879e-00dbc77a0e0b/scratchpad/cohort_sample_list.jsonl",
+    "/private/tmp/claude-501/<redacted-scratchpad-session>/scratchpad/cohort_sample_list.jsonl",
     "--sample-size",
     "500",
     "--depth",

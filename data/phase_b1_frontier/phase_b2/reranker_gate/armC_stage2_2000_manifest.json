@@ -94,7 +94,7 @@
     "ram_bytes": 17179869184,
     "top_cpu_processes_raw": [
       "PID  %CPU COMM",
-      "64871 197.5 /Users/k_tanabe/Documents/Documents/oss_rust/chematic/.claude/worktrees/agent-ac9e68ce9d65a5660/target/debug/deps/chematic_3d-ad37230c7f3c1337",
+      "64871 197.5 /Users/<redacted-user>/Documents/Documents/oss_rust/chematic/.claude/worktrees/agent-ac9e68ce9d65a5660/target/debug/deps/chematic_3d-ad37230c7f3c1337",
       " 7892  39.3 /System/Library/PrivateFrameworks/StorageManagement.framework/PlugIns/StorageManagementService",
       "64958  36.3 /Library/Frameworks/Python.framework/Versions/3.13/Resources/Python.app/Contents/MacOS/Python",
       " 1019  22.3 /Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper (Renderer).app/Contents/MacOS/Code Helper (Renderer)",

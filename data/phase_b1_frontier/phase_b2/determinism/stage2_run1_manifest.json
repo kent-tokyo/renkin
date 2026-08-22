@@ -87,7 +87,7 @@
     "top_cpu_processes_raw": [
       "PID  %CPU COMM",
       " 7951  89.2 /System/Library/PrivateFrameworks/StorageManagement.framework/PlugIns/ApplicationsStorageExtension.appex/Contents/MacOS/ApplicationsStorageExtension",
-      "54276  72.5 /Users/k_tanabe/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc",
+      "54276  72.5 /Users/<redacted-user>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc",
       "54290  40.2 /Library/Frameworks/Python.framework/Versions/3.13/Resources/Python.app/Contents/MacOS/Python",
       "  402  26.7 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
       "33737  17.2 claude",

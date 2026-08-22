@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 import platform
+import re
 import subprocess
 import sys
 import time
@@ -28,9 +29,37 @@ def _run(argv: list[str]) -> str:
         return f"<error: {e}>"
 
 
+def redact_home_dir(text: str) -> str:
+    """Replace the current user's home directory -- wherever it appears,
+    including the hyphen-flattened form Claude Code's scratchpad temp
+    directories use (e.g. /Users/name -> -Users-name-...) -- with a neutral
+    placeholder. This manifest is a committed, shareable diagnostic
+    artifact (git_commit/binary_sha256/environment snapshot), not a local
+    scratch file; both `command_line` (which can carry a caller-supplied
+    absolute path, e.g. a --sample-list under a scratchpad dir) and
+    `top_cpu_processes_raw` (macOS `ps -o comm` reports each process's full
+    executable path, not just its basename) can otherwise leak a local
+    username into it. Derived from the environment at call time --
+    deliberately never hardcodes a specific username here.
+    """
+    home = os.path.expanduser("~")
+    if not text or home in ("~", "/"):
+        return text
+    redacted = text.replace(home, "<redacted-home>")
+    home_flat = re.sub(r"[/_]", "-", home.strip("/"))
+    if home_flat:
+        redacted = re.sub(
+            re.escape(home_flat) + r"[\w-]*", "<redacted-scratchpad-session>", redacted
+        )
+    return redacted
+
+
 def capture_environment() -> dict:
     battery = _run(["pmset", "-g", "batt"])
-    top_procs = _run(["ps", "-Ao", "pid,%cpu,comm", "-r"]).splitlines()[:8]
+    top_procs = [
+        redact_home_dir(line)
+        for line in _run(["ps", "-Ao", "pid,%cpu,comm", "-r"]).splitlines()[:8]
+    ]
     caffeinate = _run(["pgrep", "-fl", "caffeinate"]) or None
     disk = _run(["df", "-h", "."])
     return {
@@ -71,7 +100,7 @@ def capture_start_manifest(
         "tool": tool,
         "comparison_mode": comparison_mode,
         "ring_context_policy": ring_context_policy,
-        "command_line": command_line,
+        "command_line": [redact_home_dir(arg) for arg in command_line],
         "git_commit": git_commit,
         "binary_sha256": sha256_file(binary_path) if binary_path else None,
         "docker_image": docker_image,

@@ -73,10 +73,13 @@ gzip-compressed), trimmed.
   - `CC(C)Cc1ccc(C(C)C(=O)O)cc1` (ibuprofen) -- **not** solved (5 raw
     routes saved, `is_solved: False`) -- same "route present but not
     solved" case `v4.3.2`/`v4.4.1`'s Fixture B exercises. (The raw route
-    count for this not-solved target varies run to run --
-    9 for `v4.3.2`, 5 here, 11 for `v4.4.1` -- an artifact of the search
-    itself terminating at a fixed iteration budget on an unsolved target,
-    not a fixture inconsistency; the trimmed fixture keeps 2 either way.)
+    count for this not-solved target differs across the three captures --
+    11 for `v4.4.1`, 9 for `v4.3.2`, 5 here. The single-target search
+    above is fully deterministic across all three versions -- identical
+    23 routes, identical `top_score` to the last digit -- so this is not
+    generic run-to-run nondeterminism; the actual cause was not
+    investigated. Not a fixture inconsistency either way: the trimmed
+    fixture keeps 2 routes regardless of how many the raw run produced.)
 - **Capture command**:
   ```
   printf "CCOC(=O)c1ccc(N)cc1\nCC(C)Cc1ccc(C(C)C(=O)O)cc1\n" > batch_targets.smi

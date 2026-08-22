@@ -82,6 +82,12 @@ fn single_trees_without_stock_is_identical_partial_verdict_across_all_verified_v
     }
 }
 
+/// This test's exact pass/fail/fail pattern is coupled to
+/// `data/building_blocks.smi`'s current contents, not just to the
+/// AiZynthFinder fixtures -- if that stock file ever gains or loses a
+/// compound these three routes' leaves depend on, this test can start
+/// failing for a reason unrelated to AiZynthFinder version compatibility.
+///
 /// With `data/building_blocks.smi` configured, route index 1 (the middle
 /// of the 3 kept routes) resolves both its leaves and PASSes; routes 0 and
 /// 2 have at least one leaf claimed purchasable that isn't actually in
@@ -149,4 +155,39 @@ fn batch_output_gz_parses_identically_across_all_verified_versions() {
             );
         }
     }
+}
+
+/// Pins the one real cross-version JSON difference this matrix actually
+/// found (see `v4.3.2/PROVENANCE.md`): `v4.3.2`'s raw route JSON carries
+/// an extra `scores["average template occurrence"]` field that `v4.4.0`
+/// doesn't -- exactly the "extra future fields must be tolerated, not
+/// rejected" case the matrix exists to cover. This reads the raw fixture
+/// file directly (not through `audit-route`, whose report never echoes
+/// back this AiZynthFinder-internal field at all) so that if either
+/// fixture is ever "cleaned up" and the field disappears, this fails
+/// loud instead of the PROVENANCE.md claim quietly going stale.
+#[test]
+fn v432_fixture_carries_a_field_v440_lacks_the_forward_compat_witness() {
+    let v432_path = fixture_path("v4.3.2", "single_trees.json");
+    let v432: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&v432_path).expect("read v4.3.2 fixture"))
+            .expect("v4.3.2 fixture is valid JSON");
+    assert!(
+        v432[0]["scores"]["average template occurrence"].is_number(),
+        "v4.3.2/single_trees.json route 0 must carry scores['average template occurrence']"
+    );
+
+    let v440_path = fixture_path("v4.4.0", "single_trees.json");
+    let v440: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&v440_path).expect("read v4.4.0 fixture"))
+            .expect("v4.4.0 fixture is valid JSON");
+    assert!(
+        v440[0]["scores"]["average template occurrence"].is_null(),
+        "v4.4.0/single_trees.json route 0 must NOT carry scores['average template occurrence']"
+    );
+
+    // And RENKIN must still audit v4.3.2's route with the extra field
+    // exactly the same as every other version -- tolerated, not rejected.
+    let report = run_audit(&v432_path, &[]);
+    assert_eq!(report["routes"][0]["route_tree_parseable"], true);
 }

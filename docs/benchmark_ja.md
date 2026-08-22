@@ -1,11 +1,20 @@
 ---
-title: "RENKINベンチマーク: USPTO-50k評価結果と手法"
-description: "USPTO-50kにおけるRENKINの修正済みベンチマーク結果。手法の詳細、他の逆合成プランナーとの比較、既知の限界を含む。"
+title: "RENKIN 過去のUSPTO-50kストレステスト（v0.15.5、凍結）"
+description: "RENKIN v0.15.5、単一コミットに凍結されたUSPTO-50k route-to-stockストレステスト。詳細な手法と既知の限界を含む。他プランナーとの現在の比較データはOpen-Source Retrosynthesis Comparisonガイドを参照。"
 ---
 
-# ベンチマーク
+# 過去のUSPTO-50kストレステスト（凍結、v0.15.5）
 
-> ⚠️ **注記（2026-07-22）: このページに残る78.0%（単一パス）/95.9%（cascade）/81.8%（ChEMBL OOD）は無効化された過去の計測値であり、再計測されていません。** これらは、解決数を化学的に不正な経路や誤って肯定判定されたルートで水増ししていた4件の逆合成ルール・validatorバグを修正する前に計測されたものです（経緯は下記）。**「Corrected baseline」セクションのみが現行ルールセットを反映しています**——このページの他の箇所は歴史的な連続性のために旧い無効化済みの数値をそのまま残しており、それぞれその旨を明記しています。マークのない過去の数値をRENKINの現在の性能として引用しないでください。
+**このページ全体が凍結された過去の記録であり、現在進行形のベンチマークではありません。** 以下のすべての数値——「Corrected Baseline」セクションを含む——は、単一の特定コミット（`e20dc8c`、RENKIN v0.15.5、2026-07-22）に対して一度だけ計測されたものであり、それ以降再計測されていません。「Corrected」が指すのは、そのコミット時点でのルールセットであり、RENKINの現在の状態ではありません。このページのすべての数値は、ある1日にRENKINが行ったことのスナップショットとして扱ってください。
+
+> **現在の・条件を揃えた比較データをお探しですか？** 代わりに
+> [Open-Source Retrosynthesis Comparison](guides/open-source-retrosynthesis-comparison.md#500-target-results)
+> ガイドを参照してください：500ターゲット、paired bootstrap、exact McNemar検定による、
+> shared stockと各ツール自身のnative stockの両条件でのAiZynthFinderとの比較で、
+> 常に最新の状態に保たれています。このページは最新の状態に保たれておらず、
+> その目的には使用しないでください。
+
+> ⚠️ **注記（2026-07-22）: このページに残る78.0%（単一パス）/95.9%（cascade）/81.8%（ChEMBL OOD）は無効化された過去の計測値であり、再計測されていません。** これらは、解決数を化学的に不正な経路や誤って肯定判定されたルートで水増ししていた4件の逆合成ルール・validatorバグを修正する前に計測されたものです（経緯は下記）。**「Corrected baseline」セクションのみが凍結時点のルールセットを反映しています**——このページの他の箇所は歴史的な連続性のために旧い無効化済みの数値をそのまま残しており、それぞれその旨を明記しています。マークの有無にかかわらず、このページのいかなる数値もRENKINの現在の性能として引用しないでください。
 >
 > **Corrected baseline — USPTO-50k Stage 1（単一パス）、コミット `e20dc8c`、2026-07-22。** Search-to-stock rate（`raw_solved_rate`）**20.09%**（986/4,907）→ atom-balance-filtered rate（`atom_balanced_solved_rate`）**15.41%**（756/4,907）→ current-validator-confirmed rate（`provenance_validated_solved_rate`）**0.88%**（43/4,907）。この3つは同一4,907件に対する*入れ子系列*（各段が前段のより厳格な部分集合）であり、独立した3つの計測値ではなく、いずれも単独では実験的に検証された合成成功率でも人間の化学者によるルート正確性評価でもありません。
 >
@@ -15,7 +24,11 @@ description: "USPTO-50kにおけるRENKINの修正済みベンチマーク結果
 
 ## USPTO-50k テストセット
 
-RENKIN は [USPTO-50k](https://huggingface.co/datasets/bisectgroup/USPTO_50K) テストセット全件（4,907分子）で評価されます——多段階逆合成計画の標準ベンチマークです。
+USPTO-50kは主に**単一ステップ**逆合成のベンチマークとして使われています（単一ステップでの利用は下記の「比較: 単一ステップTop-1モデル」を参照）。このページでは、[USPTO-50k](https://huggingface.co/datasets/bisectgroup/USPTO_50K) から派生した4,907件の凍結ターゲットコーパスを、RENKINの多段階探索に対する**route-to-stockストレステスト**として転用しています——[PaRoutes](https://github.com/AstraZeneca/PaRoutes)（RENKINも`renkin-bench --input-format paroutes`で直接対応済み。[README](https://github.com/kent-tokyo/renkin#paroutes-compatibility)参照）のような、多段階の標準ベンチマークではありません。
+
+このコーパスには、既知の・開示済みのprovenance gapもあります：`data/uspto50k_test.smi`のヘッダーは「5007 reactions」と記載していますが、実際のデータ行数は4,907件であり、このリポジトリにはこのファイルの由来となったHugging Face上の正確なrevisionを追跡する記録がありません。詳細な開示は
+[Open-Source Retrosynthesis Comparisonガイドの「Known gaps」セクション](guides/open-source-retrosynthesis-comparison.md#known-gaps-disclosed-not-fixed-in-this-round)
+を参照してください——同じ注意書きが2箇所で独立にずれていくのを避けるため、ここでは繰り返しません。
 
 **「解決（solved）」の意味:** ターゲットは、すべてのリーフ前駆体がビルディングブロック集合に含まれる完全な逆合成経路が1つ以上見つかった場合に*solved*と判定されます（下記のcorrected-baseline実行では`data/building_blocks.smi`から読み込んだ402件のユニークな化合物——ファイルの生の行数と異なる理由は同セクション参照）。これはUSPTOデータセットのground-truth試薬との照合では**ありません**。
 
@@ -53,26 +66,33 @@ RENKIN は [USPTO-50k](https://huggingface.co/datasets/bisectgroup/USPTO_50K) �
 | + beam=100 | 2,688 / 4,907 | 54.8% | ビームサーチ |
 | + Phase A頻度重み付け | 3,540 / 4,907 | 72.1% | 高頻度テンプレートへのstep_costボーナス |
 | **+ 約5,000テンプレート（v0.15.5）** | **3,826 / 4,907** | **78.0%** | 修正前計測値、無効化済み |
-| **Cascade: Stage 2（depth=7, beam=300, 未解決分のみ）** | **4,705 / 4,907** | **95.9%** | 2026-06-29 ✅ |
+| **Cascade: Stage 2（depth=7, beam=300, 未解決分のみ）** | **4,705 / 4,907** | **95.9%** | 2026-06-29 ✅（修正前計測値、無効化済み） |
 
 *状態: 無効化された過去の計測値——上記の注記を参照。*
 
-### 比較: 多段階プランナー（Table B）
+### 条件の異なる文献値（旧「Table B」）
 
-> **⚠️ 条件を揃えた比較ではありません。** ビルディングブロック数・テンプレート数・評価設定はシステムごとに大きく異なります。この数値だけでツールの優劣を確定的にランク付けすることはできません。同一のBB集合・同一のテンプレートによる条件統一実験はまだ行われていません。
+> **⚠️ これは比較ではありません。** RENKIN v0.30.0以降で文書化されているAiZynthFinderとの比較は、現在すべて
+> [Open-Source Retrosynthesis Comparison](guides/open-source-retrosynthesis-comparison.md#500-target-results)
+> ガイドにあります（同一ターゲット集合、同一ハードウェア、shared stock、統計的検定）。
+> 以下の表は過去の引用一覧としてのみ保持しています——どの行もターゲット集合・在庫・探索budget・
+> ツールversionを揃えておらず、少なくとも1行の引用数値は出典論文自体と一致しません：
+> Genheden et al. 2020自身の100件のChEMBL化合物によるillustrationでは、AiZynthFinderは**55/100**
+> （同条件でASKCOSは62/100）と報告されており、論文自身がこれをベンチマーク結果ではなく
+> capacityのillustrationだと明記しています——以前ここに記載していた「45–53%」は、
+> その論文の具体的などの数値に対応するのか追跡できませんでした。以下のいずれの数値も、
+> RENKINのこれらのツールに対する相対的な位置付けを示すものとして引用しないでください。
 
-| システム | 多段階成功率 | 在庫 | テンプレート | 出典 |
-|--------|----------------|-------|-----------|--------|
-| **RENKIN v0.16.0（corrected, `raw_solved_rate`）** | **20.09%** | 402 BB | 約5,000 | 本ページ、2026-07-22 |
-| AiZynthFinder | 45–53% | 約600万（eMolecules） | 約50,000 | Genheden et al., J. Cheminform. 2020 |
-| Retro\* | 44.3% | 約20,000 | 約17,000 | Chen et al., NeurIPS 2020 |
-| ASKCOS | 約41% | 約20,000 | 約195,000 | Coley et al., Science 2019 |
+| システム | 割合 | 出典 | 備考 |
+|--------|------|------|------|
+| AiZynthFinder | 55/100（ChEMBL illustration） | Genheden et al., J. Cheminform. 2020 | 論文自身の位置付け：illustrationであり、benchmarkではない |
+| ASKCOS | 62/100（同一ChEMBL集合） | Genheden et al., J. Cheminform. 2020 | AiZynthFinder論文自身の比較内の記載 |
+| Retro\* | 44.3% | Chen et al., NeurIPS 2020 | ターゲット集合・在庫・budgetをRENKINと揃えていない |
+| ASKCOS | 約41% | Coley et al., Science 2019 | ターゲット集合・在庫・budgetをRENKINと揃えていない。上記ChEMBL行とは別の計測 |
 
-RENKIN行は`raw_solved_rate`（stockへの経路が1件以上見つかった率）を使用しています——他システムが公表しているroute-finding成功率に最も近いRENKIN側の指標です。ただし在庫規模・テンプレート集合・ターゲット集合・探索budget・ルート品質検査がシステムごとに異なるため直接比較はできず、この表はRENKINが他システムより優れている（あるいは劣っている）ことを示すものではありません。RENKINはこれに加えてより厳格な2つの入れ子指標（`atom_balanced_solved_rate` 15.41%、`provenance_validated_solved_rate` 0.88%——上記のcorrected-baseline注記参照）も報告していますが、他システムの論文には直接対応する数値がありません。
+### 比較: 単一ステップTop-1モデル（異なる指標）
 
-### 比較: 単一ステップTop-1モデル（Table C — 異なる指標）
-
-> **⚠️ 異なる指標です。** これらは単一ステップのtop-1予測精度（モデルのtop-1予測が既知の反応と一致するか）を測定するものであり、多段階プランニングの成功率では**ありません**。Table Bとの直接比較は妥当ではありません。
+> **⚠️ 異なる指標です。** これらは単一ステップのtop-1予測精度（モデルのtop-1予測が既知の反応と一致するか）を測定するものであり、多段階プランニングの成功率では**ありません**。上記のRENKINの多段階成功率、および前セクションの文献値との直接比較は妥当ではありません。
 
 | システム | 単一ステップTop-1 | 出典 |
 |--------|------------------|--------|
@@ -84,7 +104,13 @@ RENKIN行は`raw_solved_rate`（stockへの経路が1件以上見つかった率
 
 ### RENKIN が得意とする反応
 
-RENKIN は標準的な結合切断に対して高い精度を示します：
+> ⚠️ **実測の精度に基づく主張ではありません。** 以下のリストは、RENKINがhand-crafted
+> またはgraph-baseの明示的なルールを持っている変換ファミリーを示したものであり、
+> クラス別に再計測された精度の数値ではありません（修正済みルールセットに対する
+> そのような数値は存在しません。このセクションが以前暗黙に依拠していた
+> 78.0%/95.9%という過去の数値は無効化されています——本ページ冒頭の注記を参照）。
+
+RENKIN は以下の変換ファミリーに対して明示的なルールを持っています：
 
 - エステル → カルボン酸 + アルコール
 - アミド → 酸 + アミン（グラフベース切断）

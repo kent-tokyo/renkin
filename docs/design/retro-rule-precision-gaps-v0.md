@@ -1,14 +1,17 @@
 # Retro-Rule Precision & Coverage Gaps — Design Doc
 
-Status: **Findings only, no implementation in this round.** These are
-external, hands-on findings surfaced while writing a public "tried it"
-article comparing RENKIN against AiZynthFinder (`find_routes` and
-`audit_route` run against v0.31.0–v0.34.0; behavior confirmed unchanged
-across all four). Two are new, previously untracked correctness bugs in
-hand-crafted rules. The rest cross-reference existing open issues with an
-independent reproduction case. Nothing here is a commitment — this is a
-findings dump to triage against the existing issue backlog (#61, #86,
-#101, #128) and prioritize.
+Status: **Findings #1/#2 fixed and merged (PR #171, 2026-08-23). Findings
+#3/#4/#5 still open.** These are external, hands-on findings surfaced
+while writing a public "tried it" article comparing RENKIN against
+AiZynthFinder (`find_routes` and `audit_route` run against
+v0.31.0–v0.34.0; behavior confirmed unchanged across all four). Two were
+new, previously untracked correctness bugs in hand-crafted rules — both
+fixed. #5 was investigated further after the initial writing and turned
+out to be a real, sizeable gap (see its own section below), not a small
+one as first guessed. #3/#4 cross-reference existing open issues with an
+independent reproduction case, not yet posted as issue comments (needs
+explicit authorization — posting to GitHub is a visible external action,
+not autonomous work).
 
 ## 1. `aryl_ether_retro` mislabels ester-bond cleavage as Ullmann coupling (NEW, not tracked)
 
@@ -141,26 +144,82 @@ not_evaluable`, `reason: missing_reaction_representation`, overall route
 export format, by contrast, carries enough info for
 `forward_validation.status: pass` on the same audit pipeline.
 
-This means RENKIN's own planner output currently can't be self-audited
-end-to-end — only third-party exports (AiZynthFinder, Syntheseus,
-SynPlanner) can reach `pass`. Whatever "declared reaction representation"
-the audit's `declared_reaction_replay` method needs from a route JSON,
-`find_routes()`'s own `--format json` output doesn't currently include it
-per step. Worth deciding whether this is in scope for the Bridge
-work already underway, or a separate `find_routes` output-schema task —
-not investigated further here, flagging the gap since it's directly
-visible from the outside and looks like an easy trust-building win (self-
-audit passing is a much stronger claim than only third-party exports
-passing).
+**Root cause, investigated and confirmed 2026-08-23 (was "not
+investigated further" originally)**: this is **not** a data-transport
+gap in `find_routes()`'s `--format json` output as first guessed — it's
+rule-*class*-dependent, and traced to one exact place.
+`normalize_renkin_route` already builds a real
+`ReactionEvidence::RenkinTemplate { template_id }` for every step, and
+`bridge::audit_route.rs`'s `AuditRouteFormat::Renkin` dispatch already
+passes the real rule set (`Some(rules)`) into `audit`. The gap is in
+`forward.rs`'s `declared_smirks` match arm for `RenkinTemplate`:
+
+```rust
+ReactionEvidence::RenkinTemplate { template_id } => {
+    let rule = rules_by_template_id.and_then(|m| m.get(template_id.as_str()))
+        .ok_or(MissingReactionRepresentation)?;
+    if rule.smirks.is_empty() {
+        return Err(MissingReactionRepresentation);
+    }
+    Ok((rule.smirks.as_str(), false))
+}
+```
+
+Confirmed by re-running the exact aspirin repro after this doc's own #1/#2
+fixes landed: `find_routes` finds this target via **two** different
+rules, and only one reaches `pass`:
+
+```
+route 1 (rule:co_aliphatic_cleavage, real SMIRKS): forward_validation: {status: pass}
+route 2 (rule:ester_cleavage,        empty smirks): forward_validation: {status: not_evaluable, reason: missing_reaction_representation}
+```
+
+**Every graph-based default rule (empty `smirks`, dispatched by name in
+`apply_retro`) hits this same wall — not just `ester_cleavage`.**
+Counted directly against `default_rules()`: **8 of 27 hand-crafted rules
+(~30%)** are graph-based today: `ester_cleavage`, `amide_cleavage`,
+`aryl_ether_retro` (as of this doc's #1 fix), `suzuki_retro` (as of #2),
+`sulfonamide_retro`, `diaryl_sulfone_retro`, `boc_deprotection_retro`,
+`cbz_deprotection_retro`. Any route whose winning disconnection used one
+of these — several of the most common real reaction types RENKIN
+handles — can *never* reach `forward_validation: pass` via self-audit,
+regardless of how chemically correct the route actually is. This doc's
+own #1/#2 fixes (converting `aryl_ether_retro` and effectively touching
+`suzuki_retro` to graph-based form, for good, independent reasons — see
+above) *widened* this gap by one rule, worth flagging explicitly rather
+than treated as a free side effect.
+
+**Not fixed here — needs a real design decision, not a small patch**:
+unlike a SMIRKS-string rule, a graph-based rule has no positional
+template for `chematic::rxn::run_reactants` to reverse-apply; "forward
+replay" for these needs either (a) a per-rule forward-verification
+function mirroring each graph-based cleavage function structurally
+(8 functions to write and keep in sync with their retro counterparts),
+or (b) each graph-based function additionally emitting a real,
+atom-mapped forward SMIRKS as evidence at the moment it performs the
+cut (it already knows exactly which atoms/bonds moved), stored
+alongside `template_id` on the route step and consumed by the *existing*
+`declared_smirks` machinery unchanged. (b) looks more promising — it
+reuses `forward.rs`'s existing replay path entirely, no new verification
+logic — but wasn't designed further here; flagging the shape of the
+decision, not making it. See `ROADMAP.md`'s "Make RENKIN's own routes
+fully self-auditable (P0)" section for the release-gate framing this
+would need to satisfy.
 
 ## Suggested priority
 
-1 and 2 are small, self-contained, and each has an existing sibling code
+1 and 2 were small, self-contained, and each had an existing sibling code
 pattern to copy (the `[OH]` fix for `aryl_carboxylation_retro`; the
-`build_sub_molecule_with_br`/`with_cl` pattern). Both directly reduce the
-"looks solved but isn't" surface area, which is what most visibly erodes
-trust when someone tries the tool by hand. 5 is also small and would make
-RENKIN's own output self-consistent with the audit story RENKIN is
-selling for other tools. 3 and 4 are bigger/already-tracked — this doc
-just adds independent repro evidence to existing issues rather than
-proposing new investigation threads.
+`build_sub_molecule_with_br`/`with_cl` pattern) — both merged (PR #171).
+Both directly reduce the "looks solved but isn't" surface area, which is
+what most visibly erodes trust when someone tries the tool by hand.
+
+**5 turned out NOT to be small** once actually investigated (see its own
+section above, updated after this doc's initial writing): it's a real
+~30%-of-default-rules gap (8/27 graph-based rules can never reach
+`forward_validation: pass` via self-audit) needing a genuine design
+decision on how graph-based rules produce forward-replay evidence —
+recorded as a P0 item in `ROADMAP.md` for a real design/implementation
+round, not something to patch in passing. 3 and 4 are bigger/
+already-tracked — this doc just adds independent repro evidence to
+existing issues rather than proposing new investigation threads.

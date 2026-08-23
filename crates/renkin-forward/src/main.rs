@@ -7,11 +7,16 @@
 ///   renkin-forward validate --route-json '{"steps":[...]}' [--templates file.smi]
 ///   renkin-forward enumerate --reactant "CC(=O)O" [--partners partners.smi] [--templates file.smi]
 ///   renkin-forward hints --reactants "Brc1ccccc1" [--templates file.smi] [--max-hints 50]
+///   renkin-forward benchmark --corpus corpus.jsonl --output-rows rows.jsonl [--output-report report.json]
 ///
-/// Output: JSON to stdout, nothing else. Template load summary, warnings,
-/// and diagnostics go to stderr.
+/// Output: JSON to stdout, nothing else, EXCEPT `benchmark`, whose row-level
+/// output always goes to the required `--output-rows` file (never stdout --
+/// it can be large) and whose aggregate report goes to `--output-report` if
+/// given, stdout otherwise. Template load summary, warnings, and
+/// diagnostics go to stderr for every subcommand.
 use anyhow::{Result, bail};
 use renkin::chem_env::default_rules;
+use renkin_forward::bench::{BenchOutcome, TemplateSource, run_benchmark};
 use renkin_forward::hints::{HintGenerationConfig, generate_retrieval_hints};
 use renkin_forward::{
     ForwardEnumerationConfig, ForwardPredictConfig, ForwardPrediction, enumerate_products_detailed,
@@ -26,12 +31,14 @@ renkin-forward predict --reactants <SMILES>... [--templates <path>] [--max-resul
 renkin-forward validate --route-json <JSON> [--templates <path>] [--max-results N]\n  \
 renkin-forward enumerate --reactant <SMILES> [--partners <path>] [--templates <path>] [--max-results N]\n  \
 renkin-forward hints --reactants <SMILES>... [--templates <path>] [--max-hints N]\n  \
+renkin-forward benchmark --corpus <path> --output-rows <path> [--output-report <path>]\n                          \
+[--template-source embedded|file|train-extracted] [--templates <path>]\n  \
 renkin-forward --help\n  \
 renkin-forward --version\n\
 \n\
 Run `renkin-forward predict --help`, `renkin-forward validate --help`,\n\
-`renkin-forward enumerate --help`, or `renkin-forward hints --help` for\n\
-subcommand options.";
+`renkin-forward enumerate --help`, `renkin-forward hints --help`, or\n\
+`renkin-forward benchmark --help` for subcommand options.";
 
 const PREDICT_HELP: &str = "renkin-forward predict — forward-apply reversible SMIRKS templates to reactants\n\
 \n\
@@ -113,6 +120,45 @@ concrete SMILES) for the product. No conditions, catalyst, yield, or reaction-su
 probability, and no claim that a hint corresponds to a real, literature-verified reaction.\n\
 Output is a versioned ForwardRetrievalHintReport.";
 
+const BENCHMARK_HELP: &str = "renkin-forward benchmark — deterministic forward-prediction benchmark harness (issue #61 PR A)\n\
+\n\
+Usage:\n  \
+renkin-forward benchmark --corpus <path> --output-rows <path> [--output-report <path>]\n                            \
+[--template-source embedded|file|train-extracted] [--templates <path>] [--strict]\n\
+\n\
+Options:\n  \
+--corpus <path>            JSONL benchmark corpus, one reaction per line (required; see\n                               \
+docs/guides/forward-benchmark.md for the schema). Never bundled by this repo --\n                               \
+user-supplied, like the ORD evidence-import corpus.\n  \
+--output-rows <path>       Where to write the row-level JSONL, one row per reaction\n                               \
+(required; never printed to stdout -- can be large)\n  \
+--output-report <path>     Where to write the aggregate-metrics JSON report. If omitted,\n                               \
+the report is printed to stdout instead (this subcommand's only stdout output)\n  \
+--template-source <mode>   'embedded' (default): embedded default rules only.\n                               \
+'file': ONLY the rules in --templates (never merged with embedded defaults).\n                               \
+'train-extracted': same mechanics as 'file'; labels the run as having used\n                               \
+templates the caller extracted from the train split only -- this harness\n                               \
+cannot verify that claim, see the guide.\n                               \
+'scorer-conditioned' is named by the frozen protocol (Phase 0 mode 4) but is\n                               \
+not implemented until a reranker exists (issue #61 Phase 3/4) -- rejected\n                               \
+here, not silently downgraded to another mode.\n  \
+--templates <path>         Required when --template-source is 'file' or 'train-extracted';\n                               \
+hard error if given under 'embedded' (see docs)\n  \
+--strict                   Hard-error the whole run on any data-quality issue: malformed\n                               \
+corpus JSON, wrong schema version, unparseable SMILES, empty reactants/accepted\n                               \
+products, a conflicting group_key/reaction_id, a per-row prediction failure,\n                               \
+proposal_status=capped_unknown, or incomplete reproducibility provenance. Never\n                               \
+fails on a legitimate miss (proposal, ranking, or stereo) or a genuinely empty\n                               \
+candidate pool -- those are real outcomes, not data-quality problems. Off by\n                               \
+default: non-strict mode always counts every issue in corpus_stats/corpus_warnings/\n                               \
+diagnostics/per-row fields instead of failing the run.\n\
+\n\
+Deterministic and leakage-safe: every reaction is split train/val/test by a SHA-256 hash of\n\
+its canonical reactant multiset (or an explicit corpus-supplied group_key), never by the\n\
+accepted products -- see the guide for why. Conditional and end-to-end accuracy are always\n\
+reported separately, never conflated. Repeated runs on the same corpus/rules produce\n\
+byte-identical output except each row's elapsed_ms and the report's latency_ms percentiles.";
+
 fn print_version() {
     println!(
         "renkin-forward {} (a sub-crate of the renkin workspace; this is NOT the renkin package version)",
@@ -147,6 +193,11 @@ struct ParsedArgs {
     max_matches_per_slot: usize,
     max_assignments_per_template: usize,
     report: bool,
+    corpus_path: Option<String>,
+    output_rows_path: Option<String>,
+    output_report_path: Option<String>,
+    template_source: String,
+    strict: bool,
 }
 
 /// Strict argument parser shared by `predict`/`validate`: unknown options,
@@ -170,6 +221,11 @@ fn parse_args(subcommand: &str, args: &[String]) -> Result<ParsedArgs> {
     let mut max_matches_per_slot: usize = hints_defaults.max_matches_per_slot;
     let mut max_assignments_per_template: usize = hints_defaults.max_assignments_per_template;
     let mut report = false;
+    let mut corpus_path: Option<String> = None;
+    let mut output_rows_path: Option<String> = None;
+    let mut output_report_path: Option<String> = None;
+    let mut template_source = "embedded".to_string();
+    let mut strict = false;
 
     let mut i = 0;
     while i < args.len() {
@@ -260,6 +316,37 @@ fn parse_args(subcommand: &str, args: &[String]) -> Result<ParsedArgs> {
             "--report" if subcommand == "predict" => {
                 report = true;
             }
+            "--corpus" if subcommand == "benchmark" => {
+                i += 1;
+                let v = args
+                    .get(i)
+                    .ok_or_else(|| anyhow::anyhow!("--corpus requires a value"))?;
+                corpus_path = Some(v.clone());
+            }
+            "--output-rows" if subcommand == "benchmark" => {
+                i += 1;
+                let v = args
+                    .get(i)
+                    .ok_or_else(|| anyhow::anyhow!("--output-rows requires a value"))?;
+                output_rows_path = Some(v.clone());
+            }
+            "--output-report" if subcommand == "benchmark" => {
+                i += 1;
+                let v = args
+                    .get(i)
+                    .ok_or_else(|| anyhow::anyhow!("--output-report requires a value"))?;
+                output_report_path = Some(v.clone());
+            }
+            "--template-source" if subcommand == "benchmark" => {
+                i += 1;
+                let v = args
+                    .get(i)
+                    .ok_or_else(|| anyhow::anyhow!("--template-source requires a value"))?;
+                template_source = v.clone();
+            }
+            "--strict" if subcommand == "benchmark" => {
+                strict = true;
+            }
             "--help" | "-h" => {
                 println!(
                     "{}",
@@ -268,6 +355,7 @@ fn parse_args(subcommand: &str, args: &[String]) -> Result<ParsedArgs> {
                         "validate" => VALIDATE_HELP,
                         "enumerate" => ENUMERATE_HELP,
                         "hints" => HINTS_HELP,
+                        "benchmark" => BENCHMARK_HELP,
                         _ => TOP_LEVEL_HELP,
                     }
                 );
@@ -291,6 +379,11 @@ fn parse_args(subcommand: &str, args: &[String]) -> Result<ParsedArgs> {
         max_matches_per_slot,
         max_assignments_per_template,
         report,
+        corpus_path,
+        output_rows_path,
+        output_report_path,
+        template_source,
+        strict,
     })
 }
 
@@ -349,6 +442,50 @@ fn load_rules(templates_path: Option<&str>) -> Result<Vec<renkin::chem_env::Retr
     Ok(rules)
 }
 
+/// Runs `benchmark`: loads the corpus and exactly one rule set (per
+/// `--template-source`), scores every reaction, then writes the row-level
+/// JSONL to `--output-rows` (always a file -- can be large) and the
+/// aggregate report to `--output-report` if given, stdout otherwise.
+fn run_benchmark_subcommand(parsed: &ParsedArgs) -> Result<()> {
+    let corpus_path = parsed
+        .corpus_path
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("benchmark requires --corpus <path>"))?;
+    let output_rows_path = parsed
+        .output_rows_path
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("benchmark requires --output-rows <path>"))?;
+    let template_source = TemplateSource::parse(&parsed.template_source)?;
+
+    let BenchOutcome { rows, report } = run_benchmark(
+        corpus_path,
+        template_source,
+        parsed.templates_path.as_deref(),
+        parsed.strict,
+    )?;
+
+    let mut rows_jsonl = String::new();
+    for row in &rows {
+        rows_jsonl.push_str(&serde_json::to_string(row)?);
+        rows_jsonl.push('\n');
+    }
+    std::fs::write(output_rows_path, rows_jsonl)
+        .map_err(|e| anyhow::anyhow!("failed to write --output-rows {output_rows_path:?}: {e}"))?;
+    eprintln!("Wrote {} row(s) to {output_rows_path}", rows.len());
+
+    let report_json = serde_json::to_string_pretty(&report)?;
+    match parsed.output_report_path.as_deref() {
+        Some(path) => {
+            std::fs::write(path, &report_json)
+                .map_err(|e| anyhow::anyhow!("failed to write --output-report {path:?}: {e}"))?;
+            eprintln!("Wrote aggregate report to {path}");
+        }
+        None => println!("{report_json}"),
+    }
+
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
 
@@ -370,13 +507,23 @@ fn main() -> Result<()> {
     }
 
     let subcommand = args[1].as_str();
-    if !["predict", "validate", "enumerate", "hints"].contains(&subcommand) {
+    if !["predict", "validate", "enumerate", "hints", "benchmark"].contains(&subcommand) {
         bail!(
-            "unknown subcommand {subcommand:?}. Use 'predict', 'validate', 'enumerate', 'hints', '--help', or '--version'."
+            "unknown subcommand {subcommand:?}. Use 'predict', 'validate', 'enumerate', 'hints', 'benchmark', '--help', or '--version'."
         );
     }
 
     let parsed = parse_args(subcommand, &args[2..])?;
+
+    // `benchmark` loads its own rule set via `TemplateSource` (Phase 0: an
+    // explicit template source must never be silently mixed with the
+    // embedded defaults) -- it deliberately does NOT go through `load_rules`
+    // below, which always extends the embedded set and is correct only for
+    // predict/validate/enumerate.
+    if subcommand == "benchmark" {
+        return run_benchmark_subcommand(&parsed);
+    }
+
     let rules = load_rules(parsed.templates_path.as_deref())?;
 
     match subcommand {

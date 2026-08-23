@@ -41,11 +41,9 @@ fn main() {
         ..Default::default()
     };
 
-    let control = std::env::var("INSPECT_VALIDATION_TIMEOUT_SECS")
+    let timeout_secs: Option<u64> = std::env::var("INSPECT_VALIDATION_TIMEOUT_SECS")
         .ok()
-        .and_then(|s| s.parse::<u64>().ok())
-        .map(|secs| SearchControl::with_timeout(Duration::from_secs(secs)))
-        .unwrap_or_else(SearchControl::unlimited);
+        .and_then(|s| s.parse::<u64>().ok());
 
     let mut input = String::new();
     std::io::stdin().read_to_string(&mut input).unwrap();
@@ -55,6 +53,17 @@ fn main() {
         if smiles.is_empty() || smiles.starts_with('#') {
             continue;
         }
+        // Fresh per-target budget -- a deadline built once outside this loop
+        // would bake in an *absolute* Instant, silently turning "N seconds
+        // per target" into "N seconds for the whole batch", after which
+        // every remaining target's very first checkpoint check would see
+        // the shared deadline already passed and report an instant,
+        // meaningless TIMEOUT. Caught exactly this way on the harness's
+        // first real run (299/300 TIMEOUT in 96s total -- impossible if
+        // each of 300 targets had genuinely spent up to 90s).
+        let control = timeout_secs
+            .map(|secs| SearchControl::with_timeout(Duration::from_secs(secs)))
+            .unwrap_or_else(SearchControl::unlimited);
         let Ok(result) = find_routes_with_control(smiles, &env, &rules, &config, &control) else {
             println!("{smiles}\tERROR");
             continue;

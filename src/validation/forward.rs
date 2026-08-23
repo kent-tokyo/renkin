@@ -303,47 +303,54 @@ mod tests {
     /// (2,7-dimethylazepane) <- `C1CCCC[C@H](N1)C.C` (2-methylazepane +
     /// methane): one of Finding #4's 6 pilot Invalid+balanced steps
     /// (`docs/validation/finding4-validator-pilot-2026-08-23.md`),
-    /// individually investigated per that doc's own protocol. Classified as
-    /// **`genuine_template_error`** -- a different failure shape than
-    /// `co_aliphatic_cleavage_piperidinyl_carbamate_is_source_step_underspecified`,
-    /// even though the graph-level mechanics look superficially similar:
+    /// individually investigated per that doc's own protocol.
     ///
-    /// - `cc_single_cleavage`'s SMIRKS (`[C:1][C:2]>>[C:1].[C:2]`) is fully
-    ///   generic aliphatic C-C cleavage, same style as `co_aliphatic_cleavage`
-    ///   (`[C:1][O:2]>>...`) -- no stereo annotation, by design.
-    /// - Reversed and applied forward to the declared precursors, it
-    ///   produces 7 distinct regiochemical outcomes. One of them,
-    ///   `C1CC[C@H](C)NCC1C`, has the *exact same connectivity* as the
-    ///   target with the pre-existing stereocenter (from the precursor)
-    ///   correctly retained -- only the newly-formed center carries no
-    ///   `@`/`@@` marker, because the rule never specified one. Purely by
-    ///   this graph-connectivity test, this looks identical in shape to
-    ///   `co_aliphatic_cleavage`'s finding.
-    /// - The difference: `co_aliphatic_cleavage` claims a real reaction
-    ///   class (amine + carbamic-acid-equivalent -> carbamate is a genuine,
-    ///   if achiral, disconnection). This step claims installing a methyl
-    ///   group at an unactivated ring C-H position using **bare methane**
-    ///   (`C`) as the second reagent -- `data/building_blocks.smi:8` lists
-    ///   `C` as stock, literally named `methane`. There is no real
-    ///   single-step reaction that methylates an alkyl C-H using free
-    ///   methane as a stoichiometric reagent (methane C-H activation is a
-    ///   specialized catalytic research topic, not a general-purpose
-    ///   disconnection any retrosynthesis template should imply). This
-    ///   also matches Phase 31's own baseline measurement of this exact
-    ///   rule (92.3% Invalid) -- not a one-off.
-    /// - So unlike `co_aliphatic_cleavage`, the defect isn't "missing
-    ///   stereo info on an otherwise-real reaction" -- it's that the rule's
-    ///   full generality lets it pair *any* C-C bond with a degenerate,
-    ///   functional-group-free single-carbon "leaving group" that has no
-    ///   real reagent behind it. Classified `genuine_template_error`
-    ///   because the *template itself* (not just this one application) is
-    ///   defective: it should not treat a bare-methyl / bare-methane
-    ///   fragment as a legitimate disconnection partner. Not fixed here
-    ///   (restricting the rule, or removing methane from the stock list,
-    ///   is a rule-design decision) -- this test only freezes the
-    ///   classification and the empirical mechanism behind it.
+    /// This step needs three separate classification axes, not one label --
+    /// an earlier draft of this fixture collapsed everything into a single
+    /// `genuine_template_error` verdict, which misreports *why* the
+    /// validator returned `Invalid` (it reads as "rejected because
+    /// chemically impossible," which isn't what happens here):
+    ///
+    /// - **`validator_invalid_cause` = `stereo_underspecified`**. Reversed
+    ///   and applied forward to the declared precursors, the rule's SMIRKS
+    ///   (`[C:1][C:2]>>[C:1].[C:2]`, fully generic, no stereo annotation)
+    ///   produces 7 distinct regiochemical outcomes. One of them has the
+    ///   *exact same connectivity* as the target, with the pre-existing
+    ///   stereocenter (from the precursor) correctly retained -- only the
+    ///   newly-formed center carries no `@`/`@@` marker, because the rule
+    ///   never specified one. The forward engine genuinely reaches the
+    ///   target's constitution; the mismatch is purely a missing stereo
+    ///   assignment on one atom -- the same *shape* of gap as
+    ///   `co_aliphatic_cleavage_piperidinyl_carbamate_is_source_step_underspecified`,
+    ///   even though the two rules differ on the axis below.
+    /// - **`chemical_step_validity` = `chemically_implausible_precursor`**.
+    ///   Independent of the axis above: the step claims installing a
+    ///   methyl group at an unactivated ring C-H position using **bare
+    ///   methane** (`C`) as the second reagent -- `data/building_blocks.smi:8`
+    ///   lists `C` as stock, literally named `methane`. RENKIN has no
+    ///   evidence-backed general reaction contract supporting direct methyl
+    ///   installation from bare methane in this context -- methane C-H
+    ///   activation exists as a specialized catalytic research topic, but
+    ///   that's a separate question from whether a general-purpose
+    ///   retrosynthesis template should treat it as a routine disconnection
+    ///   partner. This also matches Phase 31's own baseline measurement of
+    ///   this exact rule (92.3% Invalid) -- not a one-off.
+    /// - **`template_failure_class` = `implausible_bare_methane_precursor`**
+    ///   (a `genuine_template_scope_error`, not a harness artifact): the
+    ///   rule's full generality lets it pair *any* C-C bond with a
+    ///   degenerate, functional-group-free single-carbon fragment. Not
+    ///   fixed here (restricting the rule, or removing methane from the
+    ///   stock list, is a rule-design decision) -- this test only freezes
+    ///   the classification and the empirical mechanism behind it.
+    ///
+    /// Reporting only `genuine_template_error` would conflate the first two
+    /// axes: the validator did not reject this step for being chemically
+    /// impossible -- it reached the right constitution and only lacked a
+    /// stereo assignment the rule never provided. The reaction itself being
+    /// implausible (bare methane as a reagent) is a separate,
+    /// template-design-level finding.
     #[test]
-    fn cc_single_cleavage_azepane_methane_is_genuine_template_error() {
+    fn cc_single_cleavage_azepane_methane_is_stereo_underspecified_with_implausible_precursor() {
         let target = "C1CC[C@H](C)NC[C@@H]1C";
         let precursors = vec!["C1CCCC[C@H](N1)C".to_string(), "C".to_string()];
         let rule = cc_single_cleavage();
@@ -374,9 +381,10 @@ mod tests {
             .map(|m| canonical_smiles(&m))
             .collect();
 
-        let stereo_free_correct_connectivity = "C1CC[C@H](C)NCC1C";
+        let stereo_free_correct_connectivity =
+            canonical_smiles(&mol_from_smiles("C1CC[C@H](C)NCC1C").unwrap());
         assert!(
-            products.contains(stereo_free_correct_connectivity),
+            products.contains(&stereo_free_correct_connectivity),
             "the rule's reversal must still find the right regiochemistry \
              (just missing the newly-formed center's stereo): {products:?}"
         );

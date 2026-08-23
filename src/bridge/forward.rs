@@ -104,7 +104,16 @@ fn declared_smirks<'a>(
 ) -> Result<(&'a str, bool), ForwardNotEvaluableReason> {
     use ForwardNotEvaluableReason::MissingReactionRepresentation;
     match evidence {
-        ReactionEvidence::RenkinTemplate { template_id } => {
+        ReactionEvidence::RenkinTemplate {
+            template_id,
+            declared_smirks,
+        } => {
+            if let Some(s) = declared_smirks {
+                if s.is_empty() {
+                    return Err(MissingReactionRepresentation);
+                }
+                return Ok((s.as_str(), false));
+            }
             let rule = rules_by_template_id
                 .and_then(|m| m.get(template_id.as_str()))
                 .ok_or(MissingReactionRepresentation)?;
@@ -378,6 +387,7 @@ mod tests {
         let by_id = index_rules_by_template_id(&rules).unwrap();
         let evidence = ReactionEvidence::RenkinTemplate {
             template_id: "t1".to_string(),
+            declared_smirks: None,
         };
         let precursors = vec![METHANE.to_string(), WATER.to_string()];
         let result = validate_step_forward(METHANOL, &precursors, Some(&evidence), Some(&by_id));
@@ -393,6 +403,7 @@ mod tests {
         let by_id = index_rules_by_template_id(&rules).unwrap();
         let evidence = ReactionEvidence::RenkinTemplate {
             template_id: "t1".to_string(),
+            declared_smirks: None,
         };
         // A route that (wrongly) claims methane + water give ethane --
         // co_aliphatic_cleavage's reversal deterministically produces
@@ -418,6 +429,7 @@ mod tests {
         let by_id = index_rules_by_template_id(&rules).unwrap();
         let evidence = ReactionEvidence::RenkinTemplate {
             template_id: "t1".to_string(),
+            declared_smirks: None,
         };
         let precursors = vec![
             "[CH3][NH]C(CO[CH2][CH3])=O".to_string(),

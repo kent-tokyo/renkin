@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use serde::Serialize;
 
 use crate::bridge::audit::AuditFindingCode;
-use crate::chem_env::{mol_from_smiles, to_canonical};
+use crate::chem_env::{declared_forward_smirks, mol_from_smiles, to_canonical};
 use crate::search::Route;
 
 /// Which tool produced the route being audited. Mirrors `compare_schema.py`'s
@@ -47,7 +47,23 @@ pub enum ReactionEvidence {
     /// RENKIN-native: the `RetroRule` this step's search claimed to use.
     /// `ReactionStep::template_id` is "Always populated", so every
     /// RENKIN-sourced non-leaf node gets one of these.
-    RenkinTemplate { template_id: String },
+    ///
+    /// `declared_smirks` is a real, atom-mapped forward SMIRKS derived
+    /// specifically for this step's own `(target, precursors)` outcome --
+    /// populated only when `template_id` names a **graph-based** default
+    /// rule (empty `RetroRule::smirks`, e.g. `ester_cleavage`), which has
+    /// no SMIRKS string of its own for `bridge::forward` to reverse-apply.
+    /// `None` for SMIRKS-based rules, which `bridge::forward::declared_smirks`
+    /// resolves via the caller-supplied rule corpus instead, unchanged.
+    /// Computed lazily by `normalize_renkin_route` at audit time (see
+    /// `chem_env::declared_forward_smirks`) -- never stored on
+    /// `search::ReactionStep` or emitted in `find_routes`'s own JSON
+    /// output, keeping this a pure audit-layer concern. Closes the gap
+    /// documented in `docs/design/retro-rule-precision-gaps-v0.md` #5.
+    RenkinTemplate {
+        template_id: String,
+        declared_smirks: Option<String>,
+    },
     /// AiZynthFinder-sourced: whatever reaction SMIRKS/SMILES the route
     /// metadata carried, if present. No adapter in this codebase
     /// constructs this from a real AiZynthFinder JSON export yet (RENKIN
@@ -324,6 +340,11 @@ pub fn normalize_renkin_route(route: &Route, requested_target_smiles: &str) -> P
                         precursors: step.precursors.as_slice(),
                         reaction_evidence: ReactionEvidence::RenkinTemplate {
                             template_id: step.template_id.clone(),
+                            declared_smirks: declared_forward_smirks(
+                                &step.rule,
+                                &step.target,
+                                &step.precursors,
+                            ),
                         },
                     },
                 );

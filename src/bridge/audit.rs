@@ -953,6 +953,7 @@ mod tests {
             reaction_evidence: Some(
                 crate::bridge::route_graph::ReactionEvidence::RenkinTemplate {
                     template_id: "t1".to_string(),
+                    declared_smirks: None,
                 },
             ),
             children: vec![

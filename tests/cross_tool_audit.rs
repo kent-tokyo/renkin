@@ -75,6 +75,7 @@ fn renkin_equivalent_route() -> (RouteDocument, Vec<RetroRule>) {
         is_stock_leaf: Some(false),
         reaction_evidence: Some(ReactionEvidence::RenkinTemplate {
             template_id: "nitro_to_amine_retro".to_string(),
+            declared_smirks: None,
         }),
         children: vec![RouteNode {
             canonical_smiles: precursor,

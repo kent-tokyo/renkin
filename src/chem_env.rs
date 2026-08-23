@@ -1149,6 +1149,117 @@ pub fn apply_retro(mol: &Molecule, rule: &RetroRule) -> Vec<Vec<PrecursorMol>> {
     outcomes
 }
 
+/// Returns a clone of `mol` with every atom given a fresh, sequential
+/// `atom_map` (1-based, in `mol.atoms()` iteration order) -- atoms that
+/// already carry a map are overwritten. Confirmed empirically that
+/// `MoleculeBuilder::add_atom` preserves insertion order as `AtomIdx`
+/// (mirrors `clear_atom_maps`'s own rebuild pattern above, which relies on
+/// the same property for its unmapped bond indices to stay valid), and that
+/// `atom_map` survives the `canonical_smiles`/`split_fragments` round-trip
+/// unchanged -- so pre-mapping the input here and calling an existing,
+/// *unmodified* graph-based cleavage function through the normal
+/// [`apply_retro`] dispatch is sufficient to recover real atom-level
+/// correspondence between target and precursors, with zero changes needed
+/// to any of the 8 graph-based rule functions themselves.
+fn with_sequential_atom_maps(mol: &Molecule) -> Molecule {
+    let mut builder = MoleculeBuilder::new();
+    for (idx, atom) in mol.atoms() {
+        let mut a = atom.clone();
+        a.atom_map = Some(idx.0 as u16 + 1);
+        builder.add_atom(a);
+    }
+    for (_, bond) in mol.bonds() {
+        let _ = builder.add_bond(bond.atom1, bond.atom2, bond.order);
+    }
+    builder.copy_stereo_groups_from(mol);
+    builder.copy_stereo_from(mol);
+    builder.copy_bond_directions_from(mol);
+    builder.build()
+}
+
+/// Derives a real, atom-mapped forward SMIRKS for one specific
+/// `(rule_name, target, precursors)` outcome of a **graph-based** default
+/// rule (a Rust function dispatched by name in [`apply_retro`], not a
+/// SMIRKS string -- `ester_cleavage`, `amide_cleavage`, `aryl_ether_retro`,
+/// `suzuki_retro`, `sulfonamide_retro`, `diaryl_sulfone_retro`,
+/// `boc_deprotection_retro`, `cbz_deprotection_retro` as of this writing).
+///
+/// Exists because these rules have no `RetroRule::smirks` string for
+/// `bridge::forward`'s `declared_smirks` to reverse-apply, so any route
+/// step using one of them can never reach `forward_validation: pass` via
+/// self-audit today -- confirmed as a real, ~30%-of-default-rules gap, see
+/// `docs/design/retro-rule-precision-gaps-v0.md` #5. This closes that gap
+/// for the `bridge::route_graph::normalize_renkin_route` audit path
+/// specifically, called lazily at audit time (not stored on `ReactionStep`
+/// or emitted in `find_routes`'s own JSON output -- keeps this a pure
+/// audit-layer concern, no search-output schema change).
+///
+/// Mechanism: re-runs the *same, unmodified* graph-based cleavage function
+/// `apply_retro` would have used, on a fresh clone of `target` with every
+/// atom given a sequential map number first (see
+/// [`with_sequential_atom_maps`]) -- the map numbers propagate through the
+/// existing fragment-extraction code for free, since `MoleculeBuilder`
+/// clones each `Atom` (including `atom_map`) verbatim. A rule can have
+/// multiple valid disconnections for one target (e.g. two ester bonds), so
+/// every re-derived outcome's precursor set is compared (as an unmapped,
+/// canonical multiset) against the real, already-known `precursors` this
+/// step actually used -- only a genuine match is trusted, never assumed to
+/// be "probably the first one." Newly-introduced leaving-group atoms (the
+/// appended -OH/-Br/-Cl/-B(OH)2 etc.) are never mapped, matching how a
+/// hand-crafted SMIRKS rule like `buchwald_hartwig_retro`
+/// (`"[c:1][N:2]>>[c:1]Br.[N:2]"`) leaves its own literal `Br` unmapped too.
+///
+/// Returns `None` when `rule_name` isn't a known graph-based default rule
+/// (including: it's a real SMIRKS-based rule, which needs no help from
+/// this function at all), when `target`/`precursors` fail to parse, or
+/// when re-running the rule genuinely can't reproduce a matching outcome
+/// (should not happen for a route this engine itself already found, but
+/// never assumed -- always re-derived and verified, never guessed).
+pub fn declared_forward_smirks(
+    rule_name: &str,
+    target_smiles: &str,
+    precursor_smiles: &[String],
+) -> Option<String> {
+    let is_graph_based = default_rules()
+        .iter()
+        .any(|r| r.name == rule_name && r.smirks.is_empty());
+    if !is_graph_based {
+        return None;
+    }
+
+    let target_mol = mol_from_smiles(target_smiles).ok()?;
+    let mapped_target = with_sequential_atom_maps(&target_mol);
+    let rule = rr(rule_name, "");
+    let outcomes = apply_retro(&mapped_target, &rule);
+
+    // Canonicalize the caller's precursor SMILES before comparing -- callers
+    // (e.g. a hand-authored route, or one parsed back in from external JSON)
+    // aren't guaranteed to already hand us the exact canonical form, and an
+    // exact-string mismatch here must never be mistaken for "not this rule's
+    // outcome".
+    let given: std::collections::BTreeSet<String> = precursor_smiles
+        .iter()
+        .map(|s| mol_from_smiles(s).map(|m| to_canonical(&m)))
+        .collect::<Result<_, _>>()
+        .ok()?;
+    for outcome in &outcomes {
+        let outcome_unmapped: std::collections::BTreeSet<String> = outcome
+            .iter()
+            .map(|p| to_canonical(&clear_atom_maps(&p.mol)))
+            .collect();
+        if outcome_unmapped == given {
+            let target_side = to_canonical(&mapped_target);
+            let precursor_side = outcome
+                .iter()
+                .map(|p| to_canonical(&p.mol))
+                .collect::<Vec<_>>()
+                .join(".");
+            return Some(format!("{target_side}>>{precursor_side}"));
+        }
+    }
+    None
+}
+
 /// A standardized precursor molecule with its canonical SMILES.
 pub struct PrecursorMol {
     pub smiles: String,
@@ -4708,6 +4819,190 @@ mod chematic_regression {
             z_results.is_empty(),
             "E-selective SMIRKS must NOT fire on (Z)-stilbene; got {} result set(s)",
             z_results.len()
+        );
+    }
+
+    // ── declared_forward_smirks: forward-replay evidence for graph-based rules ──
+    //
+    // Closes the gap in docs/design/retro-rule-precision-gaps-v0.md #5:
+    // graph-based rules (empty RetroRule::smirks) have no string for
+    // bridge::forward to reverse-apply, so routes using them could never
+    // reach forward_validation: pass via self-audit. See that function's
+    // own doc comment for the full mechanism.
+
+    #[test]
+    fn declared_forward_smirks_none_for_smirks_based_rule() {
+        // co_aliphatic_cleavage already has a real smirks -- this function
+        // must not do anything for it (forward.rs's existing
+        // rules_by_template_id path already handles it).
+        assert_eq!(
+            declared_forward_smirks(
+                "co_aliphatic_cleavage",
+                "CO",
+                &["C".to_string(), "O".to_string()]
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn declared_forward_smirks_none_for_unknown_rule() {
+        assert_eq!(
+            declared_forward_smirks("not_a_real_rule", "CO", &["C".to_string(), "O".to_string()]),
+            None
+        );
+    }
+
+    #[test]
+    fn declared_forward_smirks_ester_cleavage_real_repro() {
+        // The exact repro from docs/design/retro-rule-precision-gaps-v0.md
+        // #5: aspirin's ester_cleavage-based route.
+        let target = "CC(=O)Oc1ccccc1C(=O)O";
+        let precursors = vec![
+            to_canonical(&mol_from_smiles("CC(=O)O").unwrap()),
+            to_canonical(&mol_from_smiles("Oc1ccccc1C(=O)O").unwrap()),
+        ];
+        let smirks = declared_forward_smirks("ester_cleavage", target, &precursors)
+            .expect("must derive a forward smirks for this real ester_cleavage outcome");
+
+        // Real, atom-mapped, and -- most importantly -- actually replays
+        // forward via chematic's own reaction engine, exactly the check
+        // bridge::forward::validate_step_forward performs.
+        assert!(
+            smirks.contains(':'),
+            "expected atom-mapped smirks: {smirks}"
+        );
+        let (lhs, rhs) = smirks.split_once(">>").unwrap();
+        let forward_smirks = format!("{rhs}>>{lhs}");
+        let reactant_mols: Vec<Molecule> = rhs
+            .split('.')
+            .map(|s| mol_from_smiles(s).unwrap())
+            .collect();
+        let reactant_refs: Vec<&Molecule> = reactant_mols.iter().collect();
+        let products = run_reactants(&forward_smirks, &reactant_refs)
+            .expect("forward-reversed smirks must at least parse and run");
+        let target_canon = to_canonical(&mol_from_smiles(target).unwrap());
+        let reproduced = products.iter().any(|pset| {
+            pset.iter()
+                .any(|p| to_canonical(&clear_atom_maps(p)) == target_canon)
+        });
+        assert!(
+            reproduced,
+            "forward-reversed smirks must reproduce the real target: {smirks}"
+        );
+    }
+
+    #[test]
+    fn declared_forward_smirks_suzuki_retro_real_repro() {
+        let target = "c1ccc(-c2ccccc2)cc1"; // biphenyl
+        let precursors = vec![
+            to_canonical(&mol_from_smiles("Brc1ccccc1").unwrap()),
+            to_canonical(&mol_from_smiles("OB(O)c1ccccc1").unwrap()),
+        ];
+        let smirks = declared_forward_smirks("suzuki_retro", target, &precursors)
+            .expect("must derive a forward smirks for this real suzuki_retro outcome");
+        assert!(
+            smirks.contains(':'),
+            "expected atom-mapped smirks: {smirks}"
+        );
+    }
+
+    #[test]
+    fn declared_forward_smirks_preserves_tetrahedral_stereocenter() {
+        // methyl (S)-2-acetoxypropanoate: acetate ester of methyl (S)-lactate.
+        // `atom.chirality` is an Atom-level field copied by `Atom::clone`, so
+        // with_sequential_atom_maps's rebuild carries it through even before
+        // the copy_stereo_*/copy_bond_directions_from calls below -- verified
+        // directly, not just asserted; those calls stay for parity with
+        // clear_atom_maps and defense against stereo forms this specific
+        // case doesn't exercise (e.g. enhanced/relative stereo groups).
+        let target = "CC(=O)O[C@@H](C)C(=O)OC";
+        let target_canon = to_canonical(&mol_from_smiles(target).unwrap());
+        let rule = rr("ester_cleavage", "");
+        let outcomes = apply_retro(&mol_from_smiles(target).unwrap(), &rule);
+        assert!(!outcomes.is_empty());
+        for outcome in &outcomes {
+            let precursors: Vec<String> = outcome
+                .iter()
+                .map(|p| to_canonical(&clear_atom_maps(&p.mol)))
+                .collect();
+            let smirks = declared_forward_smirks("ester_cleavage", target, &precursors)
+                .unwrap_or_else(|| panic!("must derive a forward smirks for {precursors:?}"));
+            assert!(
+                smirks.contains('@'),
+                "expected the stereocenter to survive into the smirks: {smirks}"
+            );
+            let (lhs, rhs) = smirks.split_once(">>").unwrap();
+            let forward_smirks = format!("{rhs}>>{lhs}");
+            let reactant_mols: Vec<Molecule> = rhs
+                .split('.')
+                .map(|s| mol_from_smiles(s).unwrap())
+                .collect();
+            let reactant_refs: Vec<&Molecule> = reactant_mols.iter().collect();
+            let products = run_reactants(&forward_smirks, &reactant_refs)
+                .expect("forward-reversed smirks must at least parse and run");
+            let reproduced_exact = products.iter().any(|pset| {
+                pset.iter()
+                    .any(|p| to_canonical(&clear_atom_maps(p)) == target_canon)
+            });
+            assert!(
+                reproduced_exact,
+                "forward replay must reproduce the exact stereo-tagged target: {smirks}"
+            );
+        }
+    }
+
+    #[test]
+    fn declared_forward_smirks_preserves_spectator_e_z_double_bond() {
+        // The E-alkene is a spectator far from the ester bond being cut --
+        // molecule-level bond-direction data (copy_bond_directions_from),
+        // not the atom-level chirality field the tetrahedral case above
+        // exercises.
+        let target = "CC(=O)Oc1ccc(/C=C/C)cc1";
+        let target_canon = to_canonical(&mol_from_smiles(target).unwrap());
+        let rule = rr("ester_cleavage", "");
+        let outcomes = apply_retro(&mol_from_smiles(target).unwrap(), &rule);
+        assert!(!outcomes.is_empty());
+        for outcome in &outcomes {
+            let precursors: Vec<String> = outcome
+                .iter()
+                .map(|p| to_canonical(&clear_atom_maps(&p.mol)))
+                .collect();
+            let smirks = declared_forward_smirks("ester_cleavage", target, &precursors)
+                .unwrap_or_else(|| panic!("must derive a forward smirks for {precursors:?}"));
+            assert!(
+                smirks.contains('/'),
+                "expected the E double bond to survive into the smirks: {smirks}"
+            );
+            let (lhs, rhs) = smirks.split_once(">>").unwrap();
+            let forward_smirks = format!("{rhs}>>{lhs}");
+            let reactant_mols: Vec<Molecule> = rhs
+                .split('.')
+                .map(|s| mol_from_smiles(s).unwrap())
+                .collect();
+            let reactant_refs: Vec<&Molecule> = reactant_mols.iter().collect();
+            let products = run_reactants(&forward_smirks, &reactant_refs)
+                .expect("forward-reversed smirks must at least parse and run");
+            let reproduced_exact = products.iter().any(|pset| {
+                pset.iter()
+                    .any(|p| to_canonical(&clear_atom_maps(p)) == target_canon)
+            });
+            assert!(
+                reproduced_exact,
+                "forward replay must reproduce the exact E-configured target: {smirks}"
+            );
+        }
+    }
+
+    #[test]
+    fn declared_forward_smirks_returns_none_for_a_precursor_set_that_was_never_produced() {
+        // A fabricated, chemically-unrelated precursor pair for this target
+        // -- must not fabricate a "close enough" match.
+        let target = "CC(=O)Oc1ccccc1C(=O)O";
+        let bogus_precursors = vec!["C".to_string(), "O".to_string()];
+        assert_eq!(
+            declared_forward_smirks("ester_cleavage", target, &bogus_precursors),
+            None
         );
     }
 }

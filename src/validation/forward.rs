@@ -291,6 +291,118 @@ mod tests {
         );
     }
 
+    fn cc_single_cleavage() -> RetroRule {
+        RetroRule {
+            name: "cc_single_cleavage".to_string(),
+            smirks: "[C:1][C:2]>>[C:1].[C:2]".to_string(),
+            ..Default::default()
+        }
+    }
+
+    /// Frozen fixture, `cc_single_cleavage` on `C1CC[C@H](C)NC[C@@H]1C`
+    /// (2,7-dimethylazepane) <- `C1CCCC[C@H](N1)C.C` (2-methylazepane +
+    /// methane): one of Finding #4's 6 pilot Invalid+balanced steps
+    /// (`docs/validation/finding4-validator-pilot-2026-08-23.md`),
+    /// individually investigated per that doc's own protocol. Classified as
+    /// **`genuine_template_error`** -- a different failure shape than
+    /// `co_aliphatic_cleavage_piperidinyl_carbamate_is_source_step_underspecified`,
+    /// even though the graph-level mechanics look superficially similar:
+    ///
+    /// - `cc_single_cleavage`'s SMIRKS (`[C:1][C:2]>>[C:1].[C:2]`) is fully
+    ///   generic aliphatic C-C cleavage, same style as `co_aliphatic_cleavage`
+    ///   (`[C:1][O:2]>>...`) -- no stereo annotation, by design.
+    /// - Reversed and applied forward to the declared precursors, it
+    ///   produces 7 distinct regiochemical outcomes. One of them,
+    ///   `C1CC[C@H](C)NCC1C`, has the *exact same connectivity* as the
+    ///   target with the pre-existing stereocenter (from the precursor)
+    ///   correctly retained -- only the newly-formed center carries no
+    ///   `@`/`@@` marker, because the rule never specified one. Purely by
+    ///   this graph-connectivity test, this looks identical in shape to
+    ///   `co_aliphatic_cleavage`'s finding.
+    /// - The difference: `co_aliphatic_cleavage` claims a real reaction
+    ///   class (amine + carbamic-acid-equivalent -> carbamate is a genuine,
+    ///   if achiral, disconnection). This step claims installing a methyl
+    ///   group at an unactivated ring C-H position using **bare methane**
+    ///   (`C`) as the second reagent -- `data/building_blocks.smi:8` lists
+    ///   `C` as stock, literally named `methane`. There is no real
+    ///   single-step reaction that methylates an alkyl C-H using free
+    ///   methane as a stoichiometric reagent (methane C-H activation is a
+    ///   specialized catalytic research topic, not a general-purpose
+    ///   disconnection any retrosynthesis template should imply). This
+    ///   also matches Phase 31's own baseline measurement of this exact
+    ///   rule (92.3% Invalid) -- not a one-off.
+    /// - So unlike `co_aliphatic_cleavage`, the defect isn't "missing
+    ///   stereo info on an otherwise-real reaction" -- it's that the rule's
+    ///   full generality lets it pair *any* C-C bond with a degenerate,
+    ///   functional-group-free single-carbon "leaving group" that has no
+    ///   real reagent behind it. Classified `genuine_template_error`
+    ///   because the *template itself* (not just this one application) is
+    ///   defective: it should not treat a bare-methyl / bare-methane
+    ///   fragment as a legitimate disconnection partner. Not fixed here
+    ///   (restricting the rule, or removing methane from the stock list,
+    ///   is a rule-design decision) -- this test only freezes the
+    ///   classification and the empirical mechanism behind it.
+    #[test]
+    fn cc_single_cleavage_azepane_methane_is_genuine_template_error() {
+        let target = "C1CC[C@H](C)NC[C@@H]1C";
+        let precursors = vec!["C1CCCC[C@H](N1)C".to_string(), "C".to_string()];
+        let rule = cc_single_cleavage();
+
+        // The rule's own claimed step does NOT verify -- confirms this is
+        // genuinely one of Finding #4's 6 Invalid+balanced steps, not
+        // something that already silently passes.
+        assert!(
+            !rule_reproduces(target, &precursors, &rule),
+            "expected this exact Finding #4 pilot step to still be Invalid"
+        );
+
+        // Reversed-SMIRKS replay: the correct connectivity (right ring
+        // position, pre-existing stereocenter retained) IS among the 7
+        // outcomes, just with no stereo marker on the newly-formed center --
+        // confirms the mechanism, not just the boolean verdict.
+        let reactant_mols: Vec<Molecule> = precursors
+            .iter()
+            .map(|s| mol_from_smiles(s).unwrap())
+            .collect();
+        let reactant_refs: Vec<&Molecule> = reactant_mols.iter().collect();
+        let (lhs, rhs) = rule.smirks.split_once(">>").unwrap();
+        let fwd = format!("{rhs}>>{lhs}");
+        let products: std::collections::BTreeSet<String> = run_reactants(&fwd, &reactant_refs)
+            .unwrap()
+            .into_iter()
+            .flatten()
+            .map(|m| canonical_smiles(&m))
+            .collect();
+
+        let stereo_free_correct_connectivity = "C1CC[C@H](C)NCC1C";
+        assert!(
+            products.contains(stereo_free_correct_connectivity),
+            "the rule's reversal must still find the right regiochemistry \
+             (just missing the newly-formed center's stereo): {products:?}"
+        );
+        assert!(
+            !products.contains(canonical_smiles(&mol_from_smiles(target).unwrap()).as_str()),
+            "the rule's reversal must never spontaneously produce the \
+             exact stereo-defined target -- it has no stereo information \
+             to do so from: {products:?}"
+        );
+
+        // The mechanism enabling this: methane really is a stock building
+        // block, so the search can legitimately propose it as a "reagent"
+        // for any C-C cleavage -- confirming the defect is in the rule's
+        // scope, not a data-loading fluke.
+        let building_blocks = std::fs::read_to_string("data/building_blocks.smi")
+            .expect("data/building_blocks.smi must be readable from the crate root");
+        assert!(
+            building_blocks
+                .lines()
+                .any(|line| line.split_whitespace().next() == Some("C")),
+            "methane ('C') must be present as its own stock entry in \
+             data/building_blocks.smi for this to be the real mechanism, \
+             not a stale assumption"
+        );
+    }
+
     /// The VF2 fallback must never launder a wrong-stereochemistry match: if
     /// a forward-reaction candidate is the correct constitution but the
     /// wrong tetrahedral configuration, `matches_target` must still reject

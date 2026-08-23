@@ -511,10 +511,12 @@ pub fn validate_forward_py(
 ///
 /// Args:
 ///     content (str): Route export JSON text -- a RENKIN ``--format json``
-///         output, or an AiZynthFinder single-route/batch export.
-///     format (str): ``"auto"`` (default), ``"renkin"``, or
-///         ``"aizynthfinder"`` -- same vocabulary as the CLI's ``--format``
-///         flag.
+///         output, an AiZynthFinder single-route/batch export, a
+///         ``renkin.syntheseus_exporter``-produced ``syntheseus-route-v1``
+///         document, or a real SynPlanner ``write_routes_json`` export.
+///     format (str): ``"auto"`` (default), ``"renkin"``, ``"aizynthfinder"``,
+///         ``"syntheseus"``, or ``"synplanner"`` -- same vocabulary as the
+///         CLI's ``--format`` flag.
 ///     stock_text (str): Optional ``.smi``-style stock listing (one SMILES
 ///         per line, ``#``-comments allowed). Default: ``""`` (no stock
 ///         configured -- stock validation reports ``not_evaluable``, never

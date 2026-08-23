@@ -586,3 +586,152 @@ fn syntheseus_convergent_fixtures_ambiguous_leaf_fails_with_two_findings() {
         "{report}"
     );
 }
+
+// ── SynPlanner Bridge, Phase 1 PR3 -- real, committed fixtures from both
+// Phase 0 (hand-constructed chython reactions run through SynPlanner's own
+// real exporter) and Phase 1 PR1.5 (a real CPU-only MCTS-searched planning
+// run through the real `synplan planning` CLI end to end). See
+// tests/fixtures/synplanner/v1.6.0/{PROVENANCE.md,real_planning_route.PROVENANCE.md}
+// for exact provenance. ──
+
+#[test]
+fn synplanner_explicit_format_audits_the_real_two_step_planning_route() {
+    let out = run(&[
+        "audit-route",
+        "tests/fixtures/synplanner/v1.6.0/real_planning_route_2step.json",
+        "--format",
+        "synplanner",
+        "--output",
+        "json",
+    ]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("stdout must be valid JSON");
+    assert_eq!(report["audit_manifest"]["source_format"], "synplanner");
+    assert_eq!(report["routes"][0]["source"], "syn_planner");
+    // No stock given -> not_evaluable -> partial, never a silent pass.
+    assert_eq!(report["routes"][0]["status"], "partial");
+}
+
+#[test]
+fn synplanner_auto_detected_via_route_id_keyed_object_shape() {
+    let out = run(&[
+        "audit-route",
+        "tests/fixtures/synplanner/v1.6.0/real_planning_route_1step.json",
+        "--output",
+        "json",
+    ]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("stdout must be valid JSON");
+    assert_eq!(report["audit_manifest"]["source_format"], "synplanner");
+}
+
+#[test]
+fn synplanner_stock_matching_the_real_leaves_passes_stock_validation() {
+    let stock_path = unique_temp_path("synplanner_stock");
+    // Both real precursors of route "2" (aspirin via acetic-anhydride
+    // acylation of salicylic acid) in real_planning_route_1step.json.
+    std::fs::write(
+        &stock_path,
+        "CC(=O)OC(C)=O acetic_anhydride\nO=C(O)c1ccccc1O salicylic_acid\n",
+    )
+    .unwrap();
+    let out = run(&[
+        "audit-route",
+        "tests/fixtures/synplanner/v1.6.0/real_planning_route_1step.json",
+        "--format",
+        "synplanner",
+        "--stock",
+        stock_path.to_str().unwrap(),
+        "--output",
+        "json",
+    ]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("stdout must be valid JSON");
+    assert_eq!(report["routes"][0]["stock_validation"]["status"], "pass");
+    std::fs::remove_file(&stock_path).ok();
+}
+
+#[test]
+fn synplanner_real_planning_reactions_genuinely_pass_forward_validation() {
+    // The headline Phase 1 PR1.5 finding, reconfirmed here at the CLI
+    // level: unlike AiZynthFinder/Syntheseus routes (always not_evaluable
+    // in this codebase today), a real MCTS-searched SynPlanner route's
+    // atom-mapped reaction smiles genuinely replays -- both steps PASS,
+    // not just "isn't reported as missing_atom_mapping".
+    let out = run(&[
+        "audit-route",
+        "tests/fixtures/synplanner/v1.6.0/real_planning_route_2step.json",
+        "--format",
+        "synplanner",
+        "--output",
+        "json",
+    ]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("stdout must be valid JSON");
+    let steps = report["routes"][0]["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 2, "{report}");
+    for step in steps {
+        assert_eq!(step["forward_validation"]["status"], "pass", "{report}");
+    }
+}
+
+#[test]
+fn synplanner_synthetic_missing_in_stock_field_is_ambiguous_leaf_not_guessed() {
+    // Per docs/design/synplanner-adapter-v1.md sec 7 item 6's resolved
+    // decision: real SynPlanner output never omits in_stock (confirmed at
+    // 167-route scale in Phase 1 PR1.5), but the parser must still handle
+    // a genuinely-missing field defensively rather than assume it can't
+    // happen. This JSON is hand-authored and NOT real SynPlanner output --
+    // unlike every other test in this section, it isn't sliced from a
+    // committed fixture, deliberately, so it's never mistaken for one.
+    let route_path = unique_temp_path("synplanner_synthetic_ambiguous");
+    std::fs::write(
+        &route_path,
+        r#"{"1":{"type":"mol","smiles":"CCO","in_stock":false,"children":[{"type":"reaction","smiles":"[C:1][O:2]>>[C:1].[O:2]","children":[{"type":"mol","smiles":"CC"},{"type":"mol","smiles":"O"}]}]}}"#,
+    )
+    .unwrap();
+    let out = run(&[
+        "audit-route",
+        route_path.to_str().unwrap(),
+        "--format",
+        "synplanner",
+        "--output",
+        "json",
+    ]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("stdout must be valid JSON");
+    assert_eq!(report["routes"][0]["status"], "fail", "{report}");
+    let codes: Vec<&str> = report["routes"][0]["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["code"].as_str().unwrap())
+        .collect();
+    assert!(codes.contains(&"ambiguous_leaf_status"), "{report}");
+    std::fs::remove_file(&route_path).ok();
+}

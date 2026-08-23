@@ -396,12 +396,13 @@
   <div class="panel">
     <div class="panel-title">
       <span data-i18n="audit_panel_title">Route to Audit</span>
-      <span class="help-icon" tabindex="0" data-i18n-tip="tip_audit" data-tip="Audits an already-completed route (RENKIN, AiZynthFinder, or Syntheseus export) for structural integrity, stock coverage, element accounting, and forward-reaction reproducibility — a pass/fail/partial verdict, entirely in your browser.">?</span>
+      <span class="help-icon" tabindex="0" data-i18n-tip="tip_audit" data-tip="Audits an already-completed route (RENKIN, AiZynthFinder, Syntheseus, or SynPlanner export) for structural integrity, stock coverage, element accounting, and forward-reaction reproducibility — a pass/fail/partial verdict, entirely in your browser.">?</span>
     </div>
 
     <div class="search-row" style="margin-top:0.5rem">
       <button type="button" class="example-btn" id="audit-example-aizynthfinder" data-i18n="audit_example_aizynthfinder">Load AiZynthFinder example</button>
       <button type="button" class="example-btn" id="audit-example-syntheseus" data-i18n="audit_example_syntheseus">Load Syntheseus example</button>
+      <button type="button" class="example-btn" id="audit-example-synplanner" data-i18n="audit_example_synplanner">Load SynPlanner example</button>
       <button type="button" class="example-btn" id="audit-example-failing" data-i18n="audit_example_failing">Load failing route example</button>
     </div>
 
@@ -413,6 +414,7 @@
           <option value="renkin" data-i18n="audit_format_renkin">RENKIN</option>
           <option value="aizynthfinder" data-i18n="audit_format_aizynthfinder">AiZynthFinder</option>
           <option value="syntheseus" data-i18n="audit_format_syntheseus">Syntheseus</option>
+          <option value="synplanner" data-i18n="audit_format_synplanner">SynPlanner</option>
         </select>
       </div>
       <div class="field">
@@ -549,14 +551,16 @@
       tab_plan: 'Plan a Route',
       tab_audit: 'Audit a Route',
       audit_panel_title: 'Route to Audit',
-      tip_audit: 'Audits an already-completed route (RENKIN, AiZynthFinder, or Syntheseus export) for structural integrity, stock coverage, element accounting, and forward-reaction reproducibility — a pass/fail/partial verdict, entirely in your browser.',
+      tip_audit: 'Audits an already-completed route (RENKIN, AiZynthFinder, Syntheseus, or SynPlanner export) for structural integrity, stock coverage, element accounting, and forward-reaction reproducibility — a pass/fail/partial verdict, entirely in your browser.',
       audit_format_label: 'Format',
       audit_format_auto: 'Auto-detect',
       audit_format_renkin: 'RENKIN',
       audit_format_aizynthfinder: 'AiZynthFinder',
       audit_format_syntheseus: 'Syntheseus',
+      audit_format_synplanner: 'SynPlanner',
       audit_example_aizynthfinder: 'Load AiZynthFinder example',
       audit_example_syntheseus: 'Load Syntheseus example',
+      audit_example_synplanner: 'Load SynPlanner example',
       audit_example_failing: 'Load failing route example',
       audit_policy_label: 'Policy',
       tip_audit_policy: 'Policy never hides a finding — it only changes how the overall pass/fail/partial verdict is derived from findings already collected.',
@@ -650,14 +654,16 @@
       tab_plan: 'ルートを計画',
       tab_audit: 'ルートを監査',
       audit_panel_title: '監査対象ルート',
-      tip_audit: '既に完成したルート（RENKIN、AiZynthFinder、またはSyntheseusのエクスポート）を、構造的整合性・在庫充足・元素収支・順方向反応の再現性について監査し、pass/fail/partialの判定を返します — すべてブラウザ内で完結します。',
+      tip_audit: '既に完成したルート（RENKIN、AiZynthFinder、Syntheseus、またはSynPlannerのエクスポート）を、構造的整合性・在庫充足・元素収支・順方向反応の再現性について監査し、pass/fail/partialの判定を返します — すべてブラウザ内で完結します。',
       audit_format_label: '形式',
       audit_format_auto: '自動判定',
       audit_format_renkin: 'RENKIN',
       audit_format_aizynthfinder: 'AiZynthFinder',
       audit_format_syntheseus: 'Syntheseus',
+      audit_format_synplanner: 'SynPlanner',
       audit_example_aizynthfinder: 'AiZynthFinderの例を読み込む',
       audit_example_syntheseus: 'Syntheseusの例を読み込む',
+      audit_example_synplanner: 'SynPlannerの例を読み込む',
       audit_example_failing: '失敗する例を読み込む',
       audit_policy_label: 'ポリシー',
       tip_audit_policy: 'ポリシーはfindingを隠しません — 既に収集されたfindingから全体のpass/fail/partial判定をどう導出するかだけが変わります。',
@@ -751,14 +757,16 @@
       tab_plan: '规划路径',
       tab_audit: '审计路径',
       audit_panel_title: '待审计路径',
-      tip_audit: '审计一条已完成的合成路径（RENKIN、AiZynthFinder 或 Syntheseus 导出）— 检查结构完整性、原料库存、元素守恒和正向反应可重现性，给出 pass/fail/partial 判定，全部在浏览器内完成。',
+      tip_audit: '审计一条已完成的合成路径（RENKIN、AiZynthFinder、Syntheseus 或 SynPlanner 导出）— 检查结构完整性、原料库存、元素守恒和正向反应可重现性，给出 pass/fail/partial 判定，全部在浏览器内完成。',
       audit_format_label: '格式',
       audit_format_auto: '自动检测',
       audit_format_renkin: 'RENKIN',
       audit_format_aizynthfinder: 'AiZynthFinder',
       audit_format_syntheseus: 'Syntheseus',
+      audit_format_synplanner: 'SynPlanner',
       audit_example_aizynthfinder: '加载 AiZynthFinder 示例',
       audit_example_syntheseus: '加载 Syntheseus 示例',
+      audit_example_synplanner: '加载 SynPlanner 示例',
       audit_example_failing: '加载失败路径示例',
       audit_policy_label: '策略',
       tip_audit_policy: '策略不会隐藏任何finding — 只改变如何从已收集的finding推导出整体的pass/fail/partial判定。',
@@ -959,9 +967,10 @@
   wireFileToTextarea('audit-stock-file', 'audit-stock-input');
 
   // ── Audit examples: real, committed fixtures embedded verbatim (byte-
-  // identical to tests/fixtures/{aizynthfinder/v4.4.1,syntheseus/0.7.2}/),
-  // not invented JSON -- so "load and run" always shows the exact same
-  // verdict the CLI/demo docs already document for these same fixtures.
+  // identical to tests/fixtures/{aizynthfinder/v4.4.1,syntheseus/0.7.2,
+  // synplanner/v1.6.0}/), not invented JSON -- so "load and run" always
+  // shows the exact same verdict the CLI/demo docs already document for
+  // these same fixtures.
   // Embedded rather than fetched: this page makes zero outbound requests
   // by design (see the footer note), and a fetched example would be the
   // one exception.
@@ -977,6 +986,17 @@
       format: 'syntheseus',
       // tests/fixtures/syntheseus/0.7.2/linear_two_leaf_route.json verbatim.
       content: '{"molecule_metadata":{"CCO":{"is_purchasable":true},"O=C(O)c1ccccc1":{"cost":12.5,"is_purchasable":true,"supplier":"TestSupplierCo"}},"schema_version":1,"source_metadata":{"exporter_schema":"syntheseus-route-v1","note":"Generated from a real syntheseus.search.graph.route.SynthesisGraph object via the public interface (Molecule/Bag/SingleProductReaction/SynthesisGraph) -- no model inference, search algorithm, checkpoint, or GPU was used to construct this route."},"source_tool":"syntheseus","source_version":"0.7.2","starting_molecules":["CCO","O=C(O)c1ccccc1"],"steps":[{"product":"CCOC(=O)c1ccccc1","reactants":["CCO","O=C(O)c1ccccc1"],"reaction_metadata":{"identifier":"step1","reaction_smiles":"CCO.O=C(O)c1ccccc1>>CCOC(=O)c1ccccc1","source":"renkin-syntheseus-spike-fixture","template":"esterification_retro"}}],"target":"CCOC(=O)c1ccccc1"}',
+    },
+    synplanner: {
+      format: 'synplanner',
+      // tests/fixtures/synplanner/v1.6.0/real_planning_route_2step.json
+      // verbatim -- a real, CPU-only MCTS-searched route (aspirin, via a
+      // benzyl-ester intermediate), not hand-built input. Unlike the
+      // AiZynthFinder/Syntheseus examples above, this one's forward
+      // validation genuinely PASSES on both steps: SynPlanner's exported
+      // reaction SMILES carry real, usable atom maps (see
+      // docs/design/synplanner-adapter-v1.md §7 item 2).
+      content: '{"33":{"type":"mol","smiles":"c1c(C(=O)O)c(ccc1)OC(=O)C","children":[{"type":"reaction","smiles":"[cH:17]1[cH:16][c:15]([cH:20][cH:19][cH:18]1)[CH2:14][O:13][C:11](=[O:12])[c:10]2[cH:9][cH:8][cH:7][cH:6][c:5]2[O:4][C:2]([CH3:1])=[O:3]>>[cH:9]1[c:10]([C:11](=[O:12])[OH:13])[c:5]([cH:6][cH:7][cH:8]1)[O:4][C:2](=[O:3])[CH3:1]","children":[{"type":"mol","smiles":"c1cc(ccc1)COC(=O)c2ccccc2OC(C)=O","children":[{"type":"reaction","smiles":"[CH3:1][C:2](=[O:3])[O:22][C:21]([CH3:24])=[O:23].[cH:16]1[cH:17][cH:18][cH:19][cH:20][c:15]1[CH2:14][O:13][C:11]([c:10]2[cH:9][cH:8][cH:7][cH:6][c:5]2[OH:4])=[O:12]>>[cH:17]1[cH:16][c:15]([cH:20][cH:19][cH:18]1)[CH2:14][O:13][C:11](=[O:12])[c:10]2[cH:9][cH:8][cH:7][cH:6][c:5]2[O:4][C:2]([CH3:1])=[O:3]","children":[{"type":"mol","smiles":"CC(=O)OC(C)=O","in_stock":true},{"type":"mol","smiles":"c1ccccc1COC(c2ccccc2O)=O","in_stock":true}]}],"in_stock":false}]}],"in_stock":false}}',
     },
     failing: {
       format: 'syntheseus',
@@ -1005,6 +1025,7 @@
   }
   document.getElementById('audit-example-aizynthfinder').addEventListener('click', () => loadAuditExample('aizynthfinder'));
   document.getElementById('audit-example-syntheseus').addEventListener('click', () => loadAuditExample('syntheseus'));
+  document.getElementById('audit-example-synplanner').addEventListener('click', () => loadAuditExample('synplanner'));
   document.getElementById('audit-example-failing').addEventListener('click', () => loadAuditExample('failing'));
 
   // find_routes_v2 (target, depth, max_routes, beam_width, avoid_elements,
@@ -1128,7 +1149,7 @@
     statusTextEl.dataset.state = 'status_init';
     statusTextEl.textContent = t('status_init');
 
-    // Shareable one-click demo links -- ?demo=aizynthfinder|syntheseus|failing
+    // Shareable one-click demo links -- ?demo=aizynthfinder|syntheseus|synplanner|failing
     // switches to the Audit tab, loads the matching real fixture, and runs
     // it immediately, so a README/social link can land straight on a real
     // verdict without the visitor pasting anything themselves.

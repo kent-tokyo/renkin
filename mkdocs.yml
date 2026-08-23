@@ -72,6 +72,7 @@ nav:
     - Open-Source Retrosynthesis Comparison: guides/open-source-retrosynthesis-comparison.md
     - Audit a Real AiZynthFinder Route: guides/aizynthfinder-audit-demo.md
     - Audit a Syntheseus Route: guides/syntheseus-audit-demo.md
+    - Audit a Real SynPlanner Route: guides/synplanner-audit-demo.md
     - Audit Reproducibility and Compatibility Contract: guides/audit-reproducibility-contract.md
   - API Reference:
     - Rust API: api/rust.md

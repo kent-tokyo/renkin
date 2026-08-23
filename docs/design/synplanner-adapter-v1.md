@@ -2,12 +2,14 @@
 
 Status: **Phase 0 complete, Phase 1 PR1 (design + fixtures) done, PR1.5
 (real MCTS-planning verification) done, PR2 (`src/bridge/synplanner.rs`,
-the actual Rust normalizer) done.** Real fixtures live at
+the actual Rust normalizer) done, PR3 (cross-tool parity, CLI-level tests,
+Playground example, docs guide) done.** Real fixtures live at
 `tests/fixtures/synplanner/v1.6.0/` (see that directory's own
 `PROVENANCE.md`/`real_planning_route.PROVENANCE.md` for exact construction/
-reproduction detail). §7's open questions are all resolved. PR3 (cross-tool
-structural-parity fixture, CLI-level tests, Playground example) is next,
-not started.
+reproduction detail). §7's open questions are all resolved. Phase 1 (the
+SynPlanner adapter) is complete; PR4 (version bump/release) needs separate
+authorization per this project's standing rule, and Phase 2+ of the
+7-phase SynPlanner-surpass roadmap is next, not started.
 
 ## 0. What this is, in one paragraph
 
@@ -278,10 +280,23 @@ correct behavior, not a regression.)
   (`{target_smiles: [RouteNode, ...]}`) — only the internal
   `{route_id: RouteNode}` shape every committed fixture uses is recognized
   today.
-- **PR3**: cross-tool structural-parity addition to
-  `tests/cross_tool_audit.rs` (a 4th "same chemistry, 4 formats" case),
-  CLI-level additions to `tests/audit_route_cli.rs`, Playground fixture
-  example, docs.
+- **PR3 done.** `tests/cross_tool_audit.rs`'s 3-tool tests extended to a
+  4th ("CO -> C + O" described a fourth way via `SynPlannerNode`), with one
+  real difference from the other two non-RENKIN adapters spelled out in the
+  test itself: SynPlanner's step genuinely PASSES forward validation, not
+  just "not_evaluable, never fail". 5 new CLI-level tests in
+  `tests/audit_route_cli.rs` against the real Phase 0/PR1.5 fixtures,
+  including one explicit synthetic (hand-authored, clearly labeled
+  not-real) `in_stock`-missing case per §7 item 6's resolved allowance.
+  Playground: a `--format synplanner` option, a "Load SynPlanner example"
+  button (real `real_planning_route_2step.json` content embedded verbatim,
+  3-language i18n), and a `?demo=synplanner` shareable link — all wired
+  through the existing generic `AUDIT_EXAMPLES`/`?demo=` machinery, no new
+  WASM/worker.js logic needed. New guide,
+  `docs/guides/synplanner-audit-demo.md` (added to `mkdocs.yml` nav,
+  cross-linked from the AiZynthFinder/Syntheseus guides and the
+  reproducibility contract page) — demonstrating a genuine `PASS` verdict
+  live, something neither of the other two adapter guides can show.
 - **PR4**: version bump / release prep (separate authorization required,
   per this project's standing rule).
 - Everything in the user's own "実施しない" list for *this* round

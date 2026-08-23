@@ -105,9 +105,11 @@ than guessing.
 | AiZynthFinder | 4.3.2, 4.4.0, 4.4.1 | single-target JSON, batch JSON, gzip-compressed batch JSON |
 | Other planners / other AiZynthFinder versions | unverified | unknown fields are tolerated (forward-compatible); a shape RENKIN doesn't recognize is a hard error, never a guess |
 
-Syntheseus is also a verified adapter (`--format syntheseus`) — see the
-[Syntheseus audit demo](syntheseus-audit-demo.md) for its own walkthrough
-and compatibility row.
+Syntheseus and SynPlanner are also verified adapters (`--format syntheseus`
+/ `--format synplanner`) — see the
+[Syntheseus audit demo](syntheseus-audit-demo.md) and
+[SynPlanner audit demo](synplanner-audit-demo.md) for their own
+walkthroughs and compatibility rows.
 
 "Verified against" is deliberate phrasing, not "supported" — this adapter is
 confirmed against real, individually captured `aizynthcli` output from

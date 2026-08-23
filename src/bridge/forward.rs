@@ -133,6 +133,19 @@ fn declared_smirks<'a>(
             }
             Ok((reaction_smiles.as_str(), true))
         }
+        // SynPlanner's reaction `smiles` is a `reactants>>product` SMIRKS
+        // string, same as-declared orientation as AiZynthFinder/Syntheseus.
+        // Confirmed against real MCTS-searched output (Phase 1 PR1.5): these
+        // strings carry real, forward-replayable atom maps for the case
+        // tested, so this is the one adapter today where the downstream
+        // `has_atom_mapping` gate is expected to actually pass, not just
+        // honestly report `MissingAtomMapping`.
+        ReactionEvidence::SynPlannerReaction { smiles, .. } => {
+            if smiles.is_empty() {
+                return Err(MissingReactionRepresentation);
+            }
+            Ok((smiles.as_str(), true))
+        }
     }
 }
 

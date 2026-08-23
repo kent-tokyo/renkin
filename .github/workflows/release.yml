@@ -174,3 +174,23 @@ jobs:
               --notes "See [CHANGELOG.md](https://github.com/kent-tokyo/renkin/blob/master/CHANGELOG.md) for details." \
               --latest
           fi
+      - name: Upload coverage-template asset (if this tag owns it)
+        run: |
+          MANIFEST="data/phase_a5_template_scaling/templates/coverage_templates_release_asset_manifest.json"
+          ASSET="data/phase_a5_template_scaling/templates/templates_2000.smi"
+          PINNED_TAG=$(python3 -c "import json; print(json.load(open('${MANIFEST}'))['release_tag'])")
+          if [ "${PINNED_TAG}" != "${TAG}" ]; then
+            echo "coverage_templates_release_asset_manifest.json is pinned to ${PINNED_TAG}, not this tag (${TAG}) -- skipping upload"
+            exit 0
+          fi
+          EXPECTED_SHA=$(python3 -c "import json; print(json.load(open('${MANIFEST}'))['assets']['templates_2000.smi']['sha256'].removeprefix('sha256:'))")
+          ACTUAL_SHA=$(sha256sum "${ASSET}" | cut -d' ' -f1)
+          if [ "${ACTUAL_SHA}" != "${EXPECTED_SHA}" ]; then
+            echo "::error::${ASSET} content hash (${ACTUAL_SHA}) does not match ${MANIFEST} (${EXPECTED_SHA}) -- refusing to upload"
+            exit 1
+          fi
+          if gh release view "${TAG}" --json assets --jq '.assets[].name' | grep -qx "templates_2000.smi"; then
+            echo "templates_2000.smi already attached to ${TAG}, skipping"
+          else
+            gh release upload "${TAG}" "${ASSET}"
+          fi

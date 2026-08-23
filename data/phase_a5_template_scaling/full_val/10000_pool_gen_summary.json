@@ -1,0 +1,14 @@
+{
+  "n_groups_requested": 4931,
+  "n_groups_parse_failed": 0,
+  "n_groups_target_id_mismatch": 14,
+  "n_groups_zero_candidates": 0,
+  "n_candidate_rows": 434912,
+  "candidates_per_group_p50": 84,
+  "candidates_per_group_p90": 141,
+  "candidates_per_group_p95": 159,
+  "candidates_per_group_max": 408,
+  "wall_clock_seconds": 11604.457939335,
+  "chunked": true,
+  "n_chunks": 17
+}

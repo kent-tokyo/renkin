@@ -1,6 +1,10 @@
 # ---- Rust ----
 /target/
 Cargo.lock
+# tools/chemical-space-eval is a deliberately separate nested [workspace]
+# (see its own Cargo.toml) -- Cargo.lock above already matches it
+# (unanchored), but /target/ is root-anchored and misses its own build dir.
+tools/chemical-space-eval/target/
 
 # ---- WASM build output ----
 /pkg/
@@ -23,6 +27,7 @@ __pycache__/
 .env
 AGENTS.md
 lessons.md
+ROADMAP.md
 tasks/todo.md
 # `tasks/*` (not `tasks/`) deliberately: a trailing-slash directory pattern
 # excludes the directory itself, and git cannot re-include a file whose
@@ -57,6 +62,78 @@ data/bench_chunks*/
 data/bench_chunks*_orchestrator.log
 data/uspto50k_test.smi
 data/uspto50k_benchmark_result.json
+data/finding4_pilot_2026-08-23/
+
+# ---- Issue #101 Phase 3: reranker real-label generation ----
+# Regenerable from the pinned HF revision + scripts/generate_real_labels.py
+# (see data/phase3a_reranker_ground_truth_audit/findings.md for full
+# provenance -- SHA-256s, preprocessing command, accept/reject accounting).
+data/uspto50k_raw_test_split.jsonl
+data/uspto50k_raw_train_split.jsonl
+data/uspto50k_raw_val_split.jsonl
+data/reranker_labels_uspto50k_test.jsonl
+data/reranker_labels_uspto50k_test.summary.json
+data/reranker_labels_uspto50k_train.jsonl
+data/reranker_labels_uspto50k_val.jsonl
+data/reranker_labels_uspto50k_train_val.summary.json
+data/reranker_targets_uspto50k_train.jsonl
+data/reranker_targets_uspto50k_val.jsonl
+data/reranker_groups_uspto50k_test.jsonl
+data/reranker_groups_uspto50k_train.jsonl
+data/reranker_groups_uspto50k_val.jsonl
+data/reranker_split_manifest.jsonl
+data/phase3a_reranker_ground_truth_audit/benchmark_quarantine_target_identities.txt
+data/phase3a_reranker_ground_truth_audit/benchmark_quarantine_manifest.json
+data/phase3b_100_target_feasibility/pool_test_100.jsonl
+data/phase3b_100_target_feasibility/groups_test_100.jsonl
+data/phase3c_500_target_feasibility/pool_train_500.jsonl
+data/phase3c_500_target_feasibility/pool_val_500.jsonl
+data/phase3c_500_target_feasibility/groups_train_500.jsonl
+data/phase3c_500_target_feasibility/groups_val_500.jsonl
+data/phase3c_500_target_feasibility/*.split_manifest_subset.jsonl
+data/phase3d_full_pool/pool_train_full.jsonl
+data/phase3d_full_pool/pool_val_full.jsonl
+data/phase3d_full_pool/groups_train_full.jsonl
+data/phase3d_full_pool/groups_val_full.jsonl
+data/phase3d_full_pool/*.split_manifest_subset.jsonl
+data/phase3d_full_pool/train_full_run.log
+
+# Phase 3D.5 canonical identity audit: regenerable intermediate text (one
+# SMILES per line, extracted from already-committed pool/label files, then
+# re-canonicalized) -- the durable record is findings.md + the small JSON
+# ledgers (mismatch_ledger.json, precursor_drift_pairs_*.json,
+# false_negative_diagnostic_*.json, target_idempotence_audit.json), all
+# tracked.
+data/phase3d5_canonical_identity_audit/*_unique.txt
+data/phase3d5_canonical_identity_audit/*_canon.txt
+data/phase3d5_canonical_identity_audit/*_canon1.txt
+data/phase3d5_canonical_identity_audit/*_canon2.txt
+data/phase3d5_canonical_identity_audit/*.split_manifest_subset.jsonl
+
+# Phase 3E: training/formal-TEST run -- regenerable from committed scripts
+# (phase3e_build_combined_pool.py, phase3e_evaluate_formal_test.py,
+# renkin-pool-gen) plus already-gitignored Phase 3D/3A source pools, and
+# from the frozen model artifact by its own SHA-256 (Step 8b confirmed
+# byte-for-byte training reproducibility -- see freeze_manifest.json). The
+# durable record is findings.md, freeze_manifest.json, eval_report.json,
+# gate_val.json, formal_test_result.json, manifest_combined.json, and
+# manifest_test_formal.json, all tracked.
+data/phase3e_reranker_training/pool_combined.jsonl
+data/phase3e_reranker_training/pool_test_formal.jsonl
+data/phase3e_reranker_training/groups_combined.jsonl
+data/phase3e_reranker_training/groups_test_formal.jsonl
+data/phase3e_reranker_training/labels_combined.jsonl
+data/phase3e_reranker_training/split_manifest_combined.jsonl
+data/phase3e_reranker_training/model.txt
+data/phase3e_reranker_training/*.log
+# Golden-test fixture for a SEPARATE, not-yet-merged runtime-integration
+# effort (real formal-TEST feature vectors + frozen-model Python
+# predictions) -- regenerable via scripts/reranker_golden_fixture.py. This
+# PR does not itself verify anything against it; a from-scratch Rust
+# LightGBM reader on the runtime-integration branch was checked against a
+# sample of this fixture there, not here -- see that branch/PR for the
+# methodology and result once it exists.
+data/phase3e_reranker_training/reranker_golden_fixture.jsonl
 
 # Phase 32 scratch/raw run dumps under data/corpora/ (underscore prefix =
 # reproducible intermediate data, not a curated deliverable -- the fixed
@@ -74,9 +151,72 @@ data/comparison/*.hdf5
 data/comparison/shared_stock/*.hdf5
 # Raw per-target adapter stderr logs for the 100-target feasibility round --
 # progress noise, not a deliverable (the JSONL rows, aggregate JSON, and
-# aggregate Markdown reports next to them ARE committed).
-data/comparison/results_*/*.log
+# aggregate Markdown reports next to them ARE committed). `**/*.log` (not
+# `*/*.log`) since later arm/mode sweeps (e.g. results_500) nest logs one
+# directory deeper (results_500/<arm>/run.log), which */*.log misses.
+data/comparison/results_*/**/*.log
 .venv-compare-66/
 
 # ---- Claude Code internal files ----
 .claude/
+# Runtime reranker local dev artifact: model.txt (external-path, never
+# committed into the crate, matching Cargo.toml's exclude list policy for
+# trained-model artifacts -- see scripts/fetch_reranker_model.py for why).
+# This blanket pattern also keeps future untracked scratch out of this
+# directory's git status by default; it has NO effect on files already
+# committed here (eval_report.json, findings.md, frequency_table.json,
+# etc. from PR #105/#106 stay tracked regardless -- .gitignore cannot
+# untrack an already-tracked file). `data/phase3e_reranker_training/*`
+# (not the trailing-slash `.../`) deliberately, for the same reason
+# documented above `tasks/*`: git can't re-include a file whose parent
+# directory itself is excluded, so the !exception below needs the
+# directory to stay non-excluded while its default-ignored contents (`*`
+# matches everything) are excluded per-file instead.
+data/phase3e_reranker_training/*
+
+# release_asset_manifest.json is durable release-distribution provenance
+# (whole-file SHA-256 for scripts/fetch_reranker_model.py's download
+# check), not a local dev artifact -- tracked despite the blanket
+# exclusion above, same rationale as the tasks/phase31_*/phase32_* exceptions.
+!data/phase3e_reranker_training/release_asset_manifest.json
+
+# Chemical Space Coverage Diagnosis Phase A PoC: the large per-target JSONL/
+# SMILES intermediates are mechanically regenerable (see
+# data/chemical_space_coverage_diagnosis/findings.md's "Reproducing this"
+# section) -- findings.md itself plus the small aggregate report and run
+# manifest are the durable record, same `dir/*` + `!exceptions` pattern as
+# tasks/* and data/phase3e_reranker_training/* above.
+data/chemical_space_coverage_diagnosis/*
+!data/chemical_space_coverage_diagnosis/findings.md
+!data/chemical_space_coverage_diagnosis/coverage_by_chemical_space_report.json
+!data/chemical_space_coverage_diagnosis/nearest_train_tanimoto.jsonl.manifest.json
+
+# Phase A.5 (candidate-generation coverage program): template-count
+# scaling diagnosis on VAL. Large regenerable intermediates excluded
+# directly by pattern (no dir/*-plus-exceptions needed here, since the
+# excluded/kept file kinds are already distinguishable by suffix) -- small
+# metrics/manifest/summary JSON and the frozen nested template .smi files
+# (durable reproducibility record, since --top N re-extraction depends on
+# the script version at run time) stay tracked. chunks/ is fully
+# regenerable from reranker_groups_uspto50k_val.jsonl via `split`.
+data/phase_a5_template_scaling/*/*_pool.jsonl
+data/phase_a5_template_scaling/*/*_groups.jsonl
+data/phase_a5_template_scaling/*/*_pool_gen.log
+data/phase_a5_template_scaling/chunks/
+data/phase_a5_template_scaling/chunks_fine/
+
+# Phase B.1 (coverage/cost frontier optimization -- closed as a negative
+# result, see data/phase_b1_frontier/findings.md): same rationale as
+# Phase A.5 above -- large regenerable per-run intermediates excluded by
+# pattern, findings.md/manifest/aggregate JSON (the durable record the
+# writeup's numbers were computed from) stay tracked. val_sample_full_sorted.jsonl
+# is regenerable from data/reranker_groups_uspto50k_val.jsonl (dedup by
+# canonical SMILES, documented in findings.md) -- not committed, same as
+# that source file's own gitignored status.
+data/phase_b1_frontier/*/*_pool.jsonl
+data/phase_b1_frontier/*/*_groups.jsonl
+data/phase_b1_frontier/*/*_rows.jsonl
+data/phase_b1_frontier/*/*_pool_gen.log
+data/phase_b1_frontier/*/*_run.log
+data/phase_b1_frontier/*/*.log
+data/phase_b1_frontier/val_sample_full_sorted.jsonl

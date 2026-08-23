@@ -1,0 +1,39 @@
+{
+  "1": {
+    "type": "mol",
+    "smiles": "CCCl",
+    "children": [
+      {
+        "type": "reaction",
+        "smiles": "[CH3:1][CH2:2][OH:3]>>[CH3:1][CH2:2][Cl:3]",
+        "children": [
+          {
+            "type": "mol",
+            "smiles": "CCO",
+            "children": [
+              {
+                "type": "reaction",
+                "smiles": "[CH3:1][CH2:2][Br:3]>>[CH3:1][CH2:2][OH:3]",
+                "children": [
+                  {
+                    "type": "mol",
+                    "smiles": "CCBr",
+                    "in_stock": true
+                  }
+                ],
+                "rule_id": 4821,
+                "rule_source": "extracted",
+                "rule_key": "chy:4821"
+              }
+            ],
+            "in_stock": false
+          }
+        ],
+        "rule_id": 17,
+        "rule_source": "handcrafted",
+        "rule_key": "chy:0017"
+      }
+    ],
+    "in_stock": false
+  }
+}

@@ -37,7 +37,7 @@ pub(crate) struct ElementAccountingResult {
 /// `validation::graph_rules::element_counts`, this deliberately does NOT
 /// add back implicit hydrogens -- this check is heavy-atom-only by design,
 /// not H-inclusive. `None` if the SMILES fails to parse under chematic.
-fn heavy_atom_counts(smiles: &str) -> Option<HashMap<Element, usize>> {
+pub(crate) fn heavy_atom_counts(smiles: &str) -> Option<HashMap<Element, usize>> {
     let mol = mol_from_smiles(smiles).ok()?;
     let mut counts: HashMap<Element, usize> = HashMap::new();
     for (_, atom) in mol.atoms() {

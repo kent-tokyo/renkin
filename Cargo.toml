@@ -4,7 +4,7 @@ resolver = "2"
 
 [package]
 name = "renkin"
-version = "0.21.0"
+version = "0.34.0"
 edition = "2024"
 authors = ["kent-tokyo <kent-tokyo@users.noreply.github.com>"]
 description = "Ultra-fast retrosynthesis engine for computer-aided synthesis planning (CASP) — pure Rust, WASM-ready, Python bindings via PyO3"
@@ -22,6 +22,7 @@ exclude       = [
     "data/uspto50k_test.smi",
     "data/uspto50k_benchmark_result*.json",
     "data/templates_extracted*.smi",
+    "data/phase_a5_template_scaling/templates/*.smi",
     "data/comparison/**",
     "data/ring_context_metadata_500.json",
     "docs/playground/**",
@@ -55,6 +56,18 @@ path = "src/bin/mcp.rs"
 name = "renkin-doctor"
 path = "src/bin/doctor.rs"
 
+[[bin]]
+name = "renkin-canonicalize"
+path = "src/bin/canonicalize.rs"
+
+[[bin]]
+name = "renkin-pool-gen"
+path = "src/bin/pool_gen.rs"
+
+[[bin]]
+name = "renkin-reranker-predict"
+path = "src/bin/reranker_predict.rs"
+
 [[example]]
 name = "measure_rank_recall"
 required-features = ["nn-scoring"]
@@ -84,11 +97,11 @@ perf-instrumentation = ["dep:chematic-rxn"]
 # (chematic#193, https://github.com/kent-tokyo/chematic/pull/193, merged as
 # 3e45f55) which resolves the apply_retro/run_reactants combinatorial
 # regression this crate previously worked around with a git-pinned commit.
-chematic = { version = "0.11", features = ["smiles", "chem", "smarts", "rxn"] }
+chematic = { version = "0.16", features = ["smiles", "chem", "smarts", "rxn"] }
 # Same registry release as `chematic` above (required: they must resolve to the
 # same chematic-core/etc. instance). Only for perf_counters -- normal builds
 # reach run_reactants via the chematic facade, not this direct dependency.
-chematic-rxn = { version = "0.11", features = ["perf-instrumentation"], optional = true }
+chematic-rxn = { version = "0.16", features = ["perf-instrumentation"], optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
@@ -102,9 +115,12 @@ pyo3 = { version = "0.29", optional = true }
 # tract-onnx: Pure Rust ONNX inference (no C/C++ dependency)
 tract-onnx = { version = "0.23", optional = true }
 
-# rayon: not available on wasm32 (no threads)
+# rayon: not available on wasm32 (no threads). flate2: gzip decompression for
+# `renkin audit-route`'s `.json.gz` input (aizynthcli's batch output format) --
+# CLI-only, never referenced from the wasm-built library target.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rayon = "1"
+flate2 = "1"
 
 # WASM: needed for chematic's internal random usage
 [target.'cfg(target_arch = "wasm32")'.dependencies]

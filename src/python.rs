@@ -1,10 +1,11 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
+use crate::bridge;
 use crate::chem_env::{
     ChemEnv, default_rules, elem_symbols_to_mask, load_rules_from_file, mol_from_smiles,
 };
-use crate::search::{SearchConfig, find_routes};
+use crate::search::{SearchConfig, diagnose, find_routes};
 
 /// Find retrosynthetic routes for a target molecule.
 ///
@@ -30,9 +31,78 @@ use crate::search::{SearchConfig, find_routes};
 ///         `template_id`, see ``renkin template ids``). Matching steps get an
 ///         ``evidence`` field; unmatched templates get none -- nothing is
 ///         fabricated. Default: ``None``.
+///     reranker_model_path (str | None): Path to a frozen LightGBM
+///         ``model.txt`` for candidate reranking (Issue #101 Task 35);
+///         ordering-only, requires ``reranker_freq_table_path`` too. Default:
+///         ``None``.
+///     reranker_freq_table_path (str | None): Path to the TRAIN-frozen
+///         template ``frequency_table.json`` for the reranker. Default:
+///         ``None``.
+///     top_templates (int | None): If given, keep only the top-N
+///         ``templates_path`` templates by frequency weight. Applies only
+///         to Stage 1 (``templates_path``) -- coverage mode's Stage 2
+///         (``coverage_templates_path``) always uses its full template set
+///         unfiltered, matching the ``renkin`` CLI's ``--top-templates``
+///         exactly. Default: ``None`` (no filtering).
+///     search_mode (str): ``"standard"`` (default, unchanged behavior) or
+///         ``"coverage"``. In coverage mode, Stage 1 (``templates_path``)
+///         runs first; only if it finds nothing does Stage 2 run against
+///         ``coverage_templates_path`` (Phase 41.18B,
+///         ``docs/design/coverage-mode-v0.md``). A Stage-1 valid route is
+///         never overwritten.
+///     coverage_templates_path (str | None): Stage 2's template set;
+///         required when ``search_mode="coverage"``, validated (existence,
+///         readability, non-empty) before Stage 1 even runs. Default:
+///         ``None``.
+///     coverage_timeout_seconds (int | None): Optional positive-integer
+///         wall-clock budget for Stage 2 only (cooperative cancellation,
+///         not a hard real-time bound -- see ``SearchTermination::
+///         DeadlineExceeded``'s doc in ``src/search.rs``). ``0`` raises.
+///         Default: ``None`` (unlimited).
+///     search_diagnostics (bool): When ``True``, adds a
+///         ``search_diagnostics`` block (beam eviction, cross-template
+///         dedup, branching factor -- Issue #101) to the JSON output,
+///         identical field names/shape to the ``renkin`` CLI's own
+///         ``--search-diagnostics`` flag. Always accumulated internally
+///         regardless of this flag (negligible bookkeeping cost); this
+///         only controls whether it's serialized. Present on both the
+///         route-found and empty-route branches when requested. Default:
+///         ``False`` (omitted from the output, not present as ``null``).
+///
+///     Passing only one of the two reranker paths, or the model failing to
+///     load, falls back to legacy ordering with a message printed to
+///     stderr -- never a hard error, matching the ``renkin`` CLI's
+///     ``--reranker-model``/``--reranker-freq-table`` flags exactly. When a
+///     reranker is configured (either path given), the JSON output gains a
+///     ``reranker_failures`` integer field -- ``0`` for a fully healthy
+///     run, nonzero if inference degraded mid-search; the field is absent
+///     entirely (not ``null``) when no reranker was configured. In coverage
+///     mode this is the sum across every stage that actually ran.
+///
+///     Coverage mode does not support ``--bond-index``/an ONNX
+///     ``--scorer``/an active ring-context policy in v0 -- none of these
+///     are exposed as Python parameters today, so this restriction has no
+///     practical effect from Python yet, but the same shared validation
+///     the ``renkin`` CLI uses (``renkin::coverage_mode::
+///     validate_coverage_mode_config``) still runs.
 ///
 /// Returns:
-///     str: JSON string with retrosynthesis routes.
+///     str: JSON string with retrosynthesis routes -- identical top-level
+///     field set to the ``renkin`` CLI's own ``--format json`` output (the
+///     two share the same underlying search code and JSON-assembly shape).
+///     When ``routes_found > 0``: also has ``joint_success_probability``
+///     (``1 - Π(1 - route.success_probability)`` across every returned
+///     route -- a frequency-derived score, not a calibrated experimental
+///     probability). When ``routes_found == 0``: ``diagnostics`` has
+///     ``nodes_expanded``, ``max_depth_reached``, ``beam_limit_hit``,
+///     ``matched_templates``, ``stock_hits``, ``likely_causes``,
+///     ``suggestions``. In coverage mode, gains ``search_mode``,
+///     ``selected_stage``, ``stage2_invoked``, ``stage1_timeout``,
+///     ``stage2_timeout``, ``stage1_elapsed_ms``, ``stage2_elapsed_ms``,
+///     ``total_elapsed_ms`` -- identical field names and shapes to the
+///     ``renkin`` CLI's own coverage-mode JSON output. Absent (not
+///     ``null``) in standard mode, byte-for-byte the same output as before
+///     these fields existed.
 ///
 /// Example::
 ///
@@ -40,7 +110,7 @@ use crate::search::{SearchConfig, find_routes};
 ///     routes = json.loads(renkin.find_routes("CC(=O)Oc1ccccc1C(=O)O", depth=3))
 ///     print(routes["routes_found"])
 #[pyfunction]
-#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None))]
+#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None, search_diagnostics=false))]
 #[allow(clippy::too_many_arguments)]
 pub fn find_routes_py(
     target: &str,
@@ -54,7 +124,37 @@ pub fn find_routes_py(
     bb_prices_path: Option<&str>,
     templates_path: Option<&str>,
     template_metadata_path: Option<&str>,
+    reranker_model_path: Option<&str>,
+    reranker_freq_table_path: Option<&str>,
+    top_templates: Option<usize>,
+    search_mode: &str,
+    coverage_templates_path: Option<&str>,
+    coverage_timeout_seconds: Option<u64>,
+    search_diagnostics: bool,
 ) -> PyResult<String> {
+    if search_mode != "standard" && search_mode != "coverage" {
+        return Err(PyValueError::new_err(format!(
+            "invalid search_mode {search_mode:?} (expected \"standard\" or \"coverage\")"
+        )));
+    }
+    if search_mode == "standard" {
+        if coverage_templates_path.is_some() {
+            return Err(PyValueError::new_err(
+                "coverage_templates_path requires search_mode=\"coverage\"",
+            ));
+        }
+        if coverage_timeout_seconds.is_some() {
+            return Err(PyValueError::new_err(
+                "coverage_timeout_seconds requires search_mode=\"coverage\"",
+            ));
+        }
+    }
+    if search_mode == "coverage" && coverage_timeout_seconds == Some(0) {
+        return Err(PyValueError::new_err(
+            "coverage_timeout_seconds must be a positive integer (got 0)",
+        ));
+    }
+
     let env = match building_blocks {
         Some(ref bbs) => {
             let refs: Vec<&str> = bbs.iter().map(|s| s.as_str()).collect();
@@ -66,7 +166,11 @@ pub fn find_routes_py(
 
     let mut rules = default_rules();
     if let Some(path) = templates_path {
-        rules.extend(load_rules_from_file(path));
+        let mut extra = load_rules_from_file(path);
+        if let Some(k) = top_templates {
+            extra = crate::chem_env::top_templates_by_weight(extra, k);
+        }
+        rules.extend(extra);
     }
 
     // Malformed metadata must fail before any search runs.
@@ -96,6 +200,34 @@ pub fn find_routes_py(
             })
             .unwrap_or_default()
     });
+
+    // Issue #101 Task 35: ordering-only candidate reranker, mirroring the
+    // `renkin` CLI's --reranker-model/--reranker-freq-table exactly -- a
+    // missing/mismatched pair or a load failure degrades to this crate's
+    // pre-existing ordering rather than raising, never a hard error.
+    let reranker: Option<std::sync::Arc<dyn crate::candidate::CandidateReranker>> =
+        match (reranker_model_path, reranker_freq_table_path) {
+            (Some(model_path), Some(freq_path)) => {
+                match crate::reranker::RuntimeReranker::from_paths(model_path, freq_path) {
+                    Ok(r) => Some(std::sync::Arc::new(r)),
+                    Err(e) => {
+                        eprintln!(
+                            "warning: failed to load reranker_model_path/reranker_freq_table_path \
+                             ({e:#}); falling back to legacy ordering for this run"
+                        );
+                        None
+                    }
+                }
+            }
+            (None, None) => None,
+            _ => {
+                eprintln!(
+                    "warning: reranker_model_path and reranker_freq_table_path must both be \
+                     given; falling back to legacy ordering for this run"
+                );
+                None
+            }
+        };
     let config = SearchConfig {
         max_depth: depth,
         max_routes,
@@ -105,25 +237,118 @@ pub fn find_routes_py(
         verbose,
         bb_price_map,
         template_metadata: template_metadata.map(|tm| tm.templates),
+        reranker,
         ..Default::default()
     };
-    let (routes, stats) = find_routes(target, &env, &rules, &config)
-        .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
-    let output = if routes.is_empty() {
+    struct CoverageModeMeta {
+        selected_stage: &'static str,
+        stage2_invoked: bool,
+        stage1_timeout: bool,
+        stage2_timeout: bool,
+        stage1_elapsed_ms: f64,
+        stage2_elapsed_ms: Option<f64>,
+        total_elapsed_ms: f64,
+        reranker_failures_summed: u64,
+    }
+
+    let (routes, stats, coverage_meta) = if search_mode == "coverage" {
+        let coverage_path = coverage_templates_path.ok_or_else(|| {
+            PyValueError::new_err("search_mode=\"coverage\" requires coverage_templates_path")
+        })?;
+        // Fail-loud validation before Stage 1 runs at all -- same contract
+        // as the renkin CLI's --search-mode coverage.
+        crate::coverage_mode::validate_coverage_mode_config(&config)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let coverage_rules = crate::coverage_mode::load_coverage_rules(coverage_path)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let coverage_timeout = coverage_timeout_seconds.map(std::time::Duration::from_secs);
+        let result = crate::coverage_mode::run_coverage_mode(
+            target,
+            &env,
+            &rules,
+            &config,
+            &coverage_rules,
+            coverage_timeout,
+        )
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let meta = CoverageModeMeta {
+            selected_stage: match result.selected_stage {
+                crate::coverage_mode::SelectedStage::Stage1 => "stage1",
+                crate::coverage_mode::SelectedStage::Stage2 => "stage2",
+            },
+            stage2_invoked: result.stage2_invoked,
+            stage1_timeout: result.stage1_timeout,
+            stage2_timeout: result.stage2_timeout,
+            stage1_elapsed_ms: result.stage1_elapsed_ms,
+            stage2_elapsed_ms: result.stage2_elapsed_ms,
+            total_elapsed_ms: result.total_elapsed_ms,
+            reranker_failures_summed: result.reranker_failures,
+        };
+        (result.routes, result.stats, Some(meta))
+    } else {
+        let (routes, stats) = find_routes(target, &env, &rules, &config)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        (routes, stats, None)
+    };
+
+    let reranker_failures_for_output = coverage_meta
+        .as_ref()
+        .map(|m| m.reranker_failures_summed)
+        .unwrap_or(stats.reranker_failures);
+
+    let mut output = if routes.is_empty() {
+        let (causes, suggestions) = diagnose(&stats, depth);
         serde_json::json!({
             "target": target,
             "routes_found": 0,
             "routes": [],
-            "diagnostics": {"nodes_expanded": stats.nodes_expanded}
+            "diagnostics": {
+                "nodes_expanded":    stats.nodes_expanded,
+                "max_depth_reached": stats.max_depth_reached,
+                "beam_limit_hit":    stats.beam_limit_hit,
+                "matched_templates": stats.matched_templates,
+                "stock_hits":        stats.stock_hits,
+                "likely_causes":     causes,
+                "suggestions":       suggestions,
+            }
         })
     } else {
+        let joint_success_probability = 1.0
+            - routes
+                .iter()
+                .map(|r| 1.0 - r.success_probability)
+                .product::<f64>();
         serde_json::json!({
             "target": target,
             "routes_found": routes.len(),
             "routes": routes,
+            "joint_success_probability": joint_success_probability,
         })
     };
+    if search_diagnostics {
+        output["search_diagnostics"] = serde_json::to_value(&stats.crowd_out)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    }
+    // Mirrors the `renkin` CLI's exact contract (src/main.rs) -- surfaced
+    // unconditionally whenever a reranker was configured, since a graceful
+    // mid-run degrade (never a hard error) has no other way to be detected
+    // by the caller. In coverage mode this is the sum across every stage
+    // that actually ran, not just the selected one's.
+    if config.reranker.is_some() {
+        output["reranker_failures"] = serde_json::Value::from(reranker_failures_for_output);
+    }
+    if let Some(ref m) = coverage_meta {
+        output["search_mode"] = serde_json::Value::from("coverage");
+        output["selected_stage"] = serde_json::Value::from(m.selected_stage);
+        output["stage2_invoked"] = serde_json::Value::from(m.stage2_invoked);
+        output["stage1_timeout"] = serde_json::Value::from(m.stage1_timeout);
+        output["stage2_timeout"] = serde_json::Value::from(m.stage2_timeout);
+        output["stage1_elapsed_ms"] = serde_json::Value::from(m.stage1_elapsed_ms);
+        output["stage2_elapsed_ms"] = serde_json::to_value(m.stage2_elapsed_ms)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        output["total_elapsed_ms"] = serde_json::Value::from(m.total_elapsed_ms);
+    }
 
     serde_json::to_string(&output).map_err(|e| PyValueError::new_err(e.to_string()))
 }
@@ -271,12 +496,83 @@ pub fn validate_forward_py(
     serde_json::to_string(&results).map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
+/// Audit an already-completed retrosynthesis route (RENKIN or AiZynthFinder
+/// export) for structural integrity, stock coverage, element accounting,
+/// and forward-reaction reproducibility -- the first Python binding for
+/// ``renkin audit-route`` (v0.29.0 Audit Policy Profiles), calling the
+/// identical ``bridge::build_audit_route_report_with_policy`` pipeline the
+/// CLI and WASM ``audit_route_v2`` use, so the same input+policy gets the
+/// same verdict from every surface.
+///
+/// A thin binding on purpose: the caller reads any file (including a
+/// gzip-compressed AiZynthFinder batch export) and passes the decoded
+/// text in -- this function never touches the filesystem itself, matching
+/// ``find_routes``'s own "pass data in, get a JSON string back" contract.
+///
+/// Args:
+///     content (str): Route export JSON text -- a RENKIN ``--format json``
+///         output, or an AiZynthFinder single-route/batch export.
+///     format (str): ``"auto"`` (default), ``"renkin"``, or
+///         ``"aizynthfinder"`` -- same vocabulary as the CLI's ``--format``
+///         flag.
+///     stock_text (str): Optional ``.smi``-style stock listing (one SMILES
+///         per line, ``#``-comments allowed). Default: ``""`` (no stock
+///         configured -- stock validation reports ``not_evaluable``, never
+///         a silent pass).
+///     policy (str): ``"informational"``, ``"standard"`` (default), or
+///         ``"strict"`` -- controls only how each route's ``status`` is
+///         derived from findings already collected; never which findings
+///         are detected or reported. See
+///         ``docs/guides/audit-reproducibility-contract.md``.
+///
+/// Returns:
+///     str: JSON string, the same ``AuditRouteReport`` shape
+///     ``renkin audit-route --output json`` and the playground's
+///     ``audit_route_v2`` WASM export both produce, including
+///     ``audit_manifest.policy`` recording the policy actually used.
+///
+/// Raises:
+///     ValueError: malformed JSON, an unrecognized route shape, or an
+///         invalid ``format``/``policy`` value -- fail-loud, never a
+///         partial or guessed result.
+///
+/// Example::
+///
+///     import json, renkin
+///     with open("trees.json", encoding="utf-8") as f:
+///         report = json.loads(
+///             renkin.audit_route(f.read(), format="aizynthfinder", policy="strict")
+///         )
+///     print(report["summary"])
+#[pyfunction]
+#[pyo3(name = "audit_route", signature = (content, format="auto", stock_text="", policy="standard"))]
+pub fn audit_route_py(
+    content: &str,
+    format: &str,
+    stock_text: &str,
+    policy: &str,
+) -> PyResult<String> {
+    let policy: bridge::AuditPolicy = policy.parse().map_err(PyValueError::new_err)?;
+    let stock = (!stock_text.trim().is_empty()).then(|| bridge::parse_stock_text(stock_text));
+    let rules = default_rules();
+    let report = bridge::build_audit_route_report_with_policy(
+        content,
+        format,
+        stock.as_ref(),
+        &rules,
+        policy,
+    )
+    .map_err(|e| PyValueError::new_err(format!("{e:#}")))?;
+    serde_json::to_string(&report).map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
 /// RENKIN Python module.
 #[pymodule]
 pub fn renkin(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(find_routes_py, m)?)?;
     m.add_function(wrap_pyfunction!(predict_forward_py, m)?)?;
     m.add_function(wrap_pyfunction!(validate_forward_py, m)?)?;
+    m.add_function(wrap_pyfunction!(audit_route_py, m)?)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }

@@ -1,0 +1,17 @@
+{
+  "candidate_jsonl_sha256": "sha256:c5b5d39bc9784ccd6b734fdc7be83d69f31fe5185b8c6b26a1f49074e7595021",
+  "candidates_per_group_max": 96,
+  "candidates_per_group_p50": 40,
+  "candidates_per_group_p90": 68,
+  "candidates_per_group_p95": 71,
+  "groups_output": "data/phase_a5_template_scaling/smoke_100/1000_groups.jsonl",
+  "manifest_output": "data/phase_a5_template_scaling/smoke_100/1000_manifest.json",
+  "n_candidate_rows": 4107,
+  "n_groups_parse_failed": 0,
+  "n_groups_requested": 100,
+  "n_groups_target_id_mismatch": 0,
+  "n_groups_zero_candidates": 0,
+  "pool_output": "data/phase_a5_template_scaling/smoke_100/1000_pool.jsonl",
+  "target_group_index_sha256": "sha256:2200e3cc83d5c526dbc669b7d9de6e268f804e045e22af6e70190f89ba06cc99",
+  "wall_clock_seconds": 22.377906833
+}

@@ -94,4 +94,4 @@ workflow instead, see the [Python retrosynthesis guide](python-retrosynthesis.md
 
 - [Rust API reference](../api/rust.md) — `ChemEnv`, `SearchConfig`, `RetroRule`, feature flags
 - [Reaction Evidence Metadata](reaction-evidence.md) — attaching conditions/yields/references to templates
-- [WASM API](../api/wasm.md) — the browser/Node.js entry point
+- [WASM API](../api/wasm.md) — the browser/bundler entry point

@@ -1,0 +1,38 @@
+{
+  "33": {
+    "type": "mol",
+    "smiles": "c1c(C(=O)O)c(ccc1)OC(=O)C",
+    "children": [
+      {
+        "type": "reaction",
+        "smiles": "[cH:17]1[cH:16][c:15]([cH:20][cH:19][cH:18]1)[CH2:14][O:13][C:11](=[O:12])[c:10]2[cH:9][cH:8][cH:7][cH:6][c:5]2[O:4][C:2]([CH3:1])=[O:3]>>[cH:9]1[c:10]([C:11](=[O:12])[OH:13])[c:5]([cH:6][cH:7][cH:8]1)[O:4][C:2](=[O:3])[CH3:1]",
+        "children": [
+          {
+            "type": "mol",
+            "smiles": "c1cc(ccc1)COC(=O)c2ccccc2OC(C)=O",
+            "children": [
+              {
+                "type": "reaction",
+                "smiles": "[CH3:1][C:2](=[O:3])[O:22][C:21]([CH3:24])=[O:23].[cH:16]1[cH:17][cH:18][cH:19][cH:20][c:15]1[CH2:14][O:13][C:11]([c:10]2[cH:9][cH:8][cH:7][cH:6][c:5]2[OH:4])=[O:12]>>[cH:17]1[cH:16][c:15]([cH:20][cH:19][cH:18]1)[CH2:14][O:13][C:11](=[O:12])[c:10]2[cH:9][cH:8][cH:7][cH:6][c:5]2[O:4][C:2]([CH3:1])=[O:3]",
+                "children": [
+                  {
+                    "type": "mol",
+                    "smiles": "CC(=O)OC(C)=O",
+                    "in_stock": true
+                  },
+                  {
+                    "type": "mol",
+                    "smiles": "c1ccccc1COC(c2ccccc2O)=O",
+                    "in_stock": true
+                  }
+                ]
+              }
+            ],
+            "in_stock": false
+          }
+        ]
+      }
+    ],
+    "in_stock": false
+  }
+}

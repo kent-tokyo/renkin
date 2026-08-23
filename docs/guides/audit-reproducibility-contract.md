@@ -7,12 +7,13 @@ description: "What the audit_manifest guarantees, the informational/standard/str
 
 This page documents two things introduced in v0.27.0 ("Reproducible Route
 Audit"): what `audit_manifest` guarantees, and the compatibility rules every
-`renkin audit-route` adapter (RENKIN-native, AiZynthFinder, Syntheseus, and
-any future one) follows. It's the general, tool-neutral reference;
-adapter-specific walkthroughs like
-[Audit a Real AiZynthFinder Route](aizynthfinder-audit-demo.md) and
-[Audit a Syntheseus Route](syntheseus-audit-demo.md) link back here rather
-than repeating this content.
+`renkin audit-route` adapter (RENKIN-native, AiZynthFinder, Syntheseus,
+SynPlanner, and any future one) follows. It's the general, tool-neutral
+reference; adapter-specific walkthroughs like
+[Audit a Real AiZynthFinder Route](aizynthfinder-audit-demo.md),
+[Audit a Syntheseus Route](syntheseus-audit-demo.md), and
+[Audit a Real SynPlanner Route](synplanner-audit-demo.md) link back here
+rather than repeating this content.
 
 ## Audit manifest
 

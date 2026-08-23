@@ -165,8 +165,11 @@ these are two different claims, not one:**
   spike (its own atom-mapping feasibility investigation reached the
   identical conclusion for both versions).
 
-See the [AiZynthFinder demo](aizynthfinder-audit-demo.md) for that
-adapter's own compatibility row.
+See the [AiZynthFinder demo](aizynthfinder-audit-demo.md) and
+[SynPlanner demo](synplanner-audit-demo.md) for those adapters' own
+compatibility rows. Unlike this adapter and AiZynthFinder, SynPlanner's
+forward validation genuinely *passes* on real output — see that guide's
+own Step 3 for why.
 
 ## Hit a compatibility problem?
 

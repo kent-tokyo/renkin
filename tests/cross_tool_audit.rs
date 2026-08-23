@@ -12,6 +12,14 @@
 //! honest-degradation principle, same "tool-neutral structure must agree,
 //! tool-specific evidence need not" contract.
 //!
+//! Phase 1 PR3 extends both of those tests to a fourth tool, SynPlanner
+//! (renamed accordingly). One difference from AiZynthFinder/Syntheseus:
+//! SynPlanner's reaction SMILES genuinely carries valid, forward-replayable
+//! atom maps (confirmed against real MCTS-searched output, Phase 1 PR1.5)
+//! -- unlike the other two adapters, whose steps always report
+//! `not_evaluable` here, SynPlanner's `co_aliphatic_cleavage`-equivalent
+//! step is expected to PASS forward validation, same as RENKIN's own side.
+//!
 //! Forward validation is deliberately NOT required to match step-for-step:
 //! it's only required to agree when both sides have sufficient evidence to
 //! reach a verdict at all. The RENKIN side is built with a `RetroRule`
@@ -29,9 +37,9 @@ use renkin::bridge::syntheseus::{
 };
 use renkin::bridge::{
     AuditFindingCode, AuditPolicy, AuditStatus, AzfNode, CheckStatus, ParseOutcome,
-    ReactionEvidence, RouteDocument, RouteNode, RouteSource, SyntheseusRouteV1, audit,
-    audit_with_policy, normalize_aizynthfinder_route, normalize_renkin_route,
-    normalize_syntheseus_route,
+    ReactionEvidence, RouteDocument, RouteNode, RouteSource, SynPlannerNode, SyntheseusRouteV1,
+    audit, audit_with_policy, normalize_aizynthfinder_route, normalize_renkin_route,
+    normalize_synplanner_route, normalize_syntheseus_route,
 };
 use renkin::chem_env::{RetroRule, mol_from_smiles, to_canonical};
 use renkin::search;
@@ -499,11 +507,42 @@ fn syntheseus_route(
     }
 }
 
+/// `SynPlannerNode` builders mirroring `azf_mol`/`azf_reaction` -- SynPlanner's
+/// reaction-only fields (`rule_id`/`rule_source`/`rule_key`) are unset here
+/// since this test isn't exercising rule provenance.
+fn synplanner_mol(
+    smiles: &str,
+    in_stock: Option<bool>,
+    children: Vec<SynPlannerNode>,
+) -> SynPlannerNode {
+    SynPlannerNode {
+        node_type: "mol".to_string(),
+        smiles: smiles.to_string(),
+        in_stock,
+        rule_id: None,
+        rule_source: None,
+        rule_key: None,
+        children,
+    }
+}
+
+fn synplanner_reaction(smiles: &str, precursors: Vec<SynPlannerNode>) -> SynPlannerNode {
+    SynPlannerNode {
+        node_type: "reaction".to_string(),
+        smiles: smiles.to_string(),
+        in_stock: None,
+        rule_id: None,
+        rule_source: None,
+        rule_key: None,
+        children: precursors,
+    }
+}
+
 /// Same "CO -> C + O" reaction as `branched_route_agrees_structurally_across_tools`,
-/// described a third way -- a genuine 3-way structural comparison, not a
-/// strained pairing, since all three sides describe the identical chemistry.
+/// described a fourth way -- a genuine 4-way structural comparison, not a
+/// strained pairing, since all four sides describe the identical chemistry.
 #[test]
-fn syntheseus_route_agrees_structurally_with_renkin_and_aizynthfinder() {
+fn four_tools_agree_structurally_renkin_aizynthfinder_syntheseus_synplanner() {
     let stock: HashSet<String> = [canon("C"), canon("O")].into_iter().collect();
 
     let renkin_input = renkin_route(&[("CO", &["C", "O"], "co_aliphatic_cleavage")], &["C", "O"]);
@@ -535,16 +574,32 @@ fn syntheseus_route_agrees_structurally_with_renkin_and_aizynthfinder() {
     assert!(syn_outcome.parseable, "{:?}", syn_outcome.defects);
     let syn_report = audit(&syn_outcome, Some(&stock), None);
 
+    let sp_node = synplanner_mol(
+        "CO",
+        Some(false),
+        vec![synplanner_reaction(
+            "[C:1][O:2]>>[C:1].[O:2]",
+            vec![
+                synplanner_mol("C", Some(true), vec![]),
+                synplanner_mol("O", Some(true), vec![]),
+            ],
+        )],
+    );
+    let sp_outcome = normalize_synplanner_route(&sp_node);
+    assert!(sp_outcome.parseable, "{:?}", sp_outcome.defects);
+    let sp_report = audit(&sp_outcome, Some(&stock), None);
+
     let renkin_doc = renkin_outcome.document.as_ref().unwrap();
     let azf_doc = azf_outcome.document.as_ref().unwrap();
     let syn_doc = syn_outcome.document.as_ref().unwrap();
+    let sp_doc = sp_outcome.document.as_ref().unwrap();
 
-    // Canonical root, agreed by all three.
-    for doc in [azf_doc, syn_doc] {
+    // Canonical root, agreed by all four.
+    for doc in [azf_doc, syn_doc, sp_doc] {
         assert_eq!(renkin_doc.root.canonical_smiles, doc.root.canonical_smiles);
     }
 
-    // Leaf multiset, agreed by all three.
+    // Leaf multiset, agreed by all four.
     let leaves_of = |doc: &RouteDocument| {
         let mut out = Vec::new();
         leaf_multiset(&doc.root, &mut out);
@@ -554,9 +609,10 @@ fn syntheseus_route_agrees_structurally_with_renkin_and_aizynthfinder() {
     let renkin_leaves = leaves_of(renkin_doc);
     assert_eq!(renkin_leaves, leaves_of(azf_doc));
     assert_eq!(renkin_leaves, leaves_of(syn_doc));
+    assert_eq!(renkin_leaves, leaves_of(sp_doc));
 
-    // Step count, agreed by all three.
-    for doc in [azf_doc, syn_doc] {
+    // Step count, agreed by all four.
+    for doc in [azf_doc, syn_doc, sp_doc] {
         assert_eq!(
             renkin_doc.step_count_collapsed_edges,
             doc.step_count_collapsed_edges
@@ -582,7 +638,7 @@ fn syntheseus_route_agrees_structurally_with_renkin_and_aizynthfinder() {
         codes.dedup();
         codes
     }
-    for report in [&azf_report, &syn_report] {
+    for report in [&azf_report, &syn_report, &sp_report] {
         assert_eq!(
             structural_codes(&renkin_report.findings),
             structural_codes(&report.findings)
@@ -590,23 +646,40 @@ fn syntheseus_route_agrees_structurally_with_renkin_and_aizynthfinder() {
     }
     assert!(structural_codes(&renkin_report.findings).is_empty());
 
-    // Target element accounting, agreed by all three.
-    for report in [&azf_report, &syn_report] {
+    // Target element accounting, agreed by all four.
+    for report in [&azf_report, &syn_report, &sp_report] {
         assert_eq!(
             renkin_report.target_element_accounting_status,
             report.target_element_accounting_status
         );
     }
 
-    // Configured stock result, agreed by all three -- all leaves are in
+    // Configured stock result, agreed by all four -- all leaves are in
     // `stock`, so every side passes.
-    for report in [&renkin_report, &azf_report, &syn_report] {
+    for report in [&renkin_report, &azf_report, &syn_report, &sp_report] {
         assert_eq!(
             report.stock_validation.as_ref().map(|s| s.status),
             Some(CheckStatus::Pass),
             "{report:?}"
         );
     }
+
+    // Forward validation: unlike AiZynthFinder/Syntheseus (whose steps here
+    // are only required to reach not_evaluable/pass, never fail -- see the
+    // 2-way and 3-way tests above), SynPlanner's real, atom-mapped reaction
+    // SMILES is expected to genuinely PASS here, matching RENKIN's own side
+    // (Phase 1 PR1.5's central finding, confirmed end to end through this
+    // adapter in PR2's own unit tests -- reconfirmed here in a genuine
+    // cross-tool comparison, not just in isolation).
+    assert_eq!(
+        renkin_report.steps[0].forward_validation.status,
+        CheckStatus::Pass
+    );
+    assert_eq!(
+        sp_report.steps[0].forward_validation.status,
+        CheckStatus::Pass,
+        "{sp_report:?}"
+    );
 }
 
 /// The `derive_status` policy table (`AuditPolicy::{Informational,Standard,
@@ -614,14 +687,15 @@ fn syntheseus_route_agrees_structurally_with_renkin_and_aizynthfinder() {
 /// `partial`, `standard`/`strict` stay `fail`) already has an exhaustive,
 /// adapter-agnostic proof in `bridge::audit`'s own tests. What's new here:
 /// confirming that table holds for real, adapter-specific *input* on all
-/// three tools at once, from the same underlying "one leaf's purchasability
-/// is genuinely unknown" condition expressed three different ways
+/// four tools at once, from the same underlying "one leaf's purchasability
+/// is genuinely unknown" condition expressed four different ways
 /// (RENKIN: absent from `building_blocks`; AiZynthFinder: `in_stock: None`;
-/// Syntheseus: `is_purchasable: None`) -- the same finding-set-invariance
-/// property v0.29.0 proved per-adapter, now confirmed to generalize across
-/// every adapter uniformly, not just each one in isolation.
+/// Syntheseus: `is_purchasable: None`; SynPlanner: `in_stock: None`) -- the
+/// same finding-set-invariance property v0.29.0 proved per-adapter, now
+/// confirmed to generalize across every adapter uniformly, not just each
+/// one in isolation.
 #[test]
-fn policy_verdict_invariance_holds_across_all_three_tools() {
+fn policy_verdict_invariance_holds_across_all_four_tools() {
     let renkin_input = renkin_route(&[("CO", &["C", "O"], "co_aliphatic_cleavage")], &["C"]);
     let renkin_outcome = normalize_renkin_route(&renkin_input, "CO");
     assert!(!renkin_outcome.parseable);
@@ -656,6 +730,25 @@ fn policy_verdict_invariance_holds_across_all_three_tools() {
             .contains(&AuditFindingCode::AmbiguousLeafStatus)
     );
 
+    let sp_node = synplanner_mol(
+        "CO",
+        Some(false),
+        vec![synplanner_reaction(
+            "[C:1][O:2]>>[C:1].[O:2]",
+            vec![
+                synplanner_mol("C", Some(true), vec![]),
+                synplanner_mol("O", None, vec![]),
+            ],
+        )],
+    );
+    let sp_outcome = normalize_synplanner_route(&sp_node);
+    assert!(!sp_outcome.parseable);
+    assert!(
+        sp_outcome
+            .defects
+            .contains(&AuditFindingCode::AmbiguousLeafStatus)
+    );
+
     for (policy, expected) in [
         (AuditPolicy::Informational, AuditStatus::Partial),
         (AuditPolicy::Standard, AuditStatus::Fail),
@@ -664,8 +757,10 @@ fn policy_verdict_invariance_holds_across_all_three_tools() {
         let renkin_report = audit_with_policy(&renkin_outcome, None, None, policy);
         let azf_report = audit_with_policy(&azf_outcome, None, None, policy);
         let syn_report = audit_with_policy(&syn_outcome, None, None, policy);
+        let sp_report = audit_with_policy(&sp_outcome, None, None, policy);
         assert_eq!(renkin_report.status, expected, "renkin, {policy:?}");
         assert_eq!(azf_report.status, expected, "aizynthfinder, {policy:?}");
         assert_eq!(syn_report.status, expected, "syntheseus, {policy:?}");
+        assert_eq!(sp_report.status, expected, "synplanner, {policy:?}");
     }
 }

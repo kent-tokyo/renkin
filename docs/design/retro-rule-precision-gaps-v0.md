@@ -187,9 +187,27 @@ graph-based default rules (`ester_cleavage`, `amide_cleavage`,
 Route `status` stays `partial` in this repro only because no `--stock`
 was supplied (`stock_validation: not_evaluable`) -- unrelated to this fix.
 
+**Honest limitation, worth stating plainly**: for graph-based rules this
+new path is pass-or-`not_evaluable`; it can structurally never return
+`fail`. A step whose claimed precursors don't match any real outcome of
+the named rule returns `None` from `declared_forward_smirks` (never
+fabricates a "close enough" match -- see its own
+`declared_forward_smirks_returns_none_for_a_precursor_set_that_was_never_produced`
+test) and falls through to the same `not_evaluable` a step with no
+reaction evidence at all gets. The derived SMIRKS is also built *from*
+the outcome that already matched the declared precursors, so the forward
+replay is closer to a round-trip sanity check on `chematic`'s own engine
+than an independent verification -- weaker than a SMIRKS-based rule's
+`pass`, where the SMIRKS exists independently of any particular step's
+claimed precursors. See
+`renkin_step_with_graph_based_rule_but_wrong_precursors_is_not_evaluable_not_fail`
+in `bridge::audit_route`'s tests for the guard against this ever silently
+becoming a false `pass` -- or a false `fail` on a real, chemically
+correct route.
+
 **Original repro (below), preserved for context:**
 
-`find_routes(target=aspirin, ...)` piped straight into `find_routes(target=aspirin, ...)` piped straight into
+**Repro:** `find_routes(target=aspirin, ...)` piped straight into
 `audit_route(..., format="renkin")` → `forward_validation.status:
 not_evaluable`, `reason: missing_reaction_representation`, overall route
 `status: partial` even with a matching stock supplied. AiZynthFinder's

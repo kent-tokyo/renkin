@@ -1171,6 +1171,9 @@ fn with_sequential_atom_maps(mol: &Molecule) -> Molecule {
     for (_, bond) in mol.bonds() {
         let _ = builder.add_bond(bond.atom1, bond.atom2, bond.order);
     }
+    builder.copy_stereo_groups_from(mol);
+    builder.copy_stereo_from(mol);
+    builder.copy_bond_directions_from(mol);
     builder.build()
 }
 
@@ -4902,6 +4905,93 @@ mod chematic_regression {
             smirks.contains(':'),
             "expected atom-mapped smirks: {smirks}"
         );
+    }
+
+    #[test]
+    fn declared_forward_smirks_preserves_tetrahedral_stereocenter() {
+        // methyl (S)-2-acetoxypropanoate: acetate ester of methyl (S)-lactate.
+        // `atom.chirality` is an Atom-level field copied by `Atom::clone`, so
+        // with_sequential_atom_maps's rebuild carries it through even before
+        // the copy_stereo_*/copy_bond_directions_from calls below -- verified
+        // directly, not just asserted; those calls stay for parity with
+        // clear_atom_maps and defense against stereo forms this specific
+        // case doesn't exercise (e.g. enhanced/relative stereo groups).
+        let target = "CC(=O)O[C@@H](C)C(=O)OC";
+        let target_canon = to_canonical(&mol_from_smiles(target).unwrap());
+        let rule = rr("ester_cleavage", "");
+        let outcomes = apply_retro(&mol_from_smiles(target).unwrap(), &rule);
+        assert!(!outcomes.is_empty());
+        for outcome in &outcomes {
+            let precursors: Vec<String> = outcome
+                .iter()
+                .map(|p| to_canonical(&clear_atom_maps(&p.mol)))
+                .collect();
+            let smirks = declared_forward_smirks("ester_cleavage", target, &precursors)
+                .unwrap_or_else(|| panic!("must derive a forward smirks for {precursors:?}"));
+            assert!(
+                smirks.contains('@'),
+                "expected the stereocenter to survive into the smirks: {smirks}"
+            );
+            let (lhs, rhs) = smirks.split_once(">>").unwrap();
+            let forward_smirks = format!("{rhs}>>{lhs}");
+            let reactant_mols: Vec<Molecule> = rhs
+                .split('.')
+                .map(|s| mol_from_smiles(s).unwrap())
+                .collect();
+            let reactant_refs: Vec<&Molecule> = reactant_mols.iter().collect();
+            let products = run_reactants(&forward_smirks, &reactant_refs)
+                .expect("forward-reversed smirks must at least parse and run");
+            let reproduced_exact = products.iter().any(|pset| {
+                pset.iter()
+                    .any(|p| to_canonical(&clear_atom_maps(p)) == target_canon)
+            });
+            assert!(
+                reproduced_exact,
+                "forward replay must reproduce the exact stereo-tagged target: {smirks}"
+            );
+        }
+    }
+
+    #[test]
+    fn declared_forward_smirks_preserves_spectator_e_z_double_bond() {
+        // The E-alkene is a spectator far from the ester bond being cut --
+        // molecule-level bond-direction data (copy_bond_directions_from),
+        // not the atom-level chirality field the tetrahedral case above
+        // exercises.
+        let target = "CC(=O)Oc1ccc(/C=C/C)cc1";
+        let target_canon = to_canonical(&mol_from_smiles(target).unwrap());
+        let rule = rr("ester_cleavage", "");
+        let outcomes = apply_retro(&mol_from_smiles(target).unwrap(), &rule);
+        assert!(!outcomes.is_empty());
+        for outcome in &outcomes {
+            let precursors: Vec<String> = outcome
+                .iter()
+                .map(|p| to_canonical(&clear_atom_maps(&p.mol)))
+                .collect();
+            let smirks = declared_forward_smirks("ester_cleavage", target, &precursors)
+                .unwrap_or_else(|| panic!("must derive a forward smirks for {precursors:?}"));
+            assert!(
+                smirks.contains('/'),
+                "expected the E double bond to survive into the smirks: {smirks}"
+            );
+            let (lhs, rhs) = smirks.split_once(">>").unwrap();
+            let forward_smirks = format!("{rhs}>>{lhs}");
+            let reactant_mols: Vec<Molecule> = rhs
+                .split('.')
+                .map(|s| mol_from_smiles(s).unwrap())
+                .collect();
+            let reactant_refs: Vec<&Molecule> = reactant_mols.iter().collect();
+            let products = run_reactants(&forward_smirks, &reactant_refs)
+                .expect("forward-reversed smirks must at least parse and run");
+            let reproduced_exact = products.iter().any(|pset| {
+                pset.iter()
+                    .any(|p| to_canonical(&clear_atom_maps(p)) == target_canon)
+            });
+            assert!(
+                reproduced_exact,
+                "forward replay must reproduce the exact E-configured target: {smirks}"
+            );
+        }
     }
 
     #[test]

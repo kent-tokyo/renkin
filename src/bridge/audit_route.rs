@@ -582,6 +582,39 @@ mod tests {
     }
 
     #[test]
+    fn renkin_step_with_graph_based_rule_but_wrong_precursors_is_not_evaluable_not_fail() {
+        // A fabricated step claiming ester_cleavage produced a precursor set
+        // ester_cleavage never actually produces for this target.
+        // declared_forward_smirks correctly returns None (it never fabricates
+        // a "close enough" match -- see chem_env's own
+        // declared_forward_smirks_returns_none_for_a_precursor_set_that_was_never_produced),
+        // so this must fall through to not_evaluable, the same honest
+        // "can't confirm" verdict a step with no reaction evidence at all
+        // gets -- never a false `fail`, which would wrongly imply the route
+        // itself is chemically broken.
+        let fixture = r#"{
+            "target": "CC(=O)Oc1ccccc1C(=O)O",
+            "routes": [{
+                "steps": [{
+                    "rule": "ester_cleavage",
+                    "target": "CC(=O)Oc1ccccc1C(=O)O",
+                    "precursors": ["C", "O"],
+                    "template_id": "rule:ester_cleavage"
+                }],
+                "building_blocks": ["C", "O"]
+            }]
+        }"#;
+        let rules: Vec<RetroRule> = Vec::new();
+        let report = build_audit_route_report(fixture, "renkin", None, &rules).expect("audits");
+        assert_eq!(
+            report.routes[0].steps[0].forward_validation.status,
+            crate::bridge::audit::CheckStatus::NotEvaluable,
+            "{:?}",
+            report.routes[0].steps[0].forward_validation
+        );
+    }
+
+    #[test]
     fn synplanner_detection_requires_every_key_to_parse_as_an_integer() {
         let mixed_keys = r#"{"1": {"type": "mol", "smiles": "CCO", "in_stock": true}, "route_a": {"type": "mol", "smiles": "CCO", "in_stock": true}}"#;
         let value: serde_json::Value = serde_json::from_str(mixed_keys).unwrap();

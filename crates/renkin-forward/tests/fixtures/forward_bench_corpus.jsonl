@@ -1,0 +1,14 @@
+{"schema_version": 1, "reaction_id": "hit-top1-ester-formation", "reactants": ["Oc1ccccc1C(=O)O", "CCO"], "accepted_products": [["C(COc1ccccc1C(=O)O)O"]], "reaction_class": "ester_formation"}
+{"schema_version": 1, "reaction_id": "hit-top5-not-top1-amine-acylation", "reactants": ["CCN", "CC(=O)Cl"], "accepted_products": [["NCCCC(Cl)=O"]], "reaction_class": "amine_acylation"}
+
+not valid json at all -- exercises malformed_json accounting
+{"schema_version": 1, "reaction_id": "hit-top10-not-top5-phenol-acylation", "reactants": ["Nc1ccc(O)cc1", "CC(=O)Cl"], "accepted_products": [["c1c(NC(C)Cl)ccc(c1)O"]], "reaction_class": "phenol_acylation"}
+{"schema_version": 1, "reaction_id": "hit-beyond-10-diacylation", "reactants": ["Nc1cc(O)ccc1C(=O)O", "CC(=O)Cl"], "accepted_products": [["c1cc(O)(C(=O)C)cc(c1C(O)=O)N"]], "reaction_class": "diacylation"}
+{"schema_version": 1, "reaction_id": "stereochemistry-hit-top10", "reactants": ["C[C@H](N)C(=O)O", "CCO"], "accepted_products": [["C([C@H](C(=O)O)N)OCC"]], "reaction_class": "ester_formation"}
+{"schema_version": 1, "reaction_id": "stereo-mismatch-diagnostic", "reactants": ["C[C@H](N)C(=O)O", "CCO"], "accepted_products": [["C([C@@H](C(=O)O)N)OCC"]], "reaction_class": "ester_formation"}
+{"schema_version": 1, "reaction_id": "correct-absent-nonempty-pool", "reactants": ["CC(=O)Cl", "CCO"], "accepted_products": [["CCCCCC"]], "reaction_class": "ester_formation"}
+{"schema_version": 1, "reaction_id": "correct-absent-empty-pool-suzuki", "reactants": ["c1ccc(Br)cc1", "OB(O)c1ccccc1"], "accepted_products": [["c1ccc(-c2ccccc2)cc1"]], "reaction_class": "suzuki_coupling"}
+{"schema_version": 1, "reaction_id": "single-reactant-no-match", "reactants": ["CCO"], "accepted_products": [["CC=O"]], "reaction_class": "oxidation"}
+{"schema_version": 1, "reaction_id": "input-invalid-bad-smiles", "reactants": ["not_a_valid_smiles((("], "accepted_products": [["CCO"]], "reaction_class": "ester_formation"}
+{"schema_version": 1, "reaction_id": "duplicate-of-hit-top1", "reactants": ["Oc1ccccc1C(=O)O", "CCO"], "accepted_products": [["C(COc1ccccc1C(=O)O)O"]], "reaction_class": "ester_formation", "group_key": "explicit-patent-family-1"}
+{"schema_version": 1, "reaction_id": "duplicate-of-hit-top1", "reactants": ["Oc1ccccc1C(=O)O", "CCO"], "accepted_products": [["C(COc1ccccc1C(=O)O)O"]], "reaction_class": "ester_formation", "group_key": "explicit-patent-family-1"}

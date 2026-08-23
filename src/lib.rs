@@ -15,6 +15,7 @@ pub mod ring_context;
 pub mod score;
 pub mod scorer;
 pub mod search;
+pub mod spectator_bond;
 pub mod synthesizability;
 pub mod validation;
 

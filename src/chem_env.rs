@@ -5005,6 +5005,84 @@ mod chematic_regression {
             None
         );
     }
+
+    #[test]
+    fn extracted_824_oxazolidinone_is_genuine_template_error() {
+        // Finding #4 pilot (2026-08-23), Invalid+balanced step, target
+        // O=C2NCC(O2)Cc1ccccc1 (5-benzyl-1,3-oxazolidin-2-one). SMIRKS'
+        // reactant pattern is a plain acyclic carbamate: C5-O6-C3(=O4)-N2H-C1,
+        // with no ring-membership or connectivity constraint tying [C:1] and
+        // [C:5] together. When it matches this target, [C:1] and [C:5] are
+        // mapped to the ring's C4/C5 atoms -- which the target *also* bonds
+        // directly to each other (the ring's C4-C5 bond) outside the matched
+        // substructure entirely. The RHS's two-fragment split
+        // ([C:1]-N=C=O . [C:5]-OH) has no way to express "these two atoms
+        // stay tethered" -- it silently drops the C4-C5 bond that made this
+        // a ring in the first place, same ring-tether-blindness failure
+        // class already confirmed for extracted_112 (genuine_template_error,
+        // PR #180). Root cause of the resulting Invalid step: the retro
+        // step claims methyl isocyanate + 2-phenylethanol as separate,
+        // untethered precursors, but a real synthesis of this oxazolidinone
+        // needs an amino-alcohol (e.g. phenylalaninol-like) reacting with an
+        // *unsubstituted* one-carbon carbonyl-transfer reagent (phosgene,
+        // CDI, HNCO) -- not a fully alkylated isocyanate paired with an
+        // unrelated free alcohol.
+        let target = "O=C2NCC(O2)Cc1ccccc1";
+        let precursors = ["C(=NC)=O".to_string(), "OCCc1ccccc1".to_string()];
+        let smirks = "[C:5]-[O:6]-[C:3](=[O:4])-[NH:2]-[C:1]>>[C:1]-[N:2]=[C:3]=[O:4].[C:5]-[OH:6]";
+        let rule = rr("extracted_824", smirks);
+        let target_mol = mol_from_smiles(target).unwrap();
+        let target_canon = to_canonical(&target_mol);
+
+        // apply_retro reproduces the exact wrong disconnection fresh, from
+        // the real target -- confirms this isn't a harness-only artifact.
+        let retro_outcomes = apply_retro(&target_mol, &rule);
+        let retro_smiles: Vec<Vec<String>> = retro_outcomes
+            .iter()
+            .map(|outcome| outcome.iter().map(|p| to_canonical(&p.mol)).collect())
+            .collect();
+        let expected_precursors: Vec<String> = precursors
+            .iter()
+            .map(|s| to_canonical(&mol_from_smiles(s).unwrap()))
+            .collect();
+        assert!(
+            retro_smiles.iter().any(|outcome| outcome
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                == expected_precursors.iter().collect()),
+            "apply_retro must still reproduce this exact wrong disconnection: {retro_smiles:?}"
+        );
+
+        // Forward replay of the declared precursors: the only possible
+        // product is the plain open-chain N-methyl carbamate ester -- never
+        // the fused-ring target, which would require the alcohol and amine
+        // to already be tethered in one molecule before ring closure.
+        let reactant_mols: Vec<Molecule> = precursors
+            .iter()
+            .map(|s| mol_from_smiles(s).unwrap())
+            .collect();
+        let reactant_refs: Vec<&Molecule> = reactant_mols.iter().collect();
+        let (lhs, rhs) = smirks.split_once(">>").unwrap();
+        let fwd = format!("{rhs}>>{lhs}");
+        let products: std::collections::BTreeSet<String> = run_reactants(&fwd, &reactant_refs)
+            .unwrap()
+            .into_iter()
+            .flatten()
+            .map(|m| to_canonical(&m))
+            .collect();
+        assert_eq!(
+            products,
+            std::collections::BTreeSet::from(["O=C(OCCc1ccccc1)NC".to_string()]),
+            "expected exactly the single open-chain N-methyl carbamate ester: {products:?}"
+        );
+        assert!(
+            !products.contains(&target_canon),
+            "methyl isocyanate + 2-phenylethanol as two separate, untethered molecules must \
+             never be able to forward-produce the fused-ring target -- if this starts passing, \
+             the underlying chematic/apply_retro fragment-tether-tracking behavior changed and \
+             this classification needs re-checking, not just the assertion updated: {products:?}"
+        );
+    }
 }
 
 // ── Phase 15: tetrahedral @/@@ full integration ──────────────────────────────

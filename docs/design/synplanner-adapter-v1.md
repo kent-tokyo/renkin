@@ -159,29 +159,42 @@ routes), this detection signal would need revisiting against that real
 shape before Phase 1 PR2 ships. Recorded as an explicit open item in §7,
 not silently assumed resolved.
 
+**Resolved/upgraded in Phase 1 PR1.5 (§7, item 1)**: this heuristic checks
+out against real search output too, but a *better* signal exists — the
+real `--export_routes` artifact (`manifest.json` + `results.json.gz`) is
+an explicitly versioned public contract whose manifest directly declares
+`directives.adapter == "synplanner"`. PR2 should prefer that signal when
+a manifest is available and keep this section's structural heuristic only
+as the fallback for a bare `RouteNode`/`mapped_routes_N.json`-style input
+with no accompanying manifest.
+
 ### 3.3 Stock / gap survey
 
-- **Atom mapping**: confirmed absent as a *dedicated* schema field (§2) —
-  but **not** confirmed absent from the data. This round's real fixtures
-  show the reaction `smiles` string itself does carry atom maps
-  (`format(rxn, "m")`'s output, per §2), which would pass `forward.rs`'s
-  existing `has_atom_mapping` scan and proceed to actual replay — the
-  opposite of `not_evaluable: MissingAtomMapping`. Whether that holds for
-  *real planning* output (not this round's hand-constructed `chython`
-  objects) is unconfirmed and is the single most consequential open
-  question for Phase 1 PR2 (§7, item 2): if it holds, SynPlanner routes
-  are genuinely forward-evaluable, unlike AiZynthFinder/Syntheseus. No new
-  forward-validation code is needed either way — `forward.rs`'s existing
-  machinery already handles both outcomes honestly.
+- **Atom mapping**: confirmed absent as a *dedicated* schema field (§2),
+  but the reaction `smiles` string itself does carry atom maps. **Resolved
+  in Phase 1 PR1.5 (§7, item 2)**: confirmed against a real 167-route MCTS
+  search, not just hand-constructed fixtures — real planning output's
+  atom maps are structurally valid (no duplicates/orphans across 317
+  reactions), cross-step consistent (150/150 byte-identical), and
+  forward-replayable (RDKit-verified on 3 representative reactions).
+  `forward.rs`'s `has_atom_mapping` gate passes every one of them — no new
+  forward-validation code needed, and SynPlanner routes are genuinely
+  forward-evaluable for the preset/target tested, unlike the
+  `not_evaluable` outcome AiZynthFinder/Syntheseus always get.
 - **Stock**: same three-valued pattern as AiZynthFinder (`Option<bool>`
   on parse), even though real-path evidence suggests it's always
-  populated (§2) — RENKIN's own `--stock` file cross-check
-  (`validate_stock_leaves`) stays completely independent of SynPlanner's
-  own claim either way, matching the existing "tool's claim is structural
-  input only, never trusted as verification" pattern.
+  populated (§2, reconfirmed at 167-route scale in PR1.5) — RENKIN's own
+  `--stock` file cross-check (`validate_stock_leaves`) stays completely
+  independent of SynPlanner's own claim either way, matching the existing
+  "tool's claim is structural input only, never trusted as verification"
+  pattern. See §7 item 6 for the resolved parse-type decision.
 - **Rule provenance** (`rule_id`/`rule_source`/`rule_key`): genuinely new
-  information type, no existing RENKIN concept to map onto. Open question
-  for Phase 1 PR2 (§7) — extend `ReactionEvidence`, or drop.
+  information type, no existing RENKIN concept to map onto. **Resolved
+  (§7, item 3)**: a SynPlanner-specific typed optional struct
+  (`SynPlannerRuleProvenance`), not consumed by any finding/status logic
+  in PR2, not generalized into a shared cross-adapter schema. PR1.5 also
+  found real standard CLI usage never populates these fields at all (no
+  `route_metadata` argument is ever passed by the shipped CLI).
 
 ## 4. Fixtures generated this round
 
@@ -208,6 +221,22 @@ not silently assumed resolved.
   this round) and a genuine `in_stock: null` case (per §2's finding, this
   real code path appears structurally incapable of producing one — not
   faked to fill a checklist).
+
+**Phase 1 PR1.5 (2026-08-23) added real-MCTS-planning fixtures**, closing
+the "not attempted" gap above:
+- `real_planning_route_1step.json` / `real_planning_route_2step.json` —
+  two real routes (aspirin, `synplanner-gps` preset), sliced verbatim from
+  a genuine 167-route CPU-only MCTS search, run through the real
+  `synplan planning` CLI end-to-end (not a hand-built `routes_dict`).
+- `real_planning_export.manifest.json` / `real_planning_export.results.json`
+  — the same two routes re-wrapped in the real `--export_routes` "public
+  contract" shape, demonstrating the `directives.adapter == "synplanner"`
+  detection signal (§3.2, §7 item 1).
+- Full provenance, the atom-mapping audit methodology/results, and the
+  RDKit forward-replay check: `real_planning_route.PROVENANCE.md`.
+- Properties asserted directly against these fixtures (no SynPlanner/torch
+  install required to run) by
+  `scripts/tests/test_synplanner_real_route_fixture.py`.
 
 ## 5. What Phase 1 PR2+ look like
 
@@ -260,6 +289,29 @@ Not started this round. Concretely, when authorized:
    re-verification against a real MCTS-searched route's actual top-level
    JSON shape (which itself requires the model-download step this round
    explicitly deferred) before PR2 ships the detection code as final.
+
+   **Resolved in Phase 1 PR1.5 (2026-08-23)**: confirmed against a real
+   167-route MCTS search (aspirin, `synplanner-gps` preset, CPU-only —
+   see `tests/fixtures/synplanner/v1.6.0/real_planning_route.PROVENANCE.md`).
+   The internal `write_routes_json` top-level shape (`{route_id:
+   RouteNode}`) matches Phase 0's hand-built-fixture finding exactly.
+   **But a better, previously-unknown signal exists**: running the real
+   CLI with `--export_routes` produces a *separate*, explicitly versioned
+   "public route-export contract" (`manifest.json` +
+   `results.json.gz`, `ROUTE_EXPORT_SCHEMA_VERSION = "synplan-routes/1"`
+   in `synplan/mcts/search.py`) whose manifest carries
+   `directives.adapter == "synplanner"` — an unambiguous, first-class
+   detection signal, strictly better than the structural heuristic §3.2
+   proposed. **Recommendation for PR2**: prefer sniffing for a
+   `manifest.json`+`results.json.gz` (or an already-decompressed
+   equivalent) pair with that directive when available, and keep §3.2's
+   structural heuristic only as the fallback for the bare `RouteNode`
+   shape (e.g. a single `mapped_routes_N.json` handed to RENKIN directly,
+   without its manifest). §3.2's original heuristic itself checks out
+   against real output too — not superseded, just not the best available
+   signal. See `real_planning_export.manifest.json` /
+   `real_planning_export.results.json` fixtures.
+
 2. **Does the exported reaction `smiles` field reliably retain atom maps
    from a real planning run**, the way it did in this round's
    hand-constructed fixtures (`format(rxn, "m")`)? Not confirmed against
@@ -267,6 +319,29 @@ Not started this round. Concretely, when authorized:
    forward-evaluable (unlike AiZynthFinder/Syntheseus) — a materially
    different outcome worth re-checking before assuming `not_evaluable` is
    the final answer for every SynPlanner step.
+
+   **Resolved in Phase 1 PR1.5 (2026-08-23)**: yes, confirmed with real
+   evidence, not just re-asserted. Across all 317 real reaction nodes in
+   the 167-route real search: 100% carry non-empty atom mapping, 0 have
+   duplicate map numbers on either side, 0 have orphan product-side map
+   numbers, and — despite `route_cgr.py`'s own docstring describing the
+   default export path as using non-reconciled "per-step-local"
+   numbering — 100% (150/150) of real cross-step boundaries carry
+   byte-identical mapped SMILES between a step's product and the next
+   step's reactant. Forward-replay was tested directly with RDKit
+   (`ReactionFromSmarts` + `RunReactants`, independent of RENKIN's Rust
+   code) on 3 representative reactions and reproduced the target exactly
+   in every case. **Category A** per this round's own classification:
+   real planning reactions have valid, usable atom maps and are genuinely
+   forward-evaluable — for this preset/target/config. RENKIN's existing
+   `has_atom_mapping` gate would pass all 317 reactions unchanged, no new
+   forward-validation logic needed. Scope caveat: one target (aspirin),
+   one preset (`synplanner-gps`), `--reconcile-mapping` not exercised —
+   not yet a claim about every preset/target/flag combination. Full
+   detail and the audit numbers: `real_planning_route.PROVENANCE.md`;
+   the same properties are asserted directly against the committed
+   fixtures by `scripts/tests/test_synplanner_real_route_fixture.py`.
+
 3. **`ReactionEvidence` extension for rule provenance**
    (`rule_id`/`rule_source`/`rule_key`): extend the shared enum (usable by
    any future adapter with similar data), or keep it SynPlanner-specific,
@@ -274,14 +349,56 @@ Not started this round. Concretely, when authorized:
    doesn't currently have any finding that would consume rule provenance)?
    Not resolved this round — a real design decision, not an implementation
    detail.
+
+   **Resolved (design decision, 2026-08-23)**: keep it SynPlanner-specific,
+   as a typed optional struct, not a shared-enum extension:
+   ```rust
+   struct SynPlannerRuleProvenance {
+       rule_id: Option<String>,
+       rule_source: Option<String>,
+       rule_key: Option<String>,
+   }
+   ```
+   Not consumed by any finding or status determination in PR2 — carried
+   for forward-compatible provenance only. Generalizing to a
+   cross-adapter provenance schema (usable by AiZynthFinder/Syntheseus
+   too) is deferred to a separate future design, not attempted in PR2.
+   Note also (§2/PROVENANCE.md, PR1.5): real standard `synplan planning`
+   CLI usage never populates these fields at all (no `route_metadata` is
+   ever passed by the shipped CLI) — so `SynPlannerRuleProvenance` will be
+   `None`/absent for real CLI-produced routes today, and only populated
+   when a caller of SynPlanner's Python API explicitly supplies
+   `route_metadata` itself.
+
 4. **`meta`/`step_id`/`tree_node_id` treatment**: opaque pass-through bag,
    or dropped entirely? Leaning toward "keep as opaque, never interpreted"
    per this codebase's existing forward-compatibility convention, but not
    finalized.
+
+   **Resolved (design decision, 2026-08-23)**: read-and-discard, not
+   carried anywhere in the audit report. Concretely for PR2: unknown
+   fields on a `RouteNode` object must be *accepted* (parsing must not
+   fail on their presence), but `meta`/`step_id`/`tree_node_id` are never
+   copied into the report as opaque JSON, and `step_id`/`tree_node_id`
+   must never be confused with or substituted for RENKIN's own internal
+   node identifiers. If a real, concrete need for one of these surfaces
+   later, add it additively then — forward compatibility here means "an
+   unknown field never breaks parsing," not "every field is preserved."
+
 5. **Route-ID provenance**: thread the top-level `route_id` key through as
    an opaque string on `AuditReport`, or discard it? No existing RENKIN
    concept for "the source tool's own route identifier" — worth checking
    whether AiZynthFinder/Syntheseus adapters have quietly wanted this too.
+
+   **Resolved (design decision, 2026-08-23)**: use it only as parse-time
+   defect context in PR2 (e.g. naming which route a parse failure came
+   from in an error message) — do **not** add it to `AuditReport`'s
+   public schema yet. Source-tool route-ID provenance isn't a
+   SynPlanner-specific problem (AiZynthFinder/Syntheseus routes have the
+   same shape of question), so it will be addressed later as one shared
+   `source_route_id`-style design covering every adapter, not designed
+   piecemeal inside the SynPlanner adapter.
+
 6. **`in_stock` optionality**: §2/§3.3 found the real export path always
    populates it, but the adapter's parse-time type should still be
    `Option<bool>` defensively. Confirm this doesn't create a dead code
@@ -289,3 +406,17 @@ Not started this round. Concretely, when authorized:
    for SynPlanner — if so, is a synthetic test case (mirroring
    AiZynthFinder's explicitly-labeled non-real Fixture C) warranted for
    PR2's own test suite?
+
+   **Resolved (design decision, 2026-08-23; reconfirmed against real
+   output in PR1.5)**: parse type stays `Option<bool>` as planned —
+   `Some(true)` = source planner claims a stock leaf, `Some(false)` = not
+   stock, `None` = `AmbiguousLeafStatus`, entirely independent of
+   RENKIN's own `--stock` file cross-check either way (the tool's claim
+   is structural input only, never trusted as verification — the existing
+   pattern for every adapter). PR1.5 reconfirmed at 167-route scale that
+   the real exporter never actually produces `None` in practice. A
+   synthetic (missing-field) negative test case is permitted for PR2's
+   own test suite to exercise the `None` branch, provided it is clearly
+   and explicitly labeled as *not* real SynPlanner output (mirroring
+   AiZynthFinder's Fixture C convention) — not added this round, since
+   there is no `Option<bool>` parser yet to test it against.

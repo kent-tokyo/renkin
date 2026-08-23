@@ -486,6 +486,28 @@ pub struct CrowdOutDiagnostics {
     /// read as a logical-template count (already-expanded variants are
     /// separate `RetroRule` entries in `rules`, same as `matched_templates`).
     pub rules_attempted_total: u64,
+    /// Cumulative wall-clock microseconds spent inside the retro-cache-miss
+    /// expansion block (rule matching/candidate generation via
+    /// `candidate::raw_propose`, plus its NN-reranking and dedup-counting
+    /// overhead) -- i.e. the same "unique intermediates only" population as
+    /// [`Self::rules_attempted_total`], but timed instead of counted.
+    /// Diagnostic instrument for Issue #128 (search dramatically slower
+    /// per-node than the Phase 31 baseline, root cause unconfirmed): that
+    /// issue's own bisection plan needed a wall-clock-noise-resistant signal
+    /// -- comparing two full runs' total elapsed time on a shared,
+    /// non-dedicated machine was already tried and found too noisy to
+    /// isolate a cause (see the issue's own comment). This field instead
+    /// answers "what fraction of one run's own total time is spent in
+    /// rule-matching/candidate-generation" from a *single* run, which
+    /// doesn't depend on comparing absolute durations across runs. `0`
+    /// unless [`SearchConfig::timing_diagnostics`] is `true` -- see that
+    /// field's own doc for why this one specific field must stay opt-in
+    /// (wall-clock timing is inherently non-deterministic, unlike every
+    /// other field here). Also always `0` on `wasm32` regardless of that
+    /// flag (`std::time::Instant::now()` is unavailable there, matching
+    /// this function's own existing `#[cfg(not(target_arch = "wasm32"))]`
+    /// `t0`/`nodes_popped` timing, which has the same restriction).
+    pub retro_expansion_wall_time_us: u64,
     /// Same-parent proposals from *different* templates whose precursor
     /// SMILES multiset (sorted) is identical -- these push distinct heap
     /// nodes that would collapse to the same downstream synthesis state.
@@ -1292,6 +1314,22 @@ pub struct SearchConfig {
     /// read "ordering-only" as "identical search tree regardless of beam
     /// width," which it isn't and was never meant to be.
     pub reranker: Option<std::sync::Arc<dyn crate::candidate::CandidateReranker>>,
+    /// Issue #128 diagnostic instrument: when `true`, accumulate
+    /// [`CrowdOutDiagnostics::retro_expansion_wall_time_us`] on every
+    /// retro-cache-miss expansion. `false` (the default) leaves that field
+    /// at `0` -- wall-clock timing is inherently non-deterministic across
+    /// repeated runs (unlike every other `CrowdOutDiagnostics` field, which
+    /// is a pure count), so it must stay opt-in: `crowd_out_diagnostics_
+    /// are_deterministic_across_repeated_runs` and
+    /// `wrapper_matches_unlimited_control_exactly` both assert
+    /// byte-identical `CrowdOutDiagnostics` JSON for identical inputs, and
+    /// neither opts in, so both stay unaffected. Offline diagnostic use
+    /// only (no CLI flag yet -- construct `SearchConfig` directly); never
+    /// changes which candidates are expanded, scored, kept, or in what
+    /// order. No-op on `wasm32` (`std::time::Instant::now()` is
+    /// unavailable there) -- the field stays `0` regardless of this flag on
+    /// that target.
+    pub timing_diagnostics: bool,
 }
 
 impl Default for SearchConfig {
@@ -1313,6 +1351,7 @@ impl Default for SearchConfig {
             ring_context: crate::ring_context::RingContextConfig::Disabled,
             candidate_trace_cap: None,
             reranker: None,
+            timing_diagnostics: false,
         }
     }
 }
@@ -1667,6 +1706,8 @@ pub fn find_routes_with_control(
             Arc::clone(cached) // O(1): pointer copy only, no Vec clone
         } else {
             retro_cache_misses += 1;
+            #[cfg(not(target_arch = "wasm32"))]
+            let expansion_t0 = config.timing_diagnostics.then(std::time::Instant::now);
             // Bond-center retrieval: filter ranked_rules to those relevant to this molecule's bonds.
             // Else, per-node NN ranking (Phase D) — scored fresh against THIS intermediate,
             // not the root; this whole branch only runs once per unique canonical
@@ -1812,6 +1853,10 @@ pub fn find_routes_with_control(
 
             let arc = Arc::new(entries);
             retro_cache.insert(target_smi.clone(), Arc::clone(&arc));
+            #[cfg(not(target_arch = "wasm32"))]
+            if let Some(t0) = expansion_t0 {
+                crowd_out.retro_expansion_wall_time_us += t0.elapsed().as_micros() as u64;
+            }
             arc // no extra clone: Arc move
         };
 
@@ -2569,6 +2614,43 @@ mod tests {
         assert_eq!(
             j1, j2,
             "identical inputs must yield byte-identical diagnostics"
+        );
+    }
+
+    #[test]
+    fn timing_diagnostics_defaults_to_zero() {
+        let env = aspirin_env();
+        let rules = default_rules();
+        let (_, stats) =
+            find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg(3)).expect("search runs");
+        assert_eq!(
+            stats.crowd_out.retro_expansion_wall_time_us, 0,
+            "must stay 0 -- and therefore deterministic across repeated runs -- unless \
+             SearchConfig::timing_diagnostics is explicitly opted into"
+        );
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn timing_diagnostics_opt_in_records_real_time() {
+        let env = aspirin_env();
+        let rules = default_rules();
+        let cfg_timed = SearchConfig {
+            timing_diagnostics: true,
+            ..cfg(3)
+        };
+        let (_, stats) =
+            find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg_timed).expect("search runs");
+        assert!(
+            stats.retro_cache_misses > 0,
+            "sanity check: this target must produce at least one retro-cache-miss \
+             expansion for this test to be meaningful"
+        );
+        assert!(
+            stats.crowd_out.retro_expansion_wall_time_us > 0,
+            "opted into timing_diagnostics with a real cache-miss expansion, so real \
+             elapsed time must have been recorded: {:?}",
+            stats.crowd_out
         );
     }
 

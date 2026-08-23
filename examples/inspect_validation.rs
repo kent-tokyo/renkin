@@ -4,11 +4,30 @@
 //! classified as real chemistry errors vs. validator false-negatives instead
 //! of only ever seeing the route-level rollup. Not part of any measured
 //! binary — reads targets from stdin, one SMILES per line.
+//!
+//! Optional `INSPECT_VALIDATION_TIMEOUT_SECS` env var (unset = unlimited,
+//! the original/default behavior): per-target cooperative-cancellation
+//! deadline (`SearchControl::with_timeout`), added for Finding #4's
+//! rule-stratified sample after Issue #128's root cause (chematic's
+//! canonical_smiles combinatorial cost on locally-symmetric molecules --
+//! Boc/tBu/pivaloyl groups, rings, cages) confirmed that per-target latency
+//! in a real USPTO-50k-shaped sample is not predictable up front: a small,
+//! not-reliably-identifiable-in-advance minority of targets can run for
+//! several minutes. A hard OS-level `timeout` wrapper was already found
+//! unreliable against this exact codebase (didn't actually kill the process
+//! at the requested mark on one prior attempt) -- this native, cooperative
+//! deadline is checked at the search loop's own existing checkpoints
+//! instead, same mechanism `find_routes_with_control`'s own doc comment
+//! documents as a *soft* bound (worst-case overshoot is bounded by the
+//! slowest single stretch of synchronous work between two checkpoints, not
+//! a hard real-time guarantee) -- adequate here since the goal is bounding
+//! a *batch's* total wall-clock, not any one target's exactly.
 use renkin::chem_env::{ChemEnv, default_rules, load_rules_from_file};
-use renkin::search::{SearchConfig, find_routes};
+use renkin::search::{SearchConfig, SearchControl, SearchTermination, find_routes_with_control};
 use renkin::validation::atom_conservation::step_balanced;
 use renkin::validation::validate_route_steps;
 use std::io::Read;
+use std::time::Duration;
 
 fn main() {
     let env = ChemEnv::load("data/building_blocks.smi").expect("load building blocks");
@@ -22,6 +41,12 @@ fn main() {
         ..Default::default()
     };
 
+    let control = std::env::var("INSPECT_VALIDATION_TIMEOUT_SECS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .map(|secs| SearchControl::with_timeout(Duration::from_secs(secs)))
+        .unwrap_or_else(SearchControl::unlimited);
+
     let mut input = String::new();
     std::io::stdin().read_to_string(&mut input).unwrap();
 
@@ -30,12 +55,16 @@ fn main() {
         if smiles.is_empty() || smiles.starts_with('#') {
             continue;
         }
-        let Ok((routes, _stats)) = find_routes(smiles, &env, &rules, &config) else {
+        let Ok(result) = find_routes_with_control(smiles, &env, &rules, &config, &control) else {
             println!("{smiles}\tERROR");
             continue;
         };
-        let Some(route) = routes.first() else {
-            println!("{smiles}\tUNSOLVED");
+        let Some(route) = result.routes.first() else {
+            let status = match result.termination {
+                SearchTermination::Completed => "UNSOLVED",
+                SearchTermination::DeadlineExceeded => "TIMEOUT",
+            };
+            println!("{smiles}\t{status}");
             continue;
         };
         let (statuses, route_status) = validate_route_steps(&route.steps, &rules);

@@ -4830,6 +4830,125 @@ mod chematic_regression {
     // reach forward_validation: pass via self-audit. See that function's
     // own doc comment for the full mechanism.
 
+    /// Frozen fixture, `extracted_112` on `c2ccc1CCC(c1c2)=O` (1-indanone)
+    /// <- `C(C(=O)Cl)C.c1ccc(C)cc1` (propionyl chloride + toluene): a
+    /// second individually-investigated step from Finding #4's pilot
+    /// (`docs/validation/finding4-validator-pilot-2026-08-23.md`), per
+    /// that doc's own protocol -- not by re-running search.
+    ///
+    /// Classified as **`genuine_template_error`**, more serious than the
+    /// `co_aliphatic_cleavage` case
+    /// (`co_aliphatic_cleavage_piperidinyl_carbamate_is_source_step_underspecified`
+    /// in `validation::forward`'s tests): there the *connectivity* was
+    /// right and only stereochemistry was unverifiable. Here the
+    /// connectivity itself is wrong.
+    ///
+    /// `extracted_112`'s own SMIRKS
+    /// (`[C:2]-[C:1](=[O:3])-[c:5](:[c:4]):[c:6]>>Cl-[C:1](-[C:2])=[O:3].[c:4]:[cH:5]:[c:6]`)
+    /// is a completely standard, real retro-Friedel-Crafts-acylation
+    /// template (Ar-C(=O)R -> ArH + Cl-C(=O)R), correct as a general
+    /// *intermolecular* transform. 1-indanone's ketone carbon and its
+    /// aromatic ring are not just "nearby" -- the ring is the SAME ring
+    /// the ketone's own alkyl tail (via the fused 5-membered ring) loops
+    /// back onto, making the real disconnection intramolecular (the real
+    /// synthesis: 3-arylpropionic acid/chloride cyclizes onto its own
+    /// tethered phenyl ring). The template's LHS only examines the
+    /// immediate reaction-center neighborhood (the acyl carbon, its two
+    /// substituents, and the three explicitly-matched ring atoms) and has
+    /// no way to notice that the "two separate RHS fragments" it declares
+    /// are, in THIS specific target, still connected to each other via
+    /// the tether atoms outside that match.
+    ///
+    /// Both directions confirm this empirically, not just structurally:
+    /// - `apply_retro` on the real target reproduces the exact same wrong
+    ///   disconnection fresh (not a one-off harness artifact) --
+    ///   `["C(C(=O)Cl)C", "c1ccc(C)cc1"]`, the fixture's own precursors.
+    /// - Forward-replaying those precursors through the reversed SMIRKS
+    ///   is exhaustive (chematic tries the acylation at every one of
+    ///   toluene's aromatic C-H positions) and produces exactly 3 distinct
+    ///   products -- the ortho/meta/para propiophenone regioisomers --
+    ///   **none of which is or can be 1-indanone**: toluene and propionyl
+    ///   chloride as two genuinely separate, untethered molecules can only
+    ///   ever combine into an open-chain aryl ketone, never a fused
+    ///   bicyclic ring system, regardless of which ring position reacts.
+    ///
+    /// The validator's `Invalid` verdict is correct, and correct for the
+    /// right reason: this declared step does not describe a real
+    /// reaction. Atom-balance still reports `true` for this step (already
+    /// confirmed by the pilot's own harness output) because
+    /// `atom_conservation`'s check is gross-formula/MW-based, not
+    /// connectivity-aware -- expected, not a separate bug; exactly why the
+    /// SMIRKS-reversal forward validator exists as a distinct check.
+    ///
+    /// Likely a general failure-class, not unique to this one template:
+    /// any two-fragment SMIRKS retro-template whose RHS declares two
+    /// independent products can silently produce this same
+    /// intramolecular-modeled-as-intermolecular error whenever the target
+    /// happens to have those two "fragments" tethered together elsewhere
+    /// (any other ring-forming disconnection matched by a template learned
+    /// from intermolecular training examples). Not investigated further
+    /// here -- filing as a general issue is a separate, explicitly
+    /// authorized step, not implied by this fixture.
+    #[test]
+    fn extracted_112_indanone_is_genuine_template_error() {
+        let target = "c2ccc1CCC(c1c2)=O";
+        let precursors = ["C(C(=O)Cl)C".to_string(), "c1ccc(C)cc1".to_string()];
+        let smirks =
+            "[C:2]-[C:1](=[O:3])-[c:5](:[c:4]):[c:6]>>Cl-[C:1](-[C:2])=[O:3].[c:4]:[cH:5]:[c:6]";
+        let rule = rr("extracted_112", smirks);
+        let target_mol = mol_from_smiles(target).unwrap();
+        let target_canon = to_canonical(&target_mol);
+
+        // apply_retro reproduces the exact wrong disconnection fresh, from
+        // the real target -- confirms this isn't a harness-only artifact.
+        let retro_outcomes = apply_retro(&target_mol, &rule);
+        let retro_smiles: Vec<Vec<String>> = retro_outcomes
+            .iter()
+            .map(|outcome| outcome.iter().map(|p| to_canonical(&p.mol)).collect())
+            .collect();
+        let expected_precursors: Vec<String> = precursors
+            .iter()
+            .map(|s| to_canonical(&mol_from_smiles(s).unwrap()))
+            .collect();
+        assert!(
+            retro_smiles.iter().any(|outcome| outcome
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                == expected_precursors.iter().collect()),
+            "apply_retro must still reproduce this exact wrong disconnection: {retro_smiles:?}"
+        );
+
+        // Exhaustive forward replay of the declared precursors: every
+        // possible product is a plain open-chain propiophenone
+        // regioisomer, none of which is (or topologically can be) the
+        // fused-ring target.
+        let reactant_mols: Vec<Molecule> = precursors
+            .iter()
+            .map(|s| mol_from_smiles(s).unwrap())
+            .collect();
+        let reactant_refs: Vec<&Molecule> = reactant_mols.iter().collect();
+        let (lhs, rhs) = smirks.split_once(">>").unwrap();
+        let fwd = format!("{rhs}>>{lhs}");
+        let products: std::collections::BTreeSet<String> = run_reactants(&fwd, &reactant_refs)
+            .unwrap()
+            .into_iter()
+            .flatten()
+            .map(|m| to_canonical(&m))
+            .collect();
+        assert_eq!(
+            products.len(),
+            3,
+            "expected exactly the 3 open-chain ortho/meta/para regioisomers: {products:?}"
+        );
+        assert!(
+            !products.contains(&target_canon),
+            "toluene + propionyl chloride as two separate molecules must never be able to \
+             forward-produce the fused-ring target -- if this starts passing, the underlying \
+             chematic/apply_retro fragment-tether-tracking behavior changed and this \
+             classification needs re-checking, not just the assertion updated: {products:?}"
+        );
+    }
+
     #[test]
     fn declared_forward_smirks_none_for_smirks_based_rule() {
         // co_aliphatic_cleavage already has a real smirks -- this function

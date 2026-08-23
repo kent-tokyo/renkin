@@ -1,7 +1,8 @@
 # Retro-Rule Precision & Coverage Gaps — Design Doc
 
-Status: **Findings #1/#2 fixed and merged (PR #171, 2026-08-23). Findings
-#3/#4/#5 still open.** These are external, hands-on findings surfaced
+Status: **Findings #1/#2/#5 fixed and merged (PR #171, #172, and the
+forward-SMIRKS-evidence fix, all 2026-08-23). Findings #3/#4 still open.**
+These are external, hands-on findings surfaced
 while writing a public "tried it" article comparing RENKIN against
 AiZynthFinder (`find_routes` and `audit_route` run against
 v0.31.0–v0.34.0; behavior confirmed unchanged across all four). Two were
@@ -135,9 +136,60 @@ cheap to audit (grep every `rr(...)` call for a SMIRKS pattern with no
 compensating negative-match constraint) and directly explains part of the
 0.88% number rather than requiring new measurement infrastructure.
 
-## 5. `find_routes()`'s own output can't be forward-validated by `audit_route()`
+## 5. `find_routes()`'s own output can't be forward-validated by `audit_route()` (FIXED, 2026-08-23)
 
-**Repro:** `find_routes(target=aspirin, ...)` piped straight into
+**Fix shipped**: option (b) from this section's own original writeup --
+`chem_env::declared_forward_smirks(rule_name, target_smiles,
+precursor_smiles)` re-runs the named graph-based rule's *existing,
+unmodified* cleavage function against the target with fresh sequential
+`atom_map`s pre-assigned, matches the outcome against the step's own
+`(target, precursors)` by canonicalized-multiset comparison (canonicalizing
+the caller's precursor SMILES first -- an exact-string comparison against
+already-canonical input was the initial implementation and is not
+sufficient, see below), and formats a real atom-mapped
+`target>>precursors` SMIRKS from whichever outcome matches. Zero changes
+needed to any of the 8 graph-based rule functions themselves --
+`MoleculeBuilder`'s atom-map-preserving clone during fragment extraction
+carries the pre-assigned maps through for free. Called lazily inside
+`normalize_renkin_route`, stored as `ReactionEvidence::RenkinTemplate`'s new
+`declared_smirks: Option<String>` field (`None` for SMIRKS-based rules,
+unchanged behavior); `forward.rs`'s `declared_smirks` match arm prefers
+this inline field, falling back to the pre-existing `rules_by_template_id`
+lookup when absent. Never stored on `search::ReactionStep` or
+`find_routes`'s own JSON schema -- purely an audit-layer concern.
+
+Two bugs surfaced and fixed during implementation, both by real CLI
+end-to-end testing (aspirin, `renkin audit-route`), not just unit tests of
+`declared_forward_smirks` in isolation:
+- `bridge::audit_route.rs`'s `AuditRouteStepInput` (the hand-maintained
+  `Deserialize` view `renkin audit-route`/the WASM `audit_route` export
+  parse external route JSON into) never had a `rule` field at all --
+  `route_from_audit_input` hardcoded `rule: String::new()`, so every
+  step audited via that path (as opposed to a route built and audited
+  in-process) got an empty rule name and silently fell through to `None`,
+  even after `declared_forward_smirks` itself was correctly implemented.
+  Fixed by adding `#[serde(default)] rule: String` to the input struct.
+- `declared_forward_smirks` originally compared the caller's raw
+  precursor SMILES strings byte-for-byte against freshly recomputed
+  canonical strings -- worked by coincidence for routes `find_routes`
+  itself produces (already canonical), but silently returned `None` for
+  any equivalent-but-differently-written precursor SMILES (confirmed via
+  a hand-authored `renkin`-format fixture using non-canonical precursor
+  strings). Fixed by canonicalizing the input precursor SMILES before
+  comparing.
+
+Verified end-to-end: all 9 routes `find_routes` returns for aspirin
+(`CC(=O)Oc1ccccc1C(=O)O`, depth 2) now reach `forward_validation: pass`
+on every step, including every step whose rule is one of the 8
+graph-based default rules (`ester_cleavage`, `amide_cleavage`,
+`aryl_ether_retro`, `suzuki_retro`, `sulfonamide_retro`,
+`diaryl_sulfone_retro`, `boc_deprotection_retro`, `cbz_deprotection_retro`).
+Route `status` stays `partial` in this repro only because no `--stock`
+was supplied (`stock_validation: not_evaluable`) -- unrelated to this fix.
+
+**Original repro (below), preserved for context:**
+
+`find_routes(target=aspirin, ...)` piped straight into `find_routes(target=aspirin, ...)` piped straight into
 `audit_route(..., format="renkin")` → `forward_validation.status:
 not_evaluable`, `reason: missing_reaction_representation`, overall route
 `status: partial` even with a matching stock supplied. AiZynthFinder's
@@ -189,7 +241,8 @@ own #1/#2 fixes (converting `aryl_ether_retro` and effectively touching
 above) *widened* this gap by one rule, worth flagging explicitly rather
 than treated as a free side effect.
 
-**Not fixed here — needs a real design decision, not a small patch**:
+**(Historical — superseded by the "Fix shipped" note above.) Not fixed
+here — needs a real design decision, not a small patch**:
 unlike a SMIRKS-string rule, a graph-based rule has no positional
 template for `chematic::rxn::run_reactants` to reverse-apply; "forward
 replay" for these needs either (a) a per-rule forward-verification
@@ -215,11 +268,10 @@ Both directly reduce the "looks solved but isn't" surface area, which is
 what most visibly erodes trust when someone tries the tool by hand.
 
 **5 turned out NOT to be small** once actually investigated (see its own
-section above, updated after this doc's initial writing): it's a real
-~30%-of-default-rules gap (8/27 graph-based rules can never reach
-`forward_validation: pass` via self-audit) needing a genuine design
-decision on how graph-based rules produce forward-replay evidence —
-recorded as a P0 item in `ROADMAP.md` for a real design/implementation
-round, not something to patch in passing. 3 and 4 are bigger/
-already-tracked — this doc just adds independent repro evidence to
-existing issues rather than proposing new investigation threads.
+section above): it was a real ~30%-of-default-rules gap (8/27 graph-based
+rules could never reach `forward_validation: pass` via self-audit),
+needing a genuine design decision on how graph-based rules produce
+forward-replay evidence — now **fixed and verified end-to-end** (see the
+"Fix shipped" note in that section). 3 and 4 are bigger/already-tracked —
+this doc just adds independent repro evidence to existing issues rather
+than proposing new investigation threads.

@@ -31,9 +31,12 @@ use crate::search;
 /// design -- see `crate::bridge` module docs for why round-tripping through
 /// a purpose-built partial type is preferred over adding `Deserialize` to
 /// the search-output types themselves). Declares only the fields
-/// [`normalize_renkin_route`] actually reads; every other field in a real
-/// RENKIN JSON file (`score`, `confidence`, `atom_economy`, ...) is
-/// silently ignored by serde, not an error.
+/// [`normalize_renkin_route`] actually reads (including `rule`, which it
+/// reads indirectly via `chem_env::declared_forward_smirks` to recover
+/// forward-replay evidence for graph-based default rules -- see
+/// `ReactionEvidence::RenkinTemplate`); every other field in a real RENKIN
+/// JSON file (`score`, `confidence`, `atom_economy`, ...) is silently
+/// ignored by serde, not an error.
 #[derive(Deserialize)]
 struct AuditRouteInput {
     target: String,
@@ -50,23 +53,28 @@ struct AuditRouteEntry {
 
 #[derive(Deserialize)]
 struct AuditRouteStepInput {
+    #[serde(default)]
+    rule: String,
     target: String,
     precursors: Vec<String>,
     template_id: String,
 }
 
 /// Rebuilds a `search::Route` from the minimal parsed input -- every field
-/// [`normalize_renkin_route`] doesn't read (`rule`, `depth`, `score`,
-/// `confidence`, `atom_economy_status`, ...) is defaulted, mirroring the
-/// same defaulting convention `bridge::route_graph`'s and `bridge::audit`'s
-/// own test fixtures already use for hand-built routes.
+/// [`normalize_renkin_route`] doesn't read (`depth`, `score`, `confidence`,
+/// `atom_economy_status`, ...) is defaulted, mirroring the same defaulting
+/// convention `bridge::route_graph`'s and `bridge::audit`'s own test
+/// fixtures already use for hand-built routes. `rule` defaults to `""` when
+/// absent (older RENKIN route JSON, or a hand-authored fixture) rather than
+/// erroring -- `declared_forward_smirks("", ...)` correctly resolves that to
+/// `None`, matching the pre-existing behavior for such inputs.
 fn route_from_audit_input(entry: AuditRouteEntry) -> search::Route {
     search::Route {
         steps: entry
             .steps
             .into_iter()
             .map(|s| search::ReactionStep {
-                rule: String::new(),
+                rule: s.rule,
                 template_id: s.template_id,
                 target: s.target,
                 precursors: s.precursors,
@@ -539,6 +547,38 @@ mod tests {
         let report =
             build_audit_route_report(RENKIN_FIXTURE, "auto", None, &rules).expect("audits");
         assert_eq!(report.audit_manifest.source_format, "renkin");
+    }
+
+    #[test]
+    fn renkin_step_with_graph_based_rule_reaches_forward_validation_pass() {
+        // Regression for docs/design/retro-rule-precision-gaps-v0.md #5:
+        // route_from_audit_input used to hardcode `rule: String::new()`,
+        // silently dropping the JSON's own "rule" field -- so
+        // declared_forward_smirks("", ...) always returned None and every
+        // graph-based-rule step audited via the CLI/WASM route-JSON path
+        // (as opposed to a route built in-process by find_routes) could
+        // never reach forward_validation: pass, even after
+        // declared_forward_smirks itself was implemented and unit-tested.
+        let fixture = r#"{
+            "target": "CC(=O)Oc1ccccc1C(=O)O",
+            "routes": [{
+                "steps": [{
+                    "rule": "ester_cleavage",
+                    "target": "CC(=O)Oc1ccccc1C(=O)O",
+                    "precursors": ["CC(=O)O", "Oc1ccccc1C(=O)O"],
+                    "template_id": "rule:ester_cleavage"
+                }],
+                "building_blocks": ["CC(=O)O", "Oc1ccccc1C(=O)O"]
+            }]
+        }"#;
+        let rules: Vec<RetroRule> = Vec::new();
+        let report = build_audit_route_report(fixture, "renkin", None, &rules).expect("audits");
+        assert_eq!(
+            report.routes[0].steps[0].forward_validation.status,
+            crate::bridge::audit::CheckStatus::Pass,
+            "{:?}",
+            report.routes[0].steps[0].forward_validation
+        );
     }
 
     #[test]

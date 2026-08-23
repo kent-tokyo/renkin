@@ -1,0 +1,29 @@
+{
+  "7": {
+    "type": "mol",
+    "smiles": "CCCl",
+    "children": [
+      {
+        "type": "reaction",
+        "smiles": "[CH3:1][CH2:2][OH:3]>>[CH3:1][CH2:2][Cl:3]",
+        "children": [
+          {
+            "type": "mol",
+            "smiles": "CCO",
+            "in_stock": true
+          }
+        ],
+        "meta": {
+          "confidence": 0.83,
+          "template_library_version": "v3"
+        },
+        "step_id": 1,
+        "tree_node_id": 42,
+        "rule_id": 17,
+        "rule_source": "handcrafted",
+        "rule_key": "chy:0017"
+      }
+    ],
+    "in_stock": false
+  }
+}

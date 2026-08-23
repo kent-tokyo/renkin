@@ -317,7 +317,7 @@ gracefully. The current closed set of values for each is documented in
 ```python
 >>> import renkin
 >>> renkin.__version__
-'0.33.0'
+'0.34.0'
 ```
 
 The version string is a module attribute, not a function.

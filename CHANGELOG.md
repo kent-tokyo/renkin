@@ -8,6 +8,15 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-08-23 "SynPlanner Bridge"
+
+RENKIN Bridge's fourth route-source adapter: unlike Syntheseus (no native
+export at all) or AiZynthFinder (route metadata *optionally* carries atom
+mapping), SynPlanner ships a real native route export whose reaction SMILES
+genuinely carries usable, forward-replayable atom maps — the first adapter
+in this codebase whose routes can reach a real `pass` verdict, not just
+`not_evaluable`.
+
 ### Added
 - `renkin audit-route`: a new `--format synplanner` (and `auto`-detection
   support) for real SynPlanner 1.6.0 `write_routes_json` exports
@@ -16,12 +25,23 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   exporter, and a real CPU-only MCTS-searched planning run through the real
   `synplan planning` CLI end to end -- see
   `docs/design/synplanner-adapter-v1.md` and
-  `tests/fixtures/synplanner/v1.6.0/`. SynPlanner routes' reaction SMILES
-  carry genuine, forward-replayable atom maps for the case tested, unlike
-  AiZynthFinder/Syntheseus routes, which always report
-  `not_evaluable: missing_atom_mapping`. The separate `--export_routes`
-  "public contract" wrapper format is not yet supported (tracked, not a
-  silent gap).
+  `tests/fixtures/synplanner/v1.6.0/`. Across 317 real reaction nodes in a
+  167-route real search: every one carries a structurally valid atom map
+  (no duplicates, no orphans), and every real cross-step boundary is
+  consistent, despite SynPlanner's own exporter documenting its default
+  path as non-reconciled. The separate `--export_routes` "public contract"
+  wrapper format is not yet supported (tracked, not a silent gap).
+- Playground Audit tab gained SynPlanner as a fourth format option, with a
+  "Load SynPlanner example" button demonstrating a genuine `PASS` verdict
+  on real MCTS-planning output — audits entirely client-side via the
+  existing `audit_route_v2` WASM export, no new export needed.
+- [Audit a Real SynPlanner Route](https://github.com/kent-tokyo/renkin/blob/master/docs/guides/synplanner-audit-demo.md):
+  a 5-minute walkthrough against the real committed fixtures, including a
+  companion example showing a deliberately-invalid-chemistry fixture
+  correctly failing.
+- 4-way (RENKIN-native/AiZynthFinder/Syntheseus/SynPlanner) structural and
+  policy-verdict parity tests in `tests/cross_tool_audit.rs`, extending the
+  existing 3-way cross-tool conformance suite.
 
 ## [0.33.0] - 2026-08-23 "Chemical Integrity & Reproducible Templates"
 

@@ -23,7 +23,7 @@ object recording what was audited and under what conditions:
 ```json
 {
   "audit_manifest": {
-    "renkin_version": "0.33.0",
+    "renkin_version": "0.34.0",
     "report_schema_version": 1,
     "source_format": "aizynthfinder",
     "source_version": null,

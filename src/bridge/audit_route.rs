@@ -579,6 +579,12 @@ mod tests {
             "{:?}",
             report.routes[0].steps[0].forward_validation
         );
+        assert_eq!(
+            report.routes[0].steps[0].forward_validation.evidence_basis,
+            Some(crate::bridge::forward::EvidenceBasis::DerivedGraphRuleRoundtrip),
+            "a graph-based rule's real pass must report the round-trip basis, not the declared-template one: {:?}",
+            report.routes[0].steps[0].forward_validation
+        );
     }
 
     #[test]
@@ -609,6 +615,15 @@ mod tests {
         assert_eq!(
             report.routes[0].steps[0].forward_validation.status,
             crate::bridge::audit::CheckStatus::NotEvaluable,
+            "{:?}",
+            report.routes[0].steps[0].forward_validation
+        );
+        // No SMIRKS was ever resolved for this step (declared_forward_smirks
+        // returned None, and the corpus fallback finds nothing either) -- an
+        // evidence_basis here would assert something untrue about this row,
+        // so it must stay None, not silently default to declared_rule_template.
+        assert_eq!(
+            report.routes[0].steps[0].forward_validation.evidence_basis, None,
             "{:?}",
             report.routes[0].steps[0].forward_validation
         );

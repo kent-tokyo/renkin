@@ -293,9 +293,12 @@ Returns an `AuditRouteReport`:
 `forward_validation: ForwardValidationResult`.
 
 `ForwardValidationResult`: `status: str`, `method: str`,
-`reason: str | None`. `StockValidationResult`: `status: str`,
-`reason: str | None`. `AuditFinding`: `code: str`, `severity: str`,
-`node: str | None`.
+`evidence_basis: str | None` (`"declared_rule_template"` |
+`"derived_graph_rule_roundtrip"` | `"source_tool_reaction"` | `None` --
+see [Audit Reproducibility and Compatibility Contract](../guides/audit-reproducibility-contract.md#forward-validation-evidence-basis)
+for what each means), `reason: str | None`. `StockValidationResult`:
+`status: str`, `reason: str | None`. `AuditFinding`: `code: str`,
+`severity: str`, `node: str | None`.
 
 **Every `str | None` field here collapses two different wire-level
 states into one Python value.** In the raw JSON, some optional fields

@@ -85,7 +85,9 @@ pub use audit_route::{
     AuditManifest, AuditRouteReport, AuditRouteSummary, build_audit_route_report,
     build_audit_route_report_with_policy, parse_stock_text,
 };
-pub use forward::{ForwardNotEvaluableReason, ForwardValidationResult, validate_step_forward};
+pub use forward::{
+    EvidenceBasis, ForwardNotEvaluableReason, ForwardValidationResult, validate_step_forward,
+};
 pub use route_graph::{
     ParseOutcome, ReactionEvidence, RouteDocument, RouteNode, RouteSource, RouteStep,
     SynPlannerRuleProvenance, normalize_renkin_route,

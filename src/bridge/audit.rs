@@ -253,7 +253,9 @@ pub struct StockValidationResult {
 /// One decomposition step plus its forward-validation outcome, the shape
 /// [`AuditReport::steps`] serializes -- matches the P0 spec's per-step JSON
 /// exactly: `{"target": ..., "precursors": [...], "forward_validation":
-/// {"status": ..., "method": ..., "reason": ...}}`.
+/// {"status": ..., "method": ..., "evidence_basis": ..., "reason": ...}}`
+/// (`evidence_basis`/`reason` both additive/optional -- see
+/// `bridge::forward::ForwardValidationResult`'s own doc comment).
 #[derive(Debug, Clone, Serialize)]
 pub struct AuditedStep {
     pub target: String,

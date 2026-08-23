@@ -54,6 +54,7 @@ class AuditFinding:
 class ForwardValidationResult:
     status: str
     method: str
+    evidence_basis: Optional[str] = None
     reason: Optional[str] = None
 
 
@@ -125,7 +126,10 @@ def _finding_from_json(data: dict) -> AuditFinding:
 
 def _forward_validation_from_json(data: dict) -> ForwardValidationResult:
     return ForwardValidationResult(
-        status=data["status"], method=data["method"], reason=data.get("reason")
+        status=data["status"],
+        method=data["method"],
+        evidence_basis=data.get("evidence_basis"),
+        reason=data.get("reason"),
     )
 
 

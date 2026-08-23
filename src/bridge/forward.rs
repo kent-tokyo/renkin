@@ -49,36 +49,95 @@ pub enum ForwardNotEvaluableReason {
     AmbiguousExpectedProduct,
 }
 
+/// Which evidentiary channel [`declared_smirks`] actually resolved a SMIRKS
+/// through, independent of `status`/`reason` -- `method` is always
+/// `"declared_reaction_replay"` regardless of which of these applies, so
+/// this is the only field that distinguishes "an independently-declared
+/// rule template was replayed" from "a forward SMIRKS was derived from this
+/// same step's own claimed outcome and then round-tripped" from "an
+/// external planner's own reaction record was replayed". A `pass` under
+/// `DerivedGraphRuleRoundtrip` is real but weaker evidence than a `pass`
+/// under `DeclaredRuleTemplate` or `SourceToolReaction`: the SMIRKS didn't
+/// exist independently of this step's declared precursors, so the replay
+/// is closer to a round-trip consistency check on `chematic`'s own engine
+/// than an independent confirmation -- see
+/// `chem_env::declared_forward_smirks`'s own doc comment and
+/// `docs/design/retro-rule-precision-gaps-v0.md` #5 for the full story.
+/// This is a from-classification (which channel *was consulted*), not a
+/// strength ranking -- don't read the variant order as a quality scale.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EvidenceBasis {
+    /// A `RetroRule`'s own independently-authored `smirks` string, resolved
+    /// via `rules_by_template_id` -- always the case for a SMIRKS-based
+    /// rule (`RenkinTemplate.declared_smirks` is `None`, and the corpus
+    /// lookup finds a real, non-empty `RetroRule::smirks`). A graph-based
+    /// rule step can also reach `declared_smirks()`'s corpus-lookup branch
+    /// this way (e.g. `declared_forward_smirks` couldn't derive evidence
+    /// for the claimed precursors, so `RenkinTemplate.declared_smirks` is
+    /// `None` too) -- but for that branch, `rule.smirks.is_empty()` is
+    /// always true by construction (every real caller -- CLI, WASM,
+    /// Python -- audits against `chem_env::default_rules()`, where every
+    /// graph-based rule's `smirks` is `""`), so resolution fails there
+    /// before a basis is ever assigned; see `ForwardValidationResult::
+    /// evidence_basis`'s own doc comment for why that case reports `None`,
+    /// not this variant.
+    DeclaredRuleTemplate,
+    /// `ReactionEvidence::RenkinTemplate`'s inline `declared_smirks` field:
+    /// a forward SMIRKS `chem_env::declared_forward_smirks` derived by
+    /// re-running a graph-based rule's own cleavage function against this
+    /// exact step's target and matching the outcome to its declared
+    /// precursors (PR #173) -- never present for a SMIRKS-based rule.
+    DerivedGraphRuleRoundtrip,
+    /// AiZynthFinder / Syntheseus / SynPlanner's own reaction record.
+    SourceToolReaction,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ForwardValidationResult {
     pub status: CheckStatus,
     pub method: &'static str,
+    /// `None` whenever no SMIRKS was ever resolved to replay -- no
+    /// `ReactionEvidence` at all, or resolution itself failed (e.g. an
+    /// unresolvable `template_id`, an empty declared SMIRKS). `Some` from
+    /// the moment a real SMIRKS was found onward, including a subsequent
+    /// `not_evaluable` (e.g. `MissingAtomMapping`) -- there the channel is
+    /// known, it just didn't reach a pass/fail verdict. Never guess a basis
+    /// for a step that never had a SMIRKS to point to.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub evidence_basis: Option<EvidenceBasis>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<ForwardNotEvaluableReason>,
 }
 
 const METHOD: &str = "declared_reaction_replay";
 
-fn not_evaluable(reason: ForwardNotEvaluableReason) -> ForwardValidationResult {
+fn not_evaluable(
+    reason: ForwardNotEvaluableReason,
+    evidence_basis: Option<EvidenceBasis>,
+) -> ForwardValidationResult {
     ForwardValidationResult {
         status: CheckStatus::NotEvaluable,
         method: METHOD,
+        evidence_basis,
         reason: Some(reason),
     }
 }
 
-fn pass() -> ForwardValidationResult {
+fn pass(evidence_basis: EvidenceBasis) -> ForwardValidationResult {
     ForwardValidationResult {
         status: CheckStatus::Pass,
         method: METHOD,
+        evidence_basis: Some(evidence_basis),
         reason: None,
     }
 }
 
-fn fail() -> ForwardValidationResult {
+fn fail(evidence_basis: EvidenceBasis) -> ForwardValidationResult {
     ForwardValidationResult {
         status: CheckStatus::Fail,
         method: METHOD,
+        evidence_basis: Some(evidence_basis),
         reason: None,
     }
 }
@@ -101,7 +160,7 @@ fn has_atom_mapping(smirks: &str) -> bool {
 fn declared_smirks<'a>(
     evidence: &'a ReactionEvidence,
     rules_by_template_id: Option<&'a HashMap<String, &'a RetroRule>>,
-) -> Result<(&'a str, bool), ForwardNotEvaluableReason> {
+) -> Result<(&'a str, bool, EvidenceBasis), ForwardNotEvaluableReason> {
     use ForwardNotEvaluableReason::MissingReactionRepresentation;
     match evidence {
         ReactionEvidence::RenkinTemplate {
@@ -112,7 +171,7 @@ fn declared_smirks<'a>(
                 if s.is_empty() {
                     return Err(MissingReactionRepresentation);
                 }
-                return Ok((s.as_str(), false));
+                return Ok((s.as_str(), false, EvidenceBasis::DerivedGraphRuleRoundtrip));
             }
             let rule = rules_by_template_id
                 .and_then(|m| m.get(template_id.as_str()))
@@ -120,13 +179,17 @@ fn declared_smirks<'a>(
             if rule.smirks.is_empty() {
                 return Err(MissingReactionRepresentation);
             }
-            Ok((rule.smirks.as_str(), false))
+            Ok((
+                rule.smirks.as_str(),
+                false,
+                EvidenceBasis::DeclaredRuleTemplate,
+            ))
         }
         ReactionEvidence::AiZynthFinderTemplate { smirks } => {
             if smirks.is_empty() {
                 return Err(MissingReactionRepresentation);
             }
-            Ok((smirks.as_str(), true))
+            Ok((smirks.as_str(), true, EvidenceBasis::SourceToolReaction))
         }
         // Syntheseus's `reaction_smiles` is a plain `reactants>>product`
         // string (a computed property, never atom-mapped) -- same
@@ -140,7 +203,11 @@ fn declared_smirks<'a>(
             if reaction_smiles.is_empty() {
                 return Err(MissingReactionRepresentation);
             }
-            Ok((reaction_smiles.as_str(), true))
+            Ok((
+                reaction_smiles.as_str(),
+                true,
+                EvidenceBasis::SourceToolReaction,
+            ))
         }
         // SynPlanner's reaction `smiles` is a `reactants>>product` SMIRKS
         // string, same as-declared orientation as AiZynthFinder/Syntheseus.
@@ -153,7 +220,7 @@ fn declared_smirks<'a>(
             if smiles.is_empty() {
                 return Err(MissingReactionRepresentation);
             }
-            Ok((smiles.as_str(), true))
+            Ok((smiles.as_str(), true, EvidenceBasis::SourceToolReaction))
         }
     }
 }
@@ -276,18 +343,30 @@ pub fn validate_step_forward(
     rules_by_template_id: Option<&HashMap<String, &RetroRule>>,
 ) -> ForwardValidationResult {
     let Some(evidence) = evidence else {
-        return not_evaluable(ForwardNotEvaluableReason::MissingReactionRepresentation);
+        return not_evaluable(
+            ForwardNotEvaluableReason::MissingReactionRepresentation,
+            None,
+        );
     };
-    let (smirks, try_both_orientations) = match declared_smirks(evidence, rules_by_template_id) {
-        Ok(v) => v,
-        Err(reason) => return not_evaluable(reason),
-    };
+    // No basis exists until a SMIRKS is actually resolved -- a resolution
+    // failure (`Err` here) reports `evidence_basis: None`, matching
+    // `ForwardValidationResult::evidence_basis`'s own doc comment. From
+    // this point on, `basis` is known and carried into every remaining
+    // return path regardless of outcome.
+    let (smirks, try_both_orientations, basis) =
+        match declared_smirks(evidence, rules_by_template_id) {
+            Ok(v) => v,
+            Err(reason) => return not_evaluable(reason, None),
+        };
 
     if !has_atom_mapping(smirks) {
-        return not_evaluable(ForwardNotEvaluableReason::MissingAtomMapping);
+        return not_evaluable(ForwardNotEvaluableReason::MissingAtomMapping, Some(basis));
     }
     let Some((lhs, rhs)) = smirks.split_once(">>") else {
-        return not_evaluable(ForwardNotEvaluableReason::UnsupportedReactionFormat);
+        return not_evaluable(
+            ForwardNotEvaluableReason::UnsupportedReactionFormat,
+            Some(basis),
+        );
     };
 
     let mut orientations = vec![format!("{rhs}>>{lhs}")];
@@ -296,14 +375,20 @@ pub fn validate_step_forward(
     }
 
     let Ok(target_mol) = mol_from_smiles(target_canonical) else {
-        return not_evaluable(ForwardNotEvaluableReason::ReactionApplicationError);
+        return not_evaluable(
+            ForwardNotEvaluableReason::ReactionApplicationError,
+            Some(basis),
+        );
     };
     let Ok(precursor_mols): Result<Vec<_>, _> = precursor_canonical
         .iter()
         .map(|s| mol_from_smiles(s))
         .collect()
     else {
-        return not_evaluable(ForwardNotEvaluableReason::ReactionApplicationError);
+        return not_evaluable(
+            ForwardNotEvaluableReason::ReactionApplicationError,
+            Some(basis),
+        );
     };
     let mol_refs: Vec<&Molecule> = precursor_mols.iter().collect();
     let target_canon = canonical_smiles(&target_mol);
@@ -317,9 +402,9 @@ pub fn validate_step_forward(
         target_atom_count,
         &mol_refs,
     ) {
-        Err(reason) => not_evaluable(reason),
-        Ok(true) => pass(),
-        Ok(false) => fail(),
+        Err(reason) => not_evaluable(reason, Some(basis)),
+        Ok(true) => pass(basis),
+        Ok(false) => fail(basis),
     }
 }
 
@@ -393,7 +478,41 @@ mod tests {
         let result = validate_step_forward(METHANOL, &precursors, Some(&evidence), Some(&by_id));
         assert_eq!(result.status, CheckStatus::Pass, "{result:?}");
         assert_eq!(result.method, "declared_reaction_replay");
+        assert_eq!(
+            result.evidence_basis,
+            Some(EvidenceBasis::DeclaredRuleTemplate),
+            "{result:?}"
+        );
         assert!(result.reason.is_none());
+    }
+
+    #[test]
+    fn renkin_graph_based_rule_step_reports_derived_graph_rule_roundtrip_basis() {
+        // A `RenkinTemplate` with a real, non-empty `declared_smirks` field
+        // -- the shape `chem_env::declared_forward_smirks` produces for a
+        // graph-based rule (PR #173) -- must be classified as
+        // `DerivedGraphRuleRoundtrip`, never `DeclaredRuleTemplate`, even
+        // though no rule corpus is supplied here at all (`None` for
+        // `rules_by_template_id`): the inline field is consulted first and
+        // the corpus lookup is never reached. Uses the real function, not a
+        // hand-typed SMIRKS string, matching this codebase's "no hand-typed
+        // fixture claims verification" convention.
+        let target = "CC(=O)Oc1ccccc1C(=O)O";
+        let precursors = vec!["CC(O)=O".to_string(), "Oc1ccccc1C(=O)O".to_string()];
+        let smirks =
+            crate::chem_env::declared_forward_smirks("ester_cleavage", target, &precursors)
+                .expect("must derive a real forward smirks for this ester_cleavage outcome");
+        let evidence = ReactionEvidence::RenkinTemplate {
+            template_id: "rule:ester_cleavage".to_string(),
+            declared_smirks: Some(smirks),
+        };
+        let result = validate_step_forward(target, &precursors, Some(&evidence), None);
+        assert_eq!(result.status, CheckStatus::Pass, "{result:?}");
+        assert_eq!(
+            result.evidence_basis,
+            Some(EvidenceBasis::DerivedGraphRuleRoundtrip),
+            "{result:?}"
+        );
     }
 
     #[test]
@@ -451,6 +570,10 @@ mod tests {
             result.reason,
             Some(ForwardNotEvaluableReason::MissingReactionRepresentation)
         );
+        assert_eq!(
+            result.evidence_basis, None,
+            "no ReactionEvidence at all -> no basis to report: {result:?}"
+        );
     }
 
     #[test]
@@ -465,6 +588,11 @@ mod tests {
         let precursors = vec!["CCO".to_string(), "C".to_string()];
         let result = validate_step_forward(target, &precursors, Some(&evidence), None);
         assert_eq!(result.status, CheckStatus::Pass, "{result:?}");
+        assert_eq!(
+            result.evidence_basis,
+            Some(EvidenceBasis::SourceToolReaction),
+            "{result:?}"
+        );
     }
 
     #[test]
@@ -483,5 +611,50 @@ mod tests {
             result.reason,
             Some(ForwardNotEvaluableReason::MissingAtomMapping)
         );
+        // A SMIRKS WAS resolved (a real AiZynthFinderTemplate) -- it just
+        // didn't carry atom mapping. The basis is known even though the
+        // verdict is not_evaluable; only a *resolution* failure reports
+        // `None` (see `aizynthfinder_step_with_no_evidence_is_not_evaluable`
+        // and `renkin_graph_based_rule_step_with_unresolvable_template_id_
+        // reports_no_basis` above/below for the two `None` cases).
+        assert_eq!(
+            result.evidence_basis,
+            Some(EvidenceBasis::SourceToolReaction),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn renkin_graph_based_rule_step_with_unresolvable_template_id_reports_no_basis() {
+        // The wrong-precursor-set case from PR #173's own regression test
+        // (bridge::audit_route's renkin_step_with_graph_based_rule_but_
+        // wrong_precursors_is_not_evaluable_not_fail), exercised directly at
+        // this layer: `declared_forward_smirks` returns `None` for a
+        // precursor set that doesn't match any real outcome, so
+        // `RenkinTemplate.declared_smirks` is `None` too, and resolution
+        // falls through to `rules_by_template_id` -- which, for a
+        // graph-based rule's `template_id`, either finds nothing (as here,
+        // no corpus supplied) or finds an entry whose `smirks` is `""` by
+        // construction (`chem_env::default_rules()`, every real caller's
+        // corpus). Either way resolution fails before a basis is ever
+        // assigned -- `declared_rule_template` would assert something
+        // untrue here (no rule template was ever actually declared for this
+        // step), so `None` is correct, not a fallback default.
+        let evidence = ReactionEvidence::RenkinTemplate {
+            template_id: "rule:ester_cleavage".to_string(),
+            declared_smirks: None,
+        };
+        let result = validate_step_forward(
+            "CC(=O)Oc1ccccc1C(=O)O",
+            &["C".to_string(), "O".to_string()],
+            Some(&evidence),
+            None,
+        );
+        assert_eq!(result.status, CheckStatus::NotEvaluable, "{result:?}");
+        assert_eq!(
+            result.reason,
+            Some(ForwardNotEvaluableReason::MissingReactionRepresentation)
+        );
+        assert_eq!(result.evidence_basis, None, "{result:?}");
     }
 }

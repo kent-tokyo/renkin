@@ -8,6 +8,21 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `renkin audit-route`: a new `--format synplanner` (and `auto`-detection
+  support) for real SynPlanner 1.6.0 `write_routes_json` exports
+  (`{route_id: RouteNode}` shape). Confirmed against real SynPlanner output
+  twice -- hand-constructed reactions run through SynPlanner's own real
+  exporter, and a real CPU-only MCTS-searched planning run through the real
+  `synplan planning` CLI end to end -- see
+  `docs/design/synplanner-adapter-v1.md` and
+  `tests/fixtures/synplanner/v1.6.0/`. SynPlanner routes' reaction SMILES
+  carry genuine, forward-replayable atom maps for the case tested, unlike
+  AiZynthFinder/Syntheseus routes, which always report
+  `not_evaluable: missing_atom_mapping`. The separate `--export_routes`
+  "public contract" wrapper format is not yet supported (tracked, not a
+  silent gap).
+
 ## [0.33.0] - 2026-08-23 "Chemical Integrity & Reproducible Templates"
 
 Reproducibility and diagnostics for the template-extraction pipeline, plus

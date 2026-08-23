@@ -55,12 +55,24 @@
 //! `status` is derived from findings/checks already collected -- never
 //! which findings are detected or reported. See
 //! `docs/design/audit-policy-profiles-v0.md` for the full design.
+//!
+//! Phase 1 PR2 (SynPlanner-surpass roadmap) adds a real SynPlanner
+//! `write_routes_json` adapter (`synplanner` submodule, `--format
+//! synplanner`/`auto` on the CLI): confirmed against real SynPlanner 1.6.0
+//! output twice (see `docs/design/synplanner-adapter-v1.md` and
+//! `tests/fixtures/synplanner/v1.6.0/`) -- once via hand-constructed
+//! `chython` reactions run through the real exporter, once via a real
+//! CPU-only MCTS-searched planning run through the real `synplan planning`
+//! CLI end to end. Still out of scope, not just deferred: the separate
+//! `--export_routes` "public contract" wrapper format, RouteCGR/clustering/
+//! quality-scoring output, and any model-training/planning integration.
 
 pub mod aizynthfinder;
 pub mod audit;
 pub mod audit_route;
 pub mod forward;
 pub mod route_graph;
+pub mod synplanner;
 pub mod syntheseus;
 
 pub use aizynthfinder::{AzfMetadata, AzfNode, normalize_aizynthfinder_route};
@@ -76,6 +88,7 @@ pub use audit_route::{
 pub use forward::{ForwardNotEvaluableReason, ForwardValidationResult, validate_step_forward};
 pub use route_graph::{
     ParseOutcome, ReactionEvidence, RouteDocument, RouteNode, RouteSource, RouteStep,
-    normalize_renkin_route,
+    SynPlannerRuleProvenance, normalize_renkin_route,
 };
+pub use synplanner::{SynPlannerNode, normalize_synplanner_route, parse_synplanner_routes};
 pub use syntheseus::{SyntheseusRouteV1, normalize_syntheseus_route};

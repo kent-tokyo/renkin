@@ -1,13 +1,13 @@
 # RENKIN SynPlanner Bridge — Design Doc
 
-Status: **Phase 0 complete (feasibility + schema + real fixtures), Phase 1
-PR1 (this doc + fixtures) done. No Rust/Python/WASM/CLI code written this
-round — the "今回の実行範囲" scope explicitly excludes the normalizer
-implementation.** Real fixtures generated this round via SynPlanner's own
-installed, real export code live at
+Status: **Phase 0 complete, Phase 1 PR1 (design + fixtures) done, PR1.5
+(real MCTS-planning verification) done, PR2 (`src/bridge/synplanner.rs`,
+the actual Rust normalizer) done.** Real fixtures live at
 `tests/fixtures/synplanner/v1.6.0/` (see that directory's own
-`PROVENANCE.md` for exact construction/reproduction detail). §7 records
-open questions Phase 1 PR2 needs to resolve before implementation starts.
+`PROVENANCE.md`/`real_planning_route.PROVENANCE.md` for exact construction/
+reproduction detail). §7's open questions are all resolved. PR3 (cross-tool
+structural-parity fixture, CLI-level tests, Playground example) is next,
+not started.
 
 ## 0. What this is, in one paragraph
 
@@ -240,18 +240,44 @@ the "not attempted" gap above:
 
 ## 5. What Phase 1 PR2+ look like
 
-Not started this round. Concretely, when authorized:
-- **PR2**: `src/bridge/synplanner.rs` (new file, AiZynthFinder-pattern
-  recursive walker), `RouteSource::SynPlanner` +
-  `ReactionEvidence::SynPlannerReaction` variants in `route_graph.rs`
-  (updating the stale "2-variant" comment while there), new
-  `AuditRouteFormat` variant + detection arm + dispatch arm in
-  `audit_route.rs`, format allowlist updated in **both**
-  `audit_route.rs` and `main.rs` (currently duplicated, per the existing
-  codebase's own pattern), plus the two CLI usage strings in `main.rs`.
-  In-module unit tests against this round's real fixtures (fixture-parity
-  oracle pattern, matching every other adapter). No Python/WASM logic
-  changes needed — both are thin passthroughs already.
+**PR2 done.** Delivered exactly as scoped below, plus one real end-to-end
+confirmation the scoping didn't anticipate: a real MCTS-planning fixture's
+reaction now measurably *passes* `bridge::forward::validate_step_forward`
+(`status: "pass"`, `method: "declared_reaction_replay"`), not just
+"doesn't report `MissingAtomMapping`" — SynPlanner is the first adapter in
+this codebase whose routes are genuinely forward-evaluable end to end, per
+CLI output on `real_planning_route_2step.json`. (One of Phase 0's own
+hand-built fixtures, `route_3_full_fields.json`, correctly *fails* forward
+validation instead — its `[CH3:1][CH2:2][OH:3]>>[CH3:1][CH2:2][Cl:3]`
+SMIRKS reuses one atom-map number across an O->Cl identity change, which
+isn't valid atom-mapped chemistry; that fixture was always documented as
+schema-only, not chemically real, and the real engine catching it is
+correct behavior, not a regression.)
+- `src/bridge/synplanner.rs` (new file, AiZynthFinder-pattern recursive
+  walker — `SynPlannerNode`, `synplanner_mol_to_route_node`,
+  `normalize_synplanner_route`, `parse_synplanner_routes`).
+  `RouteSource::SynPlanner` + `ReactionEvidence::SynPlannerReaction` (with
+  the resolved `SynPlannerRuleProvenance` typed struct) added to
+  `route_graph.rs`, stale "2-variant" comment fixed while there. A new
+  `declared_smirks` match arm in `forward.rs` (as-declared orientation,
+  same as AiZynthFinder/Syntheseus). New `AuditRouteFormat::SynPlanner`
+  variant + `looks_like_synplanner_export` detection (the §3.2 heuristic,
+  confirmed against real fixtures) + dispatch arm in `audit_route.rs`.
+  Format allowlist updated in **both** `audit_route.rs` and `main.rs`, plus
+  the two CLI usage strings in `main.rs` — exactly the duplication the
+  design predicted.
+  In-module unit tests (6 in `synplanner.rs`, 4 new in `audit_route.rs`)
+  against real fixtures from both Phase 0 and Phase 1 PR1.5 (fixture-parity
+  oracle pattern, matching every other adapter) — including one test that
+  runs a real planning fixture through the *actual*
+  `validate_step_forward` call, not just a standalone check. No Python/WASM
+  logic changes made — both are thin passthroughs, confirmed unaffected by
+  `cargo build`/`cargo test`.
+  **Deliberately not supported yet, a tracked scope boundary**: the
+  separate `--export_routes` "public contract" wrapper shape
+  (`{target_smiles: [RouteNode, ...]}`) — only the internal
+  `{route_id: RouteNode}` shape every committed fixture uses is recognized
+  today.
 - **PR3**: cross-tool structural-parity addition to
   `tests/cross_tool_audit.rs` (a 4th "same chemistry, 4 formats" case),
   CLI-level additions to `tests/audit_route_cli.rs`, Playground fixture

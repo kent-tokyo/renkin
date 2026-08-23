@@ -10,11 +10,10 @@ use crate::bridge::audit::AuditFindingCode;
 use crate::chem_env::{mol_from_smiles, to_canonical};
 use crate::search::Route;
 
-/// Which tool produced the route being audited. A closed, 2-variant set --
-/// mirrors `compare_schema.py`'s `VALID_TOOLS` frozenset. RENKIN Bridge
-/// PR4 adds the AiZynthFinder JSON adapter that actually constructs an
-/// `AiZynthFinder`-sourced [`RouteDocument`]; this type exists now so
-/// `AuditReport::source` has a home for it ahead of that.
+/// Which tool produced the route being audited. Mirrors `compare_schema.py`'s
+/// `VALID_TOOLS` frozenset. Started as a closed 2-variant set (RENKIN Bridge
+/// PR4, ahead of the AiZynthFinder adapter actually landing); now 4 variants
+/// after Syntheseus (v0.30.0) and SynPlanner (Phase 1 PR2) adapters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum RouteSource {
@@ -26,6 +25,11 @@ pub enum RouteSource {
     /// output directly, since Syntheseus has no native route export (see
     /// `docs/design/syntheseus-bridge-v0.md`).
     Syntheseus,
+    /// Phase 1 PR2: a real SynPlanner `write_routes_json` export
+    /// (`bridge::synplanner::normalize_synplanner_route`) -- unlike
+    /// Syntheseus, SynPlanner ships a real native route export; see
+    /// `docs/design/synplanner-adapter-v1.md`.
+    SynPlanner,
 }
 
 /// Whatever reaction-identity evidence is available for a non-leaf node --
@@ -55,6 +59,36 @@ pub enum ReactionEvidence {
     /// property on every Syntheseus `Reaction` object -- see the schema doc,
     /// safe to treat as required rather than optional).
     SyntheseusReaction { reaction_smiles: String },
+    /// SynPlanner-sourced (Phase 1 PR2): a reaction node's own `smiles`
+    /// field, always present on a real `write_routes_json` export (required,
+    /// not optional -- see `docs/design/synplanner-adapter-v1.md` §3.1).
+    /// Confirmed against real MCTS-searched planning output (Phase 1 PR1.5,
+    /// `tests/fixtures/synplanner/v1.6.0/real_planning_route.PROVENANCE.md`):
+    /// atom-mapped and forward-replayable for the case tested, unlike
+    /// AiZynthFinder/Syntheseus's always-`not_evaluable` outcome.
+    /// `rule_provenance` is `None` for every route produced by SynPlanner's
+    /// own shipped CLI today (it never passes the opt-in `route_metadata`
+    /// argument its exporter supports) -- kept as a typed, forward-compatible
+    /// field for callers of SynPlanner's Python API that do supply it. Never
+    /// consumed by any finding or `AuditStatus` derivation.
+    SynPlannerReaction {
+        smiles: String,
+        rule_provenance: Option<SynPlannerRuleProvenance>,
+    },
+}
+
+/// SynPlanner's own `rule_id`/`rule_source`/`rule_key` reaction-node fields
+/// (Phase 1 PR1.5/§7 item 3 resolution): a SynPlanner-specific typed bag,
+/// not a shared cross-adapter provenance schema -- no other adapter has
+/// anything like this today. `rule_id` is a JSON *number* in real SynPlanner
+/// output but normalized to `String` here (an opaque identifier, never
+/// arithmetic on it) so this type doesn't depend on `route_metadata`'s exact
+/// numeric-vs-string convention holding across SynPlanner versions.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SynPlannerRuleProvenance {
+    pub rule_id: Option<String>,
+    pub rule_source: Option<String>,
+    pub rule_key: Option<String>,
 }
 
 /// One node in the normalized, tool-neutral route tree. Mirrors

@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-//! Structural validators for RENKIN's 7 graph-based retro rules.
+//! Structural validators for RENKIN's 8 graph-based retro rules.
 //!
 //! These rules cut a bond directly in the target's molecular graph (see
 //! `apply_retro` in `chem_env.rs`) instead of matching a SMIRKS pattern, so
@@ -14,9 +14,17 @@
 //! from each rule's reaction equation and confirmed against `renkin --format
 //! json` output for a concrete example (see PR test fixtures).
 //!
-//! A rule name with no case here (a future 8th graph rule, for instance)
-//! falls through to `NotEvaluable` rather than silently passing — there is
-//! deliberately no catch-all "trust it" arm.
+//! A rule name with no case here falls through to `NotEvaluable` rather than
+//! silently passing — there is deliberately no catch-all "trust it" arm. This
+//! was a real, silent gap for a while: `aryl_ether_retro` became this
+//! module's 8th graph-based rule when PR #171 converted it from a
+//! SMIRKS-based rule (fixing a mislabeling bug -- see
+//! `docs/design/retro-rule-precision-gaps-v0.md` #1) without a matching case
+//! being added here, so every `aryl_ether_retro` step silently fell through
+//! to `NotEvaluable` in this validator (used by `examples/inspect_validation`,
+//! `src/bin/benchmark.rs`, and `synthesizability::assessment`) even though
+//! the rule's own chemistry is straightforward to check -- caught and fixed
+//! in a later pass, not part of PR #171 itself.
 
 use std::collections::BTreeMap;
 
@@ -95,7 +103,7 @@ fn validate_delta(
     }
 }
 
-/// Dispatch to the structural validator for one of the 7 graph-based rules.
+/// Dispatch to the structural validator for one of the 8 graph-based rules.
 /// Rule names not covered here return `NotEvaluable` — never a silent `Valid`.
 pub fn validate_graph_step(
     rule_name: &str,
@@ -103,7 +111,14 @@ pub fn validate_graph_step(
     precursors: &[String],
 ) -> StepValidationStatus {
     match rule_name {
-        "ester_cleavage" | "amide_cleavage" => {
+        // aryl_ether_retro: Ar-O-R -> Ar-OH + R-OH -- the O atom the target
+        // already has stays with the R fragment (picks up one new H to fill
+        // its valence), and the aromatic fragment gains a brand-new O-H.
+        // Net delta: +1 O, +2 H -- formally the same hydrolysis-shaped delta
+        // as ester/amide cleavage, confirmed by direct atom counting against
+        // `aryl_ether_cleavage` in chem_env.rs (a diaryl ether like
+        // `c1ccccc1Oc1ccccc1` -> two phenols is +2H+1O end to end).
+        "ester_cleavage" | "amide_cleavage" | "aryl_ether_retro" => {
             validate_delta(target, precursors, ESTER_AMIDE_DELTA)
         }
         "suzuki_retro" => validate_delta(target, precursors, SUZUKI_DELTA),
@@ -157,6 +172,28 @@ mod tests {
     #[test]
     fn amide_cleavage_invalid_missing_precursor() {
         let status = validate_graph_step("amide_cleavage", "CC(=O)Nc1ccccc1", &precs(&["CC(=O)O"]));
+        assert_eq!(status, StepValidationStatus::Invalid);
+    }
+
+    // ── aryl_ether_retro ─────────────────────────────────────────────────────
+    #[test]
+    fn aryl_ether_retro_valid() {
+        // diphenyl ether -> phenol + phenol
+        let status = validate_graph_step(
+            "aryl_ether_retro",
+            "c1ccc(Oc2ccccc2)cc1",
+            &precs(&["Oc1ccccc1", "Oc1ccccc1"]),
+        );
+        assert_eq!(status, StepValidationStatus::Valid);
+    }
+
+    #[test]
+    fn aryl_ether_retro_invalid_missing_precursor() {
+        let status = validate_graph_step(
+            "aryl_ether_retro",
+            "c1ccc(Oc2ccccc2)cc1",
+            &precs(&["Oc1ccccc1"]),
+        );
         assert_eq!(status, StepValidationStatus::Invalid);
     }
 
@@ -283,5 +320,43 @@ mod tests {
     fn unparseable_smiles_not_evaluable() {
         let status = validate_graph_step("ester_cleavage", "", &precs(&["CCO"]));
         assert_eq!(status, StepValidationStatus::NotEvaluable);
+    }
+
+    // ── closed-set coverage: catches exactly the class of bug this module's
+    // own doc comment warns about (a graph-based rule silently falling
+    // through to the NotEvaluable catch-all because no case was added here
+    // when it was introduced elsewhere) -- this is precisely what happened
+    // to aryl_ether_retro after PR #171 converted it from SMIRKS-based to
+    // graph-based. Every rule with an empty `smirks` in `default_rules()`
+    // must have a real (non-catch-all) case in `validate_graph_step`.
+    #[test]
+    fn every_graph_based_default_rule_has_a_validate_graph_step_case() {
+        let covered: std::collections::BTreeSet<&str> = [
+            "ester_cleavage",
+            "amide_cleavage",
+            "aryl_ether_retro",
+            "suzuki_retro",
+            "sulfonamide_retro",
+            "diaryl_sulfone_retro",
+            "boc_deprotection_retro",
+            "cbz_deprotection_retro",
+        ]
+        .into_iter()
+        .collect();
+        let graph_based: std::collections::BTreeSet<String> = crate::chem_env::default_rules()
+            .iter()
+            .filter(|r| r.smirks.is_empty())
+            .map(|r| r.name.clone())
+            .collect();
+        let covered_owned: std::collections::BTreeSet<String> =
+            covered.iter().map(|s| s.to_string()).collect();
+        assert_eq!(
+            graph_based, covered_owned,
+            "default_rules()'s graph-based rule set and validate_graph_step's \
+             covered names have drifted apart -- a rule on either side with no \
+             match on the other silently degrades to NotEvaluable everywhere \
+             this validator is used (examples/inspect_validation, \
+             src/bin/benchmark.rs, synthesizability::assessment)"
+        );
     }
 }

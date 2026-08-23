@@ -205,6 +205,23 @@ in `bridge::audit_route`'s tests for the guard against this ever silently
 becoming a false `pass` -- or a false `fail` on a real, chemically
 correct route.
 
+**Follow-up fix (PR, same day)**: this asymmetry was previously invisible
+in the wire format -- every `pass` looked identical regardless of which
+of the three evidentiary channels backed it. `forward_validation` now
+carries an additive `evidence_basis` field
+(`declared_rule_template`/`derived_graph_rule_roundtrip`/
+`source_tool_reaction`/absent) making this distinction explicit in raw
+JSON, the typed Python API, the CLI, and WASM, without changing
+`status`/`method`/`reason`'s existing meaning or values, and without a
+`schema_version` bump (a purely additive per-step field, per the audit
+contract's own rule 4). See
+`docs/guides/audit-reproducibility-contract.md#forward-validation-evidence-basis`
+for the full field reference, and `bridge::forward::EvidenceBasis`'s doc
+comment for the implementation-level reasoning, including why the
+wrong-precursors case above reports `evidence_basis: null` rather than
+`declared_rule_template` (no rule template was ever actually declared for
+that step -- the label would assert something untrue).
+
 **Original repro (below), preserved for context:**
 
 **Repro:** `find_routes(target=aspirin, ...)` piped straight into

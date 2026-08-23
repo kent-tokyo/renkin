@@ -82,6 +82,45 @@ full, at every policy level. Only the *derived* `AuditStatus`
 `strict` is for pipelines that should treat "we couldn't fully verify this"
 the same as "this is wrong."
 
+## Forward validation evidence basis
+
+Every step's `forward_validation.method` is always
+`"declared_reaction_replay"` — that field says *how* the check works
+(replay the one declared reaction, compare to the target), not *what
+evidence backed it*. A `status: "pass"` under that one method can rest on
+three meaningfully different foundations, distinguished by the additive
+`evidence_basis` field (`null`/absent when no SMIRKS was ever resolved to
+replay in the first place, e.g. no reaction evidence at all, or an
+unresolvable `template_id`):
+
+| `evidence_basis` | What it means | When it applies |
+|---|---|---|
+| `declared_rule_template` | An independently-authored `RetroRule.smirks` string, resolved from the rule corpus by `template_id` and replayed as-is. | RENKIN-native steps using a SMIRKS-based rule (most default and all extracted templates). |
+| `derived_graph_rule_roundtrip` | A forward SMIRKS `chem_env::declared_forward_smirks` *derived* for this exact step, by re-running a graph-based rule's own cleavage function against the step's target and matching the outcome to its declared precursors — see `docs/design/retro-rule-precision-gaps-v0.md` #5. | RENKIN-native steps using one of the 8 graph-based default rules (`ester_cleavage`, `amide_cleavage`, `aryl_ether_retro`, `suzuki_retro`, `sulfonamide_retro`, `diaryl_sulfone_retro`, `boc_deprotection_retro`, `cbz_deprotection_retro`), which have no independently-authored SMIRKS string at all. |
+| `source_tool_reaction` | The source planner's own reaction record, replayed as declared. | AiZynthFinder, Syntheseus, and SynPlanner steps. |
+
+**`derived_graph_rule_roundtrip` is real evidence, but weaker evidence
+than the other two — this is a from-classification, not a strength
+ranking, and the difference matters for anyone aggregating pass rates.**
+The SMIRKS behind a `declared_rule_template` or `source_tool_reaction`
+pass exists *independently* of any one step's claimed precursors — it was
+authored (or exported) before this specific route was ever checked, so a
+successful replay is genuine independent confirmation. The SMIRKS behind a
+`derived_graph_rule_roundtrip` pass is constructed *from* the very outcome
+it's then checked against: `declared_forward_smirks` only produces a
+result when the graph-based rule's real output already matches the step's
+declared precursors, so the subsequent forward replay is closer to a
+round-trip consistency check on `chematic`'s own reaction engine than an
+independent verification. It still means something — the derivation can
+fail (returns `None`, which flows through to `evidence_basis: null` and
+`forward_validation.status: "not_evaluable"`, never a false `pass`, and
+never a false `fail` either — a graph-based rule's step is structurally
+either `pass` or `not_evaluable`, it can't reach `fail`), and every
+`pass` it does produce reproduces the exact declared target, stereo
+included — but don't treat it as equivalent-strength evidence to the
+other two `evidence_basis` values when computing an aggregate
+forward-validated rate.
+
 ## Compatibility rules
 
 These apply to every adapter (RENKIN-native, AiZynthFinder, Syntheseus, and

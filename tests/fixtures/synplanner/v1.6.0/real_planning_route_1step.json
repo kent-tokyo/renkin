@@ -1,0 +1,25 @@
+{
+  "2": {
+    "type": "mol",
+    "smiles": "c1c(C(=O)O)c(ccc1)OC(=O)C",
+    "children": [
+      {
+        "type": "reaction",
+        "smiles": "[CH3:1][C:2](=[O:3])[O:15][C:14]([CH3:17])=[O:16].[O:12]=[C:11]([OH:13])[c:10]1[cH:9][cH:8][cH:7][cH:6][c:5]1[OH:4]>>[cH:9]1[c:10]([C:11](=[O:12])[OH:13])[c:5]([cH:6][cH:7][cH:8]1)[O:4][C:2](=[O:3])[CH3:1]",
+        "children": [
+          {
+            "type": "mol",
+            "smiles": "CC(=O)OC(C)=O",
+            "in_stock": true
+          },
+          {
+            "type": "mol",
+            "smiles": "O=C(O)c1ccccc1O",
+            "in_stock": true
+          }
+        ]
+      }
+    ],
+    "in_stock": false
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "schema_version": "synplan-routes/1",
+  "synplan_version": "1.6.0",
+  "directives": {
+    "adapter": "synplanner",
+    "raw_results_filename": "results.json.gz"
+  }
+}

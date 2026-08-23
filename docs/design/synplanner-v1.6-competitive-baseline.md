@@ -111,17 +111,28 @@ fixtures through the installed package this round (full detail in
   `rule_source`/`rule_key` (reaction only, several only populated if the
   caller passes optional metadata).
 - **No *dedicated* atom-mapping field in the schema — but the reaction
-  node's own `smiles` string does carry atom maps**, confirmed by this
-  round's real fixtures (e.g. `[CH3:1][CH2:2][OH:3]>>[CH3:1][CH2:2][Cl:3]`).
-  Whether SynPlanner-sourced routes land in `forward_validation:
-  not_evaluable` or actually get replayed therefore depends on whether a
-  future adapter passes that `smiles` string through unchanged to
-  `forward.rs`'s existing `has_atom_mapping` check — unlike AiZynthFinder
-  and Syntheseus, this is **not settled** yet; see the adapter design
-  doc's §7 open question.
+  node's own `smiles` string does carry atom maps**, and — confirmed
+  against a real 167-route MCTS planning search (2026-08-23, see
+  `tests/fixtures/synplanner/v1.6.0/real_planning_route.PROVENANCE.md`),
+  not just this round's hand-built fixtures — those maps are genuinely
+  usable: structurally valid on every one of 317 real reaction nodes, 100%
+  consistent across step boundaries, and RDKit-confirmed forward-
+  replayable. **SynPlanner-sourced routes are, for the preset/target
+  tested, genuinely forward-evaluable through `forward.rs`'s existing
+  `has_atom_mapping` gate** — the opposite of AiZynthFinder/Syntheseus's
+  always-`not_evaluable` outcome. Scope caveat: one target, one preset,
+  `--reconcile-mapping` not exercised — see the adapter design doc's §7
+  item 2 for the full evidence and its limits.
 - The real top-level file shape is `{route_id: RouteNode}` — an object
   keyed by route ID, not a bare tree or an array (confirmed by running
-  the real exporter, not assumed from the TypedDict declaration alone).
+  the real exporter, and reconfirmed against real MCTS search output).
+  A separate, explicitly versioned "public route-export contract"
+  (`manifest.json` + `results.json.gz`, only emitted when the CLI's
+  `--export_routes` flag is passed) additionally wraps the same
+  `RouteNode` shape as `{target_smiles: [RouteNode, ...]}`, with an
+  unambiguous `directives.adapter == "synplanner"` format-detection
+  signal — a genuinely new finding from real planning output, not visible
+  from source-reading alone (see adapter design doc §3.2/§7 item 1).
 - Malformed routes are dropped with a logged warning, or raise
   `RouteExportError` under `strict=True` — confirmed both ways by running
   real (deliberately broken) input through the installed package.

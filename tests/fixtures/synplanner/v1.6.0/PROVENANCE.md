@@ -58,7 +58,7 @@ re-verified against any stock database** by this function: "no producing
 reaction in the given `routes_dict`" is the entire criterion. This matters
 for the adapter design doc's stock-handling section (§3 of
 `docs/design/synplanner-adapter-v1.md`) — RENKIN's existing
-"ambiguous/`None` leaf" finding (`AmsiguousLeafStatus`, used for AiZynthFinder's
+"ambiguous/`None` leaf" finding (`AmbiguousLeafStatus`, used for AiZynthFinder's
 `in_stock: None` and Syntheseus's `is_purchasable: None`) may simply never
 trigger for SynPlanner-sourced routes, at least not via this export path.
 

@@ -50,13 +50,16 @@ normalizer) can start.
   (a route with any defect is never partially trusted).
 - **`src/bridge/forward.rs`**'s existing `not_evaluable(
   MissingReactionRepresentation | MissingAtomMapping)` machinery needs
-  **zero new logic**. SynPlanner's schema has no atom-mapping field
-  anywhere (confirmed, see §2 below) — every SynPlanner step will land in
-  `not_evaluable: missing_atom_mapping` (if some reaction-SMILES-like
-  representation is available) or `MissingReactionRepresentation` (if not),
-  the identical honest treatment AiZynthFinder and Syntheseus already get.
-  Only a new `declared_smirks` match arm may be needed if SynPlanner's
-  reaction `smiles` field needs its own resolution rule (see §7).
+  **zero new logic** either way. SynPlanner's schema has no *dedicated*
+  atom-mapping field (confirmed, see §2 below) — but this round's real
+  fixtures show the reaction node's own `smiles` string does carry atom
+  maps (`[CH3:1][CH2:2][OH:3]>>[CH3:1][CH2:2][Cl:3]`), which would pass
+  `forward.rs`'s existing permissive `has_atom_mapping` (`:` + digit) scan.
+  A new `declared_smirks` match arm just needs to pass that `smiles` field
+  through unchanged — whether the result is `not_evaluable:
+  missing_atom_mapping` or an actual forward replay then depends on
+  whether real (non-hand-constructed) SynPlanner output retains those
+  maps the same way, which is **not yet confirmed** (see §7).
 - **`src/bridge/audit_route.rs`**'s `detect_audit_route_format` is an
   ordered, most-specific-signal-first structural sniff. A SynPlanner
   branch needs its own distinguishing top-level marker; §3 proposes one
@@ -158,16 +161,18 @@ not silently assumed resolved.
 
 ### 3.3 Stock / gap survey
 
-- **Atom mapping**: confirmed absent from the schema entirely (§2). Every
-  SynPlanner step lands in `forward_validation: not_evaluable`
-  (`MissingAtomMapping`, since the reaction `smiles` field itself likely
-  *does* carry atom maps per-reaction as SynPlanner's own internal chython
-  representation does — but whether the *exported* `smiles` string
-  reliably retains them the same way `format(rxn, "m")` did in this
-  round's fixtures needs re-confirming against real planning output, not
-  assumed identical). No new forward-validation code needed regardless —
-  `forward.rs`'s existing machinery handles both the "no mapping" and
-  "mapping present but this specific SMIRKS doesn't replay" cases already.
+- **Atom mapping**: confirmed absent as a *dedicated* schema field (§2) —
+  but **not** confirmed absent from the data. This round's real fixtures
+  show the reaction `smiles` string itself does carry atom maps
+  (`format(rxn, "m")`'s output, per §2), which would pass `forward.rs`'s
+  existing `has_atom_mapping` scan and proceed to actual replay — the
+  opposite of `not_evaluable: MissingAtomMapping`. Whether that holds for
+  *real planning* output (not this round's hand-constructed `chython`
+  objects) is unconfirmed and is the single most consequential open
+  question for Phase 1 PR2 (§7, item 2): if it holds, SynPlanner routes
+  are genuinely forward-evaluable, unlike AiZynthFinder/Syntheseus. No new
+  forward-validation code is needed either way — `forward.rs`'s existing
+  machinery already handles both outcomes honestly.
 - **Stock**: same three-valued pattern as AiZynthFinder (`Option<bool>`
   on parse), even though real-path evidence suggests it's always
   populated (§2) — RENKIN's own `--stock` file cross-check

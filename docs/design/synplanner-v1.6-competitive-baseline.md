@@ -110,10 +110,15 @@ fixtures through the installed package this round (full detail in
   `in_stock` (mol only), `meta`/`step_id`/`tree_node_id`/`rule_id`/
   `rule_source`/`rule_key` (reaction only, several only populated if the
   caller passes optional metadata).
-- **No atom-mapping field anywhere in the schema.** Every SynPlanner-
-  sourced route RENKIN eventually audits will land in
-  `forward_validation: not_evaluable` — the exact same honest treatment
-  AiZynthFinder and Syntheseus routes already get, not a new gap.
+- **No *dedicated* atom-mapping field in the schema — but the reaction
+  node's own `smiles` string does carry atom maps**, confirmed by this
+  round's real fixtures (e.g. `[CH3:1][CH2:2][OH:3]>>[CH3:1][CH2:2][Cl:3]`).
+  Whether SynPlanner-sourced routes land in `forward_validation:
+  not_evaluable` or actually get replayed therefore depends on whether a
+  future adapter passes that `smiles` string through unchanged to
+  `forward.rs`'s existing `has_atom_mapping` check — unlike AiZynthFinder
+  and Syntheseus, this is **not settled** yet; see the adapter design
+  doc's §7 open question.
 - The real top-level file shape is `{route_id: RouteNode}` — an object
   keyed by route ID, not a bare tree or an array (confirmed by running
   the real exporter, not assumed from the TypedDict declaration alone).

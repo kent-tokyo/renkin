@@ -180,6 +180,92 @@ mod tests {
         }
     }
 
+    /// Frozen fixture, `co_aliphatic_cleavage` on
+    /// `O=C(O[C@@H]1CCCNC1)N` <- `C1CCNCC1.NC(O)=O`: one of Finding #4's
+    /// 6 pilot Invalid+balanced steps
+    /// (`docs/validation/finding4-validator-pilot-2026-08-23.md`),
+    /// individually investigated per that doc's own protocol rather than
+    /// re-running search. Classified as **`source_step_underspecified`**,
+    /// not a validator false negative and not a genuine template/search
+    /// defect:
+    ///
+    /// - `co_aliphatic_cleavage`'s SMIRKS (`[C:1][O:2]>>[C:1].[O:2]`)
+    ///   carries no stereo annotation at all -- fully generic aliphatic
+    ///   C-O cleavage, by design (matches sibling rules like
+    ///   `cn_aliphatic_cleavage`/`reductive_amination_retro`).
+    /// - Reversed and applied forward to the declared precursors, it
+    ///   produces exactly 3 distinct regiochemical outcomes (one per
+    ///   piperidine's 3 distinct carbon environments: {2,6}, {3,5}, {4}).
+    ///   One of them, `O=C(OC1CCCNC1)N`, has the *exact same connectivity*
+    ///   as the target -- the regiochemistry (ring position 3) is
+    ///   correctly reproduced -- but carries no `@`/`@@` marker at all,
+    ///   because the rule never specified one.
+    /// - The target's own canonical form, `O=C(O[C@@H]1CCCNC1)N`, carries
+    ///   a real, defined stereocenter. `matches_target`'s VF2 structural
+    ///   fallback is deliberately disabled whenever either side has a
+    ///   stereo marker (this module's own doc comment: VF2 is confirmed
+    ///   stereo-blind and would otherwise silently launder wrong
+    ///   stereochemistry into a false `Valid`) -- so canonical-string
+    ///   equality is the only check available here, and it correctly
+    ///   fails: `"...OC1CCCNC1)N"` != `"...O[C@@H]1CCCNC1)N"`.
+    ///
+    /// This is not "the validator is wrong" (it's correctly refusing to
+    /// confirm stereochemistry a stereo-blind rule can't determine) and
+    /// not "the retro-step is chemically broken" (piperidine + carbamic
+    /// acid really can form 3-substituted piperidinyl carbamate, and the
+    /// *regiochemistry* is right) -- the declared step just doesn't carry
+    /// enough information to verify *which enantiomer* forms, because the
+    /// rule it claims is fundamentally achiral. A real, disclosed
+    /// limitation of generic achiral-disconnection rules applied
+    /// retrosynthetically to targets with a real stereocenter at the
+    /// reaction site -- worth a dedicated look at how many of the other 5
+    /// pilot findings (or the broader corpus) share this same shape, not
+    /// fixed here.
+    #[test]
+    fn co_aliphatic_cleavage_piperidinyl_carbamate_is_source_step_underspecified() {
+        let target = "O=C(O[C@@H]1CCCNC1)N";
+        let precursors = vec!["C1CCNCC1".to_string(), "NC(O)=O".to_string()];
+        let rule = co_aliphatic_cleavage();
+
+        // The rule's own claimed step does NOT verify -- confirms this is
+        // genuinely one of Finding #4's 6 Invalid+balanced steps, not
+        // something that already silently passes.
+        assert!(
+            !rule_reproduces(target, &precursors, &rule),
+            "expected this exact Finding #4 pilot step to still be Invalid"
+        );
+
+        // Reversed-SMIRKS replay: the correct regiochemistry IS among the
+        // outcomes, just with no stereo marker -- confirms the mechanism,
+        // not just the boolean verdict.
+        let reactant_mols: Vec<Molecule> = precursors
+            .iter()
+            .map(|s| mol_from_smiles(s).unwrap())
+            .collect();
+        let reactant_refs: Vec<&Molecule> = reactant_mols.iter().collect();
+        let (lhs, rhs) = rule.smirks.split_once(">>").unwrap();
+        let fwd = format!("{rhs}>>{lhs}");
+        let products: std::collections::BTreeSet<String> = run_reactants(&fwd, &reactant_refs)
+            .unwrap()
+            .into_iter()
+            .flatten()
+            .map(|m| canonical_smiles(&m))
+            .collect();
+
+        let stereo_free_correct_connectivity = "O=C(OC1CCCNC1)N";
+        assert!(
+            products.contains(stereo_free_correct_connectivity),
+            "the rule's reversal must still find the right regiochemistry \
+             (just without stereo): {products:?}"
+        );
+        assert!(
+            !products.contains(canonical_smiles(&mol_from_smiles(target).unwrap()).as_str()),
+            "the rule's reversal must never spontaneously produce the \
+             exact stereo-defined target -- it has no stereo information \
+             to do so from: {products:?}"
+        );
+    }
+
     /// Regression for the Track F gold-set finding: a real USPTO-50k
     /// benchmark step (co_aliphatic_cleavage on a diethyl-acetal-like
     /// amide, no ring, no stereo) whose precursors are chematic's own

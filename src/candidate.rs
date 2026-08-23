@@ -962,14 +962,28 @@ pub struct RawCandidate {
 /// alongside the candidates so a serial caller (`find_routes`'s A* loop)
 /// can accumulate them across many `raw_propose` calls without needing a
 /// shared mutex here.
+///
+/// `spectator_bond_diagnostics`: opt-in (see
+/// `SearchConfig::spectator_bond_diagnostics`'s own doc for why) --
+/// `false` skips `spectator_bond::detect_case_a`/`detect_case_b` entirely
+/// for every rule this call considers, returning an empty `Vec` byte-for-
+/// byte identical to this function's own pre-existing two-tuple return
+/// shape. `true` runs both detectors against `target_mol` for every rule
+/// with a non-empty `smirks` (graph-based rules have nothing to analyze,
+/// same short-circuit the detectors apply themselves) and returns every
+/// finding, regardless of whether that rule's own application happened to
+/// yield a candidate here -- detection is about the rule/target pair, not
+/// about this call's own candidate-filtering outcome.
 pub(crate) fn raw_propose(
     target_mol: &Molecule,
     target_smi: &str,
     active_rules: &[ScoredRuleRef<'_>],
     ring: crate::ring_context::RingContextArgs,
+    spectator_bond_diagnostics: bool,
 ) -> (
     Vec<RawCandidate>,
     crate::ring_context::RingContextDiagnostics,
+    Vec<crate::spectator_bond::SpectatorBondLossFinding>,
 ) {
     let target_elem_mask: u64 = crate::search::elem_mask_from_smiles(target_smi);
 
@@ -981,6 +995,7 @@ pub(crate) fn raw_propose(
     let per_rule: Vec<(
         Vec<RawCandidate>,
         crate::ring_context::RingContextDiagnostics,
+        Vec<crate::spectator_bond::SpectatorBondLossFinding>,
     )> = iter
         .filter(|r| {
             r.rule.required_elements == 0
@@ -1006,19 +1021,28 @@ pub(crate) fn raw_propose(
                 precursors: precs,
             })
             .collect::<Vec<_>>();
-            (candidates, diag)
+            let sbl_findings = if spectator_bond_diagnostics {
+                let mut findings = crate::spectator_bond::detect_case_a(target_mol, r.rule);
+                findings.extend(crate::spectator_bond::detect_case_b(target_mol, r.rule));
+                findings
+            } else {
+                Vec::new()
+            };
+            (candidates, diag, sbl_findings)
         })
         .collect();
 
     let mut merged_diag = crate::ring_context::RingContextDiagnostics::default();
+    let mut merged_sbl_findings = Vec::new();
     let raw: Vec<RawCandidate> = per_rule
         .into_iter()
-        .flat_map(|(candidates, diag)| {
+        .flat_map(|(candidates, diag, sbl_findings)| {
             merged_diag.merge(&diag);
+            merged_sbl_findings.extend(sbl_findings);
             candidates
         })
         .collect();
-    (raw, merged_diag)
+    (raw, merged_diag, merged_sbl_findings)
 }
 
 /// Hashes a sequence of strings with an unambiguous, length-prefixed
@@ -1388,11 +1412,15 @@ impl<'a> CandidateProposalContext<'a> {
 
         #[cfg(feature = "perf-instrumentation")]
         let t1 = Instant::now();
-        let (raw, _ring_diag) = raw_propose(
+        // Offline candidate-pool generation deliberately doesn't collect
+        // spectator-bond diagnostics -- that's a search-time (SearchConfig)
+        // concern; this batch API has no equivalent config surface yet.
+        let (raw, _ring_diag, _sbl_findings) = raw_propose(
             &target_mol,
             &canonical_target,
             &active_rules,
             crate::ring_context::RingContextArgs::default(),
+            false,
         );
         #[cfg(feature = "perf-instrumentation")]
         PHASE_RAW_PROPOSE_NANOS.fetch_add(t1.elapsed().as_nanos() as u64, Ordering::Relaxed);
@@ -1981,11 +2009,12 @@ mod tests {
 
         let active_rules =
             select_active_rules(&target_mol, &rules, &ProposalMode::Exhaustive, None).unwrap();
-        let (got, _ring_diag) = raw_propose(
+        let (got, _ring_diag, _sbl_findings) = raw_propose(
             &target_mol,
             &canon_target,
             &active_rules,
             crate::ring_context::RingContextArgs::default(),
+            false,
         );
         let mut got_pairs: Vec<(String, Vec<String>)> = got
             .into_iter()
@@ -2005,6 +2034,99 @@ mod tests {
             !got_pairs.is_empty(),
             "expected at least one match for acetophenone"
         );
+    }
+
+    // ---- spectator-bond diagnostics wiring ----
+
+    fn scored_rule_ref(rule: &RetroRule) -> ScoredRuleRef<'_> {
+        ScoredRuleRef {
+            rule,
+            source_rank: 0,
+            upstream_score: None,
+            upstream_score_status: UpstreamScoreStatus::NotApplicable,
+        }
+    }
+
+    #[test]
+    fn raw_propose_spectator_bond_diagnostics_off_by_default_produces_none() {
+        // Real Finding #4 positive control (extracted_824, PR #183) -- the
+        // detector itself is proven against this exact pair in
+        // spectator_bond.rs's own tests; this test is about the *wiring*
+        // only: with the flag false, raw_propose must never call the
+        // detectors at all.
+        let target_mol = mol_from_smiles("O=C2NCC(O2)Cc1ccccc1").unwrap();
+        let rule = RetroRule {
+            name: "extracted_824".to_string(),
+            template_id: "rule:extracted_824".to_string(),
+            smirks: "[C:5]-[O:6]-[C:3](=[O:4])-[NH:2]-[C:1]>>[C:1]-[N:2]=[C:3]=[O:4].[C:5]-[OH:6]"
+                .to_string(),
+            ..Default::default()
+        };
+        let active_rules = [scored_rule_ref(&rule)];
+        let (_raw, _ring_diag, sbl_findings) = raw_propose(
+            &target_mol,
+            "O=C2NCC(O2)Cc1ccccc1",
+            &active_rules,
+            crate::ring_context::RingContextArgs::default(),
+            false,
+        );
+        assert!(
+            sbl_findings.is_empty(),
+            "spectator_bond_diagnostics=false must produce zero findings, even for a rule/target \
+             pair the detector would flag if enabled: {sbl_findings:?}"
+        );
+    }
+
+    #[test]
+    fn raw_propose_spectator_bond_diagnostics_on_detects_known_positive_control() {
+        let target_mol = mol_from_smiles("O=C2NCC(O2)Cc1ccccc1").unwrap();
+        let rule = RetroRule {
+            name: "extracted_824".to_string(),
+            template_id: "rule:extracted_824".to_string(),
+            smirks: "[C:5]-[O:6]-[C:3](=[O:4])-[NH:2]-[C:1]>>[C:1]-[N:2]=[C:3]=[O:4].[C:5]-[OH:6]"
+                .to_string(),
+            ..Default::default()
+        };
+        let active_rules = [scored_rule_ref(&rule)];
+        let (_raw, _ring_diag, sbl_findings) = raw_propose(
+            &target_mol,
+            "O=C2NCC(O2)Cc1ccccc1",
+            &active_rules,
+            crate::ring_context::RingContextArgs::default(),
+            true,
+        );
+        assert!(
+            !sbl_findings.is_empty(),
+            "spectator_bond_diagnostics=true must surface the real extracted_824 finding through \
+             raw_propose's own wiring, not just the detector functions directly"
+        );
+        assert_eq!(
+            sbl_findings[0].rule_name, "extracted_824",
+            "finding must be attributed to the rule that produced it"
+        );
+    }
+
+    #[test]
+    fn raw_propose_spectator_bond_diagnostics_on_stays_empty_for_clean_rule() {
+        // Negative-control sanity check on the wiring itself: a rule with
+        // no spectator-bond defect must still produce zero findings even
+        // with the flag on.
+        let target_mol = mol_from_smiles("CC(=O)NC").unwrap();
+        let rule = RetroRule {
+            name: "amide_formation_retro".to_string(),
+            template_id: "rule:amide_formation_retro".to_string(),
+            smirks: "[C:1](=[O:2])-[N:3]>>[C:1](=[O:2])[OH].[N:3]".to_string(),
+            ..Default::default()
+        };
+        let active_rules = [scored_rule_ref(&rule)];
+        let (_raw, _ring_diag, sbl_findings) = raw_propose(
+            &target_mol,
+            "CC(=O)NC",
+            &active_rules,
+            crate::ring_context::RingContextArgs::default(),
+            true,
+        );
+        assert!(sbl_findings.is_empty());
     }
 
     // ---- merge / provenance ----

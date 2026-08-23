@@ -4822,6 +4822,144 @@ mod chematic_regression {
         );
     }
 
+    /// Frozen fixture, `extracted_109` on `C1CCCC[C@H](N1)C` <-
+    /// `C(C)(CCCC)=O.C(CCN)C` (a methyl-butyl ketone + n-butylamine): a
+    /// third individually-investigated step from Finding #4's pilot
+    /// (`docs/validation/finding4-validator-pilot-2026-08-23.md`), per
+    /// that doc's own protocol -- not by re-running search.
+    ///
+    /// Note: the pilot's preliminary visual note called the target
+    /// "2-methylpiperidine". That was wrong -- `target_mol.atom_count()`
+    /// is 8 (6 ring carbons + 1 ring nitrogen + 1 exocyclic methyl),
+    /// confirming a 7-membered ring: this is **2-methylazepane**
+    /// (hexahydro-2-methyl-1H-azepine), not the 6-membered piperidine.
+    /// Doesn't change the classification below, but corrects the record.
+    ///
+    /// Classified as **`genuine_template_error`**, and a second concrete
+    /// instance of the same failure class documented on `extracted_112`
+    /// (`extracted_112_indanone_is_genuine_template_error` above): a
+    /// two-fragment retro-SMIRKS (RHS = `ketone . amine`, `.`-separated)
+    /// applied to a target where the two "fragments" are not actually
+    /// separate molecules -- they're tethered to each other via the rest
+    /// of a ring the LHS pattern never examines.
+    ///
+    /// `extracted_109`'s SMIRKS
+    /// (`[C:2]-[CH:1](-[NH:5]-[C:4])-[C:3]>>O=[C:1](-[C:2])-[C:3].[C:4]-[NH2:5]`)
+    /// is a standard retro-reductive-amination template, correct in
+    /// general for genuinely intermolecular cases (ketone + amine ->
+    /// secondary amine). In the target, `[CH:1]` and `[NH:5]` are two
+    /// adjacent atoms of the SAME 7-membered ring; `[C:4]` (`NH:5`'s other
+    /// neighbor) is reachable from `[CH:1]`'s own other ring substituent
+    /// via the rest of that same ring. Cutting only the matched
+    /// `[CH:1]`-`[NH:5]` bond therefore cannot split the molecule in two
+    /// -- topologically it can only open the ring into a single
+    /// amino-ketone chain. The real retro-relationship here is an
+    /// intramolecular ring-closing reductive amination (one precursor
+    /// molecule, not two separate building blocks).
+    ///
+    /// Confirmed empirically, both directions:
+    /// - `apply_retro` on the real target reproduces the exact same wrong
+    ///   two-fragment split fresh (not a harness-only artifact) -- and the
+    ///   two fragments' combined heavy-atom count (12: 7 + 5) *exceeds*
+    ///   the target's own heavy-atom count (8), which is impossible for a
+    ///   real bond-breaking disconnection (retro of this reaction class
+    ///   should conserve every target atom and add exactly one new
+    ///   oxygen). That numeric inflation is itself direct evidence the
+    ///   declared fragmentation isn't a real graph cut of this target.
+    /// - Forward-replaying the declared precursors through the reversed
+    ///   SMIRKS produces exactly one product, a plain open-chain secondary
+    ///   amine -- not a ring, and not the target under any of canonical /
+    ///   connectivity-only (stereo-stripped) comparison.
+    ///
+    /// The validator's `Invalid` verdict is correct, for the right reason.
+    /// Atom-balance still reports `true` in the pilot's own harness output
+    /// because `atom_conservation` checks gross formula/MW, not graph
+    /// connectivity -- expected, not a separate bug, same as
+    /// `extracted_112`.
+    #[test]
+    fn extracted_109_azepane_is_genuine_template_error() {
+        let target = "C1CCCC[C@H](N1)C";
+        let precursors = ["C(C)(CCCC)=O".to_string(), "C(CCN)C".to_string()];
+        let smirks = "[C:2]-[CH:1](-[NH:5]-[C:4])-[C:3]>>O=[C:1](-[C:2])-[C:3].[C:4]-[NH2:5]";
+        let rule = rr("extracted_109", smirks);
+        let target_mol = mol_from_smiles(target).unwrap();
+        let target_canon = to_canonical(&target_mol);
+
+        assert_eq!(
+            target_mol.atom_count(),
+            8,
+            "target must be the 7-membered-ring 2-methylazepane (8 heavy atoms), \
+             not the 6-membered piperidine the pilot's preliminary note assumed"
+        );
+
+        // apply_retro reproduces the exact wrong disconnection fresh, from
+        // the real target -- confirms this isn't a harness-only artifact.
+        let retro_outcomes = apply_retro(&target_mol, &rule);
+        let retro_smiles: Vec<Vec<String>> = retro_outcomes
+            .iter()
+            .map(|outcome| outcome.iter().map(|p| to_canonical(&p.mol)).collect())
+            .collect();
+        let expected_precursors: Vec<String> = precursors
+            .iter()
+            .map(|s| to_canonical(&mol_from_smiles(s).unwrap()))
+            .collect();
+        assert!(
+            retro_smiles.iter().any(|outcome| outcome
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                == expected_precursors.iter().collect()),
+            "apply_retro must still reproduce this exact wrong disconnection: {retro_smiles:?}"
+        );
+
+        // The declared precursors' combined atom count must exceed the
+        // target's own -- direct evidence this "split" is not a real cut
+        // of this target's graph (impossible for a genuine disconnection).
+        let precursor_atom_total: usize = precursors
+            .iter()
+            .map(|s| mol_from_smiles(s).unwrap().atom_count())
+            .sum();
+        assert!(
+            precursor_atom_total > target_mol.atom_count(),
+            "declared precursors ({precursor_atom_total} atoms) were expected to exceed the \
+             target's own atom count ({}) -- if this stops holding, the underlying apply_retro \
+             ring-splitting behavior changed and this classification needs re-checking",
+            target_mol.atom_count()
+        );
+
+        // Forward replay of the declared precursors: only one product
+        // forms, a plain open-chain secondary amine -- not the target,
+        // under canonical or connectivity-only (stereo-stripped) identity.
+        let reactant_mols: Vec<Molecule> = precursors
+            .iter()
+            .map(|s| mol_from_smiles(s).unwrap())
+            .collect();
+        let reactant_refs: Vec<&Molecule> = reactant_mols.iter().collect();
+        let (lhs, rhs) = smirks.split_once(">>").unwrap();
+        let fwd = format!("{rhs}>>{lhs}");
+        let products: std::collections::BTreeSet<String> = run_reactants(&fwd, &reactant_refs)
+            .unwrap()
+            .into_iter()
+            .flatten()
+            .map(|m| to_canonical(&m))
+            .collect();
+        assert_eq!(
+            products.len(),
+            1,
+            "expected exactly the one open-chain secondary-amine product: {products:?}"
+        );
+        assert!(
+            !products.contains(&target_canon),
+            "two separate molecules must never forward-produce the ring target: {products:?}"
+        );
+        let strip_stereo = |s: &str| s.replace('@', "");
+        let target_no_stereo = strip_stereo(&target_canon);
+        assert!(
+            !products.iter().any(|p| strip_stereo(p) == target_no_stereo),
+            "products must not even match the target's connectivity ignoring stereo -- this is \
+             a connectivity error, not a stereo-only gap like co_aliphatic_cleavage: {products:?}"
+        );
+    }
+
     // ── declared_forward_smirks: forward-replay evidence for graph-based rules ──
     //
     // Closes the gap in docs/design/retro-rule-precision-gaps-v0.md #5:

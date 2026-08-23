@@ -1,0 +1,51 @@
+{
+  "molecule_metadata": {
+    "CC": {
+      "is_purchasable": null
+    }
+  },
+  "schema_version": 1,
+  "source_metadata": {
+    "exporter_schema": "syntheseus-route-v1",
+    "note": "Generated from a real syntheseus.search.graph.route.SynthesisGraph object via the public interface (Molecule/Bag/SingleProductReaction/SynthesisGraph) -- no model inference, search algorithm, checkpoint, or GPU was used to construct this route."
+  },
+  "source_tool": "syntheseus",
+  "source_version": "0.8.0",
+  "starting_molecules": [
+    "CC"
+  ],
+  "steps": [
+    {
+      "product": "COCS",
+      "reactants": [
+        "CO",
+        "CS"
+      ],
+      "reaction_metadata": {
+        "identifier": "cocs_from_co_cs",
+        "reaction_smiles": "CO.CS>>COCS"
+      }
+    },
+    {
+      "product": "CO",
+      "reactants": [
+        "CC"
+      ],
+      "reaction_metadata": {
+        "identifier": "co_from_cc",
+        "reaction_smiles": "CC>>CO"
+      }
+    },
+    {
+      "product": "CS",
+      "reactants": [
+        "CO"
+      ],
+      "reaction_metadata": {
+        "identifier": "cs_from_co",
+        "reaction_smiles": "CO>>CS"
+      }
+    }
+  ],
+  "target": "COCS"
+}

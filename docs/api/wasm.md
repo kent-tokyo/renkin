@@ -1,6 +1,6 @@
 ---
 title: "Browser-Based Retrosynthesis with RENKIN WebAssembly"
-description: "Run RENKIN's retrosynthesis search entirely in the browser or Node.js via WebAssembly -- no server, no installation. API reference and examples."
+description: "Run RENKIN's retrosynthesis search entirely in the browser via WebAssembly -- no server, no installation. API reference, bundler support, and examples."
 ---
 
 # WASM / JavaScript API
@@ -31,19 +31,26 @@ npm install renkin
 </script>
 ```
 
-## Node.js
+## Browser and bundler usage
 
-```javascript
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
+The npm package is currently built with `wasm-pack build --target web`.
 
-// Node.js usage (sync WASM load)
-const renkin = require('renkin');
-await renkin.default();  // initialize WASM
+**Supported:**
 
-const raw = renkin.find_routes("c1ccc(-c2ccccc2)cc1", 5, 3, 0);
-const result = JSON.parse(raw);
-```
+- Native browser ES modules
+- Vite
+- Webpack
+- Rollup and compatible bundlers
+
+**Not currently supported:**
+
+- Plain Node.js `require()`
+- Direct Node.js execution without a bundler
+
+To exercise the WASM API from a plain Node.js script (not through a
+bundler), build a `--target nodejs` package from source instead — see
+[Minimal Node.js Example](#minimal-nodejs-example-ci-verified) below,
+which is verified this way, not against the published npm package.
 
 ## `find_routes`
 
@@ -56,7 +63,7 @@ function find_routes(
 ): string  // JSON-encoded result
 ```
 
-WASM always uses the compiled-in default rule set (28 hand-crafted rules) and
+WASM always uses the compiled-in default rule set (27 hand-crafted rules) and
 building blocks — there is no way to load an external templates file or
 custom building blocks list from the WASM entry point (unlike the CLI/Python
 bindings). See [Rust API](rust.md) or [Python API](python.md) for
@@ -94,15 +101,76 @@ interface Step {
 }
 ```
 
+## `audit_route_v2`
+
+```typescript
+function audit_route_v2(
+  content: string,    // Route export JSON text (RENKIN, AiZynthFinder, or Syntheseus)
+  format: string,      // "auto" | "renkin" | "aizynthfinder" | "syntheseus"
+  stockText: string,    // "" for no stock, else one SMILES per line (.smi-style)
+  policy: string         // "informational" | "standard" | "strict"
+): string  // JSON-encoded AuditRouteReport, or {"error": "..."}
+```
+
+The browser counterpart to `renkin audit-route` (see
+[Audit Reproducibility and Compatibility Contract](../guides/audit-reproducibility-contract.md)
+for the full `AuditRouteReport`/`audit_manifest` shape, and what each
+`policy` value means) — calls the identical
+`bridge::build_audit_route_report_with_policy` pipeline the CLI uses, so a
+route audited in the browser gets exactly the same verdict the CLI would
+produce for the same input and policy. Unlike the CLI, `content` must
+already be plain JSON text — there is no gzip support in the browser (a
+paste or file upload never needs it). `policy` controls only how each
+route's `status` is derived from findings already collected — never which
+findings are detected or reported.
+
+```js
+import init, { audit_route_v2 } from './node_modules/renkin/renkin.js';
+
+await init();
+const routeJson = JSON.stringify({
+  target: "CCOC(=O)c1ccccc1",
+  routes: [{
+    steps: [{ target: "CCOC(=O)c1ccccc1", precursors: ["CCO", "O=C(O)c1ccccc1"], template_id: "co_aliphatic_cleavage" }],
+    building_blocks: ["CCO", "O=C(O)c1ccccc1"],
+  }],
+});
+const report = JSON.parse(audit_route_v2(routeJson, "auto", "", "strict"));
+console.log(report.routes[0].status); // "pass" | "fail" | "partial"
+```
+
+Also available from the [Live Playground](../playground/){ target="_blank" }'s
+`[ Audit a Route ]` tab — paste or upload a route (and optionally a stock
+list) with a policy selector, entirely client-side.
+
+## `audit_route`
+
+```typescript
+function audit_route(content: string, format: string, stockText: string): string
+```
+
+The original (v0.28.0) 3-argument export, kept unchanged for backward
+compatibility — a thin `policy: "standard"` wrapper around
+[`audit_route_v2`](#audit_route_v2). New code should call `audit_route_v2`
+directly; `audit_route` exists only so a build predating v0.29.0's policy
+parameter keeps working exactly as before.
+
 ## `version`
 
 ```typescript
 function version(): string
 ```
 
-Returns the RENKIN version string (e.g., `"0.21.0"`).
+Returns the RENKIN version string (e.g., `"0.34.0"`).
 
 ## Minimal Node.js Example (CI-verified)
+
+This example runs against a package built locally with
+`wasm-pack build --target nodejs` — a different build target from the
+published npm package (`--target web`, browser/bundler only; see
+[Browser and bundler usage](#browser-and-bundler-usage) above). It's the
+from-source path for using RENKIN's WASM bindings in a plain Node.js
+script; `npm install renkin` alone does not give you this.
 
 `examples/quickstart.mjs` is run against a `wasm-pack build --target nodejs`
 output as part of CI, so this call shape can't silently drift from the real API:

@@ -1,11 +1,16 @@
 #![forbid(unsafe_code)]
 
+pub mod bridge;
 pub mod candidate;
 pub mod chem_env;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod coverage_mode;
 pub mod display;
 pub mod evidence;
 pub mod evidence_match;
 pub mod pool_export;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod reranker;
 pub mod ring_context;
 pub mod score;
 pub mod scorer;

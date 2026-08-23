@@ -3,9 +3,9 @@
 //! Route/step plausibility checks, shared by `renkin-bench` and `renkin-mcp`.
 //!
 //! Forward validation historically returned a single bool per step, computed
-//! by reverse-applying every rule's SMIRKS to the step's precursors. Seven
-//! hand-crafted rules (ester/amide/Suzuki/sulfonamide/sulfone/Boc/Cbz
-//! cleavage) are graph-based — they cut bonds directly in the target's
+//! by reverse-applying every rule's SMIRKS to the step's precursors. Eight
+//! hand-crafted rules (ester/amide/aryl-ether/Suzuki/sulfonamide/sulfone/
+//! Boc/Cbz cleavage) are graph-based — they cut bonds directly in the target's
 //! molecular graph instead of matching a SMIRKS pattern — so they carry an
 //! empty `smirks` string and could never pass that check. That conflated
 //! "this route step is chemically wrong" with "the validator has no method
@@ -55,7 +55,7 @@ pub enum RouteValidationStatus {
 ///
 /// - Not found (e.g. an extracted template RENKIN can't match back): `NotEvaluable`.
 /// - Found, graph-based (empty `smirks`): routed to the dedicated structural
-///   check for the 7 graph-based rules.
+///   check for the 8 graph-based rules.
 /// - Found, SMIRKS-based: `Valid` only if *that rule's own* reversed SMIRKS
 ///   reproduces the target from the precursors, `Invalid` otherwise.
 ///

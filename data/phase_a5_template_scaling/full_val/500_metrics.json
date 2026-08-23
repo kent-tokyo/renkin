@@ -1,0 +1,30 @@
+{
+  "arm_label": "500",
+  "unlabeled_groups_excluded": 0,
+  "group_count": 4931,
+  "target_count": 4924,
+  "zero_positive_count": 1678,
+  "zero_positive_rate": 0.3402960859866153,
+  "positive_present_rate": 0.6597039140133847,
+  "ground_truth_precursor_recall_target_level": 0.6596263200649878,
+  "dedup_rate": 0.1863850666410739,
+  "total_candidate_count": 135641,
+  "positive_candidate_count": 3253,
+  "pool_gen_summary": {
+    "candidate_jsonl_sha256": "sha256:2770047e6103ffee9d63b9122996739cb8f0fa17b1fc42312eed742ee38fc1e1",
+    "candidates_per_group_max": 128,
+    "candidates_per_group_p50": 26,
+    "candidates_per_group_p90": 45,
+    "candidates_per_group_p95": 51,
+    "groups_output": "data/phase_a5_template_scaling/full_val/500_groups.jsonl",
+    "manifest_output": "data/phase_a5_template_scaling/full_val/500_manifest.json",
+    "n_candidate_rows": 135641,
+    "n_groups_parse_failed": 0,
+    "n_groups_requested": 4931,
+    "n_groups_target_id_mismatch": 14,
+    "n_groups_zero_candidates": 1,
+    "pool_output": "data/phase_a5_template_scaling/full_val/500_pool.jsonl",
+    "target_group_index_sha256": "sha256:bb93a9b46c7eafd6b9dc2f138e020f2e9407a6e11bf73e8c53405b9cb26fe6ca",
+    "wall_clock_seconds": 417.837146666
+  }
+}

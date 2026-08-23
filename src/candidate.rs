@@ -40,7 +40,11 @@
 //! `find_routes` computes.
 
 use std::collections::HashMap;
+#[cfg(feature = "perf-instrumentation")]
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
+#[cfg(feature = "perf-instrumentation")]
+use std::time::Instant;
 
 #[cfg(not(target_arch = "wasm32"))]
 use rayon::prelude::*;
@@ -1037,7 +1041,7 @@ fn hash_string_sequence(hasher: &mut Sha256, values: &[String]) {
 /// silently collide with this one), the canonical target, an explicit
 /// section separator, then the sorted (not deduplicated -- see call site)
 /// precursor multiset.
-fn candidate_id_for(canonical_target: &str, precursor_smiles: &[String]) -> String {
+pub(crate) fn candidate_id_for(canonical_target: &str, precursor_smiles: &[String]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"renkin-retrospect-candidate-v1\0");
     hash_string_sequence(&mut hasher, &[canonical_target.to_string()]);
@@ -1123,9 +1127,9 @@ fn merge_duplicate_sources(sources: Vec<CandidateSource>) -> anyhow::Result<Vec<
 /// ambiguous, and `best_*`/`min_*`/`max_*`/`mean_*` aggregates are computed
 /// over all sources -- no provenance is dropped in favor of "just the best
 /// one".
-fn merge_into_candidates(
+pub(crate) fn merge_into_candidates(
     canonical_target: &str,
-    raw: Vec<RawCandidate>,
+    raw: &[RawCandidate],
 ) -> anyhow::Result<Vec<ReactionCandidate>> {
     let mut order: Vec<String> = Vec::new();
     let mut precursors_by_id: HashMap<String, Vec<String>> = HashMap::new();
@@ -1158,8 +1162,8 @@ fn merge_into_candidates(
         );
 
         let source = CandidateSource {
-            template_id: proposal.template_id,
-            rule_name: proposal.rule_name,
+            template_id: proposal.template_id.clone(),
+            rule_name: proposal.rule_name.clone(),
             original_rank: proposal.original_rank,
             upstream_score: proposal.upstream_score,
             upstream_score_status: proposal.upstream_score_status,
@@ -1256,6 +1260,62 @@ fn merge_into_candidates(
         .collect()
 }
 
+#[cfg(feature = "perf-instrumentation")]
+static PHASE_SELECT_NANOS: AtomicU64 = AtomicU64::new(0);
+#[cfg(feature = "perf-instrumentation")]
+static PHASE_RAW_PROPOSE_NANOS: AtomicU64 = AtomicU64::new(0);
+#[cfg(feature = "perf-instrumentation")]
+static PHASE_MERGE_NANOS: AtomicU64 = AtomicU64::new(0);
+
+/// Coarse per-phase wall-clock breakdown of [`CandidateProposalContext::propose_one_step`]
+/// (and its free-standing [`propose_one_step`] wrapper), summed across every
+/// call since the last [`reset_propose_phase_nanos`]. Only tracked when the
+/// `perf-instrumentation` feature is enabled (off by default, same as
+/// `chem_env::apply_retro_call_count` -- no shared-atomic contention on the
+/// hot path in production).
+///
+/// `select` is rule selection ([`select_active_rules`] -- `Exhaustive`'s own
+/// filter, or `BondIndexed`'s [`TemplateBondIndex::retrieve`]).
+/// `raw_propose` is [`raw_propose`]'s parallel per-rule SMARTS-match +
+/// reaction-application work (chematic's `apply_retro_with_policy`, entered
+/// once per active rule); RENKIN does not instrument match vs. application
+/// separately inside that chematic call, so this bucket is the two
+/// combined, not two further-split numbers. `merge` is
+/// [`merge_into_candidates`]'s canonicalize/dedup pass. Each field is wall
+/// clock for that phase's call (parallel sections are timed as one wall-clock
+/// span, not summed per-thread), not CPU time.
+#[derive(Debug, Clone, Copy, Default, serde::Serialize)]
+pub struct ProposePhaseNanos {
+    pub select: u64,
+    pub raw_propose: u64,
+    pub merge: u64,
+}
+
+#[cfg(feature = "perf-instrumentation")]
+pub fn propose_phase_nanos() -> ProposePhaseNanos {
+    ProposePhaseNanos {
+        select: PHASE_SELECT_NANOS.load(Ordering::Relaxed),
+        raw_propose: PHASE_RAW_PROPOSE_NANOS.load(Ordering::Relaxed),
+        merge: PHASE_MERGE_NANOS.load(Ordering::Relaxed),
+    }
+}
+
+#[cfg(not(feature = "perf-instrumentation"))]
+pub fn propose_phase_nanos() -> ProposePhaseNanos {
+    ProposePhaseNanos::default()
+}
+
+/// Reset the counters above (e.g. between template-set arms in a profiling run).
+#[cfg(feature = "perf-instrumentation")]
+pub fn reset_propose_phase_nanos() {
+    PHASE_SELECT_NANOS.store(0, Ordering::Relaxed);
+    PHASE_RAW_PROPOSE_NANOS.store(0, Ordering::Relaxed);
+    PHASE_MERGE_NANOS.store(0, Ordering::Relaxed);
+}
+
+#[cfg(not(feature = "perf-instrumentation"))]
+pub fn reset_propose_phase_nanos() {}
+
 /// Reusable context for repeated one-step candidate proposal against one
 /// fixed `rules` set across many targets. Exists because
 /// `ProposalMode::BondIndexed`'s `TemplateBondIndex` is a pure function of
@@ -1315,19 +1375,33 @@ impl<'a> CandidateProposalContext<'a> {
         let target_mol = mol_from_smiles(target_smiles)?;
         let canonical_target = to_canonical(&target_mol);
 
+        #[cfg(feature = "perf-instrumentation")]
+        let t0 = Instant::now();
         let active_rules = select_active_rules(
             &target_mol,
             self.rules,
             &config.mode,
             self.bond_index.as_ref(),
         )?;
+        #[cfg(feature = "perf-instrumentation")]
+        PHASE_SELECT_NANOS.fetch_add(t0.elapsed().as_nanos() as u64, Ordering::Relaxed);
+
+        #[cfg(feature = "perf-instrumentation")]
+        let t1 = Instant::now();
         let (raw, _ring_diag) = raw_propose(
             &target_mol,
             &canonical_target,
             &active_rules,
             crate::ring_context::RingContextArgs::default(),
         );
-        let candidates = merge_into_candidates(&canonical_target, raw)?;
+        #[cfg(feature = "perf-instrumentation")]
+        PHASE_RAW_PROPOSE_NANOS.fetch_add(t1.elapsed().as_nanos() as u64, Ordering::Relaxed);
+
+        #[cfg(feature = "perf-instrumentation")]
+        let t2 = Instant::now();
+        let candidates = merge_into_candidates(&canonical_target, &raw)?;
+        #[cfg(feature = "perf-instrumentation")]
+        PHASE_MERGE_NANOS.fetch_add(t2.elapsed().as_nanos() as u64, Ordering::Relaxed);
 
         Ok(CandidatePool {
             group_id: group_id.to_string(),
@@ -1974,7 +2048,7 @@ mod tests {
             upstream_score_status: UpstreamScoreStatus::NotApplicable,
             precursors: vec![precs("CC"), precs("CC")],
         }];
-        let merged = merge_into_candidates("target", raw).unwrap();
+        let merged = merge_into_candidates("target", &raw).unwrap();
         assert_eq!(merged.len(), 1);
         assert_eq!(
             merged[0].precursor_smiles,
@@ -2005,7 +2079,7 @@ mod tests {
                 precursors: vec![precs("O"), precs("CC")], // same set, different order
             },
         ];
-        let merged = merge_into_candidates("target", raw).unwrap();
+        let merged = merge_into_candidates("target", &raw).unwrap();
         assert_eq!(
             merged.len(),
             1,
@@ -2050,7 +2124,7 @@ mod tests {
                 precursors: vec![precs("O"), precs("CC")], // same set, different match site
             },
         ];
-        let merged = merge_into_candidates("target", raw).unwrap();
+        let merged = merge_into_candidates("target", &raw).unwrap();
         assert_eq!(merged.len(), 1);
         assert_eq!(
             merged[0].source_template_count, 1,
@@ -2089,7 +2163,7 @@ mod tests {
                 precursors: vec![precs("CC")],
             },
         ];
-        assert!(merge_into_candidates("target", raw).is_err());
+        assert!(merge_into_candidates("target", &raw).is_err());
     }
 
     #[test]
@@ -2119,7 +2193,7 @@ mod tests {
         a.precursors = vec![precs("CC")];
         b.precursors = vec![precs("CC")];
 
-        let merged = merge_into_candidates("target", vec![a, b]).unwrap();
+        let merged = merge_into_candidates("target", &[a, b]).unwrap();
         assert_eq!(merged.len(), 1);
         assert_eq!(
             merged[0].best_upstream_score,
@@ -2160,7 +2234,7 @@ mod tests {
                 precursors: vec![precs("CC")],
             },
         ];
-        let merged = merge_into_candidates("target", raw).unwrap();
+        let merged = merge_into_candidates("target", &raw).unwrap();
         assert_eq!(merged.len(), 1);
         assert_eq!(merged[0].best_upstream_score, Some(0.9));
         assert_eq!(
@@ -2191,7 +2265,7 @@ mod tests {
                 precursors: vec![precs("CC")],
             },
         ];
-        let merged = merge_into_candidates("target", raw).unwrap();
+        let merged = merge_into_candidates("target", &raw).unwrap();
         assert_eq!(merged.len(), 1);
         // Tied on upstream_score and base_step_cost and original_rank -->
         // tie-break by template_id lexicographic: "a" before "z".
@@ -2248,8 +2322,8 @@ mod tests {
             one("rule_a", "rule:a", 0, "CC"),
         ];
 
-        let forward_summary = summarize(merge_into_candidates("target", forward).unwrap());
-        let reversed_summary = summarize(merge_into_candidates("target", reversed).unwrap());
+        let forward_summary = summarize(merge_into_candidates("target", &forward).unwrap());
+        let reversed_summary = summarize(merge_into_candidates("target", &reversed).unwrap());
         assert_eq!(
             forward_summary, reversed_summary,
             "merged candidate set/content must not depend on RawCandidate input order"

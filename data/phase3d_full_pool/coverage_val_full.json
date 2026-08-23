@@ -1,0 +1,26 @@
+{
+  "best_positive_rank_buckets": {
+    "rank_1": 849,
+    "rank_11_50": 624,
+    "rank_2_10": 1778,
+    "rank_over_50": 2
+  },
+  "best_positive_rank_max": 53,
+  "best_positive_rank_p50": 3,
+  "best_positive_rank_p90": 16,
+  "best_positive_rank_p95": 22,
+  "groups_path": "data/phase3d_full_pool/groups_val_full.jsonl",
+  "labels_path": "data/reranker_labels_uspto50k_val.jsonl",
+  "n_groups_total": 4931,
+  "n_groups_with_positive": 3253,
+  "n_groups_wrong_split_assignment": 0,
+  "n_groups_zero_positive": 1678,
+  "n_labeled_rows": 135641,
+  "n_pool_rows": 135641,
+  "n_unlabeled_groups": 0,
+  "pool_path": "data/phase3d_full_pool/pool_val_full.jsonl",
+  "positive_count_per_group_mean": 0.6617168429617575,
+  "positive_coverage_rate": 0.6597039140133847,
+  "split": "val",
+  "wrong_split_assignment_sample": {}
+}

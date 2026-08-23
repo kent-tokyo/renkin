@@ -1,0 +1,193 @@
+#!/usr/bin/env python3
+"""Fetch the frozen LightGBM reranker model + template frequency table from
+a GitHub Release asset, verifying each file with SHA-256 checks against two
+committed manifests before use (Issue #101 -- "batteries-included
+reranker").
+
+model.txt is a trained artifact derived from USPTO-50k (see
+data/phase3e_reranker_training/findings.md); it is not committed to this
+repository and is not bundled into the crates.io/PyPI/npm packages -- it is
+attached as a GitHub Release asset instead, downloaded on request, and
+SHA-256 verified. This keeps a research-provenance artifact of unclear
+upstream data licensing out of the MIT-licensed packages while still
+letting an ordinary user get a working reranker in one command, without
+running the training pipeline themselves. frequency_table.json (aggregate
+per-template frequency counts, not raw training data) IS already committed
+and bundled in packages -- this script re-fetches/re-verifies it too
+anyway, purely for a single consistent "both files verified together"
+command; it is not filling a distribution gap for that file the way it is
+for model.txt.
+
+Two manifests, two different things verified:
+  - freeze_manifest.json: training-time artifact identity. model.txt's
+    entry is a whole-file hash. frequency_table.json's entry is a hash of
+    just the file's inner `table` data (computed before
+    phase3e_export_frequency_table.py wraps it in `_purpose`/`entries`/
+    `table` keys) -- read back from the file's own embedded "sha256"
+    field rather than re-derived.
+  - release_asset_manifest.json: release-asset identity (whole-file hash
+    of exactly what was uploaded, plus the release_tag those hashes are
+    valid for). Needed for frequency_table.json since freeze_manifest.json's
+    entry there is not a whole-file hash and so cannot by itself catch a
+    wrong/corrupted/truncated download.
+
+`--version` defaults to release_asset_manifest.json's own `release_tag`,
+NOT to Cargo.toml's crate version -- those are independently-varying
+concepts (the crate version bumps on every release; the asset manifest
+only gets a new release_tag when its assets are actually re-uploaded, per
+its own immutability policy) and conflating them would break this script's
+default invocation on every ordinary version bump, long before any new
+release actually re-hosts these assets.
+
+This script does not create, modify, or upload to any GitHub Release --
+it only downloads and verifies assets that must already exist there.
+
+Usage:
+    python3 scripts/fetch_reranker_model.py
+    python3 scripts/fetch_reranker_model.py --version v0.23.0 --repo kent-tokyo/renkin
+"""
+
+import argparse
+import json
+import os
+import sys
+
+from asset_fetch_common import (
+    check_asset_manifest_version,
+    fetch_and_verify,
+    load_json_manifest,
+    sha256_of,
+)
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DEFAULT_FREEZE_MANIFEST = os.path.join(
+    REPO_ROOT, "data/phase3e_reranker_training/freeze_manifest.json"
+)
+DEFAULT_ASSET_MANIFEST = os.path.join(
+    REPO_ROOT, "data/phase3e_reranker_training/release_asset_manifest.json"
+)
+DEFAULT_OUTPUT_DIR = os.path.join(REPO_ROOT, "data/phase3e_reranker_training")
+
+
+def embedded_json_sha256(path):
+    """frequency_table.json's freeze_manifest.json entry is a hash of the
+    file's inner `table` data (scripts/train_reranker.py's
+    template_frequency_table_sha256), computed *before*
+    phase3e_export_frequency_table.py wraps it with `_purpose`/`entries`/
+    `table` keys and writes it to disk -- NOT a whole-file hash. That same
+    export script embeds the identical hash in the file's own top-level
+    "sha256" field for exactly this reason -- read it back rather than
+    re-deriving it (which would require importing train_reranker.py's
+    hashing internals here too). Raises RuntimeError (not some other
+    exception type) on any malformed input, so callers only ever need to
+    catch one exception type."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        raise RuntimeError(f"{path} is not valid JSON: {e}") from e
+    if "sha256" not in data:
+        raise RuntimeError(f"{path} has no top-level \"sha256\" field to verify")
+    return data["sha256"]
+
+
+def manifest_lookup(manifest, dotted_key):
+    try:
+        node = manifest
+        for part in dotted_key.split("."):
+            node = node[part]
+        return node
+    except KeyError as e:
+        raise RuntimeError(f"manifest is missing expected key {dotted_key!r}") from e
+
+
+def build_checks(freeze_manifest, asset_manifest):
+    """Returns {filename: [(description, expected_sha256, verifier(path)), ...]}.
+
+    Every filename here must pass ALL of its listed checks -- see the
+    module docstring for why frequency_table.json needs two different
+    ones and model.txt only needs one.
+    """
+    try:
+        frequency_table_asset_sha256 = asset_manifest["assets"]["frequency_table.json"]["sha256"]
+    except KeyError as e:
+        raise RuntimeError(
+            "release_asset_manifest.json is missing assets.\"frequency_table.json\".sha256"
+        ) from e
+    return {
+        "model.txt": [
+            (
+                "whole-file hash vs freeze_manifest.json (model_artifact.sha256)",
+                manifest_lookup(freeze_manifest, "model_artifact.sha256"),
+                sha256_of,
+            ),
+        ],
+        "frequency_table.json": [
+            (
+                "whole-file hash vs release_asset_manifest.json (download authenticity)",
+                frequency_table_asset_sha256,
+                sha256_of,
+            ),
+            (
+                "embedded inner-table hash vs freeze_manifest.json "
+                "(feature_schema.template_frequency_table_sha256)",
+                manifest_lookup(
+                    freeze_manifest, "feature_schema.template_frequency_table_sha256"
+                ),
+                embedded_json_sha256,
+            ),
+        ],
+    }
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("--repo", default="kent-tokyo/renkin")
+    parser.add_argument(
+        "--version",
+        default=None,
+        help="Release tag, e.g. v0.22.0. Default: release_asset_manifest.json's "
+        "own release_tag -- the release its checksums are actually valid for "
+        "(deliberately NOT the crate's current Cargo.toml version, which is an "
+        "independently-varying number).",
+    )
+    parser.add_argument("--freeze-manifest", default=DEFAULT_FREEZE_MANIFEST)
+    parser.add_argument("--asset-manifest", default=DEFAULT_ASSET_MANIFEST)
+    parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
+    args = parser.parse_args(argv)
+
+    freeze_manifest = load_json_manifest(args.freeze_manifest, "freeze_manifest.json")
+    asset_manifest = load_json_manifest(args.asset_manifest, "release_asset_manifest.json")
+
+    version = args.version or asset_manifest.get("release_tag")
+    if version is None:
+        parser.error(
+            "release_asset_manifest.json has no release_tag and --version was "
+            "not given -- pass --version explicitly"
+        )
+    check_asset_manifest_version(asset_manifest, version, "release_asset_manifest.json")
+
+    os.makedirs(args.output_dir, exist_ok=True)
+    checks_by_file = build_checks(freeze_manifest, asset_manifest)
+
+    paths = {}
+    for filename, checks in checks_by_file.items():
+        paths[filename] = fetch_and_verify(
+            filename, checks, args.repo, version, args.output_dir
+        )
+
+    print(
+        "\nDone. Use with:\n"
+        f"  renkin ... --reranker-model {paths['model.txt']} "
+        f"--reranker-freq-table {paths['frequency_table.json']}"
+    )
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except RuntimeError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)

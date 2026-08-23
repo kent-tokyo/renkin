@@ -1,0 +1,15 @@
+# Minimal, committed, self-contained template fixture for
+# tests/coverage_mode_cli.rs -- NOT excluded from `cargo package` (unlike
+# data/templates_extracted*.smi), so these integration tests remain
+# self-contained in a published crate tarball, not just a git checkout.
+#
+# Exactly the two extracted-template lines (by content, not by file
+# position) already proven sufficient to solve
+# STAGE1_UNSOLVED_AT_STAGE2_TEMPLATES ("O=C1CCC(=O)N1c1ccccc1",
+# N-phenylsuccinimide) at depth=2 with data/templates_extracted_500.smi --
+# reused verbatim rather than hand-authored, since real templates already
+# came from that file's own extraction/validation pipeline. See
+# tests/coverage_mode_cli.rs's module doc for how this target was chosen
+# (default_rules() alone cannot solve it; these two lines can).
+[C:2]-[C:1](=[O:3])-[NH:4]-[c:5]>>O-[C:1](-[C:2])=[O:3].[NH2:4]-[c:5]	205
+[C:2]-[C:1](=[O:3])-[N:5](-[C:4])-[c:6]>>O-[C:1](-[C:2])=[O:3].[C:4]-[NH:5]-[c:6]	23

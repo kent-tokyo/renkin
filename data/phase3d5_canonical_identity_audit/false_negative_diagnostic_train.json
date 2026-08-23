@@ -1,0 +1,389 @@
+{
+  "split": "train",
+  "n_groups_total": 39798,
+  "n_unlabeled_groups": 0,
+  "coverage_before": {
+    "n_with_positive": 26648,
+    "n_zero_positive": 13150,
+    "rate": 0.6695813859992964
+  },
+  "coverage_after_normalized_diagnostic": {
+    "n_with_positive": 26723,
+    "n_zero_positive": 13075,
+    "rate": 0.6714659028091864
+  },
+  "n_groups_flipped_zero_to_positive": 75,
+  "flipped_groups_sample": [
+    {
+      "group_id": "uspto50k_train#L11491",
+      "candidate_id": "sha256:5be9423f9e03184895fcb60342a64f2d72d5ed5ec0350996f6aa220f94a0e474",
+      "best_upstream_rank": 20,
+      "raw_precursor_smiles": [
+        "CC(=O)Cl",
+        "O=c3c(N)cc2c1c(COc2[nH]3)cccc1"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "CC(=O)Cl",
+          "c1c2c(COc3[nH]c(c(N)cc23)=O)ccc1"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_train#L1245",
+      "candidate_id": "sha256:1886cdaef06cb8bd8baa85242e81950d53cfb5473d3fc7731b77e713b20e5dc5",
+      "best_upstream_rank": 9,
+      "raw_precursor_smiles": [
+        "O=S1(=O)CCNCC1",
+        "c3c(ccc(C(O)=O)c3)Nc1[nH]c2nccc2c(NCC(F)(F)F)n1"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "C(O)(c1ccc(Nc3nc(NCC(F)(F)F)c2ccnc2[nH]3)cc1)=O",
+          "O=S1(=O)CCNCC1"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_train#L12694",
+      "candidate_id": "sha256:9f6d0c7e12369ec7e5a9520c3a220a6b09550c93a83d7b6f520642e6d12bfbf2",
+      "best_upstream_rank": 4,
+      "raw_precursor_smiles": [
+        "C1C[C@H](CN)CC[C@@H]1Cc2ccccc2",
+        "c1(c(c[nH]n1)C(=O)O)N"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "C1C[C@@H](CN)CC[C@H]1Cc2ccccc2",
+          "c1(c(c[nH]n1)C(=O)O)N"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_train#L1297",
+      "candidate_id": "sha256:21eeda8968711808a4f90334529542d6637d65b74fbb881cc2689a4dfa622834",
+      "best_upstream_rank": 39,
+      "raw_precursor_smiles": [
+        "c1ccccc1C3=NCc4cnc(n4c2ccc(cc23)C(=O)C)C"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "C(C)(=O)c4ccc2c(c4)C(c3ccccc3)=NCc1cnc(C)n12"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_train#L13946",
+      "candidate_id": "sha256:c62e170c1a74d3cb60cb7fcb437a5026b288a92be80dd5b28b7405ee42ab0bc1",
+      "best_upstream_rank": 12,
+      "raw_precursor_smiles": [
+        "C1[C@H](C(=O)O)CC[C@@H](CNC(OCc2ccccc2)=O)C1",
+        "c1nc(c(CN)nc1)Cl"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "C1[C@@H](C(=O)O)CC[C@H](CNC(OCc2ccccc2)=O)C1",
+          "c1nc(c(CN)nc1)Cl"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_train#L14122",
+      "candidate_id": "sha256:72b1515d7eab80699a2fa125d2c3803b163d192793e89781e330b05d515a3049",
+      "best_upstream_rank": 48,
+      "raw_precursor_smiles": [
+        "c3ccc2[nH]c(n(c2c3)C1CCNCC1)=O",
+        "n3(CCCCCl)nc2n(c3=O)c1c(OC2)cccc1"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "C(Cn3c(=O)n1c(n3)COc2ccccc12)CCCl",
+          "c3ccc2[nH]c(n(c2c3)C1CCNCC1)=O"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_train#L14905",
+      "candidate_id": "sha256:4e7f6218271504ffb6b87c691a8da2ecd82dd441510cdc8e81833d67b2cf342f",
+      "best_upstream_rank": 225,
+      "raw_precursor_smiles": [
+        "Brc4ccc3c1c(C(CCCC)(c3c4)CCCC)cc(N2CCCCC2)cc1",
+        "O=CN(C)C"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "N1(c4ccc2c(c4)C(CCCC)(c3c2ccc(c3)Br)CCCC)CCCCC1",
+          "O=CN(C)C"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_train#L15588",
+      "candidate_id": "sha256:faaa570230f3edd59172a08b42ddf333806dec2e8a99a4a8c76903d52e06f60e",
+      "best_upstream_rank": 318,
+      "raw_precursor_smiles": [
+        "c1c(-c3nc2c(n3)cn[nH]c2)c(F)c(cc1)F",
+        "c1ccccc1NC(c2ccc(CCl)cc2)=O"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "c1c(-c2nc3cn[nH]cc3n2)c(F)c(cc1)F",
+          "c1ccccc1NC(c2ccc(CCl)cc2)=O"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_train#L15949",
+      "candidate_id": "sha256:378f9adaa068a431b1507c3e6a5de4f5a99c205c9968f4befde70e3a6ea8e149",
+      "best_upstream_rank": 4,
+      "raw_precursor_smiles": [
+        "C(c1ccc(N2CCOCC2)cc1)(=O)O",
+        "C1[C@H](N)CC[C@@H](CCN2CCN(c4nccc3OCCc34)CC2)C1"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "C(c1ccc(N2CCOCC2)cc1)(=O)O",
+          "C1[C@@H](N)CC[C@H](CCN2CCN(c4nccc3OCCc34)CC2)C1"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_train#L16829",
+      "candidate_id": "sha256:a47103e46efe96412592260388f28ab97ed19cefbbc8bc3e357f599f4d34a715",
+      "best_upstream_rank": 171,
+      "raw_precursor_smiles": [
+        "CN",
+        "c12ccccc1CCc3[nH]c(=O)c(Cl)cc23"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "CN",
+          "c13c(cccc3)CCc2[nH]c(=O)c(Cl)cc12"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_train#L16913",
+      "candidate_id": "sha256:6646f51435ed0bb9920cc3101e34cb1212dd3fbbac47cdb06a4c32ffb3cbd29d",
+      "best_upstream_rank": 410,
+      "raw_precursor_smiles": [
+        "O=C(c1ccccc1)Cl",
+        "c5(noc(n5)C4CC4)-c2c1CNc3c(F)cccc3n1cn2"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "Fc5cccc1c5NCc2c(-c3nc(C4CC4)on3)ncn12",
+          "O=C(c1ccccc1)Cl"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_train#L17692",
+      "candidate_id": "sha256:2a0137f1ae0081451c5c6d88fe90cb1ad8b72b2338a63e39011a83016f02d360",
+      "best_upstream_rank": 250,
+      "raw_precursor_smiles": [
+        "c1c(-c3nc2c(n3)cn[nH]c2)c(F)c(cc1)F",
+        "c2c(OC)ccc(c2C(F)(F)F)-c1ccc(CBr)cc1C(=O)OC"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "c1c(-c2nc3cn[nH]cc3n2)c(F)c(cc1)F",
+          "c2c(OC)ccc(c2C(F)(F)F)-c1ccc(CBr)cc1C(=O)OC"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_train#L18131",
+      "candidate_id": "sha256:9bc405c9bd0086fefd97db2a1ff485ab2b2794c49d00c4046b2a4feef832af79",
+      "best_upstream_rank": 173,
+      "raw_precursor_smiles": [
+        "C(C)NCC",
+        "c3(C(=O)OCC)c2c([nH]c3)CCCc1cn(CCOS(=O)(=O)C)nc12"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "C(C)NCC",
+          "c3c(C(OCC)=O)c1c([nH]3)CCCc2c1nn(c2)CCOS(=O)(=O)C"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_train#L18177",
+      "candidate_id": "sha256:5a18b1ba6392c714ffb2c335e3cb90addbf4c8bc83e38ee9265f884faf76d9c6",
+      "best_upstream_rank": 34,
+      "raw_precursor_smiles": [
+        "C2N(CCNC2)c1ccccn1",
+        "c13c(cccc3)c2c(cccc2)C1(C(=O)NCC(F)(F)F)CCCCBr"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "C2N(CCNC2)c1ccccn1",
+          "c3ccc2c(c3)C(CCCCBr)(C(=O)NCC(F)(F)F)c1ccccc12"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_train#L18312",
+      "candidate_id": "sha256:2afca243998f34d00159aa79a2769bf5a33b50ba03590c1e0da78ea73ca5dc2f",
+      "best_upstream_rank": 86,
+      "raw_precursor_smiles": [
+        "C(CCCBr)O[C@H]1CC[C@@H](CC1)NC",
+        "c1(F)cc(F)ccc1S(Cl)(=O)=O"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "C(CCCBr)O[C@@H]1CC[C@H](CC1)NC",
+          "c1(F)cc(F)ccc1S(Cl)(=O)=O"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_train#L18910",
+      "candidate_id": "sha256:6d502a33e2c23dc082cc845bd3879b767f7701da012ca797f3a72a942b2ab706",
+      "best_upstream_rank": 0,
+      "raw_precursor_smiles": [
+        "C(OC)(c1cc(C(=O)N[C@H]2CC[C@@H](Nc4ccc3ccccc3n4)CC2)ccc1)=O"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "C(OC)(c1cc(C(=O)N[C@@H]2CC[C@H](Nc4ccc3ccccc3n4)CC2)ccc1)=O"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_train#L19396",
+      "candidate_id": "sha256:ef1147c0c89297ac2ea25f874e4249b826aa0e1c897d84b1a7211872681a9473",
+      "best_upstream_rank": 5,
+      "raw_precursor_smiles": [
+        "c1cc(OC)ccc1S(=O)(=O)N3C(c4c(cccc4)c2ccc(F)cc23)C"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "c4cc2c(cc4F)N(C(c3ccccc23)C)S(=O)(=O)c1ccc(OC)cc1"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_train#L19510",
+      "candidate_id": "sha256:1090e6e093f733d5608a2fd4293671f8769d2b6b0ce84250f9199590ef9f6aed",
+      "best_upstream_rank": 494,
+      "raw_precursor_smiles": [
+        "C(CN1CCCCC1)Cl",
+        "c34c(cccc4)c1c([nH]3)c2ccccc2SCC1"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "C(CN1CCCCC1)Cl",
+          "c1c3c(SCCc4c2c([nH]c34)cccc2)ccc1"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_train#L20052",
+      "candidate_id": "sha256:f0adabefcacf50e1e12a7d7596324cd8da1ef8f92b65aa46690feada99d5ffb2",
+      "best_upstream_rank": 325,
+      "raw_precursor_smiles": [
+        "N",
+        "c12CCc3c(c(OCCC)sc3C(=O)O)c1n(C)nc2"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "Cn1c2c(CCc3c(sc(c23)OCCC)C(=O)O)cn1",
+          "N"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_train#L20234",
+      "candidate_id": "sha256:1a113dde39119aaa210c30bc32e8da0f6e8019592e4082d422593695e4df4667",
+      "best_upstream_rank": 23,
+      "raw_precursor_smiles": [
+        "C1COCCN1",
+        "n1c2c([nH]c(C)nc2Cl)cc1C"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "C1COCCN1",
+          "c2(C)nc1c(nc(C)[nH]c1c2)Cl"
+        ]
+      ]
+    }
+  ],
+  "flipped_best_upstream_rank_distribution": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    4,
+    4,
+    4,
+    4,
+    5,
+    5,
+    6,
+    6,
+    8,
+    9,
+    12,
+    12,
+    12,
+    12,
+    14,
+    14,
+    15,
+    16,
+    20,
+    20,
+    20,
+    23,
+    24,
+    30,
+    34,
+    34,
+    37,
+    39,
+    48,
+    50,
+    53,
+    54,
+    72,
+    74,
+    83,
+    86,
+    92,
+    93,
+    94,
+    96,
+    101,
+    103,
+    116,
+    119,
+    119,
+    119,
+    125,
+    128,
+    133,
+    145,
+    171,
+    173,
+    213,
+    225,
+    238,
+    250,
+    263,
+    287,
+    318,
+    318,
+    318,
+    318,
+    325,
+    381,
+    383,
+    383,
+    410,
+    410,
+    488,
+    494
+  ]
+}

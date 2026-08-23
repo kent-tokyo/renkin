@@ -1,0 +1,220 @@
+[renkin] rank=0 status=completed route_found=False
+[renkin] rank=1 status=completed route_found=False
+[renkin] rank=2 status=completed route_found=False
+[renkin] rank=3 status=completed route_found=True
+[renkin] rank=4 status=completed route_found=False
+[renkin] rank=5 status=completed route_found=False
+[renkin] rank=6 status=completed route_found=True
+[renkin] rank=7 status=completed route_found=False
+[renkin] rank=8 status=completed route_found=False
+[renkin] rank=9 status=completed route_found=True
+[renkin] rank=10 status=completed route_found=False
+[renkin] rank=11 status=completed route_found=False
+[renkin] rank=12 status=completed route_found=False
+[renkin] rank=13 status=completed route_found=False
+[renkin] rank=14 status=completed route_found=True
+[renkin] rank=15 status=completed route_found=False
+[renkin] rank=16 status=completed route_found=True
+[renkin] rank=17 status=completed route_found=False
+[renkin] rank=18 status=completed route_found=True
+[renkin] rank=19 status=completed route_found=False
+[renkin] rank=20 status=completed route_found=False
+[renkin] rank=21 status=completed route_found=False
+[renkin] rank=22 status=completed route_found=True
+[renkin] rank=23 status=completed route_found=False
+[renkin] rank=24 status=completed route_found=False
+[renkin] rank=25 status=timeout route_found=None
+[renkin] rank=26 status=completed route_found=False
+[renkin] rank=27 status=completed route_found=False
+[renkin] rank=28 status=completed route_found=False
+[renkin] rank=29 status=completed route_found=True
+[renkin] rank=30 status=completed route_found=True
+[renkin] rank=31 status=completed route_found=False
+[renkin] rank=32 status=completed route_found=False
+[renkin] rank=33 status=completed route_found=False
+[renkin] rank=34 status=completed route_found=True
+[renkin] rank=35 status=completed route_found=False
+[renkin] rank=36 status=completed route_found=False
+[renkin] rank=37 status=completed route_found=False
+[renkin] rank=38 status=completed route_found=False
+[renkin] rank=39 status=completed route_found=False
+[renkin] rank=40 status=completed route_found=True
+[renkin] rank=41 status=completed route_found=False
+[renkin] rank=42 status=completed route_found=False
+[renkin] rank=43 status=completed route_found=True
+[renkin] rank=44 status=completed route_found=True
+[renkin] rank=45 status=completed route_found=False
+[renkin] rank=46 status=completed route_found=False
+[renkin] rank=47 status=completed route_found=False
+[renkin] rank=48 status=completed route_found=False
+[renkin] rank=49 status=completed route_found=True
+[renkin] rank=50 status=completed route_found=False
+[renkin] rank=51 status=completed route_found=True
+[renkin] rank=52 status=completed route_found=False
+[renkin] rank=53 status=completed route_found=True
+[renkin] rank=54 status=completed route_found=False
+[renkin] rank=55 status=completed route_found=False
+[renkin] rank=56 status=completed route_found=False
+[renkin] rank=57 status=completed route_found=False
+[renkin] rank=58 status=completed route_found=False
+[renkin] rank=59 status=completed route_found=False
+[renkin] rank=60 status=completed route_found=False
+[renkin] rank=61 status=completed route_found=False
+[renkin] rank=62 status=completed route_found=False
+[renkin] rank=63 status=completed route_found=False
+[renkin] rank=64 status=completed route_found=False
+[renkin] rank=65 status=completed route_found=False
+[renkin] rank=66 status=completed route_found=False
+[renkin] rank=67 status=completed route_found=False
+[renkin] rank=68 status=completed route_found=False
+[renkin] rank=69 status=completed route_found=False
+[renkin] rank=70 status=completed route_found=False
+[renkin] rank=71 status=completed route_found=False
+[renkin] rank=72 status=completed route_found=False
+[renkin] rank=73 status=completed route_found=True
+[renkin] rank=74 status=completed route_found=False
+[renkin] rank=75 status=completed route_found=False
+[renkin] rank=76 status=completed route_found=False
+[renkin] rank=77 status=completed route_found=True
+[renkin] rank=78 status=completed route_found=False
+[renkin] rank=79 status=completed route_found=False
+[renkin] rank=80 status=completed route_found=True
+[renkin] rank=81 status=completed route_found=True
+[renkin] rank=82 status=completed route_found=True
+[renkin] rank=83 status=completed route_found=False
+[renkin] rank=84 status=completed route_found=True
+[renkin] rank=85 status=completed route_found=False
+[renkin] rank=86 status=completed route_found=False
+[renkin] rank=87 status=completed route_found=False
+[renkin] rank=88 status=completed route_found=True
+[renkin] rank=89 status=completed route_found=True
+[renkin] rank=90 status=completed route_found=False
+[renkin] rank=91 status=completed route_found=False
+[renkin] rank=92 status=completed route_found=True
+[renkin] rank=93 status=completed route_found=False
+[renkin] rank=94 status=completed route_found=True
+[renkin] rank=95 status=completed route_found=True
+[renkin] rank=96 status=completed route_found=False
+[renkin] rank=97 status=completed route_found=False
+[renkin] rank=98 status=completed route_found=False
+[renkin] rank=99 status=completed route_found=False
+{
+  "best_route_depth_distribution": {
+    "denominator_kind": "route_found_runs",
+    "max": 5,
+    "n": 27,
+    "p50": 3,
+    "p95": 5
+  },
+  "best_route_leaf_count_distribution": {
+    "denominator_kind": "parseable_routes",
+    "max": 5,
+    "n": 27,
+    "p50": 3,
+    "p95": 5
+  },
+  "best_route_step_count_distribution": {
+    "denominator_kind": "route_found_runs",
+    "max": 5,
+    "n": 27,
+    "p50": 3,
+    "p95": 5
+  },
+  "common_structural_warning_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 100,
+    "n_numerator": 9,
+    "value": 0.09
+  },
+  "comparison_mode": "shared_stock",
+  "crash_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 100,
+    "n_numerator": 0,
+    "value": 0.0
+  },
+  "invalid_input_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 100,
+    "n_numerator": 0,
+    "value": 0.0
+  },
+  "n_all_sampled": 100,
+  "new_rows_this_invocation": 100,
+  "peak_rss_bytes_percentiles": {
+    "denominator_kind": "measured_runs",
+    "max": 23445504,
+    "n": 99,
+    "p50": 10338304,
+    "p95": 15482880
+  },
+  "reaction_steps_parseable_rate": {
+    "denominator_kind": "parseable_routes",
+    "n_denominator": 27,
+    "n_numerator": 27,
+    "value": 1.0
+  },
+  "route_found_but_tree_not_parseable_count": 0,
+  "route_found_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 100,
+    "n_numerator": 27,
+    "value": 0.27
+  },
+  "route_to_configured_stock_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 100,
+    "n_numerator": 27,
+    "value": 0.27
+  },
+  "route_tree_parseable_rate": {
+    "denominator_kind": "route_found_runs",
+    "n_denominator": 27,
+    "n_numerator": 27,
+    "value": 1.0
+  },
+  "setup_error_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 100,
+    "n_numerator": 0,
+    "value": 0.0
+  },
+  "solved_only_total_elapsed_ms_percentiles": {
+    "denominator_kind": "route_found_runs",
+    "max": 8000.480249989778,
+    "n": 27,
+    "p50": 330.2615419961512,
+    "p95": 4379.051208990859
+  },
+  "target_elements_accounted_route_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 100,
+    "n_numerator": 19,
+    "value": 0.19
+  },
+  "time_to_first_route_ms_percentiles": {
+    "denominator_kind": "route_found_runs",
+    "max": null,
+    "n": 0,
+    "p50": null,
+    "p90": null,
+    "p95": null,
+    "p99": null
+  },
+  "timeout_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 100,
+    "n_numerator": 1,
+    "value": 0.01
+  },
+  "tool": "renkin",
+  "total_elapsed_ms_percentiles": {
+    "denominator_kind": "measured_runs",
+    "max": 150005.88991699624,
+    "n": 100,
+    "p50": 6516.8836250086315,
+    "p95": 42181.69979201048
+  },
+  "total_rows_in_file": 100,
+  "wall_clock_total_sweep_s": 1354.268925957993
+}

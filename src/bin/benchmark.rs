@@ -145,9 +145,10 @@ struct BenchResult {
     /// "not_evaluable" (no step could be checked). None when --plausibility
     /// not set or no routes found. See `renkin::validation` for why this
     /// replaces the old binary forward_validated as the source of truth:
-    /// 7 graph-based rules (ester/amide/Suzuki/sulfonamide/sulfone/Boc/Cbz)
-    /// have no SMIRKS to reverse-apply and need a separate structural check,
-    /// so "couldn't be checked" and "checked and wrong" must stay distinct.
+    /// 8 graph-based rules (ester/amide/Suzuki/sulfonamide/sulfone/Boc/Cbz/
+    /// aryl-ether) have no SMIRKS to reverse-apply and need a separate
+    /// structural check, so "couldn't be checked" and "checked and wrong"
+    /// must stay distinct.
     #[serde(skip_serializing_if = "Option::is_none")]
     route_validation_status: Option<String>,
     /// True if any step uses a low-frequency template (step_confidence < 0.1).

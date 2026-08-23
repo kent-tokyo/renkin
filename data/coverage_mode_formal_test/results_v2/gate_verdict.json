@@ -1,0 +1,37 @@
+{
+  "arm_a_solved": 102,
+  "arm_c_solved": 132,
+  "cohort_mismatch": {
+    "missing_in_arm_a": [],
+    "missing_in_arm_c": []
+  },
+  "coverage_delta_pp": 6.0,
+  "criteria": {
+    "arm_a_solved_exact_match_in_arm_c_stage1": true,
+    "coverage_delta_ge_3pp_and_net_gain_ge_15": true,
+    "invalid_zero": false,
+    "regressions_zero": true,
+    "reranker_failures_zero_both_arms": true,
+    "stage2_never_invoked_when_stage1_solved": true,
+    "stage2_timeout_rate_le_5pct": true
+  },
+  "execution_anomalies": {
+    "arm_a_external_timeout": [],
+    "arm_c_external_timeout": []
+  },
+  "invalid": [
+    "uspto50k_test#L4703"
+  ],
+  "n_cohort": 500,
+  "n_common": 500,
+  "net_gain": 30,
+  "overall_pass": false,
+  "regressions": [],
+  "reranker_failures_arm_a": 0,
+  "reranker_failures_arm_c": 0,
+  "stage1_semantic_mismatches": [],
+  "stage2_invocation_count": 398,
+  "stage2_invoked_when_stage1_solved": [],
+  "stage2_timeout_count": 1,
+  "stage2_timeout_rate": 0.002512562814070352
+}

@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 use renkin::DEFAULT_BUILDING_BLOCKS;
+use renkin::bridge;
 use renkin::chem_env;
 use renkin::display;
 use renkin::evidence_match;
@@ -21,6 +22,97 @@ struct Output {
     /// itself is a template-frequency ranking score, not a measured or
     /// predicted experimental success rate.
     joint_success_probability: f64,
+    /// Beam/crowd-out diagnostics (Issue #101). Only present with
+    /// `--search-diagnostics`; omitted (not `null`) by default so existing
+    /// consumers see byte-identical output.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    search_diagnostics: Option<search::CrowdOutDiagnostics>,
+    /// Issue #101 Task 35: only present when `--reranker-model`/
+    /// `--reranker-freq-table` were both given and loaded successfully.
+    /// A nonzero value means the reranker degraded to legacy ordering
+    /// partway through this search (see `SearchStats::reranker_failures`'
+    /// doc) -- surfaced unconditionally whenever the reranker was active,
+    /// not gated behind `--search-diagnostics`, since a paired ON-vs-OFF
+    /// comparison has no other way to tell "reranker ON and healthy for
+    /// this whole run" apart from "reranker ON but silently degraded"
+    /// (a run that exits 0 either way).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reranker_failures: Option<u64>,
+    /// Phase 41.18B (coverage mode): present only when `--search-mode
+    /// coverage` was used -- omitted (not `null`) for standard mode, so
+    /// existing consumers see byte-identical output. When a reranker is
+    /// also configured, `reranker_failures` above is the sum across every
+    /// stage that actually ran, not just this one's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    search_mode: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    selected_stage: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stage2_invoked: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stage1_timeout: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stage2_timeout: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stage1_elapsed_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stage2_elapsed_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    total_elapsed_ms: Option<f64>,
+}
+
+/// Issue #99: which loaded templates are `Unsupported` for concrete
+/// application (their `[#N]` hash-atoms have no usable concrete-element
+/// reading, so they can never produce a route), grouped by reason. Pure
+/// classification, no I/O -- see `report_hash_atom_unsupported` for the
+/// load-time stderr summary this backs.
+fn count_hash_atom_unsupported(
+    rules: &[chem_env::RetroRule],
+) -> std::collections::BTreeMap<&'static str, usize> {
+    let mut by_reason: std::collections::BTreeMap<&'static str, usize> =
+        std::collections::BTreeMap::new();
+    for rule in rules {
+        if let chem_env::ConcreteApplicationStatus::Unsupported { reason } =
+            chem_env::concrete_application_status(&rule.smirks)
+        {
+            let key = match reason {
+                chem_env::HashAtomUnsupportedReason::UnhandledSyntax => "unhandled_syntax",
+                chem_env::HashAtomUnsupportedReason::InconsistentElement => "inconsistent_element",
+                chem_env::HashAtomUnsupportedReason::VariantLimitExceeded { .. } => {
+                    "variant_limit_exceeded"
+                }
+                chem_env::HashAtomUnsupportedReason::NoValidVariant => "no_valid_variant",
+            };
+            *by_reason.entry(key).or_insert(0) += 1;
+        }
+    }
+    by_reason
+}
+
+/// Issue #99: a normal search run had no in-band signal that some loaded
+/// templates are unsupported for concrete application — the only way to
+/// see this was `examples/hashatom_corpus_stats.rs`, run offline against a
+/// template file directly. Silent when there's nothing to report (both
+/// checked-in corpora currently have zero unsupported templates); prints a
+/// reason-broken-down summary otherwise, right after the existing
+/// unconditional "Loaded N templates" line — load-time, not requiring a
+/// search to actually run one to completion.
+fn report_hash_atom_unsupported(rules: &[chem_env::RetroRule]) {
+    let by_reason = count_hash_atom_unsupported(rules);
+    let total: usize = by_reason.values().sum();
+    if total == 0 {
+        return;
+    }
+    let breakdown = by_reason
+        .iter()
+        .map(|(reason, count)| format!("{reason}={count}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    eprintln!(
+        "  {total} of {} loaded templates are unsupported for concrete application \
+         (will never produce a route): {breakdown}",
+        rules.len()
+    );
 }
 
 // ..Default::default() is needed when nn-scoring feature is enabled (adds nn_scorer field).
@@ -39,6 +131,9 @@ fn main() -> Result<()> {
     if args.get(1).map(|s| s.as_str()) == Some("evidence") {
         return run_evidence(&args[2..]);
     }
+    if args.get(1).map(|s| s.as_str()) == Some("audit-route") {
+        return run_audit_route(&args[2..]);
+    }
 
     let mut target: Option<String> = None;
     let mut max_depth: u32 = 5;
@@ -52,6 +147,8 @@ fn main() -> Result<()> {
     let mut avoid_elements: String = String::new();
     let mut require_elements: String = String::new();
     let mut verbose = false;
+    let mut search_diagnostics = false;
+    let mut candidate_trace_limit: Option<usize> = None;
     let mut bond_index = false;
     let mut bb_prices_path: Option<String> = None;
     let mut stock_path: Option<String> = None;
@@ -61,6 +158,11 @@ fn main() -> Result<()> {
     let mut scorer_path: Option<String> = None;
     let mut ring_context_policy_arg: Option<String> = None;
     let mut ring_context_sidecar_path: Option<String> = None;
+    let mut reranker_model_path: Option<String> = None;
+    let mut reranker_freq_table_path: Option<String> = None;
+    let mut search_mode_arg: Option<String> = None;
+    let mut coverage_templates_path: Option<String> = None;
+    let mut coverage_timeout_secs_arg: Option<String> = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -134,6 +236,24 @@ fn main() -> Result<()> {
             "--verbose" | "-v" => {
                 verbose = true;
             }
+            "--search-diagnostics" => {
+                search_diagnostics = true;
+            }
+            "--candidate-trace-limit" => {
+                i += 1;
+                let Some(v) = args.get(i) else {
+                    bail!("--candidate-trace-limit requires a <N> value");
+                };
+                let n: usize = v.parse().map_err(|_| {
+                    anyhow::anyhow!(
+                        "--candidate-trace-limit value must be a non-negative integer, got {v:?}"
+                    )
+                })?;
+                candidate_trace_limit = Some(n);
+                // Self-sufficient: requesting a trace implies wanting to see
+                // it, without also having to remember --search-diagnostics.
+                search_diagnostics = true;
+            }
             "--bond-index" => {
                 bond_index = true;
             }
@@ -153,6 +273,41 @@ fn main() -> Result<()> {
                     bail!("--ring-context-sidecar requires a <path> value");
                 };
                 ring_context_sidecar_path = Some(v.clone());
+            }
+            "--reranker-model" => {
+                i += 1;
+                let Some(v) = args.get(i) else {
+                    bail!("--reranker-model requires a <path> value");
+                };
+                reranker_model_path = Some(v.clone());
+            }
+            "--reranker-freq-table" => {
+                i += 1;
+                let Some(v) = args.get(i) else {
+                    bail!("--reranker-freq-table requires a <path> value");
+                };
+                reranker_freq_table_path = Some(v.clone());
+            }
+            "--search-mode" => {
+                i += 1;
+                let Some(v) = args.get(i) else {
+                    bail!("--search-mode requires a <standard|coverage> value");
+                };
+                search_mode_arg = Some(v.clone());
+            }
+            "--coverage-templates" => {
+                i += 1;
+                let Some(v) = args.get(i) else {
+                    bail!("--coverage-templates requires a <path> value");
+                };
+                coverage_templates_path = Some(v.clone());
+            }
+            "--coverage-timeout-secs" => {
+                i += 1;
+                let Some(v) = args.get(i) else {
+                    bail!("--coverage-timeout-secs requires an <N> value");
+                };
+                coverage_timeout_secs_arg = Some(v.clone());
             }
             "--bb-prices" => {
                 i += 1;
@@ -208,13 +363,89 @@ fn main() -> Result<()> {
              --avoid-elements / -e  Comma-separated elements to ban from BBs (e.g. \"Br,I\")\n  \
              --require-elements / -r  Comma-separated elements each route must supply (e.g. \"B\")\n  \
              --verbose / -v         Print search statistics to stderr\n  \
+             --search-diagnostics   Add a \"search_diagnostics\" block (beam eviction, \
+             cross-template dedup, branching factor -- Issue #101) to JSON output\n  \
+             --candidate-trace-limit <N>  Also collect up to N per-candidate trace records \
+             (implies --search-diagnostics; offline diagnostic use, competitive program Phase 1B)\n  \
              --bond-index           Bond-center template index: ~24%% faster, no accuracy loss\n  \
              --bb-prices <path>     CSV (SMILES,price_per_gram) for route cost scoring\n  \
              --ring-context-policy <policy>  disabled (default) | audit-only | conservative | \
              ring-only | element-only\n  \
              --ring-context-sidecar <path>   Ring-context metadata JSON, required unless policy \
-             is disabled"
+             is disabled\n  \
+             --reranker-model <path>       Frozen LightGBM model.txt for candidate reranking \
+             (Issue #101 Task 35); ordering-only, requires --reranker-freq-table too\n  \
+             --reranker-freq-table <path>  TRAIN-frozen template frequency_table.json for the \
+             reranker\n  \
+             (either flag missing, or the model fails to load, falls back to legacy ordering \
+             with a stderr warning -- never a hard error)\n  \
+             --search-mode standard|coverage  standard (default): unchanged behavior. \
+             coverage: Stage 1 (--templates) runs first; only if it finds nothing does Stage 2 \
+             run against --coverage-templates (Phase 41.18B, docs/design/coverage-mode-v0.md)\n  \
+             --coverage-templates <path>   Stage 2's template set; required with \
+             --search-mode coverage, validated before Stage 1 runs\n  \
+             --coverage-timeout-secs <N>   Optional positive-integer wall-clock budget for \
+             Stage 2 only (cooperative cancellation, not a hard bound); default: unlimited\n  \
+             coverage mode does not support --bond-index, --scorer, or an active \
+             --ring-context-policy in v0 (fails loud before Stage 1 runs)"
         );
+    };
+
+    // Phase 41.18B: coverage mode. `search_mode_arg` absent or "standard"
+    // is byte-for-byte the pre-existing path below -- this whole block is
+    // additive. Resolved and validated here, before any of the env/rules/
+    // scorer/ring-context loading below -- specifically so an unsupported
+    // option combination (--bond-index / --scorer / an active
+    // --ring-context-policy) is rejected by flag presence alone, before
+    // this process attempts to load a real ONNX model or ring-context
+    // sidecar file for a combination that's going to be rejected anyway.
+    enum SearchMode {
+        Standard,
+        Coverage,
+    }
+    let search_mode = match search_mode_arg.as_deref() {
+        None | Some("standard") => SearchMode::Standard,
+        Some("coverage") => SearchMode::Coverage,
+        Some(other) => bail!("invalid --search-mode '{other}' (expected standard|coverage)"),
+    };
+    match search_mode {
+        SearchMode::Standard => {
+            if coverage_templates_path.is_some() {
+                bail!("--coverage-templates requires --search-mode coverage");
+            }
+            if coverage_timeout_secs_arg.is_some() {
+                bail!("--coverage-timeout-secs requires --search-mode coverage");
+            }
+        }
+        SearchMode::Coverage => {
+            if coverage_templates_path.is_none() {
+                bail!("--search-mode coverage requires --coverage-templates <path>");
+            }
+            let ring_context_policy_active = ring_context_policy_arg
+                .as_deref()
+                .is_some_and(|p| p != "disabled");
+            #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
+            let onnx_scorer_active = scorer_path.is_some();
+            #[cfg(not(all(not(target_arch = "wasm32"), feature = "nn-scoring")))]
+            let onnx_scorer_active = false;
+            renkin::coverage_mode::validate_coverage_mode_flags(
+                bond_index,
+                ring_context_policy_active,
+                onnx_scorer_active,
+            )?;
+        }
+    }
+    let coverage_timeout: Option<std::time::Duration> = match coverage_timeout_secs_arg {
+        None => None,
+        Some(ref s) => {
+            let n: u64 = s.parse().map_err(|_| {
+                anyhow::anyhow!("--coverage-timeout-secs must be a positive integer, got {s:?}")
+            })?;
+            if n == 0 {
+                bail!("--coverage-timeout-secs must be a positive integer (got 0)");
+            }
+            Some(std::time::Duration::from_secs(n))
+        }
     };
 
     // --stock overrides --building-blocks and --bb-prices
@@ -245,6 +476,7 @@ fn main() -> Result<()> {
             extra = chem_env::top_templates_by_weight(extra, k);
         }
         eprintln!("Loaded {} templates from {path}", extra.len());
+        report_hash_atom_unsupported(&extra);
         rules.extend(extra);
     }
 
@@ -270,6 +502,37 @@ fn main() -> Result<()> {
                     std::process::exit(1)
                 })
         });
+
+    // Issue #101 Task 35: ordering-only candidate reranker. Unlike --scorer
+    // above, a problem here never aborts the run -- both flags are opt-in,
+    // and the whole point of a staged rollout is that a bad model file or a
+    // missing sibling flag degrades to this crate's pre-existing ordering
+    // rather than blocking prediction.
+    let reranker: Option<std::sync::Arc<dyn renkin::candidate::CandidateReranker>> = match (
+        reranker_model_path.as_deref(),
+        reranker_freq_table_path.as_deref(),
+    ) {
+        (Some(model_path), Some(freq_path)) => {
+            match renkin::reranker::RuntimeReranker::from_paths(model_path, freq_path) {
+                Ok(r) => Some(std::sync::Arc::new(r)),
+                Err(e) => {
+                    eprintln!(
+                        "warning: failed to load --reranker-model/--reranker-freq-table \
+                             ({e:#}); falling back to legacy ordering for this run"
+                    );
+                    None
+                }
+            }
+        }
+        (None, None) => None,
+        _ => {
+            eprintln!(
+                "warning: --reranker-model and --reranker-freq-table must both be given; \
+                     falling back to legacy ordering for this run"
+            );
+            None
+        }
+    };
 
     let ring_context_safety_policy = match ring_context_policy_arg.as_deref() {
         None | Some("disabled") => None,
@@ -356,9 +619,64 @@ fn main() -> Result<()> {
         #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
         nn_scorer,
         ring_context: ring_context_config,
+        candidate_trace_cap: candidate_trace_limit,
+        reranker,
         ..Default::default()
     };
-    let (mut routes, stats) = search::find_routes(&target_smiles, &env, &rules, &config)?;
+
+    struct CoverageModeMeta {
+        selected_stage: &'static str,
+        stage2_invoked: bool,
+        stage1_timeout: bool,
+        stage2_timeout: bool,
+        stage1_elapsed_ms: f64,
+        stage2_elapsed_ms: Option<f64>,
+        total_elapsed_ms: f64,
+        reranker_failures_summed: u64,
+    }
+
+    let (mut routes, stats, coverage_meta): (
+        Vec<search::Route>,
+        search::SearchStats,
+        Option<CoverageModeMeta>,
+    ) = match search_mode {
+        SearchMode::Standard => {
+            let (routes, stats) = search::find_routes(&target_smiles, &env, &rules, &config)?;
+            (routes, stats, None)
+        }
+        SearchMode::Coverage => {
+            // Unsupported-combination and --coverage-templates-presence
+            // validation already happened above, before this process did
+            // any env/rules/scorer/ring-context loading -- only the
+            // asset load itself (fail-loud on a bad path) remains here.
+            let coverage_path = coverage_templates_path
+                .as_deref()
+                .expect("already validated above: SearchMode::Coverage implies Some");
+            let coverage_rules = renkin::coverage_mode::load_coverage_rules(coverage_path)?;
+            let result = renkin::coverage_mode::run_coverage_mode(
+                &target_smiles,
+                &env,
+                &rules,
+                &config,
+                &coverage_rules,
+                coverage_timeout,
+            )?;
+            let meta = CoverageModeMeta {
+                selected_stage: match result.selected_stage {
+                    renkin::coverage_mode::SelectedStage::Stage1 => "stage1",
+                    renkin::coverage_mode::SelectedStage::Stage2 => "stage2",
+                },
+                stage2_invoked: result.stage2_invoked,
+                stage1_timeout: result.stage1_timeout,
+                stage2_timeout: result.stage2_timeout,
+                stage1_elapsed_ms: result.stage1_elapsed_ms,
+                stage2_elapsed_ms: result.stage2_elapsed_ms,
+                total_elapsed_ms: result.total_elapsed_ms,
+                reranker_failures_summed: result.reranker_failures,
+            };
+            (result.routes, result.stats, Some(meta))
+        }
+    };
     apply_constraints(&mut routes, &constraints);
 
     match format.as_str() {
@@ -470,9 +788,13 @@ fn main() -> Result<()> {
             println!("{}", serde_json::to_string_pretty(&out)?);
         }
         _ => {
+            let reranker_failures_for_output = coverage_meta
+                .as_ref()
+                .map(|m| m.reranker_failures_summed)
+                .unwrap_or(stats.reranker_failures);
             if routes.is_empty() {
-                let (causes, suggestions) = diagnose(&stats, max_depth);
-                let out = serde_json::json!({
+                let (causes, suggestions) = search::diagnose(&stats, max_depth);
+                let mut out = serde_json::json!({
                     "target": target_smiles,
                     "routes_found": 0,
                     "routes": [],
@@ -486,6 +808,22 @@ fn main() -> Result<()> {
                         "suggestions":       suggestions,
                     }
                 });
+                if search_diagnostics {
+                    out["search_diagnostics"] = serde_json::to_value(&stats.crowd_out)?;
+                }
+                if config.reranker.is_some() {
+                    out["reranker_failures"] = serde_json::to_value(reranker_failures_for_output)?;
+                }
+                if let Some(ref m) = coverage_meta {
+                    out["search_mode"] = serde_json::Value::from("coverage");
+                    out["selected_stage"] = serde_json::Value::from(m.selected_stage);
+                    out["stage2_invoked"] = serde_json::Value::from(m.stage2_invoked);
+                    out["stage1_timeout"] = serde_json::Value::from(m.stage1_timeout);
+                    out["stage2_timeout"] = serde_json::Value::from(m.stage2_timeout);
+                    out["stage1_elapsed_ms"] = serde_json::Value::from(m.stage1_elapsed_ms);
+                    out["stage2_elapsed_ms"] = serde_json::to_value(m.stage2_elapsed_ms)?;
+                    out["total_elapsed_ms"] = serde_json::Value::from(m.total_elapsed_ms);
+                }
                 println!("{}", serde_json::to_string_pretty(&out)?);
             } else {
                 let joint_success_probability = 1.0
@@ -497,6 +835,19 @@ fn main() -> Result<()> {
                     target: target_smiles,
                     routes_found: routes.len(),
                     joint_success_probability,
+                    search_diagnostics: search_diagnostics.then_some(stats.crowd_out),
+                    reranker_failures: config
+                        .reranker
+                        .is_some()
+                        .then_some(reranker_failures_for_output),
+                    search_mode: coverage_meta.as_ref().map(|_| "coverage"),
+                    selected_stage: coverage_meta.as_ref().map(|m| m.selected_stage),
+                    stage2_invoked: coverage_meta.as_ref().map(|m| m.stage2_invoked),
+                    stage1_timeout: coverage_meta.as_ref().map(|m| m.stage1_timeout),
+                    stage2_timeout: coverage_meta.as_ref().map(|m| m.stage2_timeout),
+                    stage1_elapsed_ms: coverage_meta.as_ref().map(|m| m.stage1_elapsed_ms),
+                    stage2_elapsed_ms: coverage_meta.as_ref().and_then(|m| m.stage2_elapsed_ms),
+                    total_elapsed_ms: coverage_meta.as_ref().map(|m| m.total_elapsed_ms),
                     routes,
                 };
                 println!("{}", serde_json::to_string_pretty(&output)?);
@@ -504,28 +855,6 @@ fn main() -> Result<()> {
         }
     }
     Ok(())
-}
-
-fn diagnose(stats: &search::SearchStats, max_depth: u32) -> (Vec<&'static str>, Vec<String>) {
-    let mut causes: Vec<&'static str> = Vec::new();
-    let mut suggestions: Vec<String> = Vec::new();
-    if stats.stock_hits == 0 {
-        causes.push("no matching building block in stock");
-        suggestions.push("add a custom stock file with --building-blocks".to_string());
-    }
-    if stats.max_depth_reached {
-        causes.push("search depth exhausted");
-        suggestions.push(format!("try --depth {}", max_depth + 2));
-    }
-    if stats.beam_limit_hit {
-        causes.push("beam width too narrow — candidates were pruned");
-        suggestions.push("try --beam-width 200".to_string());
-    }
-    if stats.matched_templates < 5 {
-        causes.push("few or no templates matched the target");
-        suggestions.push("try --templates data/templates_extracted_50000.smi".to_string());
-    }
-    (causes, suggestions)
 }
 
 // ── Constraint DSL ────────────────────────────────────────────────────────
@@ -712,6 +1041,132 @@ fn evidence_validate_sidecar(args: &[String]) -> Result<()> {
     renkin::evidence::load_template_metadata(path)
         .with_context(|| format!("sidecar {path} failed validation"))?;
     println!("OK: {path}");
+    Ok(())
+}
+
+/// Loads a plain `.smi` stock file into the canonical-SMILES set
+/// `bridge::audit_route::build_audit_route_report`'s `stock` expects --
+/// thin file-reading wrapper around `bridge::parse_stock_text`, which owns
+/// the actual line-parsing so the CLI's `--stock <PATH>` and the
+/// playground's pasted/uploaded stock text share identical parsing.
+fn load_audit_stock(path: &str) -> Result<std::collections::HashSet<String>> {
+    let content =
+        std::fs::read_to_string(path).with_context(|| format!("failed to read --stock {path}"))?;
+    Ok(bridge::parse_stock_text(&content))
+}
+
+/// `renkin audit-route <PATH> [--format auto|renkin|aizynthfinder|syntheseus|synplanner] [--stock <PATH>]
+/// [--policy informational|standard|strict] [--output human|json]` --
+/// audits every route in a RENKIN `--format json`
+/// output file via `bridge::route_graph::normalize_renkin_route` +
+/// `bridge::audit::audit`. RENKIN-native input only: no AiZynthFinder
+/// adapter, no HTML/DOI/condition/yield output, no alternative-
+/// disconnection suggestions -- see `bridge` module docs for why those stay
+/// out of scope here. stdout carries only the report (human text or JSON,
+/// per `--output`); nothing else is printed to stdout. Exit code matches
+/// the rest of this CLI's own convention (`main.rs`'s JSON route-search
+/// path): 0 whenever the program ran to completion and produced a report,
+/// including a `fail`/`partial` verdict -- that's a completed audit, not a
+/// program error -- and non-zero only for usage/input errors (bad flags,
+/// unreadable/malformed input).
+/// Reads `path`, transparently gzip-decompressing if the content starts
+/// with the gzip magic bytes (`1f 8b`) regardless of file extension --
+/// `aizynthcli`'s own batch output is `.json.gz` by convention, but nothing
+/// enforces the extension actually matches the content, so this sniffs the
+/// real bytes rather than trusting the filename.
+fn read_maybe_gzip(path: &str) -> Result<String> {
+    let bytes = std::fs::read(path).with_context(|| format!("failed to read {path}"))?;
+    if bytes.starts_with(&[0x1f, 0x8b]) {
+        use std::io::Read;
+        let mut decoder = flate2::read::GzDecoder::new(&bytes[..]);
+        let mut out = String::new();
+        decoder
+            .read_to_string(&mut out)
+            .with_context(|| format!("{path}: failed to gzip-decompress"))?;
+        Ok(out)
+    } else {
+        String::from_utf8(bytes).with_context(|| format!("{path}: not valid UTF-8"))
+    }
+}
+
+fn run_audit_route(args: &[String]) -> Result<()> {
+    let path = args
+        .iter()
+        .find(|a| !a.starts_with("--"))
+        .cloned()
+        .context("renkin audit-route: <PATH> is required (usage: renkin audit-route <PATH> [--format auto|renkin|aizynthfinder|syntheseus|synplanner] [--stock <PATH>] [--policy informational|standard|strict] [--output human|json])")?;
+    let format = flag_value(args, "--format").unwrap_or("auto");
+    if ![
+        "auto",
+        "renkin",
+        "aizynthfinder",
+        "syntheseus",
+        "synplanner",
+    ]
+    .contains(&format)
+    {
+        bail!(
+            "renkin audit-route: unsupported --format {format:?} (only auto|renkin|aizynthfinder|syntheseus|synplanner supported)"
+        );
+    }
+    let output_format = flag_value(args, "--output").unwrap_or("human");
+    if output_format != "human" && output_format != "json" {
+        bail!(
+            "renkin audit-route: unsupported --output {output_format:?} (only human|json supported)"
+        );
+    }
+    let policy_str = flag_value(args, "--policy").unwrap_or("standard");
+    let policy: bridge::AuditPolicy = policy_str.parse().map_err(|_| {
+        anyhow::anyhow!(
+            "renkin audit-route: unsupported --policy {policy_str:?} (only informational|standard|strict supported)"
+        )
+    })?;
+
+    let content = read_maybe_gzip(&path)?;
+    let stock = flag_value(args, "--stock")
+        .map(load_audit_stock)
+        .transpose()?;
+    let rules = chem_env::default_rules();
+
+    let out = bridge::build_audit_route_report_with_policy(
+        &content,
+        format,
+        stock.as_ref(),
+        &rules,
+        policy,
+    )
+    .with_context(|| format!("{path}: audit input rejected"))?;
+
+    if output_format == "json" {
+        println!("{}", serde_json::to_string_pretty(&out)?);
+    } else {
+        println!(
+            "{} routes audited — {} pass, {} fail, {} partial",
+            out.summary.routes_total, out.summary.pass, out.summary.fail, out.summary.partial
+        );
+        for (i, report) in out.routes.iter().enumerate() {
+            let status = match report.status {
+                bridge::AuditStatus::Pass => "PASS",
+                bridge::AuditStatus::Fail => "FAIL",
+                bridge::AuditStatus::Partial => "PARTIAL",
+            };
+            println!("route {}/{}: {status}", i + 1, out.summary.routes_total);
+            for finding in &report.findings {
+                println!("  - {:?}", finding.code);
+            }
+            if let Some(stock_validation) = &report.stock_validation
+                && let Some(reason) = &stock_validation.reason
+            {
+                println!("  - stock: {reason:?}");
+            }
+            for step in &report.steps {
+                if let Some(reason) = &step.forward_validation.reason {
+                    println!("  - forward: {reason:?}");
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -1679,5 +2134,50 @@ mod evidence_cli_tests {
         let args = vec!["--metadata".to_string(), path.clone()];
         assert!(evidence_validate_sidecar(&args).is_err());
         std::fs::remove_file(&path).ok();
+    }
+}
+
+#[cfg(test)]
+mod hash_atom_unsupported_report_tests {
+    use super::*;
+
+    fn rule(name: &str, smirks: &str) -> chem_env::RetroRule {
+        chem_env::RetroRule {
+            name: name.to_string(),
+            template_id: chem_env::template_id_for_smirks(smirks),
+            smirks: smirks.to_string(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn no_unsupported_templates_yields_empty_map() {
+        let rules = vec![rule(
+            "ester_cleavage",
+            "[O:3]=[C:2]-[OH:1]>>C-[O:1]-[C:2]=[O:3]",
+        )];
+        assert!(count_hash_atom_unsupported(&rules).is_empty());
+    }
+
+    #[test]
+    fn inconsistent_element_is_classified_and_counted() {
+        // Same atom-map number (1) resolves to carbon on the reactant side
+        // and nitrogen on the product side -- internally inconsistent.
+        let rules = vec![rule("bad", "[#6:1]>>[#7:1]")];
+        let by_reason = count_hash_atom_unsupported(&rules);
+        assert_eq!(by_reason.get("inconsistent_element"), Some(&1));
+        assert_eq!(by_reason.values().sum::<usize>(), 1);
+    }
+
+    #[test]
+    fn multiple_unsupported_rules_of_the_same_reason_accumulate() {
+        let rules = vec![
+            rule("bad1", "[#6:1]>>[#7:1]"),
+            rule("bad2", "[#8:2]>>[#9:2]"),
+            rule("ok", "[O:3]=[C:2]-[OH:1]>>C-[O:1]-[C:2]=[O:3]"),
+        ];
+        let by_reason = count_hash_atom_unsupported(&rules);
+        assert_eq!(by_reason.get("inconsistent_element"), Some(&2));
+        assert_eq!(by_reason.values().sum::<usize>(), 2);
     }
 }

@@ -1,0 +1,118 @@
+{
+  "_purpose": "Phase A.5: does increasing TRAIN-derived template count (500->10,000, nested by construction) reduce the one-step candidate-pool zero-positive rate on VAL? Formal TEST not used -- see findings.md.",
+  "primary_metric": {
+    "zero_positive_rate_500": 0.3402960859866153,
+    "zero_positive_rate_10000": 0.17582640438045022,
+    "absolute_improvement_pp": 16.44696816061651,
+    "verdict": "Phase B strong GO"
+  },
+  "saturation_curve": [
+    {
+      "arm": "500",
+      "zero_positive_rate": 0.3402960859866153,
+      "delta_from_prev_arm_pp": null
+    },
+    {
+      "arm": "1000",
+      "zero_positive_rate": 0.27682011762320013,
+      "delta_from_prev_arm_pp": 6.347596836341518
+    },
+    {
+      "arm": "2000",
+      "zero_positive_rate": 0.23382680997769215,
+      "delta_from_prev_arm_pp": 4.299330764550799
+    },
+    {
+      "arm": "5000",
+      "zero_positive_rate": 0.19813425268708174,
+      "delta_from_prev_arm_pp": 3.569255729061041
+    },
+    {
+      "arm": "10000",
+      "zero_positive_rate": 0.17582640438045022,
+      "delta_from_prev_arm_pp": 2.2307848306631515
+    }
+  ],
+  "arms": [
+    {
+      "arm": "500",
+      "n_templates_actual": 500,
+      "group_count": 4931,
+      "zero_positive_rate": 0.3402960859866153,
+      "positive_present_rate": 0.6597039140133847,
+      "ground_truth_precursor_recall_target_level": 0.6596263200649878,
+      "dedup_rate": 0.1863850666410739,
+      "candidates_per_group_p50": 26,
+      "candidates_per_group_p95": 51,
+      "n_candidate_rows": 135641,
+      "wall_clock_seconds": 417.837146666,
+      "n_groups_zero_candidates": 1,
+      "n_groups_target_id_mismatch": 14,
+      "n_groups_parse_failed": 0
+    },
+    {
+      "arm": "1000",
+      "n_templates_actual": 1000,
+      "group_count": 4931,
+      "zero_positive_rate": 0.27682011762320013,
+      "positive_present_rate": 0.7231798823767999,
+      "ground_truth_precursor_recall_target_level": 0.7231925264012997,
+      "dedup_rate": 0.1968481396943057,
+      "candidates_per_group_p50": 41,
+      "candidates_per_group_p95": 79,
+      "n_candidate_rows": 213232,
+      "wall_clock_seconds": 804.317883333,
+      "n_groups_zero_candidates": 0,
+      "n_groups_target_id_mismatch": 14,
+      "n_groups_parse_failed": 0
+    },
+    {
+      "arm": "2000",
+      "n_templates_actual": 2000,
+      "group_count": 4931,
+      "zero_positive_rate": 0.23382680997769215,
+      "positive_present_rate": 0.7661731900223079,
+      "ground_truth_precursor_recall_target_level": 0.766246953696182,
+      "dedup_rate": 0.2477694375486581,
+      "candidates_per_group_p50": 49,
+      "candidates_per_group_p95": 93,
+      "n_candidate_rows": 256048,
+      "wall_clock_seconds": 1855.074056458,
+      "n_groups_zero_candidates": 0,
+      "n_groups_target_id_mismatch": 14,
+      "n_groups_parse_failed": 0
+    },
+    {
+      "arm": "5000",
+      "n_templates_actual": 5000,
+      "group_count": 4931,
+      "zero_positive_rate": 0.19813425268708174,
+      "positive_present_rate": 0.8018657473129183,
+      "ground_truth_precursor_recall_target_level": 0.80178716490658,
+      "dedup_rate": 0.28609650596793257,
+      "candidates_per_group_p50": 64,
+      "candidates_per_group_p95": 121,
+      "n_candidate_rows": 329263,
+      "wall_clock_seconds": 6214.004384917,
+      "n_groups_zero_candidates": 0,
+      "n_groups_target_id_mismatch": 14,
+      "n_groups_parse_failed": 0
+    },
+    {
+      "arm": "10000",
+      "n_templates_actual": 9979,
+      "group_count": 4931,
+      "zero_positive_rate": 0.17582640438045022,
+      "positive_present_rate": 0.8241735956195497,
+      "ground_truth_precursor_recall_target_level": 0.8241267262388302,
+      "dedup_rate": 0.31579526969413796,
+      "candidates_per_group_p50": 84,
+      "candidates_per_group_p95": 159,
+      "n_candidate_rows": 434912,
+      "wall_clock_seconds": 11604.457939335,
+      "n_groups_zero_candidates": 0,
+      "n_groups_target_id_mismatch": 14,
+      "n_groups_parse_failed": 0
+    }
+  ]
+}

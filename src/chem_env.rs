@@ -5070,9 +5070,10 @@ mod chematic_regression {
             .flatten()
             .map(|m| to_canonical(&m))
             .collect();
+        let expected_open_chain = to_canonical(&mol_from_smiles("O=C(OCCc1ccccc1)NC").unwrap());
         assert_eq!(
             products,
-            std::collections::BTreeSet::from(["O=C(OCCc1ccccc1)NC".to_string()]),
+            std::collections::BTreeSet::from([expected_open_chain]),
             "expected exactly the single open-chain N-methyl carbamate ester: {products:?}"
         );
         assert!(

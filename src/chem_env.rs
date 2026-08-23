@@ -468,6 +468,40 @@ fn build_sub_molecule_with_cl(
     Some(builder.build())
 }
 
+/// Build a sub-molecule and append a boronic acid (-B(OH)2) bonded to
+/// `cut_atom` -- the boron gets one bond to `cut_atom` plus two bonds to
+/// O atoms, each O picking up an implicit H from valence (same
+/// implicit-H-from-valence mechanism `build_sub_molecule_with_br`/
+/// `with_cl` already rely on for their own appended atom).
+fn build_sub_molecule_with_boronic_acid(
+    mol: &Molecule,
+    atoms: &FxHashSet<AtomIdx>,
+    cut_atom: AtomIdx,
+) -> Option<Molecule> {
+    let mut builder = MoleculeBuilder::new();
+    let mut idx_map: FxHashMap<AtomIdx, AtomIdx> = FxHashMap::default();
+
+    for &old_idx in atoms {
+        let new_idx = builder.add_atom(mol.atom(old_idx).clone());
+        idx_map.insert(old_idx, new_idx);
+    }
+    for (_, bond) in mol.bonds() {
+        let (a, b) = (bond.atom1, bond.atom2);
+        if atoms.contains(&a) && atoms.contains(&b) {
+            let (&new_a, &new_b) = (idx_map.get(&a)?, idx_map.get(&b)?);
+            builder.add_bond(new_a, new_b, bond.order).ok()?;
+        }
+    }
+    let b_idx = builder.add_atom(Atom::new(Element::B));
+    let &cut_new = idx_map.get(&cut_atom)?;
+    builder.add_bond(cut_new, b_idx, BondOrder::Single).ok()?;
+    for _ in 0..2 {
+        let o_idx = builder.add_atom(Atom::new(Element::O));
+        builder.add_bond(b_idx, o_idx, BondOrder::Single).ok()?;
+    }
+    Some(builder.build())
+}
+
 /// Graph-based retro for Ar-SO2-Ar diaryl sulfones:
 /// cleave each Ar-S bridge bond to give [Ar-SO2-Cl, Ar'-H].
 fn diaryl_sulfone_cleavage(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
@@ -570,12 +604,18 @@ fn biaryl_cleavage(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
         let comp_a = get_component(mol, a, a, b);
         let comp_b = get_component(mol, b, a, b);
 
-        // Generate both orientations: which ring gets Br
-        for (comp_br, cut, comp_plain) in [(&comp_a, a, &comp_b), (&comp_b, b, &comp_a)] {
-            let Some(frag_br) = build_sub_molecule_with_br(mol, comp_br, cut) else {
+        // Generate both orientations: which ring gets Br vs. the boronic
+        // acid -- a real retro-Suzuki needs one aryl-halide partner *and*
+        // one boron-containing partner, not "aryl halide + plain arene".
+        for (comp_br, cut_br, comp_b_acid, cut_b_acid) in
+            [(&comp_a, a, &comp_b, b), (&comp_b, b, &comp_a, a)]
+        {
+            let Some(frag_br) = build_sub_molecule_with_br(mol, comp_br, cut_br) else {
                 continue;
             };
-            let Some(frag_plain) = build_sub_molecule(mol, comp_plain) else {
+            let Some(frag_plain) =
+                build_sub_molecule_with_boronic_acid(mol, comp_b_acid, cut_b_acid)
+            else {
                 continue;
             };
 
@@ -760,6 +800,95 @@ fn ester_cleavage_graph(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
         }
 
         let mut prec_set = precs_acid;
+        prec_set.extend(precs_alcohol);
+        results.push(prec_set);
+    }
+    results
+}
+
+/// Graph-based aryl ether cleavage: Ar-O-R → Ar-OH + R-OH (retro-Ullmann
+/// ether synthesis, simplified "leaving fragment" semantics matching the
+/// retired SMIRKS-string version of this rule).
+///
+/// Excludes an ester oxygen (Ar-O-C(=O)-R): mirrors ester_cleavage_graph's
+/// own carbonyl-neighbor check, applied to the *other* carbon the O is
+/// bonded to (not the aromatic one being cut). Without this exclusion, an
+/// aryl ester's ester bond gets mislabeled as a retro-Ullmann ether
+/// disconnection (wrong reaction_family/conditions/procedure_hint) --
+/// see docs/design/retro-rule-precision-gaps-v0.md #1.
+fn aryl_ether_cleavage(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
+    let mut results: Vec<Vec<PrecursorMol>> = Vec::new();
+    let mut seen: FxHashSet<String> = FxHashSet::default();
+
+    for (_, bond) in mol.bonds() {
+        let (a, b) = (bond.atom1, bond.atom2);
+        if bond.order != BondOrder::Single {
+            continue;
+        }
+
+        // Identify which end is the aromatic C and which is O.
+        let (ar_idx, o_idx) = {
+            let aa = mol.atom(a);
+            let ab = mol.atom(b);
+            if aa.aromatic && aa.element == Element::C && ab.element == Element::O {
+                (a, b)
+            } else if ab.aromatic && ab.element == Element::C && aa.element == Element::O {
+                (b, a)
+            } else {
+                continue;
+            }
+        };
+
+        // Exclude an ester oxygen: O also bonded to a carbonyl carbon (a
+        // carbon with an adjacent C=O, other than the O being cut here).
+        let is_ester_oxygen = mol.neighbors(o_idx).any(|(nb, _)| {
+            nb != ar_idx
+                && mol.atom(nb).element == Element::C
+                && mol.neighbors(nb).any(|(nb2, bond_idx2)| {
+                    nb2 != o_idx
+                        && mol.atom(nb2).element == Element::O
+                        && mol.bond(bond_idx2).order == BondOrder::Double
+                })
+        });
+        if is_ester_oxygen {
+            continue;
+        }
+
+        // Only bridge bonds produce two clean fragments.
+        if !is_bridge_bond(mol, ar_idx, o_idx) {
+            continue;
+        }
+
+        let comp_ar = get_component(mol, ar_idx, ar_idx, o_idx);
+        let comp_o = get_component(mol, o_idx, ar_idx, o_idx);
+
+        // Aromatic side: add OH → phenol fragment.
+        let Some(frag_phenol) = build_sub_molecule_with_oh(mol, &comp_ar, ar_idx) else {
+            continue;
+        };
+        // O side: keeps its existing bond(s); implicit H fills valence → R-OH.
+        let Some(frag_alcohol) = build_sub_molecule(mol, &comp_o) else {
+            continue;
+        };
+
+        let precs_phenol = split_fragments(&frag_phenol);
+        let precs_alcohol = split_fragments(&frag_alcohol);
+        if precs_phenol.is_empty() || precs_alcohol.is_empty() {
+            continue;
+        }
+
+        let mut key_parts: Vec<&str> = precs_phenol
+            .iter()
+            .chain(precs_alcohol.iter())
+            .map(|p| p.smiles.as_str())
+            .collect();
+        key_parts.sort_unstable();
+        let key = key_parts.join("|");
+        if !seen.insert(key) {
+            continue;
+        }
+
+        let mut prec_set = precs_phenol;
         prec_set.extend(precs_alcohol);
         results.push(prec_set);
     }
@@ -959,6 +1088,7 @@ pub fn apply_retro(mol: &Molecule, rule: &RetroRule) -> Vec<Vec<PrecursorMol>> {
             "diaryl_sulfone_retro" => diaryl_sulfone_cleavage(mol),
             "amide_cleavage" => amide_cleavage(mol),
             "ester_cleavage" => ester_cleavage_graph(mol),
+            "aryl_ether_retro" => aryl_ether_cleavage(mol),
             "sulfonamide_retro" => sulfonamide_cleavage_graph(mol),
             "boc_deprotection_retro" => boc_deprotection(mol),
             "cbz_deprotection_retro" => cbz_deprotection(mol),
@@ -1821,8 +1951,16 @@ pub fn default_rules() -> Vec<RetroRule> {
         //
         // Ar-N → Ar-Br + amine (retro-Buchwald-Hartwig; gives halide BB)
         rr("buchwald_hartwig_retro", "[c:1][N:2]>>[c:1]Br.[N:2]"),
-        // Ar-O → Ar-OH + leaving fragment (retro-Ullmann ether synthesis)
-        rr("aryl_ether_retro", "[c:1][O:2]>>[c:1]O.[O:2]"),
+        // Ar-O → Ar-OH + leaving fragment (retro-Ullmann ether synthesis).
+        // Graph-based (empty smirks, dispatched in apply_retro below), not a
+        // SMIRKS string: chematic-rxn's own reactant-template parser is
+        // plain-SMILES-only (no SMARTS `;`/`!`/`$(...)` operators -- confirmed
+        // empirically, see docs/design/retro-rule-precision-gaps-v0.md #1),
+        // so excluding an ester oxygen (Ar-O-C(=O)-R, which the old bare-O
+        // SMIRKS also matched, mislabeling an ester cleavage as an Ullmann
+        // ether disconnection) needs a graph-based carbonyl-neighbor check,
+        // mirroring ester_cleavage_graph's own pattern below.
+        rr("aryl_ether_retro", ""),
         // ── Aryl C-halide disconnections ────────────────────────────────
         // `aryl_chloride_retro` ("[c:1][Cl]>>[c:1]"), `aryl_iodide_retro`
         // ("[c:1][I]>>[c:1]"), and `aryl_fluoride_snAr_retro`
@@ -3417,6 +3555,69 @@ mod tests {
         );
     }
 
+    // ── aryl_ether_retro: [O;!$(OC=O)] restricts to genuine ethers, excludes esters ──
+    //
+    // Regression coverage for the ester-mislabeling bug: the old pattern
+    // "[c:1][O:2]" (bare O, no exclusion) also matched an ester's
+    // Ar-O-C(=O)-R oxygen, mislabeling an ester cleavage as a retro-Ullmann
+    // ether disconnection (wrong reaction_family/conditions/procedure_hint
+    // on a route ester_cleavage already found correctly) -- e.g. aspirin
+    // produced a spurious duplicate route. See
+    // docs/design/retro-rule-precision-gaps-v0.md #1.
+
+    fn aryl_ether_rule() -> RetroRule {
+        default_rules()
+            .into_iter()
+            .find(|r| r.name == "aryl_ether_retro")
+            .expect("aryl_ether_retro must be in default_rules()")
+    }
+
+    #[test]
+    fn aryl_ether_retro_fires_on_diaryl_ether() {
+        let mol = mol_from_smiles("c1ccc(Oc2ccccc2)cc1").unwrap(); // diphenyl ether
+        let results = apply_retro(&mol, &aryl_ether_rule());
+        assert!(
+            !results.is_empty(),
+            "genuine diaryl ether must still disconnect via aryl_ether_retro"
+        );
+    }
+
+    #[test]
+    fn aryl_ether_retro_fires_on_aryl_alkyl_ether() {
+        let mol = mol_from_smiles("COc1ccccc1").unwrap(); // anisole
+        let results = apply_retro(&mol, &aryl_ether_rule());
+        assert!(
+            !results.is_empty(),
+            "genuine aryl alkyl ether must still disconnect via aryl_ether_retro"
+        );
+    }
+
+    #[test]
+    fn aryl_ether_retro_skips_aryl_ester_oxygen() {
+        let mol = mol_from_smiles("CC(=O)Oc1ccccc1").unwrap(); // phenyl acetate
+        let results = apply_retro(&mol, &aryl_ether_rule());
+        assert!(
+            results.is_empty(),
+            "phenyl acetate's ester oxygen must NOT disconnect via aryl_ether_retro \
+             (that mislabels an ester cleavage as an Ullmann ether disconnection -- \
+             ester_cleavage is the correct rule)"
+        );
+    }
+
+    #[test]
+    fn aryl_ether_retro_skips_aspirin_ester_oxygen() {
+        // The exact repro from docs/design/retro-rule-precision-gaps-v0.md #1:
+        // aspirin's ester bond was being double-counted as both ester_cleavage
+        // (correct) and aryl_ether_retro (wrong reaction_family/conditions).
+        let mol = mol_from_smiles("CC(=O)Oc1ccccc1C(=O)O").unwrap(); // aspirin
+        let results = apply_retro(&mol, &aryl_ether_rule());
+        assert!(
+            results.is_empty(),
+            "aspirin must NOT disconnect via aryl_ether_retro -- its only aromatic \
+             C-O bond is the ester oxygen, which ester_cleavage already handles correctly"
+        );
+    }
+
     #[test]
     fn methyl_benzoate_ester_cleavage_gives_correct_precursors() {
         // Proves this isn't just "candidate removed" but "routed to the correct
@@ -3593,7 +3794,7 @@ mod tests {
     }
 
     #[test]
-    fn suzuki_retro_biphenyl_gives_bromobenzene_and_benzene() {
+    fn suzuki_retro_biphenyl_gives_bromobenzene_and_phenylboronic_acid() {
         let mol = mol_from_smiles("c1ccc(-c2ccccc2)cc1").unwrap();
         let rule = rr("suzuki_retro", "");
         let results = apply_retro(&mol, &rule);
@@ -3607,29 +3808,36 @@ mod tests {
             .flat_map(|set| set.iter().map(|p| p.smiles.clone()))
             .collect();
 
-        // Expect exactly bromobenzene and benzene. Compare against canonical
-        // forms computed at test time (not a hardcoded string) — the exact
-        // canonical SMILES chematic emits for a given molecule is an
-        // implementation detail that can change between chematic versions
-        // (e.g. 0.4.25 wrote "Brc1ccccc1", 0.4.30 writes "c1ccc(cc1)Br" for
-        // the same molecule); what must hold is chemical identity, not a
-        // specific string layout.
+        // Expect exactly bromobenzene and phenylboronic acid -- a real
+        // retro-Suzuki disconnection needs one aryl-halide partner and one
+        // boron-containing partner, not "aryl halide + plain arene" (the
+        // previous, buggy behavior this test used to pin; see
+        // docs/design/retro-rule-precision-gaps-v0.md #2). Compare against
+        // canonical forms computed at test time (not a hardcoded string) —
+        // the exact canonical SMILES chematic emits for a given molecule is
+        // an implementation detail that can change between chematic
+        // versions (e.g. 0.4.25 wrote "Brc1ccccc1", 0.4.30 writes
+        // "c1ccc(cc1)Br" for the same molecule); what must hold is chemical
+        // identity, not a specific string layout.
         let bromobenzene_canon = canonical_smiles(&mol_from_smiles("Brc1ccccc1").unwrap());
-        let benzene_canon = canonical_smiles(&mol_from_smiles("c1ccccc1").unwrap());
+        let boronic_acid_canon = canonical_smiles(&mol_from_smiles("OB(O)c1ccccc1").unwrap());
         let has_bromobenzene = all_smiles.contains(&bromobenzene_canon);
-        let has_benzene = all_smiles.contains(&benzene_canon);
+        let has_boronic_acid = all_smiles.contains(&boronic_acid_canon);
         assert!(
             has_bromobenzene,
             "expected bromobenzene fragment ({bromobenzene_canon:?}); got {all_smiles:?}"
         );
-        assert!(has_benzene, "expected benzene fragment; got {all_smiles:?}");
+        assert!(
+            has_boronic_acid,
+            "expected phenylboronic acid fragment ({boronic_acid_canon:?}); got {all_smiles:?}"
+        );
     }
 
     #[test]
     fn suzuki_retro_biphenyl_solvable_with_bb() {
-        // End-to-end: the engine must resolve biphenyl given bromobenzene + benzene as BBs.
+        // End-to-end: the engine must resolve biphenyl given bromobenzene + phenylboronic acid as BBs.
         use crate::search::{SearchConfig, find_routes};
-        let env = ChemEnv::in_memory(&["Brc1ccccc1", "c1ccccc1"]);
+        let env = ChemEnv::in_memory(&["Brc1ccccc1", "OB(O)c1ccccc1"]);
         let rules = default_rules();
         let cfg = SearchConfig {
             max_depth: 2,

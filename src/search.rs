@@ -2959,8 +2959,8 @@ mod tests {
     #[test]
     fn symmetric_biaryl_routes_deduplicated() {
         // Biphenyl is symmetric: both orientations of Suzuki retro yield the same
-        // precursor set {Brc1ccccc1, c1ccccc1}. The search must dedup to ≤ 1 route.
-        let env = ChemEnv::in_memory(&["Brc1ccccc1", "c1ccccc1"]);
+        // precursor set {Brc1ccccc1, OB(O)c1ccccc1}. The search must dedup to ≤ 1 route.
+        let env = ChemEnv::in_memory(&["Brc1ccccc1", "OB(O)c1ccccc1"]);
         let rules = default_rules();
         let cfg = SearchConfig {
             max_depth: 2,

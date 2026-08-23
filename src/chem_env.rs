@@ -4622,6 +4622,125 @@ mod bug13_regression {
 mod chematic_regression {
     use super::*;
 
+    /// Frozen fixture, `extracted_4255` on `C2c1cc(c(F)cc1C(O2)=O)F` (a
+    /// difluoro-substituted isobenzofuran-1(3H)-one / phthalide, benzo-fused
+    /// gamma-butyrolactone) <- `O=C.C(=O)O.c1(F)ccccc1F` (formaldehyde +
+    /// formic acid + 1,2-difluorobenzene, three independent fragments): a
+    /// third individually-investigated step from Finding #4's pilot
+    /// (`docs/validation/finding4-validator-pilot-2026-08-23.md`), per that
+    /// doc's own protocol -- not by re-running search.
+    ///
+    /// Classified as **`genuine_template_error`**, the same failure class as
+    /// `extracted_112_indanone_is_genuine_template_error` above: a
+    /// two-or-more-fragment SMIRKS retro-template that models what is
+    /// actually an intramolecular ring bond as an intermolecular one.
+    ///
+    /// `extracted_4255`'s SMIRKS
+    /// (`[C:2]-[O:3]-[CH2:1]-[c:5](:[c:4]):[c:6]>>O=[CH2:1].[C:2]-[OH:3].[c:4]:[cH:5]:[c:6]`)
+    /// breaks the phthalide's two ring-closing bonds (benzylic CH2-O and
+    /// benzylic CH2-aromatic) *and additionally* severs the carbonyl
+    /// carbon's own bond to its aromatic ring neighbor -- a bond the LHS
+    /// pattern never even examines (that aromatic atom isn't matched at
+    /// all), so the template has no way to know it's discarding a real,
+    /// present bond rather than a genuinely absent one. The result is 3
+    /// mutually independent fragments instead of the 2 that a correct retro
+    /// of this bicyclic lactone would produce (an open aryl fragment still
+    /// bearing both substituents, plus formaldehyde) -- let alone
+    /// recognizing this disconnection is intramolecular to begin with.
+    ///
+    /// Both directions confirm this empirically:
+    /// - `apply_retro` on the real target reproduces the exact same
+    ///   3-fragment disconnection fresh -- `["O=C", "C(=O)O",
+    ///   "c1(F)ccccc1F"]`, the fixture's own precursors, matching the
+    ///   pilot harness's raw output exactly.
+    /// - Forward-replaying those 3 precursors through the reversed SMIRKS
+    ///   can only ever form ONE new bond (benzylic CH2 to one aromatic
+    ///   ring), leaving the carbonyl fragment dangling as an open ester
+    ///   chain (`Ar-CH2-O-C(=O)H`) rather than closing the second bond
+    ///   back onto the SAME ring to re-form the fused 5-membered lactone --
+    ///   structurally impossible from 3 independent molecules via this
+    ///   rule. Neither of the 2 resulting open-chain regiochemical products
+    ///   is or can be the bicyclic target.
+    ///
+    /// Same likely-general-failure-class note as `extracted_112`: any
+    /// multi-fragment SMIRKS whose RHS declares a mapped atom's spectator
+    /// bond (one never examined by the LHS pattern) as absent will make
+    /// this same mistake whenever the target happens to have that
+    /// substituent tethered elsewhere. Not investigated further here.
+    #[test]
+    fn extracted_4255_difluorophthalide_is_genuine_template_error() {
+        let target = "C2c1cc(c(F)cc1C(O2)=O)F";
+        let precursors = [
+            "O=C".to_string(),
+            "C(=O)O".to_string(),
+            "c1(F)ccccc1F".to_string(),
+        ];
+        let smirks =
+            "[C:2]-[O:3]-[CH2:1]-[c:5](:[c:4]):[c:6]>>O=[CH2:1].[C:2]-[OH:3].[c:4]:[cH:5]:[c:6]";
+        let rule = rr("extracted_4255", smirks);
+        let target_mol = mol_from_smiles(target).unwrap();
+        let target_canon = to_canonical(&target_mol);
+
+        // apply_retro reproduces the exact 3-fragment disconnection fresh,
+        // from the real target -- confirms this isn't a harness-only
+        // artifact.
+        let retro_outcomes = apply_retro(&target_mol, &rule);
+        let retro_smiles: Vec<Vec<String>> = retro_outcomes
+            .iter()
+            .map(|outcome| outcome.iter().map(|p| to_canonical(&p.mol)).collect())
+            .collect();
+        let expected_precursors: Vec<String> = precursors
+            .iter()
+            .map(|s| to_canonical(&mol_from_smiles(s).unwrap()))
+            .collect();
+        assert!(
+            retro_smiles.iter().any(|outcome| outcome
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                == expected_precursors.iter().collect()),
+            "apply_retro must still reproduce this exact 3-fragment disconnection: {retro_smiles:?}"
+        );
+
+        // Exhaustive forward replay of the declared precursors: every
+        // possible product is a plain open-chain formate-ester regioisomer,
+        // never the fused bicyclic target.
+        let reactant_mols: Vec<Molecule> = precursors
+            .iter()
+            .map(|s| mol_from_smiles(s).unwrap())
+            .collect();
+        let reactant_refs: Vec<&Molecule> = reactant_mols.iter().collect();
+        let (lhs, rhs) = smirks.split_once(">>").unwrap();
+        let fwd = format!("{rhs}>>{lhs}");
+        let products: std::collections::BTreeSet<String> = run_reactants(&fwd, &reactant_refs)
+            .unwrap()
+            .into_iter()
+            .flatten()
+            .map(|m| to_canonical(&m))
+            .collect();
+        // Product count (currently 2 open-chain formate-ester regioisomers)
+        // is supplementary evidence, not the classification's essential
+        // claim -- a future chematic regiochemistry-enumeration/dedup
+        // change could shift the count without changing the underlying
+        // chemical conclusion. The essential claims are: at least one
+        // product exists, and none of them is the target. Canonical-SMILES
+        // inequality is a sufficient stand-in for "never reconstructs the
+        // fused ring" here since this target has no stereocenters -- a
+        // constitutional match would necessarily canonicalize identically.
+        assert!(
+            !products.is_empty(),
+            "forward replay of the declared precursors must produce at least one candidate \
+             product: {products:?}"
+        );
+        assert!(
+            !products.contains(&target_canon),
+            "formaldehyde + formic acid + 1,2-difluorobenzene as three separate molecules must \
+             never be able to forward-produce the fused bicyclic target -- if this starts \
+             passing, the underlying chematic/apply_retro fragment-tether-tracking behavior \
+             changed and this classification needs re-checking, not just the assertion updated: \
+             {products:?}"
+        );
+    }
+
     /// Regression test for chematic issue #19 (fixed in 0.4.14):
     /// parse_smarts must accept atom-map notation (:N).
     #[test]
@@ -5267,6 +5386,85 @@ mod chematic_regression {
         assert_eq!(
             declared_forward_smirks("ester_cleavage", target, &bogus_precursors),
             None
+        );
+    }
+
+    #[test]
+    fn extracted_824_oxazolidinone_is_genuine_template_error() {
+        // Finding #4 pilot (2026-08-23), Invalid+balanced step, target
+        // O=C2NCC(O2)Cc1ccccc1 (5-benzyl-1,3-oxazolidin-2-one). SMIRKS'
+        // reactant pattern is a plain acyclic carbamate: C5-O6-C3(=O4)-N2H-C1,
+        // with no ring-membership or connectivity constraint tying [C:1] and
+        // [C:5] together. When it matches this target, [C:1] and [C:5] are
+        // mapped to the ring's C4/C5 atoms -- which the target *also* bonds
+        // directly to each other (the ring's C4-C5 bond) outside the matched
+        // substructure entirely. The RHS's two-fragment split
+        // ([C:1]-N=C=O . [C:5]-OH) has no way to express "these two atoms
+        // stay tethered" -- it silently drops the C4-C5 bond that made this
+        // a ring in the first place, same ring-tether-blindness failure
+        // class already confirmed for extracted_112 (genuine_template_error,
+        // PR #180). Root cause of the resulting Invalid step: the retro
+        // step claims methyl isocyanate + 2-phenylethanol as separate,
+        // untethered precursors, but a real synthesis of this oxazolidinone
+        // needs an amino-alcohol (e.g. phenylalaninol-like) reacting with an
+        // *unsubstituted* one-carbon carbonyl-transfer reagent (phosgene,
+        // CDI, HNCO) -- not a fully alkylated isocyanate paired with an
+        // unrelated free alcohol.
+        let target = "O=C2NCC(O2)Cc1ccccc1";
+        let precursors = ["C(=NC)=O".to_string(), "OCCc1ccccc1".to_string()];
+        let smirks = "[C:5]-[O:6]-[C:3](=[O:4])-[NH:2]-[C:1]>>[C:1]-[N:2]=[C:3]=[O:4].[C:5]-[OH:6]";
+        let rule = rr("extracted_824", smirks);
+        let target_mol = mol_from_smiles(target).unwrap();
+        let target_canon = to_canonical(&target_mol);
+
+        // apply_retro reproduces the exact wrong disconnection fresh, from
+        // the real target -- confirms this isn't a harness-only artifact.
+        let retro_outcomes = apply_retro(&target_mol, &rule);
+        let retro_smiles: Vec<Vec<String>> = retro_outcomes
+            .iter()
+            .map(|outcome| outcome.iter().map(|p| to_canonical(&p.mol)).collect())
+            .collect();
+        let expected_precursors: Vec<String> = precursors
+            .iter()
+            .map(|s| to_canonical(&mol_from_smiles(s).unwrap()))
+            .collect();
+        assert!(
+            retro_smiles.iter().any(|outcome| outcome
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                == expected_precursors.iter().collect()),
+            "apply_retro must still reproduce this exact wrong disconnection: {retro_smiles:?}"
+        );
+
+        // Forward replay of the declared precursors: the only possible
+        // product is the plain open-chain N-methyl carbamate ester -- never
+        // the fused-ring target, which would require the alcohol and amine
+        // to already be tethered in one molecule before ring closure.
+        let reactant_mols: Vec<Molecule> = precursors
+            .iter()
+            .map(|s| mol_from_smiles(s).unwrap())
+            .collect();
+        let reactant_refs: Vec<&Molecule> = reactant_mols.iter().collect();
+        let (lhs, rhs) = smirks.split_once(">>").unwrap();
+        let fwd = format!("{rhs}>>{lhs}");
+        let products: std::collections::BTreeSet<String> = run_reactants(&fwd, &reactant_refs)
+            .unwrap()
+            .into_iter()
+            .flatten()
+            .map(|m| to_canonical(&m))
+            .collect();
+        let expected_open_chain = to_canonical(&mol_from_smiles("O=C(OCCc1ccccc1)NC").unwrap());
+        assert_eq!(
+            products,
+            std::collections::BTreeSet::from([expected_open_chain]),
+            "expected exactly the single open-chain N-methyl carbamate ester: {products:?}"
+        );
+        assert!(
+            !products.contains(&target_canon),
+            "methyl isocyanate + 2-phenylethanol as two separate, untethered molecules must \
+             never be able to forward-produce the fused-ring target -- if this starts passing, \
+             the underlying chematic/apply_retro fragment-tether-tracking behavior changed and \
+             this classification needs re-checking, not just the assertion updated: {products:?}"
         );
     }
 }

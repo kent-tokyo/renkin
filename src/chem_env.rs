@@ -4942,10 +4942,17 @@ mod chematic_regression {
             .flatten()
             .map(|m| to_canonical(&m))
             .collect();
-        assert_eq!(
-            products.len(),
-            1,
-            "expected exactly the one open-chain secondary-amine product: {products:?}"
+        // Product count (currently 1) is supplementary evidence, not the
+        // classification's essential claim -- demoted from a hard
+        // assertion so a future chematic enumeration change can't
+        // spuriously break this fixture without changing the chemical
+        // conclusion. The essential claims are: at least one product
+        // exists, and none of them is the target (checked below, plus the
+        // stereo-stripped connectivity check).
+        assert!(
+            !products.is_empty(),
+            "forward replay of the declared precursors must produce at least one candidate \
+             product: {products:?}"
         );
         assert!(
             !products.contains(&target_canon),

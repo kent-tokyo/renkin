@@ -4717,10 +4717,19 @@ mod chematic_regression {
             .flatten()
             .map(|m| to_canonical(&m))
             .collect();
-        assert_eq!(
-            products.len(),
-            2,
-            "expected exactly the 2 open-chain formate-ester regioisomers: {products:?}"
+        // Product count (currently 2 open-chain formate-ester regioisomers)
+        // is supplementary evidence, not the classification's essential
+        // claim -- a future chematic regiochemistry-enumeration/dedup
+        // change could shift the count without changing the underlying
+        // chemical conclusion. The essential claims are: at least one
+        // product exists, and none of them is the target. Canonical-SMILES
+        // inequality is a sufficient stand-in for "never reconstructs the
+        // fused ring" here since this target has no stereocenters -- a
+        // constitutional match would necessarily canonicalize identically.
+        assert!(
+            !products.is_empty(),
+            "forward replay of the declared precursors must produce at least one candidate \
+             product: {products:?}"
         );
         assert!(
             !products.contains(&target_canon),

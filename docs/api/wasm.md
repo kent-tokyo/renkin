@@ -63,7 +63,7 @@ function find_routes(
 ): string  // JSON-encoded result
 ```
 
-WASM always uses the compiled-in default rule set (26 hand-crafted rules) and
+WASM always uses the compiled-in default rule set (24 hand-crafted rules) and
 building blocks — there is no way to load an external templates file or
 custom building blocks list from the WASM entry point (unlike the CLI/Python
 bindings). See [Rust API](rust.md) or [Python API](python.md) for

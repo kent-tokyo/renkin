@@ -8,6 +8,50 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+v0.36.0 Phase 1 (rule-safety census, in progress): a mechanical static
+screen of every hand-crafted `default_rules()` SMIRKS against the risk
+shape that broke `aryl_amine_retro`/`buchwald_hartwig_retro`
+([0.32.0](#0320---2026-08-22-typed-reports--verified-planner-matrix)/
+[0.35.0](#0350---2026-08-24-template-integrity--spectator-bond-loss),
+issue #77) -- a minimally-constrained LHS plus a bare single-atom RHS
+product fragment. Two more rules matching that exact shape reproduced the
+same defect on real targets and are removed below.
+
+### Added
+- `examples/rule_safety_census.rs`: a static SMIRKS screen of every
+  `default_rules()` entry for the `aryl_amine_retro`/
+  `buchwald_hartwig_retro` risk shape (multi-product RHS + a bare
+  single-atom RHS fragment) -- screening only, never removes or fixes a
+  rule itself. Reproducible via `cargo run --example rule_safety_census`;
+  report at `docs/validation/rule-safety-census-2026-08-24.md` +
+  `data/rule_safety_census_2026-08-24.json`.
+
+### Fixed
+- Removed `n_benzylation_retro` and `michael_retro` from `default_rules()`:
+  both flagged by the new rule-safety census, and both already carried
+  real (not just flagged) `SpectatorBondLoss` findings from the existing
+  2026-08-24 smoke measurement. Confirmed by direct `apply_retro`
+  reproduction on real ring-fused targets -- same mechanism as
+  `aryl_amine_retro`/`buchwald_hartwig_retro`: the bare RHS fragment's
+  substituent-carry-through BFS sweeps unchecked across a ring-fusion
+  boundary. `n_benzylation_retro`'s "bare" `[N:1]` fragment carries
+  through nearly the whole molecule on an N-CH2-Ar bond that's part of a
+  ring; `michael_retro`'s "bare" `[C:1]` fragment does the same on a
+  C-CH2-C=O bond in a ring (a glutarimide), with the declared enol
+  fragment coming back as an unreal, garbled piece in both cases. **The
+  hand-crafted rule count drops from 26 to 24**; any route search that
+  previously depended on either rule will no longer find that route --
+  this is a correctness fix, not a regression.
+
+### Known Limitations
+- `grignard_addition_retro` also carries real `SpectatorBondLoss`
+  findings and matches the same static-screen risk shape, but did not
+  reproduce the defect on the one target tried this round -- left in
+  `default_rules()` as flagged-but-unconfirmed, not cleared. `negishi_retro`
+  matches the risk shape structurally (near-identical to the already-removed
+  rules) but produced zero findings in the same 15-target smoke sample --
+  also not cleared, no fixture attempted yet.
+
 ## [0.35.0] - 2026-08-24 "Template Integrity & Spectator Bond Loss"
 
 A retro-rule (hand-crafted or extracted) whose matched/product-fragment

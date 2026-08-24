@@ -881,7 +881,6 @@ fn reaction_family_for_rule(rule: &str) -> Option<&'static str> {
         "aryl_chloride_to_bromide" => Some("halogen_exchange"),
         "suzuki_retro" => Some("suzuki_coupling"),
         "heck_retro" | "heck_retro_terminal" => Some("heck_reaction"),
-        "negishi_retro" => Some("negishi_coupling"),
         "wittig_retro" => Some("wittig_reaction"),
         "reductive_amination_retro" => Some("reductive_amination"),
         "sonogashira_retro" => Some("sonogashira_coupling"),
@@ -889,12 +888,12 @@ fn reaction_family_for_rule(rule: &str) -> Option<&'static str> {
         "diaryl_sulfone_retro" => Some("friedel_crafts_sulfonylation"),
         "boc_deprotection_retro" => Some("boc_deprotection"),
         "cbz_deprotection_retro" => Some("cbz_deprotection"),
-        // n_benzylation_retro / michael_retro removed from default_rules()
-        // (v0.36.0 rule-safety census, chem_env.rs) -- same ring-fused
-        // bare-fragment atom-loss defect as aryl_amine_retro/
+        // n_benzylation_retro / michael_retro / negishi_retro /
+        // grignard_addition_retro removed from default_rules() (v0.36.0
+        // rule-safety census, chem_env.rs) -- same ring-fused
+        // bare-fragment atom-duplication defect as aryl_amine_retro/
         // buchwald_hartwig_retro above. Arms deleted so this stays
         // dead-code-free.
-        "grignard_addition_retro" => Some("grignard_addition"),
         "claisen_retro" => Some("claisen_condensation"),
         "acyl_chloride_from_acid" => Some("acyl_chloride_formation"),
         "alcohol_oxidation_retro" => Some("carbonyl_reduction"),
@@ -950,7 +949,8 @@ fn conditions_for_rule(rule: &str) -> Option<ReactionConditions> {
         "suzuki_retro" => cond!("Pd(PPh₃)₄ (5 mol%)", "EtOH/H₂O (3:1)", "80 °C"),
         "heck_retro" => cond!("Pd(OAc)₂ / PPh₃ (5 mol%)", "DMF", "100 °C"),
         "heck_retro_terminal" => cond!("Pd(OAc)₂ / PPh₃ (5 mol%)", "DMF", "100 °C"),
-        "negishi_retro" => cond!("Pd(PPh₃)₄ / ZnCl₂", "THF", "65 °C"),
+        // negishi_retro's condition entry removed with the rule (v0.36.0
+        // rule-safety census) -- see reaction_family_for_rule above.
         "cc_single_cleavage" => None, // retrosynthetic disconnection only
         "wittig_retro" => cond!("Ph₃P (1.2 eq)", "toluene", "0 °C → rt"),
         "reductive_amination_retro" => cond!("NaBH₃CN (1.5 eq)", "MeOH", "rt"),
@@ -968,10 +968,10 @@ fn conditions_for_rule(rule: &str) -> Option<ReactionConditions> {
             "Friedel-Crafts sulfonylation"
         ),
         "boc_deprotection_retro" => cond!("TFA (20 % in DCM)", "DCM", "rt"),
-        // n_benzylation_retro's and michael_retro's condition entries
-        // removed with the rules (v0.36.0 rule-safety census) -- see
-        // reaction_family_for_rule above.
-        "grignard_addition_retro" => cond!("Mg (1.1 eq)", "THF (dry)", "0 °C → rt"),
+        // n_benzylation_retro's, michael_retro's, and
+        // grignard_addition_retro's condition entries removed with the
+        // rules (v0.36.0 rule-safety census) -- see reaction_family_for_rule
+        // above.
         "claisen_retro" => cond!("LDA (2.0 eq)", "THF (dry)", "−78 °C"),
         "acyl_chloride_from_acid" => cond!("(COCl)₂ (1.2 eq) + cat. DMF", "DCM", "0 °C → rt"),
         "cbz_deprotection_retro" => cond!("H₂ (1 atm), Pd/C (10 %)", "EtOH", "rt"),
@@ -1016,9 +1016,8 @@ fn procedure_hint_for_rule(rule: &str) -> Option<&'static str> {
             Some("Treat with TFA (20% in DCM) at rt for 1 h, then evaporate.")
         }
         "cbz_deprotection_retro" => Some("Hydrogenate (H₂, 1 atm) over Pd/C (10%) in EtOH at rt."),
-        "grignard_addition_retro" => {
-            Some("Add carbonyl to Grignard reagent in dry THF at 0 °C, then rt; quench with NH₄Cl.")
-        }
+        // grignard_addition_retro's entry removed with the rule (v0.36.0
+        // rule-safety census) -- see reaction_family_for_rule above.
         "acyl_chloride_from_acid" => {
             Some("Add oxalyl chloride (1.2 eq) + cat. DMF to carboxylic acid in DCM at 0 °C.")
         }
@@ -1029,8 +1028,9 @@ fn procedure_hint_for_rule(rule: &str) -> Option<&'static str> {
             "Deprotonate ester α-position with LDA (2 eq) in dry THF at −78 °C, add electrophile.",
         ),
         // michael_retro's and n_benzylation_retro's entries removed with
-        // the rules (v0.36.0 rule-safety census) -- see
-        // reaction_family_for_rule above.
+        // the rules (v0.36.0 rule-safety census) -- grignard_addition_retro
+        // and negishi_retro never had entries here in the first place --
+        // see reaction_family_for_rule above.
         _ => None,
     }
 }

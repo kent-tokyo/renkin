@@ -1,5 +1,5 @@
 {
-  "flagged_count": 8,
+  "flagged_count": 6,
   "graph_based_count": 8,
   "rules": [
     {
@@ -129,23 +129,6 @@
       "rhs_bare_single_atom_fragments": [],
       "rhs_product_fragment_count": 2,
       "smirks": "[c:1][CH:2]=[CH2:3]>>[c:1][Br].[CH2:2]=[CH2:3]"
-    },
-    {
-      "flag_reasons": [
-        "minimal LHS: only 2 mapped atom(s) declared -- little context walling off BFS carry-through",
-        "multi-product RHS: 2 fragments",
-        "bare single-atom RHS fragment(s): [CH3:2] -- exact shape of the confirmed aryl_amine_retro/buchwald_hartwig_retro defect"
-      ],
-      "flagged": true,
-      "graph_based": false,
-      "lhs_has_ring_closure_digit": true,
-      "lhs_mapped_atom_count": 2,
-      "name": "negishi_retro",
-      "rhs_bare_single_atom_fragments": [
-        "[CH3:2]"
-      ],
-      "rhs_product_fragment_count": 2,
-      "smirks": "[c:1][CH2:2]>>[c:1][Br].[CH3:2]"
     },
     {
       "flag_reasons": [
@@ -306,23 +289,6 @@
     },
     {
       "flag_reasons": [
-        "multi-product RHS: 2 fragments",
-        "bare single-atom RHS fragment(s): [C:4] -- exact shape of the confirmed aryl_amine_retro/buchwald_hartwig_retro defect",
-        "LHS declares no ring closure of its own (background fact for this whole corpus, not independently discriminating)"
-      ],
-      "flagged": true,
-      "graph_based": false,
-      "lhs_has_ring_closure_digit": false,
-      "lhs_mapped_atom_count": 4,
-      "name": "grignard_addition_retro",
-      "rhs_bare_single_atom_fragments": [
-        "[C:4]"
-      ],
-      "rhs_product_fragment_count": 2,
-      "smirks": "[C:1]([OH:2])([C:3])[C:4]>>[C:1](=O)[C:3].[C:4]"
-    },
-    {
-      "flag_reasons": [
         "multi-product RHS: 2 fragments"
       ],
       "flagged": false,
@@ -363,5 +329,5 @@
     }
   ],
   "single_product_count": 3,
-  "total_rules": 24
+  "total_rules": 22
 }

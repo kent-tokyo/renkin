@@ -2,7 +2,7 @@
 
 **Status: static screen only.** A flagged row here is a candidate for a target fixture, never a verdict by itself — a rule only gets fixed/disabled once a specific target reproduces the defect via direct `apply_retro` calls, matching the standard this project already applied to `aryl_amine_retro`/`buchwald_hartwig_retro`.
 
-**Updated**: regenerated after two flagged rules (`n_benzylation_retro`, `michael_retro`) were confirmed via direct `apply_retro` reproduction and removed from `default_rules()` — see `n_benzylation_retro_removed_from_default_rules`/`n_benzylation_retro_would_corrupt_a_ring_fused_target_if_re_enabled` and `michael_retro_removed_from_default_rules`/`michael_retro_would_corrupt_a_ring_fused_target_if_re_enabled` in `src/chem_env.rs`. `default_rules()` now has 24 hand-crafted rules (was 26), 8 flagged (was 10).
+**Updated (round 2)**: regenerated after `negishi_retro` and `grignard_addition_retro` were also confirmed via direct `apply_retro` reproduction and removed from `default_rules()` — see `negishi_retro_removed_from_default_rules`/`negishi_retro_would_corrupt_a_ring_fused_target_if_re_enabled` and `grignard_addition_retro_removed_from_default_rules`/`grignard_addition_retro_would_corrupt_a_ring_fused_target_if_re_enabled` in `src/chem_env.rs`. This follows round 1's removal of `n_benzylation_retro`/`michael_retro`. `default_rules()` now has 22 hand-crafted rules (was 26 before this round-2/round-1 pair, 24 after round 1), 6 flagged (was 10, then 8).
 
 ## Purpose
 
@@ -16,9 +16,9 @@ cargo run --example rule_safety_census
 
 Deterministic and reproducible — pure static analysis of `default_rules()`'s own SMIRKS strings, no target data, no search. Output: `docs/validation/rule-safety-census-2026-08-24.md` (this file, hand-annotated with the cross-reference section below) + `data/rule_safety_census_2026-08-24.json` (raw per-rule data, regenerated verbatim by the command above).
 
-**Cargo incremental-build caveat**: a stale `target/debug/.fingerprint` entry for the `renkin` package can serve an old example binary under `cargo run --example` even after `src/chem_env.rs` changes (observed once while producing this report — a `default_rules()` edit didn't take effect until `rm -rf target/debug/.fingerprint/renkin-*`). `cargo test` recompiles reliably; if `cargo run --example rule_safety_census`'s rule count looks stale, clear that package's fingerprint before trusting the output.
+**Cargo incremental-build caveat**: a stale `target/debug/.fingerprint` entry for the `renkin` package can serve an old example binary under `cargo run --example` even after `src/chem_env.rs` changes (observed once while producing the round-1 report — a `default_rules()` edit didn't take effect until `rm -rf target/debug/.fingerprint/renkin-*`). `cargo test` recompiles reliably; if `cargo run --example rule_safety_census`'s rule count looks stale, clear that package's fingerprint before trusting the output.
 
-Static SMIRKS screen of all 24 `default_rules()` entries against the risk shape that broke `aryl_amine_retro`/`buchwald_hartwig_retro` (issue #77). Screening only -- a flag here is a reason to build a fixture, not a verdict. See `docs/design/` for the full v0.36.0 plan.
+Static SMIRKS screen of all 22 `default_rules()` entries against the risk shape that broke `aryl_amine_retro`/`buchwald_hartwig_retro` (issue #77). Screening only -- a flag here is a reason to build a fixture, not a verdict. See `docs/design/` for the full v0.36.0 plan.
 
 ## Cross-reference: real SpectatorBondLoss findings already on record
 
@@ -26,15 +26,15 @@ The existing 2026-08-24 smoke measurement (`docs/validation/spectator-bond-smoke
 
 | Rule | Findings | Case | Status |
 |---|---:|---|---|
-| `michael_retro` | 46 | CrossProductTerritory (Case B) | **Confirmed and removed** (ring-fused C-CH2-C=O target, atom-accounting defect) |
-| `n_benzylation_retro` | 28 | CrossProductTerritory (Case B) | **Confirmed and removed** (ring-fused N-CH2-Ar target, atom-accounting defect) |
-| `grignard_addition_retro` | 16 | CrossProductTerritory (Case B) | Flagged, real findings, but its LHS (`[C:1]([OH:2])([C:3])[C:4]`, a tertiary alcohol) never matched the one candidate target tried this round (0 outcomes) — no evidence either way, not a negative reproduction attempt; left in `default_rules()` as flagged-but-unconfirmed, not cleared |
+| `michael_retro` | 46 | CrossProductTerritory (Case B) | **Confirmed and removed** (round 1: ring-fused C-CH2-C=O target, atom-accounting defect) |
+| `n_benzylation_retro` | 28 | CrossProductTerritory (Case B) | **Confirmed and removed** (round 1: ring-fused N-CH2-Ar target, atom-accounting defect) |
+| `grignard_addition_retro` | 16 | CrossProductTerritory (Case B) | **Confirmed and removed** (round 2: ring-fused tertiary-alcohol target — a 2-substituted indanol — atom-duplication defect, 18 observed heavy atoms across precursors vs. a chemically correct 11) |
 
-`michael_retro` and `n_benzylation_retro` are the natural first candidates this round precisely because they combined the static-screen flag with real, already-observed findings — stronger evidence than the static screen alone. Both reproduced on real ring-fused targets via direct `apply_retro` calls (same BFS-carry-through-across-a-ring-fusion mechanism as `aryl_amine_retro`/`buchwald_hartwig_retro`), with a specific, mechanism-consistent atom-count signature: `n_benzylation_retro`'s broken outcome sums to 56 heavy atoms across its two precursors against a chemically-correct 46 (target's 45 + one new Br); `michael_retro`'s broken outcomes sum to 30 against a chemically-correct 24 (atom-conserving SMIRKS, no new atoms) — both a clean excess, confirming duplication (the bare fragment's carry-through re-collecting atoms the other declared fragment already claims), not just an arbitrary mismatch. Both are now removed.
+`michael_retro`, `n_benzylation_retro`, and `grignard_addition_retro` combined the static-screen flag with real, already-observed findings — stronger evidence than the static screen alone. All three reproduced on real ring-fused targets via direct `apply_retro` calls (same BFS-carry-through-across-a-ring-fusion mechanism as `aryl_amine_retro`/`buchwald_hartwig_retro`), each with a specific, mechanism-consistent atom-count signature (a clean excess over the chemically correct total — duplication, not an arbitrary mismatch), and are now all removed.
 
-`negishi_retro` matches the risk shape (structurally near-identical to the already-removed rules) but produced zero findings in this same 15-target sample — not cleared, just no free evidence either way; still needs its own deliberate fixture if pursued further. `grignard_addition_retro` needs a *different* target next time (one that actually contains a tertiary alcohol matching its LHS) before its flagged-but-unconfirmed status can move either direction — this round's one attempt tested nothing, since the rule never fired.
+`negishi_retro` matched the risk shape structurally (near-identical to the already-removed rules) but produced zero findings in the 15-target smoke sample — round 1 left it as "not cleared, just no free evidence either way." Round 2 built a deliberate fixture anyway (a real indane/tetralin-type target, chosen for the exact ring-fusion shape the mechanism needs, not pulled from the smoke sample) and confirmed the same defect: a 25-atom target produced a single outcome summing to 49 heavy atoms across its precursors, against a chemically correct 26. **Now confirmed and removed**, closing out the last of the plan's originally-named priority table.
 
-**Caveat, same as the smoke doc's own**: n=15 targets, right-censored by a 90-second timeout — absence of a finding for a rule here is not evidence of safety, only absence of evidence from this small sample.
+**Caveat, same as the smoke doc's own**: n=15 targets, right-censored by a 90-second timeout — absence of a finding for a rule here is not evidence of safety, only absence of evidence from this small sample. Zero findings in that sample is exactly why `negishi_retro` needed its own deliberately-constructed fixture rather than relying on the smoke data alone.
 
 ## Flagged: multi-product RHS with a bare single-atom fragment
 
@@ -42,12 +42,12 @@ The existing 2026-08-24 smoke measurement (`docs/validation/spectator-bond-smoke
 |---|---|---:|---|
 | `friedel_crafts_acylation_retro` | `[c:1][C:2](=[O:3])>>[c:1].[C:2](=[O:3])Cl` | 3 | [c:1] |
 | `aryl_carboxylation_retro` | `[c:1][C:2](=O)[OH]>>[c:1].[C:2](=O)O` | 2 | [c:1] |
-| `negishi_retro` | `[c:1][CH2:2]>>[c:1][Br].[CH3:2]` | 2 | [CH3:2] |
 | `cc_single_cleavage` | `[C:1][C:2]>>[C:1].[C:2]` | 2 | [C:1], [C:2] |
 | `reductive_amination_retro` | `[C:1][N:2]>>[C:1]=O.[N:2]` | 2 | [N:2] |
 | `cn_aliphatic_cleavage` | `[C:1][N:2]>>[C:1].[N:2]` | 2 | [C:1], [N:2] |
 | `co_aliphatic_cleavage` | `[C:1][O:2]>>[C:1].[O:2]` | 2 | [C:1], [O:2] |
-| `grignard_addition_retro` | `[C:1]([OH:2])([C:3])[C:4]>>[C:1](=O)[C:3].[C:4]` | 4 | [C:4] |
+
+These six remain flagged-but-unattempted this round. `cc_single_cleavage`/`cn_aliphatic_cleavage`/`co_aliphatic_cleavage` are the plan's own "new, unverified angle" (BFS carry-through from an aliphatic cut site into an adjacent/fused aromatic ring elsewhere in the molecule, not yet tested against any fixture) — genuinely distinct future work, not attempted this round. `friedel_crafts_acylation_retro`/`aryl_carboxylation_retro`/`reductive_amination_retro` were flagged by the static screen but never had a dedicated fixture attempt either.
 
 ## Not flagged: single-product SMIRKS (no second-fragment risk)
 
@@ -133,14 +133,6 @@ SMIRKS: `[c:1][CH:2]=[CH2:3]>>[c:1][Br].[CH2:2]=[CH2:3]`
 
 - multi-product RHS: 2 fragments
 
-### `negishi_retro`
-
-SMIRKS: `[c:1][CH2:2]>>[c:1][Br].[CH3:2]`
-
-- minimal LHS: only 2 mapped atom(s) declared -- little context walling off BFS carry-through
-- multi-product RHS: 2 fragments
-- bare single-atom RHS fragment(s): [CH3:2] -- exact shape of the confirmed aryl_amine_retro/buchwald_hartwig_retro defect
-
 ### `cc_single_cleavage`
 
 SMIRKS: `[C:1][C:2]>>[C:1].[C:2]`
@@ -216,14 +208,6 @@ Graph-based (empty SMIRKS).
 Graph-based (empty SMIRKS).
 
 - graph-based: requires is_bridge_bond (non-ring) by construction
-
-### `grignard_addition_retro`
-
-SMIRKS: `[C:1]([OH:2])([C:3])[C:4]>>[C:1](=O)[C:3].[C:4]`
-
-- multi-product RHS: 2 fragments
-- bare single-atom RHS fragment(s): [C:4] -- exact shape of the confirmed aryl_amine_retro/buchwald_hartwig_retro defect
-- LHS declares no ring closure of its own (background fact for this whole corpus, not independently discriminating)
 
 ### `claisen_retro`
 

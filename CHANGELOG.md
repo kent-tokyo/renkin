@@ -8,21 +8,118 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-08-24 "Template Integrity & Spectator Bond Loss"
+
+A retro-rule (hand-crafted or extracted) whose matched/product-fragment
+atoms sit on a real ring-fusion junction can have chematic's own
+substituent-carry-through BFS sweep unchecked into the wrong side of that
+ring — producing a precursor that looks atom-balanced but has silently
+lost real target atoms. This release adds `SpectatorBondLoss`: detection
+of that exact mechanism (two independent sub-cases), an opt-in fail-closed
+gate that excludes only the candidates it can identify with confidence,
+and the CLI/Python/WASM surface to actually use it — plus the hand-crafted
+rule fix (`buchwald_hartwig_retro`) this same investigation found along
+the way.
+
+### Added
+- `SpectatorBondLoss` detection (`src/spectator_bond.rs`, PR #186): two
+  independent sub-cases sharing one typed
+  `SpectatorBondLossFinding`/`SpectatorBondLossCase` shape —
+  `MatchedPairUndeclared` (Case A: a real target bond directly connects
+  two matched atoms but neither the LHS nor any RHS fragment declares it)
+  and `CrossProductTerritory` (Case B: a real target path connects matched
+  atoms belonging to *different* RHS product fragments, running only
+  through genuinely unmatched atoms — RENKIN's own independent BFS
+  territory model, not a port of chematic's private internals).
+- `SpectatorBondLossFinding.target_smiles`: canonical SMILES of the exact
+  target a finding was detected against, so findings accumulated across a
+  whole search can be traced back to the specific candidate/route step
+  they apply to (PR #187).
+- `SearchConfig::spectator_bond_policy: SpectatorBondPolicy` (`Off` /
+  `DiagnosticsOnly` / `Gated`), wired through `raw_propose` and shared by
+  `find_routes` and the standalone candidate-pool API. `DiagnosticsOnly`
+  records every finding in `CrowdOutDiagnostics::spectator_bond_loss_findings`
+  without excluding any candidate. `Gated` additionally runs
+  `gate_candidates` — per-candidate correlation to the specific match that
+  produced it (via `find_reaction_matches`/`apply_reaction_match`,
+  provably identical to what `run_reactants` itself would have produced
+  for that match), so a rule with several matches against one target only
+  rejects the actually-defective candidate, never a clean sibling. v1
+  scope: only rules with no `#` in their SMIRKS (PR #188).
+- `CrowdOutDiagnostics::spectator_bond_gated_out`: every candidate `Gated`
+  actually excluded, with the finding(s) that justified it — an exclusion
+  is never silent, even though the candidate no longer appears anywhere
+  else in the run (PR #188).
+- CLI `--spectator-bond-policy <off|diagnostics-only|gated>`, Python
+  `find_routes(..., spectator_bond_policy="off")`, and WASM
+  `find_routes_v3` (extends `find_routes_v2`, not a breaking signature
+  change) — the same policy, same three values, on every surface (PR
+  #189).
+- `examples/spectator_bond_smoke.rs`, a reusable lightweight measurement
+  tool, plus a real 15-target `DiagnosticsOnly` run
+  (`docs/validation/spectator-bond-smoke-2026-08-24.md`): 19,606 findings
+  (893 Case A, 18,713 Case B) across 276 distinct rules from just 15
+  targets — far more findings than the 4 originally-known instances, not
+  a corpus-wide defect-rate claim (small, right-censored sample; see
+  Known Limitations). One hand-verified, previously-unknown template
+  defect found on a real search trace (not a constructed fixture):
+  `extracted_288` mismodels a 4-membered β-lactone ring-opening as an
+  intermolecular ester cleavage, silently dropping a methyl substituent —
+  the exact same ring-tether-blindness pattern as the four templates
+  Finding #4 already confirmed, now shown to generalize beyond them (PR
+  #187).
+
 ### Fixed
-- Removed `buchwald_hartwig_retro` from `default_rules()`: on a ring-fused
-  nitrogen (N shared between the aromatic ring and a fused saturated
-  ring), it has the same atom-loss defect `aryl_amine_retro` was removed
-  for (issue #77, [0.32.0](#0320---2026-08-22-typed-reports--verified-planner-matrix))
-  — substituent-carry-through BFS sweeps unchecked across the ring-fusion
-  boundary — but worse: the surviving "aryl" fragment comes back
-  corrupted too (a spurious extra bromine plus a dangling alkyl chain
-  that leaked in from the far side of the ring), not just a missing
+- `declared_map_pairs` (`src/spectator_bond.rs`) now returns `None` on an
+  unparseable LHS/RHS fragment instead of silently treating it as
+  "declares nothing" — the latter is a diagnostics-only blind spot but a
+  real false-reject risk for `Gated`, so `gate_candidates` refuses to
+  trust it and reports `NotEvaluable("unparseable_declared_bonds")`
+  instead (PR #188).
+- `gate_candidates` never silently accepts or rejects when confidence
+  can't be established: a `#`-bearing rule, a match that can't be
+  correlated back to any candidate, or the same candidate signature
+  reached by both a defective and a clean match all resolve to
+  `NotEvaluable`, never a guess in either direction (PR #188).
+- Removed `buchwald_hartwig_retro` from `default_rules()`: the same
+  ring-fused-nitrogen atom-loss defect `aryl_amine_retro` was removed for
+  ([0.32.0](#0320---2026-08-22-typed-reports--verified-planner-matrix),
+  issue #77) — substituent-carry-through BFS sweeps unchecked across the
+  ring-fusion boundary — but worse: the surviving "aryl" fragment comes
+  back corrupted too (a spurious extra bromine plus a dangling alkyl
+  chain leaked in from the far side of the ring), not just a missing
   fragment. Confirmed by direct reproduction on the same target shape as
   the original `aryl_amine_retro` repro. **The hand-crafted rule count
   drops from 27 to 26** — any route search that previously depended on
   this rule for a Buchwald-Hartwig-type Ar-N disconnection will no longer
   find that route; this is a correctness fix (the routes it produced
   could be chemically wrong, not just missing), not a regression.
+- 3 pre-existing `clippy::redundant_closure` findings under
+  `--features python` (never caught by CI, which only runs the
+  default-features clippy check) in `predict_forward_py`/
+  `validate_forward_py`'s error mapping — unrelated to this release's own
+  changes, found incidentally while verifying them.
+
+### Known Limitations
+- `Gated` policy only ever rejects candidates from rules with no `#` in
+  their SMIRKS (~57% of a typical extracted-template corpus); `[#N]`
+  hash-atom rules stay `DiagnosticsOnly` regardless of policy, since the
+  match-replay correlation this relies on doesn't hold for
+  `application_smirks_variants`'s concrete-element expansion path.
+- `spectator_bond_policy` defaults to `Off` on every surface (CLI/Python/
+  WASM/Rust) — zero behavior change and zero extra cost unless a caller
+  explicitly opts in.
+- The 15-target smoke measurement is a small, right-censored sample (a
+  90-second per-target timeout under-represents slow searches) and must
+  not be read as "N% of the template corpus is defective" or any other
+  corpus-wide population claim — see the measurement doc's own caveats.
+- No full 4,907-target (or 5,000-template corpus-wide) remeasurement was
+  run for this release; a `Gated`-policy smoke re-run (excluded-candidate
+  counts, route-count deltas) is deferred to post-release evidence or a
+  v0.35.1 decision, not blocking this release.
+- The unrelated chematic-side search-performance regression tracked by
+  issue #128 is followed upstream separately and is not addressed by
+  this release.
 
 ## [0.34.0] - 2026-08-23 "SynPlanner Bridge"
 

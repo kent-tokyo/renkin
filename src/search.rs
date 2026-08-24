@@ -889,10 +889,13 @@ fn reaction_family_for_rule(rule: &str) -> Option<&'static str> {
         "diaryl_sulfone_retro" => Some("friedel_crafts_sulfonylation"),
         "boc_deprotection_retro" => Some("boc_deprotection"),
         "cbz_deprotection_retro" => Some("cbz_deprotection"),
-        "n_benzylation_retro" => Some("n_benzylation"),
+        // n_benzylation_retro / michael_retro removed from default_rules()
+        // (v0.36.0 rule-safety census, chem_env.rs) -- same ring-fused
+        // bare-fragment atom-loss defect as aryl_amine_retro/
+        // buchwald_hartwig_retro above. Arms deleted so this stays
+        // dead-code-free.
         "grignard_addition_retro" => Some("grignard_addition"),
         "claisen_retro" => Some("claisen_condensation"),
-        "michael_retro" => Some("michael_addition"),
         "acyl_chloride_from_acid" => Some("acyl_chloride_formation"),
         "alcohol_oxidation_retro" => Some("carbonyl_reduction"),
         _ => None,
@@ -965,10 +968,11 @@ fn conditions_for_rule(rule: &str) -> Option<ReactionConditions> {
             "Friedel-Crafts sulfonylation"
         ),
         "boc_deprotection_retro" => cond!("TFA (20 % in DCM)", "DCM", "rt"),
-        "n_benzylation_retro" => cond!("K₂CO₃ (2 eq)", "DMF", "60 °C"),
+        // n_benzylation_retro's and michael_retro's condition entries
+        // removed with the rules (v0.36.0 rule-safety census) -- see
+        // reaction_family_for_rule above.
         "grignard_addition_retro" => cond!("Mg (1.1 eq)", "THF (dry)", "0 °C → rt"),
         "claisen_retro" => cond!("LDA (2.0 eq)", "THF (dry)", "−78 °C"),
-        "michael_retro" => cond!("DBU or K₂CO₃ (1.2 eq)", "THF", "rt"),
         "acyl_chloride_from_acid" => cond!("(COCl)₂ (1.2 eq) + cat. DMF", "DCM", "0 °C → rt"),
         "cbz_deprotection_retro" => cond!("H₂ (1 atm), Pd/C (10 %)", "EtOH", "rt"),
         _ => None,
@@ -1024,12 +1028,9 @@ fn procedure_hint_for_rule(rule: &str) -> Option<&'static str> {
         "claisen_retro" => Some(
             "Deprotonate ester α-position with LDA (2 eq) in dry THF at −78 °C, add electrophile.",
         ),
-        "michael_retro" => {
-            Some("Combine Michael donor + acceptor + K₂CO₃ or DBU (1.2 eq) in THF at rt.")
-        }
-        "n_benzylation_retro" => {
-            Some("React amine + benzyl halide + K₂CO₃ (2 eq) in DMF at 60 °C.")
-        }
+        // michael_retro's and n_benzylation_retro's entries removed with
+        // the rules (v0.36.0 rule-safety census) -- see
+        // reaction_family_for_rule above.
         _ => None,
     }
 }

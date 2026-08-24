@@ -419,7 +419,7 @@ fn py_predict_forward_core(
             if outcomes.is_empty() { return None; }
             let products: Vec<String> = outcomes
                 .into_iter()
-                .flat_map(|ms| ms.iter().map(|m| canon(m)).collect::<Vec<_>>())
+                .flat_map(|ms| ms.iter().map(canon).collect::<Vec<_>>())
                 .filter(|s| py_is_valid_smiles(s))
                 .collect();
             if products.is_empty() { return None; }
@@ -462,8 +462,8 @@ pub fn predict_forward_py(
         rules.extend(load_rules_from_file(path));
     }
     let refs: Vec<&str> = reactants.iter().map(|s| s.as_str()).collect();
-    let preds = py_predict_forward_core(&refs, &rules, max_results)
-        .map_err(|e| PyValueError::new_err(e))?;
+    let preds =
+        py_predict_forward_core(&refs, &rules, max_results).map_err(PyValueError::new_err)?;
     serde_json::to_string(&preds).map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
@@ -504,7 +504,7 @@ pub fn validate_forward_py(
             .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
             .unwrap_or_default();
         let preds = py_predict_forward_core(&prec_refs, &rules, max_results)
-            .map_err(|e| PyValueError::new_err(e))?;
+            .map_err(PyValueError::new_err)?;
         let target_canon = mol_from_smiles(target)
             .ok()
             .map(|m| canon(&m))

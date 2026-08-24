@@ -372,7 +372,7 @@ JSON 输出除标准的 solved/success_rate 指标外，还包含 `avg_nodes_exp
 | `plan_with_constraints` | 基于约束 DSL 的规划（元素过滤、步数限制、置信度阈值） |
 | `estimate_diversity` | 路线多样性与覆盖率指标 |
 
-服务器会自动检测工作目录下的 `data/building_blocks.smi` 与 `data/templates_extracted_5000.smi`；若未找到，则回退到内置的 `DEFAULT_BUILDING_BLOCKS` / `default_rules()` 默认值（根据 `ChemEnv::bb_count()`，为 152 种去重起始原料、24 条人工编写规则——已于 2026-08-24 核实，`n_benzylation_retro` 与 `michael_retro`（v0.36.0 规则安全普查：与 `aryl_amine_retro`/`buchwald_hartwig_retro` 相同的稠环原子核算缺陷，经直接 `apply_retro` 复现确认）被移除后数量从 26 降为 24；此前此处曾记载过"509 种起始原料 / 20 条规则"的数字，但未经核实）。
+服务器会自动检测工作目录下的 `data/building_blocks.smi` 与 `data/templates_extracted_5000.smi`；若未找到，则回退到内置的 `DEFAULT_BUILDING_BLOCKS` / `default_rules()` 默认值（根据 `ChemEnv::bb_count()`，为 152 种去重起始原料、22 条人工编写规则——已于 2026-08-24 核实，`negishi_retro` 与 `grignard_addition_retro`（v0.36.0 规则安全普查：与 `aryl_amine_retro`/`buchwald_hartwig_retro` 相同的稠环原子重复缺陷，经直接 `apply_retro` 复现确认）被移除后数量从 24 降为 22；此前此处曾记载过"509 种起始原料 / 20 条规则"的数字，但未经核实）。
 
 ```bash
 cargo build --release

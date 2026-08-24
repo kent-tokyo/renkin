@@ -563,7 +563,7 @@ The JSON output includes `avg_nodes_expanded`, `avg_confidence`, `avg_convergenc
 | `plan_with_constraints` | Constraint-DSL planning (element filters, step limits, confidence thresholds) |
 | `estimate_diversity` | Route diversity and coverage metrics |
 
-The server auto-detects `data/building_blocks.smi` and `data/templates_extracted_5000.smi` in the working directory. Falls back to the embedded `DEFAULT_BUILDING_BLOCKS` / `default_rules()` defaults if not found (152 unique building blocks per `ChemEnv::bb_count()`, 24 handcrafted rules — verified 2026-08-24, after `n_benzylation_retro`'s and `michael_retro`'s removal (v0.36.0 rule-safety census: same ring-fused-atom-accounting defect as `aryl_amine_retro`/`buchwald_hartwig_retro`, confirmed by direct `apply_retro` reproduction) dropped the count from 26; a "509-BB / 20-rule" figure was previously documented here without verification).
+The server auto-detects `data/building_blocks.smi` and `data/templates_extracted_5000.smi` in the working directory. Falls back to the embedded `DEFAULT_BUILDING_BLOCKS` / `default_rules()` defaults if not found (152 unique building blocks per `ChemEnv::bb_count()`, 22 handcrafted rules — verified 2026-08-24, after `negishi_retro`'s and `grignard_addition_retro`'s removal (v0.36.0 rule-safety census: same ring-fused-atom-duplication defect as `aryl_amine_retro`/`buchwald_hartwig_retro`, confirmed by direct `apply_retro` reproduction) dropped the count from 24; a "509-BB / 20-rule" figure was previously documented here without verification).
 
 ```bash
 cargo build --release
@@ -602,7 +602,7 @@ Target SMILES
 ┌─────────────────────────┐
 │     chem_env.rs         │  ← chematic wrapper
 │  - SMILES parse         │     canonical-SMILES FxHashSet BB lookup (O(1))
-│  - 24 built-in + up to 50k via --templates  │     fragment sanitization + ring-leak filter
+│  - 22 built-in + up to 50k via --templates  │     fragment sanitization + ring-leak filter
 │  - Building block check │     apply_retro memoization cache
 └────────────┬────────────┘
              │  par_iter (rayon / sequential on WASM)

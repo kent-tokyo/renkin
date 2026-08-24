@@ -111,6 +111,80 @@ pub fn find_routes_v2(
     }
 }
 
+/// Same as [`find_routes_v2`], plus `spectator_bond_policy`
+/// (`docs/design/spectator-bond-fail-closed-gating-v0.md`): `"off"`
+/// (default) | `"diagnostics_only"` | `"gated"`, same vocabulary as the
+/// CLI's `--spectator-bond-policy` flag and the Python binding's
+/// `spectator_bond_policy` kwarg. `"gated"` can change which candidates
+/// (and therefore which `routes`) come back -- v1 scope only: rules with
+/// no `#` in their SMIRKS, others stay diagnostics-only regardless of this
+/// setting. A distinct function name rather than a 5th parameter on
+/// `find_routes_v2`, matching that function's own stated reasoning (a
+/// caller on an older build gets a real "no such export" `TypeError`
+/// instead of a silently-ignored argument). Findings/gated-out records
+/// themselves aren't surfaced in this output yet -- WASM has no
+/// `search_diagnostics`-equivalent block at all today, for any
+/// `CrowdOutDiagnostics` field, not just this one; only the policy control
+/// itself (and its effect on `routes`) is in scope here.
+#[wasm_bindgen]
+pub fn find_routes_v3(
+    target: &str,
+    depth: u32,
+    max_routes: usize,
+    beam_width: usize,
+    avoid_elements: &str,
+    require_elements: &str,
+    spectator_bond_policy: &str,
+) -> String {
+    let policy = match spectator_bond_policy {
+        "off" => crate::spectator_bond::SpectatorBondPolicy::Off,
+        "diagnostics_only" => crate::spectator_bond::SpectatorBondPolicy::DiagnosticsOnly,
+        "gated" => crate::spectator_bond::SpectatorBondPolicy::Gated,
+        other => {
+            return serde_json::to_string(&serde_json::json!({
+                "error": format!(
+                    "invalid spectator_bond_policy {other:?} (expected \"off\", \
+                     \"diagnostics_only\", or \"gated\")"
+                )
+            }))
+            .unwrap_or_else(|_| r#"{"error":"invalid spectator_bond_policy"}"#.to_string());
+        }
+    };
+    let env = ChemEnv::in_memory(DEFAULT_BUILDING_BLOCKS);
+    let rules = default_rules();
+    let config = SearchConfig {
+        max_depth: depth,
+        max_routes,
+        beam_width,
+        forbidden_elements: chem_env::elem_symbols_to_mask(avoid_elements),
+        required_element_present: chem_env::elem_symbols_to_mask(require_elements),
+        spectator_bond_policy: policy,
+        ..Default::default()
+    };
+
+    match rs_find_routes(target, &env, &rules, &config) {
+        Ok((routes, stats)) => {
+            let output = if routes.is_empty() {
+                serde_json::json!({
+                    "target": target,
+                    "routes_found": 0,
+                    "routes": [],
+                    "diagnostics": {"nodes_expanded": stats.nodes_expanded}
+                })
+            } else {
+                serde_json::json!({
+                    "target": target,
+                    "routes_found": routes.len(),
+                    "routes": routes,
+                })
+            };
+            serde_json::to_string(&output)
+                .unwrap_or_else(|e| format!(r#"{{"error":"serialization: {e}"}}"#))
+        }
+        Err(e) => format!(r#"{{"error":"{e}"}}"#),
+    }
+}
+
 /// Return the crate version string.
 #[wasm_bindgen]
 pub fn version() -> String {

@@ -68,6 +68,19 @@ use crate::search::{SearchConfig, diagnose, find_routes};
 ///         only controls whether it's serialized. Present on both the
 ///         route-found and empty-route branches when requested. Default:
 ///         ``False`` (omitted from the output, not present as ``null``).
+///     spectator_bond_policy (str): ``"off"`` (default), ``"diagnostics_only"``,
+///         or ``"gated"`` -- detects a real target bond a retro-rule's own
+///         SMIRKS never declares broken but chematic silently drops from
+///         precursors (``docs/design/spectator-bond-fail-closed-gating-v0.md``).
+///         ``"diagnostics_only"`` records findings in the
+///         ``search_diagnostics`` block's ``spectator_bond_loss_findings``
+///         (requires ``search_diagnostics=True`` to see them) without
+///         excluding any candidate. ``"gated"`` additionally excludes the
+///         specific candidate a confident finding applies to, recording
+///         each exclusion in ``spectator_bond_gated_out`` -- v1 scope only:
+///         rules with no ``#`` in their SMIRKS; others stay
+///         diagnostics-only regardless of this setting. Unrecognized
+///         values raise ``ValueError``.
 ///
 ///     Passing only one of the two reranker paths, or the model failing to
 ///     load, falls back to legacy ordering with a message printed to
@@ -110,7 +123,7 @@ use crate::search::{SearchConfig, diagnose, find_routes};
 ///     routes = json.loads(renkin.find_routes("CC(=O)Oc1ccccc1C(=O)O", depth=3))
 ///     print(routes["routes_found"])
 #[pyfunction]
-#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None, search_diagnostics=false))]
+#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None, search_diagnostics=false, spectator_bond_policy="off"))]
 #[allow(clippy::too_many_arguments)]
 pub fn find_routes_py(
     target: &str,
@@ -131,12 +144,24 @@ pub fn find_routes_py(
     coverage_templates_path: Option<&str>,
     coverage_timeout_seconds: Option<u64>,
     search_diagnostics: bool,
+    spectator_bond_policy: &str,
 ) -> PyResult<String> {
     if search_mode != "standard" && search_mode != "coverage" {
         return Err(PyValueError::new_err(format!(
             "invalid search_mode {search_mode:?} (expected \"standard\" or \"coverage\")"
         )));
     }
+    let spectator_bond_policy = match spectator_bond_policy {
+        "off" => crate::spectator_bond::SpectatorBondPolicy::Off,
+        "diagnostics_only" => crate::spectator_bond::SpectatorBondPolicy::DiagnosticsOnly,
+        "gated" => crate::spectator_bond::SpectatorBondPolicy::Gated,
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "invalid spectator_bond_policy {other:?} (expected \"off\", \"diagnostics_only\", \
+                 or \"gated\")"
+            )));
+        }
+    };
     if search_mode == "standard" {
         if coverage_templates_path.is_some() {
             return Err(PyValueError::new_err(
@@ -238,6 +263,7 @@ pub fn find_routes_py(
         bb_price_map,
         template_metadata: template_metadata.map(|tm| tm.templates),
         reranker,
+        spectator_bond_policy,
         ..Default::default()
     };
 

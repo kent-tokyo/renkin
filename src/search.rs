@@ -13,6 +13,7 @@ use crate::chem_env::{
 };
 use crate::evidence::{EvidenceScope, MetadataSource, StepEvidence, TemplateMetadataEntry};
 use crate::score::{step_cost, template_bonus};
+use crate::spectator_bond::SpectatorBondPolicy;
 use crate::synthesizability::{ElementAccountingStatus, compute_element_accounting};
 
 /// Cached expansion for one (target_smiles, rule) combination.
@@ -510,13 +511,21 @@ pub struct CrowdOutDiagnostics {
     pub retro_expansion_wall_time_us: u64,
     /// Every [`crate::spectator_bond::SpectatorBondLossFinding`] detected
     /// across every retro-cache-miss expansion in this search -- always
-    /// empty unless [`SearchConfig::spectator_bond_diagnostics`] is `true`
-    /// (see that field's own doc for why this one, like
-    /// `retro_expansion_wall_time_us`, must stay opt-in rather than
-    /// unconditional like this struct's pure-count fields). Detection
-    /// only: nothing here ever changes which candidates the search itself
-    /// expands, scores, or keeps.
+    /// empty unless [`SearchConfig::spectator_bond_policy`] is
+    /// `DiagnosticsOnly` or `Gated` (see that field's own doc for why this
+    /// one, like `retro_expansion_wall_time_us`, must stay opt-in rather
+    /// than unconditional like this struct's pure-count fields). Recorded
+    /// identically under both policies -- policy only changes whether a
+    /// confident finding also excludes its candidate (see
+    /// [`Self::spectator_bond_gated_out`]), never which findings are
+    /// detected.
     pub spectator_bond_loss_findings: Vec<crate::spectator_bond::SpectatorBondLossFinding>,
+    /// Every candidate [`SearchConfig::spectator_bond_policy`]'s `Gated`
+    /// setting actually excluded from the search, with the finding(s) that
+    /// justified it -- always empty unless the policy is `Gated`. An
+    /// exclusion is never silent: this is its trail even though the
+    /// candidate itself no longer appears anywhere else in this run.
+    pub spectator_bond_gated_out: Vec<crate::spectator_bond::GatedCandidateRecord>,
     /// Same-parent proposals from *different* templates whose precursor
     /// SMILES multiset (sorted) is identical -- these push distinct heap
     /// nodes that would collapse to the same downstream synthesis state.
@@ -1339,21 +1348,26 @@ pub struct SearchConfig {
     /// unavailable there) -- the field stays `0` regardless of this flag on
     /// that target.
     pub timing_diagnostics: bool,
-    /// Opt-in (default `false`), same rationale as [`Self::timing_diagnostics`]
-    /// but for cost rather than non-determinism: `spectator_bond::
-    /// detect_case_a`/`detect_case_b` run real SMARTS matching (and, for
-    /// Case B, a BFS) per `(target, rule)` pair on every retro-cache-miss
-    /// expansion -- real work, not a free counter increment, so it must
-    /// stay opt-in like the existing `CrowdOutDiagnostics` fields that
-    /// aren't pure counts. When `true`, every finding either detector
-    /// returns is appended to
-    /// [`CrowdOutDiagnostics::spectator_bond_loss_findings`] verbatim --
-    /// detection only, never gates or filters which candidates the search
-    /// itself considers (that's a separate, not-yet-built fail-closed
-    /// stage). `false` (the default) reproduces this field's own
-    /// pre-existing empty-`Vec` behavior exactly, byte-for-byte, matching
-    /// `timing_diagnostics`'s own determinism-test precedent.
-    pub spectator_bond_diagnostics: bool,
+    /// Opt-in (default [`SpectatorBondPolicy::Off`]), same rationale as
+    /// [`Self::timing_diagnostics`] but for cost rather than
+    /// non-determinism: `spectator_bond::detect_case_a`/`detect_case_b`
+    /// run real SMARTS matching (and, for Case B, a BFS) per
+    /// `(target, rule)` pair on every retro-cache-miss expansion -- real
+    /// work, not a free counter increment, so it must stay opt-in like the
+    /// existing `CrowdOutDiagnostics` fields that aren't pure counts.
+    /// `DiagnosticsOnly` appends every finding either detector returns to
+    /// [`CrowdOutDiagnostics::spectator_bond_loss_findings`] verbatim,
+    /// never filtering which candidates the search itself considers.
+    /// `Gated` additionally excludes candidates
+    /// [`crate::spectator_bond::gate_candidates`] resolves with confidence
+    /// (v1 scope: `#`-free rules only -- see
+    /// `docs/design/spectator-bond-fail-closed-gating-v0.md`), recording
+    /// each exclusion in
+    /// [`CrowdOutDiagnostics::spectator_bond_gated_out`]. `Off` (the
+    /// default) reproduces this field's own pre-existing empty-`Vec`
+    /// behavior exactly, byte-for-byte, matching `timing_diagnostics`'s
+    /// own determinism-test precedent.
+    pub spectator_bond_policy: SpectatorBondPolicy,
 }
 
 impl Default for SearchConfig {
@@ -1376,7 +1390,7 @@ impl Default for SearchConfig {
             candidate_trace_cap: None,
             reranker: None,
             timing_diagnostics: false,
-            spectator_bond_diagnostics: false,
+            spectator_bond_policy: SpectatorBondPolicy::Off,
         }
     }
 }
@@ -1779,19 +1793,21 @@ pub fn find_routes_with_control(
                     upstream_score_status: crate::candidate::UpstreamScoreStatus::NotApplicable,
                 })
                 .collect();
-            let (raw_proposals, step_ring_diag, step_sbl_findings) = crate::candidate::raw_propose(
-                &target_mol,
-                &target_smi,
-                &scored_active_rules,
-                crate::ring_context::RingContextArgs {
-                    config: config.ring_context.clone(),
-                },
-                config.spectator_bond_diagnostics,
-            );
+            let (raw_proposals, step_ring_diag, step_sbl_findings, step_gated_out) =
+                crate::candidate::raw_propose(
+                    &target_mol,
+                    &target_smi,
+                    &scored_active_rules,
+                    crate::ring_context::RingContextArgs {
+                        config: config.ring_context.clone(),
+                    },
+                    config.spectator_bond_policy,
+                );
             ring_context_diagnostics.merge(&step_ring_diag);
             crowd_out
                 .spectator_bond_loss_findings
                 .extend(step_sbl_findings);
+            crowd_out.spectator_bond_gated_out.extend(step_gated_out);
 
             // Issue #101 Task 35: score this expansion's candidate pool once
             // (not per-proposal) when a reranker is still active. A failure
@@ -2684,31 +2700,32 @@ mod tests {
     }
 
     #[test]
-    fn spectator_bond_diagnostics_defaults_to_empty() {
+    fn spectator_bond_policy_off_by_default_produces_empty() {
         let env = aspirin_env();
         let rules = default_rules();
         let (_, stats) =
             find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg(3)).expect("search runs");
         assert!(
             stats.crowd_out.spectator_bond_loss_findings.is_empty(),
-            "must stay empty unless SearchConfig::spectator_bond_diagnostics is explicitly \
-             opted into: {:?}",
+            "must stay empty unless SearchConfig::spectator_bond_policy is explicitly opted \
+             into: {:?}",
             stats.crowd_out.spectator_bond_loss_findings
         );
+        assert!(stats.crowd_out.spectator_bond_gated_out.is_empty());
     }
 
     #[test]
-    fn spectator_bond_diagnostics_opt_in_runs_without_error_on_default_rules() {
+    fn spectator_bond_policy_diagnostics_only_runs_without_error_on_default_rules() {
         // default_rules() are hand-crafted and not expected to exhibit
         // spectator bond loss themselves (real positive controls are all
         // extracted templates, covered end-to-end by candidate.rs's
-        // raw_propose_spectator_bond_diagnostics_on_detects_known_positive_control).
-        // This test only confirms the opt-in flag is wired all the way
+        // raw_propose_spectator_bond_policy_diagnostics_only_detects_known_positive_control).
+        // This test only confirms the opt-in policy is wired all the way
         // through find_routes without panicking or changing route output.
         let env = aspirin_env();
         let rules = default_rules();
         let cfg_diag = SearchConfig {
-            spectator_bond_diagnostics: true,
+            spectator_bond_policy: SpectatorBondPolicy::DiagnosticsOnly,
             ..cfg(3)
         };
         let (routes_on, stats_on) =
@@ -2718,9 +2735,38 @@ mod tests {
         assert_eq!(
             routes_on.len(),
             routes_off.len(),
-            "opting into spectator_bond_diagnostics must never change which routes are found"
+            "opting into spectator_bond_policy: DiagnosticsOnly must never change which routes \
+             are found"
         );
         assert!(stats_on.crowd_out.spectator_bond_loss_findings.is_empty());
+        assert!(stats_on.crowd_out.spectator_bond_gated_out.is_empty());
+    }
+
+    #[test]
+    fn spectator_bond_policy_gated_runs_without_error_on_default_rules() {
+        // Same rationale as the DiagnosticsOnly test above: default_rules()
+        // exhibit no known spectator-bond defect on this target, so Gated
+        // must be a pure no-op here too -- this only confirms the policy is
+        // wired through without panicking or changing route output when
+        // there is nothing to gate. Gated's actual exclusion behavior is
+        // covered end-to-end by candidate.rs's
+        // raw_propose_spectator_bond_policy_gated_excludes_known_positive_control.
+        let env = aspirin_env();
+        let rules = default_rules();
+        let cfg_gated = SearchConfig {
+            spectator_bond_policy: SpectatorBondPolicy::Gated,
+            ..cfg(3)
+        };
+        let (routes_gated, stats_gated) =
+            find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg_gated).expect("search runs");
+        let (routes_off, _) =
+            find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg(3)).expect("search runs");
+        assert_eq!(
+            routes_gated.len(),
+            routes_off.len(),
+            "Gated must never change route output when nothing it can evaluate is defective"
+        );
+        assert!(stats_gated.crowd_out.spectator_bond_gated_out.is_empty());
     }
 
     #[test]
@@ -3383,14 +3429,14 @@ mod tests {
                 upstream_score_status: crate::candidate::UpstreamScoreStatus::NotApplicable,
             })
             .collect();
-        let (raw_proposals, _diag, _sbl_findings) = crate::candidate::raw_propose(
+        let (raw_proposals, _diag, _sbl_findings, _gated_out) = crate::candidate::raw_propose(
             &target_mol,
             target_smi,
             &scored_active_rules,
             crate::ring_context::RingContextArgs {
                 config: crate::ring_context::RingContextConfig::Disabled,
             },
-            false,
+            SpectatorBondPolicy::Off,
         );
         assert!(
             raw_proposals.len() >= 2,

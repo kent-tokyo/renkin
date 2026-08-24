@@ -7,9 +7,11 @@ use renkin::display;
 use renkin::evidence_match;
 use renkin::ring_context;
 use renkin::search::{self, SearchConfig};
+use renkin::stock_import;
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 #[derive(Serialize)]
 struct Output {
@@ -133,6 +135,9 @@ fn main() -> Result<()> {
     }
     if args.get(1).map(|s| s.as_str()) == Some("audit-route") {
         return run_audit_route(&args[2..]);
+    }
+    if args.get(1).map(|s| s.as_str()) == Some("doctor") {
+        return run_doctor(&args[2..]);
     }
 
     let mut target: Option<String> = None;
@@ -959,6 +964,84 @@ fn flag_value<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
     args.windows(2)
         .find(|w| w[0] == name)
         .map(|w| w[1].as_str())
+}
+
+/// Whether bare boolean flag `name` (e.g. `--force`) appears anywhere in `args`.
+fn flag_present(args: &[String], name: &str) -> bool {
+    args.iter().any(|a| a == name)
+}
+
+/// Lexical same-path check via `std::path::absolute` (pure path
+/// normalization, no filesystem access -- works even when one side
+/// doesn't exist yet, unlike `std::fs::canonicalize`). Not symlink-aware;
+/// just enough to catch the common "--input and --output point at
+/// literally the same path" mistake before any file gets truncated.
+fn same_path(a: &str, b: &str) -> bool {
+    match (std::path::absolute(a), std::path::absolute(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
+    }
+}
+
+/// Writes `content_a`/`content_b` to `path_a`/`path_b` with best-effort
+/// all-or-nothing semantics: both are first written to a `.stock-import-tmp`
+/// sibling file in the SAME directory as their real destination (so the
+/// final rename is same-filesystem, hence atomic) and fsynced -- only once
+/// both temp writes succeed does either destination get touched. If the
+/// first rename succeeds but the second fails, and the first destination
+/// did not exist before this call, it's removed again to restore the
+/// pre-call state.
+///
+/// ponytail: if the first destination DID already exist (an allowed
+/// `--force` overwrite) and the second rename then fails, the original
+/// bytes were never backed up and can't be restored -- that narrow window
+/// is a known, documented ceiling, not silently swallowed (the returned
+/// error says exactly which artifact is now out of sync). Add a real
+/// backup-and-restore only if a user actually hits this.
+fn write_two_artifacts_atomically(
+    path_a: &str,
+    content_a: &[u8],
+    path_b: &str,
+    content_b: &[u8],
+) -> Result<()> {
+    fn write_and_sync(path: &str, content: &[u8]) -> std::io::Result<()> {
+        use std::io::Write;
+        let mut f = std::fs::File::create(path)?;
+        f.write_all(content)?;
+        f.sync_all()
+    }
+
+    let a_existed = std::path::Path::new(path_a).exists();
+
+    let tmp_a = format!("{path_a}.stock-import-tmp");
+    let tmp_b = format!("{path_b}.stock-import-tmp");
+
+    write_and_sync(&tmp_a, content_a)
+        .with_context(|| format!("failed to write temp file for {path_a:?}"))?;
+    write_and_sync(&tmp_b, content_b)
+        .with_context(|| format!("failed to write temp file for {path_b:?}"))?;
+
+    std::fs::rename(&tmp_a, path_a)
+        .with_context(|| format!("failed to move temp file into place at {path_a:?}"))?;
+
+    if let Err(e) = std::fs::rename(&tmp_b, path_b) {
+        std::fs::remove_file(&tmp_b).ok();
+        let recovery_note = if a_existed {
+            format!(
+                "{path_a:?} was pre-existing and has already been overwritten with new \
+                 content that now has no matching manifest at {path_b:?} -- re-run the import \
+                 to fix"
+            )
+        } else {
+            std::fs::remove_file(path_a).ok();
+            format!("{path_a:?} has been removed again to avoid leaving it without a manifest")
+        };
+        return Err(e).with_context(|| {
+            format!("failed to move temp file into place at {path_b:?} -- {recovery_note}")
+        });
+    }
+
+    Ok(())
 }
 
 fn run_evidence(args: &[String]) -> Result<()> {
@@ -1907,6 +1990,7 @@ fn load_stock_csv(path: &str) -> Vec<StockEntry> {
 fn run_stock(args: &[String]) -> Result<()> {
     let cmd = args.first().map(|s| s.as_str()).unwrap_or("help");
     match cmd {
+        "import" => stock_import_cli(&args[1..])?,
         "stats" => {
             let path = args.get(1).map(|s| s.as_str()).unwrap_or("data/stock.csv");
             let entries = load_stock_csv(path);
@@ -1991,13 +2075,511 @@ fn run_stock(args: &[String]) -> Result<()> {
             );
         }
         _ => {
-            println!("Usage: renkin stock <stats|validate|coverage> [args...]");
+            println!("Usage: renkin stock <import|stats|validate|coverage> [args...]");
+            println!("  import --input <in.smi> --output <out.smi> --manifest <out.manifest.json>");
+            println!(
+                "         --source-label <label> [--source-revision <rev>] [--license <license>]"
+            );
+            println!(
+                "         [--fail-on-rejection] [--force] — deterministic .smi import + provenance manifest"
+            );
             println!("  stats <file.csv>                  — summary statistics");
             println!("  validate <file.csv>               — check SMILES validity");
             println!("  coverage <targets.smi> <file.csv> — check which targets are in stock");
         }
     }
     Ok(())
+}
+
+/// `renkin stock import --input <path> --output <path> --manifest <path>
+/// --source-label <label> [--source-revision <rev>] [--license <license>]
+/// [--fail-on-rejection] [--force]` -- CLI wrapper around
+/// `stock_import::import_stock_from_path`, the sole source of the actual
+/// canonicalize/dedup/manifest logic (never reimplemented here). Writes
+/// both the output `.smi` and the manifest JSON to temp files first, then
+/// renames both into place (`write_two_artifacts_atomically`), so a crash
+/// or write failure never leaves a stale/partial destination pair.
+/// Rejected/duplicate rows never abort the import by themselves -- only
+/// `--fail-on-rejection` turns a nonzero `rejected_rows` into a nonzero
+/// exit code, and even then the artifacts are still written first (a
+/// rejected-but-imported run leaves useful output on disk, not nothing).
+/// stdout carries only the machine-readable summary JSON; progress
+/// warnings go to stderr.
+fn stock_import_cli(args: &[String]) -> Result<()> {
+    let input_path =
+        flag_value(args, "--input").context("renkin stock import: --input <path> is required")?;
+    let output_path =
+        flag_value(args, "--output").context("renkin stock import: --output <path> is required")?;
+    let manifest_path = flag_value(args, "--manifest")
+        .context("renkin stock import: --manifest <path> is required")?;
+    let source_label = flag_value(args, "--source-label")
+        .context("renkin stock import: --source-label <label> is required")?;
+    let source_revision = flag_value(args, "--source-revision").map(str::to_string);
+    let license = flag_value(args, "--license").map(str::to_string);
+    let fail_on_rejection = flag_present(args, "--fail-on-rejection");
+    let force = flag_present(args, "--force");
+
+    if same_path(input_path, output_path) {
+        bail!(
+            "renkin stock import: --input and --output must not be the same path ({input_path:?})"
+        );
+    }
+    if same_path(input_path, manifest_path) {
+        bail!(
+            "renkin stock import: --input and --manifest must not be the same path ({input_path:?})"
+        );
+    }
+    if same_path(output_path, manifest_path) {
+        bail!(
+            "renkin stock import: --output and --manifest must not be the same path ({output_path:?})"
+        );
+    }
+    if !force && std::path::Path::new(output_path).exists() {
+        bail!(
+            "renkin stock import: --output {output_path:?} already exists (use --force to overwrite)"
+        );
+    }
+    if !force && std::path::Path::new(manifest_path).exists() {
+        bail!(
+            "renkin stock import: --manifest {manifest_path:?} already exists (use --force to overwrite)"
+        );
+    }
+
+    let options = stock_import::StockImportOptions {
+        source_label: source_label.to_string(),
+        source_revision,
+        license,
+    };
+    let (accepted, manifest) =
+        stock_import::import_stock_from_path(std::path::Path::new(input_path), &options)
+            .with_context(|| {
+                format!("renkin stock import: failed to import --input {input_path:?}")
+            })?;
+
+    let output_bytes = stock_import::render_output(&accepted);
+    let manifest_json = serde_json::to_string_pretty(&manifest)?;
+
+    write_two_artifacts_atomically(
+        output_path,
+        &output_bytes,
+        manifest_path,
+        manifest_json.as_bytes(),
+    )?;
+
+    if manifest.rejected_rows > 0 {
+        eprintln!(
+            "warning: {} of {} input rows were rejected ({:?}) -- see {manifest_path:?}",
+            manifest.rejected_rows, manifest.input_rows, manifest.rejection_reasons
+        );
+    }
+    if manifest.duplicate_rows > 0 {
+        eprintln!(
+            "warning: {} input rows were in-file duplicates (kept first occurrence only) -- \
+             see {manifest_path:?}",
+            manifest.duplicate_rows
+        );
+    }
+
+    #[derive(Serialize)]
+    struct StockImportCliSummary<'a> {
+        output_path: &'a str,
+        manifest_path: &'a str,
+        manifest: &'a stock_import::StockManifest,
+    }
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&StockImportCliSummary {
+            output_path,
+            manifest_path,
+            manifest: &manifest,
+        })?
+    );
+
+    if fail_on_rejection && manifest.rejected_rows > 0 {
+        bail!(
+            "renkin stock import: --fail-on-rejection: {} rows were rejected (artifacts were \
+             still written to {output_path:?} / {manifest_path:?})",
+            manifest.rejected_rows
+        );
+    }
+
+    Ok(())
+}
+
+/// Severity of one `renkin doctor stock` check. `Fail` is the only
+/// severity that turns the CLI's exit code non-zero; `Warn` is reported
+/// but does not fail the run (e.g. an importer-version difference or
+/// missing optional provenance is worth flagging, not blocking).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum DoctorSeverity {
+    Pass,
+    Warn,
+    Fail,
+}
+
+impl DoctorSeverity {
+    fn worse(self, other: Self) -> Self {
+        use DoctorSeverity::*;
+        match (self, other) {
+            (Fail, _) | (_, Fail) => Fail,
+            (Warn, _) | (_, Warn) => Warn,
+            _ => Pass,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            DoctorSeverity::Pass => "PASS",
+            DoctorSeverity::Warn => "WARN",
+            DoctorSeverity::Fail => "FAIL",
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct StockDoctorCheck {
+    name: &'static str,
+    severity: DoctorSeverity,
+    message: String,
+}
+
+#[derive(Debug, Serialize)]
+struct StockDoctorReport {
+    stock_path: String,
+    manifest_path: String,
+    input_path: Option<String>,
+    overall: DoctorSeverity,
+    checks: Vec<StockDoctorCheck>,
+}
+
+/// Pure report-building logic for `renkin doctor stock`, kept separate
+/// from the CLI's exit-code side effects (`doctor_stock` below) so it can
+/// be unit-tested directly without spawning a subprocess. Returns `Err`
+/// only for invocation-level problems -- missing/unreadable required
+/// files, or a manifest that isn't even valid JSON for the current
+/// `StockManifest` shape -- the CLI wrapper maps those to exit code 2.
+/// Every check the report itself records (schema_version disagreement,
+/// hash mismatches, ...) is a findable, reportable condition, not an
+/// invocation error, and always yields `Ok(report)` with that check's own
+/// severity set to `Fail`/`Warn` rather than aborting the whole report.
+fn build_stock_doctor_report(args: &[String]) -> Result<StockDoctorReport> {
+    let stock_path =
+        flag_value(args, "--stock").context("renkin doctor stock: --stock <path> is required")?;
+    let manifest_path = flag_value(args, "--manifest")
+        .context("renkin doctor stock: --manifest <path> is required")?;
+    let input_path = flag_value(args, "--input");
+
+    let stock_bytes = std::fs::read(stock_path)
+        .with_context(|| format!("renkin doctor stock: failed to read --stock {stock_path:?}"))?;
+    let manifest_text = std::fs::read_to_string(manifest_path).with_context(|| {
+        format!("renkin doctor stock: failed to read --manifest {manifest_path:?}")
+    })?;
+    let manifest: stock_import::StockManifest =
+        serde_json::from_str(&manifest_text).with_context(|| {
+            format!("renkin doctor stock: {manifest_path:?} is not a valid stock manifest")
+        })?;
+    let input_bytes = input_path
+        .map(|p| {
+            std::fs::read(p)
+                .with_context(|| format!("renkin doctor stock: failed to read --input {p:?}"))
+        })
+        .transpose()?;
+
+    let mut checks = Vec::new();
+
+    checks.push(
+        if manifest.schema_version == stock_import::STOCK_MANIFEST_SCHEMA_VERSION {
+            StockDoctorCheck {
+                name: "schema_version",
+                severity: DoctorSeverity::Pass,
+                message: format!("schema_version {} is supported", manifest.schema_version),
+            }
+        } else {
+            StockDoctorCheck {
+                name: "schema_version",
+                severity: DoctorSeverity::Fail,
+                message: format!(
+                    "manifest schema_version {} is not supported by this build (expects {})",
+                    manifest.schema_version,
+                    stock_import::STOCK_MANIFEST_SCHEMA_VERSION
+                ),
+            }
+        },
+    );
+
+    let stock_actual_sha256 = format!(
+        "sha256:{}",
+        renkin::sha256_hex(Sha256::digest(&stock_bytes))
+    );
+    checks.push(if stock_actual_sha256 == manifest.output_sha256 {
+        StockDoctorCheck {
+            name: "output_hash",
+            severity: DoctorSeverity::Pass,
+            message: "stock file SHA-256 matches manifest.output_sha256".to_string(),
+        }
+    } else {
+        StockDoctorCheck {
+            name: "output_hash",
+            severity: DoctorSeverity::Fail,
+            message: format!(
+                "stock file SHA-256 {stock_actual_sha256} does not match manifest.output_sha256 {}",
+                manifest.output_sha256
+            ),
+        }
+    });
+
+    if let (Some(input_path), Some(input_bytes)) = (input_path, &input_bytes) {
+        let input_actual_sha256 =
+            format!("sha256:{}", renkin::sha256_hex(Sha256::digest(input_bytes)));
+        checks.push(if input_actual_sha256 == manifest.input_sha256 {
+            StockDoctorCheck {
+                name: "input_hash",
+                severity: DoctorSeverity::Pass,
+                message: format!("{input_path} SHA-256 matches manifest.input_sha256"),
+            }
+        } else {
+            StockDoctorCheck {
+                name: "input_hash",
+                severity: DoctorSeverity::Fail,
+                message: format!(
+                    "{input_path} SHA-256 {input_actual_sha256} does not match \
+                     manifest.input_sha256 {}",
+                    manifest.input_sha256
+                ),
+            }
+        });
+    }
+
+    let arithmetic_ok = manifest.input_rows == manifest.accepted_rows + manifest.rejected_rows
+        && manifest.accepted_rows == manifest.unique_structures + manifest.duplicate_rows;
+    checks.push(if arithmetic_ok {
+        StockDoctorCheck {
+            name: "manifest_arithmetic",
+            severity: DoctorSeverity::Pass,
+            message: "manifest row counts are internally consistent".to_string(),
+        }
+    } else {
+        StockDoctorCheck {
+            name: "manifest_arithmetic",
+            severity: DoctorSeverity::Fail,
+            message: format!(
+                "manifest row counts are NOT internally consistent (input_rows={}, \
+                 accepted_rows={}, rejected_rows={}, unique_structures={}, duplicate_rows={})",
+                manifest.input_rows,
+                manifest.accepted_rows,
+                manifest.rejected_rows,
+                manifest.unique_structures,
+                manifest.duplicate_rows
+            ),
+        }
+    });
+
+    let stock_text = String::from_utf8_lossy(&stock_bytes);
+    let stock_line_count = stock_text.lines().filter(|l| !l.trim().is_empty()).count() as u64;
+    checks.push(if stock_line_count == manifest.unique_structures {
+        StockDoctorCheck {
+            name: "stock_line_count",
+            severity: DoctorSeverity::Pass,
+            message: format!(
+                "stock file has {stock_line_count} lines, matching manifest.unique_structures"
+            ),
+        }
+    } else {
+        StockDoctorCheck {
+            name: "stock_line_count",
+            severity: DoctorSeverity::Fail,
+            message: format!(
+                "stock file has {stock_line_count} lines but manifest.unique_structures is {}",
+                manifest.unique_structures
+            ),
+        }
+    });
+
+    let reimport_options = stock_import::StockImportOptions {
+        source_label: "doctor-reimport-probe".to_string(),
+        source_revision: None,
+        license: None,
+    };
+    let (reimport_accepted, reimport_manifest) =
+        stock_import::import_stock(stock_bytes.as_slice(), &reimport_options).with_context(
+            || "renkin doctor stock: failed to re-import --stock for the idempotency check",
+        )?;
+    let reimport_bytes = stock_import::render_output(&reimport_accepted);
+    let byte_identical = reimport_bytes == stock_bytes;
+    let idempotent = byte_identical
+        && reimport_manifest.rejected_rows == 0
+        && reimport_manifest.duplicate_rows == 0;
+    checks.push(if idempotent {
+        StockDoctorCheck {
+            name: "reimport_idempotency",
+            severity: DoctorSeverity::Pass,
+            message: "re-importing the stock file is a no-op (already canonical, deduped, sorted)"
+                .to_string(),
+        }
+    } else {
+        StockDoctorCheck {
+            name: "reimport_idempotency",
+            severity: DoctorSeverity::Fail,
+            message: format!(
+                "re-importing the stock file is NOT a no-op (byte_identical={byte_identical}, \
+                 rejected_rows={}, duplicate_rows={}) -- the stock file may have been \
+                 hand-edited after generation",
+                reimport_manifest.rejected_rows, reimport_manifest.duplicate_rows
+            ),
+        }
+    });
+
+    let current_normalization = stock_import::current_normalization_contract();
+    checks.push(if manifest.normalization == current_normalization {
+        StockDoctorCheck {
+            name: "normalization_contract",
+            severity: DoctorSeverity::Pass,
+            message: "manifest normalization policy matches this build's current \
+                      STANDARDIZE_OPTS"
+                .to_string(),
+        }
+    } else {
+        StockDoctorCheck {
+            name: "normalization_contract",
+            severity: DoctorSeverity::Fail,
+            message: format!(
+                "manifest normalization policy does not match this build's current \
+                 STANDARDIZE_OPTS (manifest: {:?}, current: {current_normalization:?})",
+                manifest.normalization
+            ),
+        }
+    });
+
+    let current_importer_version = env!("CARGO_PKG_VERSION");
+    checks.push(if manifest.importer_version == current_importer_version {
+        StockDoctorCheck {
+            name: "importer_version",
+            severity: DoctorSeverity::Pass,
+            message: format!(
+                "manifest importer_version {} matches this build",
+                manifest.importer_version
+            ),
+        }
+    } else {
+        StockDoctorCheck {
+            name: "importer_version",
+            severity: DoctorSeverity::Warn,
+            message: format!(
+                "manifest importer_version {} differs from this build's \
+                 {current_importer_version} (not necessarily a problem)",
+                manifest.importer_version
+            ),
+        }
+    });
+
+    let missing_provenance: Vec<&str> = [
+        ("source_revision", manifest.source.revision.is_none()),
+        ("license", manifest.source.license.is_none()),
+    ]
+    .into_iter()
+    .filter(|(_, missing)| *missing)
+    .map(|(name, _)| name)
+    .collect();
+    checks.push(if missing_provenance.is_empty() {
+        StockDoctorCheck {
+            name: "source_provenance",
+            severity: DoctorSeverity::Pass,
+            message: "source label, revision, and license are all recorded".to_string(),
+        }
+    } else {
+        StockDoctorCheck {
+            name: "source_provenance",
+            severity: DoctorSeverity::Warn,
+            message: format!("manifest is missing: {}", missing_provenance.join(", ")),
+        }
+    });
+
+    let overall = checks
+        .iter()
+        .fold(DoctorSeverity::Pass, |acc, c| acc.worse(c.severity));
+
+    Ok(StockDoctorReport {
+        stock_path: stock_path.to_string(),
+        manifest_path: manifest_path.to_string(),
+        input_path: input_path.map(str::to_string),
+        overall,
+        checks,
+    })
+}
+
+fn run_doctor(args: &[String]) -> Result<()> {
+    let cmd = args.first().map(|s| s.as_str()).unwrap_or("help");
+    let rest = if args.len() > 1 {
+        &args[1..]
+    } else {
+        &[] as &[String]
+    };
+    match cmd {
+        "stock" => doctor_stock(rest),
+        _ => {
+            println!("Usage: renkin doctor <cmd> [args]");
+            println!(
+                "  stock  --stock <normalized.smi> --manifest <normalized.manifest.json> \
+                 [--input <original.smi>] [--output human|json]"
+            );
+            println!(
+                "         — verifies a renkin stock import output/manifest pair; exit 0 PASS \
+                 (warnings allowed), 1 a check FAILed, 2 invocation/input error"
+            );
+            Ok(())
+        }
+    }
+}
+
+/// CLI wrapper around `build_stock_doctor_report`: prints the report
+/// (human text by default, or `--output json`) and terminates with a
+/// stable exit code -- 0 when every check is Pass/Warn, 1 when any check
+/// is Fail, 2 for an invocation-level problem (bad flags, unreadable
+/// files, a manifest that doesn't even parse). Never returns normally;
+/// every path ends in `std::process::exit`, matching this file's existing
+/// convention for CLI-level fatal control flow (see the `ring-context`/
+/// `spectator-bond` flag handling above).
+fn doctor_stock(args: &[String]) -> Result<()> {
+    let output_format = flag_value(args, "--output").unwrap_or("human");
+    if output_format != "human" && output_format != "json" {
+        eprintln!(
+            "error: renkin doctor stock: unsupported --output {output_format:?} (only \
+             human|json supported)"
+        );
+        std::process::exit(2);
+    }
+
+    let report = match build_stock_doctor_report(args) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("error: {e:#}");
+            std::process::exit(2);
+        }
+    };
+
+    if output_format == "json" {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!(
+            "renkin doctor stock: {} ({})",
+            report.overall.label(),
+            report.stock_path
+        );
+        for check in &report.checks {
+            println!(
+                "  [{}] {}: {}",
+                check.severity.label(),
+                check.name,
+                check.message
+            );
+        }
+    }
+
+    std::process::exit(match report.overall {
+        DoctorSeverity::Fail => 1,
+        DoctorSeverity::Warn | DoctorSeverity::Pass => 0,
+    });
 }
 
 fn load_prices(path: &str) -> std::collections::HashMap<String, f64> {
@@ -2208,5 +2790,358 @@ mod hash_atom_unsupported_report_tests {
         let by_reason = count_hash_atom_unsupported(&rules);
         assert_eq!(by_reason.get("inconsistent_element"), Some(&2));
         assert_eq!(by_reason.values().sum::<usize>(), 2);
+    }
+}
+
+#[cfg(test)]
+mod stock_import_cli_tests {
+    use super::*;
+
+    fn unique_temp_dir(label: &str) -> std::path::PathBuf {
+        static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!(
+            "renkin_stock_import_cli_unit_{label}_{}_{n}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    // ── write_two_artifacts_atomically ──────────────────────────────────
+
+    #[test]
+    fn atomic_write_rolls_back_output_when_second_rename_fails() {
+        let dir = unique_temp_dir("atomicity");
+        let path_a = dir.join("out.smi");
+        // A pre-existing directory at path_b makes `fs::rename(tmp_b, path_b)`
+        // fail deterministically (can't rename a file onto a directory).
+        let path_b = dir.join("out.manifest.json");
+        std::fs::create_dir_all(&path_b).unwrap();
+
+        let result = write_two_artifacts_atomically(
+            path_a.to_str().unwrap(),
+            b"content-a",
+            path_b.to_str().unwrap(),
+            b"content-b",
+        );
+        assert!(result.is_err(), "{result:?}");
+        assert!(
+            !path_a.exists(),
+            "output must be rolled back to 'did not exist' when the manifest rename fails \
+             and output didn't exist before this call"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn atomic_write_succeeds_when_both_renames_succeed() {
+        let dir = unique_temp_dir("atomicity_ok");
+        let path_a = dir.join("out.smi");
+        let path_b = dir.join("out.manifest.json");
+        write_two_artifacts_atomically(
+            path_a.to_str().unwrap(),
+            b"content-a",
+            path_b.to_str().unwrap(),
+            b"content-b",
+        )
+        .unwrap();
+        assert_eq!(std::fs::read(&path_a).unwrap(), b"content-a");
+        assert_eq!(std::fs::read(&path_b).unwrap(), b"content-b");
+        // No leftover temp files.
+        assert!(!dir.join("out.smi.stock-import-tmp").exists());
+        assert!(!dir.join("out.manifest.json.stock-import-tmp").exists());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    // ── build_stock_doctor_report ────────────────────────────────────────
+
+    /// Writes a real stock/manifest pair (via the actual `import_stock`
+    /// core, not hand-authored JSON) into a fresh temp dir and returns
+    /// (stock_path, manifest_path, input_path, the manifest). Each
+    /// "altered" test below tampers with the written files, not this
+    /// helper's output, so the untampered baseline always matches what
+    /// `stock_import` itself would really produce.
+    fn setup_stock_and_manifest(
+        dir: &std::path::Path,
+        source_revision: Option<&str>,
+        license: Option<&str>,
+    ) -> (String, String, String, stock_import::StockManifest) {
+        let input = "CCO ethanol\nCC(=O)O acetic\n";
+        let input_path = dir.join("input.smi");
+        std::fs::write(&input_path, input).unwrap();
+
+        let options = stock_import::StockImportOptions {
+            source_label: "unit-test".to_string(),
+            source_revision: source_revision.map(str::to_string),
+            license: license.map(str::to_string),
+        };
+        let (accepted, manifest) = stock_import::import_stock(input.as_bytes(), &options).unwrap();
+
+        let stock_path = dir.join("stock.smi");
+        let manifest_path = dir.join("stock.manifest.json");
+        std::fs::write(&stock_path, stock_import::render_output(&accepted)).unwrap();
+        std::fs::write(
+            &manifest_path,
+            serde_json::to_string_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+
+        (
+            stock_path.to_str().unwrap().to_string(),
+            manifest_path.to_str().unwrap().to_string(),
+            input_path.to_str().unwrap().to_string(),
+            manifest,
+        )
+    }
+
+    fn find_check<'a>(report: &'a StockDoctorReport, name: &str) -> &'a StockDoctorCheck {
+        report
+            .checks
+            .iter()
+            .find(|c| c.name == name)
+            .unwrap_or_else(|| panic!("no check named {name:?} in {report:?}"))
+    }
+
+    #[test]
+    fn doctor_report_all_consistent_is_pass() {
+        let dir = unique_temp_dir("all_consistent");
+        let (stock_path, manifest_path, input_path, _) =
+            setup_stock_and_manifest(&dir, Some("rev-1"), Some("CC0"));
+        let args = vec![
+            "--stock".to_string(),
+            stock_path,
+            "--manifest".to_string(),
+            manifest_path,
+            "--input".to_string(),
+            input_path,
+        ];
+        let report = build_stock_doctor_report(&args).unwrap();
+        assert_eq!(report.overall, DoctorSeverity::Pass, "{report:?}");
+        for check in &report.checks {
+            assert_eq!(check.severity, DoctorSeverity::Pass, "{report:?}");
+        }
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn doctor_report_altered_stock_hash_is_fail() {
+        let dir = unique_temp_dir("altered_hash");
+        let (stock_path, manifest_path, _, _) = setup_stock_and_manifest(&dir, None, None);
+        let mut bytes = std::fs::read(&stock_path).unwrap();
+        bytes.push(b'\n');
+        std::fs::write(&stock_path, bytes).unwrap();
+
+        let args = vec![
+            "--stock".to_string(),
+            stock_path,
+            "--manifest".to_string(),
+            manifest_path,
+        ];
+        let report = build_stock_doctor_report(&args).unwrap();
+        assert_eq!(report.overall, DoctorSeverity::Fail, "{report:?}");
+        assert_eq!(
+            find_check(&report, "output_hash").severity,
+            DoctorSeverity::Fail,
+            "{report:?}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn doctor_report_altered_manifest_counts_is_fail() {
+        let dir = unique_temp_dir("altered_counts");
+        let (stock_path, manifest_path, _, _) = setup_stock_and_manifest(&dir, None, None);
+        let mut value: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&manifest_path).unwrap()).unwrap();
+        value["input_rows"] = serde_json::json!(999);
+        std::fs::write(
+            &manifest_path,
+            serde_json::to_string_pretty(&value).unwrap(),
+        )
+        .unwrap();
+
+        let args = vec![
+            "--stock".to_string(),
+            stock_path,
+            "--manifest".to_string(),
+            manifest_path,
+        ];
+        let report = build_stock_doctor_report(&args).unwrap();
+        assert_eq!(report.overall, DoctorSeverity::Fail, "{report:?}");
+        assert_eq!(
+            find_check(&report, "manifest_arithmetic").severity,
+            DoctorSeverity::Fail,
+            "{report:?}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn doctor_report_normalization_mismatch_is_fail() {
+        let dir = unique_temp_dir("norm_mismatch");
+        let (stock_path, manifest_path, _, _) = setup_stock_and_manifest(&dir, None, None);
+        let mut value: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&manifest_path).unwrap()).unwrap();
+        let current = !value["normalization"]["remove_explicit_h"]
+            .as_bool()
+            .unwrap();
+        value["normalization"]["remove_explicit_h"] = serde_json::json!(current);
+        std::fs::write(
+            &manifest_path,
+            serde_json::to_string_pretty(&value).unwrap(),
+        )
+        .unwrap();
+
+        let args = vec![
+            "--stock".to_string(),
+            stock_path,
+            "--manifest".to_string(),
+            manifest_path,
+        ];
+        let report = build_stock_doctor_report(&args).unwrap();
+        assert_eq!(report.overall, DoctorSeverity::Fail, "{report:?}");
+        assert_eq!(
+            find_check(&report, "normalization_contract").severity,
+            DoctorSeverity::Fail,
+            "{report:?}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn doctor_report_importer_version_difference_is_warn_only() {
+        let dir = unique_temp_dir("version_diff");
+        let (stock_path, manifest_path, _, _) = setup_stock_and_manifest(&dir, None, None);
+        let mut value: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&manifest_path).unwrap()).unwrap();
+        value["importer_version"] = serde_json::json!("0.0.1-fake");
+        std::fs::write(
+            &manifest_path,
+            serde_json::to_string_pretty(&value).unwrap(),
+        )
+        .unwrap();
+
+        let args = vec![
+            "--stock".to_string(),
+            stock_path,
+            "--manifest".to_string(),
+            manifest_path,
+        ];
+        let report = build_stock_doctor_report(&args).unwrap();
+        assert_eq!(
+            find_check(&report, "importer_version").severity,
+            DoctorSeverity::Warn,
+            "{report:?}"
+        );
+        assert_eq!(
+            report.overall,
+            DoctorSeverity::Warn,
+            "an importer_version-only difference must not escalate the overall verdict to \
+             Fail: {report:?}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn doctor_report_missing_revision_and_license_is_warn_only() {
+        let dir = unique_temp_dir("missing_provenance");
+        let (stock_path, manifest_path, _, _) = setup_stock_and_manifest(&dir, None, None);
+        let args = vec![
+            "--stock".to_string(),
+            stock_path,
+            "--manifest".to_string(),
+            manifest_path,
+        ];
+        let report = build_stock_doctor_report(&args).unwrap();
+        let check = find_check(&report, "source_provenance");
+        assert_eq!(check.severity, DoctorSeverity::Warn, "{report:?}");
+        assert!(check.message.contains("source_revision"), "{check:?}");
+        assert!(check.message.contains("license"), "{check:?}");
+        assert_eq!(
+            report.overall,
+            DoctorSeverity::Warn,
+            "missing optional provenance must not escalate the overall verdict to Fail: \
+             {report:?}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn doctor_report_input_hash_mismatch_is_fail() {
+        let dir = unique_temp_dir("input_hash_mismatch");
+        let (stock_path, manifest_path, _, _) = setup_stock_and_manifest(&dir, None, None);
+        let wrong_input_path = dir.join("wrong_input.smi");
+        std::fs::write(&wrong_input_path, "CCCC not the original input\n").unwrap();
+
+        let args = vec![
+            "--stock".to_string(),
+            stock_path,
+            "--manifest".to_string(),
+            manifest_path,
+            "--input".to_string(),
+            wrong_input_path.to_str().unwrap().to_string(),
+        ];
+        let report = build_stock_doctor_report(&args).unwrap();
+        assert_eq!(report.overall, DoctorSeverity::Fail, "{report:?}");
+        assert_eq!(
+            find_check(&report, "input_hash").severity,
+            DoctorSeverity::Fail,
+            "{report:?}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn doctor_report_unsupported_schema_version_is_fail() {
+        let dir = unique_temp_dir("bad_schema");
+        let (stock_path, manifest_path, _, _) = setup_stock_and_manifest(&dir, None, None);
+        let mut value: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&manifest_path).unwrap()).unwrap();
+        value["schema_version"] = serde_json::json!(999);
+        std::fs::write(
+            &manifest_path,
+            serde_json::to_string_pretty(&value).unwrap(),
+        )
+        .unwrap();
+
+        let args = vec![
+            "--stock".to_string(),
+            stock_path,
+            "--manifest".to_string(),
+            manifest_path,
+        ];
+        let report = build_stock_doctor_report(&args).unwrap();
+        assert_eq!(report.overall, DoctorSeverity::Fail, "{report:?}");
+        assert_eq!(
+            find_check(&report, "schema_version").severity,
+            DoctorSeverity::Fail,
+            "{report:?}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn doctor_report_missing_required_flag_is_invocation_error() {
+        let err =
+            build_stock_doctor_report(&["--manifest".to_string(), "x".to_string()]).unwrap_err();
+        assert!(format!("{err:#}").contains("--stock"), "{err:#}");
+    }
+
+    #[test]
+    fn doctor_report_malformed_manifest_json_is_invocation_error() {
+        let dir = unique_temp_dir("malformed_manifest");
+        let (stock_path, _, _, _) = setup_stock_and_manifest(&dir, None, None);
+        let manifest_path = dir.join("not_json.manifest.json");
+        std::fs::write(&manifest_path, "not valid json").unwrap();
+
+        let args = vec![
+            "--stock".to_string(),
+            stock_path,
+            "--manifest".to_string(),
+            manifest_path.to_str().unwrap().to_string(),
+        ];
+        assert!(build_stock_doctor_report(&args).is_err());
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

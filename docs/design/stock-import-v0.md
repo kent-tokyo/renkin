@@ -1,10 +1,13 @@
 # Stock Importer v0 — Design & Contract Doc
 
-Status: **Implemented, PR 1 of v0.36.0 Phase 2 ("Scalable Stock & Audited
-Coverage").** Module: `src/stock_import.rs`. Phase 1 (rule-safety census,
-PR #193) is complete and merged; this is the first Phase 2 PR, scoped
-deliberately narrow per the phase plan: importer core + manifest schema
-only, no CLI, no large-file fetch, no default-stock replacement.
+Status: **Implemented, PR 1 + PR 2 of v0.36.0 Phase 2 ("Scalable Stock &
+Audited Coverage").** Module: `src/stock_import.rs`. Phase 1 (rule-safety
+census, PR #193) is complete and merged. PR 1 (#194) added the importer
+core + manifest schema as a library module only, deliberately no CLI. PR
+2 (this update, §6 below) adds the `renkin stock import` /
+`renkin doctor stock` CLI on top of that same core -- no new
+canonicalize/dedup/manifest logic, no large-file fetch, no default-stock
+replacement.
 
 ## 0. What this is, in one paragraph
 
@@ -60,9 +63,10 @@ with real provenance, not a rewrite of how RENKIN loads its existing one.
   the naive in-memory `Vec<String>` approach is actually a problem.
 - 10k/100k measurement runs — a separate PR per the phase plan, gated on
   this PR's contract being solid first.
-- `renkin stock import` CLI subcommand — this PR is a library module
-  only; the CLI surface is explicitly a later PR so it can be reviewed
-  against a stable core API rather than co-evolving with it.
+- `renkin stock import` CLI subcommand — PR 1 was a library module only;
+  the CLI surface was deliberately deferred to a later PR so it could be
+  reviewed against a stable core API rather than co-evolving with it.
+  **Delivered in PR 2 (§6 below).**
 - Replacing the embedded/default stock — `DEFAULT_BUILDING_BLOCKS`
   (`src/lib.rs`) and `data/building_blocks.smi` are both untouched, and
   nothing in this PR bundles a large external stock file into the
@@ -184,10 +188,146 @@ itself is unchanged; deduping it, if ever wanted, is a separate decision
 for a separate PR, not something this importer does automatically to an
 existing file.
 
-## 5. Non-goals restated
+## 5. PR 1 non-goals restated
 
-This PR does not: run a 10k/100k pilot, add a CLI subcommand, replace the
+PR 1 did not: run a 10k/100k pilot, add a CLI subcommand, replace the
 embedded stock, touch `data/building_blocks.smi`, fetch or commit a large
 external file, or make any claim about AiZynthFinder-scale comparison
-(issue #86). Each is real, named future work, not silently dropped scope
-— see the phase plan for sequencing.
+(issue #86). Each was real, named future work, not silently dropped
+scope. The CLI subcommand is now delivered by PR 2 (§6); the rest remain
+open for a later PR — see the phase plan for sequencing.
+
+## 6. CLI (v0.36.0 Phase 2 PR 2)
+
+Two new subcommands on the existing `renkin` binary (manual `args[1]`
+dispatch, same convention as `stock`/`template`/`evidence`/`audit-route`
+— no `clap`/argument-parsing crate in this codebase). Neither
+reimplements any of §0-4's canonicalize/dedup/manifest logic; both call
+straight into `stock_import`'s public functions
+(`import_stock_from_path`, `render_output`, `current_normalization_contract`).
+
+### 6.1 `renkin stock import`
+
+```
+renkin stock import \
+  --input <path> --output <path> --manifest <path> \
+  --source-label <label> \
+  [--source-revision <rev>] [--license <license>] \
+  [--fail-on-rejection] [--force]
+```
+
+Contract:
+- `--input`/`--output`/`--manifest`/`--source-label` are required;
+  `--source-revision`/`--license` are optional and recorded as `None`
+  (not an empty string) when omitted.
+- `--input`, `--output`, and `--manifest` must be three distinct paths
+  (checked via `std::path::absolute`, a pure lexical comparison — not
+  symlink-aware, but enough to catch the direct-collision mistake before
+  any file is touched).
+- `--output`/`--manifest` are refused if either already exists, unless
+  `--force` is given.
+- Both artifacts are written to `<path>.stock-import-tmp` siblings
+  first (same directory as the real destination, so the final rename is
+  same-filesystem and atomic), fsynced, then both renamed into place
+  back-to-back (`write_two_artifacts_atomically` in `src/main.rs`). If
+  the second rename fails after the first succeeded, the first
+  destination is removed again to restore the pre-call state — *unless*
+  it was a pre-existing file being overwritten under `--force`, in which
+  case the original bytes were never backed up and can't be restored;
+  the returned error says explicitly which artifact is now out of sync
+  with which. This narrow post-`--force`-overwrite window is a known,
+  documented ceiling, not silently swallowed — a real backup-and-restore
+  path is future work if anyone actually hits it.
+- Rejected/duplicate rows never abort the import by themselves — the
+  run still succeeds (exit 0) and both artifacts are written. Only
+  `--fail-on-rejection` turns a nonzero `rejected_rows` into a nonzero
+  exit code (1), and even then the artifacts are written first: a
+  rejected-but-imported run leaves useful output on disk, not nothing.
+- stdout carries exactly one pretty-printed JSON object (the output/
+  manifest paths plus the full `StockManifest`) and nothing else;
+  progress warnings (rejected-row count, duplicate-row count) go to
+  stderr only.
+
+### 6.2 `renkin doctor stock`
+
+```
+renkin doctor stock \
+  --stock <path> --manifest <path> \
+  [--input <path>] [--output human|json]
+```
+
+`renkin doctor stock` is a subcommand of the main `renkin` binary
+(`args[1] == "doctor"`, same dispatch style as `stock`/`template`/
+`evidence`/`audit-route`) and is unrelated to the pre-existing standalone
+`renkin-doctor` binary (`src/bin/doctor.rs`, installed as its own `[[bin]]`
+target) — that one is a flat, argument-free asset/environment checker
+(templates, reranker model, WASM package, Python bindings, ...) with no
+subcommands, no severities, and no distinct exit codes. `renkin doctor
+stock` is a new, separate, typed report specifically for a `stock import`
+output/manifest pair; it does not call into or replace `renkin-doctor`.
+
+Independently re-verifies a `renkin stock import` output/manifest pair
+— it does not trust the manifest's own claims, it recomputes and
+compares. Nine checks, run unconditionally except `input_hash` (only
+when `--input` is given):
+
+| check | what it compares | severity on mismatch |
+|---|---|---|
+| `schema_version` | manifest's `schema_version` vs `STOCK_MANIFEST_SCHEMA_VERSION` | Fail |
+| `output_hash` | SHA-256 of `--stock`'s real bytes vs `manifest.output_sha256` | Fail |
+| `input_hash` | SHA-256 of `--input`'s real bytes vs `manifest.input_sha256` | Fail |
+| `manifest_arithmetic` | the two identities from §2 item 2 ("No silent drops") | Fail |
+| `stock_line_count` | non-blank line count of `--stock` vs `manifest.unique_structures` | Fail |
+| `reimport_idempotency` | re-running `import_stock` on `--stock`'s own bytes reproduces it byte-identically with zero new rejections/duplicates | Fail |
+| `normalization_contract` | manifest's `normalization` vs `current_normalization_contract()` (the *currently running* binary's live policy, not whatever was live when the manifest was generated) | Fail |
+| `importer_version` | manifest's `importer_version` vs this binary's `CARGO_PKG_VERSION` | **Warn** |
+| `source_provenance` | whether `source.revision`/`source.license` are present | **Warn** |
+
+Only `importer_version` and `source_provenance` are Warn-only by
+design: a manifest generated by a different (but still trustworthy)
+`renkin` build, or one missing optional licensing metadata, is not
+itself evidence the stock file is wrong — it's flagged, not failed.
+Every other check failing means the stock/manifest pair is
+self-inconsistent or doesn't match what's on disk, which is always a
+real problem.
+
+Exit codes (checked directly by `tests/stock_import_cli.rs`, not just
+documented):
+- **0** — every check Pass or Warn (`report.overall != Fail`).
+- **1** — at least one check Fail.
+- **2** — invocation-level problem: missing/unsupported `--output`,
+  missing `--stock`/`--manifest`, an unreadable `--stock`/`--manifest`/
+  `--input` file, or a `--manifest` file that isn't valid JSON for the
+  current `StockManifest` shape at all (as opposed to valid JSON with a
+  `schema_version` this build disagrees with, which is the
+  `schema_version` check above — exit 1, not 2, since the doctor *could*
+  read it and form an opinion).
+
+`--output human` (default) prints one summary line plus one
+`[SEVERITY] name: message` line per check; `--output json` prints the
+full typed `StockDoctorReport` (`stock_path`, `manifest_path`,
+`input_path`, `overall`, `checks[]`) and nothing else on stdout.
+
+### 6.3 Security/atomicity assumptions
+
+- Single-process, local-filesystem tool — no network access, no
+  concurrent-writer coordination beyond the temp-file-then-rename
+  pattern (a second concurrent `renkin stock import` targeting the same
+  `--output` could still interleave; not addressed here, matching this
+  tool's stated scope as a local pilot/provenance utility, not a
+  multi-writer service).
+- `std::fs::rename` is atomic per-file on every platform this crate
+  targets as long as source and destination are on the same filesystem
+  — guaranteed here since the temp file is always written as a sibling
+  of its real destination, never in a shared/system temp directory.
+- No sandboxing beyond what the OS/filesystem permissions already
+  provide; `--force` is the only privilege being modeled (whether an
+  existing destination may be overwritten), not a filesystem ACL.
+
+## 7. Non-goals restated (still open after PR 2)
+
+Still not done by either PR: run a 10k/100k pilot, replace the embedded
+stock, touch `data/building_blocks.smi`, fetch or commit a large
+external file, add CSV/SDF/gzip input support, or make any claim about
+AiZynthFinder-scale comparison (issue #86). Each is real, named future
+work — see the phase plan for sequencing.

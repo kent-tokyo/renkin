@@ -24,7 +24,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use rustc_hash::FxHashMap;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::chem_env::{STANDARDIZE_OPTS, canonical_stock_identity_from_smiles};
@@ -48,7 +48,7 @@ pub struct StockImportOptions {
 /// Why one input row was rejected outright -- never included in the
 /// output stock, but always counted and recorded here, never silently
 /// dropped.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RejectionReason {
     /// The row's SMILES field is present but empty. Unreachable for this
@@ -71,14 +71,14 @@ impl RejectionReason {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RejectedRow {
     pub line_no: u64,
     pub smiles: String,
     pub reason: RejectionReason,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DuplicateRow {
     pub line_no: u64,
     pub canonical_smiles: String,
@@ -91,7 +91,7 @@ pub struct DuplicateRow {
 /// static every time via [`current_normalization_contract`] -- never
 /// hand-duplicated, so it can't silently drift out of sync with the real
 /// policy.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NormalizationContract {
     pub canonical_tautomer: bool,
     pub neutralize_charges: bool,
@@ -100,7 +100,13 @@ pub struct NormalizationContract {
     pub zwitterion_handling: String,
 }
 
-fn current_normalization_contract() -> NormalizationContract {
+/// Builds a fresh snapshot of the normalization policy this build of
+/// RENKIN actually applies right now (from the live `STANDARDIZE_OPTS`,
+/// never hand-duplicated). `renkin doctor stock` calls this directly to
+/// compare a manifest's recorded `normalization` against what the
+/// *currently running* binary would produce, independent of whatever
+/// policy was live when the manifest was originally generated.
+pub fn current_normalization_contract() -> NormalizationContract {
     NormalizationContract {
         canonical_tautomer: STANDARDIZE_OPTS.canonical_tautomer,
         neutralize_charges: STANDARDIZE_OPTS.neutralize_charges,
@@ -110,7 +116,7 @@ fn current_normalization_contract() -> NormalizationContract {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StockSource {
     pub label: String,
     pub revision: Option<String>,
@@ -125,7 +131,7 @@ pub struct StockSource {
 /// by this module's own tests rather than left as an implicit invariant:
 /// `input_rows == accepted_rows + rejected_rows` and
 /// `accepted_rows == unique_structures + duplicate_rows`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StockManifest {
     pub schema_version: u32,
     pub source: StockSource,
@@ -469,6 +475,23 @@ mod tests {
             manifest.normalization.zwitterion_handling,
             format!("{:?}", STANDARDIZE_OPTS.zwitterion_handling)
         );
+    }
+
+    /// `StockManifest` gained `Deserialize` in v0.36.0 Phase 2 PR 2 so
+    /// `renkin doctor stock` can read a manifest a prior `renkin stock
+    /// import` run wrote -- round-trips through the exact JSON text a
+    /// file on disk would contain (not just `serde_json::Value`) to
+    /// confirm the derive actually mirrors `Serialize` field-for-field.
+    #[test]
+    fn manifest_round_trips_through_json_deserialize() {
+        let input = "CCO ethanol\nOCC dup\nnot(valid(((\n";
+        let mut options = opts();
+        options.source_revision = Some("rev-1".to_string());
+        options.license = Some("CC0".to_string());
+        let (_accepted, manifest) = import_stock(input.as_bytes(), &options).unwrap();
+        let json = serde_json::to_string_pretty(&manifest).unwrap();
+        let round_tripped: StockManifest = serde_json::from_str(&json).unwrap();
+        assert_eq!(manifest, round_tripped);
     }
 
     /// Fixture-consistency check requested for v0.36.0 Phase 2 PR 1: import

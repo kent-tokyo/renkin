@@ -26,6 +26,27 @@ this closes out the plan's originally-named priority table.
   rule itself. Reproducible via `cargo run --example rule_safety_census`;
   report at `docs/validation/rule-safety-census-2026-08-24.md` +
   `data/rule_safety_census_2026-08-24.json`.
+- `stock_import` module (`src/stock_import.rs`, Phase 2 PR 1, #194): a
+  deterministic `.smi` stock importer core with a versioned provenance
+  manifest (`StockManifest`) -- typed rejection/duplicate reasons,
+  input/output SHA-256, and a normalization-policy snapshot, closing the
+  gap where `ChemEnv::load` silently drops unparseable/duplicate rows
+  with no count surfaced anywhere. Library module only in that PR; see
+  `docs/design/stock-import-v0.md`.
+- `renkin stock import` / `renkin doctor stock` CLI subcommands (Phase 2
+  PR 2): a stable, third-party-reproducible CLI around `stock_import`'s
+  core, never reimplementing its canonicalize/dedup/manifest logic.
+  `stock import` writes the output `.smi` + manifest atomically (temp
+  file + rename, never a partial pair), refuses to overwrite an existing
+  destination without `--force`, rejects `--input`/`--output`/
+  `--manifest` collisions, and supports `--fail-on-rejection` for strict
+  pipelines (artifacts are still written first). `doctor stock`
+  independently re-verifies a stock/manifest pair -- hash, row-count
+  arithmetic, re-import idempotency, normalization-contract and
+  importer-version agreement, source-provenance completeness -- with
+  typed PASS/WARN/FAIL severities and stable exit codes (0/1/2). See
+  `docs/design/stock-import-v0.md` §6 for the full CLI/exit-code
+  contract.
 
 ### Fixed
 - Removed `n_benzylation_retro` and `michael_retro` from `default_rules()`

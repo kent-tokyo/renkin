@@ -45,12 +45,23 @@ same defect on real targets and are removed below.
 
 ### Known Limitations
 - `grignard_addition_retro` also carries real `SpectatorBondLoss`
-  findings and matches the same static-screen risk shape, but did not
-  reproduce the defect on the one target tried this round -- left in
-  `default_rules()` as flagged-but-unconfirmed, not cleared. `negishi_retro`
-  matches the risk shape structurally (near-identical to the already-removed
-  rules) but produced zero findings in the same 15-target smoke sample --
-  also not cleared, no fixture attempted yet.
+  findings and matches the same static-screen risk shape, but its LHS (a
+  tertiary alcohol) never matched the one candidate target tried this
+  round (0 outcomes) -- no evidence either way, not a negative
+  reproduction attempt; left in `default_rules()` as
+  flagged-but-unconfirmed, not cleared. `negishi_retro` matches the risk
+  shape structurally (near-identical to the already-removed rules) but
+  produced zero findings in the same 15-target smoke sample -- also not
+  cleared, no fixture attempted yet.
+- `scripts/ord_evidence_audit.py`'s `AUDIT_ONLY_TEMPLATE_IDS` frozenset
+  still names `"rule:michael_retro"`: a deliberate no-op left in place
+  rather than touched this round (the set only gates audit-report
+  classification of *matched* template IDs from real ORD literature
+  data; since the rule no longer exists in `default_rules()`, no future
+  match can ever produce that string, so the entry is inert, not
+  misleading in a way that affects any real audit run). Out of this
+  round's doc-cascade scope (ORD-evidence tooling, not rule-count docs);
+  flagged here so it reads as a decision, not an oversight.
 
 ## [0.35.0] - 2026-08-24 "Template Integrity & Spectator Bond Loss"
 

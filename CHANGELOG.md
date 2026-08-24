@@ -8,14 +8,15 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-v0.36.0 Phase 1 (rule-safety census, in progress): a mechanical static
-screen of every hand-crafted `default_rules()` SMIRKS against the risk
-shape that broke `aryl_amine_retro`/`buchwald_hartwig_retro`
+v0.36.0 Phase 1 (rule-safety census): a mechanical static screen of every
+hand-crafted `default_rules()` SMIRKS against the risk shape that broke
+`aryl_amine_retro`/`buchwald_hartwig_retro`
 ([0.32.0](#0320---2026-08-22-typed-reports--verified-planner-matrix)/
 [0.35.0](#0350---2026-08-24-template-integrity--spectator-bond-loss),
 issue #77) -- a minimally-constrained LHS plus a bare single-atom RHS
-product fragment. Two more rules matching that exact shape reproduced the
-same defect on real targets and are removed below.
+product fragment. Four more rules matching that exact shape reproduced
+the same defect on real targets across two rounds and are removed below;
+this closes out the plan's originally-named priority table.
 
 ### Added
 - `examples/rule_safety_census.rs`: a static SMIRKS screen of every
@@ -27,10 +28,10 @@ same defect on real targets and are removed below.
   `data/rule_safety_census_2026-08-24.json`.
 
 ### Fixed
-- Removed `n_benzylation_retro` and `michael_retro` from `default_rules()`:
-  both flagged by the new rule-safety census, and both already carried
-  real (not just flagged) `SpectatorBondLoss` findings from the existing
-  2026-08-24 smoke measurement. Confirmed by direct `apply_retro`
+- Removed `n_benzylation_retro` and `michael_retro` from `default_rules()`
+  (round 1): both flagged by the new rule-safety census, and both already
+  carried real (not just flagged) `SpectatorBondLoss` findings from the
+  existing 2026-08-24 smoke measurement. Confirmed by direct `apply_retro`
   reproduction on real ring-fused targets -- same mechanism as
   `aryl_amine_retro`/`buchwald_hartwig_retro`: the bare RHS fragment's
   substituent-carry-through BFS sweeps unchecked across a ring-fusion
@@ -38,21 +39,47 @@ same defect on real targets and are removed below.
   through nearly the whole molecule on an N-CH2-Ar bond that's part of a
   ring; `michael_retro`'s "bare" `[C:1]` fragment does the same on a
   C-CH2-C=O bond in a ring (a glutarimide), with the declared enol
-  fragment coming back as an unreal, garbled piece in both cases. **The
-  hand-crafted rule count drops from 26 to 24**; any route search that
-  previously depended on either rule will no longer find that route --
-  this is a correctness fix, not a regression.
+  fragment coming back as an unreal, garbled piece in both cases.
+- Removed `negishi_retro` and `grignard_addition_retro` from
+  `default_rules()` (round 2): `negishi_retro` was the plan's own
+  top-priority candidate (structurally near-identical to
+  `buchwald_hartwig_retro`) despite producing zero findings in the
+  15-target smoke sample -- confirmed anyway via a deliberately
+  constructed ring-fused (indane/tetralin-type) target, since zero
+  findings in a small right-censored sample isn't evidence of safety.
+  `grignard_addition_retro` also carries real `SpectatorBondLoss`
+  findings; its first tested target didn't match the rule's LHS at all
+  (0 outcomes, not a negative result), but a second target (a ring-fused
+  tertiary alcohol) confirmed the same mechanism. Both show the identical
+  duplication signature as round 1's fixes -- the bare fragment's
+  carry-through re-collects atoms the other declared fragment already
+  claims, so the outcome's precursors sum to *more* heavy atoms than
+  chemically correct, not fewer: `negishi_retro`'s broken outcome summed
+  to 49 against a correct 26 (a 25-atom target + one new Br);
+  `grignard_addition_retro`'s summed to 18 against a correct 11
+  (atom-conserving SMIRKS, no new atom). **The hand-crafted rule count
+  drops from 26 to 22 across both rounds**; any route search that
+  previously depended on any of these four rules will no longer find that
+  route -- this is a correctness fix, not a regression.
+- `crates/renkin-forward/src/bench.rs`'s
+  `compute_row_predicts_from_reactants_original_not_reactants_canonical`
+  and `crates/renkin-forward/tests/bench.rs`'s fixture corpus
+  (`crates/renkin-forward/tests/fixtures/forward_bench_corpus.jsonl`)
+  both pinned a candidate rank that's sensitive to `default_rules()`'s
+  exact composition; both updated to the correct post-removal values
+  (rank 6 -> 4) and the fixture's `stereochemistry-hit-top10` reaction_id
+  renamed to `stereochemistry-hit-top5` to match, rather than leaving a
+  passing-but-misleadingly-named fixture.
 
 ### Known Limitations
-- `grignard_addition_retro` also carries real `SpectatorBondLoss`
-  findings and matches the same static-screen risk shape, but its LHS (a
-  tertiary alcohol) never matched the one candidate target tried this
-  round (0 outcomes) -- no evidence either way, not a negative
-  reproduction attempt; left in `default_rules()` as
-  flagged-but-unconfirmed, not cleared. `negishi_retro` matches the risk
-  shape structurally (near-identical to the already-removed rules) but
-  produced zero findings in the same 15-target smoke sample -- also not
-  cleared, no fixture attempted yet.
+- Six rules remain flagged by the static screen but unattempted:
+  `friedel_crafts_acylation_retro`, `aryl_carboxylation_retro`,
+  `cc_single_cleavage`, `reductive_amination_retro`,
+  `cn_aliphatic_cleavage`, `co_aliphatic_cleavage`. The last three are the
+  plan's own "new, unverified angle" (BFS carry-through from an aliphatic
+  cut site into an adjacent/fused aromatic ring elsewhere in the
+  molecule, never actually tested against a fixture) -- distinct future
+  work, not a completed check that came back clean.
 - `scripts/ord_evidence_audit.py`'s `AUDIT_ONLY_TEMPLATE_IDS` frozenset
   still names `"rule:michael_retro"`: a deliberate no-op left in place
   rather than touched this round (the set only gates audit-report

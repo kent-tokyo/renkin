@@ -4460,23 +4460,31 @@ mod tests {
         // Correct chemistry for this SMIRKS is atom-conserving except for
         // one new heavy atom (the appended leaving-group Br): total heavy
         // atoms across the outcome's precursors should equal the target's
-        // own heavy-atom count plus exactly one. A real, uncorrupted
-        // instance of this rule must satisfy that -- computed at test time,
-        // not hardcoded, so this stays correct if canonicalization ever
-        // changes representation.
+        // own heavy-atom count plus exactly one. The confirmed defect's
+        // specific signature (verified 2026-08-24 against this exact
+        // target: target has 45 heavy atoms, the broken outcome's two
+        // precursors sum to 56 -- 10 atoms *more* than the chemically
+        // correct 46) is duplication, not loss: the "bare" [N:1]
+        // fragment's carry-through sweeps around the ring the *other*
+        // way and re-collects atoms the declared Br-CH2-Ar fragment
+        // already legitimately claims. A dropped-fragment defect (the
+        // buchwald_hartwig_retro shape) would show as too *few* atoms
+        // instead; asserting a strict excess pins this to the specific
+        // duplication mechanism rather than any atom-count mismatch.
         let target_atoms = target.atom_count();
         let corrupted = outcomes.iter().any(|o| {
             let precursor_atoms: usize = o
                 .iter()
                 .map(|p| mol_from_smiles(&p.smiles).unwrap().atom_count())
                 .sum();
-            precursor_atoms != target_atoms + 1
+            precursor_atoms > target_atoms + 1
         });
         assert!(
             corrupted,
-            "expected at least one outcome with broken atom accounting (ring carry-through \
-             defect), got only atom-conserving outcomes -- rule may have been fixed upstream, \
-             re-check whether it's still correctly disabled: {outcome_smiles:?}"
+            "expected at least one outcome with atom-duplicating ring carry-through (more \
+             heavy atoms across precursors than the target's own count plus one new Br), got \
+             only atom-conserving outcomes -- rule may have been fixed upstream, re-check \
+             whether it's still correctly disabled: {outcome_smiles:?}"
         );
     }
 
@@ -4514,19 +4522,32 @@ mod tests {
             "expected at least one outcome on this real ring-fused (glutarimide) target: \
              {outcome_smiles:?}"
         );
+        // This SMIRKS's RHS declares no new atoms (pure cleavage +
+        // tautomerization), so a correct outcome's precursors must sum to
+        // exactly the target's own heavy-atom count. The confirmed
+        // defect's specific signature (verified 2026-08-24 against this
+        // exact target: target has 24 heavy atoms, both broken outcomes'
+        // precursors sum to 30 -- 6 atoms *more* than the correct 24) is
+        // duplication, same direction and same underlying mechanism as
+        // n_benzylation_retro above: the "bare" [C:1] fragment's
+        // carry-through sweeps around the ring the other way and
+        // re-collects atoms the declared enol fragment already claims.
+        // Asserting a strict excess (not just any mismatch) pins this to
+        // that specific duplication mechanism.
         let target_atoms = target.atom_count();
         let corrupted = outcomes.iter().any(|o| {
             let precursor_atoms: usize = o
                 .iter()
                 .map(|p| mol_from_smiles(&p.smiles).unwrap().atom_count())
                 .sum();
-            precursor_atoms != target_atoms
+            precursor_atoms > target_atoms
         });
         assert!(
             corrupted,
-            "expected at least one outcome with broken atom accounting (ring carry-through \
-             defect), got only atom-conserving outcomes -- rule may have been fixed upstream, \
-             re-check whether it's still correctly disabled: {outcome_smiles:?}"
+            "expected at least one outcome with atom-duplicating ring carry-through (more \
+             heavy atoms across precursors than the target's own count), got only \
+             atom-conserving outcomes -- rule may have been fixed upstream, re-check whether \
+             it's still correctly disabled: {outcome_smiles:?}"
         );
     }
 

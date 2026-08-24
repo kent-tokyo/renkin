@@ -127,13 +127,14 @@ binary):
 molecule with its symmetric ring positions typically produces several.)
 
 With `--max-hints 5` on the same reactant, the same run also surfaces
-aryl carboxylation, Friedel-Crafts acylation, Sonogashira, Heck, and aryl
-chloride-to-bromide retro-templates — each with its own
-`missing_partners[].query_smarts` and `search_terms` — a realistic spread
-of "what to search for" starting from one aryl bromide, none of it
-invented. (Verified against the current 22-rule `default_rules()` set,
-2026-08-24; the exact top-5 shifts if the rule set changes, since
-ranking depends on which templates are loaded.)
+aryl carboxylation, Friedel-Crafts acylation, Sonogashira, and Heck
+retro-templates (each with its own `missing_partners[].query_smarts` and
+`search_terms`) plus aryl chloride-to-bromide (a unary rule -- no
+`missing_partners` slot, `search_terms` only) — a realistic spread of
+"what to search for" starting from one aryl bromide, none of it invented.
+(Verified against the current 22-rule `default_rules()` set, 2026-08-24;
+the exact top-5 shifts if the rule set changes, since ranking depends on
+which templates are loaded.)
 
 ## Multiple known reactants
 

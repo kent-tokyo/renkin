@@ -47,20 +47,29 @@ this closes out the plan's originally-named priority table.
   15-target smoke sample -- confirmed anyway via a deliberately
   constructed ring-fused (indane/tetralin-type) target, since zero
   findings in a small right-censored sample isn't evidence of safety.
+  This is a weaker evidence chain than round 1's two rules (real
+  corpus-derived `SpectatorBondLoss` findings *and* reproduction on
+  drug-like smoke-corpus targets): `negishi_retro` rests on a
+  hand-constructed repro target and zero corpus findings, so its removal
+  is confirmed but less independently corroborated than the other three.
   `grignard_addition_retro` also carries real `SpectatorBondLoss`
   findings; its first tested target didn't match the rule's LHS at all
   (0 outcomes, not a negative result), but a second target (a ring-fused
-  tertiary alcohol) confirmed the same mechanism. Both show the identical
-  duplication signature as round 1's fixes -- the bare fragment's
-  carry-through re-collects atoms the other declared fragment already
-  claims, so the outcome's precursors sum to *more* heavy atoms than
-  chemically correct, not fewer: `negishi_retro`'s broken outcome summed
-  to 49 against a correct 26 (a 25-atom target + one new Br);
-  `grignard_addition_retro`'s summed to 18 against a correct 11
-  (atom-conserving SMIRKS, no new atom). **The hand-crafted rule count
-  drops from 26 to 22 across both rounds**; any route search that
-  previously depended on any of these four rules will no longer find that
-  route -- this is a correctness fix, not a regression.
+  tertiary alcohol) confirmed a real defect. Both show the same
+  excess-over-correct duplication direction as round 1's fixes -- the
+  bare fragment's carry-through re-collects atoms the other declared
+  fragment already claims, so the outcome's precursors sum to *more*
+  heavy atoms than chemically correct, not fewer: `negishi_retro`'s
+  broken outcome summed to 49 against a correct 26 (a 25-atom target +
+  one new Br); `grignard_addition_retro`'s summed to 18 against a
+  correct 11 (atom-conserving SMIRKS, no new atom) -- a considerably
+  larger relative excess (~64-88%) than round 1's ~22-25%, so "same
+  mechanism" across all four is inferred from the shared structural
+  precondition and signature shape, not a traced identical BFS path.
+  **The hand-crafted rule count drops from 26 to 22 across both
+  rounds**; any route search that previously depended on any of these
+  four rules will no longer find that route -- this is a correctness
+  fix, not a regression.
 - `crates/renkin-forward/src/bench.rs`'s
   `compute_row_predicts_from_reactants_original_not_reactants_canonical`
   and `crates/renkin-forward/tests/bench.rs`'s fixture corpus

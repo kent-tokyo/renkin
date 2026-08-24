@@ -2121,17 +2121,24 @@ pub fn default_rules() -> Vec<RetroRule> {
         ),
         // `negishi_retro` ("[c:1][CH2:2]>>[c:1][Br].[CH3:2]") was removed:
         // v0.36.0's rule-safety census flagged it as the top candidate
-        // (structurally near-identical to the already-removed
+        // (structurally near-identical LHS/RHS shape to the already-removed
         // `buchwald_hartwig_retro`), and direct `apply_retro` reproduction
-        // confirmed it on a real ring-fused target -- on an Ar-CH2 bond
-        // that's part of a saturated ring fused to the aromatic ring
-        // (e.g. an indane/tetralin-type substructure), the "bare" [CH3:2]
-        // fragment's carry-through sweeps around the ring the other way
-        // and re-collects atoms the aryl-bromide fragment already claims:
-        // a 25-atom target produced a single outcome summing to 49 heavy
-        // atoms across its precursors, against a chemically correct 26
-        // (target + one new Br) -- the same duplication signature and
-        // mechanism as `n_benzylation_retro`/`michael_retro` above. See
+        // confirmed a real defect on a real ring-fused target (deliberately
+        // constructed, not corpus-derived -- this rule had zero findings in
+        // the 15-target smoke sample) -- on an Ar-CH2 bond that's part of a
+        // saturated ring fused to the aromatic ring (e.g. an
+        // indane/tetralin-type substructure), a 25-atom target produced a
+        // single outcome summing to 49 heavy atoms across its precursors,
+        // against a chemically correct 26 (target + one new Br). Same
+        // defect class as `n_benzylation_retro`/`michael_retro` above
+        // (under-constrained LHS + bare RHS fragment + a cut bond that's
+        // part of a ring) and the same excess-over-correct atom-count
+        // shape, but the exact BFS carry-through path was not traced, so
+        // "same mechanism" is inferred from the shared structural
+        // precondition and signature, not directly observed -- the
+        // magnitude here (49 vs. 26, ~88% excess) is well beyond round 1's
+        // (~22-25% excess), which may reflect a different-sized
+        // carry-through region rather than an identical failure path. See
         // `negishi_retro_removed_from_default_rules` below.
         //
         // ── Aliphatic C-C disconnections ─────────────────────────────────
@@ -2189,8 +2196,17 @@ pub fn default_rules() -> Vec<RetroRule> {
         // the molecule, and the carry-through duplicates ring atoms into
         // both declared fragments: an 11-atom target produced a single
         // outcome summing to 18 heavy atoms, against a chemically correct
-        // 11 (this SMIRKS's RHS is atom-conserving) -- same mechanism as
-        // `negishi_retro`/`n_benzylation_retro`/`michael_retro` above.
+        // 11 (this SMIRKS's RHS is atom-conserving) -- same defect class
+        // (under-constrained LHS + bare RHS fragment + ring-membership at
+        // the cut site) as `negishi_retro`/`n_benzylation_retro`/
+        // `michael_retro` above, and the same excess-over-correct
+        // signature, but the two output fragments here each contain a
+        // *whole* extra benzene ring the 11-atom target only has one of --
+        // wholesale ring duplication, not the more modest ~22-25% excess
+        // round 1's two rules showed. Whether that's the identical BFS
+        // failure path or a related-but-distinct one wasn't traced; treat
+        // "same mechanism" claims across these four as inferred from the
+        // shared precondition and signature shape, not directly observed.
         // Not every match is wrong (a genuine exocyclic substituent, e.g.
         // a real methyl-Grignard product, still disconnects correctly --
         // see the still-passing acyclic case this rule's removed
@@ -4355,11 +4371,12 @@ mod tests {
         // confirmed defect's specific signature (verified 2026-08-24
         // against this exact target: target has 25 heavy atoms, the
         // broken outcome's precursors sum to 49 -- 23 atoms more than
-        // the chemically correct 26) is duplication, same direction and
-        // mechanism as n_benzylation_retro/michael_retro: the "bare"
-        // [CH3:2] fragment's carry-through sweeps around the ring the
-        // other way and re-collects atoms the aryl-bromide fragment
-        // already claims.
+        // the chemically correct 26, an ~88% excess well beyond round 1's
+        // ~22-25%) is duplication, same direction and defect class as
+        // n_benzylation_retro/michael_retro (under-constrained LHS + bare
+        // RHS fragment + ring-membership at the cut site) -- consistent
+        // with, but not directly traced to, the same BFS carry-through
+        // path.
         let target_atoms = target.atom_count();
         let corrupted = outcomes.iter().any(|o| {
             let precursor_atoms: usize = o
@@ -4377,14 +4394,16 @@ mod tests {
         );
     }
 
-    // Same v0.36.0 census flag and mechanism as negishi_retro above,
+    // Same v0.36.0 census flag and defect class as negishi_retro above,
     // confirmed by direct apply_retro reproduction on a real target with a
     // tertiary alcohol carbon that's part of a saturated ring fused to an
     // aromatic ring (a 2-substituted indanol). This SMIRKS's RHS declares
     // no new atoms (pure cleavage, no leaving-group atom appended), so a
     // correct outcome's precursors must sum to exactly the target's own
-    // heavy-atom count; the ring carry-through defect breaks that
-    // conservation the same way it does for the three rules above.
+    // heavy-atom count; the atom-conservation violation here is even
+    // larger in relative terms (~64% excess) than negishi_retro's, and
+    // whether it's the identical BFS path or a related-but-distinct one
+    // wasn't traced -- see the removed-rule comment above for detail.
     #[test]
     fn grignard_addition_retro_removed_from_default_rules() {
         let rules = default_rules();
@@ -4665,12 +4684,13 @@ mod tests {
         // defect's specific signature (verified 2026-08-24 against this
         // exact target: target has 24 heavy atoms, both broken outcomes'
         // precursors sum to 30 -- 6 atoms *more* than the correct 24) is
-        // duplication, same direction and same underlying mechanism as
-        // n_benzylation_retro above: the "bare" [C:1] fragment's
-        // carry-through sweeps around the ring the other way and
-        // re-collects atoms the declared enol fragment already claims.
-        // Asserting a strict excess (not just any mismatch) pins this to
-        // that specific duplication mechanism.
+        // duplication, same direction and same defect class as
+        // n_benzylation_retro above (similar magnitude too: both ~25%
+        // excess): the "bare" [C:1] fragment's carry-through sweeps
+        // around the ring the other way and re-collects atoms the
+        // declared enol fragment already claims. Asserting a strict
+        // excess (not just any mismatch) pins this to that duplication
+        // direction, though the exact BFS path wasn't traced atom-by-atom.
         let target_atoms = target.atom_count();
         let corrupted = outcomes.iter().any(|o| {
             let precursor_atoms: usize = o

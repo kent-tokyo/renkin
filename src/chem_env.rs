@@ -2119,8 +2119,28 @@ pub fn default_rules() -> Vec<RetroRule> {
             "heck_retro_terminal",
             "[c:1][CH:2]=[CH2:3]>>[c:1][Br].[CH2:2]=[CH2:3]",
         ),
-        // Ar-alkyl → Ar-Br + alkyl (retro-Negishi; Pd-catalyzed C-C)
-        rr("negishi_retro", "[c:1][CH2:2]>>[c:1][Br].[CH3:2]"),
+        // `negishi_retro` ("[c:1][CH2:2]>>[c:1][Br].[CH3:2]") was removed:
+        // v0.36.0's rule-safety census flagged it as the top candidate
+        // (structurally near-identical LHS/RHS shape to the already-removed
+        // `buchwald_hartwig_retro`), and direct `apply_retro` reproduction
+        // confirmed a real defect on a real ring-fused target (deliberately
+        // constructed, not corpus-derived -- this rule had zero findings in
+        // the 15-target smoke sample) -- on an Ar-CH2 bond that's part of a
+        // saturated ring fused to the aromatic ring (e.g. an
+        // indane/tetralin-type substructure), a 25-atom target produced a
+        // single outcome summing to 49 heavy atoms across its precursors,
+        // against a chemically correct 26 (target + one new Br). Same
+        // defect class as `n_benzylation_retro`/`michael_retro` above
+        // (under-constrained LHS + bare RHS fragment + a cut bond that's
+        // part of a ring) and the same excess-over-correct atom-count
+        // shape, but the exact BFS carry-through path was not traced, so
+        // "same mechanism" is inferred from the shared structural
+        // precondition and signature, not directly observed -- the
+        // magnitude here (49 vs. 26, ~88% excess) is well beyond round 1's
+        // (~22-25% excess), which may reflect a different-sized
+        // carry-through region rather than an identical failure path. See
+        // `negishi_retro_removed_from_default_rules` below.
+        //
         // ── Aliphatic C-C disconnections ─────────────────────────────────
         // Generic aliphatic C-C bond cleavage
         rr("cc_single_cleavage", "[C:1][C:2]>>[C:1].[C:2]"),
@@ -2148,17 +2168,55 @@ pub fn default_rules() -> Vec<RetroRule> {
         // N-Boc → N-H (deprotect: TFA removes Boc). Graph-based to avoid leakage.
         rr("boc_deprotection_retro", ""),
         // ── N-alkylation (more specific than cn_aliphatic_cleavage) ──────────
-        // N-CH2Ar → N-H + BrCH2Ar (N-benzyl retro)
-        rr(
-            "n_benzylation_retro",
-            "[N:1][CH2:2][c:3]>>[N:1].[Br][CH2:2][c:3]",
-        ),
+        // `n_benzylation_retro` ("[N:1][CH2:2][c:3]>>[N:1].[Br][CH2:2][c:3]")
+        // was removed: v0.36.0's rule-safety census (issue #77-class screen,
+        // docs/validation/rule-safety-census-2026-08-24.md) flagged it for
+        // the same bare-single-atom-RHS shape as `aryl_amine_retro`/
+        // `buchwald_hartwig_retro`, and direct `apply_retro` reproduction on
+        // a real target confirmed it: on an N-CH2-Ar bond that's part of a
+        // ring, substituent-carry-through BFS for the "bare" [N:1] fragment
+        // loops the other way around the ring, producing a fragment that's
+        // nearly the entire rest of the molecule, while the declared
+        // Br-CH2-Ar leaving-group fragment comes back holding a piece of
+        // the ring backbone that was never really a substituent -- a
+        // chemically-wrong "solved" route, not a missing one, same failure
+        // shape as the two already-removed rules. See
+        // `n_benzylation_retro_removed_from_default_rules` below.
+        //
         // ── Grignard / organolithium retro ───────────────────────────────────
-        // Tertiary alcohol → ketone + R-MgBr (retro-Grignard)
-        rr(
-            "grignard_addition_retro",
-            "[C:1]([OH:2])([C:3])[C:4]>>[C:1](=O)[C:3].[C:4]",
-        ),
+        // `grignard_addition_retro`
+        // ("[C:1]([OH:2])([C:3])[C:4]>>[C:1](=O)[C:3].[C:4]") was removed:
+        // flagged by the v0.36.0 census and already carrying real
+        // `SpectatorBondLoss` findings, confirmed by direct `apply_retro`
+        // reproduction on a real ring-fused tertiary alcohol -- when the
+        // atom-matcher binds the "bare" [C:4] leaving-group slot to a
+        // ring-continuation bond rather than a genuine exocyclic
+        // substituent (both are structurally valid matches for this
+        // under-constrained LHS), cutting it doesn't actually separate
+        // the molecule, and the carry-through duplicates ring atoms into
+        // both declared fragments: an 11-atom target produced a single
+        // outcome summing to 18 heavy atoms, against a chemically correct
+        // 11 (this SMIRKS's RHS is atom-conserving) -- same defect class
+        // (under-constrained LHS + bare RHS fragment + ring-membership at
+        // the cut site) as `negishi_retro`/`n_benzylation_retro`/
+        // `michael_retro` above, and the same excess-over-correct
+        // signature, but the two output fragments here each contain a
+        // *whole* extra benzene ring the 11-atom target only has one of --
+        // wholesale ring duplication, not the more modest ~22-25% excess
+        // round 1's two rules showed. Whether that's the identical BFS
+        // failure path or a related-but-distinct one wasn't traced; treat
+        // "same mechanism" claims across these four as inferred from the
+        // shared precondition and signature shape, not directly observed.
+        // Not every match is wrong (a genuine exocyclic substituent, e.g.
+        // a real methyl-Grignard product, still disconnects correctly --
+        // see the still-passing acyclic case this rule's removed
+        // `SubstituentPreservationCase` used to cover), but an
+        // under-constrained LHS with no ring/degree check can't tell the
+        // two apart, so the rule is disabled entirely rather than kept
+        // for the subset of inputs it handles correctly, matching this
+        // codebase's established policy for this whole defect class. See
+        // `grignard_addition_retro_removed_from_default_rules` below.
+        //
         // ── Claisen / Dieckmann condensation ────────────────────────────────
         // β-ketoester → ester + ester (retro-Claisen condensation)
         rr(
@@ -2166,11 +2224,17 @@ pub fn default_rules() -> Vec<RetroRule> {
             "[C:1](=O)[CH2:2][C:3](=O)[O:4]>>[C:1](=O)O.[C:2]=[C:3][O:4]",
         ),
         // ── Michael addition retro ───────────────────────────────────────────
-        // R-CH2-C(=O)R' ← CH2=C(=O)R' + H (retro-1,4-addition at α)
-        rr(
-            "michael_retro",
-            "[C:1][CH2:2][C:3]=[O:4]>>[C:1].[CH2:2]=[C:3][OH:4]",
-        ),
+        // `michael_retro`
+        // ("[C:1][CH2:2][C:3]=[O:4]>>[C:1].[CH2:2]=[C:3][OH:4]") was removed:
+        // same v0.36.0 rule-safety census flag and same confirmed mechanism
+        // as `n_benzylation_retro` above -- on a C-CH2-C=O bond that's part
+        // of a ring (e.g. a glutarimide), the "bare" [C:1] fragment's
+        // carry-through loops around the ring the other way, producing
+        // nearly the whole molecule as one fragment while the declared
+        // enol fragment comes back as an unreal, garbled piece. Confirmed
+        // by direct `apply_retro` reproduction on a real target. See
+        // `michael_retro_removed_from_default_rules` below.
+        //
         // ── Acyl chloride as electrophile source ─────────────────────────────
         // Acid chloride → carboxylic acid (SOCl2 activation retro)
         rr("acyl_chloride_from_acid", "[C:1](=[O:2])Cl>>[C:1](=[O:2])O"),
@@ -3812,25 +3876,25 @@ mod tests {
             target: "COC(=O)c1ccccc1",                // methyl benzoate
             expected_preserved_fragment: "COC(=O)Cl", // methyl chloroformate
         },
-        SubstituentPreservationCase {
-            // The CH2's real -OH substituent must survive, not be discarded
-            // when the rule re-declares CH2 (2H) -> CH3 (3H).
-            rule_name: "negishi_retro",
-            target: "OCc1ccccc1",              // benzyl alcohol
-            expected_preserved_fragment: "CO", // methanol
-        },
+        // negishi_retro's case was removed here along with the rule itself
+        // (v0.36.0 rule-safety census) -- it passed for this plain
+        // acyclic substrate (benzyl alcohol -> bromobenzene + methanol),
+        // but the rule produces a duplicated split on ring-fused
+        // substrates, so it was disabled entirely rather than kept for
+        // the subset of inputs it handles correctly. See
+        // `negishi_retro_removed_from_default_rules` below.
         SubstituentPreservationCase {
             // C:1's extra branch (isopropyl) must survive into the acid fragment.
             rule_name: "claisen_retro",
             target: "CC(C)C(=O)CC(=O)OCC", // ethyl 4-methyl-3-oxopentanoate
             expected_preserved_fragment: "CC(C)C(=O)O", // isobutyric acid
         },
-        SubstituentPreservationCase {
-            // C:1's aryl substituent must survive into the enol fragment.
-            rule_name: "michael_retro",
-            target: "c1ccccc1CC(=O)CC", // 1-phenylpentan-2-one-ish chain
-            expected_preserved_fragment: "C=C(O)Cc1ccccc1",
-        },
+        // michael_retro's case was removed here along with the rule itself
+        // (v0.36.0 rule-safety census) -- it passed for this plain acyclic
+        // substrate, but the rule produces a corrupted split on ring-fused
+        // targets, so it was disabled entirely rather than kept for the
+        // subset of inputs it handles correctly. See
+        // `michael_retro_removed_from_default_rules` below.
         SubstituentPreservationCase {
             // C:1's bulky tert-butyl substituent must survive, not vanish
             // when C:1 becomes a carbonyl.
@@ -3845,12 +3909,13 @@ mod tests {
             target: "CC(C)=CC",                     // 2-methyl-2-butene
             expected_preserved_fragment: "CC(C)=O", // acetone
         },
-        SubstituentPreservationCase {
-            // The ethyl ketone fragment (not just a bare carbonyl) must survive.
-            rule_name: "grignard_addition_retro",
-            target: "CCC(O)(C)CC",                   // 3-methylpentan-3-ol
-            expected_preserved_fragment: "CCC(C)=O", // butan-2-one
-        },
+        // grignard_addition_retro's case was removed here along with the
+        // rule itself (v0.36.0 rule-safety census) -- it passed for this
+        // plain acyclic substrate (3-methylpentan-3-ol -> butan-2-one +
+        // ethyl), but the rule produces a duplicated split on ring-fused
+        // tertiary alcohols, so it was disabled entirely rather than kept
+        // for the subset of inputs it handles correctly. See
+        // `grignard_addition_retro_removed_from_default_rules` below.
         // aryl_amine_retro's case was removed here along with the rule
         // itself (issue #77) — it passed for this plain acyclic substrate,
         // but the rule loses the nitrogen outright on ring-fused targets,
@@ -4263,24 +4328,131 @@ mod tests {
         );
     }
 
+    // v0.36.0 rule-safety census (docs/validation/rule-safety-census-2026-08-24.md):
+    // same bare-single-atom-RHS shape as aryl_amine_retro/
+    // buchwald_hartwig_retro/n_benzylation_retro/michael_retro, confirmed
+    // by direct apply_retro reproduction on a real target with an Ar-CH2
+    // bond inside a saturated ring fused to the aromatic ring
+    // (indane/tetralin-type). negishi_retro used to have a simple-case
+    // test on ethylbenzene (a plain, non-ring-fused benzylic CH2) that
+    // passed cleanly -- removed along with the rule itself, since the
+    // defect only shows up on ring-fused substrates and the rule is
+    // disabled entirely rather than kept for the inputs it handles
+    // correctly, matching this codebase's established policy for this
+    // defect class.
     #[test]
-    fn negishi_retro_on_ethylbenzene() {
-        // negishi_retro SMIRKS [c:1][CH2:2] matches the benzylic CH2 in ethylbenzene,
-        // not the methyl (CH3) in toluene (toluene has 3H on that carbon, not 2H).
-        let mol = mol_from_smiles("CCc1ccccc1").unwrap();
-        let rule = rr("negishi_retro", "[c:1][CH2:2]>>[c:1][Br].[CH3:2]");
-        let results = apply_retro(&mol, &rule);
+    fn negishi_retro_removed_from_default_rules() {
+        let rules = default_rules();
         assert!(
-            !results.is_empty(),
-            "negishi_retro must fire on ethylbenzene (benzylic CH2)"
+            rules.iter().all(|r| r.name != "negishi_retro"),
+            "negishi_retro must not be present in default_rules(): same ring-fused \
+             atom-duplication defect as aryl_amine_retro/buchwald_hartwig_retro/\
+             n_benzylation_retro/michael_retro"
         );
-        let flat: Vec<_> = results
+    }
+
+    #[test]
+    fn negishi_retro_would_corrupt_a_ring_fused_target_if_re_enabled() {
+        let target_smiles = "c1ccc2c(c1)CCC2C(=O)N3CCN(CC3)C(=O)c4ccccc4";
+        let target = mol_from_smiles(target_smiles).unwrap();
+        let rule = rr("negishi_retro", "[c:1][CH2:2]>>[c:1][Br].[CH3:2]");
+        let outcomes = apply_retro(&target, &rule);
+        let outcome_smiles: Vec<Vec<&str>> = outcomes
             .iter()
-            .flat_map(|s| s.iter().map(|p| p.smiles.as_str()))
+            .map(|o| o.iter().map(|p| p.smiles.as_str()).collect())
             .collect();
         assert!(
-            flat.iter().any(|s| s.contains("Br")),
-            "products must include aryl bromide; got {flat:?}"
+            !outcomes.is_empty(),
+            "expected at least one outcome on this real ring-fused (indane-type) target: \
+             {outcome_smiles:?}"
+        );
+        // Correct chemistry for this SMIRKS is atom-conserving except for
+        // one new heavy atom (the appended leaving-group Br). The
+        // confirmed defect's specific signature (verified 2026-08-24
+        // against this exact target: target has 25 heavy atoms, the
+        // broken outcome's precursors sum to 49 -- 23 atoms more than
+        // the chemically correct 26, an ~88% excess well beyond round 1's
+        // ~22-25%) is duplication, same direction and defect class as
+        // n_benzylation_retro/michael_retro (under-constrained LHS + bare
+        // RHS fragment + ring-membership at the cut site) -- consistent
+        // with, but not directly traced to, the same BFS carry-through
+        // path.
+        let target_atoms = target.atom_count();
+        let corrupted = outcomes.iter().any(|o| {
+            let precursor_atoms: usize = o
+                .iter()
+                .map(|p| mol_from_smiles(&p.smiles).unwrap().atom_count())
+                .sum();
+            precursor_atoms > target_atoms + 1
+        });
+        assert!(
+            corrupted,
+            "expected at least one outcome with atom-duplicating ring carry-through (more \
+             heavy atoms across precursors than the target's own count plus one new Br), got \
+             only atom-conserving outcomes -- rule may have been fixed upstream, re-check \
+             whether it's still correctly disabled: {outcome_smiles:?}"
+        );
+    }
+
+    // Same v0.36.0 census flag and defect class as negishi_retro above,
+    // confirmed by direct apply_retro reproduction on a real target with a
+    // tertiary alcohol carbon that's part of a saturated ring fused to an
+    // aromatic ring (a 2-substituted indanol). This SMIRKS's RHS declares
+    // no new atoms (pure cleavage, no leaving-group atom appended), so a
+    // correct outcome's precursors must sum to exactly the target's own
+    // heavy-atom count; the atom-conservation violation here is even
+    // larger in relative terms (~64% excess) than negishi_retro's, and
+    // whether it's the identical BFS path or a related-but-distinct one
+    // wasn't traced -- see the removed-rule comment above for detail.
+    #[test]
+    fn grignard_addition_retro_removed_from_default_rules() {
+        let rules = default_rules();
+        assert!(
+            rules.iter().all(|r| r.name != "grignard_addition_retro"),
+            "grignard_addition_retro must not be present in default_rules(): same ring-fused \
+             atom-duplication defect as negishi_retro/n_benzylation_retro/michael_retro"
+        );
+    }
+
+    #[test]
+    fn grignard_addition_retro_would_corrupt_a_ring_fused_target_if_re_enabled() {
+        let target_smiles = "c1ccc2c(c1)C(C)(O)CC2";
+        let target = mol_from_smiles(target_smiles).unwrap();
+        let rule = rr(
+            "grignard_addition_retro",
+            "[C:1]([OH:2])([C:3])[C:4]>>[C:1](=O)[C:3].[C:4]",
+        );
+        let outcomes = apply_retro(&target, &rule);
+        let outcome_smiles: Vec<Vec<&str>> = outcomes
+            .iter()
+            .map(|o| o.iter().map(|p| p.smiles.as_str()).collect())
+            .collect();
+        assert!(
+            !outcomes.is_empty(),
+            "expected at least one outcome on this real ring-fused (2-substituted indanol) \
+             target: {outcome_smiles:?}"
+        );
+        // Confirmed defect's specific signature (verified 2026-08-24
+        // against this exact target: target has 11 heavy atoms, the
+        // broken outcome's precursors sum to 18 -- 7 atoms more than the
+        // chemically correct 11) is duplication: the atom-matcher bound
+        // the "bare" [C:4] leaving-group slot to a ring-continuation bond
+        // instead of a genuine exocyclic substituent, and cutting it
+        // doesn't actually separate the molecule.
+        let target_atoms = target.atom_count();
+        let corrupted = outcomes.iter().any(|o| {
+            let precursor_atoms: usize = o
+                .iter()
+                .map(|p| mol_from_smiles(&p.smiles).unwrap().atom_count())
+                .sum();
+            precursor_atoms > target_atoms
+        });
+        assert!(
+            corrupted,
+            "expected at least one outcome with atom-duplicating ring carry-through (more \
+             heavy atoms across precursors than the target's own count), got only \
+             atom-conserving outcomes -- rule may have been fixed upstream, re-check whether \
+             it's still correctly disabled: {outcome_smiles:?}"
         );
     }
 
@@ -4400,6 +4572,139 @@ mod tests {
             br_count, 2,
             "corrupted fragment must carry two bromines, not the real product's one: {}",
             precursor_smiles[0]
+        );
+    }
+
+    // v0.36.0 rule-safety census (docs/validation/rule-safety-census-2026-08-24.md):
+    // same bare-single-atom-RHS shape as aryl_amine_retro/
+    // buchwald_hartwig_retro, confirmed by direct apply_retro reproduction
+    // on a real target with a ring N-CH2-Ar bond. Unlike buchwald_hartwig_retro
+    // (which drops a fragment), the broken output here is atom-accounting
+    // wrong: the "bare" [N:1] fragment carries through nearly the whole
+    // molecule via the ring's other path, and the declared Br-CH2-Ar leaving
+    // group ends up holding an extra piece of the ring backbone that was
+    // never a real substituent of it -- total heavy atoms across both
+    // precursors comes out wrong for a bond-cleavage-plus-one-new-Br.
+    #[test]
+    fn n_benzylation_retro_removed_from_default_rules() {
+        let rules = default_rules();
+        assert!(
+            rules.iter().all(|r| r.name != "n_benzylation_retro"),
+            "n_benzylation_retro must not be present in default_rules(): same ring-fused \
+             atom-accounting defect as aryl_amine_retro/buchwald_hartwig_retro"
+        );
+    }
+
+    #[test]
+    fn n_benzylation_retro_would_corrupt_a_ring_fused_target_if_re_enabled() {
+        let target_smiles =
+            "C(CC(NC(=O)C(NC(=O)C(N)Cc4ccccc4)C)Cc3c(F)cc(c(F)c3Cl)F)(=O)N1Cc2n(c(C(F)(F)F)nn2)CC1";
+        let target = mol_from_smiles(target_smiles).unwrap();
+        let rule = rr(
+            "n_benzylation_retro",
+            "[N:1][CH2:2][c:3]>>[N:1].[Br][CH2:2][c:3]",
+        );
+        let outcomes = apply_retro(&target, &rule);
+        let outcome_smiles: Vec<Vec<&str>> = outcomes
+            .iter()
+            .map(|o| o.iter().map(|p| p.smiles.as_str()).collect())
+            .collect();
+        assert!(
+            !outcomes.is_empty(),
+            "expected at least one outcome on this real ring-fused target: {outcome_smiles:?}"
+        );
+        // Correct chemistry for this SMIRKS is atom-conserving except for
+        // one new heavy atom (the appended leaving-group Br): total heavy
+        // atoms across the outcome's precursors should equal the target's
+        // own heavy-atom count plus exactly one. The confirmed defect's
+        // specific signature (verified 2026-08-24 against this exact
+        // target: target has 45 heavy atoms, the broken outcome's two
+        // precursors sum to 56 -- 10 atoms *more* than the chemically
+        // correct 46) is duplication, not loss: the "bare" [N:1]
+        // fragment's carry-through sweeps around the ring the *other*
+        // way and re-collects atoms the declared Br-CH2-Ar fragment
+        // already legitimately claims. A dropped-fragment defect (the
+        // buchwald_hartwig_retro shape) would show as too *few* atoms
+        // instead; asserting a strict excess pins this to the specific
+        // duplication mechanism rather than any atom-count mismatch.
+        let target_atoms = target.atom_count();
+        let corrupted = outcomes.iter().any(|o| {
+            let precursor_atoms: usize = o
+                .iter()
+                .map(|p| mol_from_smiles(&p.smiles).unwrap().atom_count())
+                .sum();
+            precursor_atoms > target_atoms + 1
+        });
+        assert!(
+            corrupted,
+            "expected at least one outcome with atom-duplicating ring carry-through (more \
+             heavy atoms across precursors than the target's own count plus one new Br), got \
+             only atom-conserving outcomes -- rule may have been fixed upstream, re-check \
+             whether it's still correctly disabled: {outcome_smiles:?}"
+        );
+    }
+
+    // Same v0.36.0 census flag and mechanism as n_benzylation_retro above,
+    // confirmed by direct apply_retro reproduction on a real target with a
+    // ring C-CH2-C=O bond (a glutarimide). This SMIRKS's RHS declares no
+    // new atoms (pure cleavage + tautomerization), so a correct outcome's
+    // precursors must have exactly the target's own heavy-atom count; the
+    // ring carry-through defect breaks that conservation.
+    #[test]
+    fn michael_retro_removed_from_default_rules() {
+        let rules = default_rules();
+        assert!(
+            rules.iter().all(|r| r.name != "michael_retro"),
+            "michael_retro must not be present in default_rules(): same ring-fused \
+             atom-accounting defect as aryl_amine_retro/buchwald_hartwig_retro"
+        );
+    }
+
+    #[test]
+    fn michael_retro_would_corrupt_a_ring_fused_target_if_re_enabled() {
+        let target_smiles = "C(=O)N1C(=O)CC(N2C(C)c3c(c(C#N)cc(F)c3)C2=O)CC1=O";
+        let target = mol_from_smiles(target_smiles).unwrap();
+        let rule = rr(
+            "michael_retro",
+            "[C:1][CH2:2][C:3]=[O:4]>>[C:1].[CH2:2]=[C:3][OH:4]",
+        );
+        let outcomes = apply_retro(&target, &rule);
+        let outcome_smiles: Vec<Vec<&str>> = outcomes
+            .iter()
+            .map(|o| o.iter().map(|p| p.smiles.as_str()).collect())
+            .collect();
+        assert!(
+            !outcomes.is_empty(),
+            "expected at least one outcome on this real ring-fused (glutarimide) target: \
+             {outcome_smiles:?}"
+        );
+        // This SMIRKS's RHS declares no new atoms (pure cleavage +
+        // tautomerization), so a correct outcome's precursors must sum to
+        // exactly the target's own heavy-atom count. The confirmed
+        // defect's specific signature (verified 2026-08-24 against this
+        // exact target: target has 24 heavy atoms, both broken outcomes'
+        // precursors sum to 30 -- 6 atoms *more* than the correct 24) is
+        // duplication, same direction and same defect class as
+        // n_benzylation_retro above (similar magnitude too: both ~25%
+        // excess): the "bare" [C:1] fragment's carry-through sweeps
+        // around the ring the other way and re-collects atoms the
+        // declared enol fragment already claims. Asserting a strict
+        // excess (not just any mismatch) pins this to that duplication
+        // direction, though the exact BFS path wasn't traced atom-by-atom.
+        let target_atoms = target.atom_count();
+        let corrupted = outcomes.iter().any(|o| {
+            let precursor_atoms: usize = o
+                .iter()
+                .map(|p| mol_from_smiles(&p.smiles).unwrap().atom_count())
+                .sum();
+            precursor_atoms > target_atoms
+        });
+        assert!(
+            corrupted,
+            "expected at least one outcome with atom-duplicating ring carry-through (more \
+             heavy atoms across precursors than the target's own count), got only \
+             atom-conserving outcomes -- rule may have been fixed upstream, re-check whether \
+             it's still correctly disabled: {outcome_smiles:?}"
         );
     }
 

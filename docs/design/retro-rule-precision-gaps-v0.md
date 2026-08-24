@@ -263,9 +263,10 @@ route 2 (rule:ester_cleavage,        empty smirks): forward_validation: {status:
 
 **Every graph-based default rule (empty `smirks`, dispatched by name in
 `apply_retro`) hits this same wall — not just `ester_cleavage`.**
-Counted directly against `default_rules()`: **8 of 26 hand-crafted rules
-(~31%, was 27 before `buchwald_hartwig_retro`'s later removal -- issue
-#77)** are graph-based today: `ester_cleavage`, `amide_cleavage`,
+Counted directly against `default_rules()`: **8 of 22 hand-crafted rules
+(~36%, was 26 before `n_benzylation_retro`'s, `michael_retro`'s,
+`negishi_retro`'s, and `grignard_addition_retro`'s later removal --
+v0.36.0 rule-safety census)** are graph-based today: `ester_cleavage`, `amide_cleavage`,
 `aryl_ether_retro` (as of this doc's #1 fix), `suzuki_retro` (as of #2),
 `sulfonamide_retro`, `diaryl_sulfone_retro`, `boc_deprotection_retro`,
 `cbz_deprotection_retro`. Any route whose winning disconnection used one

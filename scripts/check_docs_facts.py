@@ -28,6 +28,8 @@ STALE_FIGURES = [
     (re.compile(r"\b31\s*(hand[- ]?crafted|handcrafted|built-in)\s*rules?", re.IGNORECASE), "31 hand-crafted rules"),
     (re.compile(r"\b28\s*(hand[- ]?crafted|handcrafted|built-in)\s*rules?", re.IGNORECASE), "28 hand-crafted rules"),
     (re.compile(r"\b27\s*(hand[- ]?crafted|handcrafted|built-in)\s*rules?", re.IGNORECASE), "27 hand-crafted rules"),
+    (re.compile(r"\b26\s*(hand[- ]?crafted|handcrafted|built-in)\s*rules?", re.IGNORECASE), "26 hand-crafted rules"),
+    (re.compile(r"\b24\s*(hand[- ]?crafted|handcrafted|built-in)\s*rules?", re.IGNORECASE), "24 hand-crafted rules"),
     (re.compile(r"\b509\s*(building block|BB)", re.IGNORECASE), "509 building blocks"),
     (re.compile(r"78\.0%"), "78.0%"),
     (re.compile(r"95\.9%"), "95.9%"),

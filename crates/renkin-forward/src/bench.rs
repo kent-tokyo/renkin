@@ -2694,8 +2694,13 @@ not json at all
             has_stereochemistry: true,
         };
 
+        // This exact rank is sensitive to default_rules()'s composition
+        // (candidate generation order shifts whenever a rule is added or
+        // removed) -- was 6 before v0.36.0's negishi_retro/
+        // grignard_addition_retro removal dropped it to 4. Re-derive, don't
+        // guess, if this fails after a future rule-set change.
         let row = compute_row(&reaction, &rules, &provenance).unwrap();
-        assert_eq!(row.best_correct_rank, Some(6));
+        assert_eq!(row.best_correct_rank, Some(4));
 
         // The actual invariant this test protects: feeding the canonical
         // (pre-sorted) rewrite instead of the original text must give a

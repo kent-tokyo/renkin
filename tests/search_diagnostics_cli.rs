@@ -198,3 +198,154 @@ fn candidate_trace_limit_missing_value_is_hard_error() {
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+// ── --spectator-bond-policy (docs/design/spectator-bond-fail-closed-gating-v0.md) ──
+
+/// A single-line templates file carrying the exact extracted_824 positive
+/// control (Finding #4 / PR #186's own fixture): an oxazolidinone ring
+/// whose C1-C5 ring-closing bond isn't declared by either the LHS or any
+/// RHS fragment. `load_rules_from_file`'s two-column format is
+/// `SMIRKS\tcount`; the loader assigns its own name/template_id, so the
+/// finding is attributed to whatever it picks (checked by SMIRKS-derived
+/// case/lost_bonds shape below, not by a hardcoded rule name).
+fn write_extracted_824_templates_file() -> std::path::PathBuf {
+    // Keyed by test name, not just PID: cargo's default test harness runs
+    // every #[test] fn on its own thread within one process, so a
+    // PID-only path collides across the concurrently-running tests in
+    // this file (one test's cleanup racing another's still-in-flight
+    // read) -- confirmed empirically, not assumed.
+    let test_name = std::thread::current()
+        .name()
+        .unwrap_or("unknown")
+        .replace("::", "_");
+    let path = std::env::temp_dir().join(format!(
+        "renkin_spectator_bond_cli_test_{}_{test_name}.smi",
+        std::process::id()
+    ));
+    std::fs::write(
+        &path,
+        "[C:5]-[O:6]-[C:3](=[O:4])-[NH:2]-[C:1]>>[C:1]-[N:2]=[C:3]=[O:4].[C:5]-[OH:6]\t824\n",
+    )
+    .unwrap();
+    path
+}
+
+const OXAZOLIDINONE_TARGET: &str = "O=C2NCC(O2)Cc1ccccc1";
+
+#[test]
+fn spectator_bond_policy_defaults_to_off() {
+    let templates = write_extracted_824_templates_file();
+    let v = run(&[
+        "--target",
+        OXAZOLIDINONE_TARGET,
+        "--depth",
+        "1",
+        "--templates",
+        templates.to_str().unwrap(),
+        "--search-diagnostics",
+    ]);
+    std::fs::remove_file(&templates).ok();
+    let sd = v.get("search_diagnostics").expect("flag was passed");
+    assert_eq!(
+        sd["spectator_bond_loss_findings"].as_array().unwrap().len(),
+        0,
+        "policy Off must never run the detectors, even against a rule/target pair that would \
+         flag if enabled: {sd}"
+    );
+    assert_eq!(sd["spectator_bond_gated_out"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn spectator_bond_policy_diagnostics_only_finds_but_never_excludes() {
+    let templates = write_extracted_824_templates_file();
+    let v = run(&[
+        "--target",
+        OXAZOLIDINONE_TARGET,
+        "--depth",
+        "1",
+        "--templates",
+        templates.to_str().unwrap(),
+        "--spectator-bond-policy",
+        "diagnostics-only",
+        "--search-diagnostics",
+    ]);
+    std::fs::remove_file(&templates).ok();
+    let sd = v.get("search_diagnostics").expect("flag was passed");
+    let findings = sd["spectator_bond_loss_findings"].as_array().unwrap();
+    assert_eq!(
+        findings.len(),
+        1,
+        "the real extracted_824 defect must be detected through the CLI's own wiring, not just \
+         library internals: {sd}"
+    );
+    assert_eq!(findings[0]["case"], "matched_pair_undeclared");
+    assert_eq!(
+        sd["spectator_bond_gated_out"].as_array().unwrap().len(),
+        0,
+        "diagnostics-only must never exclude a candidate"
+    );
+}
+
+#[test]
+fn spectator_bond_policy_gated_excludes_the_known_defect() {
+    let templates = write_extracted_824_templates_file();
+    let v = run(&[
+        "--target",
+        OXAZOLIDINONE_TARGET,
+        "--depth",
+        "1",
+        "--templates",
+        templates.to_str().unwrap(),
+        "--spectator-bond-policy",
+        "gated",
+        "--search-diagnostics",
+    ]);
+    std::fs::remove_file(&templates).ok();
+    let sd = v.get("search_diagnostics").expect("flag was passed");
+    // Policy changes the verdict, never the finding set -- still recorded.
+    assert_eq!(
+        sd["spectator_bond_loss_findings"].as_array().unwrap().len(),
+        1
+    );
+    let gated_out = sd["spectator_bond_gated_out"].as_array().unwrap();
+    assert_eq!(
+        gated_out.len(),
+        1,
+        "the known-defective candidate must be excluded under Gated: {sd}"
+    );
+    assert!(!gated_out[0]["findings"].as_array().unwrap().is_empty());
+    assert!(
+        !gated_out[0]["precursor_smiles"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn spectator_bond_policy_invalid_value_is_hard_error() {
+    let out = std::process::Command::new(bin())
+        .args(["--target", "CCO", "--spectator-bond-policy", "bogus"])
+        .output()
+        .expect("failed to spawn renkin");
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("--spectator-bond-policy"),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn spectator_bond_policy_missing_value_is_hard_error() {
+    let out = std::process::Command::new(bin())
+        .args(["--target", "CCO", "--spectator-bond-policy"])
+        .output()
+        .expect("failed to spawn renkin");
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("--spectator-bond-policy"),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}

@@ -158,6 +158,7 @@ fn main() -> Result<()> {
     let mut scorer_path: Option<String> = None;
     let mut ring_context_policy_arg: Option<String> = None;
     let mut ring_context_sidecar_path: Option<String> = None;
+    let mut spectator_bond_policy_arg: Option<String> = None;
     let mut reranker_model_path: Option<String> = None;
     let mut reranker_freq_table_path: Option<String> = None;
     let mut search_mode_arg: Option<String> = None;
@@ -274,6 +275,13 @@ fn main() -> Result<()> {
                 };
                 ring_context_sidecar_path = Some(v.clone());
             }
+            "--spectator-bond-policy" => {
+                i += 1;
+                let Some(v) = args.get(i) else {
+                    bail!("--spectator-bond-policy requires a value (off|diagnostics-only|gated)");
+                };
+                spectator_bond_policy_arg = Some(v.clone());
+            }
             "--reranker-model" => {
                 i += 1;
                 let Some(v) = args.get(i) else {
@@ -373,6 +381,13 @@ fn main() -> Result<()> {
              ring-only | element-only\n  \
              --ring-context-sidecar <path>   Ring-context metadata JSON, required unless policy \
              is disabled\n  \
+             --spectator-bond-policy <policy>  off (default) | diagnostics-only | gated -- \
+             detects a real target bond a retro-rule's own SMIRKS never declares broken but \
+             chematic silently drops from precursors (docs/design/spectator-bond-fail-closed-\
+             gating-v0.md). diagnostics-only records findings in --search-diagnostics output \
+             only; gated additionally excludes the specific candidate a confident finding \
+             applies to (v1: rules with no '#' in their SMIRKS only -- others stay \
+             diagnostics-only regardless of this flag)\n  \
              --reranker-model <path>       Frozen LightGBM model.txt for candidate reranking \
              (Issue #101 Task 35); ordering-only, requires --reranker-freq-table too\n  \
              --reranker-freq-table <path>  TRAIN-frozen template frequency_table.json for the \
@@ -578,6 +593,19 @@ fn main() -> Result<()> {
         }
     };
 
+    let spectator_bond_policy = match spectator_bond_policy_arg.as_deref() {
+        None | Some("off") => renkin::spectator_bond::SpectatorBondPolicy::Off,
+        Some("diagnostics-only") => renkin::spectator_bond::SpectatorBondPolicy::DiagnosticsOnly,
+        Some("gated") => renkin::spectator_bond::SpectatorBondPolicy::Gated,
+        Some(other) => {
+            eprintln!(
+                "error: invalid --spectator-bond-policy '{other}' \
+                 (expected off|diagnostics-only|gated)"
+            );
+            std::process::exit(1);
+        }
+    };
+
     let constraints: ConstraintSpec = constraints_path
         .as_deref()
         .and_then(|p| std::fs::read_to_string(p).ok())
@@ -621,6 +649,7 @@ fn main() -> Result<()> {
         ring_context: ring_context_config,
         candidate_trace_cap: candidate_trace_limit,
         reranker,
+        spectator_bond_policy,
         ..Default::default()
     };
 

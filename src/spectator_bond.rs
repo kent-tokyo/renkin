@@ -67,10 +67,11 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use chematic::core::{AtomIdx, BondOrder};
-use chematic::rxn::find_reaction_matches;
+use chematic::rxn::{ReactionMatch, apply_reaction_match, find_reaction_matches};
+use rustc_hash::FxHashMap;
 use serde::Serialize;
 
-use crate::chem_env::{Molecule, RetroRule, mol_from_smiles};
+use crate::chem_env::{Molecule, RetroRule, mol_from_smiles, split_fragments};
 
 /// Which of the two mechanisms a [`SpectatorBondLossFinding`] was detected
 /// under -- kept on the finding itself (not just implied by which detector
@@ -131,6 +132,41 @@ pub struct SpectatorBondLossFinding {
     pub evidence: String,
 }
 
+/// How much SpectatorBondLoss work `raw_propose` does for one search or
+/// candidate-generation call. Replaces the earlier plain
+/// `spectator_bond_diagnostics: bool` field -- pre-release only, no
+/// published crate version ever shipped that field, so this is a free
+/// rename, not a breaking change. Mirrors `bridge::audit::AuditPolicy`'s
+/// "policy changes only the verdict, never the finding set" separation:
+/// `Gated` runs exactly the same detection `DiagnosticsOnly` does, it just
+/// additionally acts on the findings [`gate_candidates`] resolves with
+/// confidence.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SpectatorBondPolicy {
+    /// No detection at all -- zero cost, matches the pre-v0.35 absent
+    /// behavior.
+    #[default]
+    Off,
+    /// Detect and record findings; never excludes a candidate.
+    DiagnosticsOnly,
+    /// Detect, record, and additionally reject candidates [`gate_candidates`]
+    /// resolves with confidence (v1 scope: `#`-free rules only -- see
+    /// `docs/design/spectator-bond-fail-closed-gating-v0.md` §2).
+    Gated,
+}
+
+/// One candidate `raw_propose` excluded under [`SpectatorBondPolicy::Gated`]
+/// -- the diagnostic trail an exclusion leaves behind even though the
+/// candidate itself no longer appears in the returned proposal list.
+#[derive(Debug, Clone, Serialize)]
+pub struct GatedCandidateRecord {
+    pub rule_name: String,
+    pub template_id: String,
+    pub precursor_smiles: Vec<String>,
+    pub findings: Vec<SpectatorBondLossFinding>,
+}
+
 /// Map-number pairs (unordered, smaller-first) with a declared bond
 /// somewhere in `pattern`'s own structure. `pattern` is either a retro
 /// rule's LHS or one `.`-split RHS fragment. Both parse as plain
@@ -141,11 +177,17 @@ pub struct SpectatorBondLossFinding {
 /// literal bond graph. An atom with no map number can never contribute a
 /// pair here by construction (only mapped atoms are ever looked up against
 /// this set in [`detect_case_a`]).
-fn declared_map_pairs(pattern: &str) -> HashSet<(u16, u16)> {
+///
+/// `None` means `pattern` failed to parse -- distinct from "parsed fine
+/// and declares nothing." Diagnostics-only callers ([`detect_case_a`])
+/// treat the two the same (`unwrap_or_default`, matching this function's
+/// pre-existing behavior). [`gate_candidates`] does not: an unparseable
+/// fragment can only make the declared set too *small*, which risks
+/// misclassifying a real declared bond as spectator loss -- a false
+/// reject, not a false negative -- so gating must know the difference.
+fn declared_map_pairs(pattern: &str) -> Option<HashSet<(u16, u16)>> {
+    let mol = mol_from_smiles(pattern.trim()).ok()?;
     let mut pairs = HashSet::new();
-    let Ok(mol) = mol_from_smiles(pattern.trim()) else {
-        return pairs;
-    };
     for (_, bond) in mol.bonds() {
         let a = mol.atom(bond.atom1).atom_map;
         let b = mol.atom(bond.atom2).atom_map;
@@ -153,7 +195,41 @@ fn declared_map_pairs(pattern: &str) -> HashSet<(u16, u16)> {
             pairs.insert(if a < b { (a, b) } else { (b, a) });
         }
     }
-    pairs
+    Some(pairs)
+}
+
+/// Case A lost bonds for one already-resolved match, with no cross-match
+/// dedup -- [`detect_case_a`] (aggregating over every match) does its own
+/// dedup on top of this; [`gate_candidates`] (evaluating one match at a
+/// time) uses it as-is. Shared so the two can never define "lost bond"
+/// differently.
+fn case_a_lost_bonds_for_match(
+    target: &Molecule,
+    declared: &HashSet<(u16, u16)>,
+    positions: &FxHashMap<u16, (usize, AtomIdx)>,
+) -> Vec<LostBond> {
+    let map_numbers: Vec<u16> = positions.keys().copied().collect();
+    let mut lost_bonds = Vec::new();
+    for i in 0..map_numbers.len() {
+        for j in (i + 1)..map_numbers.len() {
+            let (mi, mj) = (map_numbers[i], map_numbers[j]);
+            let key = if mi < mj { (mi, mj) } else { (mj, mi) };
+            if declared.contains(&key) {
+                continue;
+            }
+            let (_, ai) = positions[&mi];
+            let (_, aj) = positions[&mj];
+            let Some((_, bond)) = target.bond_between(ai, aj) else {
+                continue;
+            };
+            lost_bonds.push(LostBond {
+                source_atom_a: ai.0,
+                source_atom_b: aj.0,
+                bond_order: bond_order_label(bond.order),
+            });
+        }
+    }
+    lost_bonds
 }
 
 /// Case A detector -- see this module's own doc comment for the mechanism.
@@ -169,9 +245,9 @@ pub fn detect_case_a(target: &Molecule, rule: &RetroRule) -> Vec<SpectatorBondLo
     let Some((lhs, rhs)) = rule.smirks.split_once(">>") else {
         return Vec::new();
     };
-    let mut declared = declared_map_pairs(lhs);
+    let mut declared = declared_map_pairs(lhs).unwrap_or_default();
     for fragment in rhs.split('.') {
-        declared.extend(declared_map_pairs(fragment));
+        declared.extend(declared_map_pairs(fragment).unwrap_or_default());
     }
 
     let Ok(matches) = find_reaction_matches(&rule.smirks, &[target]) else {
@@ -184,29 +260,14 @@ pub fn detect_case_a(target: &Molecule, rule: &RetroRule) -> Vec<SpectatorBondLo
         let Ok(positions) = m.atom_map_positions(&rule.smirks) else {
             continue;
         };
-        let map_numbers: Vec<u16> = positions.keys().copied().collect();
         let mut lost_bonds = Vec::new();
-        for i in 0..map_numbers.len() {
-            for j in (i + 1)..map_numbers.len() {
-                let (mi, mj) = (map_numbers[i], map_numbers[j]);
-                let key = if mi < mj { (mi, mj) } else { (mj, mi) };
-                if declared.contains(&key) {
-                    continue;
-                }
-                let (_, ai) = positions[&mi];
-                let (_, aj) = positions[&mj];
-                let Some((_, bond)) = target.bond_between(ai, aj) else {
-                    continue;
-                };
-                let bond_key = (ai.0.min(aj.0), ai.0.max(aj.0));
-                if !seen_bonds.insert(bond_key) {
-                    continue;
-                }
-                lost_bonds.push(LostBond {
-                    source_atom_a: ai.0,
-                    source_atom_b: aj.0,
-                    bond_order: bond_order_label(bond.order),
-                });
+        for bond in case_a_lost_bonds_for_match(target, &declared, &positions) {
+            let bond_key = (
+                bond.source_atom_a.min(bond.source_atom_b),
+                bond.source_atom_a.max(bond.source_atom_b),
+            );
+            if seen_bonds.insert(bond_key) {
+                lost_bonds.push(bond);
             }
         }
         if !lost_bonds.is_empty() {
@@ -261,17 +322,7 @@ pub fn detect_case_b(target: &Molecule, rule: &RetroRule) -> Vec<SpectatorBondLo
         return Vec::new(); // one product -- no "different product" to cross into
     }
 
-    let mut owner: HashMap<u16, usize> = HashMap::new();
-    for (k, frag) in fragments.iter().enumerate() {
-        let Ok(mol) = mol_from_smiles(frag) else {
-            continue;
-        };
-        for (_, atom) in mol.atoms() {
-            if let Some(m) = atom.atom_map {
-                owner.insert(m, k);
-            }
-        }
-    }
+    let owner = rhs_fragment_owner_map(&fragments);
 
     let Ok(matches) = find_reaction_matches(&rule.smirks, &[target]) else {
         return Vec::new();
@@ -282,61 +333,99 @@ pub fn detect_case_b(target: &Molecule, rule: &RetroRule) -> Vec<SpectatorBondLo
         let Ok(positions) = m.atom_map_positions(&rule.smirks) else {
             continue;
         };
-        let all_matched: HashSet<AtomIdx> = positions.values().map(|&(_, a)| a).collect();
-        let map_numbers: Vec<u16> = positions.keys().copied().collect();
-        let mut checked_pairs: HashSet<(u16, u16)> = HashSet::new();
-
-        for i in 0..map_numbers.len() {
-            for j in (i + 1)..map_numbers.len() {
-                let (mi, mj) = (map_numbers[i], map_numbers[j]);
-                let (Some(&owner_i), Some(&owner_j)) = (owner.get(&mi), owner.get(&mj)) else {
-                    continue; // map number never appears on the RHS at all
-                };
-                if owner_i == owner_j {
-                    continue; // same product fragment -- not this detector's scope
-                }
-                let key = if mi < mj { (mi, mj) } else { (mj, mi) };
-                if !checked_pairs.insert(key) {
-                    continue;
-                }
-                let (_, a) = positions[&mi];
-                let (_, b) = positions[&mj];
-                if target.bond_between(a, b).is_some() {
-                    continue; // direct bond -- detect_case_a's territory
-                }
-                let Some(path) = unmatched_only_path(target, a, b, &all_matched) else {
-                    continue;
-                };
-                let lost_bonds: Vec<LostBond> = path
-                    .windows(2)
-                    .filter_map(|w| {
-                        target.bond_between(w[0], w[1]).map(|(_, bond)| LostBond {
-                            source_atom_a: w[0].0,
-                            source_atom_b: w[1].0,
-                            bond_order: bond_order_label(bond.order),
-                        })
-                    })
-                    .collect();
-                if lost_bonds.is_empty() {
-                    continue;
-                }
-                findings.push(SpectatorBondLossFinding {
-                    template_id: rule.template_id.clone(),
-                    rule_name: rule.name.clone(),
-                    case: SpectatorBondLossCase::CrossProductTerritory,
-                    evidence: format!(
-                        "matched atoms {mi} and {mj} (declared by different RHS product \
-                         fragments in {}) are connected in the target only through unmatched \
-                         atoms -- chematic assembles each product fragment as a separate \
-                         molecule, so this chain can never survive intact in either output",
-                        rule.name
-                    ),
-                    lost_bonds,
-                });
-            }
+        for (mi, mj, lost_bonds) in case_b_lost_bond_chains_for_match(target, &owner, &positions) {
+            findings.push(SpectatorBondLossFinding {
+                template_id: rule.template_id.clone(),
+                rule_name: rule.name.clone(),
+                case: SpectatorBondLossCase::CrossProductTerritory,
+                evidence: format!(
+                    "matched atoms {mi} and {mj} (declared by different RHS product \
+                     fragments in {}) are connected in the target only through unmatched \
+                     atoms -- chematic assembles each product fragment as a separate \
+                     molecule, so this chain can never survive intact in either output",
+                    rule.name
+                ),
+                lost_bonds,
+            });
         }
     }
     findings
+}
+
+/// `atom_map` number -> which `.`-split RHS fragment (by index) declares
+/// it. A fragment that fails to parse simply contributes no entries (same
+/// "fail open" behavior this had inline in [`detect_case_b`] before this
+/// was extracted) -- unlike [`declared_map_pairs`]'s failure mode, an
+/// under-populated `owner` map can only make [`detect_case_b`] miss a real
+/// cross-fragment pair, never flag a false one, so it carries no gating
+/// risk worth a `not_evaluable` guard of its own.
+fn rhs_fragment_owner_map(fragments: &[&str]) -> HashMap<u16, usize> {
+    let mut owner = HashMap::new();
+    for (k, frag) in fragments.iter().enumerate() {
+        let Ok(mol) = mol_from_smiles(frag) else {
+            continue;
+        };
+        for (_, atom) in mol.atoms() {
+            if let Some(m) = atom.atom_map {
+                owner.insert(m, k);
+            }
+        }
+    }
+    owner
+}
+
+/// Case B lost-bond chains for one already-resolved match: one
+/// `(map_a, map_b, chain)` entry per cross-product-fragment matched-atom
+/// pair connected only through unmatched atoms (mirrors [`detect_case_b`]'s
+/// existing one-finding-per-pair granularity). Shared so `detect_case_b`
+/// and [`gate_candidates`] can never define "lost chain" differently.
+fn case_b_lost_bond_chains_for_match(
+    target: &Molecule,
+    owner: &HashMap<u16, usize>,
+    positions: &FxHashMap<u16, (usize, AtomIdx)>,
+) -> Vec<(u16, u16, Vec<LostBond>)> {
+    let all_matched: HashSet<AtomIdx> = positions.values().map(|&(_, a)| a).collect();
+    let map_numbers: Vec<u16> = positions.keys().copied().collect();
+    let mut checked_pairs: HashSet<(u16, u16)> = HashSet::new();
+    let mut chains = Vec::new();
+
+    for i in 0..map_numbers.len() {
+        for j in (i + 1)..map_numbers.len() {
+            let (mi, mj) = (map_numbers[i], map_numbers[j]);
+            let (Some(&owner_i), Some(&owner_j)) = (owner.get(&mi), owner.get(&mj)) else {
+                continue; // map number never appears on the RHS at all
+            };
+            if owner_i == owner_j {
+                continue; // same product fragment -- not this detector's scope
+            }
+            let key = if mi < mj { (mi, mj) } else { (mj, mi) };
+            if !checked_pairs.insert(key) {
+                continue;
+            }
+            let (_, a) = positions[&mi];
+            let (_, b) = positions[&mj];
+            if target.bond_between(a, b).is_some() {
+                continue; // direct bond -- detect_case_a's territory
+            }
+            let Some(path) = unmatched_only_path(target, a, b, &all_matched) else {
+                continue;
+            };
+            let lost_bonds: Vec<LostBond> = path
+                .windows(2)
+                .filter_map(|w| {
+                    target.bond_between(w[0], w[1]).map(|(_, bond)| LostBond {
+                        source_atom_a: w[0].0,
+                        source_atom_b: w[1].0,
+                        bond_order: bond_order_label(bond.order),
+                    })
+                })
+                .collect();
+            if !lost_bonds.is_empty() {
+                chains.push((mi, mj, lost_bonds));
+            }
+        }
+    }
+    chains
 }
 
 /// Shortest real-target path from `start` to `end`, refusing to route
@@ -375,6 +464,197 @@ fn unmatched_only_path(
     None
 }
 
+/// Fail-closed gating verdict for one already-generated candidate.
+/// Deliberately identified only by the candidate's own canonical
+/// precursor-SMILES signature (see [`gate_candidates`]) rather than by a
+/// `crate::candidate::RawCandidate` reference -- keeps this module
+/// decoupled from candidate-generation's own types and testable in
+/// isolation. See `docs/design/spectator-bond-fail-closed-gating-v0.md`
+/// for the full design.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum SpectatorBondGateVerdict {
+    Accepted,
+    Rejected {
+        findings: Vec<SpectatorBondLossFinding>,
+    },
+    NotEvaluable {
+        reason: &'static str,
+    },
+}
+
+/// Fail-closed gating for one rule's already-generated candidates.
+/// `candidate_signatures[i]` is candidate `i`'s own sorted, canonical
+/// precursor-SMILES multiset (exactly what `RawCandidate.precursors`
+/// already carries) -- returns one verdict per entry, same order.
+///
+/// v1 scope (`docs/design/spectator-bond-fail-closed-gating-v0.md` §2/§3):
+/// only rules with no `#` in `rule.smirks` are ever evaluated with
+/// confidence -- a `[#N]`-bearing rule applies concrete-element *variant*
+/// strings in `apply_retro`, not this literal `rule.smirks`, so the replay
+/// this function relies on wouldn't correspond to what was actually
+/// applied. A rule whose LHS or any RHS fragment fails to parse is also
+/// never evaluated with confidence, since `detect_case_a`'s "declared"
+/// set would be too small, not too large -- that risks a false reject,
+/// never a false accept. Both cases return `NotEvaluable` for every one
+/// of the rule's candidates, never a silent `Accepted`.
+pub fn gate_candidates(
+    target: &Molecule,
+    rule: &RetroRule,
+    candidate_signatures: &[Vec<String>],
+) -> Vec<SpectatorBondGateVerdict> {
+    let accept_all = || vec![SpectatorBondGateVerdict::Accepted; candidate_signatures.len()];
+    let not_evaluable_all = |reason: &'static str| {
+        vec![SpectatorBondGateVerdict::NotEvaluable { reason }; candidate_signatures.len()]
+    };
+
+    if rule.smirks.is_empty() {
+        return accept_all(); // graph-based rule -- nothing to analyze
+    }
+    if rule.smirks.contains('#') {
+        return not_evaluable_all("hash_atom_wildcard_rule");
+    }
+    let Some((lhs, rhs)) = rule.smirks.split_once(">>") else {
+        return accept_all();
+    };
+    let Some(mut declared) = declared_map_pairs(lhs) else {
+        return not_evaluable_all("unparseable_declared_bonds");
+    };
+    for fragment in rhs.split('.') {
+        let Some(frag_pairs) = declared_map_pairs(fragment) else {
+            return not_evaluable_all("unparseable_declared_bonds");
+        };
+        declared.extend(frag_pairs);
+    }
+
+    let fragments: Vec<&str> = rhs.split('.').map(str::trim).collect();
+    let owner = rhs_fragment_owner_map(&fragments);
+
+    let Ok(matches) = find_reaction_matches(&rule.smirks, &[target]) else {
+        return accept_all();
+    };
+
+    // Candidate signature -> one findings-list per match that replayed to
+    // that exact signature (usually exactly one match; a symmetric target
+    // can have several matches collapse onto the same product set).
+    let mut by_signature: HashMap<Vec<String>, Vec<Vec<SpectatorBondLossFinding>>> = HashMap::new();
+    for m in &matches {
+        let Some(signature) = replay_match_signature(&rule.smirks, target, m) else {
+            continue; // valence-rejected or replay failed -- matches run_reactants' own filter
+        };
+        let Ok(positions) = m.atom_map_positions(&rule.smirks) else {
+            continue;
+        };
+        let mut findings = Vec::new();
+        let case_a = case_a_lost_bonds_for_match(target, &declared, &positions);
+        if !case_a.is_empty() {
+            findings.push(build_finding(
+                rule,
+                SpectatorBondLossCase::MatchedPairUndeclared,
+                case_a,
+            ));
+        }
+        for (_, _, lost_bonds) in case_b_lost_bond_chains_for_match(target, &owner, &positions) {
+            findings.push(build_finding(
+                rule,
+                SpectatorBondLossCase::CrossProductTerritory,
+                lost_bonds,
+            ));
+        }
+        by_signature.entry(signature).or_default().push(findings);
+    }
+
+    candidate_signatures
+        .iter()
+        .map(|sig| match by_signature.get(sig) {
+            // No replayed match produced this exact candidate -- e.g. a
+            // ring-context-guarded outcome this replay (deliberately
+            // independent of that pipeline) can't reproduce. Never treated
+            // as a clean pass: it's a correlation gap, not a clean bill of
+            // health.
+            None => SpectatorBondGateVerdict::NotEvaluable {
+                reason: "match_correlation_failed",
+            },
+            Some(per_match) => {
+                let defective: Vec<&Vec<SpectatorBondLossFinding>> =
+                    per_match.iter().filter(|f| !f.is_empty()).collect();
+                let clean_count = per_match.len() - defective.len();
+                if !defective.is_empty() && clean_count > 0 {
+                    // Same signature reached by both a defective and a
+                    // clean match -- can't tell which one this candidate
+                    // really is, so don't guess either way.
+                    SpectatorBondGateVerdict::NotEvaluable {
+                        reason: "ambiguous_signature",
+                    }
+                } else if let Some(first_defective) = defective.first() {
+                    SpectatorBondGateVerdict::Rejected {
+                        findings: (*first_defective).clone(),
+                    }
+                } else {
+                    SpectatorBondGateVerdict::Accepted
+                }
+            }
+        })
+        .collect()
+}
+
+/// One match's own product set, replayed independently of whatever
+/// `apply_retro`/`apply_retro_with_policy` actually produced. For `#`-free
+/// rules this reproduces `run_reactants`'s own output for this exact
+/// match, byte-for-byte: chematic-rxn 0.16.0's own `run_reactants_impl` is
+/// literally `find_matches_impl` (what `find_reaction_matches` calls)
+/// followed by `apply_match_impl` per match (what `apply_reaction_match`
+/// calls) -- not a parallel reimplementation that could drift, confirmed
+/// by reading `transform.rs` directly. `None` on a valence-rejected match
+/// (mirrors `run_reactants`'s own `filter_map`) or a genuine replay error.
+fn replay_match_signature(
+    smirks: &str,
+    target: &Molecule,
+    m: &ReactionMatch,
+) -> Option<Vec<String>> {
+    let products = apply_reaction_match(smirks, &[target], m, true).ok()??;
+    let mut signature: Vec<String> = products
+        .iter()
+        .flat_map(split_fragments)
+        .map(|p| p.smiles)
+        .collect();
+    signature.sort_unstable();
+    Some(signature)
+}
+
+/// Wraps a raw lost-bond list into a typed finding with the same evidence
+/// phrasing `detect_case_a`/`detect_case_b` use, so a `Rejected` verdict's
+/// findings read identically whether they came from those aggregate
+/// detectors or from this per-match gating path.
+fn build_finding(
+    rule: &RetroRule,
+    case: SpectatorBondLossCase,
+    lost_bonds: Vec<LostBond>,
+) -> SpectatorBondLossFinding {
+    let evidence = match case {
+        SpectatorBondLossCase::MatchedPairUndeclared => format!(
+            "{} bond(s) between matched atoms exist in the target but are declared broken by \
+             neither {}'s LHS nor any RHS fragment",
+            lost_bonds.len(),
+            rule.name
+        ),
+        SpectatorBondLossCase::CrossProductTerritory => format!(
+            "matched atoms (declared by different RHS product fragments in {}) are connected \
+             in the target only through unmatched atoms -- chematic assembles each product \
+             fragment as a separate molecule, so this chain can never survive intact in either \
+             output",
+            rule.name
+        ),
+    };
+    SpectatorBondLossFinding {
+        template_id: rule.template_id.clone(),
+        rule_name: rule.name.clone(),
+        case,
+        evidence,
+        lost_bonds,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -392,20 +672,24 @@ mod tests {
 
     #[test]
     fn declared_map_pairs_reads_simple_chain() {
-        let pairs = declared_map_pairs("[C:1]-[O:2]-[C:3]");
+        let pairs = declared_map_pairs("[C:1]-[O:2]-[C:3]").unwrap();
         assert_eq!(pairs, HashSet::from([(1, 2), (2, 3)]));
     }
 
     #[test]
     fn declared_map_pairs_ignores_unmapped_atoms() {
         // The leaving-group O has no map number -- must not appear in any pair.
-        let pairs = declared_map_pairs("[C:1]OC");
+        let pairs = declared_map_pairs("[C:1]OC").unwrap();
         assert!(pairs.iter().all(|&(a, b)| a == 1 || b == 1));
     }
 
     #[test]
-    fn declared_map_pairs_empty_for_unparseable_pattern() {
-        assert!(declared_map_pairs("not smiles at all !!").is_empty());
+    fn declared_map_pairs_none_for_unparseable_pattern() {
+        // `None`, not merely empty -- a parse failure must stay
+        // distinguishable from "parsed fine and declares nothing" so
+        // gate_candidates can refuse to trust an empty declared-set that
+        // might just be a parse failure in disguise.
+        assert_eq!(declared_map_pairs("not smiles at all !!"), None);
     }
 
     // ── detect_case_a: positive controls (Finding #4) ───────────────────
@@ -729,5 +1013,227 @@ mod tests {
         let target = mol_from_smiles("OC1CCCCC1").unwrap();
         let rule = rr("dehydration_retro", "[C:1][O:2]>>[C:1][O:2]");
         assert!(detect_case_b(&target, &rule).is_empty());
+    }
+
+    // ── gate_candidates ──────────────────────────────────────────────────
+
+    fn first_match_signature(rule: &RetroRule, target: &Molecule) -> Vec<String> {
+        let matches = find_reaction_matches(&rule.smirks, &[target]).unwrap();
+        replay_match_signature(&rule.smirks, target, &matches[0]).unwrap()
+    }
+
+    #[test]
+    fn gate_candidates_rejects_extracted_824() {
+        let target = mol_from_smiles("O=C2NCC(O2)Cc1ccccc1").unwrap();
+        let rule = rr(
+            "extracted_824",
+            "[C:5]-[O:6]-[C:3](=[O:4])-[NH:2]-[C:1]>>[C:1]-[N:2]=[C:3]=[O:4].[C:5]-[OH:6]",
+        );
+        let sig = first_match_signature(&rule, &target);
+        let verdicts = gate_candidates(&target, &rule, &[sig]);
+        assert!(
+            matches!(verdicts[0], SpectatorBondGateVerdict::Rejected { .. }),
+            "{:?}",
+            verdicts[0]
+        );
+    }
+
+    #[test]
+    fn gate_candidates_rejects_extracted_109() {
+        let target = mol_from_smiles("C1CCCC[C@H](N1)C").unwrap();
+        let rule = rr(
+            "extracted_109",
+            "[C:2]-[CH:1](-[NH:5]-[C:4])-[C:3]>>O=[C:1](-[C:2])-[C:3].[C:4]-[NH2:5]",
+        );
+        let sig = first_match_signature(&rule, &target);
+        let verdicts = gate_candidates(&target, &rule, &[sig]);
+        assert!(
+            matches!(verdicts[0], SpectatorBondGateVerdict::Rejected { .. }),
+            "{:?}",
+            verdicts[0]
+        );
+    }
+
+    #[test]
+    fn gate_candidates_rejects_extracted_112() {
+        let target = mol_from_smiles("c2ccc1CCC(c1c2)=O").unwrap();
+        let rule = rr(
+            "extracted_112",
+            "[C:2]-[C:1](=[O:3])-[c:5](:[c:4]):[c:6]>>Cl-[C:1](-[C:2])=[O:3].[c:4]:[cH:5]:[c:6]",
+        );
+        let sig = first_match_signature(&rule, &target);
+        let verdicts = gate_candidates(&target, &rule, &[sig]);
+        assert!(
+            matches!(verdicts[0], SpectatorBondGateVerdict::Rejected { .. }),
+            "{:?}",
+            verdicts[0]
+        );
+    }
+
+    #[test]
+    fn gate_candidates_rejects_extracted_4255() {
+        let target = mol_from_smiles("C2c1cc(c(F)cc1C(O2)=O)F").unwrap();
+        let rule = rr(
+            "extracted_4255",
+            "[C:2]-[O:3]-[CH2:1]-[c:5](:[c:4]):[c:6]>>O=[CH2:1].[C:2]-[OH:3].[c:4]:[cH:5]:[c:6]",
+        );
+        let sig = first_match_signature(&rule, &target);
+        let verdicts = gate_candidates(&target, &rule, &[sig]);
+        assert!(
+            matches!(verdicts[0], SpectatorBondGateVerdict::Rejected { .. }),
+            "{:?}",
+            verdicts[0]
+        );
+    }
+
+    #[test]
+    fn gate_candidates_accepts_negative_controls() {
+        let cases = [
+            (
+                "O=C(OC1CCCNC1)N",
+                rr("co_aliphatic_cleavage", "[C:1][O:2]>>[C:1].[O:2]"),
+            ),
+            (
+                "C1CC[C@H](C)NC[C@@H]1C",
+                rr("cc_single_cleavage", "[C:1][C:2]>>[C:1].[C:2]"),
+            ),
+            (
+                "CC(=O)NC",
+                rr(
+                    "amide_formation_retro",
+                    "[C:1](=[O:2])-[N:3]>>[C:1](=[O:2])[OH].[N:3]",
+                ),
+            ),
+            (
+                "OC1CCCCC1",
+                rr("ring_open_retro", "[C:1][C:2]>>[C:1].[C:2]"),
+            ),
+        ];
+        for (smiles, rule) in cases {
+            let target = mol_from_smiles(smiles).unwrap();
+            let sig = first_match_signature(&rule, &target);
+            let verdicts = gate_candidates(&target, &rule, &[sig]);
+            assert!(
+                matches!(verdicts[0], SpectatorBondGateVerdict::Accepted),
+                "{} / {}: {:?}",
+                rule.name,
+                smiles,
+                verdicts[0]
+            );
+        }
+    }
+
+    #[test]
+    fn gate_candidates_not_evaluable_for_hash_atom_wildcard_rule() {
+        let target = mol_from_smiles("CCO").unwrap();
+        let rule = rr("hash_rule", "[#6:1]-[#8:2]>>[#6:1].[#8:2]");
+        let verdicts = gate_candidates(
+            &target,
+            &rule,
+            &[vec!["CC".to_string()], vec!["O".to_string()]],
+        );
+        assert_eq!(verdicts.len(), 2);
+        for v in &verdicts {
+            assert!(
+                matches!(
+                    v,
+                    SpectatorBondGateVerdict::NotEvaluable {
+                        reason: "hash_atom_wildcard_rule"
+                    }
+                ),
+                "{v:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn gate_candidates_not_evaluable_when_lhs_unparseable() {
+        // A rule whose LHS can't be read as plain SMILES must never let
+        // Case A's "declared" set silently default to empty for gating --
+        // an empty declared set makes every real bond look undeclared.
+        let target = mol_from_smiles("CCO").unwrap();
+        let rule = rr("garbage_lhs", "not smiles at all !!>>[C:1].[C:2]");
+        let verdicts = gate_candidates(&target, &rule, &[vec!["C".to_string()]]);
+        assert!(
+            matches!(
+                verdicts[0],
+                SpectatorBondGateVerdict::NotEvaluable {
+                    reason: "unparseable_declared_bonds"
+                }
+            ),
+            "{:?}",
+            verdicts[0]
+        );
+    }
+
+    #[test]
+    fn gate_candidates_not_evaluable_when_signature_does_not_correlate_to_any_match() {
+        let target = mol_from_smiles("CCO").unwrap();
+        let rule = rr("co_aliphatic_cleavage", "[C:1][O:2]>>[C:1].[O:2]");
+        let verdicts = gate_candidates(
+            &target,
+            &rule,
+            &[vec!["totally-unrelated-signature".to_string()]],
+        );
+        assert!(
+            matches!(
+                verdicts[0],
+                SpectatorBondGateVerdict::NotEvaluable {
+                    reason: "match_correlation_failed"
+                }
+            ),
+            "{:?}",
+            verdicts[0]
+        );
+    }
+
+    #[test]
+    fn gate_candidates_mixed_outcome_rejects_only_the_defective_candidate() {
+        // Same rule (extracted_824's oxazolidinone LHS/RHS), one target
+        // with two disconnected components: a real oxazolidinone ring (the
+        // known positive control -- C1/C5 really bonded, undeclared) and a
+        // plain open-chain carbamate matching the identical 5-atom pattern
+        // with no such bond. One rule, one target, matches in both
+        // components, opposite verdicts -- proves gating rejects the
+        // specific defective candidate and leaves its clean sibling from
+        // the same rule alone, per
+        // docs/design/spectator-bond-fail-closed-gating-v0.md §7.
+        let target = mol_from_smiles("O=C2NCC(O2)Cc1ccccc1.COC(=O)NC").unwrap();
+        let rule = rr(
+            "extracted_824",
+            "[C:5]-[O:6]-[C:3](=[O:4])-[NH:2]-[C:1]>>[C:1]-[N:2]=[C:3]=[O:4].[C:5]-[OH:6]",
+        );
+        let matches = find_reaction_matches(&rule.smirks, &[&target]).unwrap();
+        assert!(
+            matches.len() >= 2,
+            "expected at least one match in each disconnected component"
+        );
+        let sigs: Vec<Vec<String>> = matches
+            .iter()
+            .map(|m| replay_match_signature(&rule.smirks, &target, m).unwrap())
+            .collect();
+
+        let verdicts = gate_candidates(&target, &rule, &sigs);
+        assert!(
+            verdicts
+                .iter()
+                .any(|v| matches!(v, SpectatorBondGateVerdict::Rejected { .. })),
+            "the ring instance must reject: {verdicts:?}"
+        );
+        assert!(
+            verdicts
+                .iter()
+                .any(|v| matches!(v, SpectatorBondGateVerdict::Accepted)),
+            "the open-chain instance must stay accepted: {verdicts:?}"
+        );
+        assert!(
+            !verdicts.iter().any(|v| matches!(
+                v,
+                SpectatorBondGateVerdict::NotEvaluable {
+                    reason: "ambiguous_signature"
+                }
+            )),
+            "the two components' signatures must never collide: {verdicts:?}"
+        );
     }
 }

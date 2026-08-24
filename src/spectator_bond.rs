@@ -71,7 +71,7 @@ use chematic::rxn::{ReactionMatch, apply_reaction_match, find_reaction_matches};
 use rustc_hash::FxHashMap;
 use serde::Serialize;
 
-use crate::chem_env::{Molecule, RetroRule, mol_from_smiles, split_fragments};
+use crate::chem_env::{Molecule, RetroRule, mol_from_smiles, split_fragments, to_canonical};
 
 /// Which of the two mechanisms a [`SpectatorBondLossFinding`] was detected
 /// under -- kept on the finding itself (not just implied by which detector
@@ -125,6 +125,13 @@ pub struct LostBond {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SpectatorBondLossFinding {
+    /// Canonical SMILES of the exact target this finding was detected
+    /// against -- without this, findings accumulated across a whole search
+    /// (many distinct intermediates) can't be traced back to which
+    /// specific candidate they apply to. Added after the original
+    /// detection+wiring PRs shipped without it, once real smoke-testing
+    /// against a target sample surfaced the gap.
+    pub target_smiles: String,
     pub template_id: String,
     pub rule_name: String,
     pub case: SpectatorBondLossCase,
@@ -272,6 +279,7 @@ pub fn detect_case_a(target: &Molecule, rule: &RetroRule) -> Vec<SpectatorBondLo
         }
         if !lost_bonds.is_empty() {
             findings.push(SpectatorBondLossFinding {
+                target_smiles: to_canonical(target),
                 template_id: rule.template_id.clone(),
                 rule_name: rule.name.clone(),
                 case: SpectatorBondLossCase::MatchedPairUndeclared,
@@ -335,6 +343,7 @@ pub fn detect_case_b(target: &Molecule, rule: &RetroRule) -> Vec<SpectatorBondLo
         };
         for (mi, mj, lost_bonds) in case_b_lost_bond_chains_for_match(target, &owner, &positions) {
             findings.push(SpectatorBondLossFinding {
+                target_smiles: to_canonical(target),
                 template_id: rule.template_id.clone(),
                 rule_name: rule.name.clone(),
                 case: SpectatorBondLossCase::CrossProductTerritory,
@@ -549,6 +558,7 @@ pub fn gate_candidates(
         let case_a = case_a_lost_bonds_for_match(target, &declared, &positions);
         if !case_a.is_empty() {
             findings.push(build_finding(
+                target,
                 rule,
                 SpectatorBondLossCase::MatchedPairUndeclared,
                 case_a,
@@ -556,6 +566,7 @@ pub fn gate_candidates(
         }
         for (_, _, lost_bonds) in case_b_lost_bond_chains_for_match(target, &owner, &positions) {
             findings.push(build_finding(
+                target,
                 rule,
                 SpectatorBondLossCase::CrossProductTerritory,
                 lost_bonds,
@@ -627,6 +638,7 @@ fn replay_match_signature(
 /// findings read identically whether they came from those aggregate
 /// detectors or from this per-match gating path.
 fn build_finding(
+    target: &Molecule,
     rule: &RetroRule,
     case: SpectatorBondLossCase,
     lost_bonds: Vec<LostBond>,
@@ -647,6 +659,7 @@ fn build_finding(
         ),
     };
     SpectatorBondLossFinding {
+        target_smiles: to_canonical(target),
         template_id: rule.template_id.clone(),
         rule_name: rule.name.clone(),
         case,
@@ -736,6 +749,11 @@ mod tests {
             findings.iter().map(|f| f.lost_bonds.len()).sum::<usize>(),
             1,
             "exactly one real bond (C1-C5) is undeclared here"
+        );
+        assert_eq!(
+            findings[0].target_smiles,
+            to_canonical(&target),
+            "target_smiles must identify the exact target this finding was detected against"
         );
     }
 

@@ -314,7 +314,7 @@ mod clear_atom_maps_tests {
     }
 }
 
-static STANDARDIZE_OPTS: StandardizeOptions = StandardizeOptions {
+pub(crate) static STANDARDIZE_OPTS: StandardizeOptions = StandardizeOptions {
     canonical_tautomer: false,
     neutralize_charges: false,
     remove_explicit_h: true,

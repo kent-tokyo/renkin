@@ -16,6 +16,7 @@ pub mod score;
 pub mod scorer;
 pub mod search;
 pub mod spectator_bond;
+pub mod stock_import;
 pub mod synthesizability;
 pub mod validation;
 

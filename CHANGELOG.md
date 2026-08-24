@@ -8,6 +8,22 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- Removed `buchwald_hartwig_retro` from `default_rules()`: on a ring-fused
+  nitrogen (N shared between the aromatic ring and a fused saturated
+  ring), it has the same atom-loss defect `aryl_amine_retro` was removed
+  for (issue #77, [0.32.0](#0320---2026-08-22-typed-reports--verified-planner-matrix))
+  — substituent-carry-through BFS sweeps unchecked across the ring-fusion
+  boundary — but worse: the surviving "aryl" fragment comes back
+  corrupted too (a spurious extra bromine plus a dangling alkyl chain
+  that leaked in from the far side of the ring), not just a missing
+  fragment. Confirmed by direct reproduction on the same target shape as
+  the original `aryl_amine_retro` repro. **The hand-crafted rule count
+  drops from 27 to 26** — any route search that previously depended on
+  this rule for a Buchwald-Hartwig-type Ar-N disconnection will no longer
+  find that route; this is a correctness fix (the routes it produced
+  could be chemically wrong, not just missing), not a regression.
+
 ## [0.34.0] - 2026-08-23 "SynPlanner Bridge"
 
 RENKIN Bridge's fourth route-source adapter: unlike Syntheseus (no native

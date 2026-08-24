@@ -2540,26 +2540,28 @@ mod tests {
 
     /// Compatibility regression: pins `validate_route`'s `verified` outcome
     /// for a route step built on a real default rule
-    /// (`buchwald_hartwig_retro`, 2-bromobenzoic acid + ethylamine ->
-    /// 2-(ethylamino)benzoic acid), so this specific, previously-working
-    /// case can never silently flip during future refactors of the
-    /// candidate/merge pipeline. Was `aryl_ether_retro` (salicylic acid +
-    /// ethanol -> 2-ethoxybenzoic acid) until that rule was converted to a
-    /// graph-based Rust function (empty smirks -- see
-    /// docs/design/retro-rule-precision-gaps-v0.md #1), which this
-    /// crate's SMIRKS-reversal forward-prediction mechanism can no longer
-    /// verify by construction; substituted with a structurally analogous
-    /// SMIRKS-backed rule, re-verified with a scratch probe to still hold.
+    /// (`sonogashira_retro`, bromobenzene + propyne -> 1-phenylpropyne), so
+    /// this specific, previously-working case can never silently flip
+    /// during future refactors of the candidate/merge pipeline. Was
+    /// `aryl_ether_retro` (salicylic acid + ethanol -> 2-ethoxybenzoic
+    /// acid) until that rule was converted to a graph-based Rust function
+    /// (empty smirks -- see docs/design/retro-rule-precision-gaps-v0.md
+    /// #1), then `buchwald_hartwig_retro` (2-bromobenzoic acid + ethylamine
+    /// -> 2-(ethylamino)benzoic acid) until that rule was itself removed
+    /// from `default_rules()` (issue #77: ring-fused-nitrogen atom loss,
+    /// plus a corrupted surviving fragment) -- each time substituted with a
+    /// structurally analogous SMIRKS-backed rule, re-verified with a
+    /// scratch probe to still hold.
     #[test]
     fn validate_route_golden_fixture_verified_true() {
         use renkin::search::ReactionStep;
 
         let rules = renkin::chem_env::default_rules();
         let step = ReactionStep {
-            rule: "buchwald_hartwig_retro".to_string(),
-            template_id: "rule:buchwald_hartwig_retro".to_string(),
-            target: "CCNc1ccccc1C(=O)O".to_string(),
-            precursors: vec!["Brc1ccccc1C(=O)O".to_string(), "CCN".to_string()],
+            rule: "sonogashira_retro".to_string(),
+            template_id: "rule:sonogashira_retro".to_string(),
+            target: "c1ccccc1C#CC".to_string(),
+            precursors: vec!["Brc1ccccc1".to_string(), "C#CC".to_string()],
             conditions: None,
             atom_economy: None,
             atom_economy_raw_percent: None,
@@ -2575,7 +2577,7 @@ mod tests {
             steps: vec![step],
             depth: 1,
             score: 1.0,
-            building_blocks: vec!["Brc1ccccc1C(=O)O".to_string(), "CCN".to_string()],
+            building_blocks: vec!["Brc1ccccc1".to_string(), "C#CC".to_string()],
             confidence: 1.0,
             convergency: 1.0,
             success_probability: 1.0,
@@ -2586,7 +2588,7 @@ mod tests {
         assert_eq!(validations.len(), 1);
         assert!(
             validations[0].verified,
-            "expected buchwald_hartwig_retro forward application to verify the target, got {:?}",
+            "expected sonogashira_retro forward application to verify the target, got {:?}",
             validations[0]
         );
     }
@@ -2599,8 +2601,8 @@ mod tests {
     /// through `validate_route` instead of `predict_products_detailed`
     /// directly. Re-verified with a scratch probe (both precursor orders
     /// for this rule/pair genuinely produce `verified: true` here) after
-    /// substituting `buchwald_hartwig_retro` for the original
-    /// `aryl_ether_retro` fixture -- see the sibling
+    /// substituting `sonogashira_retro` for the removed
+    /// `buchwald_hartwig_retro` fixture -- see the sibling
     /// `validate_route_golden_fixture_verified_true`'s doc comment for why.
     #[test]
     fn validate_route_verified_is_independent_of_precursor_order() {
@@ -2608,10 +2610,10 @@ mod tests {
 
         let rules = renkin::chem_env::default_rules();
         let step = ReactionStep {
-            rule: "buchwald_hartwig_retro".to_string(),
-            template_id: "rule:buchwald_hartwig_retro".to_string(),
-            target: "CCNc1ccccc1C(=O)O".to_string(),
-            precursors: vec!["CCN".to_string(), "Brc1ccccc1C(=O)O".to_string()],
+            rule: "sonogashira_retro".to_string(),
+            template_id: "rule:sonogashira_retro".to_string(),
+            target: "c1ccccc1C#CC".to_string(),
+            precursors: vec!["C#CC".to_string(), "Brc1ccccc1".to_string()],
             conditions: None,
             atom_economy: None,
             atom_economy_raw_percent: None,
@@ -2627,7 +2629,7 @@ mod tests {
             steps: vec![step],
             depth: 1,
             score: 1.0,
-            building_blocks: vec!["CCN".to_string(), "Brc1ccccc1C(=O)O".to_string()],
+            building_blocks: vec!["C#CC".to_string(), "Brc1ccccc1".to_string()],
             confidence: 1.0,
             convergency: 1.0,
             success_probability: 1.0,

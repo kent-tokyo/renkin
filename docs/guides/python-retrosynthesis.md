@@ -56,8 +56,8 @@ can't match as a leaf building block.
 
 ## Extracted Templates
 
-The built-in rule set is 27 hand-crafted, human-readable disconnections
-(ester cleavage, Suzuki, Buchwald-Hartwig, and so on). For broader reaction
+The built-in rule set is 26 hand-crafted, human-readable disconnections
+(ester cleavage, Suzuki, Heck, and so on). For broader reaction
 coverage, load additional SMIRKS templates auto-extracted from USPTO-50k/MIT
 via rdchiral:
 

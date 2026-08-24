@@ -871,13 +871,13 @@ fn reaction_family_for_rule(rule: &str) -> Option<&'static str> {
         "amide_cleavage" => Some("amide_coupling"),
         "friedel_crafts_acylation_retro" => Some("friedel_crafts_acylation"),
         "aryl_carboxylation_retro" => Some("decarboxylation"),
-        "buchwald_hartwig_retro" => Some("buchwald_hartwig"),
         "aryl_ether_retro" => Some("ullmann_ether"),
         // aryl_chloride_retro / aryl_iodide_retro / aryl_fluoride_snAr_retro
         // removed from default_rules() (31.11, chem_env.rs) — atom-loss bug,
-        // no tracked reagent. aryl_amine_retro removed the same way (issue
-        // #77, ring-fused-nitrogen atom loss). Arms deleted so this stays
-        // dead-code-free.
+        // no tracked reagent. aryl_amine_retro and buchwald_hartwig_retro
+        // removed the same way (issue #77, ring-fused-nitrogen atom loss --
+        // buchwald_hartwig_retro's surviving fragment came back corrupted
+        // too). Arms deleted so this stays dead-code-free.
         "aryl_chloride_to_bromide" => Some("halogen_exchange"),
         "suzuki_retro" => Some("suzuki_coupling"),
         "heck_retro" | "heck_retro_terminal" => Some("heck_reaction"),
@@ -939,9 +939,9 @@ fn conditions_for_rule(rule: &str) -> Option<ReactionConditions> {
         "aryl_carboxylation_retro" => {
             cond!("none", "water", "150 °C", "Kolbe-Schmitt / decarboxylation")
         }
-        "buchwald_hartwig_retro" => cond!("Pd₂(dba)₃ / XPhos (5 mol%)", "toluene", "100 °C"),
-        // aryl_amine_retro's condition entry removed with the rule (issue
-        // #77) — see reaction_family_for_rule above.
+        // aryl_amine_retro's and buchwald_hartwig_retro's condition entries
+        // removed with the rules (issue #77) — see reaction_family_for_rule
+        // above.
         "aryl_ether_retro" => cond!("Cs₂CO₃ (2 eq)", "DMF", "110 °C", "Ullmann ether retro"),
         "aryl_chloride_to_bromide" => cond!("NaBr (excess)", "DMF", "120 °C", "halogen exchange"),
         "suzuki_retro" => cond!("Pd(PPh₃)₄ (5 mol%)", "EtOH/H₂O (3:1)", "80 °C"),
@@ -986,9 +986,9 @@ fn procedure_hint_for_rule(rule: &str) -> Option<&'static str> {
         "friedel_crafts_acylation_retro" => {
             Some("Add acid chloride to arene + AlCl₃ (1.2 eq) in DCM at 0 °C, warm to rt.")
         }
-        "buchwald_hartwig_retro" => {
-            Some("Combine aryl halide + amine + Pd₂(dba)₃/XPhos in toluene, heat at 100 °C.")
-        }
+        // buchwald_hartwig_retro's entry removed with the rule (issue #77)
+        // — see reaction_family_for_rule above. aryl_amine_retro never had
+        // an entry here (this function's coverage was always partial).
         "aryl_ether_retro" => {
             Some("Mix aryl halide + phenol + Cs₂CO₃ (2 eq) in DMF, heat at 110 °C.")
         }

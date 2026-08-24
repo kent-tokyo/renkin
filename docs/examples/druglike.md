@@ -1,6 +1,6 @@
 ---
 title: "Retrosynthesis Examples for Drug-Like Molecules with RENKIN"
-description: "Suzuki coupling, Buchwald-Hartwig amination, and amide bond disconnection examples on drug-like molecules using RENKIN's retrosynthesis engine."
+description: "Suzuki coupling and amide bond disconnection examples on drug-like molecules using RENKIN's retrosynthesis engine."
 ---
 
 # Drug-like Molecules
@@ -33,19 +33,6 @@ c1ccc(-c2ccncc2)cc1
 ```
 
 Both bromobenzene (`Brc1ccccc1`) and pyridine (`c1ccccn1`) are in the default building block stock.
-
-## N-Phenyl-2-aminopyridine (Buchwald-Hartwig product)
-
-SMILES: `c1ccc(Nc2ccccn2)cc1`
-
-```
-c1ccc(Nc2ccccn2)cc1
-    → Brc1ccccn1 + Nc1ccccc1
-    [buchwald_hartwig_retro]
-```
-
-- **2-Bromopyridine** (`Brc1ccccn1`) — in stock
-- **Aniline** (`Nc1ccccc1`) — in stock
 
 ## 4-Fluorobiphenyl
 

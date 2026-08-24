@@ -1206,8 +1206,9 @@ fn with_sequential_atom_maps(mol: &Molecule) -> Molecule {
 /// step actually used -- only a genuine match is trusted, never assumed to
 /// be "probably the first one." Newly-introduced leaving-group atoms (the
 /// appended -OH/-Br/-Cl/-B(OH)2 etc.) are never mapped, matching how a
-/// hand-crafted SMIRKS rule like `buchwald_hartwig_retro`
-/// (`"[c:1][N:2]>>[c:1]Br.[N:2]"`) leaves its own literal `Br` unmapped too.
+/// hand-crafted SMIRKS rule like `heck_retro`
+/// (`"[c:1][CH:2]=[CH:3]>>[c:1][Br].[CH2:2]=[CH:3]"`) leaves its own
+/// literal `Br` unmapped too.
 ///
 /// Returns `None` when `rule_name` isn't a known graph-based default rule
 /// (including: it's a real SMIRKS-based rule, which needs no help from
@@ -2060,8 +2061,19 @@ pub fn default_rules() -> Vec<RetroRule> {
         // the same policy applied to the halide rules above (31.11). See
         // `aryl_amine_retro_removed_from_default_rules` below.
         //
-        // Ar-N → Ar-Br + amine (retro-Buchwald-Hartwig; gives halide BB)
-        rr("buchwald_hartwig_retro", "[c:1][N:2]>>[c:1]Br.[N:2]"),
+        // `buchwald_hartwig_retro` ("[c:1][N:2]>>[c:1]Br.[N:2]") was removed
+        // for the same reason and mechanism as `aryl_amine_retro` above --
+        // same root cause (both product templates' bare single-atom RHS
+        // fragments let substituent-carry-through BFS sweep unchecked
+        // across a ring-fusion boundary), confirmed on the same
+        // `c12c(NCCC2)ccc(c1)Br`-shaped repro. Worse in practice: not only
+        // does the amine fragment vanish the same way, the *surviving*
+        // aryl fragment comes back corrupted too (carry-through loops the
+        // other way around the same ring through the same fusion carbon,
+        // producing a spurious extra `Br` plus a dangling alkyl chain that
+        // don't belong on the real precursor) -- a chemically-wrong
+        // "solved" route, not just a missing one. See
+        // `buchwald_hartwig_retro_removed_from_default_rules` below.
         // Ar-O → Ar-OH + leaving fragment (retro-Ullmann ether synthesis).
         // Graph-based (empty smirks, dispatched in apply_retro below), not a
         // SMIRKS string: chematic-rxn's own reactant-template parser is
@@ -4328,6 +4340,66 @@ mod tests {
             rules.iter().all(|r| r.name != "aryl_amine_retro"),
             "aryl_amine_retro must not be present in default_rules() (issue #77: \
              deletes ring-fused nitrogen with no tracked second precursor)"
+        );
+    }
+
+    // Same root cause and mechanism as aryl_amine_retro above, confirmed by
+    // direct reproduction, not just by analogy: both rules' bare
+    // single-atom RHS fragments let substituent-carry-through BFS sweep
+    // unchecked across a ring-fusion boundary. Worse in practice --
+    // buchwald_hartwig_retro's surviving "aryl" fragment comes back
+    // corrupted (a spurious extra Br plus a dangling alkyl chain), not
+    // just missing the amine fragment.
+    #[test]
+    fn buchwald_hartwig_retro_removed_from_default_rules() {
+        let rules = default_rules();
+        assert!(
+            rules.iter().all(|r| r.name != "buchwald_hartwig_retro"),
+            "buchwald_hartwig_retro must not be present in default_rules(): same \
+             ring-fused-nitrogen atom-loss defect as aryl_amine_retro (issue #77), \
+             plus a corrupted surviving aryl fragment"
+        );
+    }
+
+    // Direct reproduction of the removed rule's failure on a real,
+    // deliberately re-added instance -- documents *why* it's gone, not
+    // just *that* it's gone. Same target shape as the issue #77 repro
+    // (uspto50k_test#L2263): a fused aromatic/saturated-ring nitrogen.
+    #[test]
+    fn buchwald_hartwig_retro_would_corrupt_a_ring_fused_target_if_re_enabled() {
+        let target = mol_from_smiles("c12c(NCCC2)ccc(c1)Br").unwrap();
+        let rule = rr("buchwald_hartwig_retro", "[c:1][N:2]>>[c:1]Br.[N:2]");
+        let outcomes = apply_retro(&target, &rule);
+        let outcome_smiles: Vec<Vec<&str>> = outcomes
+            .iter()
+            .map(|o| o.iter().map(|p| p.smiles.as_str()).collect())
+            .collect();
+        assert_eq!(
+            outcomes.len(),
+            1,
+            "expected exactly one (broken) outcome: {outcome_smiles:?}",
+        );
+        let precursor_smiles: Vec<&str> = outcomes[0].iter().map(|p| p.smiles.as_str()).collect();
+        assert_eq!(
+            precursor_smiles.len(),
+            1,
+            "the amine fragment must be silently dropped (split_fragments' aromaticity \
+             filter rejects the leaked-ring-remainder fragment): {precursor_smiles:?}"
+        );
+        // The lone surviving fragment is the corrupted one: it must retain
+        // the alkyl chain that leaked in from the far side of the fused
+        // ring (real precursor loss) and carry two bromines (the target's
+        // own plus the rule's own appended leaving-group Br) rather than
+        // one -- proof this is not just a dropped fragment but a wrong one.
+        let precursor_mol = mol_from_smiles(precursor_smiles[0]).unwrap();
+        let br_count = precursor_mol
+            .atoms()
+            .filter(|(_, a)| a.element == Element::BR)
+            .count();
+        assert_eq!(
+            br_count, 2,
+            "corrupted fragment must carry two bromines, not the real product's one: {}",
+            precursor_smiles[0]
         );
     }
 

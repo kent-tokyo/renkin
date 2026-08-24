@@ -96,7 +96,6 @@ RENKIN contains explicit rules for these transformation families:
 - Esters → carboxylic acid + alcohol
 - Amides → acid + amine (graph-based cleavage)
 - Biaryls → aryl halide + boronic acid (Suzuki, graph-based)
-- Aryl amines → aryl halide + amine (Buchwald-Hartwig)
 - Boc / Cbz protecting group removal (graph-based)
 - Diaryl sulfones → arylsulfonyl chloride + arene (graph-based)
 - Sulfonamides → sulfonyl chloride + amine

@@ -296,6 +296,21 @@ Applied identically to both tools' normalized routes (`scripts/compare_validatio
   internal diagnostic — the two are different checks with different
   tolerances and must never be shown as if they were the same number.
 
+- **`validator_confirmed_route_found`** / **`not_evaluable`** — a stricter,
+  validator-gated companion to tool-native `route_found`, computed
+  identically for both tools from the checks above: `True` only when
+  `route_found` is `True` **and** `route_tree_parseable`,
+  `reaction_steps_parseable`, and `target_element_accounting_status ==
+  "accounted"` all hold; `False` when `route_found` is `True` but any of
+  those found a concrete defect; `null` (and unset) whenever `route_found`
+  is not `True` (nothing to validate). `not_evaluable` is `True` in the one
+  case that's ambiguous rather than confirmed-bad: `route_found` is `True`
+  but `target_element_accounting_status == "not_evaluable"`. Solve rate
+  (`route_found_rate`) and route quality
+  (`validator_confirmed_route_found_rate`) are reported as two separate
+  aggregate rates, both with `all_sampled` as their denominator so they're
+  directly comparable to each other — never conflated into one number.
+
 ### What this validation does not claim
 
 > Target-element-accounted (`target_element_accounting_status=accounted`)
@@ -413,6 +428,19 @@ a result: whatever the single per-target CLI response already contains
 nodes_expanded/matched_templates/stock_hits/beam_limit_hit/max_depth_reached
 for an unsolved one), explicitly tagged `diagnostics_source:
 "single_per_target_cli_call"`.
+
+`--spectator-bond-policy` (v0.35.0's fail-closed gate) is a second,
+**orthogonal** RENKIN-only policy axis alongside `--ring-context-policy` —
+recorded as its own `spectator_bond_policy` field in the run manifest,
+never folded into the same `configuration_id`/label as ring-context, and
+run as its own separate arm the same way Conservative-vs-Disabled already
+are. Only under `--spectator-bond-policy gated` (which the adapter always
+pairs with `--search-diagnostics` so the CLI actually emits it) do the
+common-schema fields `gated_out_candidate_count` (how many candidates the
+search excluded for that target) and `gated_out_reasons` (`rule_name ->`
+exclusion count) get populated; both stay `null` under `off`/
+`diagnostics-only`, not `0`, since `0` legitimately means "gated, but
+nothing was excluded".
 
 ## AiZynthFinder-specific notes (`tool_specific.aizynthfinder`)
 

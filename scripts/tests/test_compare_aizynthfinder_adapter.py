@@ -75,6 +75,12 @@ class TestAizynthfinderAdapterRealContainer(unittest.TestCase):
         self.assertTrue(row.reaction_steps_parseable)
         self.assertIn(row.target_element_accounting_status, ("accounted", "unaccounted_target_element"))
         self.assertIsNotNone(row.normalized_route_sha256)
+        self.assertFalse(row.not_evaluable)
+        self.assertEqual(
+            row.validator_confirmed_route_found,
+            row.reaction_steps_parseable is True
+            and row.target_element_accounting_status == "accounted",
+        )
 
     def test_native_mode_trusts_tool_stock_claim_with_disclosed_warning(self):
         # Native mode's real stock is ~17.4M ZINC compounds -- too large to

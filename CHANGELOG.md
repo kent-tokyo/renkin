@@ -47,6 +47,18 @@ this closes out the plan's originally-named priority table.
   typed PASS/WARN/FAIL severities and stable exit codes (0/1/2). See
   `docs/design/stock-import-v0.md` §6 for the full CLI/exit-code
   contract.
+- `PlannerComparisonRow` schema v1.1 (Phase 2 PR 4, Issue #66 open-source
+  comparison harness): `validator_confirmed_route_found`/`not_evaluable`
+  give a validator-gated companion to tool-native `route_found` for both
+  RENKIN and AiZynthFinder, keeping solve rate and route quality as two
+  separate, non-conflated aggregate rates. RENKIN-only
+  `gated_out_candidate_count`/`gated_out_reasons` surface what
+  `--spectator-bond-policy gated` actually excluded per target, via a new
+  `--spectator-bond-policy` flag on `scripts/compare_run.py` (orthogonal to
+  `--ring-context-policy`, its own `spectator_bond_policy` run-manifest
+  field, never the same arm/label). See
+  `docs/guides/open-source-retrosynthesis-comparison.md`, "Common post-hoc
+  validation" and "RENKIN-specific diagnostics".
 
 ### Fixed
 - Removed `n_benzylation_retro` and `michael_retro` from `default_rules()`

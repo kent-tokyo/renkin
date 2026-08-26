@@ -97,11 +97,22 @@ perf-instrumentation = ["dep:chematic-rxn"]
 # (chematic#193, https://github.com/kent-tokyo/chematic/pull/193, merged as
 # 3e45f55) which resolves the apply_retro/run_reactants combinatorial
 # regression this crate previously worked around with a git-pinned commit.
-chematic = { version = "0.16", features = ["smiles", "chem", "smarts", "rxn"] }
+#
+# 0.16 -> 0.20.1: three independent stock/stereo-identity correctness fixes
+# found via `renkin doctor stock reimport_idempotency` on a 9.47M-compound
+# eMolecules corpus, none a patch-level jump from RENKIN's own perspective --
+# see the CHANGELOG entry for this bump for the full verification record.
+# remove_hydrogens no longer silently destroys isotope-labeled hydrogen
+# (chematic#389) or drops stereo_neighbor_order/bond_directions on a
+# canonical round-trip (chematic#392); a coupled-stereo-alkene E/Z
+# canonicalization defect that could silently change a molecule's real
+# geometry is fixed (chematic#390); two more independent correctness fixes
+# (chematic#395, #399) landed in the same 0.20.1 release.
+chematic = { version = "0.20.1", features = ["smiles", "chem", "smarts", "rxn"] }
 # Same registry release as `chematic` above (required: they must resolve to the
 # same chematic-core/etc. instance). Only for perf_counters -- normal builds
 # reach run_reactants via the chematic facade, not this direct dependency.
-chematic-rxn = { version = "0.16", features = ["perf-instrumentation"], optional = true }
+chematic-rxn = { version = "0.20.1", features = ["perf-instrumentation"], optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"

@@ -120,6 +120,62 @@ this closes out the plan's originally-named priority table.
   round's doc-cascade scope (ORD-evidence tooling, not rule-count docs);
   flagged here so it reads as a decision, not an oversight.
 
+### Dependencies
+- `chematic`/`chematic-rxn`: `0.16` -> `0.20.1`. Not a patch-level jump
+  from RENKIN's own perspective, despite the numbers: this closes out
+  the `renkin doctor stock reimport_idempotency` FAIL discovered during
+  v0.36.0 Phase 2's eMolecules stock provenance retrofit (PR #196,
+  itself still frozen), root-caused to three independent, upstream
+  `chematic` correctness defects, all fixed and shipped in this range:
+  - Isotope-labeled hydrogen (`[2H]`/`[3H]`) was silently stripped by
+    `remove_hydrogens` on every canonicalization pass, not just
+    re-canonicalization (chematic#389).
+  - `remove_hydrogens` never restored `Molecule`'s
+    `stereo_neighbor_order`/`bond_directions` side tables, which could
+    flip a declared tetrahedral stereocenter to its mirror image on
+    re-canonicalization (chematic#392) -- 289/290 of the originating
+    290-compound eMolecules-derived corpus resolved by this fix alone.
+  - A coupled stereo-alkene E/Z canonicalization defect (chematic#390,
+    two independent root causes in `resolve_ez_markers`'s carrier
+    election and `normalize_ez`'s sign-seeding) could silently change a
+    molecule's real geometry, closing the corpus's one remaining
+    mismatch (290/290).
+  - Also included in this range: two more independent correctness fixes
+    found by chematic's own new idempotency property test
+    (chematic#395, #399) that landed in the same `0.20.1` release, and
+    the `0.17`-`0.20.0` feature/fix history in between (stereo-safe 3D
+    generation, a connectivity-ordered coordinate engine, format/Python/
+    WASM breadth, MMFF94 accuracy fixes -- see chematic's own
+    `CHANGELOG.md` for the full record, not reproduced here).
+  - Verified before merging this bump (all against the exact published
+    `chematic` v0.20.1, not a local checkout): the real 290-compound
+    eMolecules-derived corpus this investigation originated from,
+    two independent ways -- idempotence 290/290 and, independently, an
+    RDKit InChIKey cross-check, 290/290 (corpus itself not committed,
+    only aggregate counts, matching this investigation's own standing
+    discipline); `renkin doctor stock reimport_idempotency` against
+    `data/building_blocks.smi` (402 compounds) now **PASSes** (was the
+    originating FAIL); isotope and issue #390 witness fixtures directly;
+    full RENKIN workspace test suite (`cargo test --workspace --lib`
+    and `--tests`); `cargo check --target wasm32-unknown-unknown --lib`
+    and `--features python`; `cargo package --list`; `doc_facts`
+    (`HAND_CRAFTED_RULE_COUNT`/`BUILDING_BLOCK_FILE_COUNT`/
+    `BUILDING_BLOCK_FALLBACK_COUNT`) unchanged (22/402/152); a
+    small-scale retrosynthesis smoke test (aspirin's real ester-cleavage
+    route still found and correctly scored; an E/Z-stereo hydrazone
+    target parses and searches cleanly, exercising the fixed code path
+    directly, even though it returns zero routes -- no template covers
+    that bond, not a regression).
+  - Not run this round, deliberately: the formal 4,907-target Step 0
+    remeasurement, the full 9.47M-compound eMolecules re-import, and any
+    change to PR #196's own frozen scope -- this bump is the dependency
+    update alone, Phase 5's own re-verification ladder (minimal fixtures
+    already covered above -> 290-case corpus already covered above ->
+    a 12,688-row raw isotopic-H subset -> the 402-compound stock doctor
+    already covered above -> a lightweight 9.47M-row probe -> exactly
+    one full re-import -> `renkin doctor stock` all-PASS) is separate,
+    later work before PR #196 itself resumes.
+
 ## [0.35.0] - 2026-08-24 "Template Integrity & Spectator Bond Loss"
 
 A retro-rule (hand-crafted or extracted) whose matched/product-fragment

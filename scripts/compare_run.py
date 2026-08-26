@@ -51,6 +51,7 @@ def renkin_config_and_id(args):
         grace_s=args.grace_s,
         ring_context_policy=args.ring_context_policy,
         ring_context_sidecar=args.ring_context_sidecar,
+        spectator_bond_policy=args.spectator_bond_policy,
         reranker_model=args.reranker_model,
         reranker_freq_table=args.reranker_freq_table,
         search_mode=args.search_mode,
@@ -66,9 +67,17 @@ def renkin_config_and_id(args):
         "-reranker_on" if args.reranker_model and args.reranker_freq_table else ""
     )
     coverage_suffix = "-coverage" if args.search_mode == "coverage" else ""
+    # Orthogonal to policy_suffix (ring-context) -- kept as its own suffix
+    # segment rather than folded into "-disabled"/etc. so the two guards
+    # never collapse into one ambiguous "gated" label in configuration_id.
+    spectator_bond_suffix = (
+        f"-sb_{args.spectator_bond_policy.replace('-', '_')}"
+        if args.spectator_bond_policy != "off"
+        else ""
+    )
     configuration_id = (
         f"renkin-{args.comparison_mode}-d{args.depth}-b{args.beam_width}"
-        f"{policy_suffix}{reranker_suffix}{coverage_suffix}"
+        f"{policy_suffix}{reranker_suffix}{coverage_suffix}{spectator_bond_suffix}"
     )
     return config, building_blocks_path, configuration_id
 
@@ -187,6 +196,17 @@ def main(argv: list[str] | None = None) -> int:
         help="Ring-context metadata JSON sidecar; required when --ring-context-policy != disabled",
     )
     parser.add_argument(
+        "--spectator-bond-policy",
+        choices=["off", "diagnostics-only", "gated"],
+        default="off",
+        help="RENKIN-only: spectator-bond-loss fail-closed gate (v0.35.0, "
+        "docs/design/spectator-bond-fail-closed-gating-v0.md); ignored for "
+        "--tool aizynthfinder. Orthogonal to --ring-context-policy -- run as "
+        "separate arms, never combined in one row. 'gated' also adds "
+        "--search-diagnostics to the underlying renkin CLI call so "
+        "gated_out_candidate_count/gated_out_reasons can be populated.",
+    )
+    parser.add_argument(
         "--reranker-model",
         default=None,
         help="RENKIN-only: frozen LightGBM model.txt for the ordering-only candidate reranker "
@@ -283,6 +303,7 @@ def main(argv: list[str] | None = None) -> int:
                 tool=args.tool,
                 comparison_mode=args.comparison_mode,
                 ring_context_policy=args.ring_context_policy if args.tool == "renkin" else None,
+                spectator_bond_policy=args.spectator_bond_policy if args.tool == "renkin" else None,
                 command_line=sys.argv,
                 repo_root=args.repo_root,
                 binary_path=args.renkin_binary if args.tool == "renkin" else None,

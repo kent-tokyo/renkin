@@ -88,6 +88,7 @@ def capture_start_manifest(
     tool: str,
     comparison_mode: str,
     ring_context_policy: str | None,
+    spectator_bond_policy: str | None = None,
     command_line: list[str],
     repo_root: str,
     binary_path: str | None,
@@ -100,6 +101,11 @@ def capture_start_manifest(
         "tool": tool,
         "comparison_mode": comparison_mode,
         "ring_context_policy": ring_context_policy,
+        # Orthogonal to ring_context_policy -- v0.35.0's spectator-bond-loss
+        # gate (Off/DiagnosticsOnly/Gated) is a separate policy axis from
+        # v0.36.0 Phase 1's ring-context guard (Conservative/Disabled) and
+        # must never collapse into one "gated" label.
+        "spectator_bond_policy": spectator_bond_policy,
         "command_line": [redact_home_dir(arg) for arg in command_line],
         "git_commit": git_commit,
         "binary_sha256": sha256_file(binary_path) if binary_path else None,

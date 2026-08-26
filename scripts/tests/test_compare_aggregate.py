@@ -76,6 +76,50 @@ class TestComputeAggregate(unittest.TestCase):
         result = agg.compute_aggregate(rows)
         self.assertEqual(result["total_elapsed_ms_percentiles"]["n"], 1)
 
+    def test_validator_confirmed_route_found_rate_denominator_is_all_sampled(self):
+        rows = [
+            make_row(route_found=True, validator_confirmed_route_found=True, total_elapsed_ms=1.0),
+            make_row(route_found=True, validator_confirmed_route_found=False, total_elapsed_ms=1.0),
+            make_row(route_found=False, total_elapsed_ms=1.0),
+        ]
+        result = agg.compute_aggregate(rows)
+        self.assertEqual(result["validator_confirmed_route_found_rate"]["n_numerator"], 1)
+        self.assertEqual(result["validator_confirmed_route_found_rate"]["n_denominator"], 3)
+
+    def test_not_evaluable_rate(self):
+        rows = [
+            make_row(route_found=True, not_evaluable=True, total_elapsed_ms=1.0),
+            make_row(route_found=True, not_evaluable=False, total_elapsed_ms=1.0),
+        ]
+        result = agg.compute_aggregate(rows)
+        self.assertEqual(result["not_evaluable_rate"]["n_numerator"], 1)
+        self.assertEqual(result["not_evaluable_rate"]["n_denominator"], 2)
+
+    def test_gated_out_summary_omitted_when_no_row_ran_gated(self):
+        rows = [make_row(route_found=True, total_elapsed_ms=1.0)]
+        result = agg.compute_aggregate(rows)
+        self.assertNotIn("gated_out_candidates_total", result)
+
+    def test_gated_out_summary_present_and_merged_when_gated(self):
+        rows = [
+            make_row(
+                route_found=True,
+                total_elapsed_ms=1.0,
+                gated_out_candidate_count=2,
+                gated_out_reasons={"n_benzylation_retro": 2},
+            ),
+            make_row(
+                route_found=False,
+                total_elapsed_ms=1.0,
+                gated_out_candidate_count=0,
+                gated_out_reasons={},
+            ),
+        ]
+        result = agg.compute_aggregate(rows)
+        self.assertEqual(result["gated_out_candidates_total"], 2)
+        self.assertEqual(result["gated_out_candidates_mean_per_target"], 1.0)
+        self.assertEqual(result["gated_out_reasons_total"], {"n_benzylation_retro": 2})
+
 
 if __name__ == "__main__":
     unittest.main()

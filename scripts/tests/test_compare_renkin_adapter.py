@@ -61,9 +61,35 @@ class TestRenkinAdapterSmoke(unittest.TestCase):
         self.assertTrue(row.reaction_steps_parseable)
         self.assertTrue(row.all_leaves_in_configured_stock)
         self.assertEqual(row.target_element_accounting_status, "accounted")
+        self.assertTrue(row.validator_confirmed_route_found)
+        self.assertFalse(row.not_evaluable)
+        self.assertIsNone(row.gated_out_candidate_count)
+        self.assertIsNone(row.gated_out_reasons)
         self.assertIsNotNone(row.normalized_route_sha256)
         self.assertIsNotNone(row.raw_output_sha256)
         self.assertGreater(row.total_elapsed_ms, 0)
+
+    def test_spectator_bond_gated_policy_populates_gated_out_fields(self):
+        # Doesn't assert a specific exclusion count (that depends on
+        # default_rules()'s exact composition, out of scope here) -- only
+        # that the --spectator-bond-policy gated + --search-diagnostics
+        # wiring actually reaches the CLI and comes back parsed, distinct
+        # from the off-policy default (None) asserted above.
+        config = adapter.RenkinConfig(
+            binary_path=str(RENKIN_BIN),
+            building_blocks_path=str(BUILDING_BLOCKS),
+            templates_path=str(TEMPLATES),
+            depth=5,
+            beam_width=100,
+            max_routes=1,
+            external_timeout_s=30,
+            spectator_bond_policy="gated",
+        )
+        row = self._run(ASPIRIN, config=config)
+        self.assertEqual(row.run_status, "completed")
+        self.assertIsNotNone(row.gated_out_candidate_count)
+        self.assertIsNotNone(row.gated_out_reasons)
+        self.assertGreaterEqual(row.gated_out_candidate_count, 0)
 
     def test_reranker_failures_is_captured_in_tool_specific(self):
         model = REPO_ROOT / "data" / "phase3e_reranker_training" / "model.txt"

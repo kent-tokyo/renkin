@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass, field
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
 
 # Closed set -- exact equality is asserted in tests, not just "these are present".
 VALID_TOOLS = frozenset({"renkin", "aizynthfinder"})
@@ -34,6 +34,7 @@ _ROUTE_DEPENDENT_FIELDS = (
     "time_to_first_route_ms",
     "best_route_depth",
     "best_route_step_count",
+    "validator_confirmed_route_found",
 )
 _TREE_DEPENDENT_FIELDS = (
     "best_route_leaf_count",
@@ -94,6 +95,34 @@ class PlannerComparisonRow:
     route_tree_parseable: bool | None = None
     reaction_steps_parseable: bool | None = None
     target_element_accounting_status: str | None = None  # "accounted"|"unaccounted_target_element"|"not_evaluable"
+
+    # True only when route_found is True AND every existing validator check
+    # agrees the route is real (route_tree_parseable, reaction_steps_parseable,
+    # target_element_accounting_status == "accounted"). False when route_found
+    # is True but a validator check found a concrete defect. Null (not set)
+    # whenever route_found is not True -- there is nothing to validate, same
+    # convention as _ROUTE_DEPENDENT_FIELDS. Distinct from route_found itself
+    # so "solve rate" and "route quality" stay two separate, non-conflated
+    # axes (see docs/design v0.36.0 plan, "Docs explain solve rate and route
+    # quality as two separate axes").
+    validator_confirmed_route_found: bool | None = None
+    # True iff route_found is True but validator_confirmed_route_found could
+    # not be determined either way (target_element_accounting_status ==
+    # "not_evaluable") -- distinct from "no route was found" (which is not
+    # evaluable either, but for a trivial reason already visible via
+    # route_found=False, so this flag stays False there rather than True).
+    not_evaluable: bool = False
+
+    # Spectator-bond-loss fail-closed gate (v0.35.0, RENKIN-only,
+    # docs/design/spectator-bond-fail-closed-gating-v0.md). Null unless this
+    # row's own run used `--spectator-bond-policy gated`; on a gated run,
+    # gated_out_candidate_count is the number of candidates the search
+    # excluded for this target and gated_out_reasons maps rule_name -> count
+    # for those exclusions (both may be 0/{} when the policy was gated but
+    # excluded nothing, which is not the same as "not applicable" -- hence
+    # null rather than 0 as the not-applicable sentinel).
+    gated_out_candidate_count: int | None = None
+    gated_out_reasons: dict | None = None
 
     common_validation_warnings: list = field(default_factory=list)
     adapter_warnings: list = field(default_factory=list)

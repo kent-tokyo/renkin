@@ -60,6 +60,9 @@ class RenkinConfig:
     # RENKIN-vs-AiZynthFinder arm (see Issue #66 500-target protocol).
     ring_context_policy: str | None = None
     ring_context_sidecar: str | None = None
+    # Spectator-bond-loss fail-closed gate (v0.35.0) -- orthogonal to
+    # ring_context_policy above; "off" runs the shipped default (gate off).
+    spectator_bond_policy: str | None = None
     # Issue #101 Task 35: ordering-only LightGBM candidate reranker. Both
     # must be set together (renkin's own CLI already falls back to legacy
     # ordering with a stderr warning if only one is given, or if loading
@@ -177,6 +180,11 @@ def run_one_target(
     if config.ring_context_policy and config.ring_context_policy != "disabled":
         argv += ["--ring-context-policy", config.ring_context_policy]
         argv += ["--ring-context-sidecar", config.ring_context_sidecar]
+    if config.spectator_bond_policy and config.spectator_bond_policy != "off":
+        # --search-diagnostics is required for the CLI to emit
+        # search_diagnostics.spectator_bond_gated_out -- gated_out_* below
+        # would otherwise stay null even under a "gated" policy.
+        argv += ["--spectator-bond-policy", config.spectator_bond_policy, "--search-diagnostics"]
     if config.reranker_model and config.reranker_freq_table:
         argv += ["--reranker-model", config.reranker_model]
         argv += ["--reranker-freq-table", config.reranker_freq_table]
@@ -257,6 +265,16 @@ def run_one_target(
         "stage2_elapsed_ms": parsed.get("stage2_elapsed_ms"),
     }
 
+    gated_out_candidate_count = None
+    gated_out_reasons = None
+    if config.spectator_bond_policy == "gated":
+        gated_records = parsed.get("search_diagnostics", {}).get("spectator_bond_gated_out", [])
+        gated_out_candidate_count = len(gated_records)
+        gated_out_reasons = {}
+        for rec in gated_records:
+            rule_name = rec.get("rule_name", "unknown")
+            gated_out_reasons[rule_name] = gated_out_reasons.get(rule_name, 0) + 1
+
     row_kwargs = dict(
         **base,
         run_status="completed",
@@ -265,6 +283,8 @@ def run_one_target(
         total_elapsed_ms=total_elapsed_ms,
         peak_rss_bytes=peak_rss_bytes,
         raw_output_sha256=raw_output_sha256,
+        gated_out_candidate_count=gated_out_candidate_count,
+        gated_out_reasons=gated_out_reasons,
     )
 
     if not route_found:
@@ -307,6 +327,9 @@ def run_one_target(
     row_kwargs["route_tree_parseable"] = outcome.parseable
     if not outcome.parseable:
         row_kwargs["common_validation_warnings"] = outcome.defects
+        # A route was reported but its own tree doesn't parse -- a concrete,
+        # confirmed defect, not merely "couldn't evaluate".
+        row_kwargs["validator_confirmed_route_found"] = False
         return PlannerComparisonRow(**row_kwargs)
 
     graph = outcome.graph
@@ -324,6 +347,13 @@ def run_one_target(
     row_kwargs["target_element_accounting_status"] = accounting_status
 
     row_kwargs["common_validation_warnings"] = list(step_warnings) + list(accounting_warnings)
+
+    if accounting_status == "not_evaluable":
+        row_kwargs["not_evaluable"] = True
+    else:
+        row_kwargs["validator_confirmed_route_found"] = (
+            steps_ok is True and accounting_status == "accounted"
+        )
 
     return PlannerComparisonRow(**row_kwargs)
 

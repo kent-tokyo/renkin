@@ -84,7 +84,37 @@ def compute_aggregate(rows: list) -> dict:
             ),
             "denominator_kind": "parseable_routes",
         },
+        # Solve rate (route_found_rate above) vs route quality -- kept as two
+        # separate, non-conflated axes (see v0.36.0 plan). Denominator is
+        # all_sampled, not route_found_runs, so this rate is directly
+        # comparable to route_found_rate itself.
+        "validator_confirmed_route_found_rate": {
+            **_rate(
+                sum(1 for r in all_sampled if r.validator_confirmed_route_found is True), n_all
+            ),
+            "denominator_kind": "all_sampled",
+        },
+        "not_evaluable_rate": {
+            **_rate(sum(1 for r in all_sampled if r.not_evaluable is True), n_all),
+            "denominator_kind": "all_sampled",
+        },
     }
+
+    # Spectator-bond-loss gate exclusions (v0.35.0) -- only meaningful for an
+    # arm actually run under --spectator-bond-policy gated, where every row
+    # has gated_out_candidate_count set (possibly 0); omitted entirely for
+    # any other arm rather than reported as a misleading all-zero rate.
+    gated_rows = [r for r in all_sampled if r.gated_out_candidate_count is not None]
+    if gated_rows:
+        reasons_total: dict = {}
+        for r in gated_rows:
+            for rule_name, count in (r.gated_out_reasons or {}).items():
+                reasons_total[rule_name] = reasons_total.get(rule_name, 0) + count
+        agg["gated_out_candidates_total"] = sum(r.gated_out_candidate_count for r in gated_rows)
+        agg["gated_out_candidates_mean_per_target"] = agg["gated_out_candidates_total"] / len(
+            gated_rows
+        )
+        agg["gated_out_reasons_total"] = reasons_total
 
     tt_first = [r.time_to_first_route_ms for r in route_found_runs if r.time_to_first_route_ms is not None]
     total_elapsed = [r.total_elapsed_ms for r in measured_runs if r.total_elapsed_ms is not None]

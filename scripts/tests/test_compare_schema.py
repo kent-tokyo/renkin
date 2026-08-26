@@ -159,6 +159,38 @@ class TestNullabilityContract(unittest.TestCase):
         problems = schema.validate_row_nullability(row)
         self.assertTrue(any("best_route_depth" in p for p in problems))
 
+    def test_validator_confirmed_route_found_forbidden_when_no_route(self):
+        row = schema.PlannerComparisonRow(
+            target_id="t1",
+            target_smiles="CCO",
+            sample_rank=0,
+            tool="renkin",
+            tool_version="1.0",
+            configuration_id="cfg1",
+            comparison_mode="native",
+            run_status="completed",
+            route_found=False,
+            validator_confirmed_route_found=True,
+        )
+        problems = schema.validate_row_nullability(row)
+        self.assertTrue(any("validator_confirmed_route_found" in p for p in problems))
+
+    def test_not_evaluable_and_gated_out_default_to_falsy_and_null(self):
+        row = schema.PlannerComparisonRow(
+            target_id="t1",
+            target_smiles="CCO",
+            sample_rank=0,
+            tool="renkin",
+            tool_version="1.0",
+            configuration_id="cfg1",
+            comparison_mode="native",
+            run_status="completed",
+            route_found=False,
+        )
+        self.assertFalse(row.not_evaluable)
+        self.assertIsNone(row.gated_out_candidate_count)
+        self.assertIsNone(row.gated_out_reasons)
+
 
 class TestToolSpecificNamespacing(unittest.TestCase):
     def test_tool_specific_must_be_namespaced_under_tool_name(self):

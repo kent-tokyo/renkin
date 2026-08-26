@@ -68,7 +68,15 @@ this closes out the plan's originally-named priority table.
   12,684-row deuterium/tritium subset of `data/building_blocks_emolecules.smi`,
   that the `chematic` 0.20.1 bump above genuinely fixes the isotope-loss
   defect: 0 parse failures, 0 losses (full reversal from pre-fix
-  behavior). Full investigation record at
+  behavior). A separate 49,912-row stratified sample of the same file
+  (every 190th row, covering canonicalization idempotency broadly rather
+  than isotopes specifically) found 0 cycles / 0 non-convergent lines
+  across up to 8 repeated re-canonicalization passes -- every line
+  reaches a stable fixed point, the actual property `chematic` 0.20.1 was
+  meant to restore. Full investigation record, including the 29 flagged
+  (and explained -- pre-existing organometallic/counterion
+  standardization differences, not idempotency bugs) structurally-unusual
+  lines from that sample, at
   `docs/design/PHASE3A_CHEMATIC_ISOTOPE_FIX_STATUS.md`.
 
 ### Fixed

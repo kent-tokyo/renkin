@@ -59,6 +59,17 @@ this closes out the plan's originally-named priority table.
   field, never the same arm/label). See
   `docs/guides/open-source-retrosynthesis-comparison.md`, "Common post-hoc
   validation" and "RENKIN-specific diagnostics".
+- `stock_import::recanonicalize_stock_smiles` + `examples/isotope_sample_check.rs`:
+  a standing tool (not wired into the CLI) that re-applies RENKIN's real
+  stock-identity canonicalization path to every line of a `.smi` sample
+  and reports isotope-label survival, so a future `chematic` bump can be
+  re-checked against a real corpus sample before trusting a `renkin
+  doctor stock reimport_idempotency` PASS. Confirms, against the real
+  12,684-row deuterium/tritium subset of `data/building_blocks_emolecules.smi`,
+  that the `chematic` 0.20.1 bump above genuinely fixes the isotope-loss
+  defect: 0 parse failures, 0 losses (full reversal from pre-fix
+  behavior). Full investigation record at
+  `docs/design/PHASE3A_CHEMATIC_ISOTOPE_FIX_STATUS.md`.
 
 ### Fixed
 - Removed `n_benzylation_retro` and `michael_retro` from `default_rules()`

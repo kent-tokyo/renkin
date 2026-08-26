@@ -293,6 +293,18 @@ pub fn import_stock(
     Ok((accepted, manifest))
 }
 
+/// Diagnostic-only bridge: re-applies the exact same stock-identity
+/// canonicalization `import_stock` itself uses to a single SMILES string.
+/// Exists only so out-of-crate diagnostic tooling (e.g. an `examples/`
+/// probe) can reuse the real canonicalization path -- which is
+/// `pub(crate)` -- instead of re-deriving it, which would risk the probe
+/// silently testing different logic than what actually ships. Not part of
+/// the documented import/manifest API and not wired into the CLI; added
+/// for the v0.36.0 Phase 2 PR 2 `reimport_idempotency` investigation.
+pub fn recanonicalize_stock_smiles(smiles: &str) -> Result<String> {
+    canonical_stock_identity_from_smiles(smiles)
+}
+
 /// Convenience wrapper: import directly from a file path.
 pub fn import_stock_from_path(
     path: &Path,

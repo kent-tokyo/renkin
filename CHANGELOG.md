@@ -124,8 +124,8 @@ this closes out the plan's originally-named priority table.
 - `chematic`/`chematic-rxn`: `0.16` -> `0.20.1`. Not a patch-level jump
   from RENKIN's own perspective, despite the numbers: this closes out
   the `renkin doctor stock reimport_idempotency` FAIL discovered during
-  v0.36.0 Phase 2's eMolecules stock provenance retrofit (PR #196,
-  itself still frozen), root-caused to three independent, upstream
+  v0.36.0 Phase 2's eMolecules stock provenance retrofit (still frozen,
+  not yet opened as its own PR), root-caused to three independent, upstream
   `chematic` correctness defects, all fixed and shipped in this range:
   - Isotope-labeled hydrogen (`[2H]`/`[3H]`) was silently stripped by
     `remove_hydrogens` on every canonicalization pass, not just
@@ -168,13 +168,14 @@ this closes out the plan's originally-named priority table.
     that bond, not a regression).
   - Not run this round, deliberately: the formal 4,907-target Step 0
     remeasurement, the full 9.47M-compound eMolecules re-import, and any
-    change to PR #196's own frozen scope -- this bump is the dependency
-    update alone, Phase 5's own re-verification ladder (minimal fixtures
-    already covered above -> 290-case corpus already covered above ->
-    a 12,688-row raw isotopic-H subset -> the 402-compound stock doctor
-    already covered above -> a lightweight 9.47M-row probe -> exactly
-    one full re-import -> `renkin doctor stock` all-PASS) is separate,
-    later work before PR #196 itself resumes.
+    change to the provenance retrofit's own frozen scope -- this bump is
+    the dependency update alone, Phase 5's own re-verification ladder
+    (minimal fixtures already covered above -> 290-case corpus already
+    covered above -> a 12,688-row raw isotopic-H subset -> the
+    402-compound stock doctor already covered above -> a lightweight
+    9.47M-row probe -> exactly one full re-import -> `renkin doctor
+    stock` all-PASS) is separate, later work before that provenance
+    retrofit itself resumes.
 
 ## [0.35.0] - 2026-08-24 "Template Integrity & Spectator Bond Loss"
 

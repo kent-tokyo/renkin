@@ -250,10 +250,15 @@ of this investigation (neither is a bug in itself, neither blocks Phase
     export vs. split into separate fragments by chematic's valence model)
     or a bare `[H+]` counterion being dropped by `remove_explicit_h`
     (e.g. chloroauric acid's `[H+].[Au+3].4[Cl-]` losing its proton to
-    become `[Au+3].4[Cl-]`, net charge -1) -- pre-existing standardization
-    *policy* differences between two different tools/pipelines, not
-    idempotency bugs: every one of these 29 is still stable
-    (`fixed_point_after_2_calls`), never a cycle or non-convergence.
+    become `[Au+3].4[Cl-]`, net charge -1). None of these 29 is an
+    idempotency defect -- every one is still stable
+    (`fixed_point_after_2_calls`), never a cycle or non-convergence. The
+    organometallic bond-splitting is well-evidenced as a pre-existing
+    tool-vs-tool representation difference; the bare-`[H+]`-counterion
+    case is not fully verified the same way -- whether silently
+    collapsing a salt and its conjugate base to the same stock identity
+    is the *intended* `STANDARDIZE_OPTS` policy, or an unexamined side
+    effect, is a separate open question this probe did not settle.
   - Single full re-import from raw eMolecules, and `renkin doctor stock`
     all-PASS on the result — **not started**, stays gated behind an
     explicit go-ahead given the disk footprint (~455MB+ output) and this

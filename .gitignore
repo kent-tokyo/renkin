@@ -28,6 +28,10 @@ __pycache__/
 AGENTS.md
 lessons.md
 ROADMAP.md
+# Internal-only notes/roadmap, never published -- whole directory, not just
+# the two files it happens to hold today (those already matched the bare
+# ROADMAP.md/memo.txt patterns above by coincidence).
+/internal_docs/
 tasks/todo.md
 # `tasks/*` (not `tasks/`) deliberately: a trailing-slash directory pattern
 # excludes the directory itself, and git cannot re-include a file whose

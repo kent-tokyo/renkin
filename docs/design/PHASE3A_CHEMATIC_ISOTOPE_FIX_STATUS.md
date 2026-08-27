@@ -220,11 +220,45 @@ of this investigation (neither is a bug in itself, neither blocks Phase
   - 402-compound `data/building_blocks.smi` stock doctor — covered by
     Phase 4's own verification pass (`renkin doctor stock
     reimport_idempotency` now **PASS**es).
-  - 9.47M-row lightweight probe (a *sampled* full-corpus check, not an
-    exhaustive one — an exhaustive double-canonicalization pass over all
-    9.47M rows runs on the same order of wall-clock time as the full
-    re-import it's meant to gate, defeating the point of a cheap
-    intermediate rung) — **not started**.
+  - 9.47M-row lightweight probe — **done**, 2026-08-26, as a *stratified
+    sample* rather than an exhaustive pass (an exhaustive
+    double-canonicalization pass over all 9.47M rows runs on the same
+    order of wall-clock time as the full re-import it's meant to gate,
+    defeating the point of a cheap intermediate rung). Sampled every
+    190th data row of `data/building_blocks_emolecules.smi`
+    (49,912 SMILES, evenly spread across the file) and ran each through
+    up to 8 repeated `recanonicalize_stock_smiles` applications (the
+    `diagnose/canonical-identity-blockers` branch's own
+    `emolecules_idempotency_probe.rs`, run locally, not merged to
+    master). Result: **0 parse failures; 0 cycles; 0
+    `no_convergence_within_limit`** — every single line reaches a stable
+    fixed point (49,911/49,912 after exactly 2 canonicalization calls, 1
+    after 3), which is the actual signal this rung exists to check (that
+    chematic's own canonical form, once produced, doesn't drift under
+    repeated re-application). The naive "differs from the line stored in
+    the file" count is a red herring here and should not be read as a
+    defect count: 49,785/49,912 lines differ from pass 0, but pass 0 is
+    text from the *old* ad-hoc Python/RDKit import script, not chematic's
+    own canonical form -- of course chematic's canonicalization changes
+    RDKit-canonicalized text, that comparison was never meaningful and
+    will go away once the provenance retrofit regenerates this file via
+    chematic itself. Separately, 29/49,912 lines are
+    `structurally_unstable` (atom_count/formula/fragment_count differs
+    between the stored line and chematic's canonical form) -- inspected
+    by hand, every one is an organometallic bond-interpretation
+    difference (Sn-C/Fe-C/Au-Cl treated as a real bond by the old RDKit
+    export vs. split into separate fragments by chematic's valence model)
+    or a bare `[H+]` counterion being dropped by `remove_explicit_h`
+    (e.g. chloroauric acid's `[H+].[Au+3].4[Cl-]` losing its proton to
+    become `[Au+3].4[Cl-]`, net charge -1). None of these 29 is an
+    idempotency defect -- every one is still stable
+    (`fixed_point_after_2_calls`), never a cycle or non-convergence. The
+    organometallic bond-splitting is well-evidenced as a pre-existing
+    tool-vs-tool representation difference; the bare-`[H+]`-counterion
+    case is not fully verified the same way -- whether silently
+    collapsing a salt and its conjugate base to the same stock identity
+    is the *intended* `STANDARDIZE_OPTS` policy, or an unexamined side
+    effect, is a separate open question this probe did not settle.
   - Single full re-import from raw eMolecules, and `renkin doctor stock`
     all-PASS on the result — **not started**, stays gated behind an
     explicit go-ahead given the disk footprint (~455MB+ output) and this

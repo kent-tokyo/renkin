@@ -81,6 +81,21 @@ use crate::search::{SearchConfig, diagnose, find_routes};
 ///         rules with no ``#`` in their SMIRKS; others stay
 ///         diagnostics-only regardless of this setting. Unrecognized
 ///         values raise ``ValueError``.
+///     beam_diversity_policy (str): ``"off"`` (default), ``"diagnostics_only"``,
+///         or ``"active"`` -- reserves ``beam_diversity_slots`` beam slots
+///         for template-family diversity instead of pure score, so a
+///         lower-scoring candidate from an underrepresented rule isn't
+///         fully crowded out by many higher-scoring same-rule siblings
+///         (``docs/design/diversity-reserved-beam-v0.md``).
+///         ``"diagnostics_only"`` records what ``"active"`` would
+///         additionally keep in the ``search_diagnostics`` block's
+///         ``beam_diversity_stats`` (requires ``search_diagnostics=True``
+///         to see them) without changing selection. ``"active"`` actually
+///         reserves the slots. Unrecognized values raise ``ValueError``.
+///     beam_diversity_slots (int): Beam slots reserved under
+///         ``"diagnostics_only"``/``"active"`` above; ignored under
+///         ``"off"``. Default: ``0`` (no reservation even if the policy is
+///         opted into).
 ///
 ///     Passing only one of the two reranker paths, or the model failing to
 ///     load, falls back to legacy ordering with a message printed to
@@ -123,7 +138,7 @@ use crate::search::{SearchConfig, diagnose, find_routes};
 ///     routes = json.loads(renkin.find_routes("CC(=O)Oc1ccccc1C(=O)O", depth=3))
 ///     print(routes["routes_found"])
 #[pyfunction]
-#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None, search_diagnostics=false, spectator_bond_policy="off"))]
+#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None, search_diagnostics=false, spectator_bond_policy="off", beam_diversity_policy="off", beam_diversity_slots=0))]
 #[allow(clippy::too_many_arguments)]
 pub fn find_routes_py(
     target: &str,
@@ -145,6 +160,8 @@ pub fn find_routes_py(
     coverage_timeout_seconds: Option<u64>,
     search_diagnostics: bool,
     spectator_bond_policy: &str,
+    beam_diversity_policy: &str,
+    beam_diversity_slots: usize,
 ) -> PyResult<String> {
     if search_mode != "standard" && search_mode != "coverage" {
         return Err(PyValueError::new_err(format!(
@@ -159,6 +176,17 @@ pub fn find_routes_py(
             return Err(PyValueError::new_err(format!(
                 "invalid spectator_bond_policy {other:?} (expected \"off\", \"diagnostics_only\", \
                  or \"gated\")"
+            )));
+        }
+    };
+    let beam_diversity_policy = match beam_diversity_policy {
+        "off" => crate::search::BeamDiversityPolicy::Off,
+        "diagnostics_only" => crate::search::BeamDiversityPolicy::DiagnosticsOnly,
+        "active" => crate::search::BeamDiversityPolicy::Active,
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "invalid beam_diversity_policy {other:?} (expected \"off\", \"diagnostics_only\", \
+                 or \"active\")"
             )));
         }
     };
@@ -264,6 +292,8 @@ pub fn find_routes_py(
         template_metadata: template_metadata.map(|tm| tm.templates),
         reranker,
         spectator_bond_policy,
+        beam_diversity_policy,
+        beam_diversity_slots,
         ..Default::default()
     };
 

@@ -526,6 +526,13 @@ pub struct CrowdOutDiagnostics {
     /// exclusion is never silent: this is its trail even though the
     /// candidate itself no longer appears anywhere else in this run.
     pub spectator_bond_gated_out: Vec<crate::spectator_bond::GatedCandidateRecord>,
+    /// Diversity-reserved beam (Issue #101,
+    /// `docs/design/diversity-reserved-beam-v0.md`), accumulated across
+    /// every `beam_prune` call in this search -- always default/empty
+    /// unless [`SearchConfig::beam_diversity_policy`] is `DiagnosticsOnly`
+    /// or `Active`. An independent axis from `spectator_bond_gated_out`
+    /// above, never conflated with it.
+    pub beam_diversity_stats: DiversityReservationStats,
     /// Same-parent proposals from *different* templates whose precursor
     /// SMILES multiset (sorted) is identical -- these push distinct heap
     /// nodes that would collapse to the same downstream synthesis state.
@@ -689,11 +696,8 @@ struct Node {
     /// eligible for family-diversity beam-slot reservation, only for the
     /// pure-score portion). Populated once at push time from the same
     /// `entry.template_id` `CandidateTraceRecord` already reads, at no
-    /// extra per-node cost. Not yet read anywhere -- `beam_prune` is still
-    /// pure top-K-by-score; this is rollout stage 1 (plumbing only) of
-    /// that design doc. `#[allow(dead_code)]` is deliberate: stage 2 reads
-    /// this field, don't remove it as unused in the meantime.
-    #[allow(dead_code)]
+    /// extra per-node cost. Read by `select_beam_survivors`, called from
+    /// `beam_prune` whenever `SearchConfig::beam_diversity_policy != Off`.
     family_key: Option<String>,
 }
 
@@ -1122,14 +1126,22 @@ type BeamEvictionStats = (usize, f64, f64, f64);
 /// `(trace_id, rank, survived)` for one traced node -- see [`beam_prune`].
 type TraceRank = (u64, usize, bool);
 
-/// Returns `(eviction_stats, trace_ranks)`. `eviction_stats` is
-/// `Some((evicted_count, evicted_f_min, evicted_f_max, boundary_f))` when a
-/// truncation actually happened (diagnostics-only bookkeeping over the sort
-/// this function already performs -- does not change which nodes are
-/// kept), `None` when nothing was pruned. `trace_ranks` is
-/// `(trace_id, rank, survived)` for every node with `Node::trace_id ==
-/// Some(_)`, computed from the sort this function performs when truncation
-/// happens -- so it never re-sorts. Empty when nothing is truncated
+/// Returns `(eviction_stats, trace_ranks, diversity_stats)`.
+/// `eviction_stats` is `Some((evicted_count, evicted_f_min, evicted_f_max,
+/// boundary_f))` when a truncation actually happened (diagnostics-only
+/// bookkeeping over the sort this function already performs -- does not
+/// change which nodes are kept), `None` when nothing was pruned. These
+/// three stats are always computed over the pure top-`beam_width`-by-score
+/// cutoff, *even under* `BeamDiversityPolicy::Active` (where the actual
+/// survivor set can differ from that cutoff) -- this keeps their meaning
+/// stable and comparable across every policy; `diversity_stats`
+/// (`DiversityReservationStats::default()` unless `diversity_policy` is
+/// `DiagnosticsOnly`/`Active`) is the correct place to look for what the
+/// diversity mechanism itself did. `trace_ranks` is `(trace_id, rank,
+/// survived)` for every node with `Node::trace_id == Some(_)`; `rank` is
+/// always the pure-score rank, but `survived` reflects true final-survivor
+/// membership (which can differ from `rank < beam_width` under `Active`).
+/// Both stats vecs are empty/default when nothing is truncated
 /// (`heap.len() <= beam_width`): the heap isn't sorted in that branch, so
 /// there is no real rank to report, and a traced node's
 /// `CandidateTraceRecord` simply keeps its as-created
@@ -1138,9 +1150,15 @@ type TraceRank = (u64, usize, bool);
 fn beam_prune(
     heap: &mut BinaryHeap<Node>,
     beam_width: usize,
-) -> (Option<BeamEvictionStats>, Vec<TraceRank>) {
+    diversity_policy: BeamDiversityPolicy,
+    diversity_slots: usize,
+) -> (
+    Option<BeamEvictionStats>,
+    Vec<TraceRank>,
+    DiversityReservationStats,
+) {
     if beam_width == 0 || heap.len() <= beam_width {
-        return (None, Vec::new());
+        return (None, Vec::new(), DiversityReservationStats::default());
     }
     let mut nodes: Vec<Node> = heap.drain().collect();
     nodes.sort_unstable_by(|a, b| {
@@ -1148,10 +1166,36 @@ fn beam_prune(
             .partial_cmp(&b.f())
             .unwrap_or(std::cmp::Ordering::Equal)
     });
-    let trace_ranks: Vec<(u64, usize, bool)> = nodes
+
+    if diversity_policy == BeamDiversityPolicy::Off {
+        // Exact pre-existing behavior, byte-for-byte, zero extra cost --
+        // no call into select_beam_survivors at all.
+        let trace_ranks: Vec<TraceRank> = nodes
+            .iter()
+            .enumerate()
+            .filter_map(|(rank, n)| n.trace_id.map(|id| (id, rank, rank < beam_width)))
+            .collect();
+        let evicted = &nodes[beam_width..];
+        let evicted_f_min = evicted.iter().map(Node::f).fold(f64::INFINITY, f64::min);
+        let evicted_f_max = evicted
+            .iter()
+            .map(Node::f)
+            .fold(f64::NEG_INFINITY, f64::max);
+        let boundary_f = nodes[beam_width - 1].f();
+        let evicted_count = evicted.len();
+        nodes.truncate(beam_width);
+        *heap = nodes.into_iter().collect();
+        return (
+            Some((evicted_count, evicted_f_min, evicted_f_max, boundary_f)),
+            trace_ranks,
+            DiversityReservationStats::default(),
+        );
+    }
+
+    let trace_ranks_by_rank: Vec<(u64, usize)> = nodes
         .iter()
         .enumerate()
-        .filter_map(|(rank, n)| n.trace_id.map(|id| (id, rank, rank < beam_width)))
+        .filter_map(|(rank, n)| n.trace_id.map(|id| (id, rank)))
         .collect();
     let evicted = &nodes[beam_width..];
     let evicted_f_min = evicted.iter().map(Node::f).fold(f64::INFINITY, f64::min);
@@ -1161,21 +1205,31 @@ fn beam_prune(
         .fold(f64::NEG_INFINITY, f64::max);
     let boundary_f = nodes[beam_width - 1].f();
     let evicted_count = evicted.len();
-    nodes.truncate(beam_width);
-    *heap = nodes.into_iter().collect();
+
+    let (survivors, diversity_stats) =
+        select_beam_survivors(nodes, beam_width, diversity_slots, diversity_policy);
+    let survivor_trace_ids: FxHashSet<u64> = survivors.iter().filter_map(|n| n.trace_id).collect();
+    let trace_ranks: Vec<TraceRank> = trace_ranks_by_rank
+        .into_iter()
+        .map(|(id, rank)| (id, rank, survivor_trace_ids.contains(&id)))
+        .collect();
+    *heap = survivors.into_iter().collect();
+
     (
         Some((evicted_count, evicted_f_min, evicted_f_max, boundary_f)),
         trace_ranks,
+        diversity_stats,
     )
 }
 
-/// Rollout stage 2 of `docs/design/diversity-reserved-beam-v0.md` §6.
-/// **Not wired into `beam_prune` yet** (stage 3) -- exists standalone so it
-/// can be unit-tested against synthetic `Node` sets with contrived family
-/// distributions before touching the search hot path at all.
+/// `docs/design/diversity-reserved-beam-v0.md` §5. Wired into `beam_prune`
+/// via [`SearchConfig::beam_diversity_policy`] (rollout stage 3) -- `Off`
+/// (the default) reproduces pre-existing behavior exactly, byte-for-byte,
+/// zero extra cost. CLI/Python/WASM exposure is stage 4, not yet done --
+/// `Active` is reachable only by constructing a `SearchConfig` directly
+/// (Rust callers/tests), not from any shipped external surface yet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)] // stage 3 wires this into SearchConfig/beam_prune
-enum BeamDiversityPolicy {
+pub enum BeamDiversityPolicy {
     /// Default: identical to today's `beam_prune` (pure top-`beam_width`
     /// by score). No diversity computation happens at all.
     Off,
@@ -1196,15 +1250,25 @@ enum BeamDiversityPolicy {
 /// diversity picks may coincidentally already rank inside the top
 /// `beam_width` anyway; the design doc's own §7 "diversity yield" metric
 /// (rescued / diversity_slots) is meant to answer "are the reserved slots
-/// doing anything," which this counts correctly either way.
-#[derive(Debug, Default, Clone, PartialEq)]
-#[allow(dead_code)] // stage 3 wires this into beam_prune/search_diagnostics
-struct DiversityReservationStats {
-    families_represented_by_score_alone: usize,
-    families_rescued_by_reservation: usize,
+/// doing anything," which this counts correctly either way. Accumulated
+/// across every `beam_prune` call in a search via
+/// [`CrowdOutDiagnostics::beam_diversity_stats`].
+#[derive(Debug, Default, Clone, PartialEq, Serialize)]
+pub struct DiversityReservationStats {
+    pub families_represented_by_score_alone: usize,
+    pub families_rescued_by_reservation: usize,
     /// Only traced nodes (`Node::trace_id.is_some()`) are identifiable
     /// here -- matches `beam_prune`'s own `TraceRank` opt-in convention.
-    rescued_node_trace_ids: Vec<u64>,
+    pub rescued_node_trace_ids: Vec<u64>,
+}
+
+impl std::ops::AddAssign for DiversityReservationStats {
+    fn add_assign(&mut self, other: Self) {
+        self.families_represented_by_score_alone += other.families_represented_by_score_alone;
+        self.families_rescued_by_reservation += other.families_rescued_by_reservation;
+        self.rescued_node_trace_ids
+            .extend(other.rescued_node_trace_ids);
+    }
 }
 
 /// Computes which of `nodes` survive beam pruning under `policy`, given
@@ -1219,8 +1283,9 @@ struct DiversityReservationStats {
 /// set as pure top-`beam_width`-by-score -- `Off` skips all diversity
 /// computation entirely (zero cost), `DiagnosticsOnly` still computes it
 /// (for `DiversityReservationStats`) but discards its effect on selection.
-/// Only `Active` actually changes which nodes survive.
-#[allow(dead_code)] // stage 3 wires this into beam_prune
+/// Only `Active` actually changes which nodes survive. Called from
+/// `beam_prune` only when `policy != Off` (that case is handled inline
+/// there instead, to guarantee zero extra cost for the default policy).
 fn select_beam_survivors(
     nodes: Vec<Node>,
     beam_width: usize,
@@ -1509,6 +1574,26 @@ pub struct SearchConfig {
     /// behavior exactly, byte-for-byte, matching `timing_diagnostics`'s
     /// own determinism-test precedent.
     pub spectator_bond_policy: SpectatorBondPolicy,
+    /// Diversity-reserved beam (ROADMAP Item 4, issue #101,
+    /// `docs/design/diversity-reserved-beam-v0.md`) -- an independent
+    /// axis from `spectator_bond_policy` above, never combined into one
+    /// label (same "orthogonal policies" rule this codebase already
+    /// applies to `ring_context`). `Off` (the default) reproduces
+    /// `beam_prune`'s pre-existing pure-top-K-by-score behavior exactly,
+    /// byte-for-byte, with zero extra computation. `DiagnosticsOnly`
+    /// computes what `Active` would additionally keep
+    /// (`CrowdOutDiagnostics::beam_diversity_stats`) but never changes
+    /// which nodes survive pruning. `Active` reserves
+    /// `beam_diversity_slots` beam slots for family diversity instead of
+    /// pure score. Not yet exposed on any CLI/Python/WASM surface
+    /// (design doc stage 4) -- reachable only by constructing a
+    /// `SearchConfig` directly.
+    pub beam_diversity_policy: BeamDiversityPolicy,
+    /// Beam slots reserved for family diversity under `DiagnosticsOnly`/
+    /// `Active` (design doc §6); ignored under `Off`. Clamped to
+    /// `beam_width` inside `select_beam_survivors` -- never panics if set
+    /// larger.
+    pub beam_diversity_slots: usize,
 }
 
 impl Default for SearchConfig {
@@ -1532,6 +1617,8 @@ impl Default for SearchConfig {
             reranker: None,
             timing_diagnostics: false,
             spectator_bond_policy: SpectatorBondPolicy::Off,
+            beam_diversity_policy: BeamDiversityPolicy::Off,
+            beam_diversity_slots: 0,
         }
     }
 }
@@ -2185,7 +2272,12 @@ pub fn find_routes_with_control(
         if config.beam_width > 0 && heap.len() > config.beam_width {
             beam_limit_hit = true;
         }
-        let (eviction_stats, trace_ranks) = beam_prune(&mut heap, config.beam_width);
+        let (eviction_stats, trace_ranks, diversity_stats) = beam_prune(
+            &mut heap,
+            config.beam_width,
+            config.beam_diversity_policy,
+            config.beam_diversity_slots,
+        );
         if let Some((evicted_n, evicted_min, evicted_max, boundary)) = eviction_stats {
             crowd_out.beam_prune_invocations += 1;
             crowd_out.candidates_evicted_total += evicted_n as u64;
@@ -2200,6 +2292,7 @@ pub fn find_routes_with_control(
                     .map_or(evicted_max, |m| m.max(evicted_max)),
             );
             crowd_out.final_beam_boundary_f = Some(boundary);
+            crowd_out.beam_diversity_stats += diversity_stats;
         }
         for (trace_id, rank, survived) in trace_ranks {
             if let Some(record) = crowd_out.candidate_trace.get_mut(trace_id as usize) {
@@ -2688,7 +2781,7 @@ mod tests {
     #[test]
     fn beam_prune_returns_none_when_beam_width_zero() {
         let mut heap: BinaryHeap<Node> = (0..5).map(|i| node(i as f64)).collect();
-        let (stats, trace_ranks) = beam_prune(&mut heap, 0);
+        let (stats, trace_ranks, _) = beam_prune(&mut heap, 0, BeamDiversityPolicy::Off, 0);
         assert_eq!(stats, None);
         assert!(trace_ranks.is_empty());
         assert_eq!(heap.len(), 5, "beam_width=0 must not truncate");
@@ -2697,7 +2790,7 @@ mod tests {
     #[test]
     fn beam_prune_returns_none_when_heap_within_beam_width() {
         let mut heap: BinaryHeap<Node> = (0..3).map(|i| node(i as f64)).collect();
-        let (stats, trace_ranks) = beam_prune(&mut heap, 10);
+        let (stats, trace_ranks, _) = beam_prune(&mut heap, 10, BeamDiversityPolicy::Off, 0);
         assert_eq!(stats, None);
         assert!(trace_ranks.is_empty());
         assert_eq!(heap.len(), 3);
@@ -2707,7 +2800,10 @@ mod tests {
     fn beam_prune_reports_exact_eviction_stats() {
         // f = 0.0, 1.0, 2.0, 3.0, 4.0 -- keep the best 2 (lowest f).
         let mut heap: BinaryHeap<Node> = (0..5).map(|i| node(i as f64)).collect();
-        let (evicted_n, evicted_min, evicted_max, boundary) = beam_prune(&mut heap, 2).0.unwrap();
+        let (evicted_n, evicted_min, evicted_max, boundary) =
+            beam_prune(&mut heap, 2, BeamDiversityPolicy::Off, 0)
+                .0
+                .unwrap();
         assert_eq!(evicted_n, 3, "5 nodes - beam_width 2 = 3 evicted");
         assert_eq!(evicted_min, 2.0, "lowest f among the evicted (f=2,3,4)");
         assert_eq!(evicted_max, 4.0, "highest f among the evicted");
@@ -2731,7 +2827,7 @@ mod tests {
         ]
         .into_iter()
         .collect();
-        let (_, trace_ranks) = beam_prune(&mut heap, 2);
+        let (_, trace_ranks, _) = beam_prune(&mut heap, 2, BeamDiversityPolicy::Off, 0);
         let mut by_id: FxHashMap<u64, (usize, bool)> = trace_ranks
             .into_iter()
             .map(|(id, rank, survived)| (id, (rank, survived)))
@@ -2750,9 +2846,61 @@ mod tests {
         // a traced node here must keep its as-created default rather than
         // being reported as a fabricated rank 0.
         let mut heap: BinaryHeap<Node> = vec![traced_node(0.0, 7), node(1.0)].into_iter().collect();
-        let (stats, trace_ranks) = beam_prune(&mut heap, 10);
+        let (stats, trace_ranks, _) = beam_prune(&mut heap, 10, BeamDiversityPolicy::Off, 0);
         assert_eq!(stats, None, "heap smaller than beam_width -> no eviction");
         assert!(trace_ranks.is_empty());
+    }
+
+    // ── beam_prune integration tests for BeamDiversityPolicy (rollout
+    //    stage 3 -- wiring select_beam_survivors into beam_prune itself) ──
+
+    fn crowded_family_heap() -> BinaryHeap<Node> {
+        // 3 nodes family "A" (best scores) + 1 node family "B" (worst) --
+        // pure top-3 excludes B entirely; a diversity slot should rescue it.
+        vec![
+            family_node(1.0, "A"),
+            family_node(2.0, "A"),
+            family_node(3.0, "A"),
+            family_node(4.0, "B"),
+        ]
+        .into_iter()
+        .collect()
+    }
+
+    #[test]
+    fn beam_prune_diagnostics_only_matches_off_survivor_set_exactly() {
+        let mut off_heap = crowded_family_heap();
+        let (off_stats, _, off_diversity) =
+            beam_prune(&mut off_heap, 3, BeamDiversityPolicy::Off, 1);
+
+        let mut diag_heap = crowded_family_heap();
+        let (diag_stats, _, diag_diversity) =
+            beam_prune(&mut diag_heap, 3, BeamDiversityPolicy::DiagnosticsOnly, 1);
+
+        let mut off_fs: Vec<f64> = off_heap.iter().map(Node::f).collect();
+        let mut diag_fs: Vec<f64> = diag_heap.iter().map(Node::f).collect();
+        off_fs.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+        diag_fs.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_eq!(
+            off_fs, diag_fs,
+            "DiagnosticsOnly must never change beam_prune's actual survivors"
+        );
+        assert_eq!(
+            off_stats, diag_stats,
+            "eviction bookkeeping stays identical too"
+        );
+        assert_eq!(off_diversity, DiversityReservationStats::default());
+        assert_eq!(diag_diversity.families_rescued_by_reservation, 1);
+    }
+
+    #[test]
+    fn beam_prune_active_rescues_underrepresented_family() {
+        let mut heap = crowded_family_heap();
+        let (_, _, diversity) = beam_prune(&mut heap, 3, BeamDiversityPolicy::Active, 1);
+        let mut fs: Vec<f64> = heap.iter().map(Node::f).collect();
+        fs.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_eq!(fs, vec![1.0, 2.0, 4.0], "family B (f=4.0) must be rescued");
+        assert_eq!(diversity.families_rescued_by_reservation, 1);
     }
 
     #[test]

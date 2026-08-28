@@ -77,6 +77,36 @@ this closes out the plan's originally-named priority table.
   structurally-unusual (but never non-idempotent) lines from that sample
   and what's confirmed vs. still-open about each explanation, at
   `docs/design/PHASE3A_CHEMATIC_ISOTOPE_FIX_STATUS.md`.
+- **eMolecules stock provenance retrofit (v0.36.0 Phase 2 PR 2):
+  `data/building_blocks_emolecules_canonical.smi`'s manifest**
+  (`data/building_blocks_emolecules_canonical.manifest.json`, tracked;
+  the 385MB stock file itself stays gitignored, matching every other
+  large-stock precedent in this repo). Generated via `renkin stock
+  import` against the existing `data/building_blocks_emolecules.smi`
+  (itself an eMolecules-free-tier-2024-01-01 extract already filtered by
+  `scripts/prepare_emolecules.py`, not raw eMolecules -- the manifest's
+  `source.label` says exactly that): 9,483,212 input rows -> 9,483,209
+  accepted (3 unparseable) -> 9,481,986 unique canonical structures
+  (1,223 duplicates collapsed under chematic identity).
+  `renkin doctor stock` against the result: **8/9 checks PASS, 1 WARN**
+  (`source_provenance`: no license recorded -- honest, not fabricated),
+  **1 FAIL** (`reimport_idempotency`). Root-caused the FAIL directly (a
+  real second `renkin stock import` on the canonical output, diffed
+  byte-for-byte against the first): **31 lines differ out of 9,481,986
+  (0.00033%)**, isolated to a bare-`chematic` `canonical_smiles(x) !=
+  canonical_smiles(canonical_smiles(x))` residual for E/Z-coupled and
+  locally-symmetric-stereocenter inputs -- roughly 1/10th the rate of
+  the original 290/9.47M defect this investigation already root-caused
+  and fixed (chematic #389/#392/#390, shipped in 0.20.1). RDKit InChI/
+  InChIKey confirmed identical real chemistry on 2 of the 31 cases --
+  pure text-representation instability, not a stock-identity or
+  correctness defect. Filed as chematic issue #423 with 3 minimal,
+  isolated (non-corpus) witnesses; **not blocking** -- the stock content
+  itself is complete and chemically correct, this residual only affects
+  whether `renkin doctor stock` can report a byte-for-byte-reproducible
+  PASS. This closes out Phase 2 PR 2's actual scope; the 10k/100k/1M
+  pilot tiers (Phase 2 PR 5) and the exact-ZINC-scale shared-stock arm
+  (Phase 3, issue #86) remain separately gated, not started here.
 - `renkin doctor templates <file.smi>` (issue #100): reports an
   extracted-template corpus's own SHA-256, whether its header records a
   revision-pinned source (`# Source: {dataset}@{revision}`, the format

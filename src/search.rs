@@ -682,6 +682,19 @@ struct Node {
     /// reached yet. `None` (the default) costs nothing beyond this field's
     /// own size -- see [`CandidateTraceRecord`].
     trace_id: Option<u64>,
+    /// The `template_id` of the rule that produced this node's own step,
+    /// i.e. the last edge on `path` -- `None` for the root (no step) or any
+    /// other node with no well-defined rule identity of its own (see
+    /// `docs/design/diversity-reserved-beam-v0.md` §3: such nodes are never
+    /// eligible for family-diversity beam-slot reservation, only for the
+    /// pure-score portion). Populated once at push time from the same
+    /// `entry.template_id` `CandidateTraceRecord` already reads, at no
+    /// extra per-node cost. Not yet read anywhere -- `beam_prune` is still
+    /// pure top-K-by-score; this is rollout stage 1 (plumbing only) of
+    /// that design doc. `#[allow(dead_code)]` is deliberate: stage 2 reads
+    /// this field, don't remove it as unused in the meantime.
+    #[allow(dead_code)]
+    family_key: Option<String>,
 }
 
 impl Node {
@@ -1643,6 +1656,7 @@ pub fn find_routes_with_control(
         g: 0.0,
         h: h0,
         trace_id: None,
+        family_key: None,
     });
 
     'frontier: while let Some(node) = heap.pop() {
@@ -2036,6 +2050,7 @@ pub fn find_routes_with_control(
                 g: node.g + entry.step_cost,
                 h: new_h,
                 trace_id,
+                family_key: Some(entry.template_id.clone()),
             });
         }
 
@@ -2396,6 +2411,7 @@ mod tests {
             g: f,
             h: 0.0,
             trace_id: None,
+            family_key: None,
         }
     }
 

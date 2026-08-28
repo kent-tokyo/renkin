@@ -1169,6 +1169,133 @@ fn beam_prune(
     )
 }
 
+/// Rollout stage 2 of `docs/design/diversity-reserved-beam-v0.md` §6.
+/// **Not wired into `beam_prune` yet** (stage 3) -- exists standalone so it
+/// can be unit-tested against synthetic `Node` sets with contrived family
+/// distributions before touching the search hot path at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)] // stage 3 wires this into SearchConfig/beam_prune
+enum BeamDiversityPolicy {
+    /// Default: identical to today's `beam_prune` (pure top-`beam_width`
+    /// by score). No diversity computation happens at all.
+    Off,
+    /// Computes what `Active` would additionally keep, for measurement,
+    /// but returns the exact same survivor set as `Off` -- never changes
+    /// which nodes actually continue the search.
+    DiagnosticsOnly,
+    /// Actually reserves `diversity_slots` beam slots for family diversity
+    /// (design doc §6).
+    Active,
+}
+
+/// See [`BeamDiversityPolicy::Active`]. `families_rescued_by_reservation`
+/// counts distinct families given a beam slot that pure top-`score_slots`
+/// selection (`beam_width - diversity_slots`) would not have included --
+/// this is deliberately relative to the score-only cutoff, not to
+/// `Off`'s own full-`beam_width` survivor set, since a handful of
+/// diversity picks may coincidentally already rank inside the top
+/// `beam_width` anyway; the design doc's own §7 "diversity yield" metric
+/// (rescued / diversity_slots) is meant to answer "are the reserved slots
+/// doing anything," which this counts correctly either way.
+#[derive(Debug, Default, Clone, PartialEq)]
+#[allow(dead_code)] // stage 3 wires this into beam_prune/search_diagnostics
+struct DiversityReservationStats {
+    families_represented_by_score_alone: usize,
+    families_rescued_by_reservation: usize,
+    /// Only traced nodes (`Node::trace_id.is_some()`) are identifiable
+    /// here -- matches `beam_prune`'s own `TraceRank` opt-in convention.
+    rescued_node_trace_ids: Vec<u64>,
+}
+
+/// Computes which of `nodes` survive beam pruning under `policy`, given
+/// `beam_width` total slots and `diversity_slots` of those reserved for
+/// family diversity (design doc §6's 3-step algorithm). `nodes` need not
+/// be pre-sorted. Returns the selected survivors (unsorted relative to
+/// score -- caller's responsibility to re-sort if needed, matching how
+/// `beam_prune` itself rebuilds the heap from an unordered `Vec` today)
+/// plus diagnostics. `diversity_slots` is clamped to `beam_width`.
+///
+/// `Off` and `DiagnosticsOnly` both return byte-for-byte the same survivor
+/// set as pure top-`beam_width`-by-score -- `Off` skips all diversity
+/// computation entirely (zero cost), `DiagnosticsOnly` still computes it
+/// (for `DiversityReservationStats`) but discards its effect on selection.
+/// Only `Active` actually changes which nodes survive.
+#[allow(dead_code)] // stage 3 wires this into beam_prune
+fn select_beam_survivors(
+    nodes: Vec<Node>,
+    beam_width: usize,
+    diversity_slots: usize,
+    policy: BeamDiversityPolicy,
+) -> (Vec<Node>, DiversityReservationStats) {
+    let mut sorted = nodes;
+    sorted.sort_unstable_by(|a, b| {
+        a.f()
+            .partial_cmp(&b.f())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    if policy == BeamDiversityPolicy::Off {
+        sorted.truncate(beam_width);
+        return (sorted, DiversityReservationStats::default());
+    }
+
+    // `off_survivors` is what both Off and DiagnosticsOnly must return --
+    // computed up front so DiagnosticsOnly can hand it back unmodified
+    // regardless of what the diversity computation below finds.
+    let mut off_survivors = sorted.clone();
+    off_survivors.truncate(beam_width);
+
+    let diversity_slots = diversity_slots.min(beam_width);
+    let score_slots = beam_width - diversity_slots;
+    let remainder = if sorted.len() <= score_slots {
+        Vec::new()
+    } else {
+        sorted.split_off(score_slots)
+    };
+    let score_selected = sorted; // now len() <= score_slots
+
+    let mut represented: std::collections::HashSet<String> = score_selected
+        .iter()
+        .filter_map(|n| n.family_key.clone())
+        .collect();
+    let families_represented_by_score_alone = represented.len();
+
+    let mut diversity_selected: Vec<Node> = Vec::new();
+    let mut rescued_node_trace_ids = Vec::new();
+    for node in remainder {
+        if diversity_selected.len() >= diversity_slots {
+            break;
+        }
+        let Some(key) = node.family_key.clone() else {
+            continue; // design doc §3: no family identity, never eligible
+        };
+        if represented.contains(&key) {
+            continue;
+        }
+        represented.insert(key);
+        if let Some(id) = node.trace_id {
+            rescued_node_trace_ids.push(id);
+        }
+        diversity_selected.push(node);
+    }
+
+    let stats = DiversityReservationStats {
+        families_represented_by_score_alone,
+        families_rescued_by_reservation: diversity_selected.len(),
+        rescued_node_trace_ids,
+    };
+
+    match policy {
+        BeamDiversityPolicy::Off => unreachable!("handled above"),
+        BeamDiversityPolicy::DiagnosticsOnly => (off_survivors, stats),
+        BeamDiversityPolicy::Active => {
+            let mut survivors = score_selected;
+            survivors.extend(diversity_selected);
+            (survivors, stats)
+        }
+    }
+}
+
 /// Diagnostics-only (Issue #101 / Phase 1B): for one node's expansion,
 /// count (a) proposals from *different* templates whose precursor SMILES
 /// multiset (sorted) is identical to an already-seen one -- same as the
@@ -2420,6 +2547,142 @@ mod tests {
             trace_id: Some(trace_id),
             ..node(f)
         }
+    }
+
+    fn family_node(f: f64, family: &str) -> Node {
+        Node {
+            family_key: Some(family.to_string()),
+            ..node(f)
+        }
+    }
+
+    fn traced_family_node(f: f64, family: &str, trace_id: u64) -> Node {
+        Node {
+            family_key: Some(family.to_string()),
+            trace_id: Some(trace_id),
+            ..node(f)
+        }
+    }
+
+    // ── select_beam_survivors tests (diversity-reserved beam, rollout
+    //    stage 2 -- see docs/design/diversity-reserved-beam-v0.md) ─────────
+
+    #[test]
+    fn select_beam_survivors_off_matches_pure_top_k_regardless_of_family() {
+        // 3 nodes all family "A" (best scores) + 1 node family "B" (worst) --
+        // Off must return exactly the top 3 by score, ignoring family
+        // entirely, exactly like beam_prune does today.
+        let nodes = vec![
+            family_node(1.0, "A"),
+            family_node(2.0, "A"),
+            family_node(3.0, "A"),
+            family_node(4.0, "B"),
+        ];
+        let (survivors, stats) = select_beam_survivors(nodes, 3, 1, BeamDiversityPolicy::Off);
+        let mut fs: Vec<f64> = survivors.iter().map(Node::f).collect();
+        fs.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_eq!(fs, vec![1.0, 2.0, 3.0]);
+        assert_eq!(stats, DiversityReservationStats::default());
+    }
+
+    #[test]
+    fn select_beam_survivors_diagnostics_only_never_changes_selection() {
+        // Same contrived case as the rescue test below, but DiagnosticsOnly
+        // must return byte-for-byte the same survivor set as Off, even
+        // though a rescue is clearly available.
+        let nodes = vec![
+            family_node(1.0, "A"),
+            family_node(2.0, "A"),
+            family_node(3.0, "A"),
+            family_node(4.0, "B"),
+        ];
+        let (off_survivors, _) =
+            select_beam_survivors(nodes.clone(), 3, 1, BeamDiversityPolicy::Off);
+        let (diag_survivors, diag_stats) =
+            select_beam_survivors(nodes, 3, 1, BeamDiversityPolicy::DiagnosticsOnly);
+        let mut off_fs: Vec<f64> = off_survivors.iter().map(Node::f).collect();
+        let mut diag_fs: Vec<f64> = diag_survivors.iter().map(Node::f).collect();
+        off_fs.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+        diag_fs.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_eq!(
+            off_fs, diag_fs,
+            "DiagnosticsOnly must never change selection"
+        );
+        // But it must still have computed what a rescue WOULD do.
+        assert_eq!(diag_stats.families_rescued_by_reservation, 1);
+    }
+
+    #[test]
+    fn select_beam_survivors_active_rescues_underrepresented_family() {
+        // beam_width=3, diversity_slots=1 -> score_slots=2. Pure score
+        // would keep the 2 best (family A, f=1.0/2.0), fully excluding
+        // family B (f=4.0) and the 3rd-best family A (f=3.0). Active must
+        // reserve 1 slot for the best-scoring not-yet-represented family,
+        // which is B (f=4.0) -- not the weaker 3rd-place A, even though
+        // it's a better score, because A is already represented.
+        let nodes = vec![
+            family_node(1.0, "A"),
+            family_node(2.0, "A"),
+            family_node(3.0, "A"),
+            family_node(4.0, "B"),
+        ];
+        let (survivors, stats) = select_beam_survivors(nodes, 3, 1, BeamDiversityPolicy::Active);
+        let mut fs: Vec<f64> = survivors.iter().map(Node::f).collect();
+        fs.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_eq!(fs, vec![1.0, 2.0, 4.0], "family B must be rescued");
+        assert_eq!(stats.families_represented_by_score_alone, 1);
+        assert_eq!(stats.families_rescued_by_reservation, 1);
+    }
+
+    #[test]
+    fn select_beam_survivors_nodes_without_family_key_never_diversity_selected() {
+        // The remainder pool's only candidate has no family_key (e.g. a
+        // root-shaped node) -- it must never be picked for a diversity
+        // slot, even though it would technically be "underrepresented."
+        let nodes = vec![
+            family_node(1.0, "A"),
+            family_node(2.0, "A"),
+            node(3.0), // family_key: None
+        ];
+        let (survivors, stats) = select_beam_survivors(nodes, 2, 1, BeamDiversityPolicy::Active);
+        let mut fs: Vec<f64> = survivors.iter().map(Node::f).collect();
+        fs.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_eq!(fs, vec![1.0], "score_slots=1 keeps only the best A");
+        assert_eq!(stats.families_rescued_by_reservation, 0);
+    }
+
+    #[test]
+    fn select_beam_survivors_diversity_slots_clamped_to_beam_width() {
+        // diversity_slots > beam_width must not panic or under-flow
+        // (beam_width - diversity_slots).
+        let nodes = vec![family_node(1.0, "A"), family_node(2.0, "B")];
+        let (survivors, _) = select_beam_survivors(nodes, 1, 5, BeamDiversityPolicy::Active);
+        assert_eq!(survivors.len(), 1);
+    }
+
+    #[test]
+    fn select_beam_survivors_fewer_nodes_than_beam_width_returns_all() {
+        let nodes = vec![family_node(1.0, "A"), family_node(2.0, "B")];
+        for policy in [
+            BeamDiversityPolicy::Off,
+            BeamDiversityPolicy::DiagnosticsOnly,
+            BeamDiversityPolicy::Active,
+        ] {
+            let (survivors, _) = select_beam_survivors(nodes.clone(), 10, 2, policy);
+            assert_eq!(survivors.len(), 2, "{policy:?}");
+        }
+    }
+
+    #[test]
+    fn select_beam_survivors_rescued_node_trace_ids_only_covers_traced_nodes() {
+        // beam_width=2, diversity_slots=1 -> score_slots=1: family "A"
+        // (f=1.0) already fills the one score slot, leaving the traced "B"
+        // node (f=2.0) as the only, and therefore rescued, remainder
+        // candidate.
+        let nodes = vec![family_node(1.0, "A"), traced_family_node(2.0, "B", 42)];
+        let (survivors, stats) = select_beam_survivors(nodes, 2, 1, BeamDiversityPolicy::Active);
+        assert_eq!(survivors.len(), 2);
+        assert_eq!(stats.rescued_node_trace_ids, vec![42]);
     }
 
     #[test]

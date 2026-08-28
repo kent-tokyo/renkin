@@ -1,0 +1,20 @@
+{
+  "baseline_p95_s": 94.09086841705721,
+  "baseline_solved": 14,
+  "baseline_timeouts": 7,
+  "beam_diversity_slots": 20,
+  "beam_width": 100,
+  "candidate_p95_s": 75.07687004096806,
+  "candidate_solved": 16,
+  "candidate_timeouts": 8,
+  "coverage_delta_pp": 2.0,
+  "invalid_count": 0,
+  "n_targets": 100,
+  "new_solve_count": 2,
+  "new_solves": [
+    "uspto50k_test#L2263",
+    "uspto50k_test#L4575"
+  ],
+  "regression_count": 0,
+  "regressions": []
+}

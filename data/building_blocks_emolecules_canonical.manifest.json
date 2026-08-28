@@ -1,0 +1,6160 @@
+{
+  "schema_version": 1,
+  "source": {
+    "label": "eMolecules free tier 2024-01-01, filtered via scripts/prepare_emolecules.py (MW<=500, atoms<=30, rings<=5)",
+    "revision": "2024-01-01",
+    "license": null
+  },
+  "importer_version": "0.35.0",
+  "input_sha256": "sha256:de9b0fdacac1dab3c9b5f7057a5d95be288821782c10decc98f946ec71967920",
+  "output_sha256": "sha256:11e623b360edfc630c267aff4b82934822e65f7d41459d1410ba0dfaa8042a2c",
+  "input_rows": 9483212,
+  "accepted_rows": 9483209,
+  "rejected_rows": 3,
+  "unique_structures": 9481986,
+  "duplicate_rows": 1223,
+  "rejection_reasons": {
+    "unparseable_smiles": 3
+  },
+  "rejected": [
+    {
+      "line_no": 6556550,
+      "smiles": "[Ag+].[F-2].[F-2].[F-2].[F-2].[F-2].[F-2].[Sb+11]",
+      "reason": "unparseable_smiles"
+    },
+    {
+      "line_no": 7638597,
+      "smiles": "*c1ccc2ccc(N3CCN(c4ncccn4)CC3)n2c1",
+      "reason": "unparseable_smiles"
+    },
+    {
+      "line_no": 7638699,
+      "smiles": "*C1CCC2(CC1)CN(*)c1ccccc12",
+      "reason": "unparseable_smiles"
+    }
+  ],
+  "duplicates": [
+    {
+      "line_no": 2061585,
+      "canonical_smiles": "C2CCCc3n(c(sc23)=N)CC(=O)c1ccc(C)cc1.Br",
+      "duplicate_of_line_no": 124127
+    },
+    {
+      "line_no": 2533093,
+      "canonical_smiles": "[Cu].[Zn]",
+      "duplicate_of_line_no": 184812
+    },
+    {
+      "line_no": 3435673,
+      "canonical_smiles": "[K+]",
+      "duplicate_of_line_no": 96576
+    },
+    {
+      "line_no": 3604538,
+      "canonical_smiles": "c13n(cc(-c4ccc(cc4)C)n3)c2CCCCc2s1.Br",
+      "duplicate_of_line_no": 124124
+    },
+    {
+      "line_no": 3720120,
+      "canonical_smiles": "n1ccc(-c3[nH]c(nc3-c4ccc(cc4)F)-c2ccc(cc2)O)cc1.Cl",
+      "duplicate_of_line_no": 2474792
+    },
+    {
+      "line_no": 4057389,
+      "canonical_smiles": "O.C(C)(C)(O)C(Cl)(Cl)Cl",
+      "duplicate_of_line_no": 2845177
+    },
+    {
+      "line_no": 4125932,
+      "canonical_smiles": "C(C)(C)(C)P(C(C)(C)C)C(C)(C)C.[B-](F)(F)(F)F",
+      "duplicate_of_line_no": 2758230
+    },
+    {
+      "line_no": 4177010,
+      "canonical_smiles": "F[B-](F)(F)CN1CCOCC1",
+      "duplicate_of_line_no": 2518925
+    },
+    {
+      "line_no": 4191251,
+      "canonical_smiles": "[nH]1c2c(cc(cc2)F)c(CCN)c1.Cl",
+      "duplicate_of_line_no": 115126
+    },
+    {
+      "line_no": 5314117,
+      "canonical_smiles": "[B-](F)(F)(F)F",
+      "duplicate_of_line_no": 3420496
+    },
+    {
+      "line_no": 5432723,
+      "canonical_smiles": "N1(O)C(C)(C)CC(C(=O)O)C1(C)C",
+      "duplicate_of_line_no": 101079
+    },
+    {
+      "line_no": 5434280,
+      "canonical_smiles": "C1(C)(C)CC(N)C(C)(C)N1O",
+      "duplicate_of_line_no": 1449625
+    },
+    {
+      "line_no": 5435046,
+      "canonical_smiles": "C1(C)(C)CC(=O)CC(C)(C)N1O",
+      "duplicate_of_line_no": 98861
+    },
+    {
+      "line_no": 5435139,
+      "canonical_smiles": "[P-](F)(F)(F)(F)(F)F",
+      "duplicate_of_line_no": 5317614
+    },
+    {
+      "line_no": 5435230,
+      "canonical_smiles": "C(CN(C)C)SSCCN(C)C.Cl.Cl",
+      "duplicate_of_line_no": 1913107
+    },
+    {
+      "line_no": 5436035,
+      "canonical_smiles": "C1CN(Cc2ccccc2)CCC1.[I-].[Zn+]",
+      "duplicate_of_line_no": 5435329
+    },
+    {
+      "line_no": 5436313,
+      "canonical_smiles": "c2ccc(cc2)CN1CCCCC1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 5436165
+    },
+    {
+      "line_no": 5437467,
+      "canonical_smiles": "C(C)C[CH2].CCC[CH2].C(C[CH2])C.c1cnccc1.[Sn]",
+      "duplicate_of_line_no": 5436873
+    },
+    {
+      "line_no": 5437469,
+      "canonical_smiles": "n1cccnc1.CCC[CH2].[CH2]CCC.CCC[CH2].[Sn]",
+      "duplicate_of_line_no": 5437382
+    },
+    {
+      "line_no": 5437607,
+      "canonical_smiles": "CCC[CH2].c1ncsc1.[Sn].CCC[CH2].[CH2]CCC",
+      "duplicate_of_line_no": 3276104
+    },
+    {
+      "line_no": 5437608,
+      "canonical_smiles": "C1CCC(C)(C)N(O)C1(C)C",
+      "duplicate_of_line_no": 99869
+    },
+    {
+      "line_no": 5437609,
+      "canonical_smiles": "c1n(cnc1)C.C([CH2])CC.[Sn].C(CC)[CH2].[CH2]CCC",
+      "duplicate_of_line_no": 5437463
+    },
+    {
+      "line_no": 5437751,
+      "canonical_smiles": "C([CH2])CC.c1(nscc1)OC.C(CC)[CH2].[Sn].C(C)C[CH2]",
+      "duplicate_of_line_no": 5437331
+    },
+    {
+      "line_no": 5437753,
+      "canonical_smiles": "C([CH2])CC.[Sn].[CH2]CCC.n1c2c(cccc2)ccc1.[CH2]CCC",
+      "duplicate_of_line_no": 5437465
+    },
+    {
+      "line_no": 5437821,
+      "canonical_smiles": "[Sn].[CH2]CCC.[CH2]CCC.CCC[CH2].c12ccccc1ccnc2",
+      "duplicate_of_line_no": 5437384
+    },
+    {
+      "line_no": 5437890,
+      "canonical_smiles": "c1cncc(c1)C(F)(F)F.CCC[CH2].[CH2]CCC.[Sn].C(C)C[CH2]",
+      "duplicate_of_line_no": 5437385
+    },
+    {
+      "line_no": 5438040,
+      "canonical_smiles": "C(C)C[CH2].C(C[CH2])C.[Sn].c1c(cccn1)C.C(C[CH2])C",
+      "duplicate_of_line_no": 5437894
+    },
+    {
+      "line_no": 5438043,
+      "canonical_smiles": "C(=O)(ON2C(=O)CCC2=O)C1=CC(C)(C)N(O)C1(C)C",
+      "duplicate_of_line_no": 150263
+    },
+    {
+      "line_no": 5438320,
+      "canonical_smiles": "[CH2]CCC.C(CC)[CH2].n1n(C)ccc1.[CH2]CCC.[Sn]",
+      "duplicate_of_line_no": 5434657
+    },
+    {
+      "line_no": 5438387,
+      "canonical_smiles": "[CH2]CCC.C(CC)[CH2].CCC[CH2].c1sc(nc1)C.[Sn]",
+      "duplicate_of_line_no": 5437889
+    },
+    {
+      "line_no": 5438396,
+      "canonical_smiles": "ON1C(C)(C)C(=CC1(C)C)CSS(=O)(C)=O",
+      "duplicate_of_line_no": 5372348
+    },
+    {
+      "line_no": 5439046,
+      "canonical_smiles": "C1NC(CC(N(O)C1(C)C)(C)C)=O",
+      "duplicate_of_line_no": 2706386
+    },
+    {
+      "line_no": 5439289,
+      "canonical_smiles": "CCC[CH2].c1ncsc1.[Sn].CCC[CH2].[CH2]CCC",
+      "duplicate_of_line_no": 3276104
+    },
+    {
+      "line_no": 5439657,
+      "canonical_smiles": "C1(C)(C)CC(N)CC(C)(C)N1O",
+      "duplicate_of_line_no": 95623
+    },
+    {
+      "line_no": 5441276,
+      "canonical_smiles": "C1C(O)CC(C)(C)N(O)C1(C)C",
+      "duplicate_of_line_no": 98711
+    },
+    {
+      "line_no": 5441638,
+      "canonical_smiles": "c1ccc(F)cc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 5440513
+    },
+    {
+      "line_no": 5443052,
+      "canonical_smiles": "O=C(OC(C)(C)C)NCc1cccnc1.CCC[CH2].CCC[CH2].CCC[CH2].[Sn]",
+      "duplicate_of_line_no": 5442966
+    },
+    {
+      "line_no": 5443204,
+      "canonical_smiles": "CCC[CH2].C(C[CH2])C.C(C)C[CH2].c1ncccc1F.[Sn]",
+      "duplicate_of_line_no": 5438391
+    },
+    {
+      "line_no": 5443205,
+      "canonical_smiles": "CCC[CH2].C(C[CH2])C.C(C)C[CH2].c1ncccc1F.[Sn]",
+      "duplicate_of_line_no": 5438391
+    },
+    {
+      "line_no": 5443212,
+      "canonical_smiles": "s1c(ccc1)C=O.C(C)C[CH2].[Sn].CCC[CH2].C(C[CH2])C",
+      "duplicate_of_line_no": 5443051
+    },
+    {
+      "line_no": 5443298,
+      "canonical_smiles": "C(c1ccccn1)=O.CCC[CH2].[CH2]CCC.CCC[CH2].[Sn]",
+      "duplicate_of_line_no": 5443131
+    },
+    {
+      "line_no": 5443378,
+      "canonical_smiles": "c1(ccccc1C#N)F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 5439296
+    },
+    {
+      "line_no": 5443380,
+      "canonical_smiles": "c1ccc(c(c1)C)F.[I-].[Zn+]",
+      "duplicate_of_line_no": 5443211
+    },
+    {
+      "line_no": 5443525,
+      "canonical_smiles": "C1C(C)(C)N(C(C)(C)CC1NC(C)=O)O",
+      "duplicate_of_line_no": 94689
+    },
+    {
+      "line_no": 5443534,
+      "canonical_smiles": "[Zn+].Fc1cc(F)ccc1.[Br-]",
+      "duplicate_of_line_no": 5434845
+    },
+    {
+      "line_no": 5443539,
+      "canonical_smiles": "[CH2]CCC.[CH2]CCC.C(=O)c1ccc(C)cc1.CCC[CH2].[Sn]",
+      "duplicate_of_line_no": 5443382
+    },
+    {
+      "line_no": 5443780,
+      "canonical_smiles": "c1ccccc1CNC(OC(C)(C)C)=O.C([CH2])CC.[Sn].C(C)C[CH2].C(C[CH2])C",
+      "duplicate_of_line_no": 5443707
+    },
+    {
+      "line_no": 5443858,
+      "canonical_smiles": "CCC[CH2].[CH2]CCC.c1ccncc1Cl.[Sn].C(C)C[CH2]",
+      "duplicate_of_line_no": 5443374
+    },
+    {
+      "line_no": 5443864,
+      "canonical_smiles": "c1ccc(F)cc1.[I-].[Zn+]",
+      "duplicate_of_line_no": 5434650
+    },
+    {
+      "line_no": 5444110,
+      "canonical_smiles": "[Sn].CCC[CH2].CCC[CH2].CCC[CH2].c1cc(cnc1)C=O",
+      "duplicate_of_line_no": 5444030
+    },
+    {
+      "line_no": 5444112,
+      "canonical_smiles": "C(C[CH2])C.CCC[CH2].C(C[CH2])C.[Sn].c1cnc(cc1)CNC(=O)OC(C)(C)C",
+      "duplicate_of_line_no": 5443948
+    },
+    {
+      "line_no": 5444180,
+      "canonical_smiles": "C(C)C[CH2].CCC[CH2].C(C[CH2])C.c1cnccc1.[Sn]",
+      "duplicate_of_line_no": 5436873
+    },
+    {
+      "line_no": 5444189,
+      "canonical_smiles": "C([CH2])CC.O=Cc1ccccc1.C(C)C[CH2].C([CH2])CC.[Sn]",
+      "duplicate_of_line_no": 5442965
+    },
+    {
+      "line_no": 5444271,
+      "canonical_smiles": "CCC[CH2].[CH2]CCC.c1ccncc1Cl.[Sn].C(C)C[CH2]",
+      "duplicate_of_line_no": 5443374
+    },
+    {
+      "line_no": 5444365,
+      "canonical_smiles": "CCC[CH2].[nH]1cc(cn1)C(F)(F)F.[Sn].C([CH2])CC.C([CH2])CC",
+      "duplicate_of_line_no": 5432505
+    },
+    {
+      "line_no": 5444536,
+      "canonical_smiles": "c1ccc(-c2ccccc2)cc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 5444361
+    },
+    {
+      "line_no": 5444714,
+      "canonical_smiles": "c1ccc(-c2ccccc2)cc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 5444361
+    },
+    {
+      "line_no": 5444718,
+      "canonical_smiles": "c1(ccccc1)Cl.[Mg+].[Br-]",
+      "duplicate_of_line_no": 5441089
+    },
+    {
+      "line_no": 5444905,
+      "canonical_smiles": "c1(C)cccc(C)c1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 5444541
+    },
+    {
+      "line_no": 5445090,
+      "canonical_smiles": "c1cc(c(cc1)Cl)C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5444719
+    },
+    {
+      "line_no": 5445091,
+      "canonical_smiles": "c1(C)cccc(C)c1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 5444541
+    },
+    {
+      "line_no": 5445092,
+      "canonical_smiles": "c1c(OC)cccc1OC.[Mg+].[Br-]",
+      "duplicate_of_line_no": 5444542
+    },
+    {
+      "line_no": 5445559,
+      "canonical_smiles": "[CH2]CCC.[CH2]CCC.c1c(nccc1)Cl.[CH2]CCC.[Sn]",
+      "duplicate_of_line_no": 5444364
+    },
+    {
+      "line_no": 5445560,
+      "canonical_smiles": "c1cc(ccc1)CC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5445372
+    },
+    {
+      "line_no": 5445650,
+      "canonical_smiles": "c1cc(C(C)(C)C)ccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5445267
+    },
+    {
+      "line_no": 5445651,
+      "canonical_smiles": "[CH2]CCC.[CH2]CCC.c1c(nccc1)Cl.[CH2]CCC.[Sn]",
+      "duplicate_of_line_no": 5444364
+    },
+    {
+      "line_no": 5445654,
+      "canonical_smiles": "c1c(c(ccc1)F)Cl.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5445272
+    },
+    {
+      "line_no": 5445655,
+      "canonical_smiles": "c1ccc(C)c(c1)C.[Mg+].[Br-]",
+      "duplicate_of_line_no": 5444368
+    },
+    {
+      "line_no": 5445656,
+      "canonical_smiles": "[Br-].[Mg+].c1ccc(N(C)C)cc1",
+      "duplicate_of_line_no": 5445464
+    },
+    {
+      "line_no": 5445657,
+      "canonical_smiles": "O1CCOC1c2ccccc2.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5444370
+    },
+    {
+      "line_no": 5445658,
+      "canonical_smiles": "[CH2]CCC.n1ccccn1.[Sn].C(CC)[CH2].[CH2]CCC",
+      "duplicate_of_line_no": 5437332
+    },
+    {
+      "line_no": 5445740,
+      "canonical_smiles": "c1cc(ccc1)CC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5445372
+    },
+    {
+      "line_no": 5445744,
+      "canonical_smiles": "CCC[CH2].C(C[CH2])C.C(C)C[CH2].c1ncccc1F.[Sn]",
+      "duplicate_of_line_no": 5438391
+    },
+    {
+      "line_no": 5445834,
+      "canonical_smiles": "[Sn].CCC[CH2].CCC[CH2].CCC[CH2].c1cc(cnc1)C=O",
+      "duplicate_of_line_no": 5444030
+    },
+    {
+      "line_no": 5445838,
+      "canonical_smiles": "c1cccc2ccccc12.[Mg+].[Br-]",
+      "duplicate_of_line_no": 5442197
+    },
+    {
+      "line_no": 5445840,
+      "canonical_smiles": "c1ccncc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5445652
+    },
+    {
+      "line_no": 5445919,
+      "canonical_smiles": "C(Oc1nccs1)C.[Sn].C(CC)[CH2].C(C[CH2])C.C(C[CH2])C",
+      "duplicate_of_line_no": 5445743
+    },
+    {
+      "line_no": 5445922,
+      "canonical_smiles": "FC(Oc1ccccc1)(F)F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5445747
+    },
+    {
+      "line_no": 5445923,
+      "canonical_smiles": "C([CH2])CC.[Sn].[CH2]CCC.n1c2c(cccc2)ccc1.[CH2]CCC",
+      "duplicate_of_line_no": 5437465
+    },
+    {
+      "line_no": 5446012,
+      "canonical_smiles": "CCC[CH2].c1cccnc1OC.C(CC)[CH2].[CH2]CCC.[Sn]",
+      "duplicate_of_line_no": 5444179
+    },
+    {
+      "line_no": 5446018,
+      "canonical_smiles": "C[Si](c1nccs1)(C)C.C(C)C[CH2].[CH2]CCC.CCC[CH2].[Sn]",
+      "duplicate_of_line_no": 5445841
+    },
+    {
+      "line_no": 5446095,
+      "canonical_smiles": "CCOc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5445917
+    },
+    {
+      "line_no": 5446100,
+      "canonical_smiles": "FC(Oc1ccccc1)(F)F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5445747
+    },
+    {
+      "line_no": 5446102,
+      "canonical_smiles": "c1ccc2c(ccnc2)c1.[CH3].[CH3].[CH3].[Sn]",
+      "duplicate_of_line_no": 5444627
+    },
+    {
+      "line_no": 5446192,
+      "canonical_smiles": "[Sn].c1c(cncc1)OC.CCC[CH2].C(C[CH2])C.C([CH2])CC",
+      "duplicate_of_line_no": 5446098
+    },
+    {
+      "line_no": 5446199,
+      "canonical_smiles": "[Sn].[CH2]CCC.[CH2]CCC.CCC[CH2].c12ccccc1ccnc2",
+      "duplicate_of_line_no": 5437384
+    },
+    {
+      "line_no": 5446276,
+      "canonical_smiles": "CCOc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5445917
+    },
+    {
+      "line_no": 5446277,
+      "canonical_smiles": "c1ccc(c(c1)C)F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5445918
+    },
+    {
+      "line_no": 5446278,
+      "canonical_smiles": "C(C[CH2])C.Clc1ncccn1.[Sn].C(C)C[CH2].CCC[CH2]",
+      "duplicate_of_line_no": 5445270
+    },
+    {
+      "line_no": 5446283,
+      "canonical_smiles": "[CH2]CCC.CCC[CH2].c1ccc(nc1)C(F)(F)F.[Sn].[CH2]CCC",
+      "duplicate_of_line_no": 5437671
+    },
+    {
+      "line_no": 5446370,
+      "canonical_smiles": "n1ccsc1Cl.[CH2]CCC.CCC[CH2].[Sn].C(C[CH2])C",
+      "duplicate_of_line_no": 5445460
+    },
+    {
+      "line_no": 5446371,
+      "canonical_smiles": "C(CC)[CH2].C(C[CH2])C.[Sn].Fc1ccccn1.[CH2]CCC",
+      "duplicate_of_line_no": 5444999
+    },
+    {
+      "line_no": 5446372,
+      "canonical_smiles": "C(C[CH2])C.c1ccnc(n1)SC.[CH2]CCC.[Sn].C(C[CH2])C",
+      "duplicate_of_line_no": 5443529
+    },
+    {
+      "line_no": 5446373,
+      "canonical_smiles": "C([CH2])CC.n1ccc(cc1)C.C(C)C[CH2].C([CH2])CC.[Sn]",
+      "duplicate_of_line_no": 5443041
+    },
+    {
+      "line_no": 5446375,
+      "canonical_smiles": "c1(C)ccccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 5440330
+    },
+    {
+      "line_no": 5446376,
+      "canonical_smiles": "CSc1ccccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 5446194
+    },
+    {
+      "line_no": 5446381,
+      "canonical_smiles": "n2n1c(nc2)cccc1.C([CH2])CC.[CH2]CCC.[CH2]CCC.[Sn]",
+      "duplicate_of_line_no": 5446378
+    },
+    {
+      "line_no": 5446459,
+      "canonical_smiles": "[Mg+].Fc1cccc(c1)C.[Br-]",
+      "duplicate_of_line_no": 5445741
+    },
+    {
+      "line_no": 5446460,
+      "canonical_smiles": "c1cnccc1Cl.[CH2]CCC.C(C)C[CH2].[Sn].CCC[CH2]",
+      "duplicate_of_line_no": 5443774
+    },
+    {
+      "line_no": 5446461,
+      "canonical_smiles": "C(CC)[CH2].C(C[CH2])C.[Sn].Fc1ccccn1.[CH2]CCC",
+      "duplicate_of_line_no": 5444999
+    },
+    {
+      "line_no": 5446462,
+      "canonical_smiles": "[Sn].CCC[CH2].[CH2]CCC.O(C)c1sccn1.C(CC)[CH2]",
+      "duplicate_of_line_no": 5444107
+    },
+    {
+      "line_no": 5446463,
+      "canonical_smiles": "CCC[CH2].C([CH2])CC.[CH2]CCC.Cc1ccccn1.[Sn]",
+      "duplicate_of_line_no": 5440137
+    },
+    {
+      "line_no": 5446465,
+      "canonical_smiles": "c1ccc2c(ccnc2)c1.[CH3].[CH3].[CH3].[Sn]",
+      "duplicate_of_line_no": 5444627
+    },
+    {
+      "line_no": 5446552,
+      "canonical_smiles": "CCC[CH2].[CH2]CCC.c1ccncc1Cl.[Sn].C(C)C[CH2]",
+      "duplicate_of_line_no": 5443374
+    },
+    {
+      "line_no": 5446553,
+      "canonical_smiles": "CCC[CH2].C(C)C[CH2].C(CC)[CH2].c1(nccs1)C=O.[Sn]",
+      "duplicate_of_line_no": 5437158
+    },
+    {
+      "line_no": 5446555,
+      "canonical_smiles": "CCC[CH2].C([CH2])CC.[CH2]CCC.Cc1ccccn1.[Sn]",
+      "duplicate_of_line_no": 5440137
+    },
+    {
+      "line_no": 5446556,
+      "canonical_smiles": "c1(C)ccccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 5440330
+    },
+    {
+      "line_no": 5446559,
+      "canonical_smiles": "n2n1c(nc2)cccc1.C([CH2])CC.[CH2]CCC.[CH2]CCC.[Sn]",
+      "duplicate_of_line_no": 5446378
+    },
+    {
+      "line_no": 5446647,
+      "canonical_smiles": "C(CC)[CH2].C(C[CH2])C.[Sn].Fc1ccccn1.[CH2]CCC",
+      "duplicate_of_line_no": 5444999
+    },
+    {
+      "line_no": 5446648,
+      "canonical_smiles": "CCC[CH2].c1cccnc1OC.C(CC)[CH2].[CH2]CCC.[Sn]",
+      "duplicate_of_line_no": 5444179
+    },
+    {
+      "line_no": 5446653,
+      "canonical_smiles": "n1cccnc1.CCC[CH2].[CH2]CCC.CCC[CH2].[Sn]",
+      "duplicate_of_line_no": 5437382
+    },
+    {
+      "line_no": 5446655,
+      "canonical_smiles": "c1ccc(nc1)C#N.C(C[CH2])C.[CH2]CCC.CCC[CH2].[Sn]",
+      "duplicate_of_line_no": 5444814
+    },
+    {
+      "line_no": 5446747,
+      "canonical_smiles": "CCC[CH2].[Sn].c1nc(OC)cnc1.[CH2]CCC.C(C)C[CH2]",
+      "duplicate_of_line_no": 5445836
+    },
+    {
+      "line_no": 5446748,
+      "canonical_smiles": "C([CH2])CC.c1(nccs1)S(=O)(C)=O.[Sn].C([CH2])CC.C([CH2])CC",
+      "duplicate_of_line_no": 5445749
+    },
+    {
+      "line_no": 5446750,
+      "canonical_smiles": "c1ccc(OC)cc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5442769
+    },
+    {
+      "line_no": 5446751,
+      "canonical_smiles": "[Mg+].[Br-].c1(C(C)C)ccccc1",
+      "duplicate_of_line_no": 5446558
+    },
+    {
+      "line_no": 5446829,
+      "canonical_smiles": "CCC[CH2].c1cccnc1OC.C(CC)[CH2].[CH2]CCC.[Sn]",
+      "duplicate_of_line_no": 5444179
+    },
+    {
+      "line_no": 5446830,
+      "canonical_smiles": "C([CH2])CC.C(C[CH2])C.c1nc(SC)sc1.C([CH2])CC.[Sn]",
+      "duplicate_of_line_no": 5446649
+    },
+    {
+      "line_no": 5446928,
+      "canonical_smiles": "[Sn].C2OCCN(C2)c1ncccc1.C(C)C[CH2].C([CH2])CC.C(C)C[CH2]",
+      "duplicate_of_line_no": 5446755
+    },
+    {
+      "line_no": 5446929,
+      "canonical_smiles": "c1n(cnc1)C.C([CH2])CC.[Sn].C(CC)[CH2].[CH2]CCC",
+      "duplicate_of_line_no": 5437463
+    },
+    {
+      "line_no": 5446931,
+      "canonical_smiles": "c1ccc(OC)cc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5442769
+    },
+    {
+      "line_no": 5446932,
+      "canonical_smiles": "[Mg+].[Br-].c1(C(C)C)ccccc1",
+      "duplicate_of_line_no": 5446558
+    },
+    {
+      "line_no": 5446938,
+      "canonical_smiles": "[CH2]CCC.c1c(N(C)c2ccccc2)cccc1.C(CC)[CH2].[Sn].[CH2]CCC",
+      "duplicate_of_line_no": 5437528
+    },
+    {
+      "line_no": 5447006,
+      "canonical_smiles": "c1ccc(c(c1)C)F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5445918
+    },
+    {
+      "line_no": 5447008,
+      "canonical_smiles": "c1ncc(cc1F)F.C(CC)[CH2].[Sn].CCC[CH2].C(C[CH2])C",
+      "duplicate_of_line_no": 5438174
+    },
+    {
+      "line_no": 5447010,
+      "canonical_smiles": "C(C)C[CH2].C(C[CH2])C.[Sn].c1c(cccn1)C.C(C[CH2])C",
+      "duplicate_of_line_no": 5437894
+    },
+    {
+      "line_no": 5447012,
+      "canonical_smiles": "[Sn].CCC[CH2].CC(C)(c1sccn1)O.C(C[CH2])C.[CH2]CCC",
+      "duplicate_of_line_no": 5445924
+    },
+    {
+      "line_no": 5448009,
+      "canonical_smiles": "[Sn].c1c(cncc1)OC.CCC[CH2].C(C[CH2])C.C([CH2])CC",
+      "duplicate_of_line_no": 5446098
+    },
+    {
+      "line_no": 5448625,
+      "canonical_smiles": "C(=O)(N)C1=CC(C)(C)N(C1(C)C)O",
+      "duplicate_of_line_no": 98029
+    },
+    {
+      "line_no": 5448638,
+      "canonical_smiles": "C([CH2])CC.[Sn].[CH2]CCC.n1c2c(cccc2)ccc1.[CH2]CCC",
+      "duplicate_of_line_no": 5437465
+    },
+    {
+      "line_no": 5448795,
+      "canonical_smiles": "[Zn+].[I-].c1(Cl)cccc(Cl)c1",
+      "duplicate_of_line_no": 5432833
+    },
+    {
+      "line_no": 5448882,
+      "canonical_smiles": "c1(C)ccccc1.[I-].[Zn+]",
+      "duplicate_of_line_no": 5432309
+    },
+    {
+      "line_no": 5449074,
+      "canonical_smiles": "c1ccccc1Br.[Zn+].[I-]",
+      "duplicate_of_line_no": 5432910
+    },
+    {
+      "line_no": 5449196,
+      "canonical_smiles": "[NH4+].[Ti+4].[F-].[F-].[F-].[F-].[F-].[NH4+].[F-]",
+      "duplicate_of_line_no": 4428190
+    },
+    {
+      "line_no": 5449270,
+      "canonical_smiles": "c1(C)ccccc1.[I-].[Zn+]",
+      "duplicate_of_line_no": 5432309
+    },
+    {
+      "line_no": 5449273,
+      "canonical_smiles": "[Zn+].Fc1cc(F)ccc1.[Br-]",
+      "duplicate_of_line_no": 5434845
+    },
+    {
+      "line_no": 5449458,
+      "canonical_smiles": "c1ccc(C(OCC)=O)cc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 5434944
+    },
+    {
+      "line_no": 5449459,
+      "canonical_smiles": "c1cc(ccc1)OC.[Zn+].[I-]",
+      "duplicate_of_line_no": 5449457
+    },
+    {
+      "line_no": 5449644,
+      "canonical_smiles": "c1(C)ncccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 5432507
+    },
+    {
+      "line_no": 5449753,
+      "canonical_smiles": "c1ccc(cc1)C(OCC)=O.[Zn+].[I-]",
+      "duplicate_of_line_no": 5448989
+    },
+    {
+      "line_no": 5449930,
+      "canonical_smiles": "c1c(C#N)cccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 5447899
+    },
+    {
+      "line_no": 5450022,
+      "canonical_smiles": "c1(Cl)ccccc1.[I-].[Zn+]",
+      "duplicate_of_line_no": 5449832
+    },
+    {
+      "line_no": 5450023,
+      "canonical_smiles": "c1(Cl)ccccc1.[I-].[Zn+]",
+      "duplicate_of_line_no": 5449832
+    },
+    {
+      "line_no": 5450024,
+      "canonical_smiles": "c1cc(ccc1)OC.[Zn+].[I-]",
+      "duplicate_of_line_no": 5449457
+    },
+    {
+      "line_no": 5450060,
+      "canonical_smiles": "CN2CCN(CC2)Cc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5435616
+    },
+    {
+      "line_no": 5450168,
+      "canonical_smiles": "c1cc(c(cc1)Cl)C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5444719
+    },
+    {
+      "line_no": 5450544,
+      "canonical_smiles": "N2(CCCC2)Cc1ccccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 5436033
+    },
+    {
+      "line_no": 5450680,
+      "canonical_smiles": "c1ccc(cc1)OC(F)(F)F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 5450468
+    },
+    {
+      "line_no": 5450758,
+      "canonical_smiles": "N2(CCOCC2)Cc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5450343
+    },
+    {
+      "line_no": 5450772,
+      "canonical_smiles": "c1cccnc1.[CH3].[CH3].[Sn].[CH3]",
+      "duplicate_of_line_no": 5432916
+    },
+    {
+      "line_no": 5450885,
+      "canonical_smiles": "c1ccc(cc1)OC(F)(F)F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 5450468
+    },
+    {
+      "line_no": 5450963,
+      "canonical_smiles": "N2(CCOCC2)Cc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5450343
+    },
+    {
+      "line_no": 5450964,
+      "canonical_smiles": "c2cccc(c2)COc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5443533
+    },
+    {
+      "line_no": 5450994,
+      "canonical_smiles": "c1c(Br)cccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5450794
+    },
+    {
+      "line_no": 5451085,
+      "canonical_smiles": "C(C)C[CH2].[Sn].CCC[CH2].C(C[CH2])C.[CH]=C/C",
+      "duplicate_of_line_no": 5450993
+    },
+    {
+      "line_no": 5451489,
+      "canonical_smiles": "[Sn].[CH2]CCC.[CH2]CCC.CCC[CH2].c12ccccc1ccnc2",
+      "duplicate_of_line_no": 5437384
+    },
+    {
+      "line_no": 5451491,
+      "canonical_smiles": "c1(ccccc1)C(F)(F)F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 5450269
+    },
+    {
+      "line_no": 5451568,
+      "canonical_smiles": "N2(CCCC2)Cc1ccccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 5436033
+    },
+    {
+      "line_no": 5451599,
+      "canonical_smiles": "c1ccncc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 5451406
+    },
+    {
+      "line_no": 5451602,
+      "canonical_smiles": "[Sn].[CH2]CCC.[CH2]CCC.CCC[CH2].c12ccccc1ccnc2",
+      "duplicate_of_line_no": 5437384
+    },
+    {
+      "line_no": 5451682,
+      "canonical_smiles": "CN2CCN(CC2)Cc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5435616
+    },
+    {
+      "line_no": 5451699,
+      "canonical_smiles": "c1(ccccc1)C(F)(F)F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 5450269
+    },
+    {
+      "line_no": 5451772,
+      "canonical_smiles": "c2ccc(cc2)CN1CCCCC1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 5436165
+    },
+    {
+      "line_no": 5452219,
+      "canonical_smiles": "c1(ccccc1)C(F)(F)F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5442673
+    },
+    {
+      "line_no": 5452396,
+      "canonical_smiles": "[CH2]CCC.C(C[CH2])C.n1ccc(cc1)F.[CH2]CCC.[Sn]",
+      "duplicate_of_line_no": 5448458
+    },
+    {
+      "line_no": 5452399,
+      "canonical_smiles": "F[B-](F)(F)F.c1ccccn1.[IH2+].c2ccccn2",
+      "duplicate_of_line_no": 5433105
+    },
+    {
+      "line_no": 5452660,
+      "canonical_smiles": "C1(N(O)C(C)(C)C(C1)C(N)=O)(C)C",
+      "duplicate_of_line_no": 98383
+    },
+    {
+      "line_no": 5453138,
+      "canonical_smiles": "c1cc(cc(c1)F)Cl.[I-].[Zn+]",
+      "duplicate_of_line_no": 5444027
+    },
+    {
+      "line_no": 5453281,
+      "canonical_smiles": "[Sn].[CH2]CCC.[CH2]CCC.CCC[CH2].c12ccccc1ccnc2",
+      "duplicate_of_line_no": 5437384
+    },
+    {
+      "line_no": 5453913,
+      "canonical_smiles": "B",
+      "duplicate_of_line_no": 5317663
+    },
+    {
+      "line_no": 5454004,
+      "canonical_smiles": "O(C(OCC)c1ccccc1)CC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5453789
+    },
+    {
+      "line_no": 5454227,
+      "canonical_smiles": "O(C(OCC)c1ccccc1)CC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5453789
+    },
+    {
+      "line_no": 5454647,
+      "canonical_smiles": "C(CC)[CH2].C(C[CH2])C.c1cnc(Br)cc1.[Sn].C([CH2])CC",
+      "duplicate_of_line_no": 5443528
+    },
+    {
+      "line_no": 5454974,
+      "canonical_smiles": "[CH2]CCC.C(CC)[CH2].n1n(C)ccc1.[CH2]CCC.[Sn]",
+      "duplicate_of_line_no": 5434657
+    },
+    {
+      "line_no": 5455076,
+      "canonical_smiles": "CCC[CH2].CCC[CH2].c1cccc(c1)OC.[CH2]CCC.[Sn]",
+      "duplicate_of_line_no": 5443047
+    },
+    {
+      "line_no": 5456227,
+      "canonical_smiles": "[I-].[Zn+].c1(C(C)C)ccccc1",
+      "duplicate_of_line_no": 5436032
+    },
+    {
+      "line_no": 5456228,
+      "canonical_smiles": "c1ccc(OC(C)=O)cc1.[I-].[Zn+]",
+      "duplicate_of_line_no": 5435760
+    },
+    {
+      "line_no": 5456526,
+      "canonical_smiles": "C2OCCN(C2)Cc1ccccc1.[Zn+].[I-]",
+      "duplicate_of_line_no": 5435480
+    },
+    {
+      "line_no": 5456527,
+      "canonical_smiles": "CSc1ccccc1.[I-].[Zn+]",
+      "duplicate_of_line_no": 5449177
+    },
+    {
+      "line_no": 5456668,
+      "canonical_smiles": "c1c2c(cc(cc2)OC)ccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5447099
+    },
+    {
+      "line_no": 5456820,
+      "canonical_smiles": "c1ccc(OC(C)=O)cc1.[I-].[Zn+]",
+      "duplicate_of_line_no": 5435760
+    },
+    {
+      "line_no": 5457413,
+      "canonical_smiles": "[I-].Cc1cc(ccc1)C.[Zn+]",
+      "duplicate_of_line_no": 5455929
+    },
+    {
+      "line_no": 5457414,
+      "canonical_smiles": "c1(c(Cl)cccc1)Cl.[I-].[Zn+]",
+      "duplicate_of_line_no": 5457113
+    },
+    {
+      "line_no": 5459306,
+      "canonical_smiles": "CCC[CH2].[CH2]CCC.CCC[CH2].[Sn].NC/C=[CH]",
+      "duplicate_of_line_no": 5455163
+    },
+    {
+      "line_no": 5461444,
+      "canonical_smiles": "CCC[CH2].C([CH2])CC.n1cscc1C.[Sn].CCC[CH2]",
+      "duplicate_of_line_no": 5436822
+    },
+    {
+      "line_no": 5461590,
+      "canonical_smiles": "[CH2]CCC.Brc1ncsc1.[CH2]CCC.C([CH2])CC.[Sn]",
+      "duplicate_of_line_no": 5437818
+    },
+    {
+      "line_no": 5462877,
+      "canonical_smiles": "Clc1nccnc1.[CH2]CCC.C(C)C[CH2].C(CC)[CH2].[Sn]",
+      "duplicate_of_line_no": 5438321
+    },
+    {
+      "line_no": 5465006,
+      "canonical_smiles": "c1cc(ccc1)C.c2cc(ccc2)C.c3c(C)cccc3.[Bi]",
+      "duplicate_of_line_no": 5435969
+    },
+    {
+      "line_no": 5474586,
+      "canonical_smiles": "c2cc(ccc2C[N+](C)(C)C)C(CC)CC(C)c1ccccc1.N.[Cl-].C(C)C(C)C",
+      "duplicate_of_line_no": 5473536
+    },
+    {
+      "line_no": 5475920,
+      "canonical_smiles": "C(N1CCCC1=O)C.N",
+      "duplicate_of_line_no": 5204149
+    },
+    {
+      "line_no": 5746061,
+      "canonical_smiles": "[CH2]CCC.C([CH2])CC.[Sn].C(CC)[CH2].[CH]=C/CO",
+      "duplicate_of_line_no": 5451203
+    },
+    {
+      "line_no": 5751100,
+      "canonical_smiles": "C=CC(=O)NC1CC(C)(C)N(O)C(C)(C)C1",
+      "duplicate_of_line_no": 1435225
+    },
+    {
+      "line_no": 5751101,
+      "canonical_smiles": "O=NN2CCN(CC2)CC1C(N(O)C(C)(C)CC1=O)(C)C",
+      "duplicate_of_line_no": 1435232
+    },
+    {
+      "line_no": 5751102,
+      "canonical_smiles": "c1cc(OC)ccc1N(c2ccc(OC)cc2)O",
+      "duplicate_of_line_no": 1435237
+    },
+    {
+      "line_no": 5751426,
+      "canonical_smiles": "C1(C)(C)CC(C(C)(C)N1O)O",
+      "duplicate_of_line_no": 1435226
+    },
+    {
+      "line_no": 5752725,
+      "canonical_smiles": "C1C(C)(C)N(O)C(CC1OCC2OC2)(C)C",
+      "duplicate_of_line_no": 1435230
+    },
+    {
+      "line_no": 5752728,
+      "canonical_smiles": "c2(C=O)ccc(s2)C1=CC(C)(C)N(O)C(C)(C)C1",
+      "duplicate_of_line_no": 1435242
+    },
+    {
+      "line_no": 5755397,
+      "canonical_smiles": "C1(C)(C)N(O)C(CC(O)(C1)CCCCCC)(C)C",
+      "duplicate_of_line_no": 1435253
+    },
+    {
+      "line_no": 5771396,
+      "canonical_smiles": "C3C(C)(C)N(O)C(C)(C)C1(C3=O)OC=2CC(C)(C)N(C(C)(C)C=2CC1)O",
+      "duplicate_of_line_no": 1440942
+    },
+    {
+      "line_no": 5793634,
+      "canonical_smiles": "CCC[CH2].[Sn].c1nc(OC)cnc1.[CH2]CCC.C(C)C[CH2]",
+      "duplicate_of_line_no": 5445836
+    },
+    {
+      "line_no": 6093055,
+      "canonical_smiles": "c1c(c(ccc1)F)Cl.[Br-].[Zn+]",
+      "duplicate_of_line_no": 5443704
+    },
+    {
+      "line_no": 6093218,
+      "canonical_smiles": "CC2(CCCC(N2Cc1ccccc1)(C)C)C.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6092924
+    },
+    {
+      "line_no": 6093219,
+      "canonical_smiles": "c1cc(COCCF)ccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6092925
+    },
+    {
+      "line_no": 6093221,
+      "canonical_smiles": "[Mg+].c1cccnc1OCCC.[Br-]",
+      "duplicate_of_line_no": 6092927
+    },
+    {
+      "line_no": 6093356,
+      "canonical_smiles": "C(Oc2ccccc2)c1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6093054
+    },
+    {
+      "line_no": 6093525,
+      "canonical_smiles": "CCC(C)Sc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6093214
+    },
+    {
+      "line_no": 6093530,
+      "canonical_smiles": "c1cc(COCCF)ccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6092925
+    },
+    {
+      "line_no": 6093672,
+      "canonical_smiles": "C(Oc2ccccc2)c1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6093054
+    },
+    {
+      "line_no": 6093844,
+      "canonical_smiles": "O(Cc1ccccc1)CCCOC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6093529
+    },
+    {
+      "line_no": 6094164,
+      "canonical_smiles": "O(Cc1ccccc1)CCCOC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6093529
+    },
+    {
+      "line_no": 6094165,
+      "canonical_smiles": "c1c(cccc1)COCC(F)F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6093845
+    },
+    {
+      "line_no": 6094169,
+      "canonical_smiles": "c1cc(c(cc1)Cl)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6093849
+    },
+    {
+      "line_no": 6094301,
+      "canonical_smiles": "c2cccc(c2)-c1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 5449831
+    },
+    {
+      "line_no": 6094493,
+      "canonical_smiles": "c1c(cccc1)COCC(F)F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6093845
+    },
+    {
+      "line_no": 6094627,
+      "canonical_smiles": "Clc1cc(ccc1)C.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6094302
+    },
+    {
+      "line_no": 6094628,
+      "canonical_smiles": "O(C(OCC)c1ccccc1)CC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6092761
+    },
+    {
+      "line_no": 6094793,
+      "canonical_smiles": "C(CCOc1ccccc1)CC=C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6092923
+    },
+    {
+      "line_no": 6094795,
+      "canonical_smiles": "c1c(COCCCF)cccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6094492
+    },
+    {
+      "line_no": 6094796,
+      "canonical_smiles": "O(c1ccccc1)CCCCF.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6092926
+    },
+    {
+      "line_no": 6094942,
+      "canonical_smiles": "c1cc(c(cc1)Cl)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6093849
+    },
+    {
+      "line_no": 6094943,
+      "canonical_smiles": "O(C(OCC)c1ccccc1)CC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6092761
+    },
+    {
+      "line_no": 6095112,
+      "canonical_smiles": "c1ccc(cc1)OCCC=C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6092921
+    },
+    {
+      "line_no": 6095114,
+      "canonical_smiles": "C(CCOc1ccccc1)CC=C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6092923
+    },
+    {
+      "line_no": 6095115,
+      "canonical_smiles": "CC2(CCCC(N2Cc1ccccc1)(C)C)C.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6092924
+    },
+    {
+      "line_no": 6095116,
+      "canonical_smiles": "c1c(COCCCF)cccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6094492
+    },
+    {
+      "line_no": 6095117,
+      "canonical_smiles": "O(c1ccccc1)CCCCF.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6092926
+    },
+    {
+      "line_no": 6095121,
+      "canonical_smiles": "C1CCCCC1c2ccccc2.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6094800
+    },
+    {
+      "line_no": 6095431,
+      "canonical_smiles": "c1(C=C)ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 5451380
+    },
+    {
+      "line_no": 6095582,
+      "canonical_smiles": "c2(ccccc2)C1OCCCO1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6095266
+    },
+    {
+      "line_no": 6095748,
+      "canonical_smiles": "c1c(C)cccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6095586
+    },
+    {
+      "line_no": 6095912,
+      "canonical_smiles": "c1c(C)cccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6095586
+    },
+    {
+      "line_no": 6096537,
+      "canonical_smiles": "Fc1cccc(c1)C.[Zn+].[Br-]",
+      "duplicate_of_line_no": 5443866
+    },
+    {
+      "line_no": 6096542,
+      "canonical_smiles": "CSc1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6096385
+    },
+    {
+      "line_no": 6096827,
+      "canonical_smiles": "[Br-].[Zn+].c1ccc(N(C)C)cc1",
+      "duplicate_of_line_no": 6096535
+    },
+    {
+      "line_no": 6096829,
+      "canonical_smiles": "c1ccc(c(c1)C)F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6096384
+    },
+    {
+      "line_no": 6096834,
+      "canonical_smiles": "CSc1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6096385
+    },
+    {
+      "line_no": 6096991,
+      "canonical_smiles": "O(c1ccccc1F)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6095425
+    },
+    {
+      "line_no": 6096997,
+      "canonical_smiles": "C1CCCOC1Oc2ccccc2.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6096682
+    },
+    {
+      "line_no": 6097309,
+      "canonical_smiles": "c1(C)ncccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 5432507
+    },
+    {
+      "line_no": 6097456,
+      "canonical_smiles": "c2(ccccc2)C1OCCCO1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6095266
+    },
+    {
+      "line_no": 6097613,
+      "canonical_smiles": "c1(OC)cc(ccc1)F.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6097307
+    },
+    {
+      "line_no": 6097619,
+      "canonical_smiles": "c1(C=C)ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 5451380
+    },
+    {
+      "line_no": 6098097,
+      "canonical_smiles": "c2ccc(cc2)CN1CCCCC1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6097939
+    },
+    {
+      "line_no": 6098098,
+      "canonical_smiles": "C(=C)COc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6097782
+    },
+    {
+      "line_no": 6098261,
+      "canonical_smiles": "c2ccc(cc2)CN1CCCCC1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6097939
+    },
+    {
+      "line_no": 6098415,
+      "canonical_smiles": "c1ccccc1Cc2ccccc2.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6098091
+    },
+    {
+      "line_no": 6098422,
+      "canonical_smiles": "C(=C)COc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6097782
+    },
+    {
+      "line_no": 6098562,
+      "canonical_smiles": "[Br-].[Zn+].c1ccc(cc1)SC(F)(F)F",
+      "duplicate_of_line_no": 6098258
+    },
+    {
+      "line_no": 6098564,
+      "canonical_smiles": "c1(ccccc1)OC(F)F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6097935
+    },
+    {
+      "line_no": 6098720,
+      "canonical_smiles": "c1cc(OC(C)C)ccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6095267
+    },
+    {
+      "line_no": 6098726,
+      "canonical_smiles": "CN2CCN(CC2)Cc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6098421
+    },
+    {
+      "line_no": 6098728,
+      "canonical_smiles": "c2cccc(c2C)COc1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6095585
+    },
+    {
+      "line_no": 6098729,
+      "canonical_smiles": "c1c(COc2ccccc2)cccc1F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6095745
+    },
+    {
+      "line_no": 6098881,
+      "canonical_smiles": "[Br-].[Zn+].c1c(OC(F)(F)C(F)F)cccc1",
+      "duplicate_of_line_no": 6098880
+    },
+    {
+      "line_no": 6098882,
+      "canonical_smiles": "c1cc(C(F)F)ccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6098260
+    },
+    {
+      "line_no": 6099035,
+      "canonical_smiles": "O(c1ccccc1F)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6095425
+    },
+    {
+      "line_no": 6099036,
+      "canonical_smiles": "s1cc(Br)cc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 5433017
+    },
+    {
+      "line_no": 6099040,
+      "canonical_smiles": "CN2CCN(CC2)Cc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6098421
+    },
+    {
+      "line_no": 6099199,
+      "canonical_smiles": "c1(ccccc1)OC(F)F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6097935
+    },
+    {
+      "line_no": 6099200,
+      "canonical_smiles": "[Br-].[Zn+].c1c(OC(F)(F)C(F)F)cccc1",
+      "duplicate_of_line_no": 6098880
+    },
+    {
+      "line_no": 6099201,
+      "canonical_smiles": "c1cc(C(F)F)ccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6098260
+    },
+    {
+      "line_no": 6099202,
+      "canonical_smiles": "c1ccc(C2OCCO2)cc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6096063
+    },
+    {
+      "line_no": 6099512,
+      "canonical_smiles": "c1ccc(Cl)c(c1)C(F)(F)F.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6098257
+    },
+    {
+      "line_no": 6099662,
+      "canonical_smiles": "[Si](C)(C)(C)Oc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6097775
+    },
+    {
+      "line_no": 6099667,
+      "canonical_smiles": "c1ccccc1CN2CCOCC2.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6099513
+    },
+    {
+      "line_no": 6099668,
+      "canonical_smiles": "C1CN(Cc2ccccc2)CCS1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6099354
+    },
+    {
+      "line_no": 6099832,
+      "canonical_smiles": "FC(c1cc(F)ccc1)(F)F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6098563
+    },
+    {
+      "line_no": 6099833,
+      "canonical_smiles": "[Zn+].[Br-].c1cccc(F)c1C(F)(F)F",
+      "duplicate_of_line_no": 6099509
+    },
+    {
+      "line_no": 6099835,
+      "canonical_smiles": "c1ccccc1CN2CCOCC2.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6099513
+    },
+    {
+      "line_no": 6099984,
+      "canonical_smiles": "N2(CCCC2)Cc1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6097781
+    },
+    {
+      "line_no": 6099985,
+      "canonical_smiles": "C1CN(Cc2ccccc2)CCS1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6099354
+    },
+    {
+      "line_no": 6100138,
+      "canonical_smiles": "FC(c1cc(C(F)(F)F)ccc1)(F)F.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6099198
+    },
+    {
+      "line_no": 6100139,
+      "canonical_smiles": "[Zn+].[Br-].c1ccc(c(c1)C(F)(F)F)C",
+      "duplicate_of_line_no": 6098259
+    },
+    {
+      "line_no": 6100141,
+      "canonical_smiles": "N2(CCCC2)Cc1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6097781
+    },
+    {
+      "line_no": 6100273,
+      "canonical_smiles": "c1c(ccc(COc2ccccc2)c1)F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6096064
+    },
+    {
+      "line_no": 6100282,
+      "canonical_smiles": "c1cc(COc2ccccc2)cc(c1)Cl.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6098100
+    },
+    {
+      "line_no": 6100284,
+      "canonical_smiles": "c2(ccccc2)COc1cc(C)ccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6094940
+    },
+    {
+      "line_no": 6100573,
+      "canonical_smiles": "c2cc(ccc2)OCc1ccc(C)cc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6095909
+    },
+    {
+      "line_no": 6100578,
+      "canonical_smiles": "c2cc(ccc2Cl)OCc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6100275
+    },
+    {
+      "line_no": 6100582,
+      "canonical_smiles": "c2c(cccc2)OCc1cc(ccc1)C.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6099043
+    },
+    {
+      "line_no": 6100583,
+      "canonical_smiles": "c2c(c(C)ccc2)OCc1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6100274
+    },
+    {
+      "line_no": 6100584,
+      "canonical_smiles": "c2cc(ccc2Cl)OCc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6100275
+    },
+    {
+      "line_no": 6100585,
+      "canonical_smiles": "CC(CN(CC(C)C)Cc1ccccc1)C.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6100276
+    },
+    {
+      "line_no": 6100586,
+      "canonical_smiles": "c1ccc(CN(C)C2CCCCC2)cc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6100277
+    },
+    {
+      "line_no": 6100843,
+      "canonical_smiles": "c1c(C#N)cccc1.[Zn+].[I-]",
+      "duplicate_of_line_no": 6100572
+    },
+    {
+      "line_no": 6100852,
+      "canonical_smiles": "c2(F)ccc(c(c2)F)COc1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6099041
+    },
+    {
+      "line_no": 6100853,
+      "canonical_smiles": "O(c2ccccc2)Cc1ccc(cc1)Cl.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6099671
+    },
+    {
+      "line_no": 6100854,
+      "canonical_smiles": "Fc2c(cc(cc2F)OCc1ccccc1)F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6100574
+    },
+    {
+      "line_no": 6100855,
+      "canonical_smiles": "c2ccc(cc2)CN1CCN(CC)CC1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6100575
+    },
+    {
+      "line_no": 6100856,
+      "canonical_smiles": "c1ccccc1CN(C(C)C)C(C)C.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6100576
+    },
+    {
+      "line_no": 6100857,
+      "canonical_smiles": "C(CCC)N(Cc1ccccc1)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6100577
+    },
+    {
+      "line_no": 6101121,
+      "canonical_smiles": "CCOc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6096677
+    },
+    {
+      "line_no": 6101123,
+      "canonical_smiles": "C(CCCC)COc1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6096830
+    },
+    {
+      "line_no": 6101124,
+      "canonical_smiles": "c1c(cc(COc2ccccc2)c(c1)F)F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6099669
+    },
+    {
+      "line_no": 6101125,
+      "canonical_smiles": "C1CCN(Cc2ccccc2)CCC1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6100844
+    },
+    {
+      "line_no": 6101126,
+      "canonical_smiles": "c1(F)c(cc(OCc2ccccc2)cc1)F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6100845
+    },
+    {
+      "line_no": 6101127,
+      "canonical_smiles": "c1(COc2ccc(cc2)F)ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6100846
+    },
+    {
+      "line_no": 6101128,
+      "canonical_smiles": "CCCCN(Cc1ccccc1)CCCC.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6100847
+    },
+    {
+      "line_no": 6101129,
+      "canonical_smiles": "c1c(cccc1)COCCCCC.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6100848
+    },
+    {
+      "line_no": 6101393,
+      "canonical_smiles": "O(c2c(F)ccc(c2)F)Cc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6093058
+    },
+    {
+      "line_no": 6101397,
+      "canonical_smiles": "C(Oc2ccccc2)c1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6093054
+    },
+    {
+      "line_no": 6101401,
+      "canonical_smiles": "c1(OCc2ccccc2Cl)ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6097783
+    },
+    {
+      "line_no": 6101402,
+      "canonical_smiles": "Fc2cc(F)ccc2OCc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101116
+    },
+    {
+      "line_no": 6101403,
+      "canonical_smiles": "c1ccc(COc2cc(F)cc(c2)F)cc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101117
+    },
+    {
+      "line_no": 6101404,
+      "canonical_smiles": "C2CN(CCC2C)Cc1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6101118
+    },
+    {
+      "line_no": 6101405,
+      "canonical_smiles": "c1(CN(CCC)CCC)ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6101119
+    },
+    {
+      "line_no": 6101406,
+      "canonical_smiles": "O(CCC)Cc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101120
+    },
+    {
+      "line_no": 6101543,
+      "canonical_smiles": "c1c(c(ccc1)F)Cl.[I-].[Zn+]",
+      "duplicate_of_line_no": 5435042
+    },
+    {
+      "line_no": 6101677,
+      "canonical_smiles": "[I-].Cc1cc(ccc1)C.[Zn+]",
+      "duplicate_of_line_no": 5455929
+    },
+    {
+      "line_no": 6101679,
+      "canonical_smiles": "c1cc(COc2cccc(F)c2)ccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6100278
+    },
+    {
+      "line_no": 6101685,
+      "canonical_smiles": "c1c(OCCCCCCCC)cccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6096068
+    },
+    {
+      "line_no": 6101686,
+      "canonical_smiles": "O(Cc2c(cccc2)F)c1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6098423
+    },
+    {
+      "line_no": 6101687,
+      "canonical_smiles": "O(c2c(F)ccc(c2)F)Cc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6093058
+    },
+    {
+      "line_no": 6101688,
+      "canonical_smiles": "C(Oc2cc(Cl)ccc2)c1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101394
+    },
+    {
+      "line_no": 6101689,
+      "canonical_smiles": "c2cc(ccc2C)OCc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101395
+    },
+    {
+      "line_no": 6101690,
+      "canonical_smiles": "C(OCc1ccccc1)(C)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101396
+    },
+    {
+      "line_no": 6101691,
+      "canonical_smiles": "C(Oc2ccccc2)c1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6093054
+    },
+    {
+      "line_no": 6101966,
+      "canonical_smiles": "c1ccc(cc1)OCCCCC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6097618
+    },
+    {
+      "line_no": 6101967,
+      "canonical_smiles": "c1cccc(OCc2ccc(c(c2)F)F)c1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6099356
+    },
+    {
+      "line_no": 6101968,
+      "canonical_smiles": "c1(COc2ccccc2Cl)ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101678
+    },
+    {
+      "line_no": 6101969,
+      "canonical_smiles": "c1cc(COc2cccc(F)c2)ccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6100278
+    },
+    {
+      "line_no": 6101970,
+      "canonical_smiles": "C2CCCC(C2)OCc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101680
+    },
+    {
+      "line_no": 6101971,
+      "canonical_smiles": "c1ccc(cc1)COCCCC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101681
+    },
+    {
+      "line_no": 6101972,
+      "canonical_smiles": "C(C2OCCCO2)COc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101682
+    },
+    {
+      "line_no": 6102244,
+      "canonical_smiles": "C2C(C)N(CCC2)Cc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6100283
+    },
+    {
+      "line_no": 6102245,
+      "canonical_smiles": "c2(ccccc2)COc1cc(C)ccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6094940
+    },
+    {
+      "line_no": 6102246,
+      "canonical_smiles": "c1ccccc1CN(CC)CC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6100285
+    },
+    {
+      "line_no": 6102247,
+      "canonical_smiles": "c1ccc(COCCCCCC)cc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6100286
+    },
+    {
+      "line_no": 6102250,
+      "canonical_smiles": "c1cccc(OCCCC)c1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6092929
+    },
+    {
+      "line_no": 6102252,
+      "canonical_smiles": "c1c(F)cc(F)cc1COc2ccccc2.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6099987
+    },
+    {
+      "line_no": 6102253,
+      "canonical_smiles": "c2cc(c(F)cc2)OCc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101959
+    },
+    {
+      "line_no": 6102254,
+      "canonical_smiles": "c2ccc(cc2)CN1CCCC(C1)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101960
+    },
+    {
+      "line_no": 6102255,
+      "canonical_smiles": "C1C(OCc2ccccc2)CCC1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6101961
+    },
+    {
+      "line_no": 6102256,
+      "canonical_smiles": "c1cc(ccc1)CN(CC)CCCC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101962
+    },
+    {
+      "line_no": 6102529,
+      "canonical_smiles": "n1cc(C)ccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6097616
+    },
+    {
+      "line_no": 6102533,
+      "canonical_smiles": "c1c(OCC(C)C)cccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101964
+    },
+    {
+      "line_no": 6102534,
+      "canonical_smiles": "C(CCCC)COc1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6096830
+    },
+    {
+      "line_no": 6102537,
+      "canonical_smiles": "c1c(F)cc(F)cc1COc2ccccc2.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6099987
+    },
+    {
+      "line_no": 6102538,
+      "canonical_smiles": "O(c2ccccc2)Cc1ccc(cc1)Cl.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6099671
+    },
+    {
+      "line_no": 6102539,
+      "canonical_smiles": "c2cc(c(F)cc2)OCc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101959
+    },
+    {
+      "line_no": 6102540,
+      "canonical_smiles": "c2ccc(cc2)CN1CCCC(C1)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101960
+    },
+    {
+      "line_no": 6102541,
+      "canonical_smiles": "C1C(OCc2ccccc2)CCC1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6101961
+    },
+    {
+      "line_no": 6102542,
+      "canonical_smiles": "c1cc(ccc1)CN(CC)CCCC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101962
+    },
+    {
+      "line_no": 6102829,
+      "canonical_smiles": "c1cc(ccc1)SCC(C)C.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6102249
+    },
+    {
+      "line_no": 6102830,
+      "canonical_smiles": "c1ccccc1SCCCCCC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101400
+    },
+    {
+      "line_no": 6102831,
+      "canonical_smiles": "c2(F)ccc(c(c2)F)COc1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6099041
+    },
+    {
+      "line_no": 6102832,
+      "canonical_smiles": "O(Cc2c(cccc2)F)c1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6098423
+    },
+    {
+      "line_no": 6102835,
+      "canonical_smiles": "C2C(C)N(CCC2)Cc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6100283
+    },
+    {
+      "line_no": 6102836,
+      "canonical_smiles": "c2(ccccc2)COc1cc(C)ccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6094940
+    },
+    {
+      "line_no": 6102837,
+      "canonical_smiles": "c1ccccc1CN(CC)CC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6100285
+    },
+    {
+      "line_no": 6102838,
+      "canonical_smiles": "c1ccc(COCCCCCC)cc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6100286
+    },
+    {
+      "line_no": 6102839,
+      "canonical_smiles": "c2cc(c(F)cc2)OCc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101959
+    },
+    {
+      "line_no": 6102842,
+      "canonical_smiles": "[Zn+].c1cccc(c1Cl)Cl.[Br-]",
+      "duplicate_of_line_no": 6094171
+    },
+    {
+      "line_no": 6102984,
+      "canonical_smiles": "C2N(CCC2)Cc1ccccc1.[I-].[Zn+]",
+      "duplicate_of_line_no": 6102678
+    },
+    {
+      "line_no": 6102988,
+      "canonical_smiles": "Clc1ncccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6102682
+    },
+    {
+      "line_no": 6102995,
+      "canonical_smiles": "c1(C2(C)OCCO2)ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6099348
+    },
+    {
+      "line_no": 6103128,
+      "canonical_smiles": "Cc1c(cccc1)C.[I-].[Zn+]",
+      "duplicate_of_line_no": 5449558
+    },
+    {
+      "line_no": 6103131,
+      "canonical_smiles": "c1cc2c(ccnc2)cc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6095907
+    },
+    {
+      "line_no": 6103133,
+      "canonical_smiles": "c1c(cccc1)OCCC(C)C.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6100279
+    },
+    {
+      "line_no": 6103134,
+      "canonical_smiles": "c1c(OCCCCCCCC)cccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6096068
+    },
+    {
+      "line_no": 6103136,
+      "canonical_smiles": "c2cccc(c2C)COc1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6095585
+    },
+    {
+      "line_no": 6103137,
+      "canonical_smiles": "c1cc(COc2ccccc2)cc(c1)Cl.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6098100
+    },
+    {
+      "line_no": 6103139,
+      "canonical_smiles": "c2c(c(C)ccc2)OCc1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6100274
+    },
+    {
+      "line_no": 6103140,
+      "canonical_smiles": "c2cc(ccc2Cl)OCc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6100275
+    },
+    {
+      "line_no": 6103141,
+      "canonical_smiles": "CC(CN(CC(C)C)Cc1ccccc1)C.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6100276
+    },
+    {
+      "line_no": 6103142,
+      "canonical_smiles": "c1ccc(CN(C)C2CCCCC2)cc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6100277
+    },
+    {
+      "line_no": 6103145,
+      "canonical_smiles": "C(CSc1ccccc1)CC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6100280
+    },
+    {
+      "line_no": 6103147,
+      "canonical_smiles": "Clc1cc(ccc1)C.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6094302
+    },
+    {
+      "line_no": 6103280,
+      "canonical_smiles": "C2N(CCC2)Cc1ccccc1.[I-].[Zn+]",
+      "duplicate_of_line_no": 6102678
+    },
+    {
+      "line_no": 6103290,
+      "canonical_smiles": "Cc1ccc(cc1)Cl.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6092760
+    },
+    {
+      "line_no": 6103425,
+      "canonical_smiles": "c12cccnc1cccc2.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6097312
+    },
+    {
+      "line_no": 6103427,
+      "canonical_smiles": "c1cccc(c1)SCCC(C)C.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6100579
+    },
+    {
+      "line_no": 6103428,
+      "canonical_smiles": "c1ccc(cc1)OCCCCC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6097618
+    },
+    {
+      "line_no": 6103432,
+      "canonical_smiles": "c1c(ccc(COc2ccccc2)c1)F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6096064
+    },
+    {
+      "line_no": 6103433,
+      "canonical_smiles": "Fc2c(cc(cc2F)OCc1ccccc1)F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6100574
+    },
+    {
+      "line_no": 6103434,
+      "canonical_smiles": "c2ccc(cc2)CN1CCN(CC)CC1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6100575
+    },
+    {
+      "line_no": 6103435,
+      "canonical_smiles": "c1ccccc1CN(C(C)C)C(C)C.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6100576
+    },
+    {
+      "line_no": 6103436,
+      "canonical_smiles": "C(CCC)N(Cc1ccccc1)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6100577
+    },
+    {
+      "line_no": 6103439,
+      "canonical_smiles": "C(CCOc1ccccc1)CCCC.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6100580
+    },
+    {
+      "line_no": 6103574,
+      "canonical_smiles": "C1CN(Cc2ccccc2)CCC1.[I-].[Zn+]",
+      "duplicate_of_line_no": 5435329
+    },
+    {
+      "line_no": 6103584,
+      "canonical_smiles": "[Br-].[Zn+].c1(Cl)cc(C(F)(F)F)ccc1",
+      "duplicate_of_line_no": 6098879
+    },
+    {
+      "line_no": 6103731,
+      "canonical_smiles": "c1cccc(OCCCC)c1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6092929
+    },
+    {
+      "line_no": 6103732,
+      "canonical_smiles": "C(CC)CCSc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6102251
+    },
+    {
+      "line_no": 6103733,
+      "canonical_smiles": "c1c(cc(COc2ccccc2)c(c1)F)F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6099669
+    },
+    {
+      "line_no": 6103736,
+      "canonical_smiles": "c2cc(ccc2)OCc1ccc(C)cc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6095909
+    },
+    {
+      "line_no": 6103737,
+      "canonical_smiles": "c1(F)c(cc(OCc2ccccc2)cc1)F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6100845
+    },
+    {
+      "line_no": 6103738,
+      "canonical_smiles": "c1(COc2ccc(cc2)F)ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6100846
+    },
+    {
+      "line_no": 6103739,
+      "canonical_smiles": "CCCCN(Cc1ccccc1)CCCC.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6100847
+    },
+    {
+      "line_no": 6103740,
+      "canonical_smiles": "O(CCC)Cc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101120
+    },
+    {
+      "line_no": 6103742,
+      "canonical_smiles": "c1c(OCC(C)C)cccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101964
+    },
+    {
+      "line_no": 6103743,
+      "canonical_smiles": "c1(SCCCCCCC)ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6100851
+    },
+    {
+      "line_no": 6103744,
+      "canonical_smiles": "c1ccc(cc1Cl)Cl.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6102546
+    },
+    {
+      "line_no": 6103894,
+      "canonical_smiles": "c1cc(OC)ccc1Cl.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6103730
+    },
+    {
+      "line_no": 6103895,
+      "canonical_smiles": "c1c(c(ccc1)F)Cl.[Br-].[Zn+]",
+      "duplicate_of_line_no": 5443704
+    },
+    {
+      "line_no": 6104024,
+      "canonical_smiles": "c1cc(ccc1)CC.[Zn+].[I-]",
+      "duplicate_of_line_no": 5455930
+    },
+    {
+      "line_no": 6104029,
+      "canonical_smiles": "C(CSc1ccccc1)CC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6100280
+    },
+    {
+      "line_no": 6104030,
+      "canonical_smiles": "C(Oc1ccccc1)CC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6100281
+    },
+    {
+      "line_no": 6104032,
+      "canonical_smiles": "c1cccc(OCc2ccc(c(c2)F)F)c1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6099356
+    },
+    {
+      "line_no": 6104033,
+      "canonical_smiles": "c1c(COc2ccccc2)cccc1F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6095745
+    },
+    {
+      "line_no": 6104034,
+      "canonical_smiles": "C1CCN(Cc2ccccc2)CCC1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6100844
+    },
+    {
+      "line_no": 6104035,
+      "canonical_smiles": "c1ccc(COc2cc(F)cc(c2)F)cc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101117
+    },
+    {
+      "line_no": 6104036,
+      "canonical_smiles": "C2CN(CCC2C)Cc1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6101118
+    },
+    {
+      "line_no": 6104037,
+      "canonical_smiles": "c1(CN(CCC)CCC)ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6101119
+    },
+    {
+      "line_no": 6104038,
+      "canonical_smiles": "C(Oc2ccccc2)c1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6093054
+    },
+    {
+      "line_no": 6104040,
+      "canonical_smiles": "c1cc(ccc1)SCC(C)C.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6102249
+    },
+    {
+      "line_no": 6104041,
+      "canonical_smiles": "c1ccccc1SCCCCCC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101400
+    },
+    {
+      "line_no": 6104188,
+      "canonical_smiles": "c1c(OC)cccc1Cl.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6102992
+    },
+    {
+      "line_no": 6104330,
+      "canonical_smiles": "n1cc(C)ccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6097616
+    },
+    {
+      "line_no": 6104334,
+      "canonical_smiles": "c1(C)ncccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 5432507
+    },
+    {
+      "line_no": 6104335,
+      "canonical_smiles": "C(CCOc1ccccc1)CCCC.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6100580
+    },
+    {
+      "line_no": 6104336,
+      "canonical_smiles": "c1ccc(cc1)SCCC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6100581
+    },
+    {
+      "line_no": 6104337,
+      "canonical_smiles": "c1(OCc2ccccc2Cl)ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6097783
+    },
+    {
+      "line_no": 6104339,
+      "canonical_smiles": "c2c(cccc2)OCc1cc(ccc1)C.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6099043
+    },
+    {
+      "line_no": 6104340,
+      "canonical_smiles": "Fc2cc(F)ccc2OCc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101116
+    },
+    {
+      "line_no": 6104341,
+      "canonical_smiles": "C(Oc2cc(Cl)ccc2)c1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101394
+    },
+    {
+      "line_no": 6104342,
+      "canonical_smiles": "c2cc(ccc2C)OCc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101395
+    },
+    {
+      "line_no": 6104343,
+      "canonical_smiles": "C(OCc1ccccc1)(C)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101396
+    },
+    {
+      "line_no": 6104344,
+      "canonical_smiles": "C(C2OCCCO2)COc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101682
+    },
+    {
+      "line_no": 6104346,
+      "canonical_smiles": "c1c(cccc1)OCCC(C)C.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6100279
+    },
+    {
+      "line_no": 6104347,
+      "canonical_smiles": "C(CC)CCSc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6102251
+    },
+    {
+      "line_no": 6104485,
+      "canonical_smiles": "c1ncccc1F.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6095426
+    },
+    {
+      "line_no": 6104493,
+      "canonical_smiles": "c1cc(c(cc1)Cl)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6093849
+    },
+    {
+      "line_no": 6104634,
+      "canonical_smiles": "Cc1ccncc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6103729
+    },
+    {
+      "line_no": 6104638,
+      "canonical_smiles": "Clc1ncccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6102682
+    },
+    {
+      "line_no": 6104639,
+      "canonical_smiles": "c1(SCCCCCCC)ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6100851
+    },
+    {
+      "line_no": 6104644,
+      "canonical_smiles": "c1(COc2ccccc2Cl)ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101678
+    },
+    {
+      "line_no": 6104645,
+      "canonical_smiles": "c1cc(COc2cccc(F)c2)ccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6100278
+    },
+    {
+      "line_no": 6104646,
+      "canonical_smiles": "C2CCCC(C2)OCc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101680
+    },
+    {
+      "line_no": 6104647,
+      "canonical_smiles": "c1ccc(cc1)COCCCC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101681
+    },
+    {
+      "line_no": 6104650,
+      "canonical_smiles": "c1cccc(c1)SCCC(C)C.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6100579
+    },
+    {
+      "line_no": 6104651,
+      "canonical_smiles": "c1ccc(cc1)SCCC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6100581
+    },
+    {
+      "line_no": 6104786,
+      "canonical_smiles": "C2OCCN(C2)Cc1ccccc1.[Zn+].[I-]",
+      "duplicate_of_line_no": 5435480
+    },
+    {
+      "line_no": 6104790,
+      "canonical_smiles": "Clc1ncccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6102682
+    },
+    {
+      "line_no": 6104796,
+      "canonical_smiles": "c1ccc(F)cc1.[I-].[Zn+]",
+      "duplicate_of_line_no": 5434650
+    },
+    {
+      "line_no": 6104797,
+      "canonical_smiles": "Clc1cc(ccc1)C.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6094302
+    },
+    {
+      "line_no": 6104926,
+      "canonical_smiles": "c1ncccc1F.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6095426
+    },
+    {
+      "line_no": 6104928,
+      "canonical_smiles": "c1cscn1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 5451600
+    },
+    {
+      "line_no": 6104929,
+      "canonical_smiles": "c1ncccc1OC.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6096831
+    },
+    {
+      "line_no": 6104937,
+      "canonical_smiles": "c2c(cccc2)Oc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5446196
+    },
+    {
+      "line_no": 6105073,
+      "canonical_smiles": "[Mg+].c1(OC)cc(ccc1)F.[Br-]",
+      "duplicate_of_line_no": 5446645
+    },
+    {
+      "line_no": 6105079,
+      "canonical_smiles": "c1cc(F)cc(c1)OC(C)(C)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6105078
+    },
+    {
+      "line_no": 6105219,
+      "canonical_smiles": "n1cccc(Cl)c1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6093850
+    },
+    {
+      "line_no": 6105231,
+      "canonical_smiles": "c2c(cccc2)Oc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5446196
+    },
+    {
+      "line_no": 6105371,
+      "canonical_smiles": "c1(OCC(C)C)c(cccc1)F.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6103438
+    },
+    {
+      "line_no": 6105372,
+      "canonical_smiles": "C(Oc1ccccc1C)CC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6105081
+    },
+    {
+      "line_no": 6105375,
+      "canonical_smiles": "CCCCCOc1ccccc1F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101974
+    },
+    {
+      "line_no": 6105534,
+      "canonical_smiles": "O3C1(OCC3)CCN(Cc2ccccc2)CC1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 5451378
+    },
+    {
+      "line_no": 6105673,
+      "canonical_smiles": "C(CC(C)=C)c1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6105074
+    },
+    {
+      "line_no": 6105676,
+      "canonical_smiles": "CCCCOc1ccccc1F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6102841
+    },
+    {
+      "line_no": 6105677,
+      "canonical_smiles": "c1(OCC(C)C)c(cccc1)F.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6103438
+    },
+    {
+      "line_no": 6105679,
+      "canonical_smiles": "c1c(OC(C)CC)cccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6105373
+    },
+    {
+      "line_no": 6105682,
+      "canonical_smiles": "c1(cccc(c1)F)OCCCCC.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6102544
+    },
+    {
+      "line_no": 6105827,
+      "canonical_smiles": "c1cc(cc(c1)F)Cl.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6099039
+    },
+    {
+      "line_no": 6105829,
+      "canonical_smiles": "Cc1cncc(c1)F.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6104927
+    },
+    {
+      "line_no": 6105830,
+      "canonical_smiles": "Clc1cncc(c1)C.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6105221
+    },
+    {
+      "line_no": 6105831,
+      "canonical_smiles": "n1cccc(Cl)c1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6093850
+    },
+    {
+      "line_no": 6105836,
+      "canonical_smiles": "O3C1(OCC3)CCN(Cc2ccccc2)CC1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 5451378
+    },
+    {
+      "line_no": 6105838,
+      "canonical_smiles": "C1CCCOC1Oc2ccccc2.[Mg+].[Br-]",
+      "duplicate_of_line_no": 5449750
+    },
+    {
+      "line_no": 6105974,
+      "canonical_smiles": "C(c1ccccc1)C=C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6105365
+    },
+    {
+      "line_no": 6105975,
+      "canonical_smiles": "c1cc(ccc1)CC(C)=C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6105366
+    },
+    {
+      "line_no": 6105979,
+      "canonical_smiles": "CCCCOc1ccccc1F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6102841
+    },
+    {
+      "line_no": 6105984,
+      "canonical_smiles": "CCCCCOc1ccccc1F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101974
+    },
+    {
+      "line_no": 6106128,
+      "canonical_smiles": "c1cc(cc(c1)F)Br.[I-].[Zn+]",
+      "duplicate_of_line_no": 5450771
+    },
+    {
+      "line_no": 6106130,
+      "canonical_smiles": "c1cc(cc(c1)F)Cl.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6099039
+    },
+    {
+      "line_no": 6106134,
+      "canonical_smiles": "n1cc(C)ccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6105531
+    },
+    {
+      "line_no": 6106136,
+      "canonical_smiles": "O1C(c2ccccc2)OCCC1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6105835
+    },
+    {
+      "line_no": 6106273,
+      "canonical_smiles": "C(CC=C)c1ccccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6105672
+    },
+    {
+      "line_no": 6106274,
+      "canonical_smiles": "C(CC(C)=C)c1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6105074
+    },
+    {
+      "line_no": 6106277,
+      "canonical_smiles": "Fc1c(cccc1)OC(C)CC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6105678
+    },
+    {
+      "line_no": 6106278,
+      "canonical_smiles": "c1(cccc(c1)F)OCCCC.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6101684
+    },
+    {
+      "line_no": 6106284,
+      "canonical_smiles": "CCCCOc1ccccc1C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6105684
+    },
+    {
+      "line_no": 6106287,
+      "canonical_smiles": "C(CCCC)Oc1ccccc1C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6105379
+    },
+    {
+      "line_no": 6106438,
+      "canonical_smiles": "c1ncccc1OC.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6096831
+    },
+    {
+      "line_no": 6106439,
+      "canonical_smiles": "n1ccccc1F.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6103289
+    },
+    {
+      "line_no": 6106442,
+      "canonical_smiles": "O1C(c2ccccc2)OCCC1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6105835
+    },
+    {
+      "line_no": 6106584,
+      "canonical_smiles": "C(CC=C)c1ccccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6105672
+    },
+    {
+      "line_no": 6106589,
+      "canonical_smiles": "Fc1c(cccc1)OC(C)CC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6105678
+    },
+    {
+      "line_no": 6106595,
+      "canonical_smiles": "c1cccc(c1C)OC(C)CC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6106285
+    },
+    {
+      "line_no": 6106751,
+      "canonical_smiles": "c12cccnc1cccc2.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6097312
+    },
+    {
+      "line_no": 6106757,
+      "canonical_smiles": "C2Cc1c(CN2Cc3ccccc3)cccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6104935
+    },
+    {
+      "line_no": 6106901,
+      "canonical_smiles": "C(c1ccccc1)C=C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6105365
+    },
+    {
+      "line_no": 6106906,
+      "canonical_smiles": "CCC(C)Oc1cc(ccc1)F.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6106588
+    },
+    {
+      "line_no": 6106907,
+      "canonical_smiles": "c1c(OC(C)CC)cccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6105373
+    },
+    {
+      "line_no": 6106913,
+      "canonical_smiles": "C(C)(C)(C)Oc1c(C)cccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6106912
+    },
+    {
+      "line_no": 6107055,
+      "canonical_smiles": "C(C)(C)COc1cc(F)ccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101398
+    },
+    {
+      "line_no": 6107060,
+      "canonical_smiles": "O1CCOC1c2ccccc2.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5444370
+    },
+    {
+      "line_no": 6107062,
+      "canonical_smiles": "C1OC(c2ccccc2F)OCC1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6106755
+    },
+    {
+      "line_no": 6107064,
+      "canonical_smiles": "C2Cc1c(CN2Cc3ccccc3)cccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6104935
+    },
+    {
+      "line_no": 6107202,
+      "canonical_smiles": "c1cc(ccc1)CC(C)=C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6105366
+    },
+    {
+      "line_no": 6107206,
+      "canonical_smiles": "Fc1ccccc1OC(C)(C)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6105980
+    },
+    {
+      "line_no": 6107207,
+      "canonical_smiles": "Fc1ccccc1OC(C)(C)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6105980
+    },
+    {
+      "line_no": 6107208,
+      "canonical_smiles": "c1(OC(C)(C)C)ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6105981
+    },
+    {
+      "line_no": 6107209,
+      "canonical_smiles": "[Zn+].[Br-].O(c1c(C)cccc1)C(C)C",
+      "duplicate_of_line_no": 6105080
+    },
+    {
+      "line_no": 6107213,
+      "canonical_smiles": "c1cccc(OCC(C)C)c1C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6105985
+    },
+    {
+      "line_no": 6107528,
+      "canonical_smiles": "Clc1ccccc1OC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6093533
+    },
+    {
+      "line_no": 6107530,
+      "canonical_smiles": "c1(ccccc1F)OCCC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6102259
+    },
+    {
+      "line_no": 6107534,
+      "canonical_smiles": "c1ncccc1C#N.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6107056
+    },
+    {
+      "line_no": 6107535,
+      "canonical_smiles": "Clc1ccncc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6106436
+    },
+    {
+      "line_no": 6107536,
+      "canonical_smiles": "c12cccnc1cccc2.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6097312
+    },
+    {
+      "line_no": 6107847,
+      "canonical_smiles": "[Br-].[Mg+].c1ccc(N(C)C)cc1",
+      "duplicate_of_line_no": 5445464
+    },
+    {
+      "line_no": 6107850,
+      "canonical_smiles": "n1ccccc1OC.[Mg+].[Br-]",
+      "duplicate_of_line_no": 5451205
+    },
+    {
+      "line_no": 6107855,
+      "canonical_smiles": "O(c1ccccc1F)CC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6103437
+    },
+    {
+      "line_no": 6107861,
+      "canonical_smiles": "c12cccnc1cccc2.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6097312
+    },
+    {
+      "line_no": 6108160,
+      "canonical_smiles": "O(c1ccccc1F)C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5446826
+    },
+    {
+      "line_no": 6108166,
+      "canonical_smiles": "C(Oc1cccc(c1)F)C.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6100849
+    },
+    {
+      "line_no": 6108174,
+      "canonical_smiles": "C(F)(F)(F)c1cccnc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6105832
+    },
+    {
+      "line_no": 6108487,
+      "canonical_smiles": "C1CCCCC1c2ccccc2.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6108157
+    },
+    {
+      "line_no": 6108496,
+      "canonical_smiles": "c1ccc(OC)c(c1)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6095584
+    },
+    {
+      "line_no": 6108497,
+      "canonical_smiles": "c1(OCCC)cccc(c1)F.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6102840
+    },
+    {
+      "line_no": 6108500,
+      "canonical_smiles": "n1ccccc1OC.[Zn+].[Br-]",
+      "duplicate_of_line_no": 5455636
+    },
+    {
+      "line_no": 6108505,
+      "canonical_smiles": "n1ccc(C)c(Br)c1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6107864
+    },
+    {
+      "line_no": 6108675,
+      "canonical_smiles": "[Si](C)(C)(Oc1ccccc1)C(C)(C)C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5451409
+    },
+    {
+      "line_no": 6108818,
+      "canonical_smiles": "c1(C)ncccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6105224
+    },
+    {
+      "line_no": 6108823,
+      "canonical_smiles": "c1cc(F)cc(c1)OC(C)C.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6108167
+    },
+    {
+      "line_no": 6108826,
+      "canonical_smiles": "n1ccccc1F.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6103289
+    },
+    {
+      "line_no": 6108829,
+      "canonical_smiles": "COC(=O)c1ccccn1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6108502
+    },
+    {
+      "line_no": 6108832,
+      "canonical_smiles": "c1(cncc(c1)Br)C.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6108176
+    },
+    {
+      "line_no": 6109142,
+      "canonical_smiles": "c2cccc(c2)COc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5443533
+    },
+    {
+      "line_no": 6109155,
+      "canonical_smiles": "Fc1c(cccc1)OC(C)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6107856
+    },
+    {
+      "line_no": 6109327,
+      "canonical_smiles": "c2c(cccc2)COC(c1ccccc1)=O.[I-].[Zn+]",
+      "duplicate_of_line_no": 6109001
+    },
+    {
+      "line_no": 6109460,
+      "canonical_smiles": "c1cc(ccc1)CCCC=C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6109139
+    },
+    {
+      "line_no": 6109475,
+      "canonical_smiles": "c1(ccccc1F)OCCC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6102259
+    },
+    {
+      "line_no": 6109477,
+      "canonical_smiles": "c1(ccccc1OCC)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6108168
+    },
+    {
+      "line_no": 6109478,
+      "canonical_smiles": "c1c(F)c(F)ccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 5452088
+    },
+    {
+      "line_no": 6109481,
+      "canonical_smiles": "n1ccc(C(=O)OC)cc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6109161
+    },
+    {
+      "line_no": 6109483,
+      "canonical_smiles": "c1ccc(N2CCOCC2)nc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6109163
+    },
+    {
+      "line_no": 6109636,
+      "canonical_smiles": "[Mg+].Clc1cc(ccc1)C.[Br-]",
+      "duplicate_of_line_no": 5444904
+    },
+    {
+      "line_no": 6109639,
+      "canonical_smiles": "c2c(cccc2)COC(c1ccccc1)=O.[I-].[Zn+]",
+      "duplicate_of_line_no": 6109001
+    },
+    {
+      "line_no": 6109776,
+      "canonical_smiles": "c1ncccc1F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6107524
+    },
+    {
+      "line_no": 6109780,
+      "canonical_smiles": "CSc1ccccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 5446194
+    },
+    {
+      "line_no": 6109783,
+      "canonical_smiles": "O(c1ccccc1F)CC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6103437
+    },
+    {
+      "line_no": 6109784,
+      "canonical_smiles": "Fc1c(cccc1)OC(C)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6107856
+    },
+    {
+      "line_no": 6109788,
+      "canonical_smiles": "n1ccccc1F.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6103289
+    },
+    {
+      "line_no": 6109790,
+      "canonical_smiles": "c12cccnc1cccc2.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6097312
+    },
+    {
+      "line_no": 6110110,
+      "canonical_smiles": "c12cccnc1cccc2.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6104932
+    },
+    {
+      "line_no": 6110119,
+      "canonical_smiles": "c1cc(COc2cc(ccc2C)C)ccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6093532
+    },
+    {
+      "line_no": 6110271,
+      "canonical_smiles": "O(c1ccccc1)CCC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6110112
+    },
+    {
+      "line_no": 6110274,
+      "canonical_smiles": "c1(Cl)cccc(c1COc2ccccc2)Cl.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6109951
+    },
+    {
+      "line_no": 6110275,
+      "canonical_smiles": "c1ccccc1COc2ccc(c(c2)Cl)Cl.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6109952
+    },
+    {
+      "line_no": 6110277,
+      "canonical_smiles": "CC(Oc1c(OCc2ccccc2)cccc1)C.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6109954
+    },
+    {
+      "line_no": 6110278,
+      "canonical_smiles": "c1c(OCc2ccc(cc2Cl)F)cccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6109955
+    },
+    {
+      "line_no": 6110280,
+      "canonical_smiles": "c1ccc(COc2ccccc2CC=C)cc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6109957
+    },
+    {
+      "line_no": 6110281,
+      "canonical_smiles": "c1cc(OCc2ccccc2)c(cc1)OC.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6109958
+    },
+    {
+      "line_no": 6110283,
+      "canonical_smiles": "c1cc(COc2c(c(ccc2)C)C)ccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6109960
+    },
+    {
+      "line_no": 6110426,
+      "canonical_smiles": "[Br-].[Mg+].c1ccccc1OC(C)C",
+      "duplicate_of_line_no": 6108350
+    },
+    {
+      "line_no": 6110428,
+      "canonical_smiles": "C(Oc1ccccc1)C=C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6110111
+    },
+    {
+      "line_no": 6110430,
+      "canonical_smiles": "O(c1ccccc1)CCC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6110112
+    },
+    {
+      "line_no": 6110431,
+      "canonical_smiles": "c1(ccccc1)Cl.[Mg+].[Br-]",
+      "duplicate_of_line_no": 5441089
+    },
+    {
+      "line_no": 6110599,
+      "canonical_smiles": "c1ccccc1COc2ccc(c(c2)Cl)Cl.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6109952
+    },
+    {
+      "line_no": 6110600,
+      "canonical_smiles": "c2(Cl)cc(c(cc2)OCc1ccccc1)Cl.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6110276
+    },
+    {
+      "line_no": 6110602,
+      "canonical_smiles": "c1c(OCc2ccc(cc2Cl)F)cccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6109955
+    },
+    {
+      "line_no": 6110603,
+      "canonical_smiles": "c2(ccc(cc2)C(C)C)OCc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6110279
+    },
+    {
+      "line_no": 6110605,
+      "canonical_smiles": "c1cc(OCc2ccccc2)c(cc1)OC.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6109958
+    },
+    {
+      "line_no": 6110606,
+      "canonical_smiles": "c2ccc(cc2)COc1cc(ccc1C)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6110282
+    },
+    {
+      "line_no": 6110750,
+      "canonical_smiles": "C(Oc1ccccc1)C=C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6110111
+    },
+    {
+      "line_no": 6110753,
+      "canonical_smiles": "c1ccc(Cl)c(c1)Cl.[Mg+].[Br-]",
+      "duplicate_of_line_no": 5445275
+    },
+    {
+      "line_no": 6110757,
+      "canonical_smiles": "c1cc(F)ccc1-c2ccccc2.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6107848
+    },
+    {
+      "line_no": 6110758,
+      "canonical_smiles": "C(COCc1ccccc1)C=C.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6110437
+    },
+    {
+      "line_no": 6110761,
+      "canonical_smiles": "CN(c2ccc(cc2)-c1ccccc1)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6110122
+    },
+    {
+      "line_no": 6110901,
+      "canonical_smiles": "c1ccc(cc1)OCCCCC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6110113
+    },
+    {
+      "line_no": 6110904,
+      "canonical_smiles": "Clc2ccc(cc2Cl)COc1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6110598
+    },
+    {
+      "line_no": 6110906,
+      "canonical_smiles": "c2(Cl)cc(c(cc2)OCc1ccccc1)Cl.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6110276
+    },
+    {
+      "line_no": 6110907,
+      "canonical_smiles": "c1c(OCc2ccccc2)ccc(c1)C(C)(C)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6110601
+    },
+    {
+      "line_no": 6110909,
+      "canonical_smiles": "c2(ccc(cc2)C(C)C)OCc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6110279
+    },
+    {
+      "line_no": 6110910,
+      "canonical_smiles": "c1ccc(COc2ccc(cc2)OC)cc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6110604
+    },
+    {
+      "line_no": 6110912,
+      "canonical_smiles": "c2ccc(cc2)COc1cc(ccc1C)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6110282
+    },
+    {
+      "line_no": 6110913,
+      "canonical_smiles": "c1ccccc1COCc2ccco2.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6110607
+    },
+    {
+      "line_no": 6111055,
+      "canonical_smiles": "c2cccc(c2)COc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5443533
+    },
+    {
+      "line_no": 6111062,
+      "canonical_smiles": "C(COCc1ccccc1)C=C.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6110437
+    },
+    {
+      "line_no": 6111215,
+      "canonical_smiles": "c12cccnc1cccc2.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6104932
+    },
+    {
+      "line_no": 6111218,
+      "canonical_smiles": "Clc2ccc(cc2Cl)COc1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6110598
+    },
+    {
+      "line_no": 6111219,
+      "canonical_smiles": "c2cc(ccc2)COc1c(Cl)cccc1Cl.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6110905
+    },
+    {
+      "line_no": 6111221,
+      "canonical_smiles": "c1c(OCc2ccccc2)ccc(c1)C(C)(C)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6110601
+    },
+    {
+      "line_no": 6111222,
+      "canonical_smiles": "c2(cc(ccc2F)OCc1ccccc1)Cl.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6110908
+    },
+    {
+      "line_no": 6111224,
+      "canonical_smiles": "c1ccc(COc2ccc(cc2)OC)cc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6110604
+    },
+    {
+      "line_no": 6111225,
+      "canonical_smiles": "c2(ccccc2)COc1cc(cc(c1)C)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6110911
+    },
+    {
+      "line_no": 6111227,
+      "canonical_smiles": "c1ccccc1COCc2ccco2.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6110607
+    },
+    {
+      "line_no": 6111370,
+      "canonical_smiles": "COc1c(c(ccc1)OC)OC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5446281
+    },
+    {
+      "line_no": 6111377,
+      "canonical_smiles": "c1c(OCC(C)C)cccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6111376
+    },
+    {
+      "line_no": 6111378,
+      "canonical_smiles": "c1(cc(Cl)ccc1)Cl.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5445465
+    },
+    {
+      "line_no": 6111386,
+      "canonical_smiles": "c2cccc(c2)-c1cc(ccc1)F.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6111063
+    },
+    {
+      "line_no": 6111387,
+      "canonical_smiles": "c2ccc(cc2)-c1cc(C)ccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6110123
+    },
+    {
+      "line_no": 6111540,
+      "canonical_smiles": "c1(C=C)ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6107061
+    },
+    {
+      "line_no": 6111544,
+      "canonical_smiles": "c2cc(ccc2)COc1c(Cl)cccc1Cl.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6110905
+    },
+    {
+      "line_no": 6111545,
+      "canonical_smiles": "c1cc(OCc2ccccc2)c(c(c1)Cl)Cl.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6111220
+    },
+    {
+      "line_no": 6111547,
+      "canonical_smiles": "c2(cc(ccc2F)OCc1ccccc1)Cl.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6110908
+    },
+    {
+      "line_no": 6111548,
+      "canonical_smiles": "O(c2c(cccc2)C(C)C)Cc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6111223
+    },
+    {
+      "line_no": 6111550,
+      "canonical_smiles": "c2(ccccc2)COc1cc(cc(c1)C)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6110911
+    },
+    {
+      "line_no": 6111551,
+      "canonical_smiles": "c2(C)c(ccc(c2)C)OCc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6111226
+    },
+    {
+      "line_no": 6111552,
+      "canonical_smiles": "c1ccc(cc1)COC/C=C\\CC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6109961
+    },
+    {
+      "line_no": 6111684,
+      "canonical_smiles": "O(c1ccccc1F)C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5446826
+    },
+    {
+      "line_no": 6111685,
+      "canonical_smiles": "s1cc(Br)cc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6105226
+    },
+    {
+      "line_no": 6111687,
+      "canonical_smiles": "c1c(OCC(C)C)cccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6111376
+    },
+    {
+      "line_no": 6111695,
+      "canonical_smiles": "c2c(cccc2)Cn1cncc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6111384
+    },
+    {
+      "line_no": 6111696,
+      "canonical_smiles": "c1c(-c2ccc(C)cc2)cccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6110762
+    },
+    {
+      "line_no": 6111697,
+      "canonical_smiles": "c2cc(ccc2)-c1ccc(OC)cc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6096224
+    },
+    {
+      "line_no": 6111844,
+      "canonical_smiles": "c1(C=C)ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6107061
+    },
+    {
+      "line_no": 6111846,
+      "canonical_smiles": "c1cc(OC(C)C)ccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6095267
+    },
+    {
+      "line_no": 6111847,
+      "canonical_smiles": "c1c(cc(cc1OCc2ccccc2)Cl)Cl.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6111543
+    },
+    {
+      "line_no": 6111848,
+      "canonical_smiles": "c1ccc(COc2c(ccc(Cl)c2)Cl)cc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6109953
+    },
+    {
+      "line_no": 6111849,
+      "canonical_smiles": "c1cc(OCc2ccccc2)c(c(c1)Cl)Cl.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6111220
+    },
+    {
+      "line_no": 6111850,
+      "canonical_smiles": "c2c(ccc(c2)CCCC)OCc1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6111546
+    },
+    {
+      "line_no": 6111851,
+      "canonical_smiles": "c2c(cc(Cl)c(c2)OCc1ccccc1)F.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6109956
+    },
+    {
+      "line_no": 6111852,
+      "canonical_smiles": "O(c2c(cccc2)C(C)C)Cc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6111223
+    },
+    {
+      "line_no": 6111853,
+      "canonical_smiles": "O(C)c2cc(ccc2)OCc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6111549
+    },
+    {
+      "line_no": 6111854,
+      "canonical_smiles": "Cc2c(ccc(c2)OCc1ccccc1)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6109959
+    },
+    {
+      "line_no": 6111855,
+      "canonical_smiles": "c2(C)c(ccc(c2)C)OCc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6111226
+    },
+    {
+      "line_no": 6111984,
+      "canonical_smiles": "c1c(OC)cccc1OC.[Mg+].[Br-]",
+      "duplicate_of_line_no": 5444542
+    },
+    {
+      "line_no": 6111986,
+      "canonical_smiles": "CC(C)CCOc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6111688
+    },
+    {
+      "line_no": 6111987,
+      "canonical_smiles": "c1cccc(OCCCC)c1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6108015
+    },
+    {
+      "line_no": 6111989,
+      "canonical_smiles": "c1(Cl)ccc(cc1)C.[Mg+].[Br-]",
+      "duplicate_of_line_no": 5450581
+    },
+    {
+      "line_no": 6111991,
+      "canonical_smiles": "Clc1ccccc1OC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6109322
+    },
+    {
+      "line_no": 6111992,
+      "canonical_smiles": "c1ccc2sccc2c1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6111693
+    },
+    {
+      "line_no": 6111994,
+      "canonical_smiles": "c1ccc(cc1)COC/C=C\\CC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6109961
+    },
+    {
+      "line_no": 6111999,
+      "canonical_smiles": "CC(C)(c1ccc(-c2ccccc2)cc1)C.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6093223
+    },
+    {
+      "line_no": 6112136,
+      "canonical_smiles": "c1(C=C)ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6107061
+    },
+    {
+      "line_no": 6112138,
+      "canonical_smiles": "c1(Cl)cccc(c1COc2ccccc2)Cl.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6109951
+    },
+    {
+      "line_no": 6112139,
+      "canonical_smiles": "c1c(cc(cc1OCc2ccccc2)Cl)Cl.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6111543
+    },
+    {
+      "line_no": 6112140,
+      "canonical_smiles": "c1ccc(COc2c(ccc(Cl)c2)Cl)cc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6109953
+    },
+    {
+      "line_no": 6112141,
+      "canonical_smiles": "CC(Oc1c(OCc2ccccc2)cccc1)C.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6109954
+    },
+    {
+      "line_no": 6112142,
+      "canonical_smiles": "c2c(ccc(c2)CCCC)OCc1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6111546
+    },
+    {
+      "line_no": 6112143,
+      "canonical_smiles": "c2c(cc(Cl)c(c2)OCc1ccccc1)F.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6109956
+    },
+    {
+      "line_no": 6112144,
+      "canonical_smiles": "c1ccc(COc2ccccc2CC=C)cc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6109957
+    },
+    {
+      "line_no": 6112145,
+      "canonical_smiles": "O(C)c2cc(ccc2)OCc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6111549
+    },
+    {
+      "line_no": 6112146,
+      "canonical_smiles": "Cc2c(ccc(c2)OCc1ccccc1)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6109959
+    },
+    {
+      "line_no": 6112147,
+      "canonical_smiles": "c1cc(COc2c(c(ccc2)C)C)ccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6109960
+    },
+    {
+      "line_no": 6112286,
+      "canonical_smiles": "c1ccc(Cc2ccccc2)cc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6110109
+    },
+    {
+      "line_no": 6112288,
+      "canonical_smiles": "c1cc(cc(c1)F)Cl.[Mg+].[Br-]",
+      "duplicate_of_line_no": 5445462
+    },
+    {
+      "line_no": 6112289,
+      "canonical_smiles": "c1c(OCCCCCCCC)cccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6109326
+    },
+    {
+      "line_no": 6112290,
+      "canonical_smiles": "c1c(OCCCCCCCC)cccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6109326
+    },
+    {
+      "line_no": 6112292,
+      "canonical_smiles": "c1(C2(C)OCCO2)ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6111371
+    },
+    {
+      "line_no": 6112295,
+      "canonical_smiles": "[Br-].[Mg+].c1ccccc1OC(C)C",
+      "duplicate_of_line_no": 6108350
+    },
+    {
+      "line_no": 6112296,
+      "canonical_smiles": "c1cccc(-c2ccc(OC)cc2)c1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6109147
+    },
+    {
+      "line_no": 6112297,
+      "canonical_smiles": "C(=C)COCc1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6111995
+    },
+    {
+      "line_no": 6112298,
+      "canonical_smiles": "c1ccsc1Cl.[Zn+].[Br-]",
+      "duplicate_of_line_no": 5457411
+    },
+    {
+      "line_no": 6112299,
+      "canonical_smiles": "c2c(ccc(c2)F)-c1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6096678
+    },
+    {
+      "line_no": 6112300,
+      "canonical_smiles": "c2c(cccc2)-c1cccc(c1)OC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6110441
+    },
+    {
+      "line_no": 6112446,
+      "canonical_smiles": "FC(c1cc(C(F)(F)F)ccc1)(F)F.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6099198
+    },
+    {
+      "line_no": 6112591,
+      "canonical_smiles": "c1(COC)ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6109467
+    },
+    {
+      "line_no": 6112594,
+      "canonical_smiles": "[Zn+].[Br-].c1(OC)cc(ccc1)OC",
+      "duplicate_of_line_no": 6095744
+    },
+    {
+      "line_no": 6112596,
+      "canonical_smiles": "n1ccccc1OC.[Zn+].[Br-]",
+      "duplicate_of_line_no": 5455636
+    },
+    {
+      "line_no": 6112597,
+      "canonical_smiles": "c2(c(ccc(c2)-c1ccccc1)OC)F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6112301
+    },
+    {
+      "line_no": 6112602,
+      "canonical_smiles": "c1cc(COc2cccc(F)c2)ccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6100278
+    },
+    {
+      "line_no": 6112754,
+      "canonical_smiles": "c1ccc(OC)cc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6112595
+    },
+    {
+      "line_no": 6112755,
+      "canonical_smiles": "C(Oc1ccccc1)CC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6100281
+    },
+    {
+      "line_no": 6112758,
+      "canonical_smiles": "c1(C(=O)OC)ccccc1.[Zn+].[I-]",
+      "duplicate_of_line_no": 6112447
+    },
+    {
+      "line_no": 6112900,
+      "canonical_smiles": "c1ccccc1CCCCCC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6108018
+    },
+    {
+      "line_no": 6112901,
+      "canonical_smiles": "c1(COC)ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6109467
+    },
+    {
+      "line_no": 6112904,
+      "canonical_smiles": "c2cccc(c2)-c1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 5449831
+    },
+    {
+      "line_no": 6112907,
+      "canonical_smiles": "Fc1cccc(c1)C.[Zn+].[Br-]",
+      "duplicate_of_line_no": 5443866
+    },
+    {
+      "line_no": 6112908,
+      "canonical_smiles": "c1ccc(OC)cc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6112595
+    },
+    {
+      "line_no": 6112914,
+      "canonical_smiles": "c1ccccc1CCCCCC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6097148
+    },
+    {
+      "line_no": 6112916,
+      "canonical_smiles": "O(CC)c1ccccc1OC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6108824
+    },
+    {
+      "line_no": 6112922,
+      "canonical_smiles": "[Zn+].[Br-].c1ccc(OCC(C)C)c(OC)c1",
+      "duplicate_of_line_no": 6105987
+    },
+    {
+      "line_no": 6112923,
+      "canonical_smiles": "C(Oc2ccccc2)c1ccc(OC)cc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6112609
+    },
+    {
+      "line_no": 6112924,
+      "canonical_smiles": "c2cc(ccc2)COc1c(F)c(c(F)cc1)F.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6112610
+    },
+    {
+      "line_no": 6112925,
+      "canonical_smiles": "c1c(OCc2ccccc2)c(ccc1F)Cl.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6112611
+    },
+    {
+      "line_no": 6112926,
+      "canonical_smiles": "C(Oc2c(F)c(Cl)ccc2)c1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6112612
+    },
+    {
+      "line_no": 6113063,
+      "canonical_smiles": "c1cc(ccc1)CN(C)C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6111050
+    },
+    {
+      "line_no": 6113064,
+      "canonical_smiles": "c1(OC(C)(C)C)ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6105981
+    },
+    {
+      "line_no": 6113065,
+      "canonical_smiles": "[Br-].[Zn+].c1ccc(N(C)C)cc1",
+      "duplicate_of_line_no": 6096535
+    },
+    {
+      "line_no": 6113067,
+      "canonical_smiles": "c1(C=C)ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 5451380
+    },
+    {
+      "line_no": 6113068,
+      "canonical_smiles": "c1(ccccn1)C(F)(F)F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6105530
+    },
+    {
+      "line_no": 6113069,
+      "canonical_smiles": "c1(C(=O)OC)ccccc1.[Zn+].[I-]",
+      "duplicate_of_line_no": 6112447
+    },
+    {
+      "line_no": 6113218,
+      "canonical_smiles": "c1cccc2ccccc12.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6113066
+    },
+    {
+      "line_no": 6113219,
+      "canonical_smiles": "[Zn+].[Br-].c1(OC)cc(ccc1)OC",
+      "duplicate_of_line_no": 6095744
+    },
+    {
+      "line_no": 6113220,
+      "canonical_smiles": "c1(-c2cc(ccc2OC)F)ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6112911
+    },
+    {
+      "line_no": 6113221,
+      "canonical_smiles": "c1ccc(-c2c(C)ccc(c2)F)cc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6112912
+    },
+    {
+      "line_no": 6113222,
+      "canonical_smiles": "c2(ccccc2C(C)C)-c1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6112913
+    },
+    {
+      "line_no": 6113223,
+      "canonical_smiles": "c1c(cccc1)COCCCCC.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6100848
+    },
+    {
+      "line_no": 6113224,
+      "canonical_smiles": "Fc2cc(F)ccc2OCc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101116
+    },
+    {
+      "line_no": 6113225,
+      "canonical_smiles": "C(C)CCOc1ccccc1OC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6106286
+    },
+    {
+      "line_no": 6113231,
+      "canonical_smiles": "c1cc(OCCC)c(OC)cc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6106281
+    },
+    {
+      "line_no": 6113233,
+      "canonical_smiles": "c2cc(ccc2)COc1c(F)c(c(F)cc1)F.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6112610
+    },
+    {
+      "line_no": 6113235,
+      "canonical_smiles": "C(Oc2c(F)c(Cl)ccc2)c1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6112612
+    },
+    {
+      "line_no": 6113383,
+      "canonical_smiles": "c1cccc(c1)F.[Zn+].[Br-]",
+      "duplicate_of_line_no": 5444185
+    },
+    {
+      "line_no": 6113530,
+      "canonical_smiles": "c2c(cc(cc2)F)OCc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6111053
+    },
+    {
+      "line_no": 6113531,
+      "canonical_smiles": "c1ccc(cc1)OCCC=C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6092921
+    },
+    {
+      "line_no": 6113533,
+      "canonical_smiles": "c1(ccccc1)Cl.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6112910
+    },
+    {
+      "line_no": 6113534,
+      "canonical_smiles": "Cc1cc(ccc1)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6113382
+    },
+    {
+      "line_no": 6113543,
+      "canonical_smiles": "C=CCOc1ccccc1OC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6113228
+    },
+    {
+      "line_no": 6113545,
+      "canonical_smiles": "C(Oc1ccccc1F)COCC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6113226
+    },
+    {
+      "line_no": 6113549,
+      "canonical_smiles": "CC(CCOc1c(C)cccc1)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6113230
+    },
+    {
+      "line_no": 6113551,
+      "canonical_smiles": "c1(F)c(OCc2ccccc2)cccc1F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6112606
+    },
+    {
+      "line_no": 6113552,
+      "canonical_smiles": "Fc2c(ccc(c2)OCc1ccccc1)Cl.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6113234
+    },
+    {
+      "line_no": 6113700,
+      "canonical_smiles": "c1(ccccc1)Cl.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6112910
+    },
+    {
+      "line_no": 6113701,
+      "canonical_smiles": "c1ccc(C)c(c1)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6096828
+    },
+    {
+      "line_no": 6113703,
+      "canonical_smiles": "c1cccc(n1)C#N.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6109158
+    },
+    {
+      "line_no": 6113704,
+      "canonical_smiles": "n1cccc(c1)Br.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6107863
+    },
+    {
+      "line_no": 6113851,
+      "canonical_smiles": "C=CCCCOc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6095113
+    },
+    {
+      "line_no": 6113854,
+      "canonical_smiles": "Cc1cc(ccc1)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6113382
+    },
+    {
+      "line_no": 6113859,
+      "canonical_smiles": "c2c(C)c(cc(c2)-c1ccccc1)F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6113538
+    },
+    {
+      "line_no": 6113860,
+      "canonical_smiles": "c1ccccc1-c2c(cccc2)OC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6113539
+    },
+    {
+      "line_no": 6113861,
+      "canonical_smiles": "c1cc(SC)c(-c2ccccc2)cc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6113540
+    },
+    {
+      "line_no": 6113864,
+      "canonical_smiles": "Cc1ccccc1OCC=C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6113863
+    },
+    {
+      "line_no": 6113866,
+      "canonical_smiles": "c1(OCCOCC)cccc(c1)F.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6112917
+    },
+    {
+      "line_no": 6113867,
+      "canonical_smiles": "c2c1ccc(OCC)cc1ccc2.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6107215
+    },
+    {
+      "line_no": 6113869,
+      "canonical_smiles": "CC(CCOc1ccccc1F)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101693
+    },
+    {
+      "line_no": 6113871,
+      "canonical_smiles": "O(Cc2cc(c(cc2)Cl)F)c1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6113550
+    },
+    {
+      "line_no": 6113872,
+      "canonical_smiles": "c1(F)c(OCc2ccccc2)cccc1F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6112606
+    },
+    {
+      "line_no": 6113873,
+      "canonical_smiles": "Fc2c(ccc(c2)OCc1ccccc1)Cl.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6113234
+    },
+    {
+      "line_no": 6113874,
+      "canonical_smiles": "c1ccc(COc2ccc(Cl)cc2F)cc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6113553
+    },
+    {
+      "line_no": 6114017,
+      "canonical_smiles": "c1cc(C(C)(C)C)ccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6094168
+    },
+    {
+      "line_no": 6114018,
+      "canonical_smiles": "c1(OC)c(OC)cccc1OC.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6099347
+    },
+    {
+      "line_no": 6114020,
+      "canonical_smiles": "c1cccc(n1)C#N.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6109158
+    },
+    {
+      "line_no": 6114177,
+      "canonical_smiles": "C=CCCCOc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6095113
+    },
+    {
+      "line_no": 6114179,
+      "canonical_smiles": "[Zn+].[Br-].c1(C(C)C)ccccc1",
+      "duplicate_of_line_no": 6095583
+    },
+    {
+      "line_no": 6114187,
+      "canonical_smiles": "c1(COc2ccc(cc2)F)ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6100846
+    },
+    {
+      "line_no": 6114188,
+      "canonical_smiles": "c1(OCC=C)c(F)cccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6102543
+    },
+    {
+      "line_no": 6114192,
+      "canonical_smiles": "C(Oc2cc1c(cc2)cccc1)CC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6105381
+    },
+    {
+      "line_no": 6114196,
+      "canonical_smiles": "O(Cc2cc(c(cc2)Cl)F)c1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6113550
+    },
+    {
+      "line_no": 6114199,
+      "canonical_smiles": "c1ccc(COc2ccc(Cl)cc2F)cc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6113553
+    },
+    {
+      "line_no": 6114349,
+      "canonical_smiles": "CCOc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6096677
+    },
+    {
+      "line_no": 6114350,
+      "canonical_smiles": "[Zn+].[Br-].c1(C(C)C)ccccc1",
+      "duplicate_of_line_no": 6095583
+    },
+    {
+      "line_no": 6114356,
+      "canonical_smiles": "c1ccc(C(OCC)=O)cc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 5434944
+    },
+    {
+      "line_no": 6114503,
+      "canonical_smiles": "C(OCCOc1ccccc1)C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6114176
+    },
+    {
+      "line_no": 6114510,
+      "canonical_smiles": "c1c(OC)cc(cc1)OC.[Zn+].[I-]",
+      "duplicate_of_line_no": 6104180
+    },
+    {
+      "line_no": 6114512,
+      "canonical_smiles": "c2cccc(c2)-c1c(cc(F)cc1)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6114184
+    },
+    {
+      "line_no": 6114513,
+      "canonical_smiles": "c1c(OC(C)C)cccc1-c2ccccc2.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6114185
+    },
+    {
+      "line_no": 6114514,
+      "canonical_smiles": "c1(-c2cc(F)c(c(F)c2)F)ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6114186
+    },
+    {
+      "line_no": 6114516,
+      "canonical_smiles": "c2cc(c(F)cc2)OCc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6101959
+    },
+    {
+      "line_no": 6114517,
+      "canonical_smiles": "O(c1ccccc1)CCOCC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6114189
+    },
+    {
+      "line_no": 6114520,
+      "canonical_smiles": "c2c1ccc(cc1ccc2)OCCCC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6106600
+    },
+    {
+      "line_no": 6114522,
+      "canonical_smiles": "C(CCOc1cc(F)ccc1)(C)C.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6104649
+    },
+    {
+      "line_no": 6114523,
+      "canonical_smiles": "c1(OCCC(C)C)c(cccc1)OC.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6112608
+    },
+    {
+      "line_no": 6114524,
+      "canonical_smiles": "c2cccc(c2)COc1c(cccc1F)F.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6112601
+    },
+    {
+      "line_no": 6114525,
+      "canonical_smiles": "c1(F)c(OCc2ccccc2)cccc1F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6112606
+    },
+    {
+      "line_no": 6114526,
+      "canonical_smiles": "Fc1c(OCc2ccccc2)c(Cl)ccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6114198
+    },
+    {
+      "line_no": 6114527,
+      "canonical_smiles": "C(=C)COCc1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6111995
+    },
+    {
+      "line_no": 6114676,
+      "canonical_smiles": "c1cccc(c1)CC.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6099980
+    },
+    {
+      "line_no": 6114680,
+      "canonical_smiles": "c1ccc2sccc2c1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6111217
+    },
+    {
+      "line_no": 6114829,
+      "canonical_smiles": "c1ccc(cc1Cl)Cl.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6102546
+    },
+    {
+      "line_no": 6114830,
+      "canonical_smiles": "c1cccc(c1)CC.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6099980
+    },
+    {
+      "line_no": 6114831,
+      "canonical_smiles": "c1c2c(cc(cc2)OC)ccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6096225
+    },
+    {
+      "line_no": 6114834,
+      "canonical_smiles": "c2ccc(cc2)-c1cc(C)c(F)cc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6112598
+    },
+    {
+      "line_no": 6114835,
+      "canonical_smiles": "c1c(cccc1-c2ccccc2)C(C)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6112599
+    },
+    {
+      "line_no": 6114838,
+      "canonical_smiles": "C(Oc1cccc(c1)F)C=C.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6101963
+    },
+    {
+      "line_no": 6114839,
+      "canonical_smiles": "O(c1ccccc1)CCOCC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6114189
+    },
+    {
+      "line_no": 6114842,
+      "canonical_smiles": "c12cc(OCC=C)ccc1cccc2.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6113546
+    },
+    {
+      "line_no": 6114844,
+      "canonical_smiles": "C(C)CCCOc1ccccc1OC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6106916
+    },
+    {
+      "line_no": 6114845,
+      "canonical_smiles": "c1cc(cc2ccccc12)OCC(C)C.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6106289
+    },
+    {
+      "line_no": 6114846,
+      "canonical_smiles": "c2cccc(c2)COc1c(cccc1F)F.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6112601
+    },
+    {
+      "line_no": 6114847,
+      "canonical_smiles": "c1c(OCc2ccccc2)c(ccc1F)Cl.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6112611
+    },
+    {
+      "line_no": 6114848,
+      "canonical_smiles": "Fc1c(OCc2ccccc2)c(Cl)ccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6114198
+    },
+    {
+      "line_no": 6114993,
+      "canonical_smiles": "n1cccc(Cl)c1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6107520
+    },
+    {
+      "line_no": 6114996,
+      "canonical_smiles": "c1cc2c(ccnc2)cc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6104931
+    },
+    {
+      "line_no": 6114998,
+      "canonical_smiles": "n1cc(C)ccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6105531
+    },
+    {
+      "line_no": 6115140,
+      "canonical_smiles": "c1ccsc1Cl.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5441729
+    },
+    {
+      "line_no": 6115141,
+      "canonical_smiles": "O(Cc1ccccc1)C(C)CC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6114849
+    },
+    {
+      "line_no": 6115307,
+      "canonical_smiles": "[Br-].[Mg+].c1ccc(cc1)SC(F)(F)F",
+      "duplicate_of_line_no": 6115001
+    },
+    {
+      "line_no": 6115309,
+      "canonical_smiles": "C(c2cc(F)ccc2F)Oc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6110429
+    },
+    {
+      "line_no": 6115448,
+      "canonical_smiles": "O(Cc1ccccc1)C(C)CC.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6114849
+    },
+    {
+      "line_no": 6115451,
+      "canonical_smiles": "C2C(C2)COCc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6115144
+    },
+    {
+      "line_no": 6115456,
+      "canonical_smiles": "O(c2ccc(OC(F)(F)F)cc2)Cc1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6115149
+    },
+    {
+      "line_no": 6115457,
+      "canonical_smiles": "O(Cc1ccccc1)CC.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6115150
+    },
+    {
+      "line_no": 6115463,
+      "canonical_smiles": "O(c2ccccc2)C1CCCCCC1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6115156
+    },
+    {
+      "line_no": 6115770,
+      "canonical_smiles": "C2C(C2)COCc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6115144
+    },
+    {
+      "line_no": 6115774,
+      "canonical_smiles": "[Br-].[Zn+].c1cc(SC(C)C)ccc1",
+      "duplicate_of_line_no": 6115455
+    },
+    {
+      "line_no": 6115776,
+      "canonical_smiles": "O(Cc1ccccc1)CC.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6115150
+    },
+    {
+      "line_no": 6116075,
+      "canonical_smiles": "c2cccc(c2)COCC1CCCO1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6115767
+    },
+    {
+      "line_no": 6116082,
+      "canonical_smiles": "[Br-].[Zn+].c1cc(SC(C)C)ccc1",
+      "duplicate_of_line_no": 6115455
+    },
+    {
+      "line_no": 6116083,
+      "canonical_smiles": "c2ccc(cc2)-c1ccc(OC(F)(F)F)cc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6115775
+    },
+    {
+      "line_no": 6116085,
+      "canonical_smiles": "c2(ccccc2)SC1CCCC1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6115777
+    },
+    {
+      "line_no": 6116087,
+      "canonical_smiles": "O(c2ccccc2)C1CCCCC1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6115779
+    },
+    {
+      "line_no": 6116239,
+      "canonical_smiles": "n1ccccc1F.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6109466
+    },
+    {
+      "line_no": 6116245,
+      "canonical_smiles": "C1CN(Cc2ccccc2)CCS1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6115936
+    },
+    {
+      "line_no": 6116383,
+      "canonical_smiles": "c2cccc(c2)COCC1CCCO1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6115767
+    },
+    {
+      "line_no": 6116390,
+      "canonical_smiles": "CC(Oc1ccccc1OC)C.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6106592
+    },
+    {
+      "line_no": 6116392,
+      "canonical_smiles": "C1(Oc2ccccc2)CCCC1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6116084
+    },
+    {
+      "line_no": 6116395,
+      "canonical_smiles": "O(c2ccccc2)C1CCCCC1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6115779
+    },
+    {
+      "line_no": 6116537,
+      "canonical_smiles": "c1ncccc1OC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6110748
+    },
+    {
+      "line_no": 6116542,
+      "canonical_smiles": "C1CN(Cc2ccccc2)CCS1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6115936
+    },
+    {
+      "line_no": 6116543,
+      "canonical_smiles": "c1c(OCc2c(F)cccc2)cccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6110751
+    },
+    {
+      "line_no": 6116696,
+      "canonical_smiles": "FC(F)(F)Oc2cccc(c2)-c1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6116391
+    },
+    {
+      "line_no": 6116697,
+      "canonical_smiles": "C1(Oc2ccccc2)CCCC1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6116084
+    },
+    {
+      "line_no": 6116699,
+      "canonical_smiles": "C1CC(Oc2ccccc2C)CC1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6115460
+    },
+    {
+      "line_no": 6116702,
+      "canonical_smiles": "c1cccc(c1OC2CCCCC2)OC.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6116701
+    },
+    {
+      "line_no": 6116842,
+      "canonical_smiles": "c1(C)ncccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6105224
+    },
+    {
+      "line_no": 6116847,
+      "canonical_smiles": "c2ccc(c(c2)COc1ccccc1)C.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6108161
+    },
+    {
+      "line_no": 6116848,
+      "canonical_smiles": "c1ccccc1OCc2cc(ccc2)F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6109775
+    },
+    {
+      "line_no": 6116990,
+      "canonical_smiles": "O(CC2CCCCC2)Cc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6116690
+    },
+    {
+      "line_no": 6116994,
+      "canonical_smiles": "c2(ccccc2)SC1CCCC1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6115777
+    },
+    {
+      "line_no": 6116995,
+      "canonical_smiles": "C1CCCC(Sc2ccccc2)C1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6115461
+    },
+    {
+      "line_no": 6116996,
+      "canonical_smiles": "c1cc(COC)ccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6095268
+    },
+    {
+      "line_no": 6116999,
+      "canonical_smiles": "c2c(F)c(ccc2)OC1CCCC1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6115151
+    },
+    {
+      "line_no": 6117000,
+      "canonical_smiles": "Fc1cccc(OC2CCCCC2)c1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6116397
+    },
+    {
+      "line_no": 6117002,
+      "canonical_smiles": "c1(c(OC2CCCCC2)cccc1)C.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6115781
+    },
+    {
+      "line_no": 6117003,
+      "canonical_smiles": "c2cc(ccc2)SC1CCCCCC1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6115148
+    },
+    {
+      "line_no": 6117153,
+      "canonical_smiles": "n1ccc(C)cc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6105833
+    },
+    {
+      "line_no": 6117303,
+      "canonical_smiles": "O(CC2CCCCC2)Cc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6116690
+    },
+    {
+      "line_no": 6117307,
+      "canonical_smiles": "C1CCCC(Sc2ccccc2)C1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6115461
+    },
+    {
+      "line_no": 6117308,
+      "canonical_smiles": "O(c2ccc(OC(F)(F)F)cc2)Cc1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6115149
+    },
+    {
+      "line_no": 6117309,
+      "canonical_smiles": "c1cc(COC)ccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6095268
+    },
+    {
+      "line_no": 6117311,
+      "canonical_smiles": "C1CCCC1Oc2c(cccc2)OC.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6115153
+    },
+    {
+      "line_no": 6117312,
+      "canonical_smiles": "c2(cccc(c2)OC1CCCC1)F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6117310
+    },
+    {
+      "line_no": 6117313,
+      "canonical_smiles": "c1(ccccc1OC2CCCCC2)F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6116089
+    },
+    {
+      "line_no": 6117315,
+      "canonical_smiles": "O(c2ccccc2)C1CCCCCC1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6115156
+    },
+    {
+      "line_no": 6117316,
+      "canonical_smiles": "c2cc(ccc2)SC1CCCCCC1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6115148
+    },
+    {
+      "line_no": 6117451,
+      "canonical_smiles": "c2c(cc(cc2)F)OCc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6111053
+    },
+    {
+      "line_no": 6117457,
+      "canonical_smiles": "c1cccc(OCc2ccc(c(c2)F)F)c1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6115004
+    },
+    {
+      "line_no": 6117458,
+      "canonical_smiles": "c1cc(COc2ccccc2Cl)ccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6117450
+    },
+    {
+      "line_no": 6117459,
+      "canonical_smiles": "c2c(cc(cc2)F)OCc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6111053
+    },
+    {
+      "line_no": 6117460,
+      "canonical_smiles": "C1CCCCC1OCc2ccccc2.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6117452
+    },
+    {
+      "line_no": 6117589,
+      "canonical_smiles": "c1cccc(c1Br)Cl.[I-].[Zn+]",
+      "duplicate_of_line_no": 6109165
+    },
+    {
+      "line_no": 6117724,
+      "canonical_smiles": "C(C)N(CCCC)Cc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6117461
+    },
+    {
+      "line_no": 6117727,
+      "canonical_smiles": "C(CCCC)COc1ccccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6107706
+    },
+    {
+      "line_no": 6117728,
+      "canonical_smiles": "Fc1cc(F)cc(COc2ccccc2)c1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6115620
+    },
+    {
+      "line_no": 6117729,
+      "canonical_smiles": "c1c(c(OCc2ccccc2)ccc1)F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6117721
+    },
+    {
+      "line_no": 6117730,
+      "canonical_smiles": "c2ccc(cc2)CN1CC(C)CCC1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6117722
+    },
+    {
+      "line_no": 6117731,
+      "canonical_smiles": "C1(OCc2ccccc2)CCCC1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6117723
+    },
+    {
+      "line_no": 6117860,
+      "canonical_smiles": "c1ccc(cc1)OCCC=C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6117582
+    },
+    {
+      "line_no": 6117865,
+      "canonical_smiles": "C(OCc1ccccc1)C(F)F.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6117587
+    },
+    {
+      "line_no": 6118016,
+      "canonical_smiles": "c2c(C)cc(cc2)OCc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6115611
+    },
+    {
+      "line_no": 6118017,
+      "canonical_smiles": "c1ccccc1CN(CC)CC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6111054
+    },
+    {
+      "line_no": 6118018,
+      "canonical_smiles": "C(CCCC)COCc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6117732
+    },
+    {
+      "line_no": 6118021,
+      "canonical_smiles": "c1ccccc1SCCCCCC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6112291
+    },
+    {
+      "line_no": 6118022,
+      "canonical_smiles": "c1cc(OCc2cc(ccc2)Cl)ccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6116247
+    },
+    {
+      "line_no": 6118023,
+      "canonical_smiles": "c1cc(CN2CCCCC2C)ccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6118015
+    },
+    {
+      "line_no": 6118024,
+      "canonical_smiles": "c2c(C)cc(cc2)OCc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6115611
+    },
+    {
+      "line_no": 6118029,
+      "canonical_smiles": "c1cccc(c1)SCCC(C)C.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6111689
+    },
+    {
+      "line_no": 6118032,
+      "canonical_smiles": "c1c(c(ccc1)F)Cl.[I-].[Zn+]",
+      "duplicate_of_line_no": 5435042
+    },
+    {
+      "line_no": 6118159,
+      "canonical_smiles": "c1ccccc1SC(CC)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6116695
+    },
+    {
+      "line_no": 6118160,
+      "canonical_smiles": "c1ccc(cc1)OCCC=C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6117582
+    },
+    {
+      "line_no": 6118161,
+      "canonical_smiles": "C=CCCCOc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6117861
+    },
+    {
+      "line_no": 6118164,
+      "canonical_smiles": "FCCCOCc1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6117864
+    },
+    {
+      "line_no": 6118166,
+      "canonical_smiles": "[Br-].[Zn+].c1(Cl)cc(C(F)(F)F)ccc1",
+      "duplicate_of_line_no": 6098879
+    },
+    {
+      "line_no": 6118295,
+      "canonical_smiles": "c1ccc(OCc2ccc(F)cc2)cc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6107523
+    },
+    {
+      "line_no": 6118297,
+      "canonical_smiles": "c2(ccccc2)COc1ccc(cc1)Cl.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6111375
+    },
+    {
+      "line_no": 6118298,
+      "canonical_smiles": "CC(CN(Cc1ccccc1)CC(C)C)C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6118025
+    },
+    {
+      "line_no": 6118299,
+      "canonical_smiles": "c1ccc(CN(C)C2CCCCC2)cc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6118026
+    },
+    {
+      "line_no": 6118302,
+      "canonical_smiles": "c1ccc(cc1)OCCCCC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6110113
+    },
+    {
+      "line_no": 6118303,
+      "canonical_smiles": "c2c(cccc2)OCc1cc(C)ccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6117159
+    },
+    {
+      "line_no": 6118304,
+      "canonical_smiles": "c1cccc(c1OCc2ccccc2)C.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6118296
+    },
+    {
+      "line_no": 6118305,
+      "canonical_smiles": "c2(ccccc2)COc1ccc(cc1)Cl.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6111375
+    },
+    {
+      "line_no": 6118306,
+      "canonical_smiles": "CC(N(Cc1ccccc1)C(C)C)C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6110752
+    },
+    {
+      "line_no": 6118311,
+      "canonical_smiles": "c1ccccc1CC(OCC)=O.[Zn+].[I-]",
+      "duplicate_of_line_no": 6118030
+    },
+    {
+      "line_no": 6118444,
+      "canonical_smiles": "c1ccccc1SC(CC)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6116695
+    },
+    {
+      "line_no": 6118446,
+      "canonical_smiles": "C=CCCCOc1ccccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6117861
+    },
+    {
+      "line_no": 6118447,
+      "canonical_smiles": "c1c(OCCCCC=C)cccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6118162
+    },
+    {
+      "line_no": 6118449,
+      "canonical_smiles": "FCCCOCc1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6117864
+    },
+    {
+      "line_no": 6118450,
+      "canonical_smiles": "O(c1ccccc1)CCCCF.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6118165
+    },
+    {
+      "line_no": 6118451,
+      "canonical_smiles": "[Zn+].[Br-].c1cccc(F)c1C(F)(F)F",
+      "duplicate_of_line_no": 6099509
+    },
+    {
+      "line_no": 6118583,
+      "canonical_smiles": "Cc2ccc(cc2)COc1ccccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6108490
+    },
+    {
+      "line_no": 6118586,
+      "canonical_smiles": "CC(N(Cc1ccccc1)C(C)C)C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6110752
+    },
+    {
+      "line_no": 6118587,
+      "canonical_smiles": "c1cc(ccc1)CN(C)CCCC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6118307
+    },
+    {
+      "line_no": 6118588,
+      "canonical_smiles": "[Br-].[Mg+].c1c(OCC(C)C)cc(F)cc1",
+      "duplicate_of_line_no": 6106583
+    },
+    {
+      "line_no": 6118591,
+      "canonical_smiles": "c1c(ccc(COc2ccccc2)c1)Cl.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6117720
+    },
+    {
+      "line_no": 6118592,
+      "canonical_smiles": "c2(F)c(cc(cc2F)OCc1ccccc1)F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6118584
+    },
+    {
+      "line_no": 6118593,
+      "canonical_smiles": "N1(CC)CCN(Cc2ccccc2)CC1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6118585
+    },
+    {
+      "line_no": 6118598,
+      "canonical_smiles": "C(CCOc1ccccc1)CCCC.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6111988
+    },
+    {
+      "line_no": 6118599,
+      "canonical_smiles": "c1ccccc1CC(OCC)=O.[Zn+].[I-]",
+      "duplicate_of_line_no": 6118030
+    },
+    {
+      "line_no": 6118725,
+      "canonical_smiles": "c1c(OCCCCC=C)cccc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6118162
+    },
+    {
+      "line_no": 6118726,
+      "canonical_smiles": "CC2(N(C(C)(C)CCC2)Cc1ccccc1)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6118448
+    },
+    {
+      "line_no": 6118728,
+      "canonical_smiles": "O(c1ccccc1)CCCCF.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6118165
+    },
+    {
+      "line_no": 6118878,
+      "canonical_smiles": "c2(ccccc2)COc1ccc(cc1)F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6113213
+    },
+    {
+      "line_no": 6118879,
+      "canonical_smiles": "CCCCN(Cc1ccccc1)CCCC.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6118594
+    },
+    {
+      "line_no": 6118880,
+      "canonical_smiles": "C(COCc1ccccc1)CCC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6118595
+    },
+    {
+      "line_no": 6118882,
+      "canonical_smiles": "c1cccc(OCCCC)c1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6108015
+    },
+    {
+      "line_no": 6118883,
+      "canonical_smiles": "CCCSc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6110114
+    },
+    {
+      "line_no": 6118884,
+      "canonical_smiles": "c2cccc(c2)CN1CCCCCC1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6118876
+    },
+    {
+      "line_no": 6118885,
+      "canonical_smiles": "c1ccccc1COc2ccc(c(c2)F)F.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6118877
+    },
+    {
+      "line_no": 6118886,
+      "canonical_smiles": "c2(ccccc2)COc1ccc(cc1)F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6113213
+    },
+    {
+      "line_no": 6118891,
+      "canonical_smiles": "c1(SCCCCCCC)ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6117456
+    },
+    {
+      "line_no": 6118892,
+      "canonical_smiles": "c1(OC)cc(ccc1)F.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6097307
+    },
+    {
+      "line_no": 6119026,
+      "canonical_smiles": "CC2(N(C(C)(C)CCC2)Cc1ccccc1)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6118448
+    },
+    {
+      "line_no": 6119027,
+      "canonical_smiles": "C(CF)OCc1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6118727
+    },
+    {
+      "line_no": 6119029,
+      "canonical_smiles": "Clc1ncccc1.[I-].[Zn+]",
+      "duplicate_of_line_no": 6117467
+    },
+    {
+      "line_no": 6119030,
+      "canonical_smiles": "Clc1ncccc1.[I-].[Zn+]",
+      "duplicate_of_line_no": 6117467
+    },
+    {
+      "line_no": 6119031,
+      "canonical_smiles": "n1ccccc1F.[I-].[Zn+]",
+      "duplicate_of_line_no": 6118602
+    },
+    {
+      "line_no": 6119032,
+      "canonical_smiles": "c1cc(cc(c1)F)C(OC)=O.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6117592
+    },
+    {
+      "line_no": 6119157,
+      "canonical_smiles": "c1(CN(CCC)CCC)ccccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6118887
+    },
+    {
+      "line_no": 6119158,
+      "canonical_smiles": "c1ccc(COCCC)cc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6118888
+    },
+    {
+      "line_no": 6119159,
+      "canonical_smiles": "c1cc(ccc1)SCC(C)C.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6117735
+    },
+    {
+      "line_no": 6119160,
+      "canonical_smiles": "C(CC)CSc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6118310
+    },
+    {
+      "line_no": 6119161,
+      "canonical_smiles": "c2c(cccc2)OCc1ccc(F)cc1F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6117157
+    },
+    {
+      "line_no": 6119162,
+      "canonical_smiles": "c2cccc(c2)COc1c(cc(F)cc1)F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6119154
+    },
+    {
+      "line_no": 6119163,
+      "canonical_smiles": "c1c(COc2cc(cc(F)c2)F)cccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6119155
+    },
+    {
+      "line_no": 6119164,
+      "canonical_smiles": "c1ccccc1CN2CCC(C)CC2.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6119156
+    },
+    {
+      "line_no": 6119166,
+      "canonical_smiles": "c2cccc(c2)COc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5443533
+    },
+    {
+      "line_no": 6119169,
+      "canonical_smiles": "C(CCCC)COc1ccccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6107706
+    },
+    {
+      "line_no": 6119170,
+      "canonical_smiles": "c1ccc(c(c1)C)F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6096384
+    },
+    {
+      "line_no": 6119172,
+      "canonical_smiles": "c1cc(c(cc1)Cl)C.[I-].[Zn+]",
+      "duplicate_of_line_no": 5455637
+    },
+    {
+      "line_no": 6119173,
+      "canonical_smiles": "[I-].Clc1cc(ccc1)C.[Zn+]",
+      "duplicate_of_line_no": 6102677
+    },
+    {
+      "line_no": 6119298,
+      "canonical_smiles": "C(COC)COCc1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6117586
+    },
+    {
+      "line_no": 6119299,
+      "canonical_smiles": "C(CF)OCc1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6118727
+    },
+    {
+      "line_no": 6119304,
+      "canonical_smiles": "c1(ccc(C(OC)=O)cc1)F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6118733
+    },
+    {
+      "line_no": 6119437,
+      "canonical_smiles": "c1(F)c(OCc2ccccc2)cc(F)cc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6116840
+    },
+    {
+      "line_no": 6119440,
+      "canonical_smiles": "CC(OCc1ccccc1)C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6119165
+    },
+    {
+      "line_no": 6119441,
+      "canonical_smiles": "c2cccc(c2)COc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5443533
+    },
+    {
+      "line_no": 6119442,
+      "canonical_smiles": "c1cccc(c1)SCCC(C)C.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6111689
+    },
+    {
+      "line_no": 6119443,
+      "canonical_smiles": "C(CCOc1ccccc1)CCCC.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6111988
+    },
+    {
+      "line_no": 6119444,
+      "canonical_smiles": "c1ccccc1OCc2ccccc2Cl.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6115937
+    },
+    {
+      "line_no": 6119445,
+      "canonical_smiles": "c1(F)c(OCc2ccccc2)cc(F)cc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6116840
+    },
+    {
+      "line_no": 6119446,
+      "canonical_smiles": "c2cc(Cl)cc(c2)OCc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6119438
+    },
+    {
+      "line_no": 6119447,
+      "canonical_smiles": "c1c(OCc2ccccc2)ccc(c1)C.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6119439
+    },
+    {
+      "line_no": 6119448,
+      "canonical_smiles": "C(OCc1ccccc1)CCC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6117453
+    },
+    {
+      "line_no": 6119449,
+      "canonical_smiles": "c2ccc(cc2)OCCC1OCCCO1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6117454
+    },
+    {
+      "line_no": 6119452,
+      "canonical_smiles": "c1ccccc1SCCCCCC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6112291
+    },
+    {
+      "line_no": 6119453,
+      "canonical_smiles": "c1cc(ccc1)CN(C)C.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6097776
+    },
+    {
+      "line_no": 6119454,
+      "canonical_smiles": "c1cccc(n1)C#N.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6109158
+    },
+    {
+      "line_no": 6119587,
+      "canonical_smiles": "C(COC)COCc1ccccc1.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6117586
+    },
+    {
+      "line_no": 6119588,
+      "canonical_smiles": "C(OCc1ccccc1)C(F)F.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6117587
+    },
+    {
+      "line_no": 6119590,
+      "canonical_smiles": "c1ccc(CC(=O)OC)cc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6117591
+    },
+    {
+      "line_no": 6119739,
+      "canonical_smiles": "C(CC)CCSc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6118590
+    },
+    {
+      "line_no": 6119741,
+      "canonical_smiles": "c1cccc(OCc2ccc(c(c2)F)F)c1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6115004
+    },
+    {
+      "line_no": 6119742,
+      "canonical_smiles": "c1ccccc1OCc2cc(ccc2)F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6109775
+    },
+    {
+      "line_no": 6119743,
+      "canonical_smiles": "c2cccc(c2)CN1CCCCCC1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6118876
+    },
+    {
+      "line_no": 6119744,
+      "canonical_smiles": "c1c(COc2cc(cc(F)c2)F)cccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6119155
+    },
+    {
+      "line_no": 6119745,
+      "canonical_smiles": "c1ccccc1CN2CCC(C)CC2.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6119156
+    },
+    {
+      "line_no": 6119746,
+      "canonical_smiles": "CC(OCc1ccccc1)C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6119165
+    },
+    {
+      "line_no": 6119750,
+      "canonical_smiles": "[Mg+].Clc1cc(ccc1)C.[Br-]",
+      "duplicate_of_line_no": 5444904
+    },
+    {
+      "line_no": 6119754,
+      "canonical_smiles": "CCCCOc1ccccc1F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6119749
+    },
+    {
+      "line_no": 6119894,
+      "canonical_smiles": "c1cc(cc(c1)F)Cl.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6099039
+    },
+    {
+      "line_no": 6120036,
+      "canonical_smiles": "CCCSc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6110114
+    },
+    {
+      "line_no": 6120037,
+      "canonical_smiles": "c1ccccc1OCc2ccccc2Cl.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6115937
+    },
+    {
+      "line_no": 6120039,
+      "canonical_smiles": "c2c(cccc2)OCc1cc(C)ccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6117159
+    },
+    {
+      "line_no": 6120040,
+      "canonical_smiles": "c2cccc(c2)COc1c(cc(F)cc1)F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6119154
+    },
+    {
+      "line_no": 6120041,
+      "canonical_smiles": "c2cc(Cl)cc(c2)OCc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6119438
+    },
+    {
+      "line_no": 6120042,
+      "canonical_smiles": "c1c(OCc2ccccc2)ccc(c1)C.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6119439
+    },
+    {
+      "line_no": 6120043,
+      "canonical_smiles": "C(OCc1ccccc1)CCC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6117453
+    },
+    {
+      "line_no": 6120046,
+      "canonical_smiles": "C(CC)CSc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6118310
+    },
+    {
+      "line_no": 6120053,
+      "canonical_smiles": "c1ccc(N2CCOCC2)nc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6109163
+    },
+    {
+      "line_no": 6120352,
+      "canonical_smiles": "c1cc(COc2ccccc2Cl)ccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6117450
+    },
+    {
+      "line_no": 6120353,
+      "canonical_smiles": "c2c(cc(cc2)F)OCc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6111053
+    },
+    {
+      "line_no": 6120354,
+      "canonical_smiles": "C1CCCCC1OCc2ccccc2.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6117452
+    },
+    {
+      "line_no": 6120355,
+      "canonical_smiles": "C(C)N(CCCC)Cc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6117461
+    },
+    {
+      "line_no": 6120356,
+      "canonical_smiles": "c1c(c(OCc2ccccc2)ccc1)F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6117721
+    },
+    {
+      "line_no": 6120358,
+      "canonical_smiles": "c1(SCCCCCCC)ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6117456
+    },
+    {
+      "line_no": 6120359,
+      "canonical_smiles": "[Mg+].Clc1cc(ccc1)C.[Br-]",
+      "duplicate_of_line_no": 5444904
+    },
+    {
+      "line_no": 6120364,
+      "canonical_smiles": "C2N(CCC2)c1ccccn1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6108830
+    },
+    {
+      "line_no": 6120665,
+      "canonical_smiles": "Fc1cc(F)cc(COc2ccccc2)c1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6115620
+    },
+    {
+      "line_no": 6120666,
+      "canonical_smiles": "c1c(ccc(COc2ccccc2)c1)Cl.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6117720
+    },
+    {
+      "line_no": 6120667,
+      "canonical_smiles": "c1c(c(OCc2ccccc2)ccc1)F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6117721
+    },
+    {
+      "line_no": 6120668,
+      "canonical_smiles": "c2ccc(cc2)CN1CC(C)CCC1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6117722
+    },
+    {
+      "line_no": 6120669,
+      "canonical_smiles": "C1(OCc2ccccc2)CCCC1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6117723
+    },
+    {
+      "line_no": 6120670,
+      "canonical_smiles": "C(CCCC)COCc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6117732
+    },
+    {
+      "line_no": 6120673,
+      "canonical_smiles": "C(CC)CCSc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6118590
+    },
+    {
+      "line_no": 6120674,
+      "canonical_smiles": "c1c(c(ccc1)F)Cl.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5445272
+    },
+    {
+      "line_no": 6120832,
+      "canonical_smiles": "C(F)(F)(F)c1cccnc1.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6105832
+    },
+    {
+      "line_no": 6120980,
+      "canonical_smiles": "c2c(cccc2)OCc1ccc(F)cc1F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6117157
+    },
+    {
+      "line_no": 6120981,
+      "canonical_smiles": "c1c(OCc2c(F)cccc2)cccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6110751
+    },
+    {
+      "line_no": 6120984,
+      "canonical_smiles": "c1cc(CN2CCCCC2C)ccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6118015
+    },
+    {
+      "line_no": 6120985,
+      "canonical_smiles": "c2c(C)cc(cc2)OCc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6115611
+    },
+    {
+      "line_no": 6120986,
+      "canonical_smiles": "c1ccccc1CN(CC)CC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6111054
+    },
+    {
+      "line_no": 6120987,
+      "canonical_smiles": "c1ccc(CN(C)C2CCCCC2)cc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6118026
+    },
+    {
+      "line_no": 6120988,
+      "canonical_smiles": "O(c1ccccc1F)CC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6112294
+    },
+    {
+      "line_no": 6120996,
+      "canonical_smiles": "Fc1cc(F)ccc1F.[Br-].[Zn+]",
+      "duplicate_of_line_no": 6114354
+    },
+    {
+      "line_no": 6121292,
+      "canonical_smiles": "c2ccc(c(c2)COc1ccccc1)C.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6108161
+    },
+    {
+      "line_no": 6121293,
+      "canonical_smiles": "c1cc(OCc2cc(ccc2)Cl)ccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6116247
+    },
+    {
+      "line_no": 6121295,
+      "canonical_smiles": "c1cccc(c1OCc2ccccc2)C.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6118296
+    },
+    {
+      "line_no": 6121296,
+      "canonical_smiles": "c2(ccccc2)COc1ccc(cc1)Cl.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6111375
+    },
+    {
+      "line_no": 6121297,
+      "canonical_smiles": "CC(CN(Cc1ccccc1)CC(C)C)C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6118025
+    },
+    {
+      "line_no": 6121298,
+      "canonical_smiles": "c1cc(ccc1)CN(C)CCCC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6118307
+    },
+    {
+      "line_no": 6121300,
+      "canonical_smiles": "c1cc(ccc1)SCC(C)C.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6117735
+    },
+    {
+      "line_no": 6121301,
+      "canonical_smiles": "c1cc(OC)ccc1Cl.[Mg+].[Br-]",
+      "duplicate_of_line_no": 5444540
+    },
+    {
+      "line_no": 6121302,
+      "canonical_smiles": "c1cc(c(cc1)Cl)C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5444719
+    },
+    {
+      "line_no": 6121603,
+      "canonical_smiles": "c1ccc(OCc2ccc(F)cc2)cc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6107523
+    },
+    {
+      "line_no": 6121604,
+      "canonical_smiles": "c2(F)c(cc(cc2F)OCc1ccccc1)F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6118584
+    },
+    {
+      "line_no": 6121605,
+      "canonical_smiles": "N1(CC)CCN(Cc2ccccc2)CC1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6118585
+    },
+    {
+      "line_no": 6121606,
+      "canonical_smiles": "CCCCN(Cc1ccccc1)CCCC.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6118594
+    },
+    {
+      "line_no": 6121607,
+      "canonical_smiles": "c1ccc(COCCC)cc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6118888
+    },
+    {
+      "line_no": 6121609,
+      "canonical_smiles": "CC(C)CCOc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6111688
+    },
+    {
+      "line_no": 6121610,
+      "canonical_smiles": "c1c(OC)cccc1Cl.[Mg+].[Br-]",
+      "duplicate_of_line_no": 5444367
+    },
+    {
+      "line_no": 6121916,
+      "canonical_smiles": "C(c2cc(F)ccc2F)Oc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6110429
+    },
+    {
+      "line_no": 6121919,
+      "canonical_smiles": "Cc2ccc(cc2)COc1ccccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6108490
+    },
+    {
+      "line_no": 6121920,
+      "canonical_smiles": "c1ccccc1COc2ccc(c(c2)F)F.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6118877
+    },
+    {
+      "line_no": 6121921,
+      "canonical_smiles": "c2(ccccc2)COc1ccc(cc1)F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6113213
+    },
+    {
+      "line_no": 6121922,
+      "canonical_smiles": "c1(CN(CCC)CCC)ccccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6118887
+    },
+    {
+      "line_no": 6121923,
+      "canonical_smiles": "c2ccc(cc2)OCCC1OCCCO1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6117454
+    },
+    {
+      "line_no": 6121931,
+      "canonical_smiles": "c1cccnc1OCCC.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6121307
+    },
+    {
+      "line_no": 6121932,
+      "canonical_smiles": "c1cc(B2OC(C)(C)C(C)(C)O2)ccc1.[Zn+].[I-]",
+      "duplicate_of_line_no": 6121617
+    },
+    {
+      "line_no": 6122243,
+      "canonical_smiles": "Fc1c(cccc1)OCC(C)C.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6120989
+    },
+    {
+      "line_no": 6122244,
+      "canonical_smiles": "Fc1c(cccc1)OC(C)CC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6120363
+    },
+    {
+      "line_no": 6122245,
+      "canonical_smiles": "[Mg+].[Br-].c1cccc(c1)OC(C)(C)C",
+      "duplicate_of_line_no": 6108347
+    },
+    {
+      "line_no": 6122257,
+      "canonical_smiles": "C(Oc1cccc(c1)F)C.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6118300
+    },
+    {
+      "line_no": 6122551,
+      "canonical_smiles": "CCCCOc1ccccc1F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6119749
+    },
+    {
+      "line_no": 6122552,
+      "canonical_smiles": "Fc1ccccc1OC(C)(C)C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6121306
+    },
+    {
+      "line_no": 6122565,
+      "canonical_smiles": "c1ccc(OC)c(c1)C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5446014
+    },
+    {
+      "line_no": 6122566,
+      "canonical_smiles": "c1(OCCC)cccc(c1)F.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6120357
+    },
+    {
+      "line_no": 6122852,
+      "canonical_smiles": "c1(cccc(c1)F)OCCCC.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6118301
+    },
+    {
+      "line_no": 6122867,
+      "canonical_smiles": "c1cc(F)cc(c1)OC(C)C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6122258
+    },
+    {
+      "line_no": 6123159,
+      "canonical_smiles": "Fc1c(cccc1)OC(C)CC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6120363
+    },
+    {
+      "line_no": 6123174,
+      "canonical_smiles": "c1(ccccc1F)OCCC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6117464
+    },
+    {
+      "line_no": 6123464,
+      "canonical_smiles": "CCC(C)Oc1cc(ccc1)F.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6120678
+    },
+    {
+      "line_no": 6123465,
+      "canonical_smiles": "[Mg+].[Br-].c1cccc(c1)OC(C)(C)C",
+      "duplicate_of_line_no": 6108347
+    },
+    {
+      "line_no": 6123468,
+      "canonical_smiles": "CCCCCOc1ccccc1F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6119451
+    },
+    {
+      "line_no": 6123469,
+      "canonical_smiles": "[Mg+].[Br-].Cc1c(cccc1)OCC(C)C",
+      "duplicate_of_line_no": 6122249
+    },
+    {
+      "line_no": 6123472,
+      "canonical_smiles": "C(CCCC)Oc1ccccc1C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6122559
+    },
+    {
+      "line_no": 6123784,
+      "canonical_smiles": "Fc1ccccc1OC(C)(C)C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6121306
+    },
+    {
+      "line_no": 6123785,
+      "canonical_smiles": "[Mg+].[Br-].O(c1c(C)cccc1)C(C)C",
+      "duplicate_of_line_no": 6123466
+    },
+    {
+      "line_no": 6123788,
+      "canonical_smiles": "c1(cccc(c1)F)OCCCCC.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6120045
+    },
+    {
+      "line_no": 6123789,
+      "canonical_smiles": "CCCCOc1ccccc1C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6123165
+    },
+    {
+      "line_no": 6123798,
+      "canonical_smiles": "c1ccc(c(c1)OC(C)C)F.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6110117
+    },
+    {
+      "line_no": 6124088,
+      "canonical_smiles": "c1c(cccc1F)OC(C)(C)C.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6121615
+    },
+    {
+      "line_no": 6124089,
+      "canonical_smiles": "C(Oc1ccccc1C)CC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6123786
+    },
+    {
+      "line_no": 6124090,
+      "canonical_smiles": "c1c(OC(C)CC)cccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6123160
+    },
+    {
+      "line_no": 6124092,
+      "canonical_smiles": "CCCCCOc1ccccc1F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6119451
+    },
+    {
+      "line_no": 6124093,
+      "canonical_smiles": "c1cccc(c1C)OC(C)CC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6123790
+    },
+    {
+      "line_no": 6124101,
+      "canonical_smiles": "O(c1ccccc1F)CC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6112294
+    },
+    {
+      "line_no": 6124102,
+      "canonical_smiles": "c1(ccccc1F)OCCC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6117464
+    },
+    {
+      "line_no": 6124386,
+      "canonical_smiles": "Fc1c(cccc1)OCC(C)C.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6120989
+    },
+    {
+      "line_no": 6124387,
+      "canonical_smiles": "c1c(OC(C)CC)cccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6123160
+    },
+    {
+      "line_no": 6124392,
+      "canonical_smiles": "[Mg+].[Br-].C(C)(C)(C)Oc1c(C)cccc1",
+      "duplicate_of_line_no": 6124391
+    },
+    {
+      "line_no": 6124400,
+      "canonical_smiles": "c1ccc(c(c1)OC(C)C)F.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6110117
+    },
+    {
+      "line_no": 6124696,
+      "canonical_smiles": "O(CC)c1ccccc1OC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6113850
+    },
+    {
+      "line_no": 6125034,
+      "canonical_smiles": "Clc2cc(cc(c2)OCc1ccccc1)Cl.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6124702
+    },
+    {
+      "line_no": 6125035,
+      "canonical_smiles": "Clc1cc(OCc2ccccc2)c(Cl)cc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6124703
+    },
+    {
+      "line_no": 6125037,
+      "canonical_smiles": "c1(OCc2ccccc2)ccc(CCCC)cc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6124705
+    },
+    {
+      "line_no": 6125038,
+      "canonical_smiles": "C(Oc2c(cc(F)cc2)Cl)c1ccccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6124706
+    },
+    {
+      "line_no": 6125040,
+      "canonical_smiles": "c2cc(ccc2)COc1cccc(OC)c1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6124708
+    },
+    {
+      "line_no": 6125041,
+      "canonical_smiles": "C(Oc2cc(C)c(cc2)C)c1ccccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6124709
+    },
+    {
+      "line_no": 6125042,
+      "canonical_smiles": "c2ccc(cc2)COc1c(c(ccc1)C)C.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6124710
+    },
+    {
+      "line_no": 6125362,
+      "canonical_smiles": "c1(ccccc1OCC)C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6124103
+    },
+    {
+      "line_no": 6125366,
+      "canonical_smiles": "c1(Cl)cccc(c1COc2ccccc2)Cl.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6125033
+    },
+    {
+      "line_no": 6125368,
+      "canonical_smiles": "Clc1cc(OCc2ccccc2)c(Cl)cc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6124703
+    },
+    {
+      "line_no": 6125369,
+      "canonical_smiles": "c1c(OCc2ccccc2)c(ccc1)OC(C)C.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6125036
+    },
+    {
+      "line_no": 6125371,
+      "canonical_smiles": "C(Oc2c(cc(F)cc2)Cl)c1ccccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6124706
+    },
+    {
+      "line_no": 6125372,
+      "canonical_smiles": "C(c1c(OCc2ccccc2)cccc1)C=C.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6125039
+    },
+    {
+      "line_no": 6125374,
+      "canonical_smiles": "C(Oc2cc(C)c(cc2)C)c1ccccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6124709
+    },
+    {
+      "line_no": 6125527,
+      "canonical_smiles": "C(CCOCc1ccccc1)=C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6125192
+    },
+    {
+      "line_no": 6125682,
+      "canonical_smiles": "n1ccccc1OC.[Mg+].[Br-]",
+      "duplicate_of_line_no": 5451205
+    },
+    {
+      "line_no": 6125683,
+      "canonical_smiles": "c12cccnc1cccc2.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6104932
+    },
+    {
+      "line_no": 6125685,
+      "canonical_smiles": "c1(Cl)cccc(c1COc2ccccc2)Cl.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6125033
+    },
+    {
+      "line_no": 6125686,
+      "canonical_smiles": "Clc2ccc(cc2Cl)OCc1ccccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6125367
+    },
+    {
+      "line_no": 6125688,
+      "canonical_smiles": "c1c(OCc2ccccc2)c(ccc1)OC(C)C.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6125036
+    },
+    {
+      "line_no": 6125689,
+      "canonical_smiles": "c2(Cl)c(ccc(c2)F)COc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6125370
+    },
+    {
+      "line_no": 6125691,
+      "canonical_smiles": "C(c1c(OCc2ccccc2)cccc1)C=C.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6125039
+    },
+    {
+      "line_no": 6125692,
+      "canonical_smiles": "c2cc(c(cc2)OC)OCc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6125373
+    },
+    {
+      "line_no": 6125693,
+      "canonical_smiles": "c1cc(COc2cc(ccc2C)C)ccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6093532
+    },
+    {
+      "line_no": 6125694,
+      "canonical_smiles": "C(c2ccccc2)OCc1ccco1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6125375
+    },
+    {
+      "line_no": 6125837,
+      "canonical_smiles": "C(CCOCc1ccccc1)=C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6125192
+    },
+    {
+      "line_no": 6126006,
+      "canonical_smiles": "n1ccccc1F.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6109466
+    },
+    {
+      "line_no": 6126007,
+      "canonical_smiles": "c12cccnc1cccc2.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6104932
+    },
+    {
+      "line_no": 6126010,
+      "canonical_smiles": "Clc2ccc(cc2Cl)OCc1ccccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6125367
+    },
+    {
+      "line_no": 6126011,
+      "canonical_smiles": "c2cc(c(Cl)cc2Cl)OCc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6125687
+    },
+    {
+      "line_no": 6126013,
+      "canonical_smiles": "c2(Cl)c(ccc(c2)F)COc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6125370
+    },
+    {
+      "line_no": 6126014,
+      "canonical_smiles": "c2(ccc(cc2)C(C)C)OCc1ccccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6125690
+    },
+    {
+      "line_no": 6126016,
+      "canonical_smiles": "c2cc(c(cc2)OC)OCc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6125373
+    },
+    {
+      "line_no": 6126018,
+      "canonical_smiles": "C(c2ccccc2)OCc1ccco1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6125375
+    },
+    {
+      "line_no": 6126326,
+      "canonical_smiles": "c1(C)ncccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6105224
+    },
+    {
+      "line_no": 6126328,
+      "canonical_smiles": "c12cccnc1cccc2.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6104932
+    },
+    {
+      "line_no": 6126329,
+      "canonical_smiles": "c1cnc(N2CCOCC2)cc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6126008
+    },
+    {
+      "line_no": 6126330,
+      "canonical_smiles": "c1(Cl)c(Cl)cc(COc2ccccc2)cc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6126009
+    },
+    {
+      "line_no": 6126332,
+      "canonical_smiles": "c2cc(c(Cl)cc2Cl)OCc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6125687
+    },
+    {
+      "line_no": 6126333,
+      "canonical_smiles": "CC(C)(c2ccc(cc2)OCc1ccccc1)C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6126012
+    },
+    {
+      "line_no": 6126335,
+      "canonical_smiles": "c2(ccc(cc2)C(C)C)OCc1ccccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6125690
+    },
+    {
+      "line_no": 6126336,
+      "canonical_smiles": "c2cccc(c2)COc1ccc(OC)cc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6126015
+    },
+    {
+      "line_no": 6126338,
+      "canonical_smiles": "c2cc(ccc2)COc1ccc(C)cc1C.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6126017
+    },
+    {
+      "line_no": 6126339,
+      "canonical_smiles": "CC/C=C\\COCc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6124711
+    },
+    {
+      "line_no": 6126670,
+      "canonical_smiles": "c1(Cl)c(Cl)cc(COc2ccccc2)cc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6126009
+    },
+    {
+      "line_no": 6126671,
+      "canonical_smiles": "c2ccc(c(c2Cl)OCc1ccccc1)Cl.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6126331
+    },
+    {
+      "line_no": 6126672,
+      "canonical_smiles": "c1cc(OCc2ccccc2)c(c(c1)Cl)Cl.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6124704
+    },
+    {
+      "line_no": 6126673,
+      "canonical_smiles": "CC(C)(c2ccc(cc2)OCc1ccccc1)C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6126012
+    },
+    {
+      "line_no": 6126674,
+      "canonical_smiles": "c2ccc(cc2)COc1cc(c(F)cc1)Cl.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6126334
+    },
+    {
+      "line_no": 6126675,
+      "canonical_smiles": "c1cc(OCc2ccccc2)c(C(C)C)cc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6124707
+    },
+    {
+      "line_no": 6126676,
+      "canonical_smiles": "c2cccc(c2)COc1ccc(OC)cc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6126015
+    },
+    {
+      "line_no": 6126677,
+      "canonical_smiles": "Cc1cc(OCc2ccccc2)cc(c1)C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6126337
+    },
+    {
+      "line_no": 6126678,
+      "canonical_smiles": "c2cc(ccc2)COc1ccc(C)cc1C.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6126017
+    },
+    {
+      "line_no": 6126830,
+      "canonical_smiles": "CC/C=C\\COCc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6124711
+    },
+    {
+      "line_no": 6126831,
+      "canonical_smiles": "O(Cc1ccccc1)CC=C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6126496
+    },
+    {
+      "line_no": 6127000,
+      "canonical_smiles": "c2ccnc(c2)N1CCCC1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6095118
+    },
+    {
+      "line_no": 6127002,
+      "canonical_smiles": "Clc2cc(cc(c2)OCc1ccccc1)Cl.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6124702
+    },
+    {
+      "line_no": 6127003,
+      "canonical_smiles": "c2ccc(c(c2Cl)OCc1ccccc1)Cl.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6126331
+    },
+    {
+      "line_no": 6127004,
+      "canonical_smiles": "c1cc(OCc2ccccc2)c(c(c1)Cl)Cl.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6124704
+    },
+    {
+      "line_no": 6127005,
+      "canonical_smiles": "c1(OCc2ccccc2)ccc(CCCC)cc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6124705
+    },
+    {
+      "line_no": 6127006,
+      "canonical_smiles": "c2ccc(cc2)COc1cc(c(F)cc1)Cl.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6126334
+    },
+    {
+      "line_no": 6127007,
+      "canonical_smiles": "c1cc(OCc2ccccc2)c(C(C)C)cc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6124707
+    },
+    {
+      "line_no": 6127008,
+      "canonical_smiles": "c2cc(ccc2)COc1cccc(OC)c1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6124708
+    },
+    {
+      "line_no": 6127009,
+      "canonical_smiles": "Cc1cc(OCc2ccccc2)cc(c1)C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6126337
+    },
+    {
+      "line_no": 6127010,
+      "canonical_smiles": "c2ccc(cc2)COc1c(c(ccc1)C)C.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6124710
+    },
+    {
+      "line_no": 6127476,
+      "canonical_smiles": "c1cc(N(C)C)ccc1-c2ccccc2.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6127168
+    },
+    {
+      "line_no": 6127477,
+      "canonical_smiles": "c2cccc(c2)-c1ccc(cc1)C(C)(C)C.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6116236
+    },
+    {
+      "line_no": 6127485,
+      "canonical_smiles": "C(Oc2cc1c(cc2)cccc1)CC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6110116
+    },
+    {
+      "line_no": 6127790,
+      "canonical_smiles": "c2cc(F)cc(c2)-c1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6111383
+    },
+    {
+      "line_no": 6127795,
+      "canonical_smiles": "c2cccc(c2)COc1c(cc(F)cc1)F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6119154
+    },
+    {
+      "line_no": 6127796,
+      "canonical_smiles": "C(c2ccccc2)n1ccnc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6126166
+    },
+    {
+      "line_no": 6127799,
+      "canonical_smiles": "c2c1ccc(cc1ccc2)OCCCC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6110755
+    },
+    {
+      "line_no": 6127801,
+      "canonical_smiles": "CC(CCOc1cccc(F)c1)C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6119748
+    },
+    {
+      "line_no": 6127803,
+      "canonical_smiles": "c2(c(cccc2F)F)OCc1ccccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6127489
+    },
+    {
+      "line_no": 6127805,
+      "canonical_smiles": "O(Cc2ccccc2)c1c(cccc1Cl)F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6127491
+    },
+    {
+      "line_no": 6128105,
+      "canonical_smiles": "c2cc(ccc2)-c1ccc(c(c1)F)OC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6127791
+    },
+    {
+      "line_no": 6128106,
+      "canonical_smiles": "c1c(-c2ccccc2)cc(C)c(c1)F.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6127792
+    },
+    {
+      "line_no": 6128107,
+      "canonical_smiles": "c1(C(C)C)cc(-c2ccccc2)ccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6127793
+    },
+    {
+      "line_no": 6128108,
+      "canonical_smiles": "C(COCc1ccccc1)CCC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6118595
+    },
+    {
+      "line_no": 6128110,
+      "canonical_smiles": "C(OCCOc1ccccc1)C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6114176
+    },
+    {
+      "line_no": 6128115,
+      "canonical_smiles": "C(C)CCCOc1ccccc1OC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6123793
+    },
+    {
+      "line_no": 6128116,
+      "canonical_smiles": "[Mg+].[Br-].c1c(cc2ccccc2c1)OCC(C)C",
+      "duplicate_of_line_no": 6110433
+    },
+    {
+      "line_no": 6128118,
+      "canonical_smiles": "c2c(cccc2)COc1cc(F)ccc1Cl.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6127804
+    },
+    {
+      "line_no": 6128430,
+      "canonical_smiles": "Cc1ccccc1OCC=C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6094797
+    },
+    {
+      "line_no": 6128434,
+      "canonical_smiles": "c1c(COc2c(F)c(ccc2)F)cccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6127490
+    },
+    {
+      "line_no": 6128436,
+      "canonical_smiles": "c1cc(c(OCCC(C)C)cc1)OC.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6127802
+    },
+    {
+      "line_no": 6128437,
+      "canonical_smiles": "c1(OC)ccc(COc2ccccc2)cc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6114826
+    },
+    {
+      "line_no": 6128438,
+      "canonical_smiles": "c1ccccc1COc2c(c(F)c(F)cc2)F.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6128117
+    },
+    {
+      "line_no": 6128439,
+      "canonical_smiles": "c2c(cccc2)COc1cc(F)ccc1Cl.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6127804
+    },
+    {
+      "line_no": 6128440,
+      "canonical_smiles": "C(c2ccccc2)Oc1c(F)c(Cl)ccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6128119
+    },
+    {
+      "line_no": 6128745,
+      "canonical_smiles": "c1ccc(-c2cc(OC)ccc2)cc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6128104
+    },
+    {
+      "line_no": 6128746,
+      "canonical_smiles": "c2c(F)cc(c(OC)c2)-c1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6128426
+    },
+    {
+      "line_no": 6128747,
+      "canonical_smiles": "c1(-c2ccccc2)cc(F)ccc1C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6128427
+    },
+    {
+      "line_no": 6128748,
+      "canonical_smiles": "c1(-c2c(cccc2)C(C)C)ccccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6128428
+    },
+    {
+      "line_no": 6128750,
+      "canonical_smiles": "c1(OCC=C)c(F)cccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6120044
+    },
+    {
+      "line_no": 6128756,
+      "canonical_smiles": "[Mg+].[Br-].c1ccc(OCC(C)C)c(OC)c1",
+      "duplicate_of_line_no": 6123471
+    },
+    {
+      "line_no": 6128758,
+      "canonical_smiles": "c1ccccc1COc2c(c(F)c(F)cc2)F.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6128117
+    },
+    {
+      "line_no": 6128760,
+      "canonical_smiles": "C(c2ccccc2)Oc1c(F)c(Cl)ccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6128119
+    },
+    {
+      "line_no": 6129060,
+      "canonical_smiles": "c1(-c2ccccc2)ccc(C)cc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6111694
+    },
+    {
+      "line_no": 6129065,
+      "canonical_smiles": "c1c(c(OCc2ccccc2)ccc1)F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6117721
+    },
+    {
+      "line_no": 6129068,
+      "canonical_smiles": "C=CCOc1ccccc1OC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6127482
+    },
+    {
+      "line_no": 6129071,
+      "canonical_smiles": "c1cc(OCCC)c(OC)cc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6122246
+    },
+    {
+      "line_no": 6129073,
+      "canonical_smiles": "c1c(COc2c(F)c(ccc2)F)cccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6127490
+    },
+    {
+      "line_no": 6129074,
+      "canonical_smiles": "c1c(c(Cl)ccc1OCc2ccccc2)F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6128759
+    },
+    {
+      "line_no": 6129386,
+      "canonical_smiles": "c2(F)c(ccc(c2)-c1ccccc1)C.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6129061
+    },
+    {
+      "line_no": 6129387,
+      "canonical_smiles": "c1cc(-c2c(cccc2)OC)ccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6129062
+    },
+    {
+      "line_no": 6129388,
+      "canonical_smiles": "CSc2ccccc2-c1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6129063
+    },
+    {
+      "line_no": 6129390,
+      "canonical_smiles": "[Mg+].C(Oc1cccc(c1)F)C=C.[Br-]",
+      "duplicate_of_line_no": 6117725
+    },
+    {
+      "line_no": 6129392,
+      "canonical_smiles": "C(Oc1ccccc1F)COCC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6129066
+    },
+    {
+      "line_no": 6129393,
+      "canonical_smiles": "c12cc(OCC=C)ccc1cccc2.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6128113
+    },
+    {
+      "line_no": 6129396,
+      "canonical_smiles": "CC(CCOc1ccccc1C)C.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6129070
+    },
+    {
+      "line_no": 6129397,
+      "canonical_smiles": "c1ccccc1OCc2ccc(c(c2)F)Cl.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6129072
+    },
+    {
+      "line_no": 6129398,
+      "canonical_smiles": "c1c(COc2c(F)c(ccc2)F)cccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6127490
+    },
+    {
+      "line_no": 6129399,
+      "canonical_smiles": "c1c(c(Cl)ccc1OCc2ccccc2)F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6128759
+    },
+    {
+      "line_no": 6129400,
+      "canonical_smiles": "c2(c(F)cc(cc2)Cl)OCc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6129075
+    },
+    {
+      "line_no": 6129696,
+      "canonical_smiles": "c2(cc(C)ccc2)-c1ccccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6128425
+    },
+    {
+      "line_no": 6129697,
+      "canonical_smiles": "Fc2cc(C)c(cc2)-c1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6127478
+    },
+    {
+      "line_no": 6129698,
+      "canonical_smiles": "CC(Oc1cc(-c2ccccc2)ccc1)C.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6127479
+    },
+    {
+      "line_no": 6129699,
+      "canonical_smiles": "c1ccccc1-c2cc(c(c(c2)F)F)F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6112590
+    },
+    {
+      "line_no": 6129700,
+      "canonical_smiles": "c2(c(cccc2F)F)OCc1ccccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6127489
+    },
+    {
+      "line_no": 6129701,
+      "canonical_smiles": "C(C)CCOc1ccccc1OC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6123791
+    },
+    {
+      "line_no": 6129703,
+      "canonical_smiles": "c1(OCCOCC)cccc(c1)F.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6128751
+    },
+    {
+      "line_no": 6129704,
+      "canonical_smiles": "c2c1ccc(OCC)cc1ccc2.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6111691
+    },
+    {
+      "line_no": 6129706,
+      "canonical_smiles": "c1(OCCC(C)C)ccccc1F.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6119168
+    },
+    {
+      "line_no": 6129708,
+      "canonical_smiles": "c1ccccc1OCc2ccc(c(c2)F)Cl.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6129072
+    },
+    {
+      "line_no": 6129710,
+      "canonical_smiles": "O(Cc2ccccc2)c1c(cccc1Cl)F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6127491
+    },
+    {
+      "line_no": 6129711,
+      "canonical_smiles": "c2(c(F)cc(cc2)Cl)OCc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6129075
+    },
+    {
+      "line_no": 6129997,
+      "canonical_smiles": "O(Cc1ccccc1)CC=C.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6126496
+    },
+    {
+      "line_no": 6130010,
+      "canonical_smiles": "C1CCCC(Sc2ccccc2)C1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6130005
+    },
+    {
+      "line_no": 6130309,
+      "canonical_smiles": "c1cc(COCC2CCCCC2)ccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6130000
+    },
+    {
+      "line_no": 6130313,
+      "canonical_smiles": "C1CCCC(Sc2ccccc2)C1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6130005
+    },
+    {
+      "line_no": 6130315,
+      "canonical_smiles": "c1cc(ccc1)COCC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6130006
+    },
+    {
+      "line_no": 6130607,
+      "canonical_smiles": "O(Cc1ccccc1)C(C)CC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6130306
+    },
+    {
+      "line_no": 6130615,
+      "canonical_smiles": "c2cccc(c2)COc1ccc(OC(F)(F)F)cc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6130314
+    },
+    {
+      "line_no": 6130616,
+      "canonical_smiles": "c1cc(ccc1)COCC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6130006
+    },
+    {
+      "line_no": 6130617,
+      "canonical_smiles": "c2(ccccc2)SC1CCCC1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6130004
+    },
+    {
+      "line_no": 6130619,
+      "canonical_smiles": "c1ccccc1OC2CCCCC2.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6130318
+    },
+    {
+      "line_no": 6130918,
+      "canonical_smiles": "O(Cc1ccccc1)C(C)CC.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6130306
+    },
+    {
+      "line_no": 6130921,
+      "canonical_smiles": "c1c(COCC2CC2)cccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6130610
+    },
+    {
+      "line_no": 6130926,
+      "canonical_smiles": "c2cccc(c2)COc1ccc(OC(F)(F)F)cc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6130314
+    },
+    {
+      "line_no": 6130928,
+      "canonical_smiles": "c2(ccccc2)SC1CCCC1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6130004
+    },
+    {
+      "line_no": 6130930,
+      "canonical_smiles": "c1ccccc1OC2CCCCC2.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6130318
+    },
+    {
+      "line_no": 6131224,
+      "canonical_smiles": "c1c(COCC2CC2)cccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6130610
+    },
+    {
+      "line_no": 6131228,
+      "canonical_smiles": "[Br-].[Mg+].c1cc(SC(C)C)ccc1",
+      "duplicate_of_line_no": 6130925
+    },
+    {
+      "line_no": 6131230,
+      "canonical_smiles": "c2(ccccc2)OC1CCCC1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6130927
+    },
+    {
+      "line_no": 6131235,
+      "canonical_smiles": "c1cccc(OC)c1OC2CCCCC2.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6131234
+    },
+    {
+      "line_no": 6131532,
+      "canonical_smiles": "C1CCOC1COCc2ccccc2.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6131221
+    },
+    {
+      "line_no": 6131539,
+      "canonical_smiles": "[Br-].[Mg+].c1cc(SC(C)C)ccc1",
+      "duplicate_of_line_no": 6130925
+    },
+    {
+      "line_no": 6131540,
+      "canonical_smiles": "FC(F)(F)Oc1ccc(-c2ccccc2)cc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6131229
+    },
+    {
+      "line_no": 6131541,
+      "canonical_smiles": "c2(ccccc2)OC1CCCC1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6130927
+    },
+    {
+      "line_no": 6131543,
+      "canonical_smiles": "C1CC(Oc2ccccc2C)CC1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6130009
+    },
+    {
+      "line_no": 6131544,
+      "canonical_smiles": "C2C(CCCC2)Oc1cc(F)ccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6130932
+    },
+    {
+      "line_no": 6131546,
+      "canonical_smiles": "c2c(c(C)ccc2)OC1CCCCC1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6130320
+    },
+    {
+      "line_no": 6131547,
+      "canonical_smiles": "c2cc(ccc2)SC1CCCCCC1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6130614
+    },
+    {
+      "line_no": 6131848,
+      "canonical_smiles": "C1CCOC1COCc2ccccc2.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6131221
+    },
+    {
+      "line_no": 6131855,
+      "canonical_smiles": "c1c(OC)c(ccc1)OC(C)C.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6110754
+    },
+    {
+      "line_no": 6131859,
+      "canonical_smiles": "Fc1c(OC2CCCC2)cccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6130007
+    },
+    {
+      "line_no": 6131860,
+      "canonical_smiles": "O(C2CCCCC2)c1ccccc1F.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6130621
+    },
+    {
+      "line_no": 6131862,
+      "canonical_smiles": "C1CCCCCC1Oc2ccccc2.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6130012
+    },
+    {
+      "line_no": 6131863,
+      "canonical_smiles": "c2cc(ccc2)SC1CCCCCC1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6130614
+    },
+    {
+      "line_no": 6132166,
+      "canonical_smiles": "c1cc(COCC2CCCCC2)ccc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6130000
+    },
+    {
+      "line_no": 6132171,
+      "canonical_smiles": "CCC(C)Sc1ccccc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6093214
+    },
+    {
+      "line_no": 6132172,
+      "canonical_smiles": "c1ccc(-c2cccc(c2)OC(F)(F)F)cc1.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6131856
+    },
+    {
+      "line_no": 6132174,
+      "canonical_smiles": "C2C(CCC2)Oc1c(cccc1)OC.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6113214
+    },
+    {
+      "line_no": 6132175,
+      "canonical_smiles": "C1C(Oc2cc(F)ccc2)CCC1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 6132173
+    },
+    {
+      "line_no": 6132178,
+      "canonical_smiles": "C1CCCCCC1Oc2ccccc2.[Mg+].[Br-]",
+      "duplicate_of_line_no": 6130012
+    },
+    {
+      "line_no": 6149478,
+      "canonical_smiles": "c1ccsc1.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5451164
+    },
+    {
+      "line_no": 6150204,
+      "canonical_smiles": "c1c[cH-]cc1.c2ccc[c-]2C(O)=O.[Fe+2]",
+      "duplicate_of_line_no": 4126254
+    },
+    {
+      "line_no": 6154525,
+      "canonical_smiles": "[CH3].[CH3].[CH3].[Sn].[Sn].[CH3].[CH3].[CH3]",
+      "duplicate_of_line_no": 5443124
+    },
+    {
+      "line_no": 6157706,
+      "canonical_smiles": "[NH4+].[Fe+3].S(=O)(=O)([O-])[O-].S(=O)([O-])([O-])=O",
+      "duplicate_of_line_no": 4912923
+    },
+    {
+      "line_no": 6159450,
+      "canonical_smiles": "C1=CCCC=CCC1.C2C=CCCC=CC2.[Ni]",
+      "duplicate_of_line_no": 5314180
+    },
+    {
+      "line_no": 6165585,
+      "canonical_smiles": "C1C(NC2CCCCC2)CCCC1.B",
+      "duplicate_of_line_no": 5302170
+    },
+    {
+      "line_no": 6201451,
+      "canonical_smiles": "[InH3]",
+      "duplicate_of_line_no": 5447276
+    },
+    {
+      "line_no": 6203262,
+      "canonical_smiles": "[Sn].n1c2ccccn2cc1.C(C[CH2])C.CCC[CH2].[CH2]CCC",
+      "duplicate_of_line_no": 5446284
+    },
+    {
+      "line_no": 6207878,
+      "canonical_smiles": "C(CC3C=Cc4ccccc34)C1c2c(cccc2)C=C1.[Zr+2].[Cl-].[Cl-]",
+      "duplicate_of_line_no": 1918864
+    },
+    {
+      "line_no": 6209319,
+      "canonical_smiles": "C(/C=C(\\[O-])C)(C)=O.[O+]#[C-].[C-]#[O+].[Ir+]",
+      "duplicate_of_line_no": 5763448
+    },
+    {
+      "line_no": 6232521,
+      "canonical_smiles": "C(CCCCCS)[c-]1cccc1.c2c[cH-]cc2.[Fe+2]",
+      "duplicate_of_line_no": 4186888
+    },
+    {
+      "line_no": 6252058,
+      "canonical_smiles": "n1c(ccnc1)OC.[CH2]CCC.C([CH2])CC.[Sn].C(CC)[CH2]",
+      "duplicate_of_line_no": 5437383
+    },
+    {
+      "line_no": 6401333,
+      "canonical_smiles": "c1(ccccc1)C(F)(F)F.[Br-].[Mg+]",
+      "duplicate_of_line_no": 5442673
+    },
+    {
+      "line_no": 6447149,
+      "canonical_smiles": "CCC[CH2].C([CH2])CC.CCC[CH2].n1n(CC)ccc1.[Sn]",
+      "duplicate_of_line_no": 5447653
+    },
+    {
+      "line_no": 6503072,
+      "canonical_smiles": "C(CC)[CH2].C([CH2])CC.Fc1ccccc1.[Sn].[CH2]CCC",
+      "duplicate_of_line_no": 5453039
+    },
+    {
+      "line_no": 6534818,
+      "canonical_smiles": "OC(=O)[c-]1cccc1.OC([c-]2cccc2)=O.[Fe+2]",
+      "duplicate_of_line_no": 4186886
+    },
+    {
+      "line_no": 6539465,
+      "canonical_smiles": "O=C(C)N[C@@H]2[C@H]([C@H](O)[C@@H](CO)O[C@H]2C)O[C@@H]1O[C@@H]([C@@H](OC)[C@H](O)[C@H]1O)C(O)=O.N",
+      "duplicate_of_line_no": 5476595
+    },
+    {
+      "line_no": 6543698,
+      "canonical_smiles": "[Sn].[CH2]CCC.[CH2]CCC.CCC[CH2].c12ccccc1ccnc2",
+      "duplicate_of_line_no": 5437384
+    },
+    {
+      "line_no": 6554038,
+      "canonical_smiles": "B.S(C)C",
+      "duplicate_of_line_no": 98032
+    },
+    {
+      "line_no": 6556552,
+      "canonical_smiles": "c1cc(ccc1)N(CC)CC.B",
+      "duplicate_of_line_no": 98853
+    },
+    {
+      "line_no": 7572935,
+      "canonical_smiles": "C=1C=CCC=1.[Co+].C=2CC=CC=2.[P-](F)(F)(F)(F)(F)F",
+      "duplicate_of_line_no": 5400952
+    },
+    {
+      "line_no": 7581090,
+      "canonical_smiles": "[CH2]CCC.Clc1ccccc1.C(C[CH2])C.CCC[CH2].[Sn]",
+      "duplicate_of_line_no": 5443617
+    },
+    {
+      "line_no": 7582387,
+      "canonical_smiles": "c1cccc(C)c1C.C([CH2])CC.[CH2]CCC.[CH2]CCC.[Sn]",
+      "duplicate_of_line_no": 7582286
+    },
+    {
+      "line_no": 7584762,
+      "canonical_smiles": "Clc1cncc(c1)F.[Zn+].[Br-]",
+      "duplicate_of_line_no": 6106752
+    },
+    {
+      "line_no": 7584938,
+      "canonical_smiles": "c1(c(cncc1)Cl)C.[Zn+].[Br-]",
+      "duplicate_of_line_no": 7584763
+    },
+    {
+      "line_no": 7586671,
+      "canonical_smiles": "O.O.O.O.[NH4+].O.O.[Al+3].O.O.O.O.O.O.S([O-])(=O)(=O)[O-].S(=O)(=O)([O-])[O-]",
+      "duplicate_of_line_no": 4428188
+    },
+    {
+      "line_no": 7593843,
+      "canonical_smiles": "C([CH2])CC.c1(C)cc(C)ccc1.[Sn].CCC[CH2].[CH2]CCC",
+      "duplicate_of_line_no": 7582503
+    },
+    {
+      "line_no": 7599804,
+      "canonical_smiles": "Cc1n(C)ccn1.C(CC)[CH2].C([CH2])CC.[Sn].C([CH2])CC",
+      "duplicate_of_line_no": 5447096
+    },
+    {
+      "line_no": 7604347,
+      "canonical_smiles": "B.C(C)(C)(C)N",
+      "duplicate_of_line_no": 98039
+    },
+    {
+      "line_no": 7612651,
+      "canonical_smiles": "[CH3].[CH3].[Pt].[CH3].C=1(C)C=CCC=1",
+      "duplicate_of_line_no": 6235652
+    },
+    {
+      "line_no": 7623789,
+      "canonical_smiles": "C([CH2])CC.n1cc(ccc1)Br.CCC[CH2].[Sn].[CH2]CCC",
+      "duplicate_of_line_no": 5444277
+    },
+    {
+      "line_no": 7631777,
+      "canonical_smiles": "CCn1ccnc1.C([CH2])CC.[Sn].C(C[CH2])C.CCC[CH2]",
+      "duplicate_of_line_no": 5438239
+    },
+    {
+      "line_no": 7643640,
+      "canonical_smiles": "C([CH2])CC.[CH2]CCC.C(C[CH2])C.O(/C=[CH])CC.[Sn]",
+      "duplicate_of_line_no": 5434750
+    },
+    {
+      "line_no": 7665291,
+      "canonical_smiles": "C(CC(CCCCCC)O)CCCCCCCCC(OCCO)=O.N",
+      "duplicate_of_line_no": 6077898
+    },
+    {
+      "line_no": 7874044,
+      "canonical_smiles": "[c-]1(C[N+](C)(C)C)cccc1.[Fe+2].[I-].[cH-]2cccc2",
+      "duplicate_of_line_no": 5205199
+    },
+    {
+      "line_no": 7880799,
+      "canonical_smiles": "C=1CCC=CCCC=1.[Cl-].[Cl-].[Ru+2]",
+      "duplicate_of_line_no": 5440705
+    },
+    {
+      "line_no": 7923986,
+      "canonical_smiles": "c1c[c-](cc1)C#C.c2ccc[cH-]2.[Fe+2]",
+      "duplicate_of_line_no": 4186877
+    },
+    {
+      "line_no": 8403917,
+      "canonical_smiles": "C(CCCCC)[N+](CCCCCC)(CCCCCC)CCCCCC.O=S([O-])([O-])=O",
+      "duplicate_of_line_no": 5434103
+    },
+    {
+      "line_no": 8403959,
+      "canonical_smiles": "c1(ccccc1)P(C)C.B",
+      "duplicate_of_line_no": 3655678
+    },
+    {
+      "line_no": 8415200,
+      "canonical_smiles": "O=C(N1CCN(C[B-](F)(F)F)CC1)OC(C)(C)C",
+      "duplicate_of_line_no": 2827555
+    },
+    {
+      "line_no": 8798046,
+      "canonical_smiles": "O.O.[NH4+].[Fe+3].O.C([O-])(=O)C([O-])=O.C(=O)([O-])C(=O)[O-]",
+      "duplicate_of_line_no": 4428192
+    },
+    {
+      "line_no": 8942722,
+      "canonical_smiles": "CCC[CH2].C(C[CH2])C.n1occc1.C(CC)[CH2].[Sn]",
+      "duplicate_of_line_no": 5781085
+    },
+    {
+      "line_no": 8973934,
+      "canonical_smiles": "c1ccc(nc1)C#N.C(C[CH2])C.[CH2]CCC.CCC[CH2].[Sn]",
+      "duplicate_of_line_no": 5444814
+    },
+    {
+      "line_no": 9031615,
+      "canonical_smiles": "C(CCc1cscc1)CCC.[CH3].[Sn].[CH3].[CH3]",
+      "duplicate_of_line_no": 7630948
+    },
+    {
+      "line_no": 9033044,
+      "canonical_smiles": "C(CCCC)CCCCCCCc1cscc1.[CH3].[CH3].[CH3].[Sn]",
+      "duplicate_of_line_no": 7630828
+    },
+    {
+      "line_no": 9073122,
+      "canonical_smiles": "CCC[CH2].CCC[CH2].[Sn].c1c(C(F)(F)F)ncs1.C([CH2])CC",
+      "duplicate_of_line_no": 5710712
+    },
+    {
+      "line_no": 9228507,
+      "canonical_smiles": "c1cccs1.[Li]",
+      "duplicate_of_line_no": 7880963
+    },
+    {
+      "line_no": 9228600,
+      "canonical_smiles": "c1cccc2ccccc12.C3CC(=O)[N-]C3=O.[Hg+]",
+      "duplicate_of_line_no": 9228513
+    },
+    {
+      "line_no": 9248677,
+      "canonical_smiles": "C1(C(CS(=O)(=O)C1)NCCCN(C)C)O.Cl",
+      "duplicate_of_line_no": 939527
+    },
+    {
+      "line_no": 9250414,
+      "canonical_smiles": "c1(P(c3ccccc3)c2ccccc2)ccccc1.B",
+      "duplicate_of_line_no": 100715
+    },
+    {
+      "line_no": 9251424,
+      "canonical_smiles": "n1c(nccc1)S(C)(=O)=O.C([CH2])CC.CCC[CH2].[Sn].CCC[CH2]",
+      "duplicate_of_line_no": 5446554
+    },
+    {
+      "line_no": 9251989,
+      "canonical_smiles": "c1csc(NC(=O)OC(C)(C)C)n1.CCC[CH2].[Sn].CCC[CH2].C(C[CH2])C",
+      "duplicate_of_line_no": 5444022
+    }
+  ],
+  "normalization": {
+    "canonical_tautomer": false,
+    "neutralize_charges": false,
+    "remove_explicit_h": true,
+    "largest_fragment_only": false,
+    "zwitterion_handling": "Keep"
+  }
+}

@@ -164,6 +164,8 @@ fn main() -> Result<()> {
     let mut ring_context_policy_arg: Option<String> = None;
     let mut ring_context_sidecar_path: Option<String> = None;
     let mut spectator_bond_policy_arg: Option<String> = None;
+    let mut beam_diversity_policy_arg: Option<String> = None;
+    let mut beam_diversity_slots_arg: Option<String> = None;
     let mut reranker_model_path: Option<String> = None;
     let mut reranker_freq_table_path: Option<String> = None;
     let mut search_mode_arg: Option<String> = None;
@@ -287,6 +289,20 @@ fn main() -> Result<()> {
                 };
                 spectator_bond_policy_arg = Some(v.clone());
             }
+            "--beam-diversity-policy" => {
+                i += 1;
+                let Some(v) = args.get(i) else {
+                    bail!("--beam-diversity-policy requires a value (off|diagnostics-only|active)");
+                };
+                beam_diversity_policy_arg = Some(v.clone());
+            }
+            "--beam-diversity-slots" => {
+                i += 1;
+                let Some(v) = args.get(i) else {
+                    bail!("--beam-diversity-slots requires a <N> value");
+                };
+                beam_diversity_slots_arg = Some(v.clone());
+            }
             "--reranker-model" => {
                 i += 1;
                 let Some(v) = args.get(i) else {
@@ -393,6 +409,16 @@ fn main() -> Result<()> {
              only; gated additionally excludes the specific candidate a confident finding \
              applies to (v1: rules with no '#' in their SMIRKS only -- others stay \
              diagnostics-only regardless of this flag)\n  \
+             --beam-diversity-policy <policy>  off (default) | diagnostics-only | active -- \
+             reserves --beam-diversity-slots beam slots for template-family diversity instead \
+             of pure score, so a lower-scoring candidate from an underrepresented rule isn't \
+             fully crowded out by many higher-scoring same-rule siblings \
+             (docs/design/diversity-reserved-beam-v0.md). diagnostics-only records what active \
+             would additionally keep without changing selection; active actually reserves the \
+             slots\n  \
+             --beam-diversity-slots <N>  Beam slots reserved under diagnostics-only/active \
+             (default 0, i.e. no reservation even if the policy is opted into); ignored under \
+             off\n  \
              --reranker-model <path>       Frozen LightGBM model.txt for candidate reranking \
              (Issue #101 Task 35); ordering-only, requires --reranker-freq-table too\n  \
              --reranker-freq-table <path>  TRAIN-frozen template frequency_table.json for the \
@@ -611,6 +637,31 @@ fn main() -> Result<()> {
         }
     };
 
+    let beam_diversity_policy = match beam_diversity_policy_arg.as_deref() {
+        None | Some("off") => search::BeamDiversityPolicy::Off,
+        Some("diagnostics-only") => search::BeamDiversityPolicy::DiagnosticsOnly,
+        Some("active") => search::BeamDiversityPolicy::Active,
+        Some(other) => {
+            eprintln!(
+                "error: invalid --beam-diversity-policy '{other}' \
+                 (expected off|diagnostics-only|active)"
+            );
+            std::process::exit(1);
+        }
+    };
+    let beam_diversity_slots: usize = match beam_diversity_slots_arg.as_deref() {
+        None => 0,
+        Some(v) => match v.parse() {
+            Ok(n) => n,
+            Err(_) => {
+                eprintln!(
+                    "error: --beam-diversity-slots '{v}' is not a valid non-negative integer"
+                );
+                std::process::exit(1);
+            }
+        },
+    };
+
     let constraints: ConstraintSpec = constraints_path
         .as_deref()
         .and_then(|p| std::fs::read_to_string(p).ok())
@@ -655,6 +706,8 @@ fn main() -> Result<()> {
         candidate_trace_cap: candidate_trace_limit,
         reranker,
         spectator_bond_policy,
+        beam_diversity_policy,
+        beam_diversity_slots,
         ..Default::default()
     };
 

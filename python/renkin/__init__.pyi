@@ -44,6 +44,9 @@ def find_routes(
     coverage_templates_path: str | None = None,
     coverage_timeout_seconds: int | None = None,
     search_diagnostics: bool = False,
+    spectator_bond_policy: str = "off",
+    beam_diversity_policy: str = "off",
+    beam_diversity_slots: int = 0,
 ) -> str: ...
 def predict_forward(
     reactants: list[str],

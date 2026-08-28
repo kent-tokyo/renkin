@@ -185,6 +185,97 @@ pub fn find_routes_v3(
     }
 }
 
+/// Same as [`find_routes_v3`], plus `beam_diversity_policy`/
+/// `beam_diversity_slots` (`docs/design/diversity-reserved-beam-v0.md`):
+/// `"off"` (default) | `"diagnostics_only"` | `"active"`, same vocabulary
+/// as the CLI's `--beam-diversity-policy` flag and the Python binding's
+/// `beam_diversity_policy` kwarg. `"active"` can change which candidates
+/// (and therefore which `routes`) come back, same caveat as
+/// `spectator_bond_policy`'s own `"gated"`. A distinct function name
+/// rather than extending `find_routes_v3`'s signature, matching that
+/// function's own stated reasoning. `beam_diversity_stats` isn't surfaced
+/// in this output either, for the same reason `spectator_bond`'s findings
+/// aren't -- WASM has no `search_diagnostics`-equivalent block at all
+/// today, for any `CrowdOutDiagnostics` field; only the policy control
+/// itself (and its effect on `routes`) is in scope here.
+#[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
+pub fn find_routes_v4(
+    target: &str,
+    depth: u32,
+    max_routes: usize,
+    beam_width: usize,
+    avoid_elements: &str,
+    require_elements: &str,
+    spectator_bond_policy: &str,
+    beam_diversity_policy: &str,
+    beam_diversity_slots: usize,
+) -> String {
+    let spectator_policy = match spectator_bond_policy {
+        "off" => crate::spectator_bond::SpectatorBondPolicy::Off,
+        "diagnostics_only" => crate::spectator_bond::SpectatorBondPolicy::DiagnosticsOnly,
+        "gated" => crate::spectator_bond::SpectatorBondPolicy::Gated,
+        other => {
+            return serde_json::to_string(&serde_json::json!({
+                "error": format!(
+                    "invalid spectator_bond_policy {other:?} (expected \"off\", \
+                     \"diagnostics_only\", or \"gated\")"
+                )
+            }))
+            .unwrap_or_else(|_| r#"{"error":"invalid spectator_bond_policy"}"#.to_string());
+        }
+    };
+    let diversity_policy = match beam_diversity_policy {
+        "off" => crate::search::BeamDiversityPolicy::Off,
+        "diagnostics_only" => crate::search::BeamDiversityPolicy::DiagnosticsOnly,
+        "active" => crate::search::BeamDiversityPolicy::Active,
+        other => {
+            return serde_json::to_string(&serde_json::json!({
+                "error": format!(
+                    "invalid beam_diversity_policy {other:?} (expected \"off\", \
+                     \"diagnostics_only\", or \"active\")"
+                )
+            }))
+            .unwrap_or_else(|_| r#"{"error":"invalid beam_diversity_policy"}"#.to_string());
+        }
+    };
+    let env = ChemEnv::in_memory(DEFAULT_BUILDING_BLOCKS);
+    let rules = default_rules();
+    let config = SearchConfig {
+        max_depth: depth,
+        max_routes,
+        beam_width,
+        forbidden_elements: chem_env::elem_symbols_to_mask(avoid_elements),
+        required_element_present: chem_env::elem_symbols_to_mask(require_elements),
+        spectator_bond_policy: spectator_policy,
+        beam_diversity_policy: diversity_policy,
+        beam_diversity_slots,
+        ..Default::default()
+    };
+
+    match rs_find_routes(target, &env, &rules, &config) {
+        Ok((routes, stats)) => {
+            let output = if routes.is_empty() {
+                serde_json::json!({
+                    "target": target,
+                    "routes_found": 0,
+                    "routes": [],
+                    "diagnostics": {"nodes_expanded": stats.nodes_expanded}
+                })
+            } else {
+                serde_json::json!({
+                    "target": target,
+                    "routes_found": routes.len(),
+                    "routes": routes,
+                })
+            };
+            serde_json::to_string(&output)
+                .unwrap_or_else(|e| format!(r#"{{"error":"serialization: {e}"}}"#))
+        }
+        Err(e) => format!(r#"{{"error":"{e}"}}"#),
+    }
+}
+
 /// Return the crate version string.
 #[wasm_bindgen]
 pub fn version() -> String {

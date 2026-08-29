@@ -1,0 +1,290 @@
+{
+  "schema_version": 1,
+  "source": {
+    "label": "union(RENKIN default 402-compound stock, eMolecules 100k tier) for v0.36.0 Phase C",
+    "revision": "2024-01-01+default",
+    "license": null
+  },
+  "importer_version": "0.35.0",
+  "input_sha256": "sha256:49a6f22e82dc4384f64abb896741c760fb7c52fbe220ee7c5949674dbafe4433",
+  "output_sha256": "sha256:194cffe24e9750339f12db7abe5804f9918181e0c5d68b356c72536621b0e50c",
+  "input_rows": 100449,
+  "accepted_rows": 100446,
+  "rejected_rows": 3,
+  "unique_structures": 100397,
+  "duplicate_rows": 49,
+  "rejection_reasons": {
+    "unparseable_smiles": 3
+  },
+  "rejected": [
+    {
+      "line_no": 277,
+      "smiles": "Brc1ccc(N+](=O)[O-])cc1",
+      "reason": "unparseable_smiles"
+    },
+    {
+      "line_no": 307,
+      "smiles": "Clc1ccc(N+](=O)[O-])cc1",
+      "reason": "unparseable_smiles"
+    },
+    {
+      "line_no": 316,
+      "smiles": "OB(O)c1ccc(N+](=O)[O-])cc1",
+      "reason": "unparseable_smiles"
+    }
+  ],
+  "duplicates": [
+    {
+      "line_no": 111,
+      "canonical_smiles": "c1(ccc(O)cc1)C(=O)O",
+      "duplicate_of_line_no": 81
+    },
+    {
+      "line_no": 112,
+      "canonical_smiles": "C(C)O",
+      "duplicate_of_line_no": 20
+    },
+    {
+      "line_no": 137,
+      "canonical_smiles": "C(O)(=O)c1ccc(cc1)N",
+      "duplicate_of_line_no": 80
+    },
+    {
+      "line_no": 142,
+      "canonical_smiles": "C(O)(=O)c1ccc(cc1)N",
+      "duplicate_of_line_no": 80
+    },
+    {
+      "line_no": 143,
+      "canonical_smiles": "C(C)N",
+      "duplicate_of_line_no": 122
+    },
+    {
+      "line_no": 158,
+      "canonical_smiles": "C1CCNCC1",
+      "duplicate_of_line_no": 153
+    },
+    {
+      "line_no": 174,
+      "canonical_smiles": "c1(N)ccc(cc1)Br",
+      "duplicate_of_line_no": 134
+    },
+    {
+      "line_no": 175,
+      "canonical_smiles": "Oc1ccc(cc1)Br",
+      "duplicate_of_line_no": 107
+    },
+    {
+      "line_no": 181,
+      "canonical_smiles": "c1cc(C(=O)O)ccc1Br",
+      "duplicate_of_line_no": 86
+    },
+    {
+      "line_no": 182,
+      "canonical_smiles": "O=Cc1ccc(cc1)Br",
+      "duplicate_of_line_no": 64
+    },
+    {
+      "line_no": 185,
+      "canonical_smiles": "Clc1ccc(cc1)N",
+      "duplicate_of_line_no": 133
+    },
+    {
+      "line_no": 187,
+      "canonical_smiles": "c1cc(ccc1C(O)=O)Cl",
+      "duplicate_of_line_no": 82
+    },
+    {
+      "line_no": 189,
+      "canonical_smiles": "Nc1ccc(F)cc1",
+      "duplicate_of_line_no": 132
+    },
+    {
+      "line_no": 225,
+      "canonical_smiles": "c1nc(N)ccc1",
+      "duplicate_of_line_no": 140
+    },
+    {
+      "line_no": 226,
+      "canonical_smiles": "n1cccc(N)c1",
+      "duplicate_of_line_no": 139
+    },
+    {
+      "line_no": 233,
+      "canonical_smiles": "c12cccnc1cccc2",
+      "duplicate_of_line_no": 232
+    },
+    {
+      "line_no": 234,
+      "canonical_smiles": "c12cccnc1cccc2",
+      "duplicate_of_line_no": 232
+    },
+    {
+      "line_no": 235,
+      "canonical_smiles": "C1CCOC1",
+      "duplicate_of_line_no": 154
+    },
+    {
+      "line_no": 237,
+      "canonical_smiles": "Clc1ncccc1",
+      "duplicate_of_line_no": 199
+    },
+    {
+      "line_no": 238,
+      "canonical_smiles": "n1cccc(Cl)c1",
+      "duplicate_of_line_no": 198
+    },
+    {
+      "line_no": 239,
+      "canonical_smiles": "Nc1ccccc1",
+      "duplicate_of_line_no": 129
+    },
+    {
+      "line_no": 293,
+      "canonical_smiles": "O=C(C)c1ccc(cc1)Br",
+      "duplicate_of_line_no": 183
+    },
+    {
+      "line_no": 333,
+      "canonical_smiles": "c12cccnc1cccc2",
+      "duplicate_of_line_no": 232
+    },
+    {
+      "line_no": 342,
+      "canonical_smiles": "Nc1ncccn1",
+      "duplicate_of_line_no": 339
+    },
+    {
+      "line_no": 346,
+      "canonical_smiles": "Nc1ncccn1",
+      "duplicate_of_line_no": 339
+    },
+    {
+      "line_no": 350,
+      "canonical_smiles": "c1c[nH]nc1",
+      "duplicate_of_line_no": 165
+    },
+    {
+      "line_no": 355,
+      "canonical_smiles": "c1c[nH]nc1",
+      "duplicate_of_line_no": 165
+    },
+    {
+      "line_no": 356,
+      "canonical_smiles": "c1ncc[nH]1",
+      "duplicate_of_line_no": 164
+    },
+    {
+      "line_no": 372,
+      "canonical_smiles": "c1occc1",
+      "duplicate_of_line_no": 220
+    },
+    {
+      "line_no": 373,
+      "canonical_smiles": "c1sccc1",
+      "duplicate_of_line_no": 221
+    },
+    {
+      "line_no": 379,
+      "canonical_smiles": "o1ccc2ccccc12",
+      "duplicate_of_line_no": 231
+    },
+    {
+      "line_no": 380,
+      "canonical_smiles": "c1ccc2sccc2c1",
+      "duplicate_of_line_no": 230
+    },
+    {
+      "line_no": 386,
+      "canonical_smiles": "C1COCCN1",
+      "duplicate_of_line_no": 156
+    },
+    {
+      "line_no": 394,
+      "canonical_smiles": "C(N)(C)C",
+      "duplicate_of_line_no": 125
+    },
+    {
+      "line_no": 396,
+      "canonical_smiles": "C(CN)C",
+      "duplicate_of_line_no": 123
+    },
+    {
+      "line_no": 399,
+      "canonical_smiles": "C1CNCCN1",
+      "duplicate_of_line_no": 155
+    },
+    {
+      "line_no": 400,
+      "canonical_smiles": "C1CCCC1N",
+      "duplicate_of_line_no": 149
+    },
+    {
+      "line_no": 401,
+      "canonical_smiles": "c1ccc(cc1)CN",
+      "duplicate_of_line_no": 128
+    },
+    {
+      "line_no": 403,
+      "canonical_smiles": "Nc1ccccc1",
+      "duplicate_of_line_no": 129
+    },
+    {
+      "line_no": 414,
+      "canonical_smiles": "c1ccccc1C(C)=O",
+      "duplicate_of_line_no": 65
+    },
+    {
+      "line_no": 437,
+      "canonical_smiles": "c1(Cl)ccc(C#N)cc1",
+      "duplicate_of_line_no": 301
+    },
+    {
+      "line_no": 479,
+      "canonical_smiles": "c1ccc(cc1C(F)(F)F)B(O)O",
+      "duplicate_of_line_no": 478
+    },
+    {
+      "line_no": 485,
+      "canonical_smiles": "c1(Br)ccc(cc1)C#N",
+      "duplicate_of_line_no": 274
+    },
+    {
+      "line_no": 491,
+      "canonical_smiles": "O=S(c1ccccc1)(Cl)=O",
+      "duplicate_of_line_no": 255
+    },
+    {
+      "line_no": 3536,
+      "canonical_smiles": "C(Br)CC",
+      "duplicate_of_line_no": 31
+    },
+    {
+      "line_no": 39904,
+      "canonical_smiles": "N1(C)CCNCC1",
+      "duplicate_of_line_no": 161
+    },
+    {
+      "line_no": 79437,
+      "canonical_smiles": "c1sccc1",
+      "duplicate_of_line_no": 221
+    },
+    {
+      "line_no": 96824,
+      "canonical_smiles": "n1cccc(N)c1",
+      "duplicate_of_line_no": 139
+    },
+    {
+      "line_no": 99712,
+      "canonical_smiles": "o1c(ccc1)Br",
+      "duplicate_of_line_no": 376
+    }
+  ],
+  "normalization": {
+    "canonical_tautomer": false,
+    "neutralize_charges": false,
+    "remove_explicit_h": true,
+    "largest_fragment_only": false,
+    "zwitterion_handling": "Keep"
+  }
+}

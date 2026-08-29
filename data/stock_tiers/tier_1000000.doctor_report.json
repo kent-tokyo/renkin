@@ -1,0 +1,53 @@
+{
+  "stock_path": "data/stock_tiers/tier_1000000.imported.smi",
+  "manifest_path": "data/stock_tiers/tier_1000000.manifest.json",
+  "input_path": "data/stock_tiers/tier_1000000.smi",
+  "overall": "warn",
+  "checks": [
+    {
+      "name": "schema_version",
+      "severity": "pass",
+      "message": "schema_version 1 is supported"
+    },
+    {
+      "name": "output_hash",
+      "severity": "pass",
+      "message": "stock file SHA-256 matches manifest.output_sha256"
+    },
+    {
+      "name": "input_hash",
+      "severity": "pass",
+      "message": "data/stock_tiers/tier_1000000.smi SHA-256 matches manifest.input_sha256"
+    },
+    {
+      "name": "manifest_arithmetic",
+      "severity": "pass",
+      "message": "manifest row counts are internally consistent"
+    },
+    {
+      "name": "stock_line_count",
+      "severity": "pass",
+      "message": "stock file has 1000000 lines, matching manifest.unique_structures"
+    },
+    {
+      "name": "reimport_idempotency",
+      "severity": "pass",
+      "message": "re-importing the stock file is a no-op (already canonical, deduped, sorted)"
+    },
+    {
+      "name": "normalization_contract",
+      "severity": "pass",
+      "message": "manifest normalization policy matches this build's current STANDARDIZE_OPTS"
+    },
+    {
+      "name": "importer_version",
+      "severity": "pass",
+      "message": "manifest importer_version 0.35.0 matches this build"
+    },
+    {
+      "name": "source_provenance",
+      "severity": "warn",
+      "message": "manifest is missing: license"
+    }
+  ]
+}

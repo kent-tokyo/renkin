@@ -2112,8 +2112,42 @@ pub fn default_rules() -> Vec<RetroRule> {
         // ── Aryl C-C disconnections ──────────────────────────────────────
         // Graph-based: find Ar-Ar bridge bonds and split into Ar-Br + Ar.
         rr("suzuki_retro", ""),
-        // Ar-CH=CH-R → Ar-Br + CH2=CH-R (retro-Heck, internal alkene)
-        rr("heck_retro", "[c:1][CH:2]=[CH:3]>>[c:1][Br].[CH2:2]=[CH:3]"),
+        // `heck_retro` ("[c:1][CH:2]=[CH:3]>>[c:1][Br].[CH2:2]=[CH:3]") was
+        // removed (found 2026-08-29 during reaction-family-mislabel-
+        // regression-v0.md's hand-inspection of §3's candidate list, not
+        // the rule-safety census's own static screen -- this rule's 2-atom
+        // RHS fragment doesn't match the census's "bare single-atom RHS"
+        // shape, so it was never flagged by that tool): on an internal
+        // alkene that's endocyclic and fused to the same aromatic ring the
+        // leaving-group Br attaches to (e.g. indene -- the cyclopentene
+        // ring shares its fusion bond with the benzo ring), the declared
+        // 2-fragment product ([c:1][Br] + [CH2:2]=[CH:3]) collapses into a
+        // single connected product, since [CH:3]'s real "far side"
+        // (continuing around the fused ring) reconnects to the very
+        // aromatic ring the other fragment already claims -- topologically
+        // impossible to cleanly separate the way the acyclic SMIRKS
+        // assumes. Confirmed by direct `apply_retro` reproduction on
+        // indene (`C1=Cc2ccccc2C1`, 9 heavy atoms): the single outcome
+        // produced is one 8-atom bromotoluene-shaped fragment (the mapped
+        // [CH:2] atom survives only as an isolated methyl substituent,
+        // its double-bond partner [CH:3] and the ring-closing carbon
+        // beyond it vanish entirely) -- a chemically-wrong "solved" route,
+        // same broader ring-fusion/naive-fragment-splitting defect family
+        // as `aryl_amine_retro`/`buchwald_hartwig_retro`/
+        // `n_benzylation_retro`/`michael_retro`/`negishi_retro` above, but
+        // its own distinct signature (connectivity collapse + atom loss,
+        // not the bare-fragment atom-duplication those five share) since
+        // this SMIRKS's RHS fragment is 2 atoms, not 1. See
+        // `heck_retro_removed_from_default_rules` below.
+        //
+        // `heck_retro_terminal` ("[c:1][CH:2]=[CH2:3]>>[c:1][Br].
+        // [CH2:2]=[CH2:3]") does NOT share this defect and is kept: its
+        // terminal [CH2:3] endpoint is fully saturated (2 H, no room for a
+        // ring-closure bond) and its [CH:2] atom's valence (aromatic bond +
+        // double bond + 1 H = 4) leaves no room for a second ring bond
+        // either -- structurally, this SMIRKS's own matched atoms can
+        // never be embedded in a ring at all, proven by valence counting,
+        // not just untested.
         // Ar-CH=CH2 → Ar-Br + CH2=CH2 (retro-Heck, terminal alkene / styrene)
         rr(
             "heck_retro_terminal",
@@ -4312,19 +4346,72 @@ mod tests {
     }
 
     #[test]
-    fn heck_retro_internal_on_stilbene() {
-        // (E)-stilbene: c1ccccc1/C=C/c1ccccc1
-        let mol = mol_from_smiles("C(=Cc1ccccc1)c1ccccc1").unwrap();
+    fn heck_retro_removed_from_default_rules() {
+        // Old version of this test ("heck_retro_internal_on_stilbene")
+        // asserted the rule's behavior on stilbene by building it directly
+        // via `rr(...)` rather than routing through `default_rules()` --
+        // exactly the mistake `aryl_chloride_retro_removed_from_default_rules`'s
+        // own comment warns about: it would have kept passing even after
+        // this removal. Replaced with the same removal-assertion +
+        // frozen-fixture pattern every other ring-fusion defect removal
+        // uses.
+        let rules = default_rules();
+        assert!(
+            rules.iter().all(|r| r.name != "heck_retro"),
+            "heck_retro must not be present in default_rules(): ring-fusion \
+             connectivity-collapse defect on internal alkenes fused to the \
+             same aromatic ring the leaving-group Br attaches to (indene-type)"
+        );
+        assert!(
+            rules.iter().any(|r| r.name == "heck_retro_terminal"),
+            "heck_retro_terminal must stay active -- its terminal CH2 endpoint \
+             is structurally immune to this defect (proven by valence \
+             counting, see the removal comment in default_rules())"
+        );
+    }
+
+    #[test]
+    fn heck_retro_would_corrupt_a_ring_fused_target_if_re_enabled() {
+        // Indene: cyclopentene fused to benzene, its endocyclic C=C
+        // directly attached to the aromatic ring -- the exact shape the
+        // removal comment in default_rules() describes.
+        let target_smiles = "C1=Cc2ccccc2C1";
+        let target = mol_from_smiles(target_smiles).unwrap();
         let rule = rr("heck_retro", "[c:1][CH:2]=[CH:3]>>[c:1][Br].[CH2:2]=[CH:3]");
-        let results = apply_retro(&mol, &rule);
-        assert!(!results.is_empty(), "heck_retro must fire on stilbene");
-        let flat: Vec<_> = results
+        let outcomes = apply_retro(&target, &rule);
+        let outcome_smiles: Vec<Vec<&str>> = outcomes
             .iter()
-            .flat_map(|s| s.iter().map(|p| p.smiles.as_str()))
+            .map(|o| o.iter().map(|p| p.smiles.as_str()).collect())
             .collect();
         assert!(
-            flat.iter().any(|s| s.contains("Br")),
-            "products must include aryl bromide; got {flat:?}"
+            !outcomes.is_empty(),
+            "expected at least one outcome on this real ring-fused (indene) target: \
+             {outcome_smiles:?}"
+        );
+        // Correct chemistry: two separate fragments ([Ar-Br], [CH2=CH-...])
+        // whose heavy atoms sum to target_atoms + 1 (the new Br). The
+        // confirmed defect (verified 2026-08-29 against this exact target:
+        // indene has 9 heavy atoms) instead produces a *single* fused
+        // fragment of 8 heavy atoms -- fewer fragments than expected AND
+        // fewer atoms than the target itself, the opposite direction from
+        // negishi_retro/grignard_addition_retro's atom-duplication
+        // signature, but the same root cause: a cut bond that's part of a
+        // ring, where the SMIRKS's naive 2-fragment assumption can't
+        // represent the real cyclic connectivity.
+        let target_atoms = target.atom_count();
+        let corrupted = outcomes.iter().any(|o| {
+            let precursor_atoms: usize = o
+                .iter()
+                .map(|p| mol_from_smiles(&p.smiles).unwrap().atom_count())
+                .sum();
+            o.len() < 2 || precursor_atoms < target_atoms
+        });
+        assert!(
+            corrupted,
+            "expected at least one outcome with fewer than 2 fragments or fewer heavy atoms \
+             than the target itself (connectivity collapse), got only well-formed \
+             2-fragment, atom-conserving outcomes -- rule may have been fixed upstream, \
+             re-check whether it's still correctly disabled: {outcome_smiles:?}"
         );
     }
 

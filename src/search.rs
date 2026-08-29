@@ -897,7 +897,12 @@ fn reaction_family_for_rule(rule: &str) -> Option<&'static str> {
         // too). Arms deleted so this stays dead-code-free.
         "aryl_chloride_to_bromide" => Some("halogen_exchange"),
         "suzuki_retro" => Some("suzuki_coupling"),
-        "heck_retro" | "heck_retro_terminal" => Some("heck_reaction"),
+        // heck_retro's own entry removed with the rule (2026-08-29,
+        // ring-fusion connectivity-collapse defect on indene-type targets
+        // -- see the removal comment in chem_env.rs's default_rules()).
+        // heck_retro_terminal is unaffected (structurally immune) and
+        // keeps its family below.
+        "heck_retro_terminal" => Some("heck_reaction"),
         "wittig_retro" => Some("wittig_reaction"),
         "reductive_amination_retro" => Some("reductive_amination"),
         "sonogashira_retro" => Some("sonogashira_coupling"),
@@ -964,7 +969,8 @@ fn conditions_for_rule(rule: &str) -> Option<ReactionConditions> {
         "aryl_ether_retro" => cond!("Cs₂CO₃ (2 eq)", "DMF", "110 °C", "Ullmann ether retro"),
         "aryl_chloride_to_bromide" => cond!("NaBr (excess)", "DMF", "120 °C", "halogen exchange"),
         "suzuki_retro" => cond!("Pd(PPh₃)₄ (5 mol%)", "EtOH/H₂O (3:1)", "80 °C"),
-        "heck_retro" => cond!("Pd(OAc)₂ / PPh₃ (5 mol%)", "DMF", "100 °C"),
+        // heck_retro's own entry removed with the rule (2026-08-29) -- see
+        // reaction_family_for_rule above.
         "heck_retro_terminal" => cond!("Pd(OAc)₂ / PPh₃ (5 mol%)", "DMF", "100 °C"),
         // negishi_retro's condition entry removed with the rule (v0.36.0
         // rule-safety census) -- see reaction_family_for_rule above.
@@ -1016,7 +1022,9 @@ fn procedure_hint_for_rule(rule: &str) -> Option<&'static str> {
         "suzuki_retro" => {
             Some("Combine aryl boronate + aryl halide + Pd(PPh₃)₄ in EtOH/H₂O, reflux at 80 °C.")
         }
-        "heck_retro" | "heck_retro_terminal" => {
+        // heck_retro's own entry removed with the rule (2026-08-29) -- see
+        // reaction_family_for_rule above.
+        "heck_retro_terminal" => {
             Some("Add alkene + aryl halide + Pd(OAc)₂/PPh₃ in DMF with Et₃N at 100 °C.")
         }
         "wittig_retro" => {
@@ -4087,7 +4095,8 @@ mod tests {
             ("aryl_ether_retro", Some("ullmann_ether")),
             ("aryl_chloride_to_bromide", Some("halogen_exchange")),
             ("suzuki_retro", Some("suzuki_coupling")),
-            ("heck_retro", Some("heck_reaction")),
+            // heck_retro (not heck_retro_terminal) was removed 2026-08-29 --
+            // see the "removed" test below and its default_rules() comment.
             ("heck_retro_terminal", Some("heck_reaction")),
             ("wittig_retro", Some("wittig_reaction")),
             ("reductive_amination_retro", Some("reductive_amination")),
@@ -4148,6 +4157,7 @@ mod tests {
             "n_benzylation_retro",
             "grignard_addition_retro",
             "michael_retro",
+            "heck_retro",
         ];
         let active: std::collections::HashSet<String> =
             default_rules().into_iter().map(|r| r.name).collect();

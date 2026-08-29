@@ -177,6 +177,25 @@ this closes out the plan's originally-named priority table.
   (rank 6 -> 4) and the fixture's `stereochemistry-hit-top10` reaction_id
   renamed to `stereochemistry-hit-top5` to match, rather than leaving a
   passing-but-misleadingly-named fixture.
+- Removed `heck_retro` from `default_rules()` (found 2026-08-29, separately
+  from the rule-safety census above -- this SMIRKS's 2-atom RHS fragment
+  doesn't match the census's "bare single-atom RHS" screen, so the static
+  tool never flagged it; found instead by hand-inspecting
+  `docs/design/reaction-family-mislabel-regression-v0.md`'s §3 candidate
+  list for a different defect class entirely). On an internal alkene
+  that's endocyclic and fused to the same aromatic ring the leaving-group
+  Br attaches to (e.g. indene), the declared 2-fragment product collapses
+  into a single connected fragment: confirmed by direct `apply_retro`
+  reproduction on indene (9 heavy atoms) producing one 8-atom
+  bromotoluene-shaped outcome instead of two well-formed fragments summing
+  to 10. Same broader ring-fusion/naive-fragment-splitting defect family as
+  the five rules above, but its own distinct signature (connectivity
+  collapse + atom loss, not bare-fragment atom duplication) since this
+  SMIRKS's RHS fragment is 2 atoms, not 1. `heck_retro_terminal` is kept --
+  proven structurally immune (its terminal `[CH2]` endpoint and fully-used
+  `[CH]` valence leave no room for either mapped atom to be part of a
+  ring). **The hand-crafted rule count now drops to 21** (26 -> 22 across
+  the census's two rounds, -> 21 here).
 
 ### Known Limitations
 - Six rules remain flagged by the static screen but unattempted:

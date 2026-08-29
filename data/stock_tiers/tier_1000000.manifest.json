@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "source": {
+    "label": "eMolecules free tier 2024-01-01 stock, deterministic hash-ranked 1000000-compound tier (renkin-stock-tier-v1)",
+    "revision": "2024-01-01",
+    "license": null
+  },
+  "importer_version": "0.35.0",
+  "input_sha256": "sha256:a4c1c31e4eebdff169841c1bc6ccfeaaad5a81bd3df2d3853977baa2f669caa4",
+  "output_sha256": "sha256:1269853949876d83f30059f5b26c1a6eb5091fa85dc4192725b341c7e008fa89",
+  "input_rows": 1000000,
+  "accepted_rows": 1000000,
+  "rejected_rows": 0,
+  "unique_structures": 1000000,
+  "duplicate_rows": 0,
+  "rejection_reasons": {},
+  "rejected": [],
+  "duplicates": [],
+  "normalization": {
+    "canonical_tautomer": false,
+    "neutralize_charges": false,
+    "remove_explicit_h": true,
+    "largest_fragment_only": false,
+    "zwitterion_handling": "Keep"
+  }
+}

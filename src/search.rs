@@ -4058,6 +4058,113 @@ mod tests {
         assert_eq!(stats_a.reranker_failures, 0);
         assert_eq!(stats_b.reranker_failures, 0);
     }
+
+    // ── reaction_family_for_rule regression coverage ─────────────────────
+    //
+    // docs/design/reaction-family-mislabel-regression-v0.md (ROADMAP Item 5,
+    // rollout stage 1): nothing previously pinned this match table's output.
+    // Both the issue-#77 rule removals and the v0.36.0 rule-safety census
+    // edited this exact table and deleted arms from it -- a real, already-
+    // twice-occurred regression risk (a stale arm mapping a removed rule
+    // name, or a live rule silently losing its family on the next edit)
+    // this table test guards against directly.
+
+    #[test]
+    fn reaction_family_for_rule_matches_every_active_rule() {
+        // Expected family per currently-active default_rules() name, mirrored
+        // from the real match table in reaction_family_for_rule (search.rs)
+        // -- kept as a literal table (not re-derived) so a future edit to
+        // either side must update both, the same way the rule's own removal
+        // comments already require touching every table it appears in.
+        let expected: &[(&str, Option<&str>)] = &[
+            ("ester_cleavage", Some("esterification")),
+            ("amide_cleavage", Some("amide_coupling")),
+            (
+                "friedel_crafts_acylation_retro",
+                Some("friedel_crafts_acylation"),
+            ),
+            ("aryl_carboxylation_retro", Some("decarboxylation")),
+            ("aryl_ether_retro", Some("ullmann_ether")),
+            ("aryl_chloride_to_bromide", Some("halogen_exchange")),
+            ("suzuki_retro", Some("suzuki_coupling")),
+            ("heck_retro", Some("heck_reaction")),
+            ("heck_retro_terminal", Some("heck_reaction")),
+            ("wittig_retro", Some("wittig_reaction")),
+            ("reductive_amination_retro", Some("reductive_amination")),
+            ("sonogashira_retro", Some("sonogashira_coupling")),
+            ("sulfonamide_retro", Some("sulfonamide_formation")),
+            ("diaryl_sulfone_retro", Some("friedel_crafts_sulfonylation")),
+            ("boc_deprotection_retro", Some("boc_deprotection")),
+            ("cbz_deprotection_retro", Some("cbz_deprotection")),
+            ("claisen_retro", Some("claisen_condensation")),
+            ("acyl_chloride_from_acid", Some("acyl_chloride_formation")),
+            ("alcohol_oxidation_retro", Some("carbonyl_reduction")),
+            // Legitimately generic hand-crafted cleavages -- no named
+            // reaction to assert, `None` is the correct, intentional value.
+            ("cc_single_cleavage", None),
+            ("cn_aliphatic_cleavage", None),
+            ("co_aliphatic_cleavage", None),
+        ];
+
+        let active: std::collections::HashSet<String> =
+            default_rules().into_iter().map(|r| r.name).collect();
+        assert_eq!(
+            active.len(),
+            expected.len(),
+            "default_rules() active-rule count drifted from this table -- a rule \
+             was added or removed without updating reaction_family_for_rule's \
+             own regression coverage"
+        );
+        for (rule_name, expected_family) in expected {
+            assert!(
+                active.contains(*rule_name),
+                "{rule_name} is in this table but not in default_rules() -- update \
+                 the table, this rule was removed"
+            );
+            assert_eq!(
+                reaction_family_for_rule(rule_name),
+                *expected_family,
+                "reaction_family_for_rule({rule_name:?}) drifted from its \
+                 expected family"
+            );
+        }
+    }
+
+    #[test]
+    fn reaction_family_for_rule_stays_none_for_removed_rules() {
+        // Every rule name deleted so far across the issue-#77 removals and
+        // the v0.36.0 rule-safety census (chem_env.rs's own removal
+        // comments in default_rules() are the source of truth for this
+        // list). Their reaction_family_for_rule arms were deleted along
+        // with the rules -- confirms a stale arm was never left behind
+        // mapping a name that no longer exists in default_rules().
+        let removed = [
+            "aryl_amine_retro",
+            "buchwald_hartwig_retro",
+            "aryl_chloride_retro",
+            "aryl_iodide_retro",
+            "aryl_fluoride_snAr_retro",
+            "negishi_retro",
+            "n_benzylation_retro",
+            "grignard_addition_retro",
+            "michael_retro",
+        ];
+        let active: std::collections::HashSet<String> =
+            default_rules().into_iter().map(|r| r.name).collect();
+        for rule_name in removed {
+            assert!(
+                !active.contains(rule_name),
+                "{rule_name} is marked removed in this test but is still in \
+                 default_rules() -- it was re-added without updating this list"
+            );
+            assert_eq!(
+                reaction_family_for_rule(rule_name),
+                None,
+                "reaction_family_for_rule({rule_name:?}) must stay None -- this \
+                 rule was removed, its arm must not resurrect a family label"
+            );
+        }
+    }
 }
 
 /// Cooperative cancellation foundation (v0.24 coverage-mode Phase 41.18A):

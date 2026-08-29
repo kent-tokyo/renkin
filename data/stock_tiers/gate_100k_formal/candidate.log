@@ -1,0 +1,341 @@
+[renkin] rank=0 status=completed route_found=False
+[renkin] rank=1 status=completed route_found=False
+[renkin] rank=2 status=completed route_found=True
+[renkin] rank=3 status=completed route_found=False
+[renkin] rank=4 status=completed route_found=False
+[renkin] rank=5 status=completed route_found=False
+[renkin] rank=6 status=completed route_found=False
+[renkin] rank=7 status=completed route_found=False
+[renkin] rank=8 status=timeout route_found=None
+[renkin] rank=9 status=completed route_found=False
+[renkin] rank=10 status=completed route_found=False
+[renkin] rank=11 status=timeout route_found=None
+[renkin] rank=12 status=completed route_found=False
+[renkin] rank=13 status=completed route_found=True
+[renkin] rank=14 status=completed route_found=True
+[renkin] rank=15 status=completed route_found=False
+[renkin] rank=16 status=completed route_found=True
+[renkin] rank=17 status=completed route_found=False
+[renkin] rank=18 status=completed route_found=True
+[renkin] rank=19 status=completed route_found=False
+[renkin] rank=20 status=completed route_found=False
+[renkin] rank=21 status=completed route_found=False
+[renkin] rank=22 status=completed route_found=False
+[renkin] rank=23 status=completed route_found=False
+[renkin] rank=24 status=completed route_found=False
+[renkin] rank=25 status=completed route_found=False
+[renkin] rank=26 status=timeout route_found=None
+[renkin] rank=27 status=completed route_found=False
+[renkin] rank=28 status=completed route_found=True
+[renkin] rank=29 status=completed route_found=False
+[renkin] rank=30 status=completed route_found=False
+[renkin] rank=31 status=completed route_found=True
+[renkin] rank=32 status=completed route_found=False
+[renkin] rank=33 status=completed route_found=False
+[renkin] rank=34 status=completed route_found=False
+[renkin] rank=35 status=completed route_found=False
+[renkin] rank=36 status=completed route_found=False
+[renkin] rank=37 status=completed route_found=False
+[renkin] rank=38 status=completed route_found=False
+[renkin] rank=39 status=completed route_found=False
+[renkin] rank=40 status=completed route_found=False
+[renkin] rank=41 status=completed route_found=True
+[renkin] rank=42 status=timeout route_found=None
+[renkin] rank=43 status=completed route_found=False
+[renkin] rank=44 status=completed route_found=False
+[renkin] rank=45 status=completed route_found=False
+[renkin] rank=46 status=completed route_found=True
+[renkin] rank=47 status=completed route_found=True
+[renkin] rank=48 status=completed route_found=False
+[renkin] rank=49 status=completed route_found=False
+[renkin] rank=50 status=completed route_found=False
+[renkin] rank=51 status=completed route_found=True
+[renkin] rank=52 status=completed route_found=False
+[renkin] rank=53 status=timeout route_found=None
+[renkin] rank=54 status=timeout route_found=None
+[renkin] rank=55 status=timeout route_found=None
+[renkin] rank=56 status=timeout route_found=None
+[renkin] rank=57 status=completed route_found=False
+[renkin] rank=58 status=completed route_found=False
+[renkin] rank=59 status=completed route_found=True
+[renkin] rank=60 status=completed route_found=False
+[renkin] rank=61 status=timeout route_found=None
+[renkin] rank=62 status=timeout route_found=None
+[renkin] rank=63 status=completed route_found=True
+[renkin] rank=64 status=completed route_found=False
+[renkin] rank=65 status=completed route_found=False
+[renkin] rank=66 status=completed route_found=False
+[renkin] rank=67 status=completed route_found=True
+[renkin] rank=68 status=timeout route_found=None
+[renkin] rank=69 status=completed route_found=True
+[renkin] rank=70 status=timeout route_found=None
+[renkin] rank=71 status=timeout route_found=None
+[renkin] rank=72 status=timeout route_found=None
+[renkin] rank=73 status=completed route_found=False
+[renkin] rank=74 status=timeout route_found=None
+[renkin] rank=75 status=timeout route_found=None
+[renkin] rank=76 status=timeout route_found=None
+[renkin] rank=77 status=timeout route_found=None
+[renkin] rank=78 status=completed route_found=False
+[renkin] rank=79 status=completed route_found=False
+[renkin] rank=80 status=timeout route_found=None
+[renkin] rank=81 status=timeout route_found=None
+[renkin] rank=82 status=completed route_found=True
+[renkin] rank=83 status=completed route_found=True
+[renkin] rank=84 status=timeout route_found=None
+[renkin] rank=85 status=timeout route_found=None
+[renkin] rank=86 status=completed route_found=False
+[renkin] rank=87 status=timeout route_found=None
+[renkin] rank=88 status=completed route_found=True
+[renkin] rank=89 status=timeout route_found=None
+[renkin] rank=90 status=timeout route_found=None
+[renkin] rank=91 status=timeout route_found=None
+[renkin] rank=92 status=completed route_found=False
+[renkin] rank=93 status=completed route_found=True
+[renkin] rank=94 status=completed route_found=True
+[renkin] rank=95 status=completed route_found=False
+[renkin] rank=96 status=completed route_found=True
+[renkin] rank=97 status=timeout route_found=None
+[renkin] rank=98 status=timeout route_found=None
+[renkin] rank=99 status=completed route_found=False
+{
+  "best_route_depth_distribution": {
+    "denominator_kind": "route_found_runs",
+    "max": 5,
+    "n": 21,
+    "p50": 3,
+    "p95": 5
+  },
+  "best_route_leaf_count_distribution": {
+    "denominator_kind": "parseable_routes",
+    "max": 5,
+    "n": 21,
+    "p50": 3,
+    "p95": 5
+  },
+  "best_route_step_count_distribution": {
+    "denominator_kind": "route_found_runs",
+    "max": 5,
+    "n": 21,
+    "p50": 3,
+    "p95": 5
+  },
+  "common_structural_warning_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 100,
+    "n_numerator": 4,
+    "value": 0.04
+  },
+  "comparison_mode": "native",
+  "crash_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 100,
+    "n_numerator": 0,
+    "value": 0.0
+  },
+  "gated_out_candidates_mean_per_target": 779.5138888888889,
+  "gated_out_candidates_total": 56125,
+  "gated_out_reasons_total": {
+    "claisen_retro": 14,
+    "extracted_106": 2576,
+    "extracted_109": 30,
+    "extracted_11": 19,
+    "extracted_112": 285,
+    "extracted_119": 370,
+    "extracted_12": 312,
+    "extracted_13": 312,
+    "extracted_134": 19,
+    "extracted_137": 1269,
+    "extracted_139": 312,
+    "extracted_14": 1269,
+    "extracted_140": 312,
+    "extracted_145": 60,
+    "extracted_146": 407,
+    "extracted_148": 190,
+    "extracted_15": 407,
+    "extracted_155": 1269,
+    "extracted_157": 413,
+    "extracted_160": 30,
+    "extracted_168": 1269,
+    "extracted_169": 60,
+    "extracted_171": 208,
+    "extracted_173": 2576,
+    "extracted_176": 2576,
+    "extracted_182": 10,
+    "extracted_189": 44,
+    "extracted_19": 1269,
+    "extracted_192": 208,
+    "extracted_20": 19,
+    "extracted_207": 2576,
+    "extracted_209": 423,
+    "extracted_211": 131,
+    "extracted_216": 449,
+    "extracted_22": 131,
+    "extracted_221": 413,
+    "extracted_223": 145,
+    "extracted_238": 623,
+    "extracted_24": 370,
+    "extracted_240": 605,
+    "extracted_244": 1269,
+    "extracted_247": 67,
+    "extracted_248": 14,
+    "extracted_251": 44,
+    "extracted_270": 1,
+    "extracted_273": 312,
+    "extracted_277": 198,
+    "extracted_283": 2576,
+    "extracted_284": 370,
+    "extracted_288": 190,
+    "extracted_289": 190,
+    "extracted_29": 7,
+    "extracted_293": 413,
+    "extracted_30": 96,
+    "extracted_303": 7,
+    "extracted_313": 6,
+    "extracted_315": 413,
+    "extracted_322": 6,
+    "extracted_327": 2576,
+    "extracted_329": 26,
+    "extracted_33": 10,
+    "extracted_331": 413,
+    "extracted_334": 198,
+    "extracted_34": 2576,
+    "extracted_341": 1,
+    "extracted_342": 10,
+    "extracted_352": 96,
+    "extracted_355": 312,
+    "extracted_359": 96,
+    "extracted_36": 131,
+    "extracted_376": 407,
+    "extracted_381": 449,
+    "extracted_384": 19,
+    "extracted_388": 198,
+    "extracted_394": 10,
+    "extracted_398": 407,
+    "extracted_4": 26,
+    "extracted_419": 407,
+    "extracted_420": 145,
+    "extracted_423": 70,
+    "extracted_43": 26,
+    "extracted_441": 370,
+    "extracted_47": 10,
+    "extracted_473": 1,
+    "extracted_475": 89,
+    "extracted_48": 2576,
+    "extracted_481": 623,
+    "extracted_488": 359,
+    "extracted_51": 623,
+    "extracted_55": 407,
+    "extracted_56": 1269,
+    "extracted_66": 2576,
+    "extracted_79": 2576,
+    "extracted_8": 131,
+    "extracted_83": 312,
+    "extracted_87": 208,
+    "extracted_88": 423,
+    "extracted_89": 131,
+    "extracted_9": 423,
+    "extracted_91": 370,
+    "extracted_93": 407,
+    "extracted_94": 2576,
+    "extracted_95": 67,
+    "extracted_96": 407,
+    "extracted_97": 423
+  },
+  "invalid_input_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 100,
+    "n_numerator": 0,
+    "value": 0.0
+  },
+  "n_all_sampled": 100,
+  "new_rows_this_invocation": 100,
+  "not_evaluable_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 100,
+    "n_numerator": 0,
+    "value": 0.0
+  },
+  "peak_rss_bytes_percentiles": {
+    "denominator_kind": "measured_runs",
+    "max": 163971072,
+    "n": 72,
+    "p50": 23396352,
+    "p95": 68009984
+  },
+  "reaction_steps_parseable_rate": {
+    "denominator_kind": "parseable_routes",
+    "n_denominator": 21,
+    "n_numerator": 21,
+    "value": 1.0
+  },
+  "route_found_but_tree_not_parseable_count": 0,
+  "route_found_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 100,
+    "n_numerator": 21,
+    "value": 0.21
+  },
+  "route_to_configured_stock_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 100,
+    "n_numerator": 21,
+    "value": 0.21
+  },
+  "route_tree_parseable_rate": {
+    "denominator_kind": "route_found_runs",
+    "n_denominator": 21,
+    "n_numerator": 21,
+    "value": 1.0
+  },
+  "setup_error_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 100,
+    "n_numerator": 0,
+    "value": 0.0
+  },
+  "solved_only_total_elapsed_ms_percentiles": {
+    "denominator_kind": "route_found_runs",
+    "max": 135014.03633400332,
+    "n": 21,
+    "p50": 83794.92124996614,
+    "p95": 122122.25849996321
+  },
+  "target_elements_accounted_route_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 100,
+    "n_numerator": 21,
+    "value": 0.21
+  },
+  "time_to_first_route_ms_percentiles": {
+    "denominator_kind": "route_found_runs",
+    "max": null,
+    "n": 0,
+    "p50": null,
+    "p90": null,
+    "p95": null,
+    "p99": null
+  },
+  "timeout_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 100,
+    "n_numerator": 28,
+    "value": 0.28
+  },
+  "tool": "renkin",
+  "total_elapsed_ms_percentiles": {
+    "denominator_kind": "measured_runs",
+    "max": 150102.42124996148,
+    "n": 100,
+    "p50": 108504.5684169745,
+    "p95": 150021.85983292293
+  },
+  "total_rows_in_file": 100,
+  "validator_confirmed_route_found_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 100,
+    "n_numerator": 21,
+    "value": 0.21
+  },
+  "wall_clock_total_sweep_s": 10530.64922837494
+}

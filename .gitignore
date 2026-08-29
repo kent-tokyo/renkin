@@ -68,6 +68,7 @@ data/uspto50k_test.smi
 data/uspto50k_benchmark_result.json
 data/finding4_pilot_2026-08-23/
 data/spectator_bond_smoke_2026-08-24/
+data/stock_tiers/*.smi
 
 # ---- Issue #101 Phase 3: reranker real-label generation ----
 # Regenerable from the pinned HF revision + scripts/generate_real_labels.py

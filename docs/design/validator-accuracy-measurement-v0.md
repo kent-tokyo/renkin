@@ -299,21 +299,22 @@ does (§1.4) — e.g. `true_accept_rate` with
 
 ## Open questions for sign-off before implementation starts
 
-- OK with §2(b)'s attribution-free probe as v1's true-accept method
-  (cheap, isolates the validator, no search compute), deferring §2(a)'s
-  real-search-based joint measurement to a separate later effort if
-  wanted?
-- OK deferring a systematic mutation-generation engine and using a small
-  hand-curated negative corpus instead for v1's true-reject side?
-- Sample size for the true-accept side: the existing 100-target sample
-  (consistent with other harnesses, smaller report) or the full
-  4903-target label file (free to do, no search compute, more
-  statistical power)? Recommend the full 4903 given the near-zero
-  marginal cost, but flagging this as a real choice since every other
-  formal-gate measurement in this project has used 100 targets by
-  convention.
-- OK stating the self-referential-labeling caveat (per-class breakdown
-  uses RENKIN's own `reaction_family` assertion, not an independent
-  class label) prominently in the report, rather than treating this as
-  a full "measure against ground-truth reaction classes" result the
-  roadmap item's wording might suggest?
+- **Answered 2026-08-29**: yes, §2(b)'s attribution-free probe is v1's
+  true-accept method. §2(a)'s real-search-based joint measurement stays
+  deferred to a separate later effort, not part of v0.37.0.
+- **Answered 2026-08-29**: yes, defer a systematic mutation-generation
+  engine. v1's true-reject side uses a small hand-curated negative
+  corpus (existing confirmed-wrong cases plus new hand-authored examples,
+  target size ~30-50 total, not a generic engine).
+- **Answered 2026-08-29**: full 4,903-target label file, not the smaller
+  100-target sample — the near-zero marginal search cost (this measures
+  the validator directly via pure function calls, not real route search)
+  makes the larger, free sample the clear choice here, unlike every other
+  formal-gate measurement in this project that does pay real search cost
+  per additional target.
+- **Answered 2026-08-29**: yes, state the self-referential-labeling
+  caveat prominently in the report, not left implicit.
+
+This is v0.37.0 "Verified Candidate Integrity" scope (see
+`internal_docs/ROADMAP.md`'s "Recommended roadmap") — not started until
+v0.36.0's stock pilot is done and reviewed.

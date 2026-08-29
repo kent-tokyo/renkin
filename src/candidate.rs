@@ -978,6 +978,27 @@ pub struct RawCandidate {
     pub upstream_score: Option<f32>,
     pub upstream_score_status: UpstreamScoreStatus,
     pub precursors: Vec<PrecursorMol>,
+    /// Always populated (design doc §4), even under
+    /// [`crate::search::ElementAccountingGatePolicy::Off`] -- `NotEvaluable`
+    /// in that case, without ever calling `step_element_accounting` (no
+    /// parse cost paid on the default path, same rationale as
+    /// `spectator_bond_policy`'s own opt-in guard).
+    pub element_accounting_gate: ElementAccountingGateVerdict,
+}
+
+/// [`crate::search::ElementAccountingGatePolicy::Gated`]'s own diagnostic
+/// trail for a candidate it excluded -- mirrors
+/// [`crate::spectator_bond::GatedCandidateRecord`]'s rule/template/precursor
+/// fields, minus a findings payload (design doc §4: no bond-level detail to
+/// attach here, the mismatch is recomputable on demand from the SMILES
+/// already in this record) plus the target SMILES, so an exclusion is never
+/// silent.
+#[derive(Debug, Clone, Serialize)]
+pub struct ElementAccountingGatedCandidateRecord {
+    pub rule_name: String,
+    pub template_id: String,
+    pub target_smiles: String,
+    pub precursor_smiles: Vec<String>,
 }
 
 /// Apply every rule in `active_rules` to `target_mol`, exactly as
@@ -1008,16 +1029,31 @@ pub struct RawCandidate {
 /// [`crate::spectator_bond::gate_candidates`] and drops the ones it
 /// resolves with confidence, returning each dropped one (with its
 /// findings) in the fourth tuple element instead.
+///
+/// `element_accounting_policy`: opt-in (see
+/// `SearchConfig::element_accounting_policy`'s own doc), an independent
+/// axis from `spectator_bond_policy` -- `Off` sets every candidate's
+/// [`ElementAccountingGateVerdict`] to `NotEvaluable` without ever calling
+/// `step_element_accounting`, so no parsing cost is paid on the default
+/// path, byte-for-byte identical to this function's own pre-existing
+/// return shape before this gate existed (empty fifth tuple element).
+/// `DiagnosticsOnly` computes and attaches the real verdict to every
+/// candidate but never excludes one. `Gated` additionally drops candidates
+/// whose verdict is `Rejected`, recording each in the fifth tuple element.
+/// Evaluated after spectator-bond gating so that mechanism's own candidate
+/// set and diagnostics are completely unaffected by this one existing.
 /// One rule's own contribution to a [`raw_propose`] call: its surviving
-/// candidates, ring-context diagnostics, SpectatorBondLoss findings, and
-/// gated-out records. Named here only because clippy's `type_complexity`
-/// lint flags the equivalent 4-tuple inline; not otherwise a meaningful
-/// abstraction boundary.
+/// candidates, ring-context diagnostics, SpectatorBondLoss findings,
+/// spectator-bond gated-out records, and element-accounting gated-out
+/// records. Named here only because clippy's `type_complexity` lint flags
+/// the equivalent 5-tuple inline; not otherwise a meaningful abstraction
+/// boundary.
 type PerRuleProposal = (
     Vec<RawCandidate>,
     crate::ring_context::RingContextDiagnostics,
     Vec<crate::spectator_bond::SpectatorBondLossFinding>,
     Vec<crate::spectator_bond::GatedCandidateRecord>,
+    Vec<ElementAccountingGatedCandidateRecord>,
 );
 
 pub(crate) fn raw_propose(
@@ -1026,12 +1062,15 @@ pub(crate) fn raw_propose(
     active_rules: &[ScoredRuleRef<'_>],
     ring: crate::ring_context::RingContextArgs,
     spectator_bond_policy: crate::spectator_bond::SpectatorBondPolicy,
+    element_accounting_policy: crate::search::ElementAccountingGatePolicy,
 ) -> (
     Vec<RawCandidate>,
     crate::ring_context::RingContextDiagnostics,
     Vec<crate::spectator_bond::SpectatorBondLossFinding>,
     Vec<crate::spectator_bond::GatedCandidateRecord>,
+    Vec<ElementAccountingGatedCandidateRecord>,
 ) {
+    use crate::search::ElementAccountingGatePolicy;
     use crate::spectator_bond::SpectatorBondPolicy;
 
     let target_elem_mask: u64 = crate::search::elem_mask_from_smiles(target_smi);
@@ -1056,14 +1095,27 @@ pub(crate) fn raw_propose(
             )
             .into_iter()
             .filter(|precs| !precs.is_empty() && !precs.iter().any(|p| p.smiles == target_smi))
-            .map(|precs| RawCandidate {
-                rule_name: r.rule.name.to_string(),
-                template_id: r.rule.template_id.clone(),
-                rule_weight: r.rule.weight,
-                original_rank: r.source_rank,
-                upstream_score: r.upstream_score,
-                upstream_score_status: r.upstream_score_status,
-                precursors: precs,
+            .map(|precs| {
+                let element_accounting_gate = if element_accounting_policy
+                    == ElementAccountingGatePolicy::Off
+                {
+                    ElementAccountingGateVerdict::NotEvaluable
+                } else {
+                    let precursor_smiles: Vec<String> =
+                        precs.iter().map(|p| p.smiles.clone()).collect();
+                    crate::synthesizability::step_element_accounting(target_smi, &precursor_smiles)
+                        .into()
+                };
+                RawCandidate {
+                    rule_name: r.rule.name.to_string(),
+                    template_id: r.rule.template_id.clone(),
+                    rule_weight: r.rule.weight,
+                    original_rank: r.source_rank,
+                    upstream_score: r.upstream_score,
+                    upstream_score_status: r.upstream_score_status,
+                    precursors: precs,
+                    element_accounting_gate,
+                }
             })
             .collect::<Vec<_>>();
 
@@ -1109,23 +1161,61 @@ pub(crate) fn raw_propose(
                 candidates = kept;
             }
 
-            (candidates, diag, sbl_findings, gated_out)
+            let mut element_accounting_gated_out = Vec::new();
+            if element_accounting_policy == ElementAccountingGatePolicy::Gated {
+                let mut kept = Vec::with_capacity(candidates.len());
+                for candidate in candidates {
+                    if candidate.element_accounting_gate == ElementAccountingGateVerdict::Rejected {
+                        element_accounting_gated_out.push(ElementAccountingGatedCandidateRecord {
+                            rule_name: candidate.rule_name.clone(),
+                            template_id: candidate.template_id.clone(),
+                            target_smiles: target_smi.to_string(),
+                            precursor_smiles: candidate
+                                .precursors
+                                .iter()
+                                .map(|p| p.smiles.clone())
+                                .collect(),
+                        });
+                    } else {
+                        kept.push(candidate);
+                    }
+                }
+                candidates = kept;
+            }
+
+            (
+                candidates,
+                diag,
+                sbl_findings,
+                gated_out,
+                element_accounting_gated_out,
+            )
         })
         .collect();
 
     let mut merged_diag = crate::ring_context::RingContextDiagnostics::default();
     let mut merged_sbl_findings = Vec::new();
     let mut merged_gated_out = Vec::new();
+    let mut merged_element_accounting_gated_out = Vec::new();
     let raw: Vec<RawCandidate> = per_rule
         .into_iter()
-        .flat_map(|(candidates, diag, sbl_findings, gated_out)| {
-            merged_diag.merge(&diag);
-            merged_sbl_findings.extend(sbl_findings);
-            merged_gated_out.extend(gated_out);
-            candidates
-        })
+        .flat_map(
+            |(candidates, diag, sbl_findings, gated_out, element_accounting_gated_out)| {
+                merged_diag.merge(&diag);
+                merged_sbl_findings.extend(sbl_findings);
+                merged_gated_out.extend(gated_out);
+                merged_element_accounting_gated_out.extend(element_accounting_gated_out);
+                candidates
+            },
+        )
         .collect();
-    (raw, merged_diag, merged_sbl_findings, merged_gated_out)
+    (
+        raw,
+        merged_diag,
+        merged_sbl_findings,
+        merged_gated_out,
+        merged_element_accounting_gated_out,
+    )
 }
 
 /// Hashes a sequence of strings with an unambiguous, length-prefixed
@@ -1496,16 +1586,18 @@ impl<'a> CandidateProposalContext<'a> {
         #[cfg(feature = "perf-instrumentation")]
         let t1 = Instant::now();
         // Offline candidate-pool generation deliberately doesn't collect
-        // spectator-bond diagnostics or gating -- that's a search-time
-        // (SearchConfig) concern; this batch API has no equivalent config
-        // surface yet.
-        let (raw, _ring_diag, _sbl_findings, _gated_out) = raw_propose(
-            &target_mol,
-            &canonical_target,
-            &active_rules,
-            crate::ring_context::RingContextArgs::default(),
-            crate::spectator_bond::SpectatorBondPolicy::Off,
-        );
+        // spectator-bond or element-accounting diagnostics/gating -- those
+        // are search-time (SearchConfig) concerns; this batch API has no
+        // equivalent config surface yet.
+        let (raw, _ring_diag, _sbl_findings, _gated_out, _element_accounting_gated_out) =
+            raw_propose(
+                &target_mol,
+                &canonical_target,
+                &active_rules,
+                crate::ring_context::RingContextArgs::default(),
+                crate::spectator_bond::SpectatorBondPolicy::Off,
+                crate::search::ElementAccountingGatePolicy::Off,
+            );
         #[cfg(feature = "perf-instrumentation")]
         PHASE_RAW_PROPOSE_NANOS.fetch_add(t1.elapsed().as_nanos() as u64, Ordering::Relaxed);
 
@@ -1551,6 +1643,7 @@ pub fn propose_one_step(
 mod tests {
     use super::*;
     use crate::chem_env::default_rules;
+    use crate::search::ElementAccountingGatePolicy;
 
     fn rule(name: &str, smirks: &str) -> RetroRule {
         RetroRule {
@@ -2093,13 +2186,15 @@ mod tests {
 
         let active_rules =
             select_active_rules(&target_mol, &rules, &ProposalMode::Exhaustive, None).unwrap();
-        let (got, _ring_diag, _sbl_findings, _gated_out) = raw_propose(
-            &target_mol,
-            &canon_target,
-            &active_rules,
-            crate::ring_context::RingContextArgs::default(),
-            crate::spectator_bond::SpectatorBondPolicy::Off,
-        );
+        let (got, _ring_diag, _sbl_findings, _gated_out, _element_accounting_gated_out) =
+            raw_propose(
+                &target_mol,
+                &canon_target,
+                &active_rules,
+                crate::ring_context::RingContextArgs::default(),
+                crate::spectator_bond::SpectatorBondPolicy::Off,
+                crate::search::ElementAccountingGatePolicy::Off,
+            );
         let mut got_pairs: Vec<(String, Vec<String>)> = got
             .into_iter()
             .map(|p| {
@@ -2151,13 +2246,15 @@ mod tests {
         let target_mol = mol_from_smiles("O=C2NCC(O2)Cc1ccccc1").unwrap();
         let rule = extracted_824_rule();
         let active_rules = [scored_rule_ref(&rule)];
-        let (_raw, _ring_diag, sbl_findings, gated_out) = raw_propose(
-            &target_mol,
-            "O=C2NCC(O2)Cc1ccccc1",
-            &active_rules,
-            crate::ring_context::RingContextArgs::default(),
-            crate::spectator_bond::SpectatorBondPolicy::Off,
-        );
+        let (_raw, _ring_diag, sbl_findings, gated_out, _element_accounting_gated_out) =
+            raw_propose(
+                &target_mol,
+                "O=C2NCC(O2)Cc1ccccc1",
+                &active_rules,
+                crate::ring_context::RingContextArgs::default(),
+                crate::spectator_bond::SpectatorBondPolicy::Off,
+                crate::search::ElementAccountingGatePolicy::Off,
+            );
         assert!(
             sbl_findings.is_empty(),
             "policy Off must produce zero findings, even for a rule/target pair the detector \
@@ -2171,12 +2268,13 @@ mod tests {
         let target_mol = mol_from_smiles("O=C2NCC(O2)Cc1ccccc1").unwrap();
         let rule = extracted_824_rule();
         let active_rules = [scored_rule_ref(&rule)];
-        let (raw, _ring_diag, sbl_findings, gated_out) = raw_propose(
+        let (raw, _ring_diag, sbl_findings, gated_out, _element_accounting_gated_out) = raw_propose(
             &target_mol,
             "O=C2NCC(O2)Cc1ccccc1",
             &active_rules,
             crate::ring_context::RingContextArgs::default(),
             crate::spectator_bond::SpectatorBondPolicy::DiagnosticsOnly,
+            crate::search::ElementAccountingGatePolicy::Off,
         );
         assert!(
             !sbl_findings.is_empty(),
@@ -2207,13 +2305,15 @@ mod tests {
             ..Default::default()
         };
         let active_rules = [scored_rule_ref(&rule)];
-        let (_raw, _ring_diag, sbl_findings, gated_out) = raw_propose(
-            &target_mol,
-            "CC(=O)NC",
-            &active_rules,
-            crate::ring_context::RingContextArgs::default(),
-            crate::spectator_bond::SpectatorBondPolicy::DiagnosticsOnly,
-        );
+        let (_raw, _ring_diag, sbl_findings, gated_out, _element_accounting_gated_out) =
+            raw_propose(
+                &target_mol,
+                "CC(=O)NC",
+                &active_rules,
+                crate::ring_context::RingContextArgs::default(),
+                crate::spectator_bond::SpectatorBondPolicy::DiagnosticsOnly,
+                crate::search::ElementAccountingGatePolicy::Off,
+            );
         assert!(sbl_findings.is_empty());
         assert!(gated_out.is_empty());
     }
@@ -2223,12 +2323,13 @@ mod tests {
         let target_mol = mol_from_smiles("O=C2NCC(O2)Cc1ccccc1").unwrap();
         let rule = extracted_824_rule();
         let active_rules = [scored_rule_ref(&rule)];
-        let (raw, _ring_diag, sbl_findings, gated_out) = raw_propose(
+        let (raw, _ring_diag, sbl_findings, gated_out, _element_accounting_gated_out) = raw_propose(
             &target_mol,
             "O=C2NCC(O2)Cc1ccccc1",
             &active_rules,
             crate::ring_context::RingContextArgs::default(),
             crate::spectator_bond::SpectatorBondPolicy::Gated,
+            crate::search::ElementAccountingGatePolicy::Off,
         );
         assert!(
             raw.iter().all(|c| c.rule_name != "extracted_824"),
@@ -2260,18 +2361,172 @@ mod tests {
             ..Default::default()
         };
         let active_rules = [scored_rule_ref(&rule)];
-        let (raw, _ring_diag, _sbl_findings, gated_out) = raw_propose(
-            &target_mol,
-            "CC(=O)NC",
-            &active_rules,
-            crate::ring_context::RingContextArgs::default(),
-            crate::spectator_bond::SpectatorBondPolicy::Gated,
-        );
+        let (raw, _ring_diag, _sbl_findings, gated_out, _element_accounting_gated_out) =
+            raw_propose(
+                &target_mol,
+                "CC(=O)NC",
+                &active_rules,
+                crate::ring_context::RingContextArgs::default(),
+                crate::spectator_bond::SpectatorBondPolicy::Gated,
+                crate::search::ElementAccountingGatePolicy::Off,
+            );
         assert!(
             !raw.is_empty(),
             "an ordinary, non-defective disconnection must survive Gated policy"
         );
         assert!(gated_out.is_empty());
+    }
+
+    // ---- element-accounting gate wiring (raw_propose stage 3) ----
+    //
+    // Unlike `assert_per_step_verdicts_agree_with_route_level` above (which
+    // computes both sides from one hand-authored `ReactionStep` and can
+    // only pin `From<Option<bool>>`'s mapping, not catch a real
+    // divergence), these exercise the gate through actual rule application
+    // (`apply_retro`/`ring_context`), same discipline as the
+    // spectator-bond wiring tests just above.
+
+    /// Deliberately defective retro rule for test purposes only (same
+    /// spirit as `element_accounting.rs`'s own `clear_violation_is_unaccounted`
+    /// fixture, now exercised through real rule application instead of a
+    /// hand-built `ReactionStep`): drops the target's bromine entirely
+    /// instead of carrying it into a precursor fragment, a genuine
+    /// target-element loss `step_element_accounting` must catch.
+    fn debromination_retro_rule() -> RetroRule {
+        RetroRule {
+            name: "test_element_loss_debromination".to_string(),
+            template_id: "rule:test_element_loss_debromination".to_string(),
+            smirks: "[c:1]-[Br]>>[c:1]".to_string(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn raw_propose_element_accounting_policy_off_never_evaluates() {
+        let target_mol = mol_from_smiles("Brc1ccccc1").unwrap();
+        let rule = debromination_retro_rule();
+        let active_rules = [scored_rule_ref(&rule)];
+        let (raw, _ring_diag, _sbl_findings, _gated_out, element_accounting_gated_out) =
+            raw_propose(
+                &target_mol,
+                "Brc1ccccc1",
+                &active_rules,
+                crate::ring_context::RingContextArgs::default(),
+                crate::spectator_bond::SpectatorBondPolicy::Off,
+                ElementAccountingGatePolicy::Off,
+            );
+        assert!(
+            !raw.is_empty(),
+            "fixture rule must actually produce a candidate"
+        );
+        assert!(
+            raw.iter()
+                .all(|c| c.element_accounting_gate == ElementAccountingGateVerdict::NotEvaluable),
+            "Off must never compute a real verdict, even for a genuinely defective candidate"
+        );
+        assert!(element_accounting_gated_out.is_empty());
+    }
+
+    #[test]
+    fn raw_propose_element_accounting_policy_diagnostics_only_detects_positive_control() {
+        let target_mol = mol_from_smiles("Brc1ccccc1").unwrap();
+        let rule = debromination_retro_rule();
+        let active_rules = [scored_rule_ref(&rule)];
+        let (raw, _ring_diag, _sbl_findings, _gated_out, element_accounting_gated_out) =
+            raw_propose(
+                &target_mol,
+                "Brc1ccccc1",
+                &active_rules,
+                crate::ring_context::RingContextArgs::default(),
+                crate::spectator_bond::SpectatorBondPolicy::Off,
+                ElementAccountingGatePolicy::DiagnosticsOnly,
+            );
+        assert!(
+            !raw.is_empty(),
+            "DiagnosticsOnly must never exclude a candidate"
+        );
+        assert!(
+            raw.iter()
+                .any(|c| c.element_accounting_gate == ElementAccountingGateVerdict::Rejected),
+            "the debromination fixture must be caught as a genuine element loss"
+        );
+        assert!(
+            element_accounting_gated_out.is_empty(),
+            "DiagnosticsOnly must never gate"
+        );
+    }
+
+    #[test]
+    fn raw_propose_element_accounting_policy_gated_excludes_positive_control() {
+        let target_mol = mol_from_smiles("Brc1ccccc1").unwrap();
+        let rule = debromination_retro_rule();
+        let active_rules = [scored_rule_ref(&rule)];
+        let (raw, _ring_diag, _sbl_findings, _gated_out, element_accounting_gated_out) =
+            raw_propose(
+                &target_mol,
+                "Brc1ccccc1",
+                &active_rules,
+                crate::ring_context::RingContextArgs::default(),
+                crate::spectator_bond::SpectatorBondPolicy::Off,
+                ElementAccountingGatePolicy::Gated,
+            );
+        assert!(
+            raw.iter()
+                .all(|c| c.rule_name != "test_element_loss_debromination"),
+            "Gated must exclude the known-defective candidate, not just report it: {:?}",
+            raw.iter().map(|c| &c.rule_name).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            element_accounting_gated_out.len(),
+            1,
+            "exactly one candidate excluded: {element_accounting_gated_out:?}"
+        );
+        assert_eq!(
+            element_accounting_gated_out[0].rule_name,
+            "test_element_loss_debromination"
+        );
+        assert_eq!(element_accounting_gated_out[0].target_smiles, "Brc1ccccc1");
+        assert_eq!(
+            element_accounting_gated_out[0].precursor_smiles,
+            vec!["c1ccccc1".to_string()]
+        );
+    }
+
+    #[test]
+    fn raw_propose_element_accounting_policy_gated_keeps_negative_control() {
+        // Negative control (design doc §7): aspirin's own ester-cleavage
+        // disconnection -- every heavy atom the target needs is covered by
+        // the two precursor fragments -- must never be rejected.
+        let target_mol = mol_from_smiles("CC(=O)Oc1ccccc1").unwrap();
+        let rule = RetroRule {
+            name: "ester_cleavage_retro".to_string(),
+            template_id: "rule:ester_cleavage_retro".to_string(),
+            smirks: "[C:1](=[O:2])-[O:3]-[c:4]>>[C:1](=[O:2])[OH].[OH:3][c:4]".to_string(),
+            ..Default::default()
+        };
+        let active_rules = [scored_rule_ref(&rule)];
+        let (raw, _ring_diag, _sbl_findings, _gated_out, element_accounting_gated_out) =
+            raw_propose(
+                &target_mol,
+                "CC(=O)Oc1ccccc1",
+                &active_rules,
+                crate::ring_context::RingContextArgs::default(),
+                crate::spectator_bond::SpectatorBondPolicy::Off,
+                ElementAccountingGatePolicy::Gated,
+            );
+        assert!(
+            !raw.is_empty(),
+            "ordinary clean disconnection must survive Gated policy"
+        );
+        assert!(
+            raw.iter()
+                .all(|c| c.element_accounting_gate == ElementAccountingGateVerdict::Accepted),
+            "clean disconnection must never be rejected: {:?}",
+            raw.iter()
+                .map(|c| c.element_accounting_gate)
+                .collect::<Vec<_>>()
+        );
+        assert!(element_accounting_gated_out.is_empty());
     }
 
     // ---- merge / provenance ----
@@ -2314,6 +2569,7 @@ mod tests {
             upstream_score: None,
             upstream_score_status: UpstreamScoreStatus::NotApplicable,
             precursors: vec![precs("CC"), precs("CC")],
+            element_accounting_gate: ElementAccountingGateVerdict::NotEvaluable,
         }];
         let merged = merge_into_candidates("target", &raw).unwrap();
         assert_eq!(merged.len(), 1);
@@ -2335,6 +2591,7 @@ mod tests {
                 upstream_score: None,
                 upstream_score_status: UpstreamScoreStatus::NotApplicable,
                 precursors: vec![precs("CC"), precs("O")],
+                element_accounting_gate: ElementAccountingGateVerdict::NotEvaluable,
             },
             RawCandidate {
                 rule_name: "rule_b".to_string(),
@@ -2344,6 +2601,7 @@ mod tests {
                 upstream_score: None,
                 upstream_score_status: UpstreamScoreStatus::NotApplicable,
                 precursors: vec![precs("O"), precs("CC")], // same set, different order
+                element_accounting_gate: ElementAccountingGateVerdict::NotEvaluable,
             },
         ];
         let merged = merge_into_candidates("target", &raw).unwrap();
@@ -2380,6 +2638,7 @@ mod tests {
                 upstream_score: Some(0.4),
                 upstream_score_status: UpstreamScoreStatus::Available,
                 precursors: vec![precs("CC"), precs("O")],
+                element_accounting_gate: ElementAccountingGateVerdict::NotEvaluable,
             },
             RawCandidate {
                 rule_name: "symmetric_rule".to_string(),
@@ -2389,6 +2648,7 @@ mod tests {
                 upstream_score: Some(0.4),
                 upstream_score_status: UpstreamScoreStatus::Available,
                 precursors: vec![precs("O"), precs("CC")], // same set, different match site
+                element_accounting_gate: ElementAccountingGateVerdict::NotEvaluable,
             },
         ];
         let merged = merge_into_candidates("target", &raw).unwrap();
@@ -2419,6 +2679,7 @@ mod tests {
                 upstream_score: None,
                 upstream_score_status: UpstreamScoreStatus::NotApplicable,
                 precursors: vec![precs("CC")],
+                element_accounting_gate: ElementAccountingGateVerdict::NotEvaluable,
             },
             RawCandidate {
                 rule_name: "r".to_string(),
@@ -2428,6 +2689,7 @@ mod tests {
                 upstream_score: None,
                 upstream_score_status: UpstreamScoreStatus::NotApplicable,
                 precursors: vec![precs("CC")],
+                element_accounting_gate: ElementAccountingGateVerdict::NotEvaluable,
             },
         ];
         assert!(merge_into_candidates("target", &raw).is_err());
@@ -2443,6 +2705,7 @@ mod tests {
             upstream_score: Some(0.2),
             upstream_score_status: UpstreamScoreStatus::Available,
             precursors: vec![precs("CC")],
+            element_accounting_gate: ElementAccountingGateVerdict::NotEvaluable,
         };
         let mut b = RawCandidate {
             rule_name: "rule_b".to_string(),
@@ -2452,6 +2715,7 @@ mod tests {
             upstream_score: Some(0.9),
             upstream_score_status: UpstreamScoreStatus::Available,
             precursors: vec![precs("CC")],
+            element_accounting_gate: ElementAccountingGateVerdict::NotEvaluable,
         };
         // Distinguish base_step_cost between the two sources by giving them
         // different (but same-canonical-set) precursor lists is not
@@ -2490,6 +2754,7 @@ mod tests {
                 upstream_score: Some(0.1),
                 upstream_score_status: UpstreamScoreStatus::Available,
                 precursors: vec![precs("CC")],
+                element_accounting_gate: ElementAccountingGateVerdict::NotEvaluable,
             },
             RawCandidate {
                 rule_name: "rule_best_score".to_string(),
@@ -2499,6 +2764,7 @@ mod tests {
                 upstream_score: Some(0.9),
                 upstream_score_status: UpstreamScoreStatus::Available,
                 precursors: vec![precs("CC")],
+                element_accounting_gate: ElementAccountingGateVerdict::NotEvaluable,
             },
         ];
         let merged = merge_into_candidates("target", &raw).unwrap();
@@ -2521,6 +2787,7 @@ mod tests {
                 upstream_score: Some(0.5),
                 upstream_score_status: UpstreamScoreStatus::Available,
                 precursors: vec![precs("CC")],
+                element_accounting_gate: ElementAccountingGateVerdict::NotEvaluable,
             },
             RawCandidate {
                 rule_name: "a_rule".to_string(),
@@ -2530,6 +2797,7 @@ mod tests {
                 upstream_score: Some(0.5),
                 upstream_score_status: UpstreamScoreStatus::Available,
                 precursors: vec![precs("CC")],
+                element_accounting_gate: ElementAccountingGateVerdict::NotEvaluable,
             },
         ];
         let merged = merge_into_candidates("target", &raw).unwrap();
@@ -2559,6 +2827,7 @@ mod tests {
                 upstream_score: None,
                 upstream_score_status: UpstreamScoreStatus::NotApplicable,
                 precursors: vec![precs(precursor)],
+                element_accounting_gate: ElementAccountingGateVerdict::NotEvaluable,
             }
         }
         fn summarize(candidates: Vec<ReactionCandidate>) -> Vec<(String, Vec<String>)> {

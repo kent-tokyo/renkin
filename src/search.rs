@@ -526,6 +526,14 @@ pub struct CrowdOutDiagnostics {
     /// exclusion is never silent: this is its trail even though the
     /// candidate itself no longer appears anywhere else in this run.
     pub spectator_bond_gated_out: Vec<crate::spectator_bond::GatedCandidateRecord>,
+    /// Every candidate [`SearchConfig::element_accounting_policy`]'s
+    /// `Gated` setting actually excluded from the search, with the target/
+    /// precursor SMILES that justified it -- always empty unless the
+    /// policy is `Gated`. An independent axis from
+    /// `spectator_bond_gated_out` above, never conflated with it (same
+    /// "never one label for two orthogonal axes" rule this codebase
+    /// already applies to `ring_context_policy` vs. `spectator_bond_policy`).
+    pub element_accounting_gated_out: Vec<crate::candidate::ElementAccountingGatedCandidateRecord>,
     /// Diversity-reserved beam (Issue #101,
     /// `docs/design/diversity-reserved-beam-v0.md`), accumulated across
     /// every `beam_prune` call in this search -- always default/empty
@@ -1235,11 +1243,13 @@ fn beam_prune(
 /// (`docs/design/candidate-time-element-accounting-gate-v0.md` §5). Same
 /// shape as [`SpectatorBondPolicy`], added as its own [`SearchConfig`]
 /// field rather than folded into `SpectatorBondPolicy` -- the two are
-/// independent, separately-toggleable defect classes. `raw_propose` does
-/// not read this field yet (rollout stage 3); this type exists so
-/// [`crate::candidate::ElementAccountingGateVerdict`] has a policy to be
-/// computed under and callers can round-trip it in tests before the
-/// wiring lands.
+/// independent, separately-toggleable defect classes. Wired into
+/// `raw_propose` (rollout stage 3) -- see
+/// [`SearchConfig::element_accounting_policy`]'s own doc for the exact
+/// per-variant behavior. CLI/Python/WASM parity is stage 4, not yet done
+/// -- `DiagnosticsOnly`/`Gated` are reachable only by constructing a
+/// `SearchConfig` directly (Rust callers/tests), not from any shipped
+/// external surface yet.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ElementAccountingGatePolicy {
@@ -1611,11 +1621,20 @@ pub struct SearchConfig {
     /// together, same "never one label for two orthogonal axes" rule this
     /// codebase already applies to `ring_context_policy` vs.
     /// `spectator_bond_policy` (`docs/design/candidate-time-element-
-    /// accounting-gate-v0.md` §5). Rollout stage 2 (this field's
-    /// introduction): the type exists and defaults to `Off`, matching
-    /// today's absent behavior exactly; `raw_propose` does not read it yet
-    /// (stage 3). Reachable only by constructing a `SearchConfig` directly
-    /// until stage 4's CLI/Python/WASM parity lands.
+    /// accounting-gate-v0.md` §5). `Off` (the default) reproduces
+    /// pre-existing behavior exactly, byte-for-byte -- every candidate's
+    /// `element_accounting_gate` is set to `NotEvaluable` without ever
+    /// calling `step_element_accounting`, so no parse cost is paid on the
+    /// default path. `DiagnosticsOnly` computes and attaches the real
+    /// verdict to every candidate but never excludes one. `Gated`
+    /// additionally excludes candidates
+    /// [`crate::candidate::ElementAccountingGateVerdict::Rejected`],
+    /// recording each exclusion in
+    /// [`CrowdOutDiagnostics::element_accounting_gated_out`]. Evaluated
+    /// after `spectator_bond_policy`'s own gating, so that mechanism's
+    /// candidate set and diagnostics are unaffected by this one existing.
+    /// Not yet exposed on any CLI/Python/WASM surface (design doc stage 4)
+    /// -- reachable only by constructing a `SearchConfig` directly.
     pub element_accounting_policy: ElementAccountingGatePolicy,
     /// Diversity-reserved beam (ROADMAP Item 4, issue #101,
     /// `docs/design/diversity-reserved-beam-v0.md`) -- an independent
@@ -2066,21 +2085,30 @@ pub fn find_routes_with_control(
                     upstream_score_status: crate::candidate::UpstreamScoreStatus::NotApplicable,
                 })
                 .collect();
-            let (raw_proposals, step_ring_diag, step_sbl_findings, step_gated_out) =
-                crate::candidate::raw_propose(
-                    &target_mol,
-                    &target_smi,
-                    &scored_active_rules,
-                    crate::ring_context::RingContextArgs {
-                        config: config.ring_context.clone(),
-                    },
-                    config.spectator_bond_policy,
-                );
+            let (
+                raw_proposals,
+                step_ring_diag,
+                step_sbl_findings,
+                step_gated_out,
+                step_element_accounting_gated_out,
+            ) = crate::candidate::raw_propose(
+                &target_mol,
+                &target_smi,
+                &scored_active_rules,
+                crate::ring_context::RingContextArgs {
+                    config: config.ring_context.clone(),
+                },
+                config.spectator_bond_policy,
+                config.element_accounting_policy,
+            );
             ring_context_diagnostics.merge(&step_ring_diag);
             crowd_out
                 .spectator_bond_loss_findings
                 .extend(step_sbl_findings);
             crowd_out.spectator_bond_gated_out.extend(step_gated_out);
+            crowd_out
+                .element_accounting_gated_out
+                .extend(step_element_accounting_gated_out);
 
             // Issue #101 Task 35: score this expansion's candidate pool once
             // (not per-proposal) when a reranker is still active. A failure
@@ -3901,15 +3929,17 @@ mod tests {
                 upstream_score_status: crate::candidate::UpstreamScoreStatus::NotApplicable,
             })
             .collect();
-        let (raw_proposals, _diag, _sbl_findings, _gated_out) = crate::candidate::raw_propose(
-            &target_mol,
-            target_smi,
-            &scored_active_rules,
-            crate::ring_context::RingContextArgs {
-                config: crate::ring_context::RingContextConfig::Disabled,
-            },
-            SpectatorBondPolicy::Off,
-        );
+        let (raw_proposals, _diag, _sbl_findings, _gated_out, _element_accounting_gated_out) =
+            crate::candidate::raw_propose(
+                &target_mol,
+                target_smi,
+                &scored_active_rules,
+                crate::ring_context::RingContextArgs {
+                    config: crate::ring_context::RingContextConfig::Disabled,
+                },
+                SpectatorBondPolicy::Off,
+                ElementAccountingGatePolicy::Off,
+            );
         assert!(
             raw_proposals.len() >= 2,
             "fixture must exercise a multi-candidate pool, got {}",

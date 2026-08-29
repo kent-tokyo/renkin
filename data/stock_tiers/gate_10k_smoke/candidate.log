@@ -1,0 +1,244 @@
+[renkin] rank=0 status=completed route_found=False
+[renkin] rank=1 status=completed route_found=False
+[renkin] rank=2 status=completed route_found=False
+[renkin] rank=3 status=completed route_found=False
+[renkin] rank=4 status=completed route_found=False
+[renkin] rank=5 status=completed route_found=False
+[renkin] rank=6 status=completed route_found=False
+[renkin] rank=7 status=completed route_found=False
+[renkin] rank=8 status=timeout route_found=None
+[renkin] rank=9 status=completed route_found=False
+[renkin] rank=10 status=completed route_found=False
+[renkin] rank=11 status=timeout route_found=None
+[renkin] rank=12 status=completed route_found=False
+[renkin] rank=13 status=completed route_found=False
+[renkin] rank=14 status=completed route_found=False
+[renkin] rank=15 status=completed route_found=False
+[renkin] rank=16 status=completed route_found=False
+[renkin] rank=17 status=completed route_found=False
+[renkin] rank=18 status=completed route_found=False
+[renkin] rank=19 status=completed route_found=False
+{
+  "best_route_depth_distribution": {
+    "denominator_kind": "route_found_runs",
+    "max": null,
+    "n": 0,
+    "p50": null,
+    "p95": null
+  },
+  "best_route_leaf_count_distribution": {
+    "denominator_kind": "parseable_routes",
+    "max": null,
+    "n": 0,
+    "p50": null,
+    "p95": null
+  },
+  "best_route_step_count_distribution": {
+    "denominator_kind": "route_found_runs",
+    "max": null,
+    "n": 0,
+    "p50": null,
+    "p95": null
+  },
+  "common_structural_warning_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 20,
+    "n_numerator": 0,
+    "value": 0.0
+  },
+  "comparison_mode": "native",
+  "crash_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 20,
+    "n_numerator": 0,
+    "value": 0.0
+  },
+  "gated_out_candidates_mean_per_target": 730.2777777777778,
+  "gated_out_candidates_total": 13145,
+  "gated_out_reasons_total": {
+    "extracted_106": 408,
+    "extracted_11": 73,
+    "extracted_112": 148,
+    "extracted_119": 154,
+    "extracted_12": 3,
+    "extracted_13": 3,
+    "extracted_134": 73,
+    "extracted_137": 253,
+    "extracted_139": 3,
+    "extracted_14": 253,
+    "extracted_140": 3,
+    "extracted_148": 335,
+    "extracted_155": 253,
+    "extracted_157": 17,
+    "extracted_168": 253,
+    "extracted_171": 285,
+    "extracted_173": 408,
+    "extracted_176": 408,
+    "extracted_182": 34,
+    "extracted_189": 91,
+    "extracted_19": 253,
+    "extracted_192": 285,
+    "extracted_20": 73,
+    "extracted_207": 408,
+    "extracted_209": 20,
+    "extracted_211": 2,
+    "extracted_216": 273,
+    "extracted_22": 2,
+    "extracted_221": 17,
+    "extracted_223": 121,
+    "extracted_238": 128,
+    "extracted_24": 154,
+    "extracted_240": 784,
+    "extracted_244": 253,
+    "extracted_251": 91,
+    "extracted_270": 21,
+    "extracted_273": 3,
+    "extracted_277": 126,
+    "extracted_283": 408,
+    "extracted_284": 154,
+    "extracted_288": 335,
+    "extracted_289": 335,
+    "extracted_29": 5,
+    "extracted_293": 17,
+    "extracted_30": 164,
+    "extracted_303": 5,
+    "extracted_315": 17,
+    "extracted_327": 408,
+    "extracted_329": 1,
+    "extracted_33": 34,
+    "extracted_331": 17,
+    "extracted_334": 126,
+    "extracted_34": 408,
+    "extracted_341": 13,
+    "extracted_342": 39,
+    "extracted_352": 164,
+    "extracted_355": 3,
+    "extracted_359": 164,
+    "extracted_36": 2,
+    "extracted_381": 273,
+    "extracted_384": 73,
+    "extracted_388": 126,
+    "extracted_390": 2,
+    "extracted_394": 34,
+    "extracted_4": 1,
+    "extracted_420": 66,
+    "extracted_423": 118,
+    "extracted_43": 1,
+    "extracted_441": 154,
+    "extracted_47": 34,
+    "extracted_473": 13,
+    "extracted_475": 97,
+    "extracted_48": 408,
+    "extracted_481": 128,
+    "extracted_488": 215,
+    "extracted_51": 128,
+    "extracted_56": 253,
+    "extracted_66": 408,
+    "extracted_79": 408,
+    "extracted_8": 2,
+    "extracted_83": 3,
+    "extracted_87": 285,
+    "extracted_88": 20,
+    "extracted_89": 2,
+    "extracted_9": 20,
+    "extracted_91": 154,
+    "extracted_94": 408,
+    "extracted_97": 20
+  },
+  "invalid_input_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 20,
+    "n_numerator": 0,
+    "value": 0.0
+  },
+  "n_all_sampled": 20,
+  "new_rows_this_invocation": 20,
+  "not_evaluable_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 20,
+    "n_numerator": 0,
+    "value": 0.0
+  },
+  "peak_rss_bytes_percentiles": {
+    "denominator_kind": "measured_runs",
+    "max": 66437120,
+    "n": 18,
+    "p50": 12451840,
+    "p95": 66437120
+  },
+  "reaction_steps_parseable_rate": {
+    "denominator_kind": "parseable_routes",
+    "n_denominator": 0,
+    "n_numerator": 0,
+    "value": null
+  },
+  "route_found_but_tree_not_parseable_count": 0,
+  "route_found_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 20,
+    "n_numerator": 0,
+    "value": 0.0
+  },
+  "route_to_configured_stock_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 20,
+    "n_numerator": 0,
+    "value": 0.0
+  },
+  "route_tree_parseable_rate": {
+    "denominator_kind": "route_found_runs",
+    "n_denominator": 0,
+    "n_numerator": 0,
+    "value": null
+  },
+  "setup_error_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 20,
+    "n_numerator": 0,
+    "value": 0.0
+  },
+  "solved_only_total_elapsed_ms_percentiles": {
+    "denominator_kind": "route_found_runs",
+    "max": null,
+    "n": 0,
+    "p50": null,
+    "p95": null
+  },
+  "target_elements_accounted_route_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 20,
+    "n_numerator": 0,
+    "value": 0.0
+  },
+  "time_to_first_route_ms_percentiles": {
+    "denominator_kind": "route_found_runs",
+    "max": null,
+    "n": 0,
+    "p50": null,
+    "p90": null,
+    "p95": null,
+    "p99": null
+  },
+  "timeout_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 20,
+    "n_numerator": 2,
+    "value": 0.1
+  },
+  "tool": "renkin",
+  "total_elapsed_ms_percentiles": {
+    "denominator_kind": "measured_runs",
+    "max": 150051.532875048,
+    "n": 20,
+    "p50": 34498.10199998319,
+    "p95": 150006.37137505691
+  },
+  "total_rows_in_file": 20,
+  "validator_confirmed_route_found_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 20,
+    "n_numerator": 0,
+    "value": 0.0
+  },
+  "wall_clock_total_sweep_s": 1235.0078452080488
+}

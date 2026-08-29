@@ -1,0 +1,227 @@
+[renkin] rank=0 status=completed route_found=False
+[renkin] rank=1 status=completed route_found=False
+[renkin] rank=2 status=completed route_found=True
+[renkin] rank=3 status=completed route_found=False
+[renkin] rank=4 status=completed route_found=False
+[renkin] rank=5 status=completed route_found=False
+[renkin] rank=6 status=timeout route_found=None
+[renkin] rank=7 status=completed route_found=False
+[renkin] rank=8 status=timeout route_found=None
+[renkin] rank=9 status=timeout route_found=None
+[renkin] rank=10 status=completed route_found=False
+[renkin] rank=11 status=timeout route_found=None
+[renkin] rank=12 status=timeout route_found=None
+[renkin] rank=13 status=completed route_found=False
+[renkin] rank=14 status=completed route_found=True
+[renkin] rank=15 status=completed route_found=False
+[renkin] rank=16 status=completed route_found=False
+[renkin] rank=17 status=completed route_found=False
+[renkin] rank=18 status=completed route_found=True
+[renkin] rank=19 status=completed route_found=False
+{
+  "best_route_depth_distribution": {
+    "denominator_kind": "route_found_runs",
+    "max": 3,
+    "n": 3,
+    "p50": 2,
+    "p95": 3
+  },
+  "best_route_leaf_count_distribution": {
+    "denominator_kind": "parseable_routes",
+    "max": 4,
+    "n": 3,
+    "p50": 3,
+    "p95": 4
+  },
+  "best_route_step_count_distribution": {
+    "denominator_kind": "route_found_runs",
+    "max": 3,
+    "n": 3,
+    "p50": 2,
+    "p95": 3
+  },
+  "common_structural_warning_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 20,
+    "n_numerator": 0,
+    "value": 0.0
+  },
+  "comparison_mode": "native",
+  "crash_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 20,
+    "n_numerator": 0,
+    "value": 0.0
+  },
+  "gated_out_candidates_mean_per_target": 450.6666666666667,
+  "gated_out_candidates_total": 6760,
+  "gated_out_reasons_total": {
+    "extracted_106": 204,
+    "extracted_11": 90,
+    "extracted_112": 107,
+    "extracted_12": 9,
+    "extracted_13": 9,
+    "extracted_134": 90,
+    "extracted_137": 145,
+    "extracted_139": 9,
+    "extracted_14": 145,
+    "extracted_140": 9,
+    "extracted_148": 101,
+    "extracted_155": 145,
+    "extracted_157": 15,
+    "extracted_168": 145,
+    "extracted_171": 178,
+    "extracted_173": 204,
+    "extracted_176": 204,
+    "extracted_182": 38,
+    "extracted_189": 88,
+    "extracted_19": 145,
+    "extracted_192": 178,
+    "extracted_20": 90,
+    "extracted_207": 204,
+    "extracted_209": 6,
+    "extracted_216": 104,
+    "extracted_221": 15,
+    "extracted_238": 109,
+    "extracted_240": 282,
+    "extracted_244": 145,
+    "extracted_251": 88,
+    "extracted_270": 20,
+    "extracted_273": 9,
+    "extracted_277": 109,
+    "extracted_283": 204,
+    "extracted_288": 101,
+    "extracted_289": 101,
+    "extracted_293": 15,
+    "extracted_30": 45,
+    "extracted_315": 15,
+    "extracted_327": 204,
+    "extracted_33": 38,
+    "extracted_331": 15,
+    "extracted_334": 109,
+    "extracted_34": 204,
+    "extracted_341": 16,
+    "extracted_342": 53,
+    "extracted_352": 45,
+    "extracted_355": 9,
+    "extracted_359": 45,
+    "extracted_381": 104,
+    "extracted_384": 90,
+    "extracted_388": 109,
+    "extracted_394": 38,
+    "extracted_420": 57,
+    "extracted_423": 42,
+    "extracted_47": 38,
+    "extracted_473": 16,
+    "extracted_475": 77,
+    "extracted_48": 204,
+    "extracted_481": 109,
+    "extracted_488": 147,
+    "extracted_51": 109,
+    "extracted_56": 145,
+    "extracted_66": 204,
+    "extracted_79": 204,
+    "extracted_83": 9,
+    "extracted_87": 178,
+    "extracted_88": 6,
+    "extracted_9": 6,
+    "extracted_94": 204,
+    "extracted_97": 6
+  },
+  "invalid_input_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 20,
+    "n_numerator": 0,
+    "value": 0.0
+  },
+  "n_all_sampled": 20,
+  "new_rows_this_invocation": 20,
+  "not_evaluable_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 20,
+    "n_numerator": 0,
+    "value": 0.0
+  },
+  "peak_rss_bytes_percentiles": {
+    "denominator_kind": "measured_runs",
+    "max": 40337408,
+    "n": 15,
+    "p50": 9797632,
+    "p95": 40337408
+  },
+  "reaction_steps_parseable_rate": {
+    "denominator_kind": "parseable_routes",
+    "n_denominator": 3,
+    "n_numerator": 3,
+    "value": 1.0
+  },
+  "route_found_but_tree_not_parseable_count": 0,
+  "route_found_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 20,
+    "n_numerator": 3,
+    "value": 0.15
+  },
+  "route_to_configured_stock_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 20,
+    "n_numerator": 3,
+    "value": 0.15
+  },
+  "route_tree_parseable_rate": {
+    "denominator_kind": "route_found_runs",
+    "n_denominator": 3,
+    "n_numerator": 3,
+    "value": 1.0
+  },
+  "setup_error_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 20,
+    "n_numerator": 0,
+    "value": 0.0
+  },
+  "solved_only_total_elapsed_ms_percentiles": {
+    "denominator_kind": "route_found_runs",
+    "max": 6949.424833059311,
+    "n": 3,
+    "p50": 146.23266702983528,
+    "p95": 6949.424833059311
+  },
+  "target_elements_accounted_route_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 20,
+    "n_numerator": 3,
+    "value": 0.15
+  },
+  "time_to_first_route_ms_percentiles": {
+    "denominator_kind": "route_found_runs",
+    "max": null,
+    "n": 0,
+    "p50": null,
+    "p90": null,
+    "p95": null,
+    "p99": null
+  },
+  "timeout_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 20,
+    "n_numerator": 5,
+    "value": 0.25
+  },
+  "tool": "renkin",
+  "total_elapsed_ms_percentiles": {
+    "denominator_kind": "measured_runs",
+    "max": 150192.17808300164,
+    "n": 20,
+    "p50": 39294.782959041186,
+    "p95": 150079.0388340829
+  },
+  "total_rows_in_file": 20,
+  "validator_confirmed_route_found_rate": {
+    "denominator_kind": "all_sampled",
+    "n_denominator": 20,
+    "n_numerator": 3,
+    "value": 0.15
+  },
+  "wall_clock_total_sweep_s": 1175.0268012499437
+}

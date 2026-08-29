@@ -939,6 +939,35 @@ fn select_active_rules<'a>(
     }
 }
 
+/// Per-candidate verdict for the target-element accounting check
+/// (`docs/design/candidate-time-element-accounting-gate-v0.md`), mirrors
+/// [`crate::spectator_bond::SpectatorBondGateVerdict`]'s shape -- an
+/// explicit three-way enum, never an implicit bool, so "not evaluated" can
+/// never be silently conflated with "passed". Unlike `SpectatorBondLoss`,
+/// `Rejected` carries no findings payload: the element-count mismatch
+/// itself, recomputed on demand from `step_element_accounting`, is the
+/// whole story, there's no bond-level detail to attach.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ElementAccountingGateVerdict {
+    Accepted,
+    Rejected,
+    NotEvaluable,
+}
+
+impl From<Option<bool>> for ElementAccountingGateVerdict {
+    /// Maps [`crate::synthesizability::step_element_accounting`]'s
+    /// `Option<bool>` directly: `Some(true)` -> `Accepted`, `Some(false)`
+    /// -> `Rejected`, `None` (parse failure) -> `NotEvaluable`.
+    fn from(accounted: Option<bool>) -> Self {
+        match accounted {
+            Some(true) => Self::Accepted,
+            Some(false) => Self::Rejected,
+            None => Self::NotEvaluable,
+        }
+    }
+}
+
 /// One raw one-step retrosynthetic proposal: a single rule application
 /// against a single target, before candidate-level canonical merge.
 pub struct RawCandidate {
@@ -3022,5 +3051,146 @@ mod tests {
         let b = extract_features(&candidate, &target_mol, &templates_by_id, None);
         assert_eq!(a.values, b.values);
         assert_eq!(a.missing, b.missing);
+    }
+
+    // ---- ElementAccountingGateVerdict: consistency with route_integrity_defects ----
+    //
+    // `docs/design/candidate-time-element-accounting-gate-v0.md` §7:
+    // per-step `Gated` verdicts must agree with `route_integrity_defects()`'s
+    // own `UnaccountedTargetElement` determination for the same steps.
+    // `route_integrity_defects` (private to `search.rs`) determines that via
+    // `compute_element_accounting(route).status`, which in turn calls
+    // `step_element_accounting` per step -- the exact function
+    // `ElementAccountingGateVerdict::from` also converts. Testing against
+    // `compute_element_accounting` directly exercises the identical
+    // dependency `route_integrity_defects` itself relies on.
+
+    fn element_accounting_step(target: &str, precursors: &[&str]) -> crate::search::ReactionStep {
+        crate::search::ReactionStep {
+            rule: "test_rule".to_string(),
+            template_id: "rule:test_rule".to_string(),
+            target: target.to_string(),
+            precursors: precursors.iter().map(|s| s.to_string()).collect(),
+            conditions: None,
+            atom_economy: None,
+            atom_economy_raw_percent: None,
+            atom_economy_status: crate::search::AtomEconomyStatus::NotEvaluable,
+            step_confidence: 1.0,
+            procedure_hint: None,
+            reaction_family: None,
+            metadata_source: None,
+            metadata_scope: None,
+            evidence: None,
+        }
+    }
+
+    fn element_accounting_route(steps: Vec<crate::search::ReactionStep>) -> crate::search::Route {
+        crate::search::Route {
+            steps,
+            depth: 1,
+            score: 0.0,
+            building_blocks: vec![],
+            confidence: 1.0,
+            convergency: 1.0,
+            success_probability: 1.0,
+            route_cost: 1.0,
+        }
+    }
+
+    /// Per-step verdicts, via the exact `From<Option<bool>>` conversion
+    /// `raw_propose` will use in stage 3, agree with `compute_element_
+    /// accounting`'s own `failing_step_indices` for every step in `route`.
+    fn assert_per_step_verdicts_agree_with_route_level(route: &crate::search::Route) {
+        let route_level = crate::synthesizability::compute_element_accounting(route);
+        for (idx, step) in route.steps.iter().enumerate() {
+            let verdict: ElementAccountingGateVerdict =
+                crate::synthesizability::step_element_accounting(&step.target, &step.precursors)
+                    .into();
+            let is_failing = route_level.failing_step_indices.contains(&idx);
+            assert_eq!(
+                verdict == ElementAccountingGateVerdict::Rejected,
+                is_failing,
+                "step {idx} verdict {verdict:?} disagrees with route_level.failing_step_indices={:?}",
+                route_level.failing_step_indices
+            );
+        }
+        // Route-level UnaccountedTargetElement iff at least one step's own
+        // verdict is Rejected -- the same either-direction implication
+        // route_integrity_defects relies on via compute_element_accounting.
+        let any_rejected = route.steps.iter().any(|step| {
+            crate::synthesizability::step_element_accounting(&step.target, &step.precursors)
+                == Some(false)
+        });
+        assert_eq!(
+            route_level.status
+                == crate::synthesizability::ElementAccountingStatus::UnaccountedTargetElement,
+            any_rejected,
+            "route-level status {:?} disagrees with any-step-Rejected={any_rejected}",
+            route_level.status
+        );
+    }
+
+    #[test]
+    fn gate_verdict_agrees_with_route_level_clean_case() {
+        // Same fixture as element_accounting.rs's clean_case_is_accounted.
+        let r = element_accounting_route(vec![element_accounting_step(
+            "CC(=O)Oc1ccccc1",
+            &["CC(=O)O", "Oc1ccccc1"],
+        )]);
+        assert_per_step_verdicts_agree_with_route_level(&r);
+        assert_eq!(
+            ElementAccountingGateVerdict::from(crate::synthesizability::step_element_accounting(
+                &r.steps[0].target,
+                &r.steps[0].precursors
+            )),
+            ElementAccountingGateVerdict::Accepted
+        );
+    }
+
+    #[test]
+    fn gate_verdict_agrees_with_route_level_positive_control() {
+        // Same fixture as element_accounting.rs's clear_violation_is_unaccounted.
+        let r =
+            element_accounting_route(vec![element_accounting_step("Brc1ccccc1", &["c1ccccc1"])]);
+        assert_per_step_verdicts_agree_with_route_level(&r);
+        assert_eq!(
+            ElementAccountingGateVerdict::from(crate::synthesizability::step_element_accounting(
+                &r.steps[0].target,
+                &r.steps[0].precursors
+            )),
+            ElementAccountingGateVerdict::Rejected
+        );
+    }
+
+    #[test]
+    fn gate_verdict_agrees_with_route_level_unparseable_step_is_not_evaluable() {
+        let r = element_accounting_route(vec![element_accounting_step("[C(", &["CCO"])]);
+        assert_per_step_verdicts_agree_with_route_level(&r);
+        assert_eq!(
+            ElementAccountingGateVerdict::from(crate::synthesizability::step_element_accounting(
+                &r.steps[0].target,
+                &r.steps[0].precursors
+            )),
+            ElementAccountingGateVerdict::NotEvaluable
+        );
+    }
+
+    #[test]
+    fn gate_verdict_agrees_with_route_level_mixed_route() {
+        // Same fixture as element_accounting.rs's
+        // unparseable_target_makes_step_not_evaluable_but_other_steps_still_count:
+        // step 0 is not evaluable, step 1 is a genuine violation -- the
+        // route-level status must still be UnaccountedTargetElement.
+        let r = element_accounting_route(vec![
+            element_accounting_step("[C(", &["CCO"]),
+            element_accounting_step("Brc1ccccc1", &["c1ccccc1"]),
+        ]);
+        assert_per_step_verdicts_agree_with_route_level(&r);
+        let route_level = crate::synthesizability::compute_element_accounting(&r);
+        assert_eq!(
+            route_level.status,
+            crate::synthesizability::ElementAccountingStatus::UnaccountedTargetElement
+        );
+        assert_eq!(route_level.failing_step_indices, vec![1]);
     }
 }

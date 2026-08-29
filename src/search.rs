@@ -1230,6 +1230,30 @@ fn beam_prune(
     )
 }
 
+/// How much target-element-accounting gate work `raw_propose` does for one
+/// search or candidate-generation call
+/// (`docs/design/candidate-time-element-accounting-gate-v0.md` §5). Same
+/// shape as [`SpectatorBondPolicy`], added as its own [`SearchConfig`]
+/// field rather than folded into `SpectatorBondPolicy` -- the two are
+/// independent, separately-toggleable defect classes. `raw_propose` does
+/// not read this field yet (rollout stage 3); this type exists so
+/// [`crate::candidate::ElementAccountingGateVerdict`] has a policy to be
+/// computed under and callers can round-trip it in tests before the
+/// wiring lands.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ElementAccountingGatePolicy {
+    /// No detection at all -- zero cost, matches today's absent behavior.
+    #[default]
+    Off,
+    /// Compute and record the verdict for every candidate; never excludes
+    /// one.
+    DiagnosticsOnly,
+    /// Additionally exclude candidates whose verdict is
+    /// [`crate::candidate::ElementAccountingGateVerdict::Rejected`].
+    Gated,
+}
+
 /// `docs/design/diversity-reserved-beam-v0.md` §5. Wired into `beam_prune`
 /// via [`SearchConfig::beam_diversity_policy`] (rollout stage 3) -- `Off`
 /// (the default) reproduces pre-existing behavior exactly, byte-for-byte,
@@ -1582,6 +1606,17 @@ pub struct SearchConfig {
     /// behavior exactly, byte-for-byte, matching `timing_diagnostics`'s
     /// own determinism-test precedent.
     pub spectator_bond_policy: SpectatorBondPolicy,
+    /// Opt-in (default [`ElementAccountingGatePolicy::Off`]), an
+    /// independent axis from `spectator_bond_policy` above -- never folded
+    /// together, same "never one label for two orthogonal axes" rule this
+    /// codebase already applies to `ring_context_policy` vs.
+    /// `spectator_bond_policy` (`docs/design/candidate-time-element-
+    /// accounting-gate-v0.md` §5). Rollout stage 2 (this field's
+    /// introduction): the type exists and defaults to `Off`, matching
+    /// today's absent behavior exactly; `raw_propose` does not read it yet
+    /// (stage 3). Reachable only by constructing a `SearchConfig` directly
+    /// until stage 4's CLI/Python/WASM parity lands.
+    pub element_accounting_policy: ElementAccountingGatePolicy,
     /// Diversity-reserved beam (ROADMAP Item 4, issue #101,
     /// `docs/design/diversity-reserved-beam-v0.md`) -- an independent
     /// axis from `spectator_bond_policy` above, never combined into one
@@ -1625,6 +1660,7 @@ impl Default for SearchConfig {
             reranker: None,
             timing_diagnostics: false,
             spectator_bond_policy: SpectatorBondPolicy::Off,
+            element_accounting_policy: ElementAccountingGatePolicy::Off,
             beam_diversity_policy: BeamDiversityPolicy::Off,
             beam_diversity_slots: 0,
         }

@@ -17,4 +17,10 @@ mod signals;
 
 pub use assessment::{AssessmentContext, assess_routes};
 pub(crate) use element_accounting::{compute_element_accounting, heavy_atom_counts};
+// `raw_propose` will call this directly once the element-accounting gate's
+// rollout stage 3 wires it in (`docs/design/candidate-time-element-
+// accounting-gate-v0.md`); until then its only crate-external caller is
+// `candidate.rs`'s consistency-check test, hence the `cfg(test)`.
+#[cfg(test)]
+pub(crate) use element_accounting::step_element_accounting;
 pub use schema::*;

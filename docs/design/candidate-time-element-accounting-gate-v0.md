@@ -211,22 +211,21 @@ Python `SearchConfig` field, WASM config struct field with the same
 
 ## Open questions for sign-off before implementation starts
 
-- OK adding a second, independent `ElementAccountingGatePolicy` enum
-  rather than widening `SpectatorBondPolicy` into a general "safety
-  policy" umbrella (§5) — keeping them orthogonal costs one more CLI flag
-  and one more `SearchConfig` field, but avoids ever conflating two
-  detection mechanisms under one label, matching this codebase's existing
-  ring-context/spectator-bond precedent?
-- Is a lightweight smoke measurement (step 5) sufficient sign-off evidence
-  before this ever defaults to anything but `Off`, or does this specific
-  gate (arithmetic, not topological — likely to fire on genuinely
-  different candidates than `SpectatorBondLoss` does) warrant its own
-  dedicated positive-control corpus the way Finding #4's four templates
-  did for spectator-bond work, rather than reusing existing route-level
-  fixtures re-targeted per step (§7)?
-- Confirm scope: this doc deliberately stops at `invalid_atom_loss`.
-  Should `invalid_ring_topology`/`invalid_valence` get their own separate
-  design docs once this ships, or should ROADMAP Item 1 be considered
-  "sufficiently addressed" by this slice plus the already-shipped
-  `SpectatorBondLoss` for ring topology, leaving only valence/charge/
-  aromaticity as a genuinely open, much later question?
+- **Answered 2026-08-29**: yes, a second, independent
+  `ElementAccountingGatePolicy` enum, not a widened `SpectatorBondPolicy`
+  umbrella (§5). Keeping them orthogonal costs one more CLI flag and one
+  more `SearchConfig` field, but avoids ever conflating two detection
+  mechanisms (topological vs. arithmetic) under one label, matching this
+  codebase's existing ring-context/spectator-bond precedent.
+- **Partially answered 2026-08-29, still open in full**: `Off` stays the
+  default through all of v0.37.0's rollout regardless — so "is a
+  lightweight smoke measurement sufficient before ever defaulting to
+  non-`Off`" doesn't block v0.37.0 itself, but remains genuinely
+  undecided for whenever a future default-change proposal comes up.
+  Don't treat v0.37.0's rollout as having answered this.
+- **Answered 2026-08-29**: this slice (`invalid_atom_loss`) plus the
+  already-shipped `SpectatorBondLoss` (ring topology) are considered
+  sufficient coverage of ROADMAP Item 1 for now. `invalid_ring_topology`
+  does not need its own separate design doc. `invalid_valence`/charge/
+  aromaticity remains a genuinely open, explicitly later, not-yet-scoped
+  question — not bundled into v0.37.0.

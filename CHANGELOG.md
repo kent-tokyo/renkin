@@ -17,6 +17,15 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   navigation. These files remain locally available and ignored for
   development.
 
+## [0.46.0] - 2026-08-31 "Per-Rule Candidate Pool Diagnostics"
+
+### Added
+- One-step candidate pools now expose deterministic per-rule accounting with
+  proposal rank, stable template identity, target-element eligibility, and raw
+  candidate yield.
+- Added regression coverage for diagnostic ordering, zero-yield rules, and
+  legacy/context API parity.
+
 ## [0.45.0] - 2026-08-31 "Per-Rule Candidate Yield Accounting"
 
 ### Added
@@ -1635,7 +1644,8 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
 
 ---
 
-[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.45.0...HEAD
+[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.46.0...HEAD
+[0.46.0]: https://github.com/kent-tokyo/renkin/compare/v0.45.0...v0.46.0
 [0.45.0]: https://github.com/kent-tokyo/renkin/compare/v0.44.0...v0.45.0
 [0.44.0]: https://github.com/kent-tokyo/renkin/compare/v0.43.0...v0.44.0
 [0.43.0]: https://github.com/kent-tokyo/renkin/compare/v0.42.0...v0.43.0

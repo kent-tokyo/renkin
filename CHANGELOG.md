@@ -10,6 +10,38 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 No changes yet.
 
+## [0.37.0] - 2026-08-30 "Verified Candidate Integrity"
+
+This release makes candidate-level element accounting observable and
+optionally fail-closed, and measures the existing route validator against
+RENKIN's full labeled USPTO-50k test set.
+
+### Added
+- Candidate-time `ElementAccountingGatePolicy` with `off` (default),
+  `diagnostics-only`, and `gated` modes. The gate is independent from
+  `SpectatorBondPolicy`; diagnostics preserve the candidate trail while
+  `gated` excludes only candidates whose target requires an element absent
+  from their precursor set. The policy is available through the CLI,
+  Python, and WASM APIs.
+- Search diagnostics now report element-accounting crowd-out separately,
+  with process-level integration coverage for default, diagnostic-only,
+  and gated behavior. `Gated` remains opt-in because the rollout smoke
+  found an allowlist-consistency issue that requires a separate policy
+  decision.
+- `examples/validator_accuracy_probe.rs` and its reproducibility report
+  under `data/validator_accuracy_probe_2026-08-30/`, measuring all 4,903
+  labeled targets without search-time collection. The report separates
+  blended graph-rule acceptance (46.1%) from genuine rule-specific SMIRKS
+  reproduction (2.4%) and records the deliberately limited true-reject
+  corpus rather than overstating validator accuracy.
+
+### Changed
+- `RawCandidate` carries the element-accounting verdict from the real
+  `raw_propose` path, while the default `Off` mode avoids the parse cost and
+  preserves existing search behavior.
+- WASM exposes `find_routes_v5` as the versioned API extension for the new
+  policy; existing API versions remain unchanged.
+
 ## [0.36.0] - 2026-08-30 "Scalable Stock & Audited Coverage"
 
 v0.36.0 Phase 1 (rule-safety census): a mechanical static screen of every
@@ -1527,6 +1559,8 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
 
 ---
 
-[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.37.0...HEAD
+[0.37.0]: https://github.com/kent-tokyo/renkin/compare/v0.36.0...v0.37.0
+[0.36.0]: https://github.com/kent-tokyo/renkin/compare/v0.35.0...v0.36.0
 [0.1.1]: https://github.com/kent-tokyo/renkin/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/kent-tokyo/renkin/releases/tag/v0.1.0

@@ -164,6 +164,7 @@ fn main() -> Result<()> {
     let mut ring_context_policy_arg: Option<String> = None;
     let mut ring_context_sidecar_path: Option<String> = None;
     let mut spectator_bond_policy_arg: Option<String> = None;
+    let mut element_accounting_policy_arg: Option<String> = None;
     let mut beam_diversity_policy_arg: Option<String> = None;
     let mut beam_diversity_slots_arg: Option<String> = None;
     let mut reranker_model_path: Option<String> = None;
@@ -289,6 +290,15 @@ fn main() -> Result<()> {
                 };
                 spectator_bond_policy_arg = Some(v.clone());
             }
+            "--element-accounting-policy" => {
+                i += 1;
+                let Some(v) = args.get(i) else {
+                    bail!(
+                        "--element-accounting-policy requires a value (off|diagnostics-only|gated)"
+                    );
+                };
+                element_accounting_policy_arg = Some(v.clone());
+            }
             "--beam-diversity-policy" => {
                 i += 1;
                 let Some(v) = args.get(i) else {
@@ -409,6 +419,11 @@ fn main() -> Result<()> {
              only; gated additionally excludes the specific candidate a confident finding \
              applies to (v1: rules with no '#' in their SMIRKS only -- others stay \
              diagnostics-only regardless of this flag)\n  \
+             --element-accounting-policy <policy>  off (default) | diagnostics-only | gated -- \
+             detects a candidate whose target needs more of some heavy element than its \
+             precursors collectively supply (docs/design/candidate-time-element-accounting-\
+             gate-v0.md). diagnostics-only records the verdict in --search-diagnostics output \
+             only; gated additionally excludes the specific candidate\n  \
              --beam-diversity-policy <policy>  off (default) | diagnostics-only | active -- \
              reserves --beam-diversity-slots beam slots for template-family diversity instead \
              of pure score, so a lower-scoring candidate from an underrepresented rule isn't \
@@ -637,6 +652,19 @@ fn main() -> Result<()> {
         }
     };
 
+    let element_accounting_policy = match element_accounting_policy_arg.as_deref() {
+        None | Some("off") => search::ElementAccountingGatePolicy::Off,
+        Some("diagnostics-only") => search::ElementAccountingGatePolicy::DiagnosticsOnly,
+        Some("gated") => search::ElementAccountingGatePolicy::Gated,
+        Some(other) => {
+            eprintln!(
+                "error: invalid --element-accounting-policy '{other}' \
+                 (expected off|diagnostics-only|gated)"
+            );
+            std::process::exit(1);
+        }
+    };
+
     let beam_diversity_policy = match beam_diversity_policy_arg.as_deref() {
         None | Some("off") => search::BeamDiversityPolicy::Off,
         Some("diagnostics-only") => search::BeamDiversityPolicy::DiagnosticsOnly,
@@ -706,6 +734,7 @@ fn main() -> Result<()> {
         candidate_trace_cap: candidate_trace_limit,
         reranker,
         spectator_bond_policy,
+        element_accounting_policy,
         beam_diversity_policy,
         beam_diversity_slots,
         ..Default::default()

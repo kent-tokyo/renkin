@@ -45,6 +45,7 @@ def find_routes(
     coverage_timeout_seconds: int | None = None,
     search_diagnostics: bool = False,
     spectator_bond_policy: str = "off",
+    element_accounting_policy: str = "off",
     beam_diversity_policy: str = "off",
     beam_diversity_slots: int = 0,
 ) -> str: ...

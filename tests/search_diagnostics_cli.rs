@@ -349,3 +349,137 @@ fn spectator_bond_policy_missing_value_is_hard_error() {
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+// ── --element-accounting-policy (docs/design/candidate-time-element-accounting-gate-v0.md) ──
+
+/// A single-line templates file carrying a deliberately defective retro
+/// rule for test purposes only (same spirit as `candidate.rs`'s own
+/// `debromination_retro_rule` unit-test fixture, now exercised through the
+/// real CLI binary): drops the target's bromine entirely instead of
+/// carrying it into a precursor fragment, a genuine target-element loss
+/// `step_element_accounting` must catch.
+fn write_debromination_templates_file() -> std::path::PathBuf {
+    let test_name = std::thread::current()
+        .name()
+        .unwrap_or("unknown")
+        .replace("::", "_");
+    let path = std::env::temp_dir().join(format!(
+        "renkin_element_accounting_cli_test_{}_{test_name}.smi",
+        std::process::id()
+    ));
+    std::fs::write(&path, "[c:1]-[Br]>>[c:1]\t1\n").unwrap();
+    path
+}
+
+const BROMOBENZENE_TARGET: &str = "Brc1ccccc1";
+
+#[test]
+fn element_accounting_policy_defaults_to_off() {
+    let templates = write_debromination_templates_file();
+    let v = run(&[
+        "--target",
+        BROMOBENZENE_TARGET,
+        "--depth",
+        "1",
+        "--templates",
+        templates.to_str().unwrap(),
+        "--search-diagnostics",
+    ]);
+    std::fs::remove_file(&templates).ok();
+    let sd = v.get("search_diagnostics").expect("flag was passed");
+    assert_eq!(
+        sd["element_accounting_gated_out"].as_array().unwrap().len(),
+        0,
+        "policy Off must never gate, even against a rule/target pair that would be caught if \
+         enabled: {sd}"
+    );
+}
+
+#[test]
+fn element_accounting_policy_diagnostics_only_never_excludes() {
+    let templates = write_debromination_templates_file();
+    let v = run(&[
+        "--target",
+        BROMOBENZENE_TARGET,
+        "--depth",
+        "1",
+        "--templates",
+        templates.to_str().unwrap(),
+        "--element-accounting-policy",
+        "diagnostics-only",
+        "--search-diagnostics",
+    ]);
+    std::fs::remove_file(&templates).ok();
+    let sd = v.get("search_diagnostics").expect("flag was passed");
+    assert_eq!(
+        sd["element_accounting_gated_out"].as_array().unwrap().len(),
+        0,
+        "diagnostics-only must never exclude a candidate"
+    );
+}
+
+#[test]
+fn element_accounting_policy_gated_excludes_the_known_defect() {
+    let templates = write_debromination_templates_file();
+    let v = run(&[
+        "--target",
+        BROMOBENZENE_TARGET,
+        "--depth",
+        "1",
+        "--templates",
+        templates.to_str().unwrap(),
+        "--element-accounting-policy",
+        "gated",
+        "--search-diagnostics",
+    ]);
+    std::fs::remove_file(&templates).ok();
+    let sd = v.get("search_diagnostics").expect("flag was passed");
+    let gated_out = sd["element_accounting_gated_out"].as_array().unwrap();
+    assert_eq!(
+        gated_out.len(),
+        1,
+        "the known-defective candidate must be excluded under Gated: {sd}"
+    );
+    // target_smiles is the search's own canonical form, not necessarily
+    // byte-identical to the CLI's input string.
+    assert!(
+        gated_out[0]["target_smiles"]
+            .as_str()
+            .unwrap()
+            .contains("Br")
+    );
+    assert!(
+        !gated_out[0]["precursor_smiles"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn element_accounting_policy_invalid_value_is_hard_error() {
+    let out = std::process::Command::new(bin())
+        .args(["--target", "CCO", "--element-accounting-policy", "bogus"])
+        .output()
+        .expect("failed to spawn renkin");
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("--element-accounting-policy"),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn element_accounting_policy_missing_value_is_hard_error() {
+    let out = std::process::Command::new(bin())
+        .args(["--target", "CCO", "--element-accounting-policy"])
+        .output()
+        .expect("failed to spawn renkin");
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("--element-accounting-policy"),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}

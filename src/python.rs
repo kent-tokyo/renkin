@@ -81,6 +81,17 @@ use crate::search::{SearchConfig, diagnose, find_routes};
 ///         rules with no ``#`` in their SMIRKS; others stay
 ///         diagnostics-only regardless of this setting. Unrecognized
 ///         values raise ``ValueError``.
+///     element_accounting_policy (str): ``"off"`` (default), ``"diagnostics_only"``,
+///         or ``"gated"`` -- detects a candidate whose target needs more of
+///         some heavy element than its precursors collectively supply
+///         (``docs/design/candidate-time-element-accounting-gate-v0.md``),
+///         an independent axis from ``spectator_bond_policy`` above.
+///         ``"diagnostics_only"`` records the verdict in the
+///         ``search_diagnostics`` block (requires ``search_diagnostics=True``
+///         to see it) without excluding any candidate. ``"gated"``
+///         additionally excludes the specific candidate, recording each
+///         exclusion in ``element_accounting_gated_out``. Unrecognized
+///         values raise ``ValueError``.
 ///     beam_diversity_policy (str): ``"off"`` (default), ``"diagnostics_only"``,
 ///         or ``"active"`` -- reserves ``beam_diversity_slots`` beam slots
 ///         for template-family diversity instead of pure score, so a
@@ -138,7 +149,7 @@ use crate::search::{SearchConfig, diagnose, find_routes};
 ///     routes = json.loads(renkin.find_routes("CC(=O)Oc1ccccc1C(=O)O", depth=3))
 ///     print(routes["routes_found"])
 #[pyfunction]
-#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None, search_diagnostics=false, spectator_bond_policy="off", beam_diversity_policy="off", beam_diversity_slots=0))]
+#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None, search_diagnostics=false, spectator_bond_policy="off", element_accounting_policy="off", beam_diversity_policy="off", beam_diversity_slots=0))]
 #[allow(clippy::too_many_arguments)]
 pub fn find_routes_py(
     target: &str,
@@ -160,6 +171,7 @@ pub fn find_routes_py(
     coverage_timeout_seconds: Option<u64>,
     search_diagnostics: bool,
     spectator_bond_policy: &str,
+    element_accounting_policy: &str,
     beam_diversity_policy: &str,
     beam_diversity_slots: usize,
 ) -> PyResult<String> {
@@ -176,6 +188,17 @@ pub fn find_routes_py(
             return Err(PyValueError::new_err(format!(
                 "invalid spectator_bond_policy {other:?} (expected \"off\", \"diagnostics_only\", \
                  or \"gated\")"
+            )));
+        }
+    };
+    let element_accounting_policy = match element_accounting_policy {
+        "off" => crate::search::ElementAccountingGatePolicy::Off,
+        "diagnostics_only" => crate::search::ElementAccountingGatePolicy::DiagnosticsOnly,
+        "gated" => crate::search::ElementAccountingGatePolicy::Gated,
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "invalid element_accounting_policy {other:?} (expected \"off\", \
+                 \"diagnostics_only\", or \"gated\")"
             )));
         }
     };
@@ -292,6 +315,7 @@ pub fn find_routes_py(
         template_metadata: template_metadata.map(|tm| tm.templates),
         reranker,
         spectator_bond_policy,
+        element_accounting_policy,
         beam_diversity_policy,
         beam_diversity_slots,
         ..Default::default()

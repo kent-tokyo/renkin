@@ -1,0 +1,40 @@
+{
+  "all_not_evaluable": {
+    "denominator_kind": "all_labeled_targets",
+    "n_denominator": 4903,
+    "n_numerator": 0,
+    "value": 0.0
+  },
+  "elapsed_secs": 23.754831834,
+  "n_targets": 4903,
+  "reaction_family_hit_counts": {
+    "amide_coupling": 794,
+    "carbonyl_reduction": 44,
+    "esterification": 794,
+    "friedel_crafts_acylation": 1,
+    "friedel_crafts_sulfonylation": 896,
+    "reductive_amination": 66,
+    "sulfonamide_formation": 896,
+    "suzuki_coupling": 452,
+    "ullmann_ether": 794
+  },
+  "reaction_family_hit_counts_caveat": "counts are grouped by RENKIN's own asserted reaction_family_for_rule, not an independent corpus-native class label (design doc §1.3) -- 'broken down by what RENKIN itself claims the reaction is', not validated against a third-party taxonomy",
+  "true_accept_rate": {
+    "denominator_kind": "all_labeled_targets",
+    "n_denominator": 4903,
+    "n_numerator": 2261,
+    "value": 0.4611462369977565
+  },
+  "true_accept_via_graph_rule_only": {
+    "denominator_kind": "all_labeled_targets",
+    "n_denominator": 4903,
+    "n_numerator": 2141,
+    "value": 0.43667142565776057
+  },
+  "true_accept_via_smirks_rule": {
+    "denominator_kind": "all_labeled_targets",
+    "n_denominator": 4903,
+    "n_numerator": 120,
+    "value": 0.02447481133999592
+  }
+}

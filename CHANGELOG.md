@@ -8,7 +8,22 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-No changes yet.
+### Changed
+- Refreshed public documentation to match the current 0.44.0 implementation,
+  including the 21 built-in rules, exact canonical-SMILES stock identity, and
+  current package-version examples.
+- Removed duplicate internal design, validation, roadmap, comparison,
+  benchmark, and reranker-training notes from the public documentation
+  navigation. These files remain locally available and ignored for
+  development.
+
+## [0.45.0] - 2026-08-31 "Per-Rule Candidate Yield Accounting"
+
+### Added
+- One-step candidate pools now report how many eligible rules produced raw
+  candidates and how many produced none, completing the rule-level accounting
+  needed to diagnose zero-positive pools.
+- Added regression coverage for per-rule candidate-yield accounting.
 
 ## [0.44.0] - 2026-08-30 "Target-Eligible Rule Accounting"
 
@@ -1620,7 +1635,8 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
 
 ---
 
-[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.44.0...HEAD
+[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.45.0...HEAD
+[0.45.0]: https://github.com/kent-tokyo/renkin/compare/v0.44.0...v0.45.0
 [0.44.0]: https://github.com/kent-tokyo/renkin/compare/v0.43.0...v0.44.0
 [0.43.0]: https://github.com/kent-tokyo/renkin/compare/v0.42.0...v0.43.0
 [0.42.0]: https://github.com/kent-tokyo/renkin/compare/v0.41.0...v0.42.0

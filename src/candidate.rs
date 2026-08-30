@@ -264,6 +264,11 @@ pub struct CandidatePoolStats {
     /// Selected rules that passed target-element eligibility and were
     /// actually applied by the raw proposer.
     pub rules_attempted: usize,
+    /// Selected and element-eligible rules that produced at least one raw
+    /// candidate before precursor-set merging.
+    pub rules_producing_candidates: usize,
+    /// Selected and element-eligible rules that produced no raw candidates.
+    pub rules_without_candidates: usize,
     /// Raw rule-application outcomes before precursor-set merging.
     pub raw_candidates_generated: usize,
     /// Distinct canonical precursor sets after merging source provenance.
@@ -1640,6 +1645,12 @@ impl<'a> CandidateProposalContext<'a> {
         #[cfg(feature = "perf-instrumentation")]
         let t2 = Instant::now();
         let candidates = merge_into_candidates(&canonical_target, &raw)?;
+        let producing_rule_ranks: std::collections::HashSet<usize> = raw
+            .iter()
+            .map(|candidate| candidate.original_rank)
+            .collect();
+        let rules_producing_candidates = producing_rule_ranks.len();
+        let rules_without_candidates = rules_attempted - rules_producing_candidates;
         #[cfg(feature = "perf-instrumentation")]
         PHASE_MERGE_NANOS.fetch_add(t2.elapsed().as_nanos() as u64, Ordering::Relaxed);
 
@@ -1653,6 +1664,8 @@ impl<'a> CandidateProposalContext<'a> {
                 rules_filtered_out: self.rules.len().saturating_sub(active_rules.len()),
                 rules_element_filtered_out,
                 rules_attempted,
+                rules_producing_candidates,
+                rules_without_candidates,
                 raw_candidates_generated: raw.len(),
                 unique_candidates: candidates.len(),
             },
@@ -1798,6 +1811,10 @@ mod tests {
             pool.stats.rules_element_filtered_out + pool.stats.rules_attempted,
             pool.stats.rules_considered
         );
+        assert_eq!(
+            pool.stats.rules_producing_candidates + pool.stats.rules_without_candidates,
+            pool.stats.rules_attempted
+        );
         assert!(pool.stats.raw_candidates_generated >= pool.stats.unique_candidates);
         assert_eq!(pool.stats.unique_candidates, pool.candidates.len());
         assert!(pool.stats.raw_candidates_generated > 0);
@@ -1805,7 +1822,10 @@ mod tests {
 
     #[test]
     fn candidate_pool_stats_separate_mode_and_element_filtering() {
-        let mut rules = vec![rule("carbon", "[C:1][C:2]>>[C:1].[C:2]")];
+        let mut rules = vec![
+            rule("carbon", "[C:1][C:2]>>[C:1].[C:2]"),
+            rule("nitrogen-no-match", "[N:1][N:2]>>[N:1].[N:2]"),
+        ];
         rules.push(RetroRule {
             name: "nitrogen-only".to_string(),
             template_id: "rule:nitrogen-only".to_string(),
@@ -1816,11 +1836,13 @@ mod tests {
 
         let pool = propose_one_step("g1", "CCCC", &rules, &ProposalConfig::default()).unwrap();
 
-        assert_eq!(pool.stats.rules_available, 2);
-        assert_eq!(pool.stats.rules_considered, 2);
+        assert_eq!(pool.stats.rules_available, 3);
+        assert_eq!(pool.stats.rules_considered, 3);
         assert_eq!(pool.stats.rules_filtered_out, 0);
         assert_eq!(pool.stats.rules_element_filtered_out, 1);
-        assert_eq!(pool.stats.rules_attempted, 1);
+        assert_eq!(pool.stats.rules_attempted, 2);
+        assert_eq!(pool.stats.rules_producing_candidates, 1);
+        assert_eq!(pool.stats.rules_without_candidates, 1);
     }
 
     #[test]

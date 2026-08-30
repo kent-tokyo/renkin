@@ -890,7 +890,7 @@ fn compute_h(
 
 /// Classify a rule name into a human-readable reaction family.
 /// Hand-crafted rules only; extracted templates return None.
-fn reaction_family_for_rule(rule: &str) -> Option<&'static str> {
+pub fn reaction_family_for_rule(rule: &str) -> Option<&'static str> {
     match rule {
         "ester_cleavage" => Some("esterification"),
         "amide_cleavage" => Some("amide_coupling"),

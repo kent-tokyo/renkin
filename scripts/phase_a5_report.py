@@ -15,6 +15,10 @@ Also reports the full saturation curve (successive-arm deltas), since the
 shape (still improving at 10k vs. plateaued by 2k) matters as much as the
 endpoint delta for reading what a residual gap implies.
 
+When produced by v0.49+ pool metrics, each arm also carries the persisted
+candidate-pool accounting summary. Older metrics remain readable and expose
+``null`` for that optional field.
+
 Usage:
     python3 scripts/phase_a5_report.py --stage-dir data/phase_a5_template_scaling/full_val
 """
@@ -66,6 +70,7 @@ def main():
             "positive_present_rate": m["positive_present_rate"],
             "ground_truth_precursor_recall_target_level": m["ground_truth_precursor_recall_target_level"],
             "dedup_rate": m["dedup_rate"],
+            "candidate_pool_accounting": m.get("candidate_pool_accounting"),
             "candidates_per_group_p50": pgs["candidates_per_group_p50"],
             "candidates_per_group_p95": pgs["candidates_per_group_p95"],
             "n_candidate_rows": pgs["n_candidate_rows"],

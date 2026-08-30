@@ -10,6 +10,15 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 No changes yet.
 
+## [0.40.0] - 2026-08-30 "Element-Aware Template Retrieval"
+
+### Added
+- Phase 1 template retrieval now combines reaction-center bond indexing with
+  required-element bitmasks, avoiding template application when the target
+  cannot contain a required element while preserving deterministic top-k order.
+- Added regression coverage for missing-element filtering and eligible fixed
+  rules in bond-index retrieval.
+
 ## [0.39.0] - 2026-08-30 "Reproducible Forward Benchmark Contracts"
 
 ### Added
@@ -1577,7 +1586,8 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
 
 ---
 
-[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.39.0...HEAD
+[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.40.0...HEAD
+[0.40.0]: https://github.com/kent-tokyo/renkin/compare/v0.39.0...v0.40.0
 [0.39.0]: https://github.com/kent-tokyo/renkin/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/kent-tokyo/renkin/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/kent-tokyo/renkin/compare/v0.36.0...v0.37.0

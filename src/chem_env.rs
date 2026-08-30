@@ -2419,20 +2419,35 @@ impl TemplateBondIndex {
     /// Includes graph-based rules and fallback rules unconditionally.
     /// If `top_k > 0`, the SMIRKS-matched candidates are trimmed to the top-K by weight.
     pub fn retrieve(&self, mol: &Molecule, top_k: usize, rules: &[RetroRule]) -> Vec<usize> {
+        let target_elements = mol.atoms().fold(0u64, |mask, (atom_idx, _)| {
+            let atomic_number = mol.atom(atom_idx).element.atomic_number();
+            if atomic_number < 64 {
+                mask | (1u64 << atomic_number)
+            } else {
+                mask
+            }
+        });
+        let is_eligible = |idx: usize| {
+            rules
+                .get(idx)
+                .is_some_and(|rule| rule.required_elements & !target_elements == 0)
+        };
         let mut seen: FxHashSet<usize> = FxHashSet::default();
         let mut candidates: Vec<usize> = Vec::new();
 
         // Always include graph-based and fallback rules.
         for &idx in &self.graph_indices {
-            if seen.insert(idx) {
+            if is_eligible(idx) && seen.insert(idx) {
                 candidates.push(idx);
             }
         }
         for &idx in &self.fallback_indices {
-            if seen.insert(idx) {
+            if is_eligible(idx) && seen.insert(idx) {
                 candidates.push(idx);
             }
         }
+
+        let fixed = candidates.len();
 
         // Retrieve SMIRKS rules matching bonds present in the target.
         for (atom_idx, _) in mol.atoms() {
@@ -2446,7 +2461,7 @@ impl TemplateBondIndex {
                 let pair = if e1 <= e2 { (e1, e2) } else { (e2, e1) };
                 if let Some(indices) = self.index.get(&pair) {
                     for &idx in indices {
-                        if seen.insert(idx) {
+                        if is_eligible(idx) && seen.insert(idx) {
                             candidates.push(idx);
                         }
                     }
@@ -2456,7 +2471,6 @@ impl TemplateBondIndex {
 
         if top_k > 0 && candidates.len() > top_k {
             // Sort SMIRKS portion by weight desc, keep top_k total.
-            let fixed = self.graph_indices.len() + self.fallback_indices.len();
             candidates[fixed..].sort_unstable_by(|&a, &b| {
                 rules[b]
                     .weight
@@ -2716,6 +2730,48 @@ mod tests {
             !pairs.contains(&(7, 17)),
             "spurious Cl-N pair across '.' boundary: {pairs:?}"
         );
+    }
+
+    #[test]
+    fn bond_index_filters_templates_missing_required_target_elements() {
+        let matching = "[C:1][Cl:2]>>[C:1].[Cl:2]";
+        let missing_oxygen = "[C:1][Cl:2][O:3]>>[C:1].[Cl:2][O:3]";
+        let rules = vec![
+            RetroRule {
+                smirks: matching.to_string(),
+                required_elements: required_elements_from_smirks(matching),
+                ..RetroRule::default()
+            },
+            RetroRule {
+                smirks: missing_oxygen.to_string(),
+                required_elements: required_elements_from_smirks(missing_oxygen),
+                ..RetroRule::default()
+            },
+        ];
+        let index = TemplateBondIndex::build(&rules);
+        let target = parse("CCCl").unwrap();
+
+        assert_eq!(index.retrieve(&target, 0, &rules), vec![0]);
+    }
+
+    #[test]
+    fn bond_index_top_k_counts_only_eligible_fixed_rules() {
+        let graph_rule = RetroRule {
+            name: "graph".to_string(),
+            required_elements: 1u64 << 8,
+            ..RetroRule::default()
+        };
+        let bond_rule = RetroRule {
+            smirks: "[C:1][Cl:2]>>[C:1].[Cl:2]".to_string(),
+            required_elements: required_elements_from_smirks("[C:1][Cl:2]>>[C:1].[Cl:2]"),
+            weight: 2.0,
+            ..RetroRule::default()
+        };
+        let rules = vec![graph_rule, bond_rule];
+        let index = TemplateBondIndex::build(&rules);
+        let target = parse("CCCl").unwrap();
+
+        assert_eq!(index.retrieve(&target, 1, &rules), vec![1]);
     }
 
     #[test]

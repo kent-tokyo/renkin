@@ -240,7 +240,22 @@ pub struct CandidatePool {
     pub group_id: String,
     pub target_id: String,
     pub target_smiles: String,
+    /// Counts from this proposal call, kept separate from the candidate list
+    /// so coverage and deduplication can be measured without re-deriving
+    /// them from provenance.
+    pub stats: CandidatePoolStats,
     pub candidates: Vec<ReactionCandidate>,
+}
+
+/// Deterministic one-step proposal counts for a [`CandidatePool`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+pub struct CandidatePoolStats {
+    /// Rules selected by the configured proposal mode and actually attempted.
+    pub rules_considered: usize,
+    /// Raw rule-application outcomes before precursor-set merging.
+    pub raw_candidates_generated: usize,
+    /// Distinct canonical precursor sets after merging source provenance.
+    pub unique_candidates: usize,
 }
 
 pub trait CandidateReranker: Send + Sync {
@@ -1611,6 +1626,11 @@ impl<'a> CandidateProposalContext<'a> {
             group_id: group_id.to_string(),
             target_id: canonical_target.clone(),
             target_smiles: canonical_target,
+            stats: CandidatePoolStats {
+                rules_considered: active_rules.len(),
+                raw_candidates_generated: raw.len(),
+                unique_candidates: candidates.len(),
+            },
             candidates,
         })
     }
@@ -1742,6 +1762,17 @@ mod tests {
     }
 
     #[test]
+    fn candidate_pool_stats_make_raw_and_dedup_counts_explicit() {
+        let rules = default_rules();
+        let pool = propose_one_step("g1", "CCO", &rules, &ProposalConfig::default()).unwrap();
+
+        assert_eq!(pool.stats.rules_considered, rules.len());
+        assert!(pool.stats.raw_candidates_generated >= pool.stats.unique_candidates);
+        assert_eq!(pool.stats.unique_candidates, pool.candidates.len());
+        assert!(pool.stats.raw_candidates_generated > 0);
+    }
+
+    #[test]
     fn scorer_conditioned_mode_is_unaffected_by_context_index_preparation() {
         // Whether or not the context happens to have a bond index prepared
         // must not change ScorerConditioned's own selection logic (it never
@@ -1808,6 +1839,7 @@ mod tests {
             "the legacy single-call API and the context-reuse API must produce \
              identical candidate IDs and source provenance for the same input"
         );
+        assert_eq!(legacy_pool.stats, context_pool.stats);
     }
 
     #[test]

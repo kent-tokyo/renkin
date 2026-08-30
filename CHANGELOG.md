@@ -10,6 +10,14 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 No changes yet.
 
+## [0.44.0] - 2026-08-30 "Target-Eligible Rule Accounting"
+
+### Added
+- One-step candidate pools now distinguish proposal-mode filtering from
+  target-element filtering, and report the number of rules actually attempted.
+- Added regression coverage for the accounting invariants when a selected rule
+  is ineligible for the target's elements.
+
 ## [0.43.0] - 2026-08-30 "Explicit Candidate Pool Accounting"
 
 ### Added
@@ -1612,7 +1620,8 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
 
 ---
 
-[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.43.0...HEAD
+[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.44.0...HEAD
+[0.44.0]: https://github.com/kent-tokyo/renkin/compare/v0.43.0...v0.44.0
 [0.43.0]: https://github.com/kent-tokyo/renkin/compare/v0.42.0...v0.43.0
 [0.42.0]: https://github.com/kent-tokyo/renkin/compare/v0.41.0...v0.42.0
 [0.41.0]: https://github.com/kent-tokyo/renkin/compare/v0.40.0...v0.41.0

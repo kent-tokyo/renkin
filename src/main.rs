@@ -8,6 +8,7 @@ use renkin::evidence_match;
 use renkin::ring_context;
 use renkin::search::{self, SearchConfig};
 use renkin::stock_import;
+use renkin::vendor_stock;
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
@@ -2156,8 +2157,43 @@ fn run_stock(args: &[String]) -> Result<()> {
                 targets.len() - in_stock.len()
             );
         }
+        "vendor-index" => {
+            let path = args
+                .get(1)
+                .ok_or_else(|| anyhow::anyhow!("vendor-index requires a CSV/TSV path"))?;
+            let content = std::fs::read_to_string(path)
+                .with_context(|| format!("failed to read vendor table: {path}"))?;
+            let records = vendor_stock::import_vendor_table(&content, None)?;
+            let index = vendor_stock::VendorStockIndex::from_records(records)?;
+            println!(
+                "{{\"schema_version\":{},\"records\":{},\"unique_inchikeys\":{}}}",
+                vendor_stock::VENDOR_STOCK_SCHEMA_VERSION,
+                index.records().len(),
+                index.unique_inchi_keys()
+            );
+        }
+        "vendor-match" => {
+            let path = args
+                .get(1)
+                .ok_or_else(|| anyhow::anyhow!("vendor-match requires a CSV/TSV path"))?;
+            let smiles = args
+                .get(2)
+                .ok_or_else(|| anyhow::anyhow!("vendor-match requires a query SMILES"))?;
+            let max_mode = parse_vendor_match_mode(args.get(3).map(String::as_str))?;
+            let content = std::fs::read_to_string(path)
+                .with_context(|| format!("failed to read vendor table: {path}"))?;
+            let index = vendor_stock::VendorStockIndex::from_records(
+                vendor_stock::import_vendor_table(&content, None)?,
+            )?;
+            match index.lookup(smiles, max_mode)? {
+                Some(found) => println!("{}", serde_json::to_string(&found)?),
+                None => println!("null"),
+            }
+        }
         _ => {
-            println!("Usage: renkin stock <import|stats|validate|coverage> [args...]");
+            println!(
+                "Usage: renkin stock <import|stats|validate|coverage|vendor-index|vendor-match> [args...]"
+            );
             println!("  import --input <in.smi> --output <out.smi> --manifest <out.manifest.json>");
             println!(
                 "         --source-label <label> [--source-revision <rev>] [--license <license>]"
@@ -2168,9 +2204,25 @@ fn run_stock(args: &[String]) -> Result<()> {
             println!("  stats <file.csv>                  — summary statistics");
             println!("  validate <file.csv>               — check SMILES validity");
             println!("  coverage <targets.smi> <file.csv> — check which targets are in stock");
+            println!("  vendor-index <file.csv|tsv>       — build and summarize a vendor index");
+            println!(
+                "  vendor-match <file> <SMILES> [exact|parent-ignoring-salts|stereo-ignored|tautomer-related]"
+            );
         }
     }
     Ok(())
+}
+
+fn parse_vendor_match_mode(value: Option<&str>) -> Result<vendor_stock::MatchMode> {
+    match value.unwrap_or("exact") {
+        "exact" => Ok(vendor_stock::MatchMode::Exact),
+        "parent-ignoring-salts" => Ok(vendor_stock::MatchMode::ParentIgnoringSalts),
+        "stereo-ignored" => Ok(vendor_stock::MatchMode::StereoIgnored),
+        "tautomer-related" => Ok(vendor_stock::MatchMode::TautomerRelated),
+        other => anyhow::bail!(
+            "unknown vendor match mode '{other}' (expected exact, parent-ignoring-salts, stereo-ignored, or tautomer-related)"
+        ),
+    }
 }
 
 /// `renkin stock import --input <path> --output <path> --manifest <path>

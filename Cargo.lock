@@ -128,6 +128,7 @@ dependencies = [
  "chematic-chem",
  "chematic-core",
  "chematic-fp",
+ "chematic-inchi",
  "chematic-perception",
  "chematic-rxn",
  "chematic-smarts",
@@ -179,6 +180,18 @@ dependencies = [
  "chematic-smiles",
  "rustc-hash",
  "smallvec",
+]
+
+[[package]]
+name = "chematic-inchi"
+version = "0.20.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "352730f78d57692f0d7feb5d56efe2ccc791bf4f452e5b3b705ef56c17af0745"
+dependencies = [
+ "chematic-chem",
+ "chematic-core",
+ "chematic-rxn",
+ "chematic-smiles",
 ]
 
 [[package]]
@@ -965,7 +978,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "renkin"
-version = "0.37.0"
+version = "0.38.0"
 dependencies = [
  "anyhow",
  "chematic",

@@ -19,6 +19,7 @@ pub mod spectator_bond;
 pub mod stock_import;
 pub mod synthesizability;
 pub mod validation;
+pub mod vendor_stock;
 
 #[cfg(feature = "python")]
 pub mod python;

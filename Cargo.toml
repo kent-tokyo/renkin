@@ -4,7 +4,7 @@ resolver = "2"
 
 [package]
 name = "renkin"
-version = "0.37.0"
+version = "0.38.0"
 edition = "2024"
 authors = ["kent-tokyo <kent-tokyo@users.noreply.github.com>"]
 description = "Ultra-fast retrosynthesis engine for computer-aided synthesis planning (CASP) — pure Rust, WASM-ready, Python bindings via PyO3"
@@ -108,7 +108,7 @@ perf-instrumentation = ["dep:chematic-rxn"]
 # canonicalization defect that could silently change a molecule's real
 # geometry is fixed (chematic#390); two more independent correctness fixes
 # (chematic#395, #399) landed in the same 0.20.1 release.
-chematic = { version = "0.20.1", features = ["smiles", "chem", "smarts", "rxn"] }
+chematic = { version = "0.20.1", features = ["smiles", "chem", "smarts", "rxn", "inchi"] }
 # Same registry release as `chematic` above (required: they must resolve to the
 # same chematic-core/etc. instance). Only for perf_counters -- normal builds
 # reach run_reactants via the chematic facade, not this direct dependency.

@@ -413,7 +413,7 @@ for the full acceptance criteria and licensing split.
 | **Output formats & diagnostics** | `--format json\|tree\|mermaid\|explain\|compare\|compare-json\|pareto`; zero-route JSON includes a `diagnostics` block with `likely_causes`/`suggestions` |
 | **`renkin-forward` toolkit** | `predict` (rank forward products), `enumerate` (bounded products from one reactant + partner library), `hints` (partner-free retrieval hints, no concrete product), `validate` (forward-verify each retro step) — see the [Forward guides](docs/guides/forward-retrieval-hints.md#predict--enumerate--hints-at-a-glance) |
 | **`renkin-bench`** | USPTO-50k/PaRoutes evaluation with `--plausibility` (forward-validated composite score), `--failure-taxonomy`, atom-balance checks (`target_MW > Σ precursor_MW`), and multi-stage `cascade` re-runs on unsolved targets — see [Benchmark](#benchmark) |
-| **Stock CSV management** | `renkin stock stats\|validate\|coverage` — SMILES, name, vendor, price, hazard fields |
+| **Stock management** | `renkin stock stats\|validate\|coverage` for legacy CSV plus the `vendor_stock` library API for v0.38 CSV/TSV vendor records (SMILES, ID, vendor, price, lead time, availability), explicit exact/parent/stereo/tautomer match modes, and an InChIKey candidate index |
 | **MCP server** | `renkin-mcp` exposes 6 tools: `find_routes`, `validate_route`, `explain_route`, `find_pareto_routes`, `plan_with_constraints`, `estimate_diversity` |
 | **`renkin-doctor`** | Environment diagnostic binary — templates, building blocks, Python import, tool versions, data integrity |
 | **`renkin-kg`** | Reaction knowledge graph builder — bipartite mol↔reaction graphs from routes, GraphML/Cypher export |

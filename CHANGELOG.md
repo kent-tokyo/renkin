@@ -10,6 +10,17 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 No changes yet.
 
+## [0.38.0] - 2026-08-30 "Vendor Stock Intelligence"
+
+### Added
+- v0.38 groundwork: typed CSV/TSV vendor-stock import with ID, vendor,
+  price, lead-time, and availability fields.
+- Explicit vendor match modes (`exact`, `parent-ignoring-salts`,
+  `stereo-ignored`, and `tautomer-related`) with deterministic priority;
+  relaxed matches never become exact stock identity.
+- Pure-Rust InChIKey candidate indexing and `renkin stock vendor-index` /
+  `vendor-match` inspection commands.
+
 ## [0.37.0] - 2026-08-30 "Verified Candidate Integrity"
 
 This release makes candidate-level element accounting observable and
@@ -1559,7 +1570,8 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
 
 ---
 
-[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.37.0...HEAD
+[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.38.0...HEAD
+[0.38.0]: https://github.com/kent-tokyo/renkin/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/kent-tokyo/renkin/compare/v0.36.0...v0.37.0
 [0.36.0]: https://github.com/kent-tokyo/renkin/compare/v0.35.0...v0.36.0
 [0.1.1]: https://github.com/kent-tokyo/renkin/compare/v0.1.0...v0.1.1

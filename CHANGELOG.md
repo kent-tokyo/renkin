@@ -17,6 +17,15 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   navigation. These files remain locally available and ignored for
   development.
 
+## [0.49.0] - 2026-08-31 "Consumed Candidate Pool Accounting"
+
+### Added
+- Phase A.5 metrics now consume persisted candidate-pool accounting from the
+  target/group index, with an explicit legacy fallback when older exports do
+  not contain the field.
+- The Python consumer rechecks raw/unique/duplicate and rule-level accounting
+  invariants before reporting deduplication metrics.
+
 ## [0.48.0] - 2026-08-31 "Persisted Candidate Pool Accounting"
 
 ### Added
@@ -1661,7 +1670,8 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
 
 ---
 
-[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.48.0...HEAD
+[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.49.0...HEAD
+[0.49.0]: https://github.com/kent-tokyo/renkin/compare/v0.48.0...v0.49.0
 [0.48.0]: https://github.com/kent-tokyo/renkin/compare/v0.47.0...v0.48.0
 [0.47.0]: https://github.com/kent-tokyo/renkin/compare/v0.46.0...v0.47.0
 [0.46.0]: https://github.com/kent-tokyo/renkin/compare/v0.45.0...v0.46.0

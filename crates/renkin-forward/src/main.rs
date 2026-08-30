@@ -16,7 +16,7 @@
 /// diagnostics go to stderr for every subcommand.
 use anyhow::{Result, bail};
 use renkin::chem_env::default_rules;
-use renkin_forward::bench::{BenchOutcome, TemplateSource, run_benchmark};
+use renkin_forward::bench::{BenchOutcome, BenchmarkManifest, TemplateSource, run_benchmark};
 use renkin_forward::hints::{HintGenerationConfig, generate_retrieval_hints};
 use renkin_forward::{
     ForwardEnumerationConfig, ForwardPredictConfig, ForwardPrediction, enumerate_products_detailed,
@@ -124,7 +124,7 @@ const BENCHMARK_HELP: &str = "renkin-forward benchmark — deterministic forward
 \n\
 Usage:\n  \
 renkin-forward benchmark --corpus <path> --output-rows <path> [--output-report <path>]\n                            \
-[--template-source embedded|file|train-extracted] [--templates <path>] [--strict]\n\
+                            [--template-source embedded|file|train-extracted] [--templates <path>] [--output-manifest <path>] [--verify-manifest <path>] [--strict]\n\
 \n\
 Options:\n  \
 --corpus <path>            JSONL benchmark corpus, one reaction per line (required; see\n                               \
@@ -134,6 +134,8 @@ user-supplied, like the ORD evidence-import corpus.\n  \
 (required; never printed to stdout -- can be large)\n  \
 --output-report <path>     Where to write the aggregate-metrics JSON report. If omitted,\n                               \
 the report is printed to stdout instead (this subcommand's only stdout output)\n  \
+--output-manifest <path>   Where to write the compact benchmark contract manifest (JSON)\n  \
+--verify-manifest <path>    Verify an existing manifest against this benchmark run\n  \
 --template-source <mode>   'embedded' (default): embedded default rules only.\n                               \
 'file': ONLY the rules in --templates (never merged with embedded defaults).\n                               \
 'train-extracted': same mechanics as 'file'; labels the run as having used\n                               \
@@ -196,6 +198,8 @@ struct ParsedArgs {
     corpus_path: Option<String>,
     output_rows_path: Option<String>,
     output_report_path: Option<String>,
+    output_manifest_path: Option<String>,
+    verify_manifest_path: Option<String>,
     template_source: String,
     strict: bool,
 }
@@ -224,6 +228,8 @@ fn parse_args(subcommand: &str, args: &[String]) -> Result<ParsedArgs> {
     let mut corpus_path: Option<String> = None;
     let mut output_rows_path: Option<String> = None;
     let mut output_report_path: Option<String> = None;
+    let mut output_manifest_path: Option<String> = None;
+    let mut verify_manifest_path: Option<String> = None;
     let mut template_source = "embedded".to_string();
     let mut strict = false;
 
@@ -337,6 +343,20 @@ fn parse_args(subcommand: &str, args: &[String]) -> Result<ParsedArgs> {
                     .ok_or_else(|| anyhow::anyhow!("--output-report requires a value"))?;
                 output_report_path = Some(v.clone());
             }
+            "--output-manifest" if subcommand == "benchmark" => {
+                i += 1;
+                let v = args
+                    .get(i)
+                    .ok_or_else(|| anyhow::anyhow!("--output-manifest requires a value"))?;
+                output_manifest_path = Some(v.clone());
+            }
+            "--verify-manifest" if subcommand == "benchmark" => {
+                i += 1;
+                let v = args
+                    .get(i)
+                    .ok_or_else(|| anyhow::anyhow!("--verify-manifest requires a value"))?;
+                verify_manifest_path = Some(v.clone());
+            }
             "--template-source" if subcommand == "benchmark" => {
                 i += 1;
                 let v = args
@@ -382,6 +402,8 @@ fn parse_args(subcommand: &str, args: &[String]) -> Result<ParsedArgs> {
         corpus_path,
         output_rows_path,
         output_report_path,
+        output_manifest_path,
+        verify_manifest_path,
         template_source,
         strict,
     })
@@ -464,6 +486,15 @@ fn run_benchmark_subcommand(parsed: &ParsedArgs) -> Result<()> {
         parsed.strict,
     )?;
 
+    if let Some(path) = parsed.verify_manifest_path.as_deref() {
+        let manifest_json = std::fs::read_to_string(path)
+            .map_err(|e| anyhow::anyhow!("failed to read --verify-manifest {path:?}: {e}"))?;
+        let manifest: BenchmarkManifest = serde_json::from_str(&manifest_json)
+            .map_err(|e| anyhow::anyhow!("failed to parse --verify-manifest {path:?}: {e}"))?;
+        manifest.verify_against_report(&report)?;
+        eprintln!("Verified benchmark manifest against {path}");
+    }
+
     let mut rows_jsonl = String::new();
     for row in &rows {
         rows_jsonl.push_str(&serde_json::to_string(row)?);
@@ -481,6 +512,14 @@ fn run_benchmark_subcommand(parsed: &ParsedArgs) -> Result<()> {
             eprintln!("Wrote aggregate report to {path}");
         }
         None => println!("{report_json}"),
+    }
+
+    if let Some(path) = parsed.output_manifest_path.as_deref() {
+        let manifest = BenchmarkManifest::from_report(&report);
+        let json = serde_json::to_string_pretty(&manifest)?;
+        std::fs::write(path, format!("{json}\n"))
+            .map_err(|e| anyhow::anyhow!("failed to write --output-manifest {path:?}: {e}"))?;
+        eprintln!("Wrote benchmark manifest to {path}");
     }
 
     Ok(())

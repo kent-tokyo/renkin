@@ -42,6 +42,15 @@ output produced from a restricted corpus, confirm your redistribution
 rights cover the identifiers and reactant text you supplied, not just the
 report's aggregate metrics.
 
+For comparison or release artifacts, pass `--output-manifest <path>` as well.
+This writes a compact, row-free contract manifest containing the corpus hash,
+loaded-rule hash, split protocol, schema versions, and reproducibility hash.
+It is derived from the same report, so it cannot describe a different corpus
+or template set by accident.
+On a later run, pass `--verify-manifest <path>` to hard-fail if any of those
+inputs, versions, split settings, or hashes differ; the corpus may be stored at
+a different path because verification compares content rather than location.
+
 ### Corpus schema (`FORWARD_BENCH_CORPUS_SCHEMA_VERSION = 1`)
 
 JSONL: one JSON object per line, one line per raw reaction record.
@@ -215,8 +224,13 @@ and `stereo_ignored_canonical_never_falls_back_to_the_stereo_aware_string`.
 renkin-forward benchmark \
   --corpus corpus.jsonl \
   --output-rows rows.jsonl \
-  --output-report report.json
+  --output-report report.json \
+  --output-manifest manifest.json
 ```
+
+To verify a rerun against the saved contract, use the same command with
+`--verify-manifest manifest.json` (and omit `--output-manifest` if the
+manifest should remain unchanged).
 
 `--output-rows` is required and always a file (row-level output can be
 large; it is never printed to stdout). `--output-report` is optional — if

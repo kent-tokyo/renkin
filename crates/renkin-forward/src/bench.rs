@@ -51,6 +51,9 @@ pub const FORWARD_BENCH_CORPUS_SCHEMA_VERSION: u32 = 1;
 /// `Unsupported` state replaces a silent bool-`false` for the case where
 /// the comparison couldn't be computed at all -- see that type's docs).
 pub const FORWARD_BENCH_REPORT_SCHEMA_VERSION: u32 = 2;
+/// Schema version of the compact benchmark contract manifest emitted beside
+/// a report. This is intentionally separate from the larger report schema.
+pub const FORWARD_BENCH_MANIFEST_SCHEMA_VERSION: u32 = 1;
 
 /// Deterministic split-bucket cutoffs: buckets `[0, TRAIN_MAX_BUCKET)` ->
 /// train, `[TRAIN_MAX_BUCKET, VAL_MAX_BUCKET)` -> val, the rest -> test.
@@ -1884,6 +1887,91 @@ pub struct BenchReport {
     /// `template_source`, `candidate_pool_size`, `failure_reason`,
     /// `input_status`, `proposal_status`, `ranking_status`, `stereo_status`.
     pub breakdowns: BTreeMap<String, Vec<BenchBreakdownBucket>>,
+}
+
+/// Portable, compact record of the benchmark inputs and protocol. Unlike
+/// `RunProvenance`, this is intended to be shared as the comparison contract
+/// without distributing the row-level benchmark output.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BenchmarkManifest {
+    pub schema_version: u32,
+    pub corpus_schema_version: u32,
+    pub report_schema_version: u32,
+    pub split_protocol_version: u32,
+    pub train_max_bucket: u32,
+    pub val_max_bucket: u32,
+    pub renkin_forward_version: String,
+    pub template_source: String,
+    pub rules_content_sha256: String,
+    pub rules_file_sha256: Option<String>,
+    pub rules_loaded: usize,
+    pub corpus_sha256: String,
+    pub config_sha256: String,
+    pub reproducibility_sha256: String,
+}
+
+impl BenchmarkManifest {
+    pub fn from_report(report: &BenchReport) -> Self {
+        let provenance = &report.provenance;
+        Self {
+            schema_version: FORWARD_BENCH_MANIFEST_SCHEMA_VERSION,
+            corpus_schema_version: FORWARD_BENCH_CORPUS_SCHEMA_VERSION,
+            report_schema_version: report.schema_version,
+            split_protocol_version: provenance.split_protocol_version,
+            train_max_bucket: provenance.train_max_bucket,
+            val_max_bucket: provenance.val_max_bucket,
+            renkin_forward_version: provenance.renkin_forward_version.clone(),
+            template_source: provenance.template_source.clone(),
+            rules_content_sha256: provenance.rules_content_sha256.clone(),
+            rules_file_sha256: provenance.rules_file_sha256.clone(),
+            rules_loaded: provenance.rules_loaded,
+            corpus_sha256: provenance.corpus_sha256.clone(),
+            config_sha256: provenance.config_sha256.clone(),
+            reproducibility_sha256: provenance.reproducibility_sha256.clone(),
+        }
+    }
+
+    pub fn verify_against_report(&self, report: &BenchReport) -> Result<()> {
+        let expected = Self::from_report(report);
+        let mut mismatches = Vec::new();
+
+        macro_rules! compare {
+            ($field:ident) => {
+                if self.$field != expected.$field {
+                    mismatches.push(format!(
+                        "{}: manifest={:?}, current={:?}",
+                        stringify!($field),
+                        self.$field,
+                        expected.$field
+                    ));
+                }
+            };
+        }
+
+        compare!(schema_version);
+        compare!(corpus_schema_version);
+        compare!(report_schema_version);
+        compare!(split_protocol_version);
+        compare!(train_max_bucket);
+        compare!(val_max_bucket);
+        compare!(renkin_forward_version);
+        compare!(template_source);
+        compare!(rules_content_sha256);
+        compare!(rules_file_sha256);
+        compare!(rules_loaded);
+        compare!(corpus_sha256);
+        compare!(config_sha256);
+        compare!(reproducibility_sha256);
+
+        if mismatches.is_empty() {
+            Ok(())
+        } else {
+            bail!(
+                "benchmark manifest verification failed:\n{}",
+                mismatches.join("\n")
+            )
+        }
+    }
 }
 
 pub struct BenchOutcome {

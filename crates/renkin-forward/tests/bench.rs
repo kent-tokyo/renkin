@@ -74,7 +74,91 @@ fn benchmark_help_succeeds() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("--corpus"));
     assert!(stdout.contains("--output-rows"));
+    assert!(stdout.contains("--output-manifest"));
+    assert!(stdout.contains("--verify-manifest"));
     assert!(stdout.contains("--template-source"));
+}
+
+#[test]
+fn benchmark_writes_compact_contract_manifest() {
+    let rows = temp_path("manifest_rows.jsonl");
+    let manifest = temp_path("manifest.json");
+    let out = run(&[
+        "benchmark",
+        "--corpus",
+        &fixture_corpus_path(),
+        "--output-rows",
+        &rows,
+        "--output-manifest",
+        &manifest,
+    ]);
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let value: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(manifest).unwrap()).unwrap();
+    assert_eq!(value["schema_version"], 1);
+    assert_eq!(value["corpus_schema_version"], 1);
+    assert_eq!(value["report_schema_version"], 2);
+    assert_eq!(value["corpus_sha256"].as_str().unwrap().len(), 64);
+    assert_eq!(value["reproducibility_sha256"].as_str().unwrap().len(), 64);
+}
+
+#[test]
+fn benchmark_verifies_manifest_and_rejects_mismatch() {
+    let rows = temp_path("verify_manifest_rows.jsonl");
+    let manifest = temp_path("verify_manifest.json");
+    let first = run(&[
+        "benchmark",
+        "--corpus",
+        &fixture_corpus_path(),
+        "--output-rows",
+        &rows,
+        "--output-manifest",
+        &manifest,
+    ]);
+    assert!(
+        first.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+
+    let verified = run(&[
+        "benchmark",
+        "--corpus",
+        &fixture_corpus_path(),
+        "--output-rows",
+        &rows,
+        "--verify-manifest",
+        &manifest,
+    ]);
+    assert!(
+        verified.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&verified.stderr)
+    );
+    assert!(String::from_utf8_lossy(&verified.stderr).contains("Verified benchmark manifest"));
+
+    let mut tampered: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&manifest).unwrap()).unwrap();
+    tampered["config_sha256"] = serde_json::Value::String("0".repeat(64));
+    std::fs::write(&manifest, serde_json::to_string_pretty(&tampered).unwrap()).unwrap();
+
+    let rejected = run(&[
+        "benchmark",
+        "--corpus",
+        &fixture_corpus_path(),
+        "--output-rows",
+        &rows,
+        "--verify-manifest",
+        &manifest,
+    ]);
+    assert!(!rejected.status.success());
+    let stderr = String::from_utf8_lossy(&rejected.stderr);
+    assert!(stderr.contains("benchmark manifest verification failed"));
+    assert!(stderr.contains("config_sha256"));
 }
 
 #[test]

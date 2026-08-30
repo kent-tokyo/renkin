@@ -17,6 +17,15 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   navigation. These files remain locally available and ignored for
   development.
 
+## [0.48.0] - 2026-08-31 "Persisted Candidate Pool Accounting"
+
+### Added
+- Target/group index JSONL records now preserve successful one-step proposal
+  statistics, including raw, unique, and duplicate candidate counts plus
+  rule-level accounting.
+- Export validation checks the candidate-pool accounting invariants and keeps
+  parse-failure and target-ID-mismatch records explicitly unmeasured.
+
 ## [0.47.0] - 2026-08-31 "Explicit Candidate Deduplication Accounting"
 
 ### Added
@@ -1652,7 +1661,8 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
 
 ---
 
-[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.47.0...HEAD
+[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.48.0...HEAD
+[0.48.0]: https://github.com/kent-tokyo/renkin/compare/v0.47.0...v0.48.0
 [0.47.0]: https://github.com/kent-tokyo/renkin/compare/v0.46.0...v0.47.0
 [0.46.0]: https://github.com/kent-tokyo/renkin/compare/v0.45.0...v0.46.0
 [0.45.0]: https://github.com/kent-tokyo/renkin/compare/v0.44.0...v0.45.0

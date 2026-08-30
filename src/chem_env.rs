@@ -2389,6 +2389,18 @@ pub struct TemplateBondIndex {
     fallback_indices: Vec<usize>,
 }
 
+/// Result of a bond-index lookup, including the candidate counts needed to
+/// measure the element-presence filter's exclusion power.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TemplateBondRetrieval {
+    /// Unique indexed rules collected before required-element filtering.
+    pub candidates_before_element_filter: usize,
+    /// Unique indexed rules remaining after required-element filtering.
+    pub candidates_after_element_filter: usize,
+    /// Rule indices returned after optional top-k trimming.
+    pub indices: Vec<usize>,
+}
+
 impl TemplateBondIndex {
     pub fn build(rules: &[RetroRule]) -> Self {
         let mut index: FxHashMap<(u8, u8), Vec<usize>> = FxHashMap::default();
@@ -2419,6 +2431,18 @@ impl TemplateBondIndex {
     /// Includes graph-based rules and fallback rules unconditionally.
     /// If `top_k > 0`, the SMIRKS-matched candidates are trimmed to the top-K by weight.
     pub fn retrieve(&self, mol: &Molecule, top_k: usize, rules: &[RetroRule]) -> Vec<usize> {
+        self.retrieve_with_diagnostics(mol, top_k, rules).indices
+    }
+
+    /// Retrieve rules and expose the pre/post element-filter counts for
+    /// search diagnostics. The returned rule indices and ordering are exactly
+    /// the same as [`Self::retrieve`].
+    pub fn retrieve_with_diagnostics(
+        &self,
+        mol: &Molecule,
+        top_k: usize,
+        rules: &[RetroRule],
+    ) -> TemplateBondRetrieval {
         let target_elements = mol.atoms().fold(0u64, |mask, (atom_idx, _)| {
             let atomic_number = mol.atom(atom_idx).element.atomic_number();
             if atomic_number < 64 {
@@ -2437,17 +2461,17 @@ impl TemplateBondIndex {
 
         // Always include graph-based and fallback rules.
         for &idx in &self.graph_indices {
-            if is_eligible(idx) && seen.insert(idx) {
+            if seen.insert(idx) {
                 candidates.push(idx);
             }
         }
         for &idx in &self.fallback_indices {
-            if is_eligible(idx) && seen.insert(idx) {
+            if seen.insert(idx) {
                 candidates.push(idx);
             }
         }
 
-        let fixed = candidates.len();
+        let fixed_before_filter = candidates.len();
 
         // Retrieve SMIRKS rules matching bonds present in the target.
         for (atom_idx, _) in mol.atoms() {
@@ -2461,13 +2485,22 @@ impl TemplateBondIndex {
                 let pair = if e1 <= e2 { (e1, e2) } else { (e2, e1) };
                 if let Some(indices) = self.index.get(&pair) {
                     for &idx in indices {
-                        if is_eligible(idx) && seen.insert(idx) {
+                        if seen.insert(idx) {
                             candidates.push(idx);
                         }
                     }
                 }
             }
         }
+
+        let candidates_before_element_filter = candidates.len();
+        candidates.retain(|&idx| is_eligible(idx));
+        let fixed = candidates
+            .iter()
+            .take(fixed_before_filter)
+            .filter(|&&idx| is_eligible(idx))
+            .count();
+        let candidates_after_element_filter = candidates.len();
 
         if top_k > 0 && candidates.len() > top_k {
             // Sort SMIRKS portion by weight desc, keep top_k total.
@@ -2479,7 +2512,11 @@ impl TemplateBondIndex {
             });
             candidates.truncate(fixed + top_k);
         }
-        candidates
+        TemplateBondRetrieval {
+            candidates_before_element_filter,
+            candidates_after_element_filter,
+            indices: candidates,
+        }
     }
 }
 
@@ -2751,6 +2788,10 @@ mod tests {
         let index = TemplateBondIndex::build(&rules);
         let target = parse("CCCl").unwrap();
 
+        let retrieval = index.retrieve_with_diagnostics(&target, 0, &rules);
+        assert_eq!(retrieval.candidates_before_element_filter, 2);
+        assert_eq!(retrieval.candidates_after_element_filter, 1);
+        assert_eq!(retrieval.indices, vec![0]);
         assert_eq!(index.retrieve(&target, 0, &rules), vec![0]);
     }
 

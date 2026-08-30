@@ -487,6 +487,12 @@ pub struct CrowdOutDiagnostics {
     /// read as a logical-template count (already-expanded variants are
     /// separate `RetroRule` entries in `rules`, same as `matched_templates`).
     pub rules_attempted_total: u64,
+    /// Number of unique bond-index candidates collected before the required
+    /// element filter, summed across cache-miss expansions.
+    pub bond_index_candidates_before_element_filter: u64,
+    /// Number of unique bond-index candidates remaining after the required
+    /// element filter, summed across cache-miss expansions.
+    pub bond_index_candidates_after_element_filter: u64,
     /// Cumulative wall-clock microseconds spent inside the retro-cache-miss
     /// expansion block (rule matching/candidate generation via
     /// `candidate::raw_propose`, plus its NN-reranking and dedup-counting
@@ -2049,8 +2055,13 @@ pub fn find_routes_with_control(
             let retrieved: Vec<&RetroRule>;
             let per_node: Vec<&RetroRule>;
             let active_rules: &[&RetroRule] = if let Some(ref idx) = bond_idx {
-                retrieved = idx
-                    .retrieve(&target_mol, 0, rules) // top_k=0 = no truncation
+                let retrieval = idx.retrieve_with_diagnostics(&target_mol, 0, rules);
+                crowd_out.bond_index_candidates_before_element_filter +=
+                    retrieval.candidates_before_element_filter as u64;
+                crowd_out.bond_index_candidates_after_element_filter +=
+                    retrieval.candidates_after_element_filter as u64;
+                retrieved = retrieval
+                    .indices
                     .into_iter()
                     .filter_map(|i| rules.get(i))
                     .collect();
@@ -3111,6 +3122,29 @@ mod tests {
             stats.crowd_out.stock_terminal_candidates + stats.crowd_out.non_stock_candidates > 0
         );
         assert!(stats.crowd_out.rules_attempted_total > 0);
+    }
+
+    #[test]
+    fn crowd_out_diagnostics_records_bond_index_element_filter_counts() {
+        let env = aspirin_env();
+        let rules = default_rules();
+        let cfg_bond_index = SearchConfig {
+            max_depth: 2,
+            max_routes: 2,
+            bond_index: true,
+            ..Default::default()
+        };
+        let (_, stats) =
+            find_routes("CC(=O)Oc1ccccc1C(=O)O", &env, &rules, &cfg_bond_index).unwrap();
+        assert!(stats.crowd_out.bond_index_candidates_before_element_filter > 0);
+        assert!(
+            stats.crowd_out.bond_index_candidates_after_element_filter > 0,
+            "the aspirin search must retain at least one eligible indexed rule"
+        );
+        assert!(
+            stats.crowd_out.bond_index_candidates_after_element_filter
+                <= stats.crowd_out.bond_index_candidates_before_element_filter
+        );
     }
 
     #[test]

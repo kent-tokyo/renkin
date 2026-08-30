@@ -17,6 +17,14 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   navigation. These files remain locally available and ignored for
   development.
 
+## [0.47.0] - 2026-08-31 "Explicit Candidate Deduplication Accounting"
+
+### Added
+- One-step candidate pools now expose the number of raw rule-application
+  outcomes removed while merging identical precursor sets.
+- Added regression coverage for the raw/unique/deduplicated accounting
+  invariant.
+
 ## [0.46.0] - 2026-08-31 "Per-Rule Candidate Pool Diagnostics"
 
 ### Added
@@ -1644,7 +1652,8 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
 
 ---
 
-[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.46.0...HEAD
+[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.47.0...HEAD
+[0.47.0]: https://github.com/kent-tokyo/renkin/compare/v0.46.0...v0.47.0
 [0.46.0]: https://github.com/kent-tokyo/renkin/compare/v0.45.0...v0.46.0
 [0.45.0]: https://github.com/kent-tokyo/renkin/compare/v0.44.0...v0.45.0
 [0.44.0]: https://github.com/kent-tokyo/renkin/compare/v0.43.0...v0.44.0

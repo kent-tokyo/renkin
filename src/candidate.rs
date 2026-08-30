@@ -293,6 +293,8 @@ pub struct CandidatePoolStats {
     pub raw_candidates_generated: usize,
     /// Distinct canonical precursor sets after merging source provenance.
     pub unique_candidates: usize,
+    /// Raw outcomes removed by precursor-set merging.
+    pub duplicate_candidates: usize,
 }
 
 pub trait CandidateReranker: Send + Sync {
@@ -1665,6 +1667,7 @@ impl<'a> CandidateProposalContext<'a> {
         #[cfg(feature = "perf-instrumentation")]
         let t2 = Instant::now();
         let candidates = merge_into_candidates(&canonical_target, &raw)?;
+        let duplicate_candidates = raw.len().saturating_sub(candidates.len());
         let raw_counts_by_rank: HashMap<usize, usize> =
             raw.iter().fold(HashMap::new(), |mut counts, candidate| {
                 *counts.entry(candidate.original_rank).or_default() += 1;
@@ -1714,6 +1717,7 @@ impl<'a> CandidateProposalContext<'a> {
                 rules_without_candidates,
                 raw_candidates_generated: raw.len(),
                 unique_candidates: candidates.len(),
+                duplicate_candidates,
             },
             candidates,
         })
@@ -1863,6 +1867,10 @@ mod tests {
         );
         assert!(pool.stats.raw_candidates_generated >= pool.stats.unique_candidates);
         assert_eq!(pool.stats.unique_candidates, pool.candidates.len());
+        assert_eq!(
+            pool.stats.unique_candidates + pool.stats.duplicate_candidates,
+            pool.stats.raw_candidates_generated
+        );
         assert!(pool.stats.raw_candidates_generated > 0);
         assert_eq!(pool.rule_stats.len(), pool.stats.rules_considered);
         assert_eq!(
@@ -1897,6 +1905,7 @@ mod tests {
         assert_eq!(pool.stats.rules_attempted, 2);
         assert_eq!(pool.stats.rules_producing_candidates, 1);
         assert_eq!(pool.stats.rules_without_candidates, 1);
+        assert!(pool.stats.duplicate_candidates > 0);
         assert_eq!(pool.rule_stats.len(), 3);
         assert_eq!(pool.rule_stats[0].source_rank, 0);
         assert!(pool.rule_stats[0].element_eligible);

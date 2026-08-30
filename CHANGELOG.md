@@ -17,6 +17,14 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   navigation. These files remain locally available and ignored for
   development.
 
+## [0.53.0] - 2026-08-31 "Schematic 0.26 Compatibility"
+
+### Changed
+- Updated `chematic` and `chematic-rxn` from 0.20.1 to 0.26.0 across the
+  root crate and `renkin-forward`, keeping all molecule types on one upstream
+  version.
+- Refreshed the Cargo.lock dependency graph to the latest compatible releases.
+
 ## [0.52.0] - 2026-08-31 "Closed-Shell Precursor Guard"
 
 ### Fixed
@@ -1695,7 +1703,8 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
 
 ---
 
-[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.52.0...HEAD
+[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.53.0...HEAD
+[0.53.0]: https://github.com/kent-tokyo/renkin/compare/v0.52.0...v0.53.0
 [0.52.0]: https://github.com/kent-tokyo/renkin/compare/v0.51.0...v0.52.0
 [0.51.0]: https://github.com/kent-tokyo/renkin/compare/v0.50.0...v0.51.0
 [0.50.0]: https://github.com/kent-tokyo/renkin/compare/v0.49.0...v0.50.0

@@ -10,6 +10,15 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 No changes yet.
 
+## [0.43.0] - 2026-08-30 "Explicit Candidate Pool Accounting"
+
+### Added
+- One-step candidate pools now expose deterministic accounting for selected
+  rules, raw rule-application candidates, and unique merged candidates as a
+  first-class metrics contract for Phase 1 coverage evaluation.
+- Added regression coverage for the accounting invariants and legacy/context
+  proposal API parity.
+
 ## [0.42.0] - 2026-08-30 "One-Step Candidate Pool Metrics"
 
 ### Added
@@ -1603,7 +1612,8 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
 
 ---
 
-[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.42.0...HEAD
+[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.43.0...HEAD
+[0.43.0]: https://github.com/kent-tokyo/renkin/compare/v0.42.0...v0.43.0
 [0.42.0]: https://github.com/kent-tokyo/renkin/compare/v0.41.0...v0.42.0
 [0.41.0]: https://github.com/kent-tokyo/renkin/compare/v0.40.0...v0.41.0
 [0.40.0]: https://github.com/kent-tokyo/renkin/compare/v0.39.0...v0.40.0

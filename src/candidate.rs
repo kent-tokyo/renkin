@@ -250,8 +250,12 @@ pub struct CandidatePool {
 /// Deterministic one-step proposal counts for a [`CandidatePool`].
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 pub struct CandidatePoolStats {
+    /// Rules available in the caller-provided rule set.
+    pub rules_available: usize,
     /// Rules selected by the configured proposal mode and actually attempted.
     pub rules_considered: usize,
+    /// Rules available but excluded by the configured proposal mode.
+    pub rules_filtered_out: usize,
     /// Raw rule-application outcomes before precursor-set merging.
     pub raw_candidates_generated: usize,
     /// Distinct canonical precursor sets after merging source provenance.
@@ -1627,7 +1631,9 @@ impl<'a> CandidateProposalContext<'a> {
             target_id: canonical_target.clone(),
             target_smiles: canonical_target,
             stats: CandidatePoolStats {
+                rules_available: self.rules.len(),
                 rules_considered: active_rules.len(),
+                rules_filtered_out: self.rules.len().saturating_sub(active_rules.len()),
                 raw_candidates_generated: raw.len(),
                 unique_candidates: candidates.len(),
             },
@@ -1767,6 +1773,8 @@ mod tests {
         let pool = propose_one_step("g1", "CCO", &rules, &ProposalConfig::default()).unwrap();
 
         assert_eq!(pool.stats.rules_considered, rules.len());
+        assert_eq!(pool.stats.rules_available, rules.len());
+        assert_eq!(pool.stats.rules_filtered_out, 0);
         assert!(pool.stats.raw_candidates_generated >= pool.stats.unique_candidates);
         assert_eq!(pool.stats.unique_candidates, pool.candidates.len());
         assert!(pool.stats.raw_candidates_generated > 0);

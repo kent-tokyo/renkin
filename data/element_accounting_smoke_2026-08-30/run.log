@@ -1,0 +1,89 @@
+element_accounting_smoke: 15 targets from data/finding4_pilot_2026-08-23/target_sample_n300_seed42.smi (first 15 of its own n=300), 90s timeout each, run under both Off and Gated
+[1/15] O=C([OH])c1[cH][cH][cH]c([CH2]n2[cH][cH]c3[cH]c([N+](=O)[O-])[cH]c([Cl])c23)[cH]1	off_found=false	gated_found=false	gated_out=45
+    excluded: rule=aryl_chloride_to_bromide target=[N+](=O)(c2cc3ccn(c3c(Cl)c2)Cc1cc(C(=O)O)ccc1)[O-] precursors=["[N+](=O)(c3cc2c(c(c3)Br)n(cc2)Cc1cc(C(=O)O)ccc1)[O-]"]
+    excluded: rule=aryl_chloride_to_bromide target=[N+](=O)(c2cc3ccn(c3c(Cl)c2)Cc1cccc(c1)C(OC)=O)[O-] precursors=["[N+](=O)(c3cc2c(c(c3)Br)n(cc2)Cc1cccc(c1)C(OC)=O)[O-]"]
+    excluded: rule=aryl_chloride_to_bromide target=[N+](=O)(c2cc3ccn(c3c(Cl)c2)Cc1cccc(c1)C(OCC)=O)[O-] precursors=["[N+](=O)(c3cc2c(c(c3)Br)n(cc2)Cc1cccc(c1)C(OCC)=O)[O-]"]
+    excluded: rule=aryl_chloride_to_bromide target=O=C(c4cccc(c4)Cn2c3c(Cl)cc([N+]([O-])=O)cc3cc2)OCc1ccccc1 precursors=["C(OCc4ccccc4)(=O)c1cccc(Cn3ccc2c3c(cc(c2)[N+]([O-])=O)Br)c1"]
+    excluded: rule=aryl_chloride_to_bromide target=Clc3c2n(ccc2cc(c3)[N+]([O-])=O)C(=O)c1cc(ccc1)C(=O)O precursors=["O=[N+](c1cc(c2n(C(=O)c3cc(ccc3)C(=O)O)ccc2c1)Br)[O-]"]
+[2/15] [CH3]c1[cH][cH][cH][cH]c1[CH2]Oc1[cH][cH][cH]c(-c2c(C(=O)c3[cH][cH][cH][cH][cH]3)[cH]nc3c(C(F)(F)F)[cH][cH][cH]c23)[cH]1	off_found=false	gated_found=false	gated_out=16
+    excluded: rule=aryl_chloride_to_bromide target=c5cc(ccc5)C(c3cnc4c(cccc4C(F)(F)F)c3-c2cc(ccc2Cl)OCc1c(cccc1)C)=O precursors=["c2(C(=O)c5ccccc5)cnc1c(c2-c4c(Br)ccc(c4)OCc3ccccc3C)cccc1C(F)(F)F"]
+    excluded: rule=aryl_chloride_to_bromide target=c1c2c(ncc(C(=O)c5ccc(cc5)Cl)c2-c3cc(OCc4ccccc4C)ccc3)c(C(F)(F)F)cc1 precursors=["c2ccc(c3ncc(c(-c4cc(OCc5ccccc5C)ccc4)c23)C(=O)c1ccc(Br)cc1)C(F)(F)F"]
+    excluded: rule=aryl_chloride_to_bromide target=c5cc(Cl)c(cc5)C(c3cnc4c(cccc4C(F)(F)F)c3-c2cc(ccc2)OCc1ccccc1C)=O precursors=["C(c1cccc4c1ncc(C(c5c(cccc5)Br)=O)c4-c3cc(ccc3)OCc2c(C)cccc2)(F)(F)F"]
+    excluded: rule=aryl_chloride_to_bromide target=c5c(cccc5)C(=O)c3c(c4c(c(C(F)(F)F)ccc4Cl)nc3)-c2cc(ccc2)OCc1ccccc1C precursors=["c2(-c5cccc(c5)OCc4c(C)cccc4)c(cnc3c2c(ccc3C(F)(F)F)Br)C(=O)c1ccccc1"]
+    excluded: rule=acyl_chloride_from_acid target=c4nc1c(c(c4C(=O)Cl)-c2cccc(OCc3c(cccc3)C)c2)cccc1C(F)(F)F precursors=["c4c(c(C)ccc4)COc3cc(ccc3)-c1c(cnc2c1cccc2C(F)(F)F)C(O)=O"]
+[3/15] [CH3]Oc1[cH][cH]c(-n2nc(C(=O)N3[CH2][CH2]O[CH2][CH2]3)[cH]c2-n2[cH][cH]c(C([NH2])=O)[cH]2)[cH]n1	off_found=false	gated_found=false	gated_out=12
+    excluded: rule=acyl_chloride_from_acid target=n2n(c(-n3ccc(C(=O)N)c3)cc2C(=O)Cl)-c1cnc(cc1)OC precursors=["c3n(cc(C(=O)N)c3)-c2n(nc(C(=O)O)c2)-c1cnc(cc1)OC"]
+    excluded: rule=aryl_chloride_to_bromide target=C(=O)(N)c4ccn(c4)-c2n(-c3cnc(cc3)Cl)nc(c2)C(N1CCOCC1)=O precursors=["c4c(ncc(c4)-n1nc(C(=O)N3CCOCC3)cc1-n2cc(cc2)C(N)=O)Br"]
+    excluded: rule=aryl_chloride_to_bromide target=C1COCCN1C(=O)c3cc(-n4cc(C(N)=O)c(Cl)c4)n(n3)-c2cnc(OC)cc2 precursors=["NC(c1cn(-c3n(nc(C(N4CCOCC4)=O)c3)-c2cnc(cc2)OC)cc1Br)=O"]
+    excluded: rule=aryl_chloride_to_bromide target=n4cc(c(cc4OC)Cl)-n2c(-n3ccc(C(N)=O)c3)cc(n2)C(N1CCOCC1)=O precursors=["c4(ccn(c4)-c1cc(C(N3CCOCC3)=O)nn1-c2c(Br)cc(nc2)OC)C(=O)N"]
+    excluded: rule=aryl_chloride_to_bromide target=c1(c(Cl)cc(-n2c(-n4cc(C(N)=O)cc4)cc(C(N3CCOCC3)=O)n2)cn1)OC precursors=["c1cc(C(N)=O)cn1-c3n(-c4cc(c(OC)nc4)Br)nc(c3)C(N2CCOCC2)=O"]
+[4/15] [CH3]N([CH3])[CH2][CH]1[CH2][CH2][CH2][CH2]C1=O	off_found=true	gated_found=true	gated_out=0
+[5/15] [O-][n+]1[cH][cH]nc2c([Cl])[cH][cH][cH]c12	off_found=false	gated_found=false	gated_out=405
+    excluded: rule=aryl_chloride_to_bromide target=n1cc[n+](c2c1c(Cl)ccc2)[O-] precursors=["Brc2c1c(ccc2)[n+](ccn1)[O-]"]
+    excluded: rule=aryl_chloride_to_bromide target=[n+]1(c2c(ccc(c2ncc1)Cl)Cl)[O-] precursors=["c12ncc[n+](c1c(ccc2Cl)Br)[O-]"]
+    excluded: rule=aryl_chloride_to_bromide target=[n+]1(c2c(ccc(c2ncc1)Cl)Cl)[O-] precursors=["[O-][n+]1c2c(Cl)ccc(c2ncc1)Br"]
+    excluded: rule=aryl_chloride_to_bromide target=[O-][n+]1c2c(c(ccc2O)Cl)ncc1 precursors=["c1cc(c2[n+](ccnc2c1Br)[O-])O"]
+    excluded: rule=aryl_chloride_to_bromide target=c2ccc1c(c2Cl)ncc([n+]1[O-])Cl precursors=["Brc2c1c(ccc2)[n+]([O-])c(cn1)Cl"]
+[6/15] [CH3][CH2]OC(=O)[CH]([CH2]c1[cH][cH][cH]c(C(F)(F)F)[cH]1)C(=O)[CH]1[CH2][CH2][CH](c2[cH][cH][cH][cH][cH]2)[CH2][CH2]1	off_found=false	gated_found=false	gated_out=211
+    excluded: rule=aryl_chloride_to_bromide target=Clc3ccccc3C2CCC(CC2)C(=O)C(Cc1cccc(c1)C(F)(F)F)C(OCC)=O precursors=["C(C)OC(C(Cc3cccc(c3)C(F)(F)F)C(=O)C2CCC(CC2)c1c(cccc1)Br)=O"]
+    excluded: rule=acyl_chloride_from_acid target=c1(C(F)(F)F)cc(CC(C(Cl)=O)C(=O)C2CCC(c3ccccc3)CC2)ccc1 precursors=["O=C(C(C(=O)C3CCC(CC3)c2ccccc2)Cc1cc(C(F)(F)F)ccc1)O"]
+    excluded: rule=aryl_chloride_to_bromide target=c1c(C3CCC(CC3)C(C(C(OCC)=O)Cc2ccc(Cl)c(C(F)(F)F)c2)=O)cccc1 precursors=["C2C(C(=O)C(C(=O)OCC)Cc3cc(C(F)(F)F)c(Br)cc3)CCC(C2)c1ccccc1"]
+    excluded: rule=aryl_chloride_to_bromide target=O=C(C3CCC(CC3)c2ccc(Cl)cc2)C(C(OCC)=O)Cc1cc(ccc1)C(F)(F)F precursors=["c3cc(ccc3Br)C1CCC(C(C(Cc2cccc(c2)C(F)(F)F)C(OCC)=O)=O)CC1"]
+    excluded: rule=aryl_chloride_to_bromide target=C(C(C(C3CCC(CC3)c2ccccc2)=O)C(OCC)=O)c1c(Cl)ccc(c1)C(F)(F)F precursors=["C(C(C(=O)C3CCC(CC3)c2ccccc2)C(=O)OCC)c1cc(ccc1Br)C(F)(F)F"]
+[7/15] [CH3][CH]1c2[cH]c(F)[cH]c(C#N)c2C(=O)N1[CH]1[CH2][CH2]N(C(=O)OC([CH3])([CH3])[CH3])[CH2][CH2]1	off_found=false	gated_found=false	gated_out=300
+    excluded: rule=boc_deprotection_retro target=N#Cc3c2c(cc(c3)F)C(N(C2=O)C1CCN(C(=O)OC(C)(C)C)CC1)C precursors=["C2(c1cc(cc(c1C(N2C3CCNCC3)=O)C#N)F)C"]
+    excluded: rule=friedel_crafts_acylation_retro target=c12cc(F)cc(c1C(=O)NC2C)C#N precursors=["c1(cc(F)cc(c1)C#N)C(N)C"]
+    excluded: rule=extracted_4 target=c12cc(F)cc(c1C(=O)NC2C)C#N precursors=["O=C(O)c1c(C#N)cc(F)cc1"]
+    excluded: rule=extracted_43 target=c12cc(F)cc(c1C(=O)NC2C)C#N precursors=["c1c(C#N)c(ccc1F)C(Cl)=O"]
+    excluded: rule=extracted_329 target=c12cc(F)cc(c1C(=O)NC2C)C#N precursors=["c1cc(F)cc(C#N)c1C(OC)=O"]
+[8/15] [Br][CH2][CH2][CH2][CH2][CH2]O[CH2][CH2][CH2]c1nc2[cH][cH][cH][cH]c2[nH]1	off_found=true	gated_found=true	gated_out=6
+    excluded: rule=aryl_chloride_to_bromide target=C(COCCCc1nc2c(Cl)cccc2[nH]1)CCCBr precursors=["n1c2c(cccc2[nH]c1CCCOCCCCCBr)Br"]
+    excluded: rule=aryl_chloride_to_bromide target=C(COCCCc2nc1ccc(Cl)cc1[nH]2)CCCBr precursors=["Brc2cc1c(cc2)nc([nH]1)CCCOCCCCCBr"]
+    excluded: rule=aryl_chloride_to_bromide target=C(COCCCc1[nH]c2ccc(cc2n1)Cl)CCCBr precursors=["C(COCCCc2[nH]c1c(n2)cc(cc1)Br)CCCBr"]
+    excluded: rule=aryl_chloride_to_bromide target=c12c(cccc2Cl)nc([nH]1)CCCOCCCCCBr precursors=["C(COCCCc1nc2c(c(ccc2)Br)[nH]1)CCCBr"]
+    excluded: rule=aryl_chloride_to_bromide target=C(COCCCc2nc1cccc(Cl)c1n2)CCCBr precursors=["C(COCCCc2nc1c(n2)c(ccc1)Br)CCCBr"]
+[9/15] O=[CH]c1[cH][cH][cH]c(-c2[cH][cH][cH]o2)n1	off_found=true	gated_found=true	gated_out=58
+    excluded: rule=extracted_3545 target=c2ccc(o2)-c1cccc(n1)CO precursors=["c2ccc(o2)-c1cccc(Cl)n1"]
+    excluded: rule=aryl_chloride_to_bromide target=c1ccc(-c2nc(ccc2Cl)C=O)o1 precursors=["c1ccc(-c2c(Br)ccc(n2)C=O)o1"]
+    excluded: rule=aryl_chloride_to_bromide target=c2ccc(o2)-c1nc(c(Cl)cc1)C=O precursors=["c2ccc(o2)-c1ccc(Br)c(n1)C=O"]
+    excluded: rule=aryl_chloride_to_bromide target=C(=O)c1cccc(-c2c(cco2)Cl)n1 precursors=["c1(-c2cccc(n2)C=O)occc1Br"]
+    excluded: rule=aryl_chloride_to_bromide target=c2(cc(Cl)co2)-c1cccc(n1)C=O precursors=["o2c(cc(c2)Br)-c1cccc(n1)C=O"]
+[10/15] [CH3][CH2]OC(=O)[CH]([CH3])Oc1[cH][cH]c(F)[cH]c1[Br]	off_found=false	gated_found=false	gated_out=16
+    excluded: rule=aryl_chloride_to_bromide target=C(C)(C(=O)OCC)Oc1cc(c(cc1Br)F)Cl precursors=["CCOC(C(Oc1c(Br)cc(c(Br)c1)F)C)=O"]
+    excluded: rule=acyl_chloride_from_acid target=c1c(Br)c(OC(C)C(=O)Cl)ccc1F precursors=["O=C(O)C(C)Oc1ccc(F)cc1Br"]
+    excluded: rule=aryl_chloride_to_bromide target=c1c(c(c(cc1F)Br)OC(C)C(=O)OCC)Cl precursors=["C(C(C)Oc1c(cc(cc1Br)F)Br)(=O)OCC"]
+    excluded: rule=aryl_chloride_to_bromide target=c1(c(Cl)c(ccc1OC(C)C(=O)OCC)F)Br precursors=["c1(Br)c(c(ccc1F)OC(C(OCC)=O)C)Br"]
+    excluded: rule=aryl_chloride_to_bromide target=c1(Cl)ccc(cc1Br)F precursors=["c1cc(F)cc(c1Br)Br"]
+[11/15] [CH3][CH]([NH]C(=O)[CH]([NH2])[CH2]c1[cH][cH][cH][cH][cH]1)C(=O)[NH][CH]([CH2]C(=O)N1[CH2][CH2]n2c(nnc2C(F)(F)F)[CH2]1)[CH2]c1[cH]c(F)c(F)[cH]c1F	off_found=false	gated_found=false	gated_out=10
+    excluded: rule=boc_deprotection_retro target=Fc1c(F)cc(CC(NC(=O)C(N(C(=O)C(N)Cc4ccccc4)C(=O)OC(C)(C)C)C)CC(=O)N2Cc3nnc(C(F)(F)F)n3CC2)c(F)c1 precursors=["c1(F)c(F)cc(F)c(CC(CC(=O)N3CCn4c(C(F)(F)F)nnc4C3)NC(=O)C(NC(=O)C(N)Cc2ccccc2)C)c1"]
+    excluded: rule=boc_deprotection_retro target=C4N(Cc3n(C4)c(nn3)C(F)(F)F)C(=O)CC(Cc2cc(c(cc2F)F)F)N(C(=O)C(NC(C(N)Cc1ccccc1)=O)C)C(=O)OC(C)(C)C precursors=["c1(F)c(F)cc(F)c(CC(CC(=O)N3CCn4c(C(F)(F)F)nnc4C3)NC(=O)C(NC(=O)C(N)Cc2ccccc2)C)c1"]
+    excluded: rule=boc_deprotection_retro target=C1c4nnc(n4CCN1C(CC(Cc3cc(F)c(F)cc3F)NC(=O)C(C)NC(C(NC(OC(C)(C)C)=O)Cc2ccccc2)=O)=O)C(F)(F)F precursors=["c1(F)c(F)cc(F)c(CC(CC(=O)N3CCn4c(C(F)(F)F)nnc4C3)NC(=O)C(NC(=O)C(N)Cc2ccccc2)C)c1"]
+    excluded: rule=aryl_chloride_to_bromide target=C(N)(C(NC(C)C(=O)NC(CC(=O)N4CCn3c(C(F)(F)F)nnc3C4)Cc2cc(F)c(F)cc2F)=O)Cc1ccc(Cl)cc1 precursors=["c1c(F)c(F)cc(F)c1CC(CC(=O)N3Cc4n(c(nn4)C(F)(F)F)CC3)NC(=O)C(C)NC(=O)C(Cc2ccc(cc2)Br)N"]
+    excluded: rule=aryl_chloride_to_bromide target=FC(c4n3CCN(Cc3nn4)C(=O)CC(NC(C(NC(C(Cc2cccc(c2)Cl)N)=O)C)=O)Cc1cc(F)c(cc1F)F)(F)F precursors=["C1N(C(=O)CC(NC(=O)C(C)NC(=O)C(Cc4cccc(c4)Br)N)Cc3cc(F)c(cc3F)F)CCn2c1nnc2C(F)(F)F"]
+[12/15] O=[N+]([O-])c1[cH][cH][cH][cH]c1[NH][CH2][CH2]N1[CH2][CH2]O[CH2][CH2]1	off_found=false	gated_found=false	gated_out=40
+    excluded: rule=aryl_chloride_to_bromide target=C1CN(CCNc2cccc(Cl)c2[N+](=O)[O-])CCO1 precursors=["c1c(NCCN2CCOCC2)c([N+]([O-])=O)c(Br)cc1"]
+    excluded: rule=aryl_chloride_to_bromide target=C1OCCN(CCNc2c(cccc2Cl)[N+](=O)[O-])C1 precursors=["c2cc(c(c(Br)c2)NCCN1CCOCC1)[N+]([O-])=O"]
+    excluded: rule=aryl_chloride_to_bromide target=[N+](=O)([O-])c1c(NCCN2CCOCC2)ccc(c1)Cl precursors=["[N+](c2cc(ccc2NCCN1CCOCC1)Br)(=O)[O-]"]
+    excluded: rule=aryl_chloride_to_bromide target=c1c(ccc(c1NCCN2CCOCC2)[N+]([O-])=O)Cl precursors=["[N+](c2ccc(Br)cc2NCCN1CCOCC1)(=O)[O-]"]
+    excluded: rule=boc_deprotection_retro target=[N+](=O)([O-])c1c(N(C(OC(C)(C)C)=O)CCN2CCOCC2)cccc1 precursors=["N1(CCNc2ccccc2[N+]([O-])=O)CCOCC1"]
+[13/15] [CH3]C(=O)N1[CH2][CH2][CH]([CH2]C(=O)[OH])[CH2][CH2]1	off_found=true	gated_found=true	gated_out=0
+[14/15] [NH2]c1c2c([cH]c(F)c1N1C(=O)C3=C([CH2][CH2][CH2][CH2]3)C1=O)O[CH2]C(=O)[NH]2	off_found=false	gated_found=false	gated_out=8
+    excluded: rule=boc_deprotection_retro target=C12=C(C(N(c3c(NC(OC(C)(C)C)=O)c4c(OCC(N4)=O)cc3F)C2=O)=O)CCCC1 precursors=["c1(N4C(=O)C3=C(C4=O)CCCC3)c(c2NC(=O)COc2cc1F)N"]
+    excluded: rule=aryl_chloride_to_bromide target=C=12C(=O)N(c4c(N)c3NC(COc3c(c4F)Cl)=O)C(C=1CCCC2)=O precursors=["C3CCCC=4C(=O)N(C(C3=4)=O)c1c(N)c2c(OCC(=O)N2)c(Br)c1F"]
+    excluded: rule=boc_deprotection_retro target=C2Oc1cc(F)c(N4C(C3=C(C4=O)CCCC3)=O)c(c1N(C2=O)C(OC(C)(C)C)=O)N precursors=["c1(N4C(=O)C3=C(C4=O)CCCC3)c(c2NC(=O)COc2cc1F)N"]
+    excluded: rule=cbz_deprotection_retro target=C2(C=1CCCCC=1C(N2c4c(cc3OCC(=O)Nc3c4NC(OCc5ccccc5)=O)F)=O)=O precursors=["c1(N4C(=O)C3=C(C4=O)CCCC3)c(c2NC(=O)COc2cc1F)N"]
+    excluded: rule=aryl_chloride_to_bromide target=c14NC(COc1cc(c(c4Cl)N3C(C2=C(C3=O)CCCC2)=O)F)=O precursors=["C1CCCC=2C(=O)N(c3c(c4NC(=O)COc4cc3F)Br)C(C1=2)=O"]
+[15/15] [CH3][CH2][CH2][CH2][CH2][CH2][CH2]OC(=O)[NH][C@H]1C(=O)O[C@H]1[CH3]	off_found=true	gated_found=true	gated_out=24
+    excluded: rule=acyl_chloride_from_acid target=CCCCCCCOC(NCC(Cl)=O)=O precursors=["C(C(O)=O)NC(OCCCCCCC)=O"]
+    excluded: rule=boc_deprotection_retro target=O(C(=O)N([C@@H]1[C@H](C)OC1=O)C(=O)OC(C)(C)C)CCCCCCC precursors=["[C@H]1(OC(=O)[C@@H]1NC(=O)OCCCCCCC)C"]
+    excluded: rule=cbz_deprotection_retro target=C(CCCCCC)OC(=O)N(C(=O)OCc2ccccc2)[C@@H]1[C@H](OC1=O)C precursors=["[C@H]1(OC(=O)[C@@H]1NC(=O)OCCCCCCC)C"]
+    excluded: rule=boc_deprotection_retro target=CC(OC(N(CC(=O)O)C(=O)OCCCCCCC)=O)(C)C precursors=["C(C(O)=O)NC(OCCCCCCC)=O"]
+    excluded: rule=acyl_chloride_from_acid target=N(C(C(=O)Cl)=O)C(OCCCCCCC)=O precursors=["N(C(=O)C(O)=O)C(OCCCCCCC)=O"]
+
+=== summary ===
+targets: 15
+off: solved=5 timed_out=6
+gated: solved=5 timed_out=7
+regressions (off solved, gated did not): 0
+new solves (gated solved, off did not): 0
+total excluded candidates under gated: 1151 (13/15 targets with >=1 exclusion)

@@ -17,6 +17,15 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   navigation. These files remain locally available and ignored for
   development.
 
+## [0.52.0] - 2026-08-31 "Closed-Shell Precursor Guard"
+
+### Fixed
+- Retro-template fragments with over-valent atoms or an explicit-H deficit
+  after bond cleavage are now rejected before entering the search frontier.
+- Added regression coverage for radical-like fragments and valid aromatic and
+  charged molecules, improving route realism without changing standard search
+  output for valid precursors.
+
 ## [0.51.0] - 2026-08-31 "One-Step Positive Recall Metrics"
 
 ### Added
@@ -1686,7 +1695,8 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
 
 ---
 
-[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.51.0...HEAD
+[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.52.0...HEAD
+[0.52.0]: https://github.com/kent-tokyo/renkin/compare/v0.51.0...v0.52.0
 [0.51.0]: https://github.com/kent-tokyo/renkin/compare/v0.50.0...v0.51.0
 [0.50.0]: https://github.com/kent-tokyo/renkin/compare/v0.49.0...v0.50.0
 [0.49.0]: https://github.com/kent-tokyo/renkin/compare/v0.48.0...v0.49.0

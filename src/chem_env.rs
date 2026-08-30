@@ -1276,6 +1276,14 @@ pub(crate) fn split_fragments(mol: &Molecule) -> Vec<PrecursorMol> {
         .filter_map(|frag| {
             let m = parse(frag).ok()?;
             let std_mol = standardize(&m, &STANDARDIZE_OPTS);
+            // A reaction template can leave an explicitly bracketed cut atom
+            // one H short after the bond is removed.  chematic can still
+            // round-trip that graph, but downstream sanitizers correctly see
+            // a radical precursor.  Reject both this under-valent form and
+            // ordinary over-valence before the candidate reaches search.
+            if fragment_has_valence_violation(&std_mol) {
+                return None;
+            }
             // Reject fragments that have aromatic atoms but no ring closure —
             // these are open-chain aromatic chains produced by BFS leakage (L4).
             //
@@ -1297,6 +1305,24 @@ pub(crate) fn split_fragments(mol: &Molecule) -> Vec<PrecursorMol> {
             })
         })
         .collect()
+}
+
+/// Return whether a generated precursor is outside the closed-shell valence
+/// contract used by RENKIN.  `validate_valence` catches over-valent atoms;
+/// the explicit-H check catches the complementary template defect where a
+/// bracket atom retains its pre-cut H count after losing a bond.  Unbracketed
+/// organic atoms are intentionally left to chematic's implicit-H model.
+fn fragment_has_valence_violation(mol: &Molecule) -> bool {
+    if !chematic::core::valence::validate_valence(mol).is_empty() {
+        return true;
+    }
+
+    mol.atoms().any(|(idx, atom)| {
+        atom.hydrogen_count.is_some()
+            && atom.element.is_organic_subset()
+            && atom.hydrogen_count.unwrap_or(0)
+                < chematic::core::valence::valence_inferred_hcount(mol, idx)
+    })
 }
 
 /// Why a just-constructed product molecule failed the aromaticity-integrity
@@ -3333,6 +3359,31 @@ mod tests {
         // documented on `split_fragments`.
         let mol = mol_from_smiles("c1ccncc1").unwrap();
         assert_eq!(aromaticity_integrity_violation(&mol), None);
+    }
+
+    #[test]
+    fn fragment_valence_guard_rejects_explicit_h_deficit_after_cut() {
+        // `[CH]C` is parseable by chematic but the bracketed carbon is one H
+        // short for its single bond.  This is the shape produced by the
+        // stale-valence retro-fragment bug documented in Phase 32 Track F.
+        let radical_like = mol_from_smiles("[CH]C").unwrap();
+        assert!(fragment_has_valence_violation(&radical_like));
+        assert!(split_fragments(&radical_like).is_empty());
+    }
+
+    #[test]
+    fn fragment_valence_guard_accepts_closed_shell_and_charged_fragments() {
+        for smiles in ["CC", "c1ccccc1", "[NH4+]"] {
+            let mol = mol_from_smiles(smiles).unwrap();
+            assert!(
+                !fragment_has_valence_violation(&mol),
+                "valid fragment must not be rejected: {smiles}"
+            );
+            assert!(
+                !split_fragments(&mol).is_empty(),
+                "valid fragment must survive splitting: {smiles}"
+            );
+        }
     }
 
     #[test]

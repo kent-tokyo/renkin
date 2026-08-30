@@ -8,6 +8,10 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+No changes yet.
+
+## [0.36.0] - 2026-08-30 "Scalable Stock & Audited Coverage"
+
 v0.36.0 Phase 1 (rule-safety census): a mechanical static screen of every
 hand-crafted `default_rules()` SMIRKS against the risk shape that broke
 `aryl_amine_retro`/`buchwald_hartwig_retro`

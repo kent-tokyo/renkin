@@ -1,6 +1,7 @@
 import importlib.util
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -29,6 +30,28 @@ def stats(**overrides):
 
 
 class PhaseA5PoolMetricsTests(unittest.TestCase):
+    def test_positive_recall_at_k_uses_upstream_order_and_keeps_zero_groups(self):
+        labels = {
+            "g1": SimpleNamespace(correct_precursor_sets={("good",)}),
+            "g2": SimpleNamespace(correct_precursor_sets={("other",)}),
+        }
+        rows = [
+            {"group_id": "g1", "candidate_id": "late", "best_upstream_rank": 2,
+             "precursor_smiles": ["good"]},
+            {"group_id": "g1", "candidate_id": "early", "best_upstream_rank": 1,
+             "precursor_smiles": ["bad"]},
+        ]
+        records = [
+            {"group_id": "g1", "candidate_count": 2},
+            {"group_id": "g2", "candidate_count": 0},
+        ]
+        self.assertEqual(MODULE.positive_recall_at_k(rows, labels, records, 1), 0.0)
+        self.assertEqual(MODULE.positive_recall_at_k(rows, labels, records, 10), 0.5)
+
+    def test_positive_recall_rejects_non_positive_k(self):
+        with self.assertRaises(ValueError):
+            MODULE.positive_recall_at_k([], {}, [], 0)
+
     def test_persisted_accounting_is_aggregated_and_drives_dedup_rate(self):
         records = [
             {"group_id": "g1", "proposal_status": "ok", "candidate_count": 2,

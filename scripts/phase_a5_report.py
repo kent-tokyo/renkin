@@ -69,6 +69,7 @@ def main():
             "zero_positive_rate": m["zero_positive_rate"],
             "positive_present_rate": m["positive_present_rate"],
             "ground_truth_precursor_recall_target_level": m["ground_truth_precursor_recall_target_level"],
+            "positive_recall_at_k": m.get("positive_recall_at_k"),
             "dedup_rate": m["dedup_rate"],
             "candidate_pool_accounting": m.get("candidate_pool_accounting"),
             "candidates_per_group_p50": pgs["candidates_per_group_p50"],

@@ -83,3 +83,24 @@ fn overflowing_search_budget_is_rejected_before_search() {
             .contains("resource_exhausted")
     );
 }
+
+#[test]
+fn repeated_rejections_do_not_poison_a_following_request() {
+    let responses = run_mcp(
+        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"find_routes\",\"arguments\":{\"smiles\":\"CCO\",\"deph\":2}}}\n\
+         {\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"find_routes\",\"arguments\":{\"smiles\":\"CCO\",\"depth\":18446744073709551615}}}\n\
+         {\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/list\"}\n",
+    );
+    assert_eq!(responses.len(), 3);
+    assert_eq!(responses[0]["id"], 1);
+    assert_eq!(responses[0]["result"]["isError"], true);
+    assert_eq!(responses[1]["id"], 2);
+    assert_eq!(responses[1]["result"]["isError"], true);
+    assert_eq!(responses[2]["id"], 3);
+    assert!(responses[2]["result"]["tools"].is_array());
+
+    let first_error = responses[0]["result"]["content"][0]["text"]
+        .as_str()
+        .expect("first error text");
+    assert!(!first_error.contains("CCO"));
+}

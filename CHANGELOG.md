@@ -55,6 +55,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   of silently ignoring them.
 - Added stdio subprocess coverage for MCP envelope rejection and notification
   response suppression, including following-frame preservation.
+- Added adversarial MCP regression coverage proving repeated rejected requests
+  do not poison a later request or echo the rejected SMILES.
 - Extended MCP subprocess coverage to unknown-argument and overflowing-budget
   rejection before chemical search dispatch.
 - Added fail-closed MCP `tools/call` validation: malformed `params` or

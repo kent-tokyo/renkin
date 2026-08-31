@@ -108,6 +108,9 @@ real stdio transport, including rejection before dispatch and preservation of
 the following frame after an invalid request.
 It also covers unknown tool arguments and overflowing search budgets at the
 same process boundary, before any chemical search work starts.
+The same process-level suite sends multiple rejected requests before a valid
+one and verifies that the server remains usable without echoing the rejected
+SMILES.
 Numeric search limits are parsed as non-negative integers and checked against
 the shared depth and route-count maxima before conversion to native integer
 types; malformed values cannot silently default or wrap into a smaller budget.

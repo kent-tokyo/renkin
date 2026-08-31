@@ -133,6 +133,10 @@ non-symlink, UTF-8, 64MiB bounded reader before model or JSON parsing.
 Binary artifact hashing uses the equivalent regular-file, non-symlink, 64MiB
 byte reader, preventing provenance-only paths from bypassing input limits.
 
+Custom template validation/loading and ring-context sidecars use the bounded
+text reader before parsing, so these auxiliary search artifacts cannot bypass
+the shared size, symlink, regular-file, or UTF-8 checks.
+
 `audit-route` route exports are capped at 64MiB both before and after gzip
 decompression. Non-regular files, invalid UTF-8, and decompressed expansion
 past the cap are rejected before route normalization.

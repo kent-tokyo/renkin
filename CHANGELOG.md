@@ -31,6 +31,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   oversized or symlinked scoring artifacts now fail closed before parsing.
 - Added a bounded byte reader for provenance hashing; forward benchmark,
   doctor, and pool-generation artifact reads now share the same file limits.
+- Extended bounded fail-closed loading to custom template validation and
+  ring-context sidecars, removing remaining unbounded production text reads.
 - Added fail-closed MCP `tools/call` validation: malformed `params` or
   `arguments` are rejected, and unknown tool names no longer fall through to
   `find_routes`.

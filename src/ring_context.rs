@@ -277,9 +277,10 @@ impl RingContextGuard {
     /// absence *within* an otherwise-valid sidecar is not an error here;
     /// it surfaces later as `MissingTopologyMetadata` per-rule.
     pub fn load(sidecar_path: &str, templates_smi_content: &str) -> anyhow::Result<Self> {
-        let raw = std::fs::read_to_string(sidecar_path).map_err(|e| {
-            anyhow::anyhow!("ring-context sidecar {sidecar_path} could not be read: {e}")
-        })?;
+        let raw = crate::io_limits::read_bounded_text_file(sidecar_path, "ring-context sidecar")
+            .map_err(|e| {
+                anyhow::anyhow!("ring-context sidecar {sidecar_path} could not be read: {e}")
+            })?;
         let sidecar: SidecarFile = serde_json::from_str(&raw).map_err(|e| {
             anyhow::anyhow!("ring-context sidecar {sidecar_path} failed to parse: {e}")
         })?;

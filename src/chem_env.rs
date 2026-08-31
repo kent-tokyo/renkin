@@ -2793,12 +2793,13 @@ pub fn validate_template_file(path: &str) -> Result<()> {
             MAX_TEMPLATE_FILE_BYTES
         );
     }
-    let content = fs::read_to_string(path).with_context(|| {
-        format!(
-            "template file {path:?} could not be read as valid UTF-8 text \
-             (permission error or binary content)"
-        )
-    })?;
+    let content =
+        crate::io_limits::read_bounded_text_file(path, "template file").with_context(|| {
+            format!(
+                "template file {path:?} could not be read as valid UTF-8 text \
+                 (permission error or binary content)"
+            )
+        })?;
     if content.lines().count() > MAX_TEMPLATE_LINES {
         anyhow::bail!(
             "resource_exhausted: template file {path:?} exceeds {} lines",
@@ -2826,7 +2827,7 @@ pub fn load_rules_from_file(path: &str) -> Vec<RetroRule> {
     // chematic 0.4.14 fixed issue #19: parse_smarts now accepts atom-map notation (:N),
     // so we can validate SMIRKS reactant patterns directly instead of running them
     // against a probe molecule.
-    let content = match std::fs::read_to_string(path) {
+    let content = match crate::io_limits::read_bounded_text_file(path, "template file") {
         Ok(c) => c,
         Err(e) => {
             eprintln!("Warning: could not read template file {path}: {e}");

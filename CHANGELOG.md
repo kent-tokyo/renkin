@@ -45,6 +45,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   contracts, including threat-case IDs and release blockers.
 - Existing comparison manifests are now validated before a resume run starts,
   preventing schema-drifted evidence from triggering benchmark work.
+- Comparison-manifest loading now rejects oversized, symlinked, and non-regular
+  files before JSON parsing.
 - MCP now requires the exact JSON-RPC `2.0` envelope before dispatch, rejecting
   missing or unsupported protocol versions as structured invalid requests.
 - MCP now suppresses responses for all JSON-RPC notifications based on the

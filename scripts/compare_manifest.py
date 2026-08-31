@@ -14,6 +14,7 @@ import json
 import os
 import platform
 import re
+import stat
 import subprocess
 import sys
 import time
@@ -22,6 +23,7 @@ from compare_sampling import sha256_file
 
 
 SECURITY_CONTRACT_VERSION = 1
+MAX_MANIFEST_BYTES = 64 * 1024 * 1024
 SECURITY_CASES = [
     {
         "security_case_id": "RENKIN-S0-INPUT-001",
@@ -157,8 +159,16 @@ def validate_security_contract(manifest: dict) -> None:
 def load_and_validate_manifest(path: str) -> dict:
     """Load a persisted comparison manifest before any resume work starts."""
     try:
-        with open(path, encoding="utf-8") as handle:
-            manifest = json.load(handle)
+        metadata = os.lstat(path)
+        if stat.S_ISLNK(metadata.st_mode):
+            raise ValueError("comparison manifest must not be a symlink")
+        if not stat.S_ISREG(metadata.st_mode):
+            raise ValueError("comparison manifest must be a regular file")
+        with open(path, "rb") as handle:
+            raw = handle.read(MAX_MANIFEST_BYTES + 1)
+        if len(raw) > MAX_MANIFEST_BYTES:
+            raise ValueError(f"comparison manifest exceeds {MAX_MANIFEST_BYTES} bytes")
+        manifest = json.loads(raw.decode("utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise ValueError(f"cannot load comparison manifest {path!r}: {exc}") from exc
     if not isinstance(manifest, dict):

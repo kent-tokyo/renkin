@@ -104,6 +104,10 @@ or expansion. The resulting `resource_exhausted` error is propagated through
 the library, CLI, Python, WASM, and MCP adapters rather than being treated as
 an empty search result.
 
+The dependency policy explicitly allows only the reviewed licenses present in
+the locked graph (`MIT`, `Apache-2.0`, `0BSD`, `Unicode-3.0`, and `Zlib`). A
+new license therefore fails the local `cargo-deny` gate until reviewed.
+
 The streaming stock importer applies independent bounds of 64MiB total input,
 64KiB per line, and one million data rows. It rejects invalid UTF-8 and
 resource exhaustion before producing a stock manifest.

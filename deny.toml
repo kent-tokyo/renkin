@@ -3,3 +3,17 @@ db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 version = 2
 ignore = []
+
+[licenses]
+# Keep the dependency policy explicit. These are the permissive licenses used
+# by the current offline-resolved graph; a newly introduced license must be
+# reviewed and added deliberately rather than accepted by default.
+version = 2
+confidence-threshold = 0.8
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "MIT",
+    "Unicode-3.0",
+    "Zlib",
+]

@@ -100,6 +100,15 @@ fn unknown_main_option_fails_closed() {
 }
 
 #[test]
+fn unknown_output_format_fails_before_search() {
+    let stderr = run_failure(&["--target", BUILDING_BLOCK, "--format", "yaml"]);
+    assert!(
+        stderr.contains("unsupported --format"),
+        "unexpected stderr: {stderr}"
+    );
+}
+
+#[test]
 fn default_output_omits_search_diagnostics_when_no_route_found() {
     // depth=1 vs a stock containing only water: exercises the routes.is_empty() branch.
     let v = run(&[

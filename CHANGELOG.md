@@ -8,6 +8,12 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.63.0] - 2026-08-31 "Fail-Closed CLI Boundaries"
+
+### Added
+- Unknown output formats are rejected before search instead of falling through
+  to the default JSON response path.
+
 ## [0.62.0] - 2026-08-31 "Security Boundary Hardening"
 
 ### Added
@@ -1941,7 +1947,8 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
 
 ---
 
-[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.62.0...HEAD
+[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.63.0...HEAD
+[0.63.0]: https://github.com/kent-tokyo/renkin/compare/v0.62.0...v0.63.0
 [0.62.0]: https://github.com/kent-tokyo/renkin/compare/v0.61.0...v0.62.0
 [0.54.0]: https://github.com/kent-tokyo/renkin/compare/v0.53.0...v0.54.0
 [0.53.0]: https://github.com/kent-tokyo/renkin/compare/v0.52.0...v0.53.0

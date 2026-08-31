@@ -197,6 +197,8 @@ from being interpreted as a different request.
 The library building-block loader uses the same bounded regular-file and
 symlink checks as the CLI, so callers cannot bypass the stock input boundary by
 invoking `ChemEnv::load` directly.
+Unsupported output formats are rejected before search, rather than being
+silently interpreted as the default JSON response.
 
 The streaming stock importer applies independent bounds of 64MiB total input,
 64KiB per line, and one million data rows. It rejects invalid UTF-8 and

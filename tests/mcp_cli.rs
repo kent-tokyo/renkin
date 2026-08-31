@@ -52,3 +52,34 @@ fn ordinary_notification_executes_without_emitting_a_response() {
     assert_eq!(responses[0]["id"], 1);
     assert!(responses[0]["result"]["tools"].is_array());
 }
+
+#[test]
+fn unknown_tool_argument_is_rejected_before_search() {
+    let responses = run_mcp(
+        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"find_routes\",\"arguments\":{\"smiles\":\"CCO\",\"deph\":2}}}\n",
+    );
+    assert_eq!(responses.len(), 1);
+    assert_eq!(responses[0]["id"], 1);
+    assert_eq!(responses[0]["result"]["isError"], true);
+    assert!(
+        responses[0]["result"]["content"][0]["text"]
+            .as_str()
+            .expect("error text")
+            .contains("unknown argument")
+    );
+}
+
+#[test]
+fn overflowing_search_budget_is_rejected_before_search() {
+    let responses = run_mcp(
+        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"find_routes\",\"arguments\":{\"smiles\":\"CCO\",\"depth\":18446744073709551615}}}\n",
+    );
+    assert_eq!(responses.len(), 1);
+    assert_eq!(responses[0]["result"]["isError"], true);
+    assert!(
+        responses[0]["result"]["content"][0]["text"]
+            .as_str()
+            .expect("error text")
+            .contains("resource_exhausted")
+    );
+}

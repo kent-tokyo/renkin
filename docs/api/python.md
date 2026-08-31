@@ -36,6 +36,7 @@ renkin.find_routes(
     avoid_reaction_families: str = "",
     prefer_reaction_families: str = "",
     max_steps: int | None = None,
+    candidate_trace_limit: int | None = None,
 ) -> str
 ```
 
@@ -73,6 +74,7 @@ a `dict` — parse it with `json.loads()` before accessing fields.
 | `coverage_templates_path` | `str \| None` | `None` | Stage 2's template set; required when `search_mode="coverage"`, validated before Stage 1 even runs |
 | `coverage_timeout_seconds` | `int \| None` | `None` | Optional positive-integer wall-clock budget for Stage 2 only (cooperative cancellation, not a hard bound). `0` raises `ValueError` |
 | `search_diagnostics` | `bool` | `False` | Add a `search_diagnostics` block (beam eviction, cross-template dedup, branching factor) to the JSON output — identical field names/shape to the `renkin` CLI's own `--search-diagnostics` flag |
+| `candidate_trace_limit` | `int \| None` | `None` | Collect up to this many candidate-level crowd-out trace records; also enables the `search_diagnostics` output block |
 
 **Returns:** a JSON string shaped like:
 

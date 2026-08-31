@@ -40,6 +40,9 @@ use crate::search::{SearchConfig, diagnose, find_routes};
 ///         first without excluding other routes. Default: ``""``.
 ///     max_steps (int | None): Keep routes with at most this many reaction steps;
 ///         distinct from the search-depth limit. Default: ``None``.
+///     candidate_trace_limit (int | None): Collect up to this many candidate
+///         trace records for crowd-out diagnostics. Setting it also enables the
+///         ``search_diagnostics`` output block. Default: ``None``.
 ///     verbose (bool): Print search statistics (nodes expanded, elapsed time) to
 ///         stderr after the search completes. Default: ``False``.
 ///     templates_path (str | None): Path to an extracted SMIRKS templates .smi
@@ -167,7 +170,7 @@ use crate::search::{SearchConfig, diagnose, find_routes};
 ///     routes = json.loads(renkin.find_routes("CC(=O)Oc1ccccc1C(=O)O", depth=3))
 ///     print(routes["routes_found"])
 #[pyfunction]
-#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None, search_diagnostics=false, spectator_bond_policy="off", element_accounting_policy="off", beam_diversity_policy="off", beam_diversity_slots=0, avoid_building_blocks="", require_building_blocks="", max_route_cost=None, min_confidence=None, min_success_probability=None, require_reaction_families="", avoid_reaction_families="", prefer_reaction_families="", max_steps=None))]
+#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None, search_diagnostics=false, spectator_bond_policy="off", element_accounting_policy="off", beam_diversity_policy="off", beam_diversity_slots=0, avoid_building_blocks="", require_building_blocks="", max_route_cost=None, min_confidence=None, min_success_probability=None, require_reaction_families="", avoid_reaction_families="", prefer_reaction_families="", max_steps=None, candidate_trace_limit=None))]
 #[allow(clippy::too_many_arguments)]
 pub fn find_routes_py(
     target: &str,
@@ -201,6 +204,7 @@ pub fn find_routes_py(
     avoid_reaction_families: &str,
     prefer_reaction_families: &str,
     max_steps: Option<usize>,
+    candidate_trace_limit: Option<usize>,
 ) -> PyResult<String> {
     crate::constraints::validate_route_thresholds(
         max_route_cost,
@@ -246,6 +250,7 @@ pub fn find_routes_py(
             )));
         }
     };
+    let search_diagnostics = search_diagnostics || candidate_trace_limit.is_some();
     if search_mode == "standard" {
         if coverage_templates_path.is_some() {
             return Err(PyValueError::new_err(
@@ -351,6 +356,7 @@ pub fn find_routes_py(
         element_accounting_policy,
         beam_diversity_policy,
         beam_diversity_slots,
+        candidate_trace_cap: candidate_trace_limit,
         ..Default::default()
     };
 

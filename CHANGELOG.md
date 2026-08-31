@@ -24,6 +24,9 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Added shared validation for numeric route constraints across CLI, Python,
   and MCP: costs must be finite and non-negative, while confidence and
   success-probability thresholds must be finite values in `[0,1]`.
+- Added Python `find_routes()` `candidate_trace_limit`, matching the CLI's
+  bounded candidate-level crowd-out trace and automatically exposing the
+  `search_diagnostics` block when requested.
 
 ## [0.61.0] - 2026-08-31 "Carbamate Graph Cleavage"
 

@@ -27,6 +27,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Result, bail};
 use renkin::DEFAULT_BUILDING_BLOCKS;
 use renkin::chem_env::{ChemEnv, default_rules, load_rules_from_file};
+use renkin::io_limits::read_bounded_text_file;
 use renkin::search::{Route, SearchConfig, exploration_contract, find_routes};
 use renkin::validation::{
     RouteValidationStatus, StepValidationStatus, route_balanced, validate_route_steps,
@@ -39,7 +40,8 @@ use serde::Serialize;
 /// Parse a PaRoutes-format JSON file into (smiles, name, gt_depth) tuples.
 /// Each entry is a route tree rooted at the target molecule.
 fn parse_paroutes(path: &str) -> Result<Vec<(String, String, Option<u32>)>> {
-    let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path)?)?;
+    let json: serde_json::Value =
+        serde_json::from_str(&read_bounded_text_file(path, "PaRoutes input")?)?;
     let arr = json
         .as_array()
         .ok_or_else(|| anyhow::anyhow!("PaRoutes JSON: expected top-level array"))?;
@@ -409,8 +411,10 @@ fn cmd_compare(paths: &[String]) -> Result<()> {
     if paths.len() < 2 {
         bail!("Usage: renkin-bench compare <baseline.json> <current.json>");
     }
-    let base: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&paths[0])?)?;
-    let curr: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&paths[1])?)?;
+    let base: serde_json::Value =
+        serde_json::from_str(&read_bounded_text_file(&paths[0], "baseline output")?)?;
+    let curr: serde_json::Value =
+        serde_json::from_str(&read_bounded_text_file(&paths[1], "current output")?)?;
 
     let base_rate = base["success_rate"].as_f64().unwrap_or(0.0) * 100.0;
     let curr_rate = curr["success_rate"].as_f64().unwrap_or(0.0) * 100.0;
@@ -600,7 +604,7 @@ fn cmd_cascade(args: &[String]) -> Result<()> {
     })?;
 
     // Parse all targets once.
-    let all_targets: Vec<(String, String)> = std::fs::read_to_string(&input)?
+    let all_targets: Vec<(String, String)> = read_bounded_text_file(&input, "cascade targets")?
         .lines()
         .map(str::trim)
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
@@ -629,10 +633,8 @@ fn cmd_cascade(args: &[String]) -> Result<()> {
     let mut n_fwd_validated = 0usize;
 
     for stage_path in &stage_paths {
-        let cfg: StageConfig = serde_json::from_str(
-            &std::fs::read_to_string(stage_path)
-                .map_err(|e| anyhow::anyhow!("failed to read stage config {stage_path}: {e}"))?,
-        )?;
+        let cfg: StageConfig =
+            serde_json::from_str(&read_bounded_text_file(stage_path, "stage config")?)?;
 
         // Decide which targets to attempt.
         let candidates: Vec<&(String, String)> = if cfg.only_unsolved_from_previous {
@@ -912,7 +914,7 @@ fn main() -> Result<()> {
     let targets: Vec<(String, String, Option<u32>)> = if input_format == "paroutes" {
         parse_paroutes(&input)?
     } else {
-        std::fs::read_to_string(&input)?
+        read_bounded_text_file(&input, "benchmark targets")?
             .lines()
             .map(str::trim)
             .filter(|l| !l.is_empty() && !l.starts_with('#'))

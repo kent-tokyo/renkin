@@ -1776,3 +1776,10 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
 [0.36.0]: https://github.com/kent-tokyo/renkin/compare/v0.35.0...v0.36.0
 [0.1.1]: https://github.com/kent-tokyo/renkin/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/kent-tokyo/renkin/releases/tag/v0.1.0
+## [0.59.0] - 2026-08-31 "Coverage Benchmark Observability"
+
+### Added
+- Added aggregate Stage 1/Stage 2 selection, invocation, and timeout counts
+  to `renkin-bench` coverage-mode reports for direct paired comparisons.
+- Added regression coverage for the new benchmark summary fields while
+  preserving standard-mode report output.

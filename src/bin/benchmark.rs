@@ -188,6 +188,13 @@ struct BenchReport {
     search_depth: u32,
     search_beam_width: usize,
     coverage_template_count: Option<usize>,
+    /// Coverage-mode target counts; omitted in standard mode.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    coverage_stage1_selected_targets: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    coverage_stage2_invoked_targets: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    coverage_stage2_timeout_targets: Option<usize>,
     total: usize,
     solved: usize,
     success_rate: f64,
@@ -1088,6 +1095,36 @@ fn main() -> Result<()> {
     }
 
     let total = results.len();
+    let coverage_stage1_selected_targets = if search_mode == "coverage" {
+        Some(
+            results
+                .iter()
+                .filter(|r| r.coverage_selected_stage == Some("stage1"))
+                .count(),
+        )
+    } else {
+        None
+    };
+    let coverage_stage2_invoked_targets = if search_mode == "coverage" {
+        Some(
+            results
+                .iter()
+                .filter(|r| r.coverage_stage2_invoked == Some(true))
+                .count(),
+        )
+    } else {
+        None
+    };
+    let coverage_stage2_timeout_targets = if search_mode == "coverage" {
+        Some(
+            results
+                .iter()
+                .filter(|r| r.coverage_stage2_timeout == Some(true))
+                .count(),
+        )
+    } else {
+        None
+    };
     let success_rate = solved_count as f64 / total as f64;
     let avg_depth = if solved_count > 0 {
         total_depth_sum as f64 / solved_count as f64
@@ -1204,6 +1241,9 @@ fn main() -> Result<()> {
         search_depth: max_depth,
         search_beam_width: beam_width,
         coverage_template_count: coverage_rules.as_ref().map(Vec::len),
+        coverage_stage1_selected_targets,
+        coverage_stage2_invoked_targets,
+        coverage_stage2_timeout_targets,
         total,
         solved: solved_count,
         success_rate,

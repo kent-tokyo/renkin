@@ -421,10 +421,7 @@ fn permute_indices(indices: &mut [usize], k: usize, visit: &mut impl FnMut(&[usi
 /// explicitly asked to use: silently proceeding with 0 templates from a
 /// typo'd or empty path must not look like success.
 pub fn load_templates_strict(path: &str) -> Result<Vec<RetroRule>> {
-    std::fs::metadata(path)
-        .with_context(|| format!("template file {path:?} does not exist or is not accessible"))?;
-    std::fs::read_to_string(path)
-        .with_context(|| format!("template file {path:?} could not be read"))?;
+    renkin::chem_env::validate_template_file(path)?;
     let rules = renkin::chem_env::load_rules_from_file(path);
     if rules.is_empty() {
         bail!("template file {path:?} contains zero valid templates");

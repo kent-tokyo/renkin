@@ -280,6 +280,7 @@ pub fn find_routes_py(
 
     let mut rules = default_rules();
     if let Some(path) = templates_path {
+        crate::chem_env::validate_template_file(path).map_err(PyValueError::new_err)?;
         let mut extra = load_rules_from_file(path);
         if let Some(k) = top_templates {
             extra = crate::chem_env::top_templates_by_weight(extra, k);

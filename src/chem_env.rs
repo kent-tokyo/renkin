@@ -2768,6 +2768,50 @@ pub fn top_templates_by_weight(mut rules: Vec<RetroRule>, k: usize) -> Vec<Retro
     rules
 }
 
+/// Limits for explicitly supplied template bundles. The legacy optional
+/// loader below intentionally keeps its warning-and-empty behavior, while
+/// CLI/Python/coverage/forward entry points call this preflight first so a
+/// malformed or oversized bundle cannot silently become an empty rule set.
+pub const MAX_TEMPLATE_FILE_BYTES: u64 = 64 * 1024 * 1024;
+pub const MAX_TEMPLATE_LINES: usize = 200_000;
+pub const MAX_TEMPLATE_LINE_BYTES: usize = 64 * 1024;
+
+pub fn validate_template_file(path: &str) -> Result<()> {
+    let metadata = fs::metadata(path)
+        .with_context(|| format!("template file {path:?} does not exist or is not accessible"))?;
+    if !metadata.is_file() {
+        anyhow::bail!("template path {path:?} is not a regular file");
+    }
+    if metadata.len() > MAX_TEMPLATE_FILE_BYTES {
+        anyhow::bail!(
+            "resource_exhausted: template file {path:?} exceeds {} bytes",
+            MAX_TEMPLATE_FILE_BYTES
+        );
+    }
+    let content = fs::read_to_string(path).with_context(|| {
+        format!(
+            "template file {path:?} could not be read as valid UTF-8 text \
+             (permission error or binary content)"
+        )
+    })?;
+    if content.lines().count() > MAX_TEMPLATE_LINES {
+        anyhow::bail!(
+            "resource_exhausted: template file {path:?} exceeds {} lines",
+            MAX_TEMPLATE_LINES
+        );
+    }
+    if content
+        .lines()
+        .any(|line| line.len() > MAX_TEMPLATE_LINE_BYTES)
+    {
+        anyhow::bail!(
+            "resource_exhausted: template file {path:?} contains a line exceeding {} bytes",
+            MAX_TEMPLATE_LINE_BYTES
+        );
+    }
+    Ok(())
+}
+
 /// Load additional SMIRKS templates from a file (tab-separated: SMIRKS\tcount).
 /// Lines starting with '#' are treated as comments and skipped.
 /// Validates each template by running it against a probe molecule; only templates
@@ -3345,6 +3389,31 @@ mod tests {
                 "template_id must be unique across the loaded rule set"
             );
         }
+    }
+
+    #[test]
+    fn validate_template_file_accepts_checked_in_corpus() {
+        validate_template_file("data/templates_extracted_5000.smi")
+            .expect("checked-in template corpus must satisfy the loader limits");
+    }
+
+    #[test]
+    fn validate_template_file_rejects_oversized_line() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!(
+            "renkin-template-limit-{}-{}.smi",
+            std::process::id(),
+            MAX_TEMPLATE_LINE_BYTES
+        ));
+        std::fs::write(
+            &path,
+            format!("{}\n", "C".repeat(MAX_TEMPLATE_LINE_BYTES + 1)),
+        )
+        .unwrap();
+        let result = validate_template_file(path.to_str().unwrap());
+        let _ = std::fs::remove_file(&path);
+        let error = result.expect_err("oversized template line must be rejected");
+        assert!(error.to_string().contains("resource_exhausted"));
     }
 
     #[test]

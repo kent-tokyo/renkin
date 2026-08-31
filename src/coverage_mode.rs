@@ -151,6 +151,7 @@ pub fn validate_coverage_mode_config(config: &SearchConfig) -> Result<()> {
 /// every line malformed) rather than treating that the same as "no file
 /// given."
 pub fn load_coverage_rules(coverage_templates_path: &str) -> Result<Vec<RetroRule>> {
+    crate::chem_env::validate_template_file(coverage_templates_path)?;
     let metadata = std::fs::metadata(coverage_templates_path).with_context(|| {
         format!(
             "--coverage-templates path does not exist or is not readable: \

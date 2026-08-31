@@ -533,6 +533,7 @@ fn main() -> Result<()> {
 
     let mut rules = chem_env::default_rules();
     if let Some(ref path) = templates_path {
+        chem_env::validate_template_file(path)?;
         let mut extra = chem_env::load_rules_from_file(path);
         if let Some(k) = top_templates {
             extra = chem_env::top_templates_by_weight(extra, k);

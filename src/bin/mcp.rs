@@ -40,11 +40,27 @@ fn main() {
 
         let msg: Value = match serde_json::from_str(line) {
             Ok(v) => v,
-            Err(_) => continue,
+            Err(_) => {
+                write_error(&mut out, Value::Null, -32700, "Parse error");
+                continue;
+            }
         };
 
-        let id = msg["id"].clone();
-        let method = msg["method"].as_str().unwrap_or("");
+        let Some(object) = msg.as_object() else {
+            write_error(&mut out, Value::Null, -32600, "Invalid Request");
+            continue;
+        };
+
+        let id = object.get("id").cloned().unwrap_or(Value::Null);
+        if !valid_request_id(&id) {
+            write_error(&mut out, Value::Null, -32600, "Invalid Request");
+            continue;
+        }
+
+        let Some(method) = object.get("method").and_then(Value::as_str) else {
+            write_error(&mut out, id, -32600, "Invalid Request");
+            continue;
+        };
 
         // Notifications have no id and require no response.
         if method.starts_with("notifications/") {
@@ -56,13 +72,7 @@ fn main() {
             "tools/list" => handle_tools_list(),
             "tools/call" => handle_tools_call(&msg),
             _ => {
-                let resp = json!({
-                    "jsonrpc": "2.0",
-                    "id": id,
-                    "error": {"code": -32601, "message": "Method not found"}
-                });
-                let _ = writeln!(out, "{resp}");
-                let _ = out.flush();
+                write_error(&mut out, id, -32601, "Method not found");
                 continue;
             }
         };
@@ -71,6 +81,20 @@ fn main() {
         let _ = writeln!(out, "{resp}");
         let _ = out.flush();
     }
+}
+
+fn valid_request_id(id: &Value) -> bool {
+    id.is_null() || id.is_string() || id.is_number()
+}
+
+fn write_error(out: &mut impl Write, id: Value, code: i32, message: &str) {
+    let resp = json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "error": {"code": code, "message": message}
+    });
+    let _ = writeln!(out, "{resp}");
+    let _ = out.flush();
 }
 
 fn handle_initialize() -> Value {
@@ -925,5 +949,25 @@ mod tests {
         let properties = &plan["inputSchema"]["properties"];
         assert!(properties["avoid_building_blocks"].is_object());
         assert!(properties["require_building_blocks"].is_object());
+    }
+
+    #[test]
+    fn request_ids_are_limited_to_json_rpc_scalar_types() {
+        assert!(valid_request_id(&Value::Null));
+        assert!(valid_request_id(&json!(7)));
+        assert!(valid_request_id(&json!("request-7")));
+        assert!(!valid_request_id(&json!({"nested": true})));
+        assert!(!valid_request_id(&json!([7])));
+    }
+
+    #[test]
+    fn protocol_errors_are_structured_and_do_not_leak_input() {
+        let mut output = Vec::new();
+        write_error(&mut output, Value::Null, -32700, "Parse error");
+        let response: Value = serde_json::from_slice(&output).expect("error must be JSON");
+        assert_eq!(response["jsonrpc"], json!("2.0"));
+        assert_eq!(response["id"], Value::Null);
+        assert_eq!(response["error"]["code"], json!(-32700));
+        assert_eq!(response["error"]["message"], json!("Parse error"));
     }
 }

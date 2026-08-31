@@ -9,6 +9,9 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Added fail-closed JSON-RPC boundary handling to `renkin-mcp`: malformed
+  JSON now returns `-32700`, invalid request shapes or non-scalar IDs return
+  `-32600`, and unknown methods continue to return `-32601`.
 - Added Security S0 metadata to comparison run manifests: a versioned threat
   case inventory, explicit trust boundary, resource budget, and release
   blocker list are now recorded alongside run provenance.

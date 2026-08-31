@@ -83,6 +83,12 @@ Minimum release blockers:
 - no local username, unredacted home path, secret, or stack trace is emitted
   into a shareable manifest or error response.
 
+The MCP transport also has a fail-closed protocol rule: malformed JSON is a
+`-32700` Parse error, a non-object request, missing/non-string method, or
+non-scalar request ID is a `-32600` Invalid Request, and an unknown method is a
+`-32601` Method not found. These errors are structured JSON-RPC responses and
+never echo the rejected input.
+
 ## Disclosure
 
 Please allow reasonable time for a fix before public disclosure.

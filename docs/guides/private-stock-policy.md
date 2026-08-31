@@ -33,6 +33,11 @@ carry a stable reason such as `vendor_not_allowed`, `price_limit_exceeded`,
 exact vendor record is `unknown`; salt-, stereo-, and tautomer-relaxed vendor
 matches do not silently become exact stock identity.
 
+When multiple exact records satisfy the policy, the report selects one
+deterministically: lowest known price, then shortest known lead time, then
+vendor and catalog ID. This makes the selected offer reproducible without
+uploading the vendor table.
+
 The output includes the policy source and a SHA-256 digest of the policy in
 `audit_manifest.private_stock_policy_sha256`. The vendor table itself is not
 uploaded or embedded in the report.

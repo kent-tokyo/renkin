@@ -121,6 +121,21 @@ fn vendor_allowed(vendor: Option<&str>, policy: &PrivateStockPolicy) -> bool {
         && !policy.blocked_vendors.iter().any(|v| v == vendor)
 }
 
+fn offer_sort_key(
+    record: &crate::vendor_stock::VendorStockRecord,
+) -> (bool, f64, bool, u32, Option<&str>, Option<&str>) {
+    // Known price/lead time wins over an unknown value. The final textual
+    // fields make the choice stable when two offers have the same logistics.
+    (
+        record.price.is_none(),
+        record.price.unwrap_or(f64::INFINITY),
+        record.lead_time_days.is_none(),
+        record.lead_time_days.unwrap_or(u32::MAX),
+        record.vendor.as_deref(),
+        record.id.as_deref(),
+    )
+}
+
 pub fn assess_report(
     report: &AuditReport,
     index: &VendorStockIndex,
@@ -169,6 +184,7 @@ pub fn assess_report(
             continue;
         };
         let mut rejected_reason = None;
+        let mut eligible = Vec::new();
         for &record_index in &found.record_indices {
             let record = &index.records()[record_index];
             if !vendor_allowed(record.vendor.as_deref(), policy) {
@@ -203,6 +219,14 @@ pub fn assess_report(
                 rejected_reason.get_or_insert(PrivateStockReason::LeadTimeExceeded);
                 continue;
             }
+            eligible.push(record_index);
+        }
+        if let Some(&record_index) = eligible.iter().min_by(|&&left, &&right| {
+            offer_sort_key(&index.records()[left])
+                .partial_cmp(&offer_sort_key(&index.records()[right]))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        }) {
+            let record = &index.records()[record_index];
             decisions.push(PrivateStockDecisionRecord {
                 smiles: smiles.clone(),
                 decision: PrivateStockDecision::Matched,
@@ -213,7 +237,6 @@ pub fn assess_report(
                 lead_time_days: record.lead_time_days,
             });
             rejected_reason = None;
-            break;
         }
         if let Some(reason) = rejected_reason {
             decisions.push(PrivateStockDecisionRecord {
@@ -305,5 +328,52 @@ mod tests {
                 .decision,
             PrivateStockDecision::Unknown
         );
+    }
+
+    #[test]
+    fn policy_selects_lowest_known_price_then_lead_time() {
+        let index = VendorStockIndex::from_records(vec![
+            VendorStockRecord {
+                id: Some("slow".into()),
+                smiles: "CCO".into(),
+                vendor: Some("Acme".into()),
+                price: Some(20.0),
+                lead_time_days: Some(2),
+                available: true,
+            },
+            VendorStockRecord {
+                id: Some("cheap".into()),
+                smiles: "CCO".into(),
+                vendor: Some("Beta".into()),
+                price: Some(12.0),
+                lead_time_days: Some(9),
+                available: true,
+            },
+            VendorStockRecord {
+                id: Some("same-price".into()),
+                smiles: "CCO".into(),
+                vendor: Some("Gamma".into()),
+                price: Some(12.0),
+                lead_time_days: Some(3),
+                available: true,
+            },
+        ])
+        .unwrap();
+        let policy = PrivateStockPolicy {
+            schema_version: 1,
+            source_label: "private".into(),
+            source_revision: None,
+            allowed_vendors: vec![],
+            blocked_vendors: vec![],
+            max_price: None,
+            max_lead_time_days: None,
+            require_available: true,
+            blocked_smiles: vec![],
+        };
+        let out = assess_report(&report(), &index, &policy);
+        let ethanol = out.decisions.iter().find(|d| d.smiles == "CCO").unwrap();
+        assert_eq!(ethanol.catalog_id.as_deref(), Some("same-price"));
+        assert_eq!(ethanol.price, Some(12.0));
+        assert_eq!(ethanol.lead_time_days, Some(3));
     }
 }

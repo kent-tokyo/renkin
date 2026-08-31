@@ -715,6 +715,8 @@ see "Earlier milestones" below for older shipped work.
 - [x] Graph rule expansion — sulfonamide and carbamate cleavage (one PR per family, with structural and atom-accounting gates; carbamate shipped v0.61.0)
 - [ ] Urea cleavage — define and validate an atom-balanced disconnection before adding a default rule
 - [ ] Stock-aware planning (price / hazard / availability re-ranking)
+  - [x] Deterministic policy-aware vendor-offer selection (price, lead time,
+    availability) for exact private-stock matches
 
 <details>
 <summary>Earlier milestones</summary>

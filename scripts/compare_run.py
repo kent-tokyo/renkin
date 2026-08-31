@@ -321,6 +321,13 @@ def main(argv: list[str] | None = None) -> int:
             with open(args.manifest_path, "w", encoding="utf-8") as f:
                 json.dump(run_manifest, f, indent=2, sort_keys=True, default=str)
                 f.write("\n")
+        else:
+            # Refuse to spend benchmark time on a corrupted or schema-drifted
+            # manifest. The same guard is applied again at finalization.
+            try:
+                manifest_mod.load_and_validate_manifest(args.manifest_path)
+            except ValueError as exc:
+                parser.error(str(exc))
 
     start = time.monotonic()
     file_mode = "a" if (args.resume and os.path.exists(args.output_rows)) else "w"
@@ -355,8 +362,10 @@ def main(argv: list[str] | None = None) -> int:
             f.write("\n")
 
     if args.manifest_path and len(all_rows) >= args.sample_size:
-        with open(args.manifest_path, "r", encoding="utf-8") as f:
-            run_manifest = json.load(f)
+        try:
+            run_manifest = manifest_mod.load_and_validate_manifest(args.manifest_path)
+        except ValueError as exc:
+            parser.error(str(exc))
         building_blocks_path = (
             args.shared_stock_smi if args.comparison_mode == "shared_stock" else args.building_blocks
         )

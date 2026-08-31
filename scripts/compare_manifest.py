@@ -154,6 +154,19 @@ def validate_security_contract(manifest: dict) -> None:
         raise ValueError("security_contract.release_blockers must be a non-empty string list")
 
 
+def load_and_validate_manifest(path: str) -> dict:
+    """Load a persisted comparison manifest before any resume work starts."""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            manifest = json.load(handle)
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"cannot load comparison manifest {path!r}: {exc}") from exc
+    if not isinstance(manifest, dict):
+        raise ValueError("comparison manifest must be a JSON object")
+    validate_security_contract(manifest)
+    return manifest
+
+
 def capture_start_manifest(
     *,
     tool: str,

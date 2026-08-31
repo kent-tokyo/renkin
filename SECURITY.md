@@ -156,6 +156,9 @@ The gate is also available locally as
 MCP, and manifest checks without installing project dependencies.
 Comparison manifests now reject incomplete or duplicated threat-case metadata
 before they can be used as release evidence.
+Resume runs validate the persisted manifest before starting benchmark work, so
+schema drift or malformed evidence fails fast rather than after an expensive
+run.
 
 The streaming stock importer applies independent bounds of 64MiB total input,
 64KiB per line, and one million data rows. It rejects invalid UTF-8 and

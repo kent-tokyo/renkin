@@ -1,5 +1,7 @@
 import os
+import json
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -135,6 +137,25 @@ class TestRedactHomeDir(unittest.TestCase):
         manifest["security_contract"]["version"] = cm.SECURITY_CONTRACT_VERSION + 1
         with self.assertRaisesRegex(ValueError, "unsupported"):
             cm.validate_security_contract(manifest)
+
+    @patch("compare_manifest.sha256_file", return_value="sha256:test")
+    def test_load_and_validate_manifest_rejects_schema_drift_before_resume(self, _mock):
+        manifest = cm.capture_start_manifest(
+            tool="renkin",
+            comparison_mode="native",
+            ring_context_policy=None,
+            command_line=["renkin"],
+            repo_root=".",
+            binary_path=None,
+            docker_image=None,
+            input_files={},
+        )
+        manifest["security_contract"]["version"] += 1
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8") as handle:
+            json.dump(manifest, handle)
+            handle.flush()
+            with self.assertRaisesRegex(ValueError, "unsupported"):
+                cm.load_and_validate_manifest(handle.name)
 
 
 if __name__ == "__main__":

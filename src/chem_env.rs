@@ -149,8 +149,28 @@ impl ChemEnv {
     }
 }
 
+/// Maximum molecular graph size accepted at the shared SMILES boundary.
+/// These limits are intentionally independent of the text-byte limit: a
+/// compact, valid SMILES can still describe an unexpectedly large graph.
+pub const MAX_MOLECULE_ATOMS: usize = 4096;
+pub const MAX_MOLECULE_BONDS: usize = 8192;
+
 pub fn mol_from_smiles(smiles: &str) -> Result<Molecule> {
-    parse(smiles).with_context(|| format!("Failed to parse SMILES: {smiles}"))
+    let molecule = parse(smiles).with_context(|| format!("Failed to parse SMILES: {smiles}"))?;
+    if molecule.atom_count() > MAX_MOLECULE_ATOMS {
+        anyhow::bail!(
+            "resource_exhausted: molecule exceeds {} atoms",
+            MAX_MOLECULE_ATOMS
+        );
+    }
+    let bond_count = molecule.bonds().count();
+    if bond_count > MAX_MOLECULE_BONDS {
+        anyhow::bail!(
+            "resource_exhausted: molecule exceeds {} bonds",
+            MAX_MOLECULE_BONDS
+        );
+    }
+    Ok(molecule)
 }
 
 pub fn to_canonical(mol: &Molecule) -> String {
@@ -2990,6 +3010,19 @@ fn cbz_deprotection(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
 
 #[cfg(test)]
 mod tests {
+    use super::{MAX_MOLECULE_ATOMS, mol_from_smiles};
+
+    #[test]
+    fn rejects_molecule_over_atom_budget() {
+        let smiles = "C".repeat(MAX_MOLECULE_ATOMS + 1);
+        let error = match mol_from_smiles(&smiles) {
+            Ok(_) => panic!("oversized molecule unexpectedly parsed"),
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("resource_exhausted"));
+        assert!(error.to_string().contains("atoms"));
+    }
+
     use super::*;
 
     #[test]

@@ -8,6 +8,13 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.66.0] - 2026-08-31 "Bounded Molecular Graphs"
+
+### Added
+- The shared SMILES parsing boundary now rejects valid but excessively large
+  molecular graphs above 4,096 atoms or 8,192 bonds as `resource_exhausted`.
+  The limit applies consistently to CLI, Python, WASM, and MCP callers.
+
 ## [0.65.0] - 2026-08-31 "Bounded Streaming Input"
 
 ### Added
@@ -1956,7 +1963,8 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
 
 ---
 
-[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.65.0...HEAD
+[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.66.0...HEAD
+[0.66.0]: https://github.com/kent-tokyo/renkin/compare/v0.65.0...v0.66.0
 [0.65.0]: https://github.com/kent-tokyo/renkin/compare/v0.64.0...v0.65.0
 [0.64.0]: https://github.com/kent-tokyo/renkin/compare/v0.63.0...v0.64.0
 [0.62.0]: https://github.com/kent-tokyo/renkin/compare/v0.61.0...v0.62.0

@@ -224,6 +224,11 @@ shared 64KiB physical-line limit while reading stdin. Canonicalization and
 fingerprint reject an oversized record as `ERR` and continue at the next
 record; the reranker fails closed rather than parsing an oversized row.
 
+The shared SMILES parser also caps each molecular graph at 4,096 atoms and
+8,192 bonds after parsing. This protects callers from compact, valid input
+that expands into an unexpectedly large graph, and reports the rejection as
+`resource_exhausted` consistently across public surfaces.
+
 Reranker model and frequency-table artifacts use the same regular-file,
 non-symlink, UTF-8, 64MiB bounded reader before model or JSON parsing.
 

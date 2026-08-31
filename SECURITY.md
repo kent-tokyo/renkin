@@ -163,6 +163,8 @@ Manifest loading also enforces a 64MiB bound and rejects symlinks and
 non-regular files before deserialization.
 Files hashed into comparison provenance use the same boundary before hashing,
 covering sample, stock, template, model, and binary inputs.
+The limit is enforced during the hash read itself as well as during the
+initial metadata check, so file growth during hashing cannot bypass it.
 
 The streaming stock importer applies independent bounds of 64MiB total input,
 64KiB per line, and one million data rows. It rejects invalid UTF-8 and

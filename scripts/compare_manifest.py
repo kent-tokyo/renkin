@@ -11,6 +11,7 @@ block a launch.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import platform
 import re
@@ -19,7 +20,6 @@ import subprocess
 import sys
 import time
 
-from compare_sampling import sha256_file as _unbounded_sha256_file
 
 
 SECURITY_CONTRACT_VERSION = 1
@@ -37,9 +37,17 @@ def sha256_file(path: str) -> str:
         raise ValueError(
             f"manifest input exceeds {MAX_MANIFEST_BYTES} bytes: {path!r}"
         )
-    # Keep the established streaming implementation for ordinary files; the
-    # preflight above prevents an unexpectedly large artifact from entering it.
-    return _unbounded_sha256_file(path)
+    digest = hashlib.sha256()
+    total = 0
+    with open(path, "rb") as handle:
+        while chunk := handle.read(65536):
+            total += len(chunk)
+            if total > MAX_MANIFEST_BYTES:
+                raise ValueError(
+                    f"manifest input exceeds {MAX_MANIFEST_BYTES} bytes: {path!r}"
+                )
+            digest.update(chunk)
+    return digest.hexdigest()
 SECURITY_CASES = [
     {
         "security_case_id": "RENKIN-S0-INPUT-001",

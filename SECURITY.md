@@ -103,6 +103,9 @@ rejected instead of falling through to the default `find_routes` handler.
 Tool arguments are checked against the advertised per-tool allowlist, so
 misspelled or unsupported fields are rejected instead of being ignored and
 silently changing the effective request.
+The subprocess integration suite exercises these protocol rules through the
+real stdio transport, including rejection before dispatch and preservation of
+the following frame after an invalid request.
 Numeric search limits are parsed as non-negative integers and checked against
 the shared depth and route-count maxima before conversion to native integer
 types; malformed values cannot silently default or wrap into a smaller budget.

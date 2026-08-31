@@ -49,6 +49,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   unsupported-direction specifications before route search.
 - MCP `tools/call` now rejects unknown or misspelled arguments per tool instead
   of silently ignoring them.
+- Added stdio subprocess coverage for MCP envelope rejection and notification
+  response suppression, including following-frame preservation.
 - Added fail-closed MCP `tools/call` validation: malformed `params` or
   `arguments` are rejected, and unknown tool names no longer fall through to
   `find_routes`.

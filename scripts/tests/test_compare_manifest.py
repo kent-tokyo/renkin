@@ -229,6 +229,27 @@ class TestRedactHomeDir(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "JSON tokens"):
                     cm.load_and_validate_manifest(handle.name)
 
+    @patch("compare_manifest.sha256_file", return_value="sha256:test")
+    def test_write_manifest_atomic_round_trips_without_temp_file(self, _mock):
+        manifest = cm.capture_start_manifest(
+            tool="renkin",
+            comparison_mode="native",
+            ring_context_policy=None,
+            command_line=["renkin"],
+            repo_root=".",
+            binary_path=None,
+            docker_image=None,
+            input_files={},
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "run-manifest.json")
+            cm.write_manifest_atomic(path, manifest)
+            loaded = cm.load_and_validate_manifest(path)
+            self.assertEqual(loaded["security_contract"], manifest["security_contract"])
+            self.assertEqual(
+                [name for name in os.listdir(directory) if name.endswith(".tmp")], []
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

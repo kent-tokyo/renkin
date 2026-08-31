@@ -172,6 +172,10 @@ contents excluded from the count.
 The benchmark sample corpus applies the same 64MiB regular-file and symlink
 boundary, plus a 64KiB per-line limit, before candidate parsing and hashing.
 The frozen JSONL sample list is subject to the same limits before row parsing.
+Manifest writes use a same-directory temporary file, `fsync`, and atomic
+replacement so an interrupted benchmark cannot publish truncated evidence.
+Each manifest also receives an independent security-contract snapshot, so
+mutating one in post-processing cannot alter later manifests in the process.
 
 The streaming stock importer applies independent bounds of 64MiB total input,
 64KiB per line, and one million data rows. It rejects invalid UTF-8 and

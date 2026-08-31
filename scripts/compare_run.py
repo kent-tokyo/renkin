@@ -318,9 +318,7 @@ def main(argv: list[str] | None = None) -> int:
                     "search_mode": args.search_mode,
                 },
             )
-            with open(args.manifest_path, "w", encoding="utf-8") as f:
-                json.dump(run_manifest, f, indent=2, sort_keys=True, default=str)
-                f.write("\n")
+            manifest_mod.write_manifest_atomic(args.manifest_path, run_manifest)
         else:
             # Refuse to spend benchmark time on a corrupted or schema-drifted
             # manifest. The same guard is applied again at finalization.
@@ -383,9 +381,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.search_mode == "coverage":
             input_files["coverage_templates"] = args.coverage_templates
         run_manifest = manifest_mod.finalize_manifest(run_manifest, input_files)
-        with open(args.manifest_path, "w", encoding="utf-8") as f:
-            json.dump(run_manifest, f, indent=2, sort_keys=True, default=str)
-            f.write("\n")
+        manifest_mod.write_manifest_atomic(args.manifest_path, run_manifest)
 
     print(json.dumps(agg, indent=2, sort_keys=True))
     return 0

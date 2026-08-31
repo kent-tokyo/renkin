@@ -10,6 +10,7 @@ block a launch.
 
 from __future__ import annotations
 
+import copy
 import json
 import hashlib
 import os
@@ -18,6 +19,7 @@ import re
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 
 
@@ -258,6 +260,28 @@ def load_and_validate_manifest(path: str) -> dict:
     return manifest
 
 
+def write_manifest_atomic(path: str, manifest: dict) -> None:
+    """Persist a manifest without exposing a partially written JSON file."""
+    directory = os.path.dirname(os.path.abspath(path))
+    basename = os.path.basename(path)
+    fd, temporary_path = tempfile.mkstemp(
+        prefix=f".{basename}.", suffix=".tmp", dir=directory
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(manifest, handle, indent=2, sort_keys=True, default=str)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, path)
+    except BaseException:
+        try:
+            os.unlink(temporary_path)
+        except OSError:
+            pass
+        raise
+
+
 def capture_start_manifest(
     *,
     tool: str,
@@ -292,7 +316,10 @@ def capture_start_manifest(
             "version": SECURITY_CONTRACT_VERSION,
             "trusted_boundary": "caller-controlled targets and route data are untrusted; local bundles are identified by hash",
             "resource_budget": resource_budget or {},
-            "threat_cases": SECURITY_CASES,
+            # Each manifest owns its contract snapshot. Returning the global
+            # list here lets a caller mutate later manifests through a prior
+            # test or post-processing step.
+            "threat_cases": copy.deepcopy(SECURITY_CASES),
             "release_blockers": [
                 "input_files_unchanged_during_run=false",
                 "resource budget missing for a bounded comparison run",

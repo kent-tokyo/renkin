@@ -97,6 +97,11 @@ fn main() {
             continue;
         }
 
+        if renkin::bridge::validate_audit_json_structure(line).is_err() {
+            write_error(&mut out, Value::Null, -32700, "Parse error");
+            continue;
+        }
+
         let msg: Value = match serde_json::from_str(line) {
             Ok(v) => v,
             Err(_) => {
@@ -1018,6 +1023,12 @@ mod tests {
         assert!(valid_request_id(&json!("request-7")));
         assert!(!valid_request_id(&json!({"nested": true})));
         assert!(!valid_request_id(&json!([7])));
+    }
+
+    #[test]
+    fn request_json_structure_uses_the_shared_depth_budget() {
+        let nested = "[".repeat(renkin::bridge::audit_route::MAX_AUDIT_JSON_DEPTH + 1);
+        assert!(renkin::bridge::validate_audit_json_structure(&nested).is_err());
     }
 
     #[test]

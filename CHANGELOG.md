@@ -14,6 +14,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   stock scanning begins.
 - Added audit JSON structural preflight: nesting is capped at 256 levels and
   structural delimiters at one million before route JSON parsing.
+- Extended the same JSON structural preflight to MCP request lines, so deeply
+  nested or structurally excessive requests fail as protocol parse errors.
 - Added Python forward-boundary limits: at most 32 reactants and 64KiB of
   reactant text per call, 1,000 results, and 64MiB/10,000 steps for route JSON
   validation; oversized inputs fail with `resource_exhausted`.

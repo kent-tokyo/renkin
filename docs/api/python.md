@@ -35,6 +35,7 @@ renkin.find_routes(
     require_reaction_families: str = "",
     avoid_reaction_families: str = "",
     prefer_reaction_families: str = "",
+    max_steps: int | None = None,
 ) -> str
 ```
 
@@ -60,6 +61,7 @@ a `dict` — parse it with `json.loads()` before accessing fields.
 | `require_reaction_families` | `str` | `""` | Comma-separated families; each returned route must contain at least one |
 | `avoid_reaction_families` | `str` | `""` | Comma-separated families; routes containing any are excluded |
 | `prefer_reaction_families` | `str` | `""` | Comma-separated families to rank first without excluding other routes |
+| `max_steps` | `int | None` | `None` | Maximum reaction steps in returned routes; separate from the search-depth limit |
 | `verbose` | `bool` | `False` | Print search statistics (nodes expanded, elapsed time) to stderr |
 | `bb_prices_path` | `str \| None` | `None` | CSV (`SMILES,price_per_gram`) for route cost scoring |
 | `templates_path` | `str \| None` | `None` | Path to an extracted SMIRKS templates `.smi` file (tab-separated). `None` = hand-crafted rules only |

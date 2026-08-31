@@ -38,6 +38,8 @@ use crate::search::{SearchConfig, diagnose, find_routes};
 ///         containing any are excluded. Default: ``""``.
 ///     prefer_reaction_families (str): Comma-separated reaction families to rank
 ///         first without excluding other routes. Default: ``""``.
+///     max_steps (int | None): Keep routes with at most this many reaction steps;
+///         distinct from the search-depth limit. Default: ``None``.
 ///     verbose (bool): Print search statistics (nodes expanded, elapsed time) to
 ///         stderr after the search completes. Default: ``False``.
 ///     templates_path (str | None): Path to an extracted SMIRKS templates .smi
@@ -165,7 +167,7 @@ use crate::search::{SearchConfig, diagnose, find_routes};
 ///     routes = json.loads(renkin.find_routes("CC(=O)Oc1ccccc1C(=O)O", depth=3))
 ///     print(routes["routes_found"])
 #[pyfunction]
-#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None, search_diagnostics=false, spectator_bond_policy="off", element_accounting_policy="off", beam_diversity_policy="off", beam_diversity_slots=0, avoid_building_blocks="", require_building_blocks="", max_route_cost=None, min_confidence=None, min_success_probability=None, require_reaction_families="", avoid_reaction_families="", prefer_reaction_families=""))]
+#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None, search_diagnostics=false, spectator_bond_policy="off", element_accounting_policy="off", beam_diversity_policy="off", beam_diversity_slots=0, avoid_building_blocks="", require_building_blocks="", max_route_cost=None, min_confidence=None, min_success_probability=None, require_reaction_families="", avoid_reaction_families="", prefer_reaction_families="", max_steps=None))]
 #[allow(clippy::too_many_arguments)]
 pub fn find_routes_py(
     target: &str,
@@ -198,6 +200,7 @@ pub fn find_routes_py(
     require_reaction_families: &str,
     avoid_reaction_families: &str,
     prefer_reaction_families: &str,
+    max_steps: Option<usize>,
 ) -> PyResult<String> {
     if search_mode != "standard" && search_mode != "coverage" {
         return Err(PyValueError::new_err(format!(
@@ -426,6 +429,9 @@ pub fn find_routes_py(
     }
     if let Some(max_cost) = max_route_cost {
         routes.retain(|route| route.route_cost <= max_cost);
+    }
+    if let Some(limit) = max_steps {
+        routes.retain(|route| route.steps.len() <= limit);
     }
     if let Some(minimum) = min_confidence {
         routes.retain(|route| route.confidence >= minimum);

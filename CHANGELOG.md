@@ -19,6 +19,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `min_confidence`, and `min_success_probability`, preserving empty defaults.
 - Added Python `find_routes()` reaction-family constraints for required,
   avoided, and preferred families, matching the CLI/MCP planning semantics.
+- Added Python `find_routes()` `max_steps` post-filter, distinct from the
+  search-depth limit and preserving the legacy default when omitted.
 
 ## [0.61.0] - 2026-08-31 "Carbamate Graph Cleavage"
 

@@ -492,6 +492,7 @@ fn syntheseus_route(
             reactants: reactants.iter().map(|s| s.to_string()).collect(),
             reaction_metadata: SyntheseusReactionMetadata {
                 reaction_smiles: format!("{}>>{target}", reactants.join(".")),
+                identifier: None,
             },
         }],
         starting_molecules: starting_leaves.iter().map(|(s, _)| s.to_string()).collect(),

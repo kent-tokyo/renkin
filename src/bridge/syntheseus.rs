@@ -40,7 +40,7 @@
 //! inheriting the existing, already-tested behavior unchanged (smallest
 //! diff, consistent with `normalize_renkin_route`'s own precedent).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use serde::Deserialize;
 
@@ -52,9 +52,9 @@ use crate::chem_env::{mol_from_smiles, to_canonical};
 
 /// Deserialized view of a `syntheseus-route-v1` document. The exporter-owned
 /// `source_version` is retained because it is a stable, explicit provenance
-/// field in the real v0.8.0 fixture. `source_metadata` and per-step
-/// `identifier`/`template`/`source`/`reaction_id` remain deliberately
-/// unparsed, following the adapters' forward-compatible convention.
+/// field in the real v0.8.0 fixture. Per-step `identifier` is retained for
+/// interchange provenance; `source_metadata` and `template`/`source`/
+/// `reaction_id` remain deliberately unparsed.
 #[derive(Debug, Deserialize)]
 pub struct SyntheseusRouteV1 {
     #[serde(default)]
@@ -80,12 +80,38 @@ pub struct SyntheseusStep {
 #[derive(Debug, Deserialize)]
 pub struct SyntheseusReactionMetadata {
     pub reaction_smiles: String,
+    #[serde(default)]
+    pub identifier: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
 pub struct SyntheseusMoleculeMetadata {
     #[serde(default)]
     pub is_purchasable: Option<bool>,
+}
+
+/// Aligns explicit Syntheseus reaction identifiers with normalized step
+/// targets. A queue per target preserves deterministic behavior for repeated
+/// product SMILES; missing identifiers remain `None`.
+pub fn original_step_ids(input: &SyntheseusRouteV1, targets: &[String]) -> Vec<Option<String>> {
+    let mut by_target: HashMap<String, VecDeque<Option<String>>> = HashMap::new();
+    for step in &input.steps {
+        if let Some(target) = canonicalize(&step.product) {
+            by_target
+                .entry(target)
+                .or_default()
+                .push_back(step.reaction_metadata.identifier.clone());
+        }
+    }
+    targets
+        .iter()
+        .map(|target| {
+            by_target
+                .get_mut(target)
+                .and_then(VecDeque::pop_front)
+                .flatten()
+        })
+        .collect()
 }
 
 fn canonicalize(smiles: &str) -> Option<String> {

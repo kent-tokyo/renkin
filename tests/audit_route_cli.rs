@@ -495,6 +495,7 @@ fn syntheseus_explicit_format_audits_the_real_linear_fixture() {
         "syntheseus",
         "--output",
         "json",
+        "--interchange",
     ]);
     assert!(
         out.status.success(),
@@ -508,6 +509,10 @@ fn syntheseus_explicit_format_audits_the_real_linear_fixture() {
     assert_eq!(report["routes"][0]["source"], "syntheseus");
     // No stock given -> not_evaluable -> partial, never a silent pass.
     assert_eq!(report["routes"][0]["status"], "partial");
+    assert_eq!(
+        report["route_interchange"][0]["steps"][0]["original_node_id"],
+        "step1"
+    );
 }
 
 #[test]

@@ -14,7 +14,8 @@ Adapters retain only source metadata that is explicit in their confirmed
 input contracts: Syntheseus `source_version` and SynPlanner's top-level route
 key are exported as `source_version` and `source_route_id`. SynPlanner's
 `tree_node_id` is exported as `original_node_id` (with `step_id` as an
-explicit compatibility fallback). Other versions or original node IDs remain
+explicit compatibility fallback). Syntheseus's explicit reaction identifier
+is exported as `original_node_id` as well. Other versions or original node IDs remain
 `null`, never guessed. `canonical_node_id` is
 deterministic and derived from the normalized route ID and step index. Where
 an adapter supplied a reaction record, the schema carries that typed

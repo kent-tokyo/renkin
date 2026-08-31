@@ -24,7 +24,9 @@ use crate::bridge::route_graph::normalize_renkin_route;
 use crate::bridge::synplanner::{
     normalize_synplanner_route, original_step_ids, parse_synplanner_routes,
 };
-use crate::bridge::syntheseus::{SyntheseusRouteV1, normalize_syntheseus_route};
+use crate::bridge::syntheseus::{
+    SyntheseusRouteV1, normalize_syntheseus_route, original_step_ids as syntheseus_step_ids,
+};
 use crate::chem_env::RetroRule;
 use crate::search;
 
@@ -541,11 +543,16 @@ pub fn build_audit_route_report_with_options(
                 .context("input: not a recognized syntheseus-route-v1 JSON")?;
             let outcome = normalize_syntheseus_route(&input);
             let report = audit::audit_with_policy(&outcome, stock, Some(rules), policy);
+            let targets: Vec<String> = report
+                .steps
+                .iter()
+                .map(|step| step.target.clone())
+                .collect();
             summary.record(report.status);
             reports.push(report);
             route_source_versions.push(input.source_version.clone());
             route_source_ids.push(None);
-            route_original_node_ids.push(Vec::new());
+            route_original_node_ids.push(syntheseus_step_ids(&input, &targets));
             "syntheseus"
         }
         AuditRouteFormat::SynPlanner => {

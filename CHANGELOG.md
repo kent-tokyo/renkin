@@ -8,6 +8,14 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.57.0] - 2026-08-31 "Exploration Contract"
+
+### Added
+- Added a stable, machine-readable exploration contract describing the
+  proposer, inventory, search, scorer, and trace boundaries.
+- Added explicit A* / beam strategy and budget metadata to benchmark reports
+  so search configurations are comparable without conflating their metrics.
+
 ## [0.56.0] - 2026-08-31 "Reaction-Family Regression Gates"
 
 ### Added

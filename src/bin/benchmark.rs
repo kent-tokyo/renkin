@@ -27,7 +27,7 @@ use std::time::Instant;
 use anyhow::{Result, bail};
 use renkin::DEFAULT_BUILDING_BLOCKS;
 use renkin::chem_env::{ChemEnv, default_rules, load_rules_from_file};
-use renkin::search::{Route, SearchConfig, find_routes};
+use renkin::search::{Route, SearchConfig, exploration_contract, find_routes};
 use renkin::validation::{
     RouteValidationStatus, StepValidationStatus, route_balanced, validate_route_steps,
 };
@@ -168,6 +168,12 @@ struct BenchResult {
 
 #[derive(Serialize)]
 struct BenchReport {
+    /// Component boundary contract used by this benchmark run.
+    exploration_contract: renkin::search::ExplorationContract,
+    /// Search strategy selected by `beam_width` (`a_star` or `beam`).
+    search_strategy: &'static str,
+    search_depth: u32,
+    search_beam_width: usize,
     total: usize,
     solved: usize,
     success_rate: f64,
@@ -1101,6 +1107,10 @@ fn main() -> Result<()> {
     });
 
     let report = BenchReport {
+        exploration_contract: exploration_contract(),
+        search_strategy: config.strategy_name(),
+        search_depth: max_depth,
+        search_beam_width: beam_width,
         total,
         solved: solved_count,
         success_rate,

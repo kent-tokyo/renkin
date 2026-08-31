@@ -407,6 +407,38 @@ pub struct SearchStats {
     pub reranker_failures: u64,
 }
 
+/// Stable component contract for exploration experiments (ROADMAP Phase 3A).
+///
+/// This is descriptive metadata only: it does not alter proposal generation,
+/// inventory membership, search ordering, scoring, or trace collection. A
+/// benchmark can persist this contract alongside its metrics so A*, beam, and
+/// future coverage runs are compared only when they used the same component
+/// boundaries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct ExplorationContract {
+    pub schema_version: u32,
+    pub proposer: &'static str,
+    pub inventory: &'static str,
+    pub search: &'static str,
+    pub scorer: &'static str,
+    pub trace: &'static str,
+}
+
+/// Current schema version for [`ExplorationContract`].
+pub const EXPLORATION_CONTRACT_SCHEMA_VERSION: u32 = 1;
+
+/// Return the component boundaries used by the current exploration engine.
+pub const fn exploration_contract() -> ExplorationContract {
+    ExplorationContract {
+        schema_version: EXPLORATION_CONTRACT_SCHEMA_VERSION,
+        proposer: "candidate::raw_propose",
+        inventory: "chem_env::ChemEnv",
+        search: "search::find_routes",
+        scorer: "search::route_cost + reaction_prior",
+        trace: "SearchStats::crowd_out.candidate_trace",
+    }
+}
+
 /// Human-readable "why no route was found" diagnosis for a zero-route
 /// search: likely causes plus actionable suggestions, derived from
 /// `stats`/`max_depth`. Shared by the `renkin` CLI and the `find_routes`
@@ -1688,6 +1720,18 @@ impl Default for SearchConfig {
             element_accounting_policy: ElementAccountingGatePolicy::Off,
             beam_diversity_policy: BeamDiversityPolicy::Off,
             beam_diversity_slots: 0,
+        }
+    }
+}
+
+impl SearchConfig {
+    /// Stable label for the search strategy selected by `beam_width`.
+    /// `a_star` is the unlimited frontier; a positive width selects `beam`.
+    pub const fn strategy_name(&self) -> &'static str {
+        if self.beam_width == 0 {
+            "a_star"
+        } else {
+            "beam"
         }
     }
 }
@@ -4274,6 +4318,33 @@ mod tests {
                  rule was removed, its arm must not resurrect a family label"
             );
         }
+    }
+
+    #[test]
+    fn exploration_contract_is_stable_and_strategy_is_explicit() {
+        let contract = exploration_contract();
+        assert_eq!(contract.schema_version, EXPLORATION_CONTRACT_SCHEMA_VERSION);
+        assert_eq!(contract.proposer, "candidate::raw_propose");
+        assert_eq!(contract.inventory, "chem_env::ChemEnv");
+        assert_eq!(contract.search, "search::find_routes");
+        assert_eq!(contract.scorer, "search::route_cost + reaction_prior");
+        assert_eq!(contract.trace, "SearchStats::crowd_out.candidate_trace");
+        assert_eq!(
+            SearchConfig {
+                beam_width: 0,
+                ..Default::default()
+            }
+            .strategy_name(),
+            "a_star"
+        );
+        assert_eq!(
+            SearchConfig {
+                beam_width: 25,
+                ..Default::default()
+            }
+            .strategy_name(),
+            "beam"
+        );
     }
 
     /// End-to-end fixtures for the reaction-family metadata attached to real

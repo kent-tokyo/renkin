@@ -14,7 +14,7 @@
 fn main() {
     use chematic::fp::{EcfpConfig, ecfp};
     use renkin::chem_env::mol_from_smiles;
-    use std::io::{self, BufRead, Write};
+    use std::io::{self, Write};
 
     const ECFP_CONFIG: EcfpConfig = EcfpConfig {
         radius: 2,
@@ -27,9 +27,11 @@ fn main() {
     let stdout = io::stdout();
     let mut out = io::BufWriter::new(stdout.lock());
 
-    for line in stdin.lock().lines() {
-        let smiles = match line {
-            Ok(s) => s,
+    let mut input = stdin.lock();
+    loop {
+        let smiles = match renkin::io_limits::read_bounded_line(&mut input, "fp stdin") {
+            Ok(Some(s)) => s,
+            Ok(None) => break,
             Err(_) => {
                 writeln!(out, "ERR").ok();
                 continue;

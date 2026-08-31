@@ -219,6 +219,11 @@ through the shared reader unit test.
 The same suite also rejects invalid UTF-8 from stdin before JSON parsing,
 keeping encoding failures distinct from malformed JSON.
 
+The canonicalization, fingerprint, and reranker JSONL utilities apply a
+shared 64KiB physical-line limit while reading stdin. Canonicalization and
+fingerprint reject an oversized record as `ERR` and continue at the next
+record; the reranker fails closed rather than parsing an oversized row.
+
 Reranker model and frequency-table artifacts use the same regular-file,
 non-symlink, UTF-8, 64MiB bounded reader before model or JSON parsing.
 

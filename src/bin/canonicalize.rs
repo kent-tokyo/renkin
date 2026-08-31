@@ -28,7 +28,7 @@
 ///   echo "[CH3:1]O" | ./target/release/renkin-canonicalize --clear-atom-maps
 fn main() {
     use renkin::chem_env::{clear_atom_maps, mol_from_smiles, to_canonical};
-    use std::io::{self, BufRead, Write};
+    use std::io::{self, Write};
 
     let clear_maps = std::env::args().any(|a| a == "--clear-atom-maps");
 
@@ -36,9 +36,11 @@ fn main() {
     let stdout = io::stdout();
     let mut out = io::BufWriter::new(stdout.lock());
 
-    for line in stdin.lock().lines() {
-        let smiles = match line {
-            Ok(s) => s,
+    let mut input = stdin.lock();
+    loop {
+        let smiles = match renkin::io_limits::read_bounded_line(&mut input, "canonicalize stdin") {
+            Ok(Some(s)) => s,
+            Ok(None) => break,
             Err(_) => {
                 writeln!(out, "ERR").ok();
                 continue;

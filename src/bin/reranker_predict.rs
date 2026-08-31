@@ -18,7 +18,7 @@
 
 use renkin::reranker::LightGbmModel;
 use serde::{Deserialize, Serialize};
-use std::io::{BufRead, Write};
+use std::io::Write;
 
 #[derive(Deserialize)]
 struct InRow {
@@ -49,9 +49,13 @@ fn main() {
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
-    for (i, line) in stdin.lock().lines().enumerate() {
-        let line = line.unwrap_or_else(|e| panic!("read stdin line {i}: {e}"));
+    let mut input = stdin.lock();
+    let mut i = 0;
+    while let Some(line) = renkin::io_limits::read_bounded_line(&mut input, "reranker stdin")
+        .unwrap_or_else(|e| panic!("read stdin line {i}: {e}"))
+    {
         if line.trim().is_empty() {
+            i += 1;
             continue;
         }
         let row: InRow =
@@ -63,5 +67,6 @@ fn main() {
         let out_row = OutRow { rust_score: score };
         writeln!(out, "{}", serde_json::to_string(&out_row).unwrap())
             .unwrap_or_else(|e| panic!("write stdout line {i}: {e}"));
+        i += 1;
     }
 }

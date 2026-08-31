@@ -1,12 +1,55 @@
 //! Bounded readers for attacker-controlled local text files.
 
-use std::io::Read;
+use std::io::{BufRead, Read};
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 
 /// Maximum size accepted for a caller-supplied text file.
 pub const MAX_TEXT_FILE_BYTES: u64 = 64 * 1024 * 1024;
+pub const MAX_TEXT_LINE_BYTES: usize = 64 * 1024;
+
+/// Read one UTF-8 line without allocating beyond the shared line cap. An
+/// oversized line is consumed through its newline before returning an error,
+/// so a streaming caller can safely continue with the following record.
+pub fn read_bounded_line(reader: &mut impl BufRead, label: &str) -> Result<Option<String>> {
+    let mut bytes = Vec::new();
+    let mut oversized = false;
+    loop {
+        let buffer = reader
+            .fill_buf()
+            .with_context(|| format!("failed to read {label}"))?;
+        if buffer.is_empty() {
+            if bytes.is_empty() && !oversized {
+                return Ok(None);
+            }
+            break;
+        }
+        let newline = buffer.iter().position(|&byte| byte == b'\n');
+        let consumed = newline.map_or(buffer.len(), |position| position + 1);
+        if !oversized {
+            let remaining = MAX_TEXT_LINE_BYTES.saturating_sub(bytes.len());
+            let copy_len = consumed.min(remaining);
+            bytes.extend_from_slice(&buffer[..copy_len]);
+            if copy_len < consumed {
+                oversized = true;
+            }
+        }
+        reader.consume(consumed);
+        if newline.is_some() {
+            break;
+        }
+    }
+    if oversized {
+        bail!(
+            "resource_exhausted: {label} line exceeds {} bytes",
+            MAX_TEXT_LINE_BYTES
+        );
+    }
+    String::from_utf8(bytes)
+        .with_context(|| format!("{label} line is not valid UTF-8"))
+        .map(Some)
+}
 
 /// Read UTF-8 text from an arbitrary reader with the same hard byte cap used
 /// for caller-supplied files. This is also used for stdin, where metadata
@@ -121,6 +164,18 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("resource_exhausted")
+        );
+    }
+
+    #[test]
+    fn bounded_line_rejects_large_line_and_preserves_following_line() {
+        let input = format!("{}\nCCO\n", "x".repeat(MAX_TEXT_LINE_BYTES + 1));
+        let mut reader = std::io::Cursor::new(input.into_bytes());
+        let error = read_bounded_line(&mut reader, "stdin").unwrap_err();
+        assert!(error.to_string().contains("line exceeds"));
+        assert_eq!(
+            read_bounded_line(&mut reader, "stdin").unwrap(),
+            Some("CCO\n".into())
         );
     }
 }

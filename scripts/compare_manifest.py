@@ -116,6 +116,44 @@ def docker_image_digest(image: str) -> str | None:
     return out
 
 
+def validate_security_contract(manifest: dict) -> None:
+    """Fail closed when a comparison manifest loses its S0 contract.
+
+    This is intentionally a structural check, not a judgment that the run
+    itself was safe. The latter depends on the recorded hashes and outcomes;
+    this guard only prevents incomplete security metadata from being treated
+    as release evidence.
+    """
+    contract = manifest.get("security_contract")
+    if not isinstance(contract, dict):
+        raise ValueError("manifest is missing security_contract")
+    if contract.get("version") != SECURITY_CONTRACT_VERSION:
+        raise ValueError("manifest has an unsupported security_contract version")
+    if not isinstance(contract.get("trusted_boundary"), str) or not contract["trusted_boundary"]:
+        raise ValueError("security_contract.trusted_boundary must be a non-empty string")
+    if not isinstance(contract.get("resource_budget"), dict):
+        raise ValueError("security_contract.resource_budget must be an object")
+    cases = contract.get("threat_cases")
+    if not isinstance(cases, list) or not cases:
+        raise ValueError("security_contract.threat_cases must be a non-empty list")
+    case_ids: set[str] = set()
+    for case in cases:
+        if not isinstance(case, dict):
+            raise ValueError("security_contract.threat_cases contains a non-object")
+        case_id = case.get("security_case_id")
+        if not isinstance(case_id, str) or not case_id or case_id in case_ids:
+            raise ValueError("security_contract.threat_cases contains an invalid or duplicate id")
+        case_ids.add(case_id)
+        for field in ("severity", "scenario", "release_blocker"):
+            if not isinstance(case.get(field), str) or not case[field]:
+                raise ValueError(f"security contract case {case_id!r} is missing {field}")
+        if not isinstance(case.get("surfaces"), list) or not case["surfaces"]:
+            raise ValueError(f"security contract case {case_id!r} has no surfaces")
+    blockers = contract.get("release_blockers")
+    if not isinstance(blockers, list) or not blockers or not all(isinstance(item, str) and item for item in blockers):
+        raise ValueError("security_contract.release_blockers must be a non-empty string list")
+
+
 def capture_start_manifest(
     *,
     tool: str,
@@ -175,6 +213,7 @@ def finalize_manifest(manifest: dict, input_files: dict[str, str]) -> dict:
     manifest["input_files_unchanged_during_run"] = (
         manifest["input_file_sha256_at_end"] == manifest["input_file_sha256"]
     )
+    validate_security_contract(manifest)
     return manifest
 
 

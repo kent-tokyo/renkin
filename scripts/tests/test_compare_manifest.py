@@ -85,6 +85,40 @@ class TestRedactHomeDir(unittest.TestCase):
         self.assertEqual(contract["resource_budget"]["timeout_s"], 30)
         self.assertTrue(contract["threat_cases"])
         self.assertTrue(all("security_case_id" in case for case in contract["threat_cases"]))
+        cm.validate_security_contract(manifest)
+
+    @patch("compare_manifest.sha256_file", return_value="sha256:test")
+    def test_security_contract_rejects_missing_threat_case_field(self, _mock):
+        manifest = cm.capture_start_manifest(
+            tool="renkin",
+            comparison_mode="native",
+            ring_context_policy=None,
+            command_line=["renkin"],
+            repo_root=".",
+            binary_path=None,
+            docker_image=None,
+            input_files={},
+        )
+        del manifest["security_contract"]["threat_cases"][0]["release_blocker"]
+        with self.assertRaisesRegex(ValueError, "release_blocker"):
+            cm.validate_security_contract(manifest)
+
+    @patch("compare_manifest.sha256_file", return_value="sha256:test")
+    def test_security_contract_rejects_duplicate_case_id(self, _mock):
+        manifest = cm.capture_start_manifest(
+            tool="renkin",
+            comparison_mode="native",
+            ring_context_policy=None,
+            command_line=["renkin"],
+            repo_root=".",
+            binary_path=None,
+            docker_image=None,
+            input_files={},
+        )
+        cases = manifest["security_contract"]["threat_cases"]
+        cases[1]["security_case_id"] = cases[0]["security_case_id"]
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            cm.validate_security_contract(manifest)
 
 
 if __name__ == "__main__":

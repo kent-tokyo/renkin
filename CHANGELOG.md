@@ -41,6 +41,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   boundary and comparison-manifest security contract tests.
 - Added a local fail-fast security regression gate shared by the scheduled
   workflow and crates-restricted development.
+- Added fail-closed structural validation for comparison-manifest security
+  contracts, including threat-case IDs and release blockers.
 - MCP now requires the exact JSON-RPC `2.0` envelope before dispatch, rejecting
   missing or unsupported protocol versions as structured invalid requests.
 - MCP now suppresses responses for all JSON-RPC notifications based on the

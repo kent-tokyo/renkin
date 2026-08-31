@@ -154,6 +154,8 @@ from the general build-and-test workflow.
 The gate is also available locally as
 `bash scripts/run_security_regressions.sh`; it performs the same dependency,
 MCP, and manifest checks without installing project dependencies.
+Comparison manifests now reject incomplete or duplicated threat-case metadata
+before they can be used as release evidence.
 
 The streaming stock importer applies independent bounds of 64MiB total input,
 64KiB per line, and one million data rows. It rejects invalid UTF-8 and

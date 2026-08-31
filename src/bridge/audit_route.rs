@@ -21,7 +21,9 @@ use sha2::{Digest, Sha256};
 use crate::bridge::aizynthfinder::{AzfNode, normalize_aizynthfinder_route};
 use crate::bridge::audit::{self, AuditPolicy, AuditReport, AuditStatus};
 use crate::bridge::route_graph::normalize_renkin_route;
-use crate::bridge::synplanner::{normalize_synplanner_route, parse_synplanner_routes};
+use crate::bridge::synplanner::{
+    normalize_synplanner_route, original_step_ids, parse_synplanner_routes,
+};
 use crate::bridge::syntheseus::{SyntheseusRouteV1, normalize_syntheseus_route};
 use crate::chem_env::RetroRule;
 use crate::search;
@@ -212,6 +214,8 @@ pub struct AuditRouteReport {
     route_source_versions: Vec<Option<String>>,
     #[serde(skip)]
     route_source_ids: Vec<Option<String>>,
+    #[serde(skip)]
+    route_original_node_ids: Vec<Vec<Option<String>>>,
 }
 
 #[derive(Debug, Serialize, Default)]
@@ -287,6 +291,9 @@ impl AuditRouteReport {
                         self.source_format,
                         self.route_source_versions.get(index).cloned().flatten(),
                         self.route_source_ids.get(index).cloned().flatten(),
+                        self.route_original_node_ids
+                            .get(index)
+                            .map_or(&[], Vec::as_slice),
                         report,
                         stock,
                     )
@@ -482,6 +489,7 @@ pub fn build_audit_route_report_with_options(
     let mut reports = Vec::new();
     let mut route_source_versions = Vec::new();
     let mut route_source_ids = Vec::new();
+    let mut route_original_node_ids = Vec::new();
     let source_format = match resolved_format {
         AuditRouteFormat::Renkin => {
             let input: AuditRouteInput = serde_json::from_value(value)
@@ -494,6 +502,7 @@ pub fn build_audit_route_report_with_options(
                 reports.push(report);
                 route_source_versions.push(None);
                 route_source_ids.push(None);
+                route_original_node_ids.push(Vec::new());
             }
             "renkin"
         }
@@ -507,6 +516,7 @@ pub fn build_audit_route_report_with_options(
                 reports.push(report);
                 route_source_versions.push(None);
                 route_source_ids.push(None);
+                route_original_node_ids.push(Vec::new());
             }
             "aizynthfinder"
         }
@@ -521,6 +531,7 @@ pub fn build_audit_route_report_with_options(
                     reports.push(report);
                     route_source_versions.push(None);
                     route_source_ids.push(None);
+                    route_original_node_ids.push(Vec::new());
                 }
             }
             "aizynthfinder"
@@ -534,6 +545,7 @@ pub fn build_audit_route_report_with_options(
             reports.push(report);
             route_source_versions.push(input.source_version.clone());
             route_source_ids.push(None);
+            route_original_node_ids.push(Vec::new());
             "syntheseus"
         }
         AuditRouteFormat::SynPlanner => {
@@ -546,6 +558,14 @@ pub fn build_audit_route_report_with_options(
                 reports.push(report);
                 route_source_versions.push(None);
                 route_source_ids.push(Some(source_route_id.clone()));
+                let ids = original_step_ids(node);
+                route_original_node_ids.push(
+                    if reports.last().is_some_and(|r| r.steps.len() == ids.len()) {
+                        ids
+                    } else {
+                        Vec::new()
+                    },
+                );
             }
             "synplanner"
         }
@@ -580,6 +600,7 @@ pub fn build_audit_route_report_with_options(
         route_interchange: None,
         route_source_versions,
         route_source_ids,
+        route_original_node_ids,
         routes: reports,
     })
 }
@@ -700,6 +721,19 @@ mod tests {
                 .iter()
                 .all(|step| step.reaction_provenance.reaction_evidence.is_some())
         );
+    }
+
+    #[test]
+    fn synplanner_full_fields_fixture_retains_original_tree_node_id() {
+        let content = load_synplanner_fixture("route_3_full_fields.json");
+        let rules: Vec<RetroRule> = Vec::new();
+        let mut report =
+            build_audit_route_report(&content, "synplanner", None, &rules).expect("audits");
+        report.attach_interchange();
+        let interchange = &report.route_interchange.as_ref().expect("interchange")[0];
+        assert_eq!(interchange.source_route_id.as_deref(), Some("7"));
+        assert_eq!(interchange.steps.len(), 1);
+        assert_eq!(interchange.steps[0].original_node_id.as_deref(), Some("42"));
     }
 
     #[test]

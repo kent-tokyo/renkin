@@ -524,6 +524,8 @@ fn synplanner_mol(
         rule_id: None,
         rule_source: None,
         rule_key: None,
+        step_id: None,
+        tree_node_id: None,
         children,
     }
 }
@@ -536,6 +538,8 @@ fn synplanner_reaction(smiles: &str, precursors: Vec<SynPlannerNode>) -> SynPlan
         rule_id: None,
         rule_source: None,
         rule_key: None,
+        step_id: None,
+        tree_node_id: None,
         children: precursors,
     }
 }

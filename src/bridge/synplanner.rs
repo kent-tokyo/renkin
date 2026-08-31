@@ -66,6 +66,12 @@ pub struct SynPlannerNode {
     pub rule_source: Option<String>,
     #[serde(default)]
     pub rule_key: Option<String>,
+    /// Optional source identifiers emitted by SynPlanner's route metadata.
+    /// They are opaque values and may be numbers or strings across exports.
+    #[serde(default)]
+    pub step_id: Option<serde_json::Value>,
+    #[serde(default)]
+    pub tree_node_id: Option<serde_json::Value>,
     #[serde(default)]
     pub children: Vec<SynPlannerNode>,
 }
@@ -76,6 +82,36 @@ fn scalar_to_string(value: &serde_json::Value) -> Option<String> {
         serde_json::Value::Number(n) => Some(n.to_string()),
         _ => None,
     }
+}
+
+fn source_node_id(node: &SynPlannerNode) -> Option<String> {
+    node.tree_node_id
+        .as_ref()
+        .and_then(scalar_to_string)
+        .or_else(|| node.step_id.as_ref().and_then(scalar_to_string))
+}
+
+/// Returns source reaction-node IDs in the same preorder as
+/// [`RouteDocument::steps`]. `tree_node_id` is preferred because it identifies
+/// the exported tree node; `step_id` is a compatibility fallback used by
+/// exports that omit the tree identifier.
+pub fn original_step_ids(node: &SynPlannerNode) -> Vec<Option<String>> {
+    fn walk(node: &SynPlannerNode, out: &mut Vec<Option<String>>) {
+        if node.node_type != "mol" {
+            return;
+        }
+        if let [reaction] = node.children.as_slice()
+            && reaction.node_type == "reaction"
+        {
+            out.push(source_node_id(reaction));
+            for precursor in &reaction.children {
+                walk(precursor, out);
+            }
+        }
+    }
+    let mut ids = Vec::new();
+    walk(node, &mut ids);
+    ids
 }
 
 fn rule_provenance(node: &SynPlannerNode) -> Option<SynPlannerRuleProvenance> {
@@ -354,6 +390,8 @@ mod tests {
             rule_id: None,
             rule_source: None,
             rule_key: None,
+            step_id: None,
+            tree_node_id: None,
             children: vec![],
         };
         let outcome = normalize_synplanner_route(&corrupt);
@@ -377,6 +415,8 @@ mod tests {
             rule_id: None,
             rule_source: None,
             rule_key: None,
+            step_id: None,
+            tree_node_id: None,
             children: vec![
                 SynPlannerNode {
                     node_type: "reaction".to_string(),
@@ -385,6 +425,8 @@ mod tests {
                     rule_id: None,
                     rule_source: None,
                     rule_key: None,
+                    step_id: None,
+                    tree_node_id: None,
                     children: vec![],
                 },
                 SynPlannerNode {
@@ -394,6 +436,8 @@ mod tests {
                     rule_id: None,
                     rule_source: None,
                     rule_key: None,
+                    step_id: None,
+                    tree_node_id: None,
                     children: vec![],
                 },
             ],

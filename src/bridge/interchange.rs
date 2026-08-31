@@ -66,6 +66,7 @@ pub fn from_audit_report(
     source_tool: &'static str,
     source_version: Option<String>,
     source_route_id: Option<String>,
+    original_node_ids: &[Option<String>],
     report: &AuditReport,
     stock: Option<StockProvenance>,
 ) -> RouteInterchange {
@@ -79,7 +80,7 @@ pub fn from_audit_report(
         .enumerate()
         .map(|(index, step)| InterchangeStep {
             canonical_node_id: format!("{route_id}:step:{index}"),
-            original_node_id: None,
+            original_node_id: original_node_ids.get(index).cloned().flatten(),
             target: step.target.clone(),
             precursors: step.precursors.clone(),
             reaction_provenance: ReactionProvenance {
@@ -134,7 +135,7 @@ mod tests {
             }],
             findings: vec![],
         };
-        let interchange = from_audit_report("aizynthfinder", None, None, &report, None);
+        let interchange = from_audit_report("aizynthfinder", None, None, &[], &report, None);
         assert_eq!(interchange.schema_version, 1);
         assert!(interchange.source_version.is_none());
         assert!(interchange.source_route_id.is_none());

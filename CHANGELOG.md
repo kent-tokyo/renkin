@@ -13,6 +13,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `plan_with_constraints` tool. Routes can now require at least one exact
   canonical building-block leaf, complementing `avoid_building_blocks` for
   local house-stock and prohibited-material policies.
+- Added matching `avoid_building_blocks` and `require_building_blocks` filters
+  to the Python `find_routes()` API without changing its legacy defaults.
 
 ## [0.61.0] - 2026-08-31 "Carbamate Graph Cleavage"
 

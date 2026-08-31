@@ -22,6 +22,10 @@ use crate::search::{SearchConfig, diagnose, find_routes};
 ///     require_elements (str): Comma-separated element symbols that must each appear
 ///         in at least one leaf BB (e.g. ``"B"`` for Suzuki-type routes).
 ///         Default: ``""`` (no constraint).
+///     avoid_building_blocks (str): Comma-separated canonical SMILES of leaf BBs
+///         to exclude from returned routes. Default: ``""`` (no constraint).
+///     require_building_blocks (str): Comma-separated canonical SMILES of leaf BBs;
+///         each returned route must contain at least one. Default: ``""`` (no constraint).
 ///     verbose (bool): Print search statistics (nodes expanded, elapsed time) to
 ///         stderr after the search completes. Default: ``False``.
 ///     templates_path (str | None): Path to an extracted SMIRKS templates .smi
@@ -149,7 +153,7 @@ use crate::search::{SearchConfig, diagnose, find_routes};
 ///     routes = json.loads(renkin.find_routes("CC(=O)Oc1ccccc1C(=O)O", depth=3))
 ///     print(routes["routes_found"])
 #[pyfunction]
-#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None, search_diagnostics=false, spectator_bond_policy="off", element_accounting_policy="off", beam_diversity_policy="off", beam_diversity_slots=0))]
+#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None, search_diagnostics=false, spectator_bond_policy="off", element_accounting_policy="off", beam_diversity_policy="off", beam_diversity_slots=0, avoid_building_blocks="", require_building_blocks=""))]
 #[allow(clippy::too_many_arguments)]
 pub fn find_routes_py(
     target: &str,
@@ -174,6 +178,8 @@ pub fn find_routes_py(
     element_accounting_policy: &str,
     beam_diversity_policy: &str,
     beam_diversity_slots: usize,
+    avoid_building_blocks: &str,
+    require_building_blocks: &str,
 ) -> PyResult<String> {
     if search_mode != "standard" && search_mode != "coverage" {
         return Err(PyValueError::new_err(format!(
@@ -332,7 +338,7 @@ pub fn find_routes_py(
         reranker_failures_summed: u64,
     }
 
-    let (routes, stats, coverage_meta) = if search_mode == "coverage" {
+    let (mut routes, stats, coverage_meta) = if search_mode == "coverage" {
         let coverage_path = coverage_templates_path.ok_or_else(|| {
             PyValueError::new_err("search_mode=\"coverage\" requires coverage_templates_path")
         })?;
@@ -371,6 +377,35 @@ pub fn find_routes_py(
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         (routes, stats, None)
     };
+
+    let avoided_building_blocks: Vec<&str> = avoid_building_blocks
+        .split(',')
+        .map(str::trim)
+        .filter(|bb| !bb.is_empty())
+        .collect();
+    if !avoided_building_blocks.is_empty() {
+        routes.retain(|route| {
+            !route.building_blocks.iter().any(|bb| {
+                avoided_building_blocks
+                    .iter()
+                    .any(|candidate| candidate == bb)
+            })
+        });
+    }
+    let required_building_blocks: Vec<&str> = require_building_blocks
+        .split(',')
+        .map(str::trim)
+        .filter(|bb| !bb.is_empty())
+        .collect();
+    if !required_building_blocks.is_empty() {
+        routes.retain(|route| {
+            route.building_blocks.iter().any(|bb| {
+                required_building_blocks
+                    .iter()
+                    .any(|candidate| candidate == bb)
+            })
+        });
+    }
 
     let reranker_failures_for_output = coverage_meta
         .as_ref()

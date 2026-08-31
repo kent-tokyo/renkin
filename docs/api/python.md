@@ -27,6 +27,8 @@ renkin.find_routes(
     coverage_templates_path: str | None = None,
     coverage_timeout_seconds: int | None = None,
     search_diagnostics: bool = False,
+    avoid_building_blocks: str = "",
+    require_building_blocks: str = "",
 ) -> str
 ```
 
@@ -44,6 +46,8 @@ a `dict` — parse it with `json.loads()` before accessing fields.
 | `building_blocks` | `list[str] \| None` | `None` | Custom building block SMILES list. If `None`, uses `data/building_blocks.smi` (402 unique compounds) when that path resolves relative to the current working directory, otherwise falls back to a compiled-in 152-compound set — see [Building Blocks](#building-blocks) below |
 | `avoid_elements` | `str` | `""` | Comma-separated element symbols to ban from building blocks (e.g. `"Br,I"`) |
 | `require_elements` | `str` | `""` | Comma-separated element symbols that must each appear in at least one leaf building block (e.g. `"B"` for Suzuki-type routes) |
+| `avoid_building_blocks` | `str` | `""` | Comma-separated canonical building-block SMILES to exclude from route leaves |
+| `require_building_blocks` | `str` | `""` | Comma-separated canonical building-block SMILES; each returned route must contain at least one |
 | `verbose` | `bool` | `False` | Print search statistics (nodes expanded, elapsed time) to stderr |
 | `bb_prices_path` | `str \| None` | `None` | CSV (`SMILES,price_per_gram`) for route cost scoring |
 | `templates_path` | `str \| None` | `None` | Path to an extracted SMIRKS templates `.smi` file (tab-separated). `None` = hand-crafted rules only |

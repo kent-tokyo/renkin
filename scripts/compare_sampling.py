@@ -204,6 +204,8 @@ def load_sample(list_path: str, n: int | None = None) -> list[dict]:
     This is the ONLY way downstream code should obtain sample_100/sample_500 --
     both are prefixes of the same file, never independently recomputed.
     """
+    if n is not None and (isinstance(n, bool) or n < 0):
+        raise ValueError("sample size must be a non-negative integer")
     _validated_sample_file(list_path)
     rows = []
     total_bytes = 0
@@ -218,7 +220,16 @@ def load_sample(list_path: str, n: int | None = None) -> list[dict]:
                 )
             line = raw_bytes.decode("utf-8").strip()
             if line:
-                rows.append(json.loads(line))
+                row = json.loads(line)
+                if not isinstance(row, dict):
+                    raise ValueError("sample list rows must be JSON objects")
+                rank = row.get("sample_rank")
+                target_id = row.get("target_id")
+                if isinstance(rank, bool) or not isinstance(rank, int) or rank < 0:
+                    raise ValueError("sample list row has an invalid sample_rank")
+                if not isinstance(target_id, str) or not target_id:
+                    raise ValueError("sample list row has an invalid target_id")
+                rows.append(row)
     rows.sort(key=lambda r: r["sample_rank"])
     return rows if n is None else rows[:n]
 

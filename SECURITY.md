@@ -179,6 +179,9 @@ Manifest writes use a same-directory temporary file, `fsync`, and atomic
 replacement so an interrupted benchmark cannot publish truncated evidence.
 Each manifest also receives an independent security-contract snapshot, so
 mutating one in post-processing cannot alter later manifests in the process.
+Frozen sample-list parsing also validates each row as an object with a
+non-negative integer `sample_rank` and non-empty `target_id`, preventing
+malformed rows from reaching downstream sorting or benchmark code.
 
 The streaming stock importer applies independent bounds of 64MiB total input,
 64KiB per line, and one million data rows. It rejects invalid UTF-8 and

@@ -61,6 +61,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   before JSONL parsing.
 - Generated sample manifests and frozen lists are now written atomically after
   flushing and syncing temporary files.
+- Frozen sample-list rows now require a validated object schema and reject
+  invalid ranks, target IDs, and negative sample sizes before sorting.
 - Comparison manifests are now written through an fsync-and-rename atomic
   path, preventing interrupted runs from leaving truncated JSON evidence.
 - Manifest security-contract snapshots are now independent per run, preventing

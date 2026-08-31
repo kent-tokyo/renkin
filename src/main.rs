@@ -436,6 +436,15 @@ fn main() -> Result<()> {
         );
     };
 
+    if !matches!(
+        format.as_str(),
+        "json" | "tree" | "mermaid" | "explain" | "compare" | "table" | "compare-json" | "pareto"
+    ) {
+        bail!(
+            "unsupported --format {format:?} (expected json|tree|mermaid|explain|compare|table|compare-json|pareto)"
+        );
+    }
+
     // Phase 41.18B: coverage mode. `search_mode_arg` absent or "standard"
     // is byte-for-byte the pre-existing path below -- this whole block is
     // additive. Resolved and validated here, before any of the env/rules/

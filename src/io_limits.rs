@@ -1,6 +1,7 @@
 //! Bounded readers for attacker-controlled local text files.
 
 use std::io::Read;
+use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 
@@ -30,16 +31,22 @@ pub fn read_bounded_reader(reader: impl Read, label: &str) -> Result<String> {
 /// metadata, so a file replacement or growth cannot turn the reader into an
 /// unbounded allocation.
 pub fn read_bounded_text_file(path: &str, label: &str) -> Result<String> {
+    read_bounded_text_path(path, label)
+}
+
+/// Path-generic variant used by APIs that accept Path values directly.
+pub fn read_bounded_text_path(path: impl AsRef<Path>, label: &str) -> Result<String> {
+    let path = path.as_ref();
     let link_metadata = std::fs::symlink_metadata(path)
-        .with_context(|| format!("failed to inspect {label} {path}"))?;
+        .with_context(|| format!("failed to inspect {label} {}", path.display()))?;
     if link_metadata.file_type().is_symlink() {
         bail!("{label} {path:?} must not be a symlink");
     }
-    let file =
-        std::fs::File::open(path).with_context(|| format!("failed to read {label} {path}"))?;
+    let file = std::fs::File::open(path)
+        .with_context(|| format!("failed to read {label} {}", path.display()))?;
     let metadata = file
         .metadata()
-        .with_context(|| format!("failed to inspect {label} {path}"))?;
+        .with_context(|| format!("failed to inspect {label} {}", path.display()))?;
     if !metadata.is_file() {
         bail!("{label} {path:?} is not a regular file");
     }
@@ -49,7 +56,7 @@ pub fn read_bounded_text_file(path: &str, label: &str) -> Result<String> {
             MAX_TEXT_FILE_BYTES
         );
     }
-    read_bounded_reader(file, &format!("{label} {path}"))
+    read_bounded_reader(file, &format!("{label} {}", path.display()))
 }
 
 #[cfg(test)]

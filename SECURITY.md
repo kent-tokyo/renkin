@@ -127,6 +127,9 @@ through the shared reader unit test.
 The same suite also rejects invalid UTF-8 from stdin before JSON parsing,
 keeping encoding failures distinct from malformed JSON.
 
+Reranker model and frequency-table artifacts use the same regular-file,
+non-symlink, UTF-8, 64MiB bounded reader before model or JSON parsing.
+
 `audit-route` route exports are capped at 64MiB both before and after gzip
 decompression. Non-regular files, invalid UTF-8, and decompressed expansion
 past the cap are rejected before route normalization.

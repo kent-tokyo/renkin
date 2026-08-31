@@ -287,8 +287,7 @@ impl LightGbmModel {
     }
 
     pub fn from_path(path: impl AsRef<Path>) -> Result<Self> {
-        let text = std::fs::read_to_string(path.as_ref())
-            .with_context(|| format!("read model file {}", path.as_ref().display()))?;
+        let text = crate::io_limits::read_bounded_text_path(path, "model file")?;
         Self::from_text(&text)
     }
 
@@ -336,8 +335,7 @@ impl TemplateFrequencyTable {
     }
 
     pub fn from_path(path: impl AsRef<Path>) -> Result<Self> {
-        let text = std::fs::read_to_string(path.as_ref())
-            .with_context(|| format!("read frequency table {}", path.as_ref().display()))?;
+        let text = crate::io_limits::read_bounded_text_path(path, "frequency table")?;
         Self::from_json_str(&text)
     }
 
@@ -384,18 +382,12 @@ impl RuntimeReranker {
         model_path: impl AsRef<Path>,
         freq_table_path: impl AsRef<Path>,
     ) -> Result<Self> {
-        let model_bytes = std::fs::read(model_path.as_ref())
-            .with_context(|| format!("read model file {}", model_path.as_ref().display()))?;
+        let model_text = crate::io_limits::read_bounded_text_path(model_path, "model file")?;
+        let model_bytes = model_text.as_bytes();
         let model_sha256 = format!(
             "sha256:{}",
-            crate::sha256_hex(sha2::Sha256::digest(&model_bytes))
+            crate::sha256_hex(sha2::Sha256::digest(model_bytes))
         );
-        let model_text = String::from_utf8(model_bytes).with_context(|| {
-            format!(
-                "model file {} is not valid UTF-8",
-                model_path.as_ref().display()
-            )
-        })?;
         let model = LightGbmModel::from_text(&model_text)?;
         let freq_table = TemplateFrequencyTable::from_path(freq_table_path)?;
         Ok(Self {
@@ -455,6 +447,7 @@ impl CandidateReranker for RuntimeReranker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs::OpenOptions;
 
     /// A hand-built, minimal single-split tree: feature 0 <= 5.0 -> leaf 0
     /// (value -1.0), else leaf 1 (value 2.0); missing -> default_left (goes
@@ -536,5 +529,27 @@ mod tests {
         assert_eq!(max, 3.0);
         assert_eq!(mean, 2.0);
         assert!(table.max_mean(&["unknown".to_string()]).is_none());
+    }
+
+    #[test]
+    fn model_path_rejects_oversized_file_before_parsing() {
+        let path =
+            std::env::temp_dir().join(format!("renkin-reranker-oversized-{}", std::process::id()));
+        let file = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&path)
+            .expect("create sparse model test file");
+        file.set_len(crate::io_limits::MAX_TEXT_FILE_BYTES + 1)
+            .expect("grow sparse model test file");
+        let result = LightGbmModel::from_path(&path);
+        let _ = std::fs::remove_file(&path);
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("resource_exhausted")
+        );
     }
 }

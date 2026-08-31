@@ -27,6 +27,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   on stdin is rejected before parsing.
 - Added a process-level regression test proving invalid UTF-8 on forward
   stdin is rejected before JSON parsing.
+- Extended the bounded reader to reranker model and frequency-table files;
+  oversized or symlinked scoring artifacts now fail closed before parsing.
 - Added fail-closed MCP `tools/call` validation: malformed `params` or
   `arguments` are rejected, and unknown tool names no longer fall through to
   `find_routes`.

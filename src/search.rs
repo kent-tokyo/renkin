@@ -2066,10 +2066,9 @@ pub fn find_routes_with_control(
             continue;
         }
         closed.insert(key);
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            nodes_expanded += 1;
-        }
+        // This is part of the serialized search contract, including WASM;
+        // only the separate `nodes_popped` timing counter is native-only.
+        nodes_expanded += 1;
 
         let Some(target_entry) = first_unsolved.or_else(|| node.frontier.first()) else {
             continue;

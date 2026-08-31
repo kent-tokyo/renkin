@@ -31,6 +31,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   candidate-level crowd-out trace in the human-readable response.
 - Added WASM `find_routes_v6`, preserving the prior policy controls while
   exposing bounded candidate traces and the full `search_diagnostics` block.
+- Fixed WASM search diagnostics reporting `nodes_expanded: 0` for every run;
+  the serialized counter is now incremented on all supported targets.
 
 ## [0.61.0] - 2026-08-31 "Carbamate Graph Cleavage"
 

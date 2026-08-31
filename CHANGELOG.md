@@ -8,6 +8,12 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.54.1] - 2026-08-31 "CI Lint Compatibility"
+
+### Fixed
+- Moved MCP unit tests to the end of the module so the latest Clippy lint
+  configuration passes in CI.
+
 ## [0.54.0] - 2026-08-31 "MCP Coverage Search"
 
 ### Added

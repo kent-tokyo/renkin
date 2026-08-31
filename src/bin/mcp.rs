@@ -321,41 +321,6 @@ fn handle_find_routes(smiles: &str, args: &Value) -> Value {
     json!({"content": [{"type": "text", "text": text}]})
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn find_routes_schema_advertises_coverage_mode() {
-        let tools = handle_tools_list();
-        let find_routes = &tools["tools"].as_array().expect("tools must be an array")[0];
-        let properties = &find_routes["inputSchema"]["properties"];
-        assert_eq!(
-            properties["search_mode"]["enum"],
-            json!(["standard", "coverage"])
-        );
-        assert!(properties["coverage_templates"].is_object());
-        assert!(properties["coverage_timeout_secs"].is_object());
-    }
-
-    #[test]
-    fn coverage_mode_requires_template_path() {
-        let response = handle_tools_call(&json!({
-            "params": {
-                "name": "find_routes",
-                "arguments": {"smiles": "CCO", "search_mode": "coverage"}
-            }
-        }));
-        assert_eq!(response["isError"], json!(true));
-        assert!(
-            response["content"][0]["text"]
-                .as_str()
-                .unwrap()
-                .contains("requires coverage_templates")
-        );
-    }
-}
-
 fn handle_explain_route(smiles: &str, args: &Value) -> Value {
     let depth = args["depth"].as_u64().unwrap_or(5) as u32;
     let max_routes = args["max_routes"].as_u64().unwrap_or(1) as usize;
@@ -826,4 +791,39 @@ fn handle_diagnose_failure(smiles: &str, args: &Value) -> Value {
 
 fn tool_error(msg: &str) -> Value {
     json!({"content": [{"type": "text", "text": msg}], "isError": true})
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn find_routes_schema_advertises_coverage_mode() {
+        let tools = handle_tools_list();
+        let find_routes = &tools["tools"].as_array().expect("tools must be an array")[0];
+        let properties = &find_routes["inputSchema"]["properties"];
+        assert_eq!(
+            properties["search_mode"]["enum"],
+            json!(["standard", "coverage"])
+        );
+        assert!(properties["coverage_templates"].is_object());
+        assert!(properties["coverage_timeout_secs"].is_object());
+    }
+
+    #[test]
+    fn coverage_mode_requires_template_path() {
+        let response = handle_tools_call(&json!({
+            "params": {
+                "name": "find_routes",
+                "arguments": {"smiles": "CCO", "search_mode": "coverage"}
+            }
+        }));
+        assert_eq!(response["isError"], json!(true));
+        assert!(
+            response["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("requires coverage_templates")
+        );
+    }
 }

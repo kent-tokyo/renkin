@@ -1241,11 +1241,11 @@ fn evidence_match(args: &[String]) -> Result<()> {
 
     let mut rules = chem_env::default_rules();
     if let Some(path) = flag_value(args, "--templates") {
+        chem_env::validate_template_file(path)?;
         rules.extend(chem_env::load_rules_from_file(path));
     }
 
-    let content = std::fs::read_to_string(input_path)
-        .with_context(|| format!("failed to read --input file {input_path}"))?;
+    let content = read_bounded_text_file(input_path, "--input")?;
 
     let mut rows: Vec<EvidenceMatchInputRow> = Vec::new();
     for (i, line) in content.lines().enumerate() {
@@ -3329,6 +3329,33 @@ mod evidence_cli_tests {
 
         std::fs::remove_file(&input).ok();
         std::fs::remove_file(&output).ok();
+    }
+
+    #[test]
+    fn evidence_match_rejects_oversized_input_before_jsonl_parsing() {
+        let input = write_temp("evidence_match_oversized_input.jsonl", "{}");
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&input)
+            .unwrap();
+        file.set_len(MAX_CLI_TEXT_FILE_BYTES + 1).unwrap();
+        let output = std::env::temp_dir()
+            .join("evidence_match_oversized_output.jsonl")
+            .to_str()
+            .unwrap()
+            .to_string();
+
+        let args = vec![
+            "--input".to_string(),
+            input.clone(),
+            "--output".to_string(),
+            output.clone(),
+        ];
+        let err = evidence_match(&args).unwrap_err();
+        assert!(format!("{err:#}").contains("resource_exhausted"));
+        assert!(!std::path::Path::new(&output).exists());
+
+        std::fs::remove_file(&input).ok();
     }
 
     #[test]

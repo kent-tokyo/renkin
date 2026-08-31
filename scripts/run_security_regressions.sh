@@ -14,4 +14,7 @@ cargo test --test mcp_cli
 echo "[security] comparison-manifest contract regressions"
 python3 -m unittest scripts/tests/test_compare_manifest.py
 
+echo "[security] comparison-sampling input regressions"
+python3 -m unittest scripts/tests/test_compare_sampling.py
+
 echo "[security] OK"

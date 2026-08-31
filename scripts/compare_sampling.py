@@ -22,7 +22,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
+import stat
 from dataclasses import dataclass, field
 
 try:
@@ -34,6 +36,8 @@ except ImportError:  # pragma: no cover -- exercised by scripts/tests without th
     HAVE_RDKIT = False
 
 PROTOCOL_VERSION = "renkin-issue66-sample-v1"
+MAX_SAMPLE_BYTES = 64 * 1024 * 1024
+MAX_SAMPLE_LINE_BYTES = 64 * 1024
 
 
 def canonical_smiles(raw_smiles: str) -> str | None:
@@ -55,9 +59,20 @@ def sample_key(canonical: str) -> str:
 
 
 def sha256_file(path: str) -> str:
+    metadata = os.lstat(path)
+    if stat.S_ISLNK(metadata.st_mode):
+        raise ValueError(f"sample input must not be a symlink: {path!r}")
+    if not stat.S_ISREG(metadata.st_mode):
+        raise ValueError(f"sample input must be a regular file: {path!r}")
+    if metadata.st_size > MAX_SAMPLE_BYTES:
+        raise ValueError(f"sample input exceeds {MAX_SAMPLE_BYTES} bytes: {path!r}")
     h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
+    total = 0
+    with open(path, "rb") as handle:
+        while chunk := handle.read(65536):
+            total += len(chunk)
+            if total > MAX_SAMPLE_BYTES:
+                raise ValueError(f"sample input exceeds {MAX_SAMPLE_BYTES} bytes: {path!r}")
             h.update(chunk)
     return h.hexdigest()
 
@@ -83,8 +98,24 @@ def load_candidate_lines(corpus_path: str) -> tuple[list[CandidateLine], int, in
     candidates: list[CandidateLine] = []
     total_lines = 0
     comment_or_blank = 0
-    with open(corpus_path, "r", encoding="utf-8") as f:
-        for line_number, raw_line in enumerate(f, start=1):
+    metadata = os.lstat(corpus_path)
+    if stat.S_ISLNK(metadata.st_mode):
+        raise ValueError(f"sample input must not be a symlink: {corpus_path!r}")
+    if not stat.S_ISREG(metadata.st_mode):
+        raise ValueError(f"sample input must be a regular file: {corpus_path!r}")
+    if metadata.st_size > MAX_SAMPLE_BYTES:
+        raise ValueError(f"sample input exceeds {MAX_SAMPLE_BYTES} bytes: {corpus_path!r}")
+    total_bytes = 0
+    with open(corpus_path, "rb") as handle:
+        for line_number, raw_bytes in enumerate(handle, start=1):
+            total_bytes += len(raw_bytes)
+            if total_bytes > MAX_SAMPLE_BYTES:
+                raise ValueError(f"sample input exceeds {MAX_SAMPLE_BYTES} bytes: {corpus_path!r}")
+            if len(raw_bytes) > MAX_SAMPLE_LINE_BYTES:
+                raise ValueError(
+                    f"sample input line exceeds {MAX_SAMPLE_LINE_BYTES} bytes: {corpus_path!r}"
+                )
+            raw_line = raw_bytes.decode("utf-8")
             total_lines += 1
             stripped = raw_line.strip()
             if not stripped or stripped.startswith("#"):

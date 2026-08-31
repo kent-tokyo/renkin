@@ -169,6 +169,8 @@ Manifest JSON is also limited to 256 nesting levels before deserialization;
 delimiters inside strings do not count toward this limit.
 It is additionally limited to 1,000,000 structural JSON tokens, with string
 contents excluded from the count.
+The benchmark sample corpus applies the same 64MiB regular-file and symlink
+boundary, plus a 64KiB per-line limit, before candidate parsing and hashing.
 
 The streaming stock importer applies independent bounds of 64MiB total input,
 64KiB per line, and one million data rows. It rejects invalid UTF-8 and

@@ -133,6 +133,18 @@ fn validate_via_stdin_matches_flag_form() {
 }
 
 #[test]
+fn oversized_route_json_on_stdin_is_rejected_before_parsing() {
+    let oversized = "x".repeat(64 * 1024 * 1024 + 1);
+    let out = run_stdin(&["validate"], &oversized);
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("resource_exhausted"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
 fn unknown_option_is_hard_error() {
     let out = run(&["predict", "--reactants", "CCO", "--bogus-flag"]);
     assert!(!out.status.success());

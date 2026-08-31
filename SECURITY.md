@@ -120,6 +120,10 @@ Route JSON supplied to renkin-forward validate through stdin and target lists
 used by CLI template coverage use the same 64MiB cap; stdin is bounded during
 the read because it has no trustworthy file-size metadata.
 
+The forward CLI integration suite includes an oversized-stdin regression case,
+so this boundary is exercised through the real subprocess rather than only
+through the shared reader unit test.
+
 `audit-route` route exports are capped at 64MiB both before and after gzip
 decompression. Non-regular files, invalid UTF-8, and decompressed expansion
 past the cap are rejected before route normalization.

@@ -23,6 +23,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a second path-based reread.
 - Bounded renkin-forward validate route JSON read from stdin and the CLI
   template-coverage target list with the shared 64MiB reader.
+- Added a process-level regression test proving oversized forward route JSON
+  on stdin is rejected before parsing.
 - Added fail-closed MCP `tools/call` validation: malformed `params` or
   `arguments` are rejected, and unknown tool names no longer fall through to
   `find_routes`.

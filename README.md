@@ -565,7 +565,7 @@ The JSON output includes `avg_nodes_expanded`, `avg_confidence`, `avg_convergenc
 | `validate_route` | Forward-validate a retrosynthetic route |
 | `explain_route` | Human-readable strengths/weaknesses per route |
 | `find_pareto_routes` | Pareto-front multi-objective route search |
-| `plan_with_constraints` | Constraint-DSL planning (element filters, step/cost limits, confidence thresholds, required/avoided/preferred reaction families) |
+| `plan_with_constraints` | Constraint-DSL planning (element/building-block filters, step/cost limits, confidence thresholds, required/avoided/preferred reaction families) |
 | `estimate_diversity` | Route diversity and coverage metrics |
 
 `find_routes` also accepts `search_mode: "coverage"` with a required

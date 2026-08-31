@@ -879,4 +879,18 @@ mod tests {
                 .contains("requires coverage_templates")
         );
     }
+
+    #[test]
+    fn plan_with_constraints_schema_advertises_building_block_filters() {
+        let tools = handle_tools_list();
+        let plan = tools["tools"]
+            .as_array()
+            .expect("tools must be an array")
+            .iter()
+            .find(|tool| tool["name"] == "plan_with_constraints")
+            .expect("plan_with_constraints must be advertised");
+        let properties = &plan["inputSchema"]["properties"];
+        assert!(properties["avoid_building_blocks"].is_object());
+        assert!(properties["require_building_blocks"].is_object());
+    }
 }

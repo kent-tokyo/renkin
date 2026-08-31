@@ -472,7 +472,7 @@ USPTO-50kテストセット（全4,907分子評価）:
 | `validate_route` | 逆合成ルートを順方向検証 |
 | `explain_route` | ルートごとの強み/弱みを人間可読形式で出力 |
 | `find_pareto_routes` | 多目的パレートフロント探索 |
-| `plan_with_constraints` | 制約 DSL による合成計画（元素フィルタ・ステップ/コスト・信頼度閾値・必須/除外/優先反応族） |
+| `plan_with_constraints` | 制約 DSL による合成計画（元素・building blockフィルタ・ステップ/コスト・信頼度閾値・必須/除外/優先反応族） |
 | `estimate_diversity` | ルート多様性・カバレッジ指標 |
 
 `find_routes` は、必須の `coverage_templates` パスと

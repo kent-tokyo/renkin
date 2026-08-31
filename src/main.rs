@@ -186,10 +186,7 @@ fn main() -> Result<()> {
     while i < args.len() {
         match args[i].as_str() {
             "--target" | "-t" => {
-                i += 1;
-                if i < args.len() {
-                    target = Some(args[i].clone());
-                }
+                target = Some(required_flag_value(&args, &mut i, "--target")?.to_owned());
             }
             "--depth" | "-d" => {
                 let value = required_flag_value(&args, &mut i, "--depth")?;
@@ -198,22 +195,15 @@ fn main() -> Result<()> {
                 })?;
             }
             "--building-blocks" | "-b" => {
-                i += 1;
-                if i < args.len() {
-                    bb_path = Some(args[i].clone());
-                }
+                bb_path = Some(required_flag_value(&args, &mut i, "--building-blocks")?.to_owned());
             }
             "--templates" => {
-                i += 1;
-                if i < args.len() {
-                    templates_path = Some(args[i].clone());
-                }
+                templates_path =
+                    Some(required_flag_value(&args, &mut i, "--templates")?.to_owned());
             }
             "--template-metadata" => {
-                i += 1;
-                if i < args.len() {
-                    template_metadata_path = Some(args[i].clone());
-                }
+                template_metadata_path =
+                    Some(required_flag_value(&args, &mut i, "--template-metadata")?.to_owned());
             }
             "--top-templates" => {
                 let value = required_flag_value(&args, &mut i, "--top-templates")?;
@@ -240,22 +230,14 @@ fn main() -> Result<()> {
                 })?;
             }
             "--format" | "-f" => {
-                i += 1;
-                if i < args.len() {
-                    format = args[i].clone();
-                }
+                format = required_flag_value(&args, &mut i, "--format")?.to_owned();
             }
             "--avoid-elements" | "-e" => {
-                i += 1;
-                if i < args.len() {
-                    avoid_elements = args[i].clone();
-                }
+                avoid_elements = required_flag_value(&args, &mut i, "--avoid-elements")?.to_owned();
             }
             "--require-elements" | "-r" => {
-                i += 1;
-                if i < args.len() {
-                    require_elements = args[i].clone();
-                }
+                require_elements =
+                    required_flag_value(&args, &mut i, "--require-elements")?.to_owned();
             }
             "--verbose" | "-v" => {
                 verbose = true;
@@ -364,37 +346,24 @@ fn main() -> Result<()> {
                 coverage_timeout_secs_arg = Some(v.clone());
             }
             "--bb-prices" => {
-                i += 1;
-                if i < args.len() {
-                    bb_prices_path = Some(args[i].clone());
-                }
+                bb_prices_path =
+                    Some(required_flag_value(&args, &mut i, "--bb-prices")?.to_owned());
             }
             "--stock" => {
-                i += 1;
-                if i < args.len() {
-                    stock_path = Some(args[i].clone());
-                }
+                stock_path = Some(required_flag_value(&args, &mut i, "--stock")?.to_owned());
             }
             "--objectives" => {
-                i += 1;
-                if i < args.len() {
-                    objectives_spec = args[i].clone();
-                }
+                objectives_spec = required_flag_value(&args, &mut i, "--objectives")?.to_owned();
             }
             "--constraints" => {
-                i += 1;
-                if i < args.len() {
-                    constraints_path = Some(args[i].clone());
-                }
+                constraints_path =
+                    Some(required_flag_value(&args, &mut i, "--constraints")?.to_owned());
             }
             #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
             "--scorer" => {
-                i += 1;
-                if i < args.len() {
-                    scorer_path = Some(args[i].clone());
-                }
+                scorer_path = Some(required_flag_value(&args, &mut i, "--scorer")?.to_owned());
             }
-            _ => {}
+            other => bail!("unknown option {other:?}"),
         }
         i += 1;
     }

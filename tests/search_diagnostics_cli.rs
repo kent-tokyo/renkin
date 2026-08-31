@@ -73,6 +73,32 @@ fn missing_numeric_limit_values_fail_closed() {
 }
 
 #[test]
+fn missing_string_values_fail_closed() {
+    for flag in [
+        "--target",
+        "--building-blocks",
+        "--templates",
+        "--format",
+        "--constraints",
+    ] {
+        let stderr = run_failure(&[flag]);
+        assert!(
+            stderr.contains("requires a value"),
+            "{flag} must reject a missing value: {stderr}"
+        );
+    }
+}
+
+#[test]
+fn unknown_main_option_fails_closed() {
+    let stderr = run_failure(&["--target", BUILDING_BLOCK, "--typo"]);
+    assert!(
+        stderr.contains("unknown option"),
+        "unexpected stderr: {stderr}"
+    );
+}
+
+#[test]
 fn default_output_omits_search_diagnostics_when_no_route_found() {
     // depth=1 vs a stock containing only water: exercises the routes.is_empty() branch.
     let v = run(&[

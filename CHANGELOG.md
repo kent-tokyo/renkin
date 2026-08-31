@@ -67,6 +67,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   positive source line number, and a lowercase 64-character SHA-256 sample key.
 - CLI depth, route-count, beam-width, and template-count options now reject
   malformed or missing numeric values instead of silently falling back.
+- Main CLI options now reject missing path/string values and unknown options
+  instead of silently ignoring malformed invocation state.
 - Frozen sample lists now reject duplicate rows and non-contiguous ranks,
   preserving deterministic sample membership after sorting.
 - Comparison manifests are now written through an fsync-and-rename atomic

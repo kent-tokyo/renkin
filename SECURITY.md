@@ -191,6 +191,9 @@ benchmark membership.
 The main CLI also rejects malformed or missing values for its depth,
 route-count, beam-width, and template-count limits instead of silently using
 defaults, preventing boundary bypasses through parser fallback.
+Required path/string options fail when their value is missing, and unknown main
+CLI options are rejected rather than ignored, preventing malformed invocations
+from being interpreted as a different request.
 
 The streaming stock importer applies independent bounds of 64MiB total input,
 64KiB per line, and one million data rows. It rejects invalid UTF-8 and

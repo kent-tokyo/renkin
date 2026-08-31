@@ -9,6 +9,10 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Added shared search budget validation across the Rust library and all
+  connected CLI/Python/WASM/MCP surfaces: target SMILES, depth, route count,
+  beam width, and candidate-trace collection are now bounded before parsing
+  or expansion begins.
 - Added a 1 MiB bounded request-line reader to `renkin-mcp`; oversized
   newline-delimited requests are rejected without allowing unbounded line
   allocation or corrupting the framing of the following request.

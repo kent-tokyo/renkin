@@ -93,6 +93,12 @@ MCP request lines are capped at 1 MiB before JSON parsing. An oversized line is
 drained through its newline and rejected as `-32600 Request too large`, so it
 cannot cause an unbounded allocation or shift subsequent request framing.
 
+The shared search entry point rejects oversized target SMILES and excessive
+depth, route count, beam width, or candidate-trace caps before chemical parsing
+or expansion. The resulting `resource_exhausted` error is propagated through
+the library, CLI, Python, WASM, and MCP adapters rather than being treated as
+an empty search result.
+
 ## Disclosure
 
 Please allow reasonable time for a fix before public disclosure.

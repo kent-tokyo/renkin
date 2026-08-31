@@ -1,7 +1,7 @@
 use std::collections::BinaryHeap;
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use chematic::chem::{molecular_weight, sa_score};
 use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
 use serde::Serialize;
@@ -15,6 +15,43 @@ use crate::evidence::{EvidenceScope, MetadataSource, StepEvidence, TemplateMetad
 use crate::score::{step_cost, template_bonus};
 use crate::spectator_bond::SpectatorBondPolicy;
 use crate::synthesizability::{ElementAccountingStatus, compute_element_accounting};
+
+/// Upper bounds applied at the shared search entry point. They are deliberately
+/// generous for normal chemistry workloads, but prevent an API caller from
+/// turning a single request into an unbounded allocation or search budget.
+pub const MAX_TARGET_SMILES_BYTES: usize = 64 * 1024;
+pub const MAX_SEARCH_DEPTH: u32 = 64;
+pub const MAX_ROUTES: usize = 10_000;
+pub const MAX_BEAM_WIDTH: usize = 1_000_000;
+pub const MAX_CANDIDATE_TRACE: usize = 1_000_000;
+
+fn validate_search_budget(target_smiles: &str, config: &SearchConfig) -> Result<()> {
+    if target_smiles.len() > MAX_TARGET_SMILES_BYTES {
+        bail!(
+            "resource_exhausted: target SMILES exceeds {} bytes",
+            MAX_TARGET_SMILES_BYTES
+        );
+    }
+    if config.max_depth > MAX_SEARCH_DEPTH {
+        bail!("resource_exhausted: max_depth exceeds {}", MAX_SEARCH_DEPTH);
+    }
+    if config.max_routes > MAX_ROUTES {
+        bail!("resource_exhausted: max_routes exceeds {}", MAX_ROUTES);
+    }
+    if config.beam_width > MAX_BEAM_WIDTH {
+        bail!("resource_exhausted: beam_width exceeds {}", MAX_BEAM_WIDTH);
+    }
+    if config
+        .candidate_trace_cap
+        .is_some_and(|cap| cap > MAX_CANDIDATE_TRACE)
+    {
+        bail!(
+            "resource_exhausted: candidate_trace_limit exceeds {}",
+            MAX_CANDIDATE_TRACE
+        );
+    }
+    Ok(())
+}
 
 /// Cached expansion for one (target_smiles, rule) combination.
 struct RetroEntry {
@@ -1873,6 +1910,7 @@ pub fn find_routes_with_control(
     config: &SearchConfig,
     control: &SearchControl,
 ) -> Result<SearchRunResult> {
+    validate_search_budget(target_smiles, config)?;
     let target_mol = mol_from_smiles(target_smiles)?;
     let target_canonical = to_canonical(&target_mol);
 
@@ -2616,6 +2654,44 @@ mod tests {
             max_routes: 5,
             beam_width: 0,
             ..Default::default()
+        }
+    }
+
+    #[test]
+    fn shared_search_budget_rejects_oversized_target_before_parsing() {
+        let env = aspirin_env();
+        let rules = default_rules();
+        let target = "C".repeat(MAX_TARGET_SMILES_BYTES + 1);
+        let error = find_routes(&target, &env, &rules, &SearchConfig::default())
+            .expect_err("oversized target must be rejected");
+        assert!(error.to_string().contains("resource_exhausted"));
+    }
+
+    #[test]
+    fn shared_search_budget_rejects_excessive_search_limits() {
+        let env = aspirin_env();
+        let rules = default_rules();
+        for config in [
+            SearchConfig {
+                max_depth: MAX_SEARCH_DEPTH + 1,
+                ..Default::default()
+            },
+            SearchConfig {
+                max_routes: MAX_ROUTES + 1,
+                ..Default::default()
+            },
+            SearchConfig {
+                beam_width: MAX_BEAM_WIDTH + 1,
+                ..Default::default()
+            },
+            SearchConfig {
+                candidate_trace_cap: Some(MAX_CANDIDATE_TRACE + 1),
+                ..Default::default()
+            },
+        ] {
+            let error = find_routes("CCO", &env, &rules, &config)
+                .expect_err("excessive search budget must be rejected");
+            assert!(error.to_string().contains("resource_exhausted"));
         }
     }
 

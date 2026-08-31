@@ -7,6 +7,32 @@ use crate::chem_env::{
 };
 use crate::search::{SearchConfig, diagnose, find_routes};
 
+const MAX_FORWARD_INPUT_BYTES: usize = 64 * 1024;
+const MAX_FORWARD_REACTANTS: usize = 32;
+const MAX_FORWARD_RESULTS: usize = 1_000;
+const MAX_ROUTE_JSON_BYTES: usize = 64 * 1024 * 1024;
+const MAX_ROUTE_JSON_STEPS: usize = 10_000;
+
+fn validate_forward_inputs(reactants: &[&str], max_results: usize) -> Result<(), String> {
+    if reactants.len() > MAX_FORWARD_REACTANTS {
+        return Err(format!(
+            "resource_exhausted: forward prediction accepts at most {MAX_FORWARD_REACTANTS} reactants"
+        ));
+    }
+    let total_bytes: usize = reactants.iter().map(|s| s.len()).sum();
+    if total_bytes > MAX_FORWARD_INPUT_BYTES {
+        return Err(format!(
+            "resource_exhausted: forward reactants exceed {MAX_FORWARD_INPUT_BYTES} bytes"
+        ));
+    }
+    if max_results > MAX_FORWARD_RESULTS {
+        return Err(format!(
+            "resource_exhausted: max_results exceeds {MAX_FORWARD_RESULTS}"
+        ));
+    }
+    Ok(())
+}
+
 /// Find retrosynthetic routes for a target molecule.
 ///
 /// Args:
@@ -280,7 +306,8 @@ pub fn find_routes_py(
 
     let mut rules = default_rules();
     if let Some(path) = templates_path {
-        crate::chem_env::validate_template_file(path).map_err(PyValueError::new_err)?;
+        crate::chem_env::validate_template_file(path)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
         let mut extra = load_rules_from_file(path);
         if let Some(k) = top_templates {
             extra = crate::chem_env::top_templates_by_weight(extra, k);
@@ -579,6 +606,8 @@ fn py_predict_forward_core(
     use chematic::rxn::run_reactants;
     use chematic::smiles::canonical_smiles as canon;
 
+    validate_forward_inputs(reactants, max_results)?;
+
     let mols: Vec<_> = reactants
         .iter()
         .filter_map(|s| mol_from_smiles(s).ok())
@@ -637,6 +666,8 @@ pub fn predict_forward_py(
 ) -> PyResult<String> {
     let mut rules = default_rules();
     if let Some(path) = templates_path {
+        crate::chem_env::validate_template_file(path)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
         rules.extend(load_rules_from_file(path));
     }
     let refs: Vec<&str> = reactants.iter().map(|s| s.as_str()).collect();
@@ -663,14 +694,27 @@ pub fn validate_forward_py(
 ) -> PyResult<String> {
     use chematic::smiles::canonical_smiles as canon;
 
+    if route_json.len() > MAX_ROUTE_JSON_BYTES {
+        return Err(PyValueError::new_err(format!(
+            "resource_exhausted: route JSON exceeds {MAX_ROUTE_JSON_BYTES} bytes"
+        )));
+    }
+
     let v: serde_json::Value = serde_json::from_str(route_json)
         .map_err(|e| PyValueError::new_err(format!("invalid JSON: {e}")))?;
     let steps = v["steps"]
         .as_array()
         .ok_or_else(|| PyValueError::new_err("route JSON must have a 'steps' array"))?;
+    if steps.len() > MAX_ROUTE_JSON_STEPS {
+        return Err(PyValueError::new_err(format!(
+            "resource_exhausted: route JSON exceeds {MAX_ROUTE_JSON_STEPS} steps"
+        )));
+    }
 
     let mut rules = default_rules();
     if let Some(path) = templates_path {
+        crate::chem_env::validate_template_file(path)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
         rules.extend(load_rules_from_file(path));
     }
 

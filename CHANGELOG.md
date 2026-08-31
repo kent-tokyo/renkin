@@ -9,6 +9,9 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Added Python forward-boundary limits: at most 32 reactants and 64KiB of
+  reactant text per call, 1,000 results, and 64MiB/10,000 steps for route JSON
+  validation; oversized inputs fail with `resource_exhausted`.
 - Added a shared 64MiB bounded text-file reader for CLI stock, private-stock,
   stock-policy, vendor-index, and vendor-match inputs, with regular-file and
   UTF-8 checks before parsing.

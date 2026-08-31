@@ -1752,7 +1752,7 @@ fn template_coverage(args: &[String]) -> Result<()> {
         .and_then(|w| w[1].parse().ok())
         .unwrap_or(1);
 
-    let targets: Vec<String> = std::fs::read_to_string(targets_path)?
+    let targets: Vec<String> = read_bounded_text_file(targets_path, "benchmark targets")?
         .lines()
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
         .map(|l| l.split_whitespace().next().unwrap_or(l).to_string())

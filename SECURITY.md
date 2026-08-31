@@ -116,6 +116,10 @@ Template metadata sidecars are likewise restricted to regular UTF-8 files of
 at most 64MiB, with the bound enforced while reading (including files that
 grow after an initial metadata check) before JSON parsing begins.
 
+Route JSON supplied to renkin-forward validate through stdin and target lists
+used by CLI template coverage use the same 64MiB cap; stdin is bounded during
+the read because it has no trustworthy file-size metadata.
+
 `audit-route` route exports are capped at 64MiB both before and after gzip
 decompression. Non-regular files, invalid UTF-8, and decompressed expansion
 past the cap are rejected before route normalization.

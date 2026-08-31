@@ -16,7 +16,7 @@
 /// diagnostics go to stderr for every subcommand.
 use anyhow::{Result, bail};
 use renkin::chem_env::default_rules;
-use renkin::io_limits::read_bounded_text_file;
+use renkin::io_limits::{read_bounded_reader, read_bounded_text_file};
 use renkin_forward::bench::{BenchOutcome, BenchmarkManifest, TemplateSource, run_benchmark};
 use renkin_forward::hints::{HintGenerationConfig, generate_retrieval_hints};
 use renkin_forward::{
@@ -602,12 +602,9 @@ fn main() -> Result<()> {
         "validate" => {
             let json_str: String = match parsed.route_json {
                 Some(s) => s,
-                None => {
-                    use std::io::Read;
-                    let mut buf = String::new();
-                    std::io::stdin().read_to_string(&mut buf)?;
-                    buf.trim().to_string()
-                }
+                None => read_bounded_reader(std::io::stdin().lock(), "route JSON from stdin")?
+                    .trim()
+                    .to_string(),
             };
             if json_str.is_empty() {
                 bail!("validate requires --route-json <JSON> or JSON piped via stdin");

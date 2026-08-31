@@ -326,22 +326,23 @@ pub fn find_routes_py(
         crate::evidence::warn_unknown_templates(tm, &known_ids);
     }
 
-    let bb_price_map = bb_prices_path.map(|path| {
-        std::fs::read_to_string(path)
-            .ok()
-            .map(|content| {
-                content
-                    .lines()
-                    .filter(|l| !l.is_empty() && !l.starts_with('#'))
-                    .filter_map(|l| {
-                        let (smiles, price) = l.split_once(',')?;
-                        let price: f64 = price.trim().parse().ok()?;
-                        Some((smiles.trim().to_string(), price))
-                    })
-                    .collect::<std::collections::HashMap<String, f64>>()
-            })
-            .unwrap_or_default()
-    });
+    let bb_price_map = bb_prices_path
+        .map(|path| {
+            crate::io_limits::read_bounded_text_file(path, "building-block prices")
+                .map(|content| {
+                    content
+                        .lines()
+                        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                        .filter_map(|l| {
+                            let (smiles, price) = l.split_once(',')?;
+                            let price: f64 = price.trim().parse().ok()?;
+                            Some((smiles.trim().to_string(), price))
+                        })
+                        .collect::<std::collections::HashMap<String, f64>>()
+                })
+                .map_err(|e| PyValueError::new_err(e.to_string()))
+        })
+        .transpose()?;
 
     // Issue #101 Task 35: ordering-only candidate reranker, mirroring the
     // `renkin` CLI's --reranker-model/--reranker-freq-table exactly -- a

@@ -124,6 +124,11 @@ CLI stock, private-stock, stock-policy, vendor-index, and vendor-match text
 files use the same 64MiB regular-file/UTF-8 preflight before CSV, TSV, or JSON
 parsing.
 
+CLI stock CSV, stock coverage targets, and CLI/Python building-block price files
+use the same fail-closed reader. Missing, unreadable, oversized, symlinked, or
+non-UTF-8 inputs now return an error instead of silently becoming empty policy
+data.
+
 Python forward APIs cap a call at 32 reactants and 64KiB of reactant text,
 limit returned predictions to 1,000, and cap route validation input at 64MiB
 and 10,000 steps. These checks return `resource_exhausted` before chemical

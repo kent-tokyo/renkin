@@ -513,7 +513,7 @@ fn main() -> Result<()> {
 
     // --stock overrides --building-blocks and --bb-prices
     let (env, bb_price_map) = if let Some(ref path) = stock_path {
-        let entries = load_stock_csv(path);
+        let entries = load_stock_csv(path)?;
         let smiles_owned: Vec<String> = entries.iter().map(|e| e.smiles.clone()).collect();
         let smiles_refs: Vec<&str> = smiles_owned.iter().map(|s| s.as_str()).collect();
         let stock_env = chem_env::ChemEnv::in_memory(&smiles_refs);
@@ -528,7 +528,7 @@ fn main() -> Result<()> {
             None => chem_env::ChemEnv::load("data/building_blocks.smi")
                 .unwrap_or_else(|_| chem_env::ChemEnv::in_memory(DEFAULT_BUILDING_BLOCKS)),
         };
-        let prices = bb_prices_path.as_deref().map(load_prices);
+        let prices = bb_prices_path.as_deref().map(load_prices).transpose()?;
         (env, prices)
     };
 
@@ -2238,12 +2238,10 @@ struct StockEntry {
 /// Parse a stock CSV file.
 /// Header (first non-comment line) and comment lines starting with `#` are skipped.
 /// Columns: smiles, name, vendor, price_jpy, amount, hazard, available
-fn load_stock_csv(path: &str) -> Vec<StockEntry> {
-    let Ok(content) = std::fs::read_to_string(path) else {
-        return Vec::new();
-    };
+fn load_stock_csv(path: &str) -> Result<Vec<StockEntry>> {
+    let content = read_bounded_text_file(path, "stock CSV")?;
     let mut first = true;
-    content
+    Ok(content
         .lines()
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
         .filter_map(|l| {
@@ -2281,7 +2279,7 @@ fn load_stock_csv(path: &str) -> Vec<StockEntry> {
                     .unwrap_or(true),
             })
         })
-        .collect()
+        .collect::<Vec<_>>())
 }
 
 fn run_stock(args: &[String]) -> Result<()> {
@@ -2290,7 +2288,7 @@ fn run_stock(args: &[String]) -> Result<()> {
         "import" => stock_import_cli(&args[1..])?,
         "stats" => {
             let path = args.get(1).map(|s| s.as_str()).unwrap_or("data/stock.csv");
-            let entries = load_stock_csv(path);
+            let entries = load_stock_csv(path)?;
             if entries.is_empty() {
                 println!("No entries found in {path}");
                 return Ok(());
@@ -2331,7 +2329,7 @@ fn run_stock(args: &[String]) -> Result<()> {
         }
         "validate" => {
             let path = args.get(1).map(|s| s.as_str()).unwrap_or("data/stock.csv");
-            let entries = load_stock_csv(path);
+            let entries = load_stock_csv(path)?;
             let mut valid = 0usize;
             let mut invalid: Vec<String> = Vec::new();
             for e in &entries {
@@ -2350,11 +2348,11 @@ fn run_stock(args: &[String]) -> Result<()> {
         "coverage" => {
             let targets_path = args.get(1).map(|s| s.as_str()).unwrap_or("targets.smi");
             let stock_path = args.get(2).map(|s| s.as_str()).unwrap_or("data/stock.csv");
-            let entries = load_stock_csv(stock_path);
+            let entries = load_stock_csv(stock_path)?;
             let stock_set: std::collections::HashSet<&str> =
                 entries.iter().map(|e| e.smiles.as_str()).collect();
-            let targets: Vec<String> = std::fs::read_to_string(targets_path)
-                .unwrap_or_default()
+            let targets_content = read_bounded_text_file(targets_path, "targets file")?;
+            let targets: Vec<String> = targets_content
                 .lines()
                 .filter(|l| !l.is_empty() && !l.starts_with('#'))
                 .map(|l| l.split_whitespace().next().unwrap_or(l).to_string())
@@ -3152,21 +3150,17 @@ fn doctor_templates(args: &[String]) -> Result<()> {
     });
 }
 
-fn load_prices(path: &str) -> std::collections::HashMap<String, f64> {
-    std::fs::read_to_string(path)
-        .ok()
-        .map(|content| {
-            content
-                .lines()
-                .filter(|l| !l.is_empty() && !l.starts_with('#'))
-                .filter_map(|l| {
-                    let (smiles, price) = l.split_once(',')?;
-                    let price: f64 = price.trim().parse().ok()?;
-                    Some((smiles.trim().to_string(), price))
-                })
-                .collect()
+fn load_prices(path: &str) -> Result<std::collections::HashMap<String, f64>> {
+    let content = read_bounded_text_file(path, "building-block prices")?;
+    Ok(content
+        .lines()
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .filter_map(|l| {
+            let (smiles, price) = l.split_once(',')?;
+            let price: f64 = price.trim().parse().ok()?;
+            Some((smiles.trim().to_string(), price))
         })
-        .unwrap_or_default()
+        .collect())
 }
 
 #[cfg(test)]

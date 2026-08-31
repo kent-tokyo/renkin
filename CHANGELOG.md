@@ -9,6 +9,9 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- CLI and Python building-block price files, plus CLI stock CSV and target
+  files, now use bounded fail-closed readers; unreadable input is no longer
+  silently treated as an empty stock or price map.
 - Added an explicit `cargo-deny` license allowlist for the currently locked
   dependency graph; offline all-checks now pass without accepting unknown
   licenses by default.

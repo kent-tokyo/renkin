@@ -25,6 +25,7 @@ import time
 SECURITY_CONTRACT_VERSION = 1
 MAX_MANIFEST_BYTES = 64 * 1024 * 1024
 MAX_MANIFEST_JSON_DEPTH = 256
+MAX_MANIFEST_JSON_TOKENS = 1_000_000
 
 
 def sha256_file(path: str) -> str:
@@ -74,6 +75,27 @@ def _json_depth(text: str) -> int:
         elif character in "]}":
             depth -= 1
     return maximum
+
+
+def _json_structure_tokens(text: str) -> int:
+    """Count structural JSON delimiters outside strings."""
+    tokens = 0
+    in_string = False
+    escaped = False
+    for character in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                in_string = False
+            continue
+        if character == '"':
+            in_string = True
+        elif character in "[]{}:,":
+            tokens += 1
+    return tokens
 SECURITY_CASES = [
     {
         "security_case_id": "RENKIN-S0-INPUT-001",
@@ -222,6 +244,10 @@ def load_and_validate_manifest(path: str) -> dict:
         if _json_depth(text) > MAX_MANIFEST_JSON_DEPTH:
             raise ValueError(
                 f"comparison manifest exceeds {MAX_MANIFEST_JSON_DEPTH} JSON levels"
+            )
+        if _json_structure_tokens(text) > MAX_MANIFEST_JSON_TOKENS:
+            raise ValueError(
+                f"comparison manifest exceeds {MAX_MANIFEST_JSON_TOKENS} JSON tokens"
             )
         manifest = json.loads(text)
     except (OSError, UnicodeError, json.JSONDecodeError, RecursionError) as exc:

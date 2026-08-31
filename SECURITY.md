@@ -167,6 +167,8 @@ The limit is enforced during the hash read itself as well as during the
 initial metadata check, so file growth during hashing cannot bypass it.
 Manifest JSON is also limited to 256 nesting levels before deserialization;
 delimiters inside strings do not count toward this limit.
+It is additionally limited to 1,000,000 structural JSON tokens, with string
+contents excluded from the count.
 
 The streaming stock importer applies independent bounds of 64MiB total input,
 64KiB per line, and one million data rows. It rejects invalid UTF-8 and

@@ -53,6 +53,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the initial stat preflight, covering files that grow during hashing.
 - Comparison manifests now reject excessive JSON nesting before
   deserialization, while ignoring bracket characters inside JSON strings.
+- Comparison manifests now also enforce a structural JSON-token budget before
+  deserialization to bound shallow delimiter storms.
 - MCP now requires the exact JSON-RPC `2.0` envelope before dispatch, rejecting
   missing or unsupported protocol versions as structured invalid requests.
 - MCP now suppresses responses for all JSON-RPC notifications based on the

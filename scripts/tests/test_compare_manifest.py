@@ -220,6 +220,15 @@ class TestRedactHomeDir(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "JSON levels"):
                     cm.load_and_validate_manifest(handle.name)
 
+    def test_json_structure_tokens_ignore_strings_and_bound_manifest(self):
+        self.assertEqual(cm._json_structure_tokens('{"note": "[],:{}"}'), 3)
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8") as handle:
+            handle.write('{"security_contract": {}}')
+            handle.flush()
+            with patch.object(cm, "MAX_MANIFEST_JSON_TOKENS", 3):
+                with self.assertRaisesRegex(ValueError, "JSON tokens"):
+                    cm.load_and_validate_manifest(handle.name)
+
 
 if __name__ == "__main__":
     unittest.main()

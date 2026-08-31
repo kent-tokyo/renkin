@@ -1858,8 +1858,8 @@ mod tests {
                 Err(_) => rejected += 1,
             }
         }
-        assert_eq!(graph_based, 8);
-        assert_eq!(smirks_based, rules.len() - 8);
+        assert_eq!(graph_based, 9);
+        assert_eq!(smirks_based, rules.len() - 9);
         assert_eq!(
             rejected, 0,
             "every SMIRKS-backed default rule must be statically parseable by hints \

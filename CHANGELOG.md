@@ -9,6 +9,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Added a bounded template-metadata sidecar loader: regular-file, UTF-8, and
+  64MiB input checks now run before JSON parsing and evidence validation.
 - Added bounded streaming limits to stock import: 64MiB total input, 64KiB
   per line, and one million data rows. Oversized or non-UTF-8 stock input now
   fails explicitly instead of allocating without a bound or silently dropping

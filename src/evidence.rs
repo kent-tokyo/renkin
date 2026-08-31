@@ -1,10 +1,13 @@
 use std::collections::{HashMap, HashSet};
+use std::io::Read;
 
 use anyhow::{Context, Result, bail};
 use serde::de::{self, Deserializer, MapAccess, Visitor};
 use serde::{Deserialize, Serialize};
 
 use crate::chem_env::{mol_from_smiles, to_canonical};
+
+pub const MAX_TEMPLATE_METADATA_BYTES: u64 = 64 * 1024 * 1024;
 
 /// How a step's metadata (`conditions`/`reaction_family`, and -- via
 /// `StepEvidence` -- yield/references/warnings/examples) was determined.
@@ -485,8 +488,32 @@ where
 /// any search runs) on malformed JSON or any of the checks in
 /// `validate_template_metadata`.
 pub fn load_template_metadata(path: &str) -> Result<TemplateMetadataFile> {
-    let content = std::fs::read_to_string(path)
+    let file = std::fs::File::open(path)
         .with_context(|| format!("failed to read template metadata file {path}"))?;
+    let metadata = file
+        .metadata()
+        .with_context(|| format!("failed to inspect template metadata file {path}"))?;
+    if !metadata.is_file() {
+        bail!("template metadata path {path:?} is not a regular file");
+    }
+    if metadata.len() > MAX_TEMPLATE_METADATA_BYTES {
+        bail!(
+            "resource_exhausted: template metadata file {path:?} exceeds {} bytes",
+            MAX_TEMPLATE_METADATA_BYTES
+        );
+    }
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    file.take(MAX_TEMPLATE_METADATA_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .with_context(|| format!("failed to read template metadata file {path}"))?;
+    if bytes.len() as u64 > MAX_TEMPLATE_METADATA_BYTES {
+        bail!(
+            "resource_exhausted: template metadata file {path:?} exceeds {} bytes",
+            MAX_TEMPLATE_METADATA_BYTES
+        );
+    }
+    let content = String::from_utf8(bytes)
+        .with_context(|| format!("template metadata file {path} is not valid UTF-8"))?;
     let file: TemplateMetadataFile = serde_json::from_str(&content)
         .with_context(|| format!("failed to parse template metadata file {path}"))?;
     validate_template_metadata(&file)?;
@@ -817,6 +844,35 @@ mod tests {
             "got: {err}"
         );
         std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn oversized_metadata_sidecar_is_rejected_before_json_parsing() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!(
+            "renkin_evidence_oversized_{}.json",
+            std::process::id()
+        ));
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(MAX_TEMPLATE_METADATA_BYTES + 1).unwrap();
+        let err = load_template_metadata(path.to_str().unwrap())
+            .expect_err("oversized metadata must be rejected");
+        std::fs::remove_file(&path).ok();
+        assert!(format!("{err:#}").contains("resource_exhausted"));
+    }
+
+    #[test]
+    fn non_utf8_metadata_sidecar_is_rejected_before_json_parsing() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!(
+            "renkin_evidence_invalid_utf8_{}.json",
+            std::process::id()
+        ));
+        std::fs::write(&path, [0xff, 0xfe]).unwrap();
+        let err = load_template_metadata(path.to_str().unwrap())
+            .expect_err("invalid UTF-8 must be rejected");
+        std::fs::remove_file(&path).ok();
+        assert!(format!("{err:#}").contains("not valid UTF-8"));
     }
 
     #[test]

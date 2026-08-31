@@ -103,6 +103,10 @@ The streaming stock importer applies independent bounds of 64MiB total input,
 64KiB per line, and one million data rows. It rejects invalid UTF-8 and
 resource exhaustion before producing a stock manifest.
 
+Template metadata sidecars are likewise restricted to regular UTF-8 files of
+at most 64MiB, with the bound enforced while reading (including files that
+grow after an initial metadata check) before JSON parsing begins.
+
 ## Disclosure
 
 Please allow reasonable time for a fix before public disclosure.

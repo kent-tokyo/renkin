@@ -35,6 +35,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ring-context sidecars, removing remaining unbounded production text reads.
 - MCP now requires the exact JSON-RPC `2.0` envelope before dispatch, rejecting
   missing or unsupported protocol versions as structured invalid requests.
+- MCP now suppresses responses for all JSON-RPC notifications based on the
+  missing `id` field, rather than relying on a notification method-name prefix.
 - Added fail-closed MCP `tools/call` validation: malformed `params` or
   `arguments` are rejected, and unknown tool names no longer fall through to
   `find_routes`.

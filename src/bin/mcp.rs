@@ -130,6 +130,7 @@ fn main() {
             continue;
         }
 
+        let is_notification = is_notification(&msg);
         let id = object.get("id").cloned().unwrap_or(Value::Null);
         if !valid_request_id(&id) {
             write_error(&mut out, Value::Null, -32600, "Invalid Request");
@@ -141,7 +142,9 @@ fn main() {
             continue;
         };
 
-        // Notifications have no id and require no response.
+        // MCP lifecycle notifications are intentionally ignored. Other
+        // JSON-RPC notifications still execute their method but require no
+        // response because they omit the id field.
         if method.starts_with("notifications/") {
             continue;
         }
@@ -156,9 +159,11 @@ fn main() {
             }
         };
 
-        let resp = json!({"jsonrpc": "2.0", "id": id, "result": result});
-        let _ = writeln!(out, "{resp}");
-        let _ = out.flush();
+        if !is_notification {
+            let resp = json!({"jsonrpc": "2.0", "id": id, "result": result});
+            let _ = writeln!(out, "{resp}");
+            let _ = out.flush();
+        }
     }
 }
 
@@ -171,6 +176,12 @@ fn is_json_rpc_request(value: &Value) -> bool {
         .as_object()
         .and_then(|object| object.get("jsonrpc"))
         .is_some_and(|version| version == "2.0")
+}
+
+fn is_notification(value: &Value) -> bool {
+    value
+        .as_object()
+        .is_some_and(|object| !object.contains_key("id"))
 }
 
 fn write_error(out: &mut impl Write, id: Value, code: i32, message: &str) {
@@ -1110,6 +1121,23 @@ mod tests {
         assert!(!is_json_rpc_request(&json!({})));
         assert!(!is_json_rpc_request(&json!({"jsonrpc": "1.0"})));
         assert!(!is_json_rpc_request(&json!({"jsonrpc": 2})));
+    }
+
+    #[test]
+    fn notifications_are_detected_by_missing_id_not_method_name() {
+        assert!(is_notification(&json!({
+            "jsonrpc": "2.0",
+            "method": "tools/list"
+        })));
+        assert!(is_notification(&json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized"
+        })));
+        assert!(!is_notification(&json!({
+            "jsonrpc": "2.0",
+            "id": null,
+            "method": "tools/list"
+        })));
     }
 
     #[test]

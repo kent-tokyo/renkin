@@ -9,6 +9,9 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Added shared audit text-input limits for Python and WASM: route and stock
+  text are capped at 64MiB, and stock lines at 64KiB, before JSON parsing or
+  stock scanning begins.
 - Added Python forward-boundary limits: at most 32 reactants and 64KiB of
   reactant text per call, 1,000 results, and 64MiB/10,000 steps for route JSON
   validation; oversized inputs fail with `resource_exhausted`.

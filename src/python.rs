@@ -802,6 +802,8 @@ pub fn audit_route_py(
     stock_text: &str,
     policy: &str,
 ) -> PyResult<String> {
+    bridge::validate_audit_text_inputs(content, stock_text)
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
     let policy: bridge::AuditPolicy = policy.parse().map_err(PyValueError::new_err)?;
     let stock = (!stock_text.trim().is_empty()).then(|| bridge::parse_stock_text(stock_text));
     let rules = default_rules();

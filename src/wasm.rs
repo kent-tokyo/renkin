@@ -537,6 +537,10 @@ pub fn audit_route(content: &str, format: &str, stock_text: &str) -> String {
 /// `audit_route` itself is now a thin `"standard"` wrapper around this.
 #[wasm_bindgen]
 pub fn audit_route_v2(content: &str, format: &str, stock_text: &str, policy: &str) -> String {
+    if let Err(e) = crate::bridge::validate_audit_text_inputs(content, stock_text) {
+        return serde_json::to_string(&serde_json::json!({ "error": format!("{e:#}") }))
+            .unwrap_or_else(|_| r#"{"error":"audit input rejected"}"#.to_string());
+    }
     let policy = match policy.parse::<crate::bridge::AuditPolicy>() {
         Ok(p) => p,
         Err(e) => {

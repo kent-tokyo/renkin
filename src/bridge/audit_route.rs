@@ -30,6 +30,35 @@ use crate::bridge::syntheseus::{
 use crate::chem_env::RetroRule;
 use crate::search;
 
+/// Maximum route-export text accepted by in-memory audit surfaces.
+pub const MAX_AUDIT_ROUTE_TEXT_BYTES: usize = 64 * 1024 * 1024;
+/// Maximum stock text accepted by in-memory audit surfaces.
+pub const MAX_AUDIT_STOCK_TEXT_BYTES: usize = 64 * 1024 * 1024;
+/// Maximum line length accepted by the in-memory stock parser.
+pub const MAX_AUDIT_STOCK_LINE_BYTES: usize = 64 * 1024;
+
+/// Validate text inputs before an in-memory audit parses or scans them.
+///
+/// File-backed CLI inputs have an equivalent bounded reader in `main.rs`; this
+/// shared check keeps Python and WASM callers on the same resource contract.
+pub fn validate_audit_text_inputs(content: &str, stock_text: &str) -> anyhow::Result<()> {
+    use anyhow::bail;
+
+    if content.len() > MAX_AUDIT_ROUTE_TEXT_BYTES {
+        bail!("resource_exhausted: audit route input exceeds {MAX_AUDIT_ROUTE_TEXT_BYTES} bytes");
+    }
+    if stock_text.len() > MAX_AUDIT_STOCK_TEXT_BYTES {
+        bail!("resource_exhausted: audit stock input exceeds {MAX_AUDIT_STOCK_TEXT_BYTES} bytes");
+    }
+    if stock_text
+        .lines()
+        .any(|line| line.len() > MAX_AUDIT_STOCK_LINE_BYTES)
+    {
+        bail!("resource_exhausted: audit stock line exceeds {MAX_AUDIT_STOCK_LINE_BYTES} bytes");
+    }
+    Ok(())
+}
+
 /// Minimal `#[derive(Deserialize)]` view of RENKIN's own `--format json`
 /// route output (`main.rs`'s `Output` struct is `Serialize`-only, by
 /// design -- see `crate::bridge` module docs for why round-tripping through
@@ -700,6 +729,24 @@ mod tests {
     fn parse_stock_text_skips_comments_and_blanks() {
         let stock = parse_stock_text("# comment\nCCO ethanol\n\nO=C(O)c1ccccc1 benzoic\n");
         assert_eq!(stock.len(), 2);
+    }
+
+    #[test]
+    fn audit_text_input_limits_reject_oversized_route_and_stock() {
+        let oversized_route = "x".repeat(MAX_AUDIT_ROUTE_TEXT_BYTES + 1);
+        let err = validate_audit_text_inputs(&oversized_route, "").unwrap_err();
+        assert!(err.to_string().contains("audit route input"));
+
+        let oversized_stock = "x".repeat(MAX_AUDIT_STOCK_TEXT_BYTES + 1);
+        let err = validate_audit_text_inputs("{}", &oversized_stock).unwrap_err();
+        assert!(err.to_string().contains("audit stock input"));
+    }
+
+    #[test]
+    fn audit_text_input_limits_reject_oversized_stock_line() {
+        let stock = format!("{}\n", "C".repeat(MAX_AUDIT_STOCK_LINE_BYTES + 1));
+        let err = validate_audit_text_inputs("{}", &stock).unwrap_err();
+        assert!(err.to_string().contains("audit stock line"));
     }
 
     fn load_synplanner_fixture(name: &str) -> String {

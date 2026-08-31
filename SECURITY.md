@@ -120,6 +120,10 @@ limit returned predictions to 1,000, and cap route validation input at 64MiB
 and 10,000 steps. These checks return `resource_exhausted` before chemical
 prediction or route-step iteration.
 
+In-memory Python and WASM audit APIs cap route and stock text at 64MiB and
+stock lines at 64KiB before JSON parsing or stock scanning. File-backed CLI
+audit inputs use the equivalent bounded reader.
+
 ## Disclosure
 
 Please allow reasonable time for a fix before public disclosure.

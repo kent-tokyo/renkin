@@ -415,6 +415,39 @@ fn build_sub_molecule(mol: &Molecule, atoms: &FxHashSet<AtomIdx>) -> Option<Mole
     Some(builder.build())
 }
 
+/// Build a sub-molecule while changing one retained bond order. Used only for
+/// graph rules whose retrosynthetic precursor changes bond order at the cut
+/// center (currently urea -> isocyanate + amine).
+fn build_sub_molecule_with_bond_order(
+    mol: &Molecule,
+    atoms: &FxHashSet<AtomIdx>,
+    changed_a: AtomIdx,
+    changed_b: AtomIdx,
+    changed_order: BondOrder,
+) -> Option<Molecule> {
+    let mut builder = MoleculeBuilder::new();
+    let mut idx_map: FxHashMap<AtomIdx, AtomIdx> = FxHashMap::default();
+
+    for &old_idx in atoms {
+        let new_idx = builder.add_atom(mol.atom(old_idx).clone());
+        idx_map.insert(old_idx, new_idx);
+    }
+    for (_, bond) in mol.bonds() {
+        let (a, b) = (bond.atom1, bond.atom2);
+        if atoms.contains(&a) && atoms.contains(&b) {
+            let (&new_a, &new_b) = (idx_map.get(&a)?, idx_map.get(&b)?);
+            let order = if (a == changed_a && b == changed_b) || (a == changed_b && b == changed_a)
+            {
+                changed_order
+            } else {
+                bond.order
+            };
+            builder.add_bond(new_a, new_b, order).ok()?;
+        }
+    }
+    Some(builder.build())
+}
+
 /// Build a sub-molecule and append a Br atom bonded to `cut_atom`.
 fn build_sub_molecule_with_br(
     mol: &Molecule,
@@ -1041,6 +1074,78 @@ fn carbamate_cleavage_graph(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
     results
 }
 
+/// Graph-based urea cleavage: R-NH-C(=O)-NHR' → R-N=C=O + H2NR'.
+///
+/// Only carbonyl carbons with two single-bonded nitrogen neighbours are
+/// considered. The retained C–N bond is upgraded to a double bond in the
+/// isocyanate precursor; the cut nitrogen becomes the amine precursor.
+fn urea_cleavage_graph(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
+    let mut results = Vec::new();
+    let mut seen: FxHashSet<String> = FxHashSet::default();
+
+    for (_, bond) in mol.bonds() {
+        if bond.order != BondOrder::Single {
+            continue;
+        }
+        let (n_cut, c_idx) = {
+            let a = mol.atom(bond.atom1);
+            let b = mol.atom(bond.atom2);
+            if a.element == Element::N && b.element == Element::C {
+                (bond.atom1, bond.atom2)
+            } else if a.element == Element::C && b.element == Element::N {
+                (bond.atom2, bond.atom1)
+            } else {
+                continue;
+            }
+        };
+        let carbonyl_oxygen = mol.neighbors(c_idx).any(|(nb, bond_idx)| {
+            mol.atom(nb).element == Element::O && mol.bond(bond_idx).order == BondOrder::Double
+        });
+        let nitrogen_neighbors: Vec<AtomIdx> = mol
+            .neighbors(c_idx)
+            .filter_map(|(nb, bond_idx)| {
+                (mol.atom(nb).element == Element::N
+                    && mol.bond(bond_idx).order == BondOrder::Single)
+                    .then_some(nb)
+            })
+            .collect();
+        if !carbonyl_oxygen || nitrogen_neighbors.len() != 2 || !is_bridge_bond(mol, n_cut, c_idx) {
+            continue;
+        }
+        let Some(&n_retained) = nitrogen_neighbors.iter().find(|&&n| n != n_cut) else {
+            continue;
+        };
+
+        let comp_amine = get_component(mol, n_cut, n_cut, c_idx);
+        let comp_isocyanate = get_component(mol, c_idx, n_cut, c_idx);
+        let Some(frag_amine) = build_sub_molecule(mol, &comp_amine) else {
+            continue;
+        };
+        let Some(frag_isocyanate) = build_sub_molecule_with_bond_order(
+            mol,
+            &comp_isocyanate,
+            n_retained,
+            c_idx,
+            BondOrder::Double,
+        ) else {
+            continue;
+        };
+        let precs_amine = split_fragments(&frag_amine);
+        let precs_isocyanate = split_fragments(&frag_isocyanate);
+        if precs_amine.is_empty() || precs_isocyanate.is_empty() {
+            continue;
+        }
+        let mut prec_set = precs_isocyanate;
+        prec_set.extend(precs_amine);
+        let mut key: Vec<&str> = prec_set.iter().map(|p| p.smiles.as_str()).collect();
+        key.sort_unstable();
+        if seen.insert(key.join("|")) {
+            results.push(prec_set);
+        }
+    }
+    results
+}
+
 /// Build a sub-molecule and append an OH group bonded to `cut_atom`.
 fn build_sub_molecule_with_oh(
     mol: &Molecule,
@@ -1159,6 +1264,7 @@ pub fn apply_retro(mol: &Molecule, rule: &RetroRule) -> Vec<Vec<PrecursorMol>> {
             "aryl_ether_retro" => aryl_ether_cleavage(mol),
             "sulfonamide_retro" => sulfonamide_cleavage_graph(mol),
             "carbamate_cleavage" => carbamate_cleavage_graph(mol),
+            "urea_cleavage" => urea_cleavage_graph(mol),
             "boc_deprotection_retro" => boc_deprotection(mol),
             "cbz_deprotection_retro" => cbz_deprotection(mol),
             _ => vec![],
@@ -2295,6 +2401,8 @@ pub fn default_rules() -> Vec<RetroRule> {
         rr("diaryl_sulfone_retro", ""),
         // R-O-C(=O)-NHR' → R-O-C(=O)Cl + H2NR' (graph-based carbamate formation)
         rr("carbamate_cleavage", ""),
+        // R-NH-C(=O)-NHR' → R-N=C=O + H2NR' (graph-based urea cleavage)
+        rr("urea_cleavage", ""),
         // ── N-protection / deprotection ──────────────────────────────────────
         // N-Boc → N-H (deprotect: TFA removes Boc). Graph-based to avoid leakage.
         rr("boc_deprotection_retro", ""),
@@ -3868,6 +3976,33 @@ mod tests {
             apply_retro(&mol, &rule).is_empty(),
             "a carbonyl without an O-organic substituent is an amide"
         );
+    }
+
+    #[test]
+    fn urea_cleavage_fires_on_unsymmetrical_urea() {
+        let mol = mol_from_smiles("CNC(=O)NC").unwrap();
+        let rule = rr("urea_cleavage", "");
+        let results = apply_retro(&mol, &rule);
+        assert!(
+            !results.is_empty(),
+            "urea_cleavage must fire on methyl urea"
+        );
+        for set in &results {
+            assert_eq!(set.len(), 2, "urea cleavage must yield two precursors");
+        }
+        let flat: Vec<_> = results
+            .iter()
+            .flat_map(|set| set.iter().map(|p| p.smiles.as_str()))
+            .collect();
+        assert!(flat.iter().any(|s| s.contains("=O") && s.contains("=N")));
+        assert!(flat.contains(&"CN"));
+    }
+
+    #[test]
+    fn urea_cleavage_skips_plain_amide() {
+        let mol = mol_from_smiles("CC(=O)NC").unwrap();
+        let rule = rr("urea_cleavage", "");
+        assert!(apply_retro(&mol, &rule).is_empty());
     }
 
     #[test]

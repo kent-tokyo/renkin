@@ -41,6 +41,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   arguments before search instead of silently defaulting or wrapping them.
 - MCP `find_routes` now rejects wrong-typed optional strings and controls
   instead of silently treating supplied values as absent.
+- MCP constraint filters and numeric thresholds now reject wrong-typed values
+  instead of silently disabling the supplied filter.
 - Added fail-closed MCP `tools/call` validation: malformed `params` or
   `arguments` are rejected, and unknown tool names no longer fall through to
   `find_routes`.

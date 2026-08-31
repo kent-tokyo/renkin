@@ -219,6 +219,16 @@ fn optional_string_arg<'a>(args: &'a Value, name: &str) -> Result<Option<&'a str
         .ok_or_else(|| format!("{name} must be a string"))
 }
 
+fn optional_f64_arg(args: &Value, name: &str) -> Result<Option<f64>, String> {
+    let Some(value) = args.get(name) else {
+        return Ok(None);
+    };
+    value
+        .as_f64()
+        .map(Some)
+        .ok_or_else(|| format!("{name} must be a number"))
+}
+
 fn write_error(out: &mut impl Write, id: Value, code: i32, message: &str) {
     let resp = json!({
         "jsonrpc": "2.0",
@@ -600,14 +610,23 @@ fn handle_plan_with_constraints(smiles: &str, args: &Value) -> Value {
         Ok(value) => value as usize,
         Err(message) => return tool_error(&message),
     };
-    let avoid = args["avoid_elements"].as_str().unwrap_or("");
-    let require = args["require_elements"].as_str().unwrap_or("");
-    let avoid_bbs: Option<Vec<String>> = args["avoid_building_blocks"]
-        .as_str()
-        .map(|s| s.split(',').map(|bb| bb.trim().to_string()).collect());
-    let require_bbs: Option<Vec<String>> = args["require_building_blocks"]
-        .as_str()
-        .map(|s| s.split(',').map(|bb| bb.trim().to_string()).collect());
+    let avoid = match optional_string_arg(args, "avoid_elements") {
+        Ok(value) => value.unwrap_or(""),
+        Err(message) => return tool_error(&message),
+    };
+    let require = match optional_string_arg(args, "require_elements") {
+        Ok(value) => value.unwrap_or(""),
+        Err(message) => return tool_error(&message),
+    };
+    let avoid_bbs: Option<Vec<String>> = match optional_string_arg(args, "avoid_building_blocks") {
+        Ok(value) => value.map(|s| s.split(',').map(|bb| bb.trim().to_string()).collect()),
+        Err(message) => return tool_error(&message),
+    };
+    let require_bbs: Option<Vec<String>> =
+        match optional_string_arg(args, "require_building_blocks") {
+            Ok(value) => value.map(|s| s.split(',').map(|bb| bb.trim().to_string()).collect()),
+            Err(message) => return tool_error(&message),
+        };
     let max_steps = match args.get("max_steps") {
         None => None,
         Some(value) => match value.as_u64() {
@@ -618,9 +637,18 @@ fn handle_plan_with_constraints(smiles: &str, args: &Value) -> Value {
             None => return tool_error("max_steps must be a non-negative integer"),
         },
     };
-    let max_route_cost = args["max_route_cost"].as_f64();
-    let min_confidence = args["min_confidence"].as_f64();
-    let min_success_prob = args["min_success_probability"].as_f64();
+    let max_route_cost = match optional_f64_arg(args, "max_route_cost") {
+        Ok(value) => value,
+        Err(message) => return tool_error(&message),
+    };
+    let min_confidence = match optional_f64_arg(args, "min_confidence") {
+        Ok(value) => value,
+        Err(message) => return tool_error(&message),
+    };
+    let min_success_prob = match optional_f64_arg(args, "min_success_probability") {
+        Ok(value) => value,
+        Err(message) => return tool_error(&message),
+    };
     if let Err(message) = renkin::constraints::validate_route_thresholds(
         max_route_cost,
         min_confidence,
@@ -628,15 +656,21 @@ fn handle_plan_with_constraints(smiles: &str, args: &Value) -> Value {
     ) {
         return tool_error(&message);
     }
-    let require_fams: Option<Vec<String>> = args["require_reaction_families"]
-        .as_str()
-        .map(|s| s.split(',').map(|f| f.trim().to_string()).collect());
-    let avoid_fams: Option<Vec<String>> = args["avoid_reaction_families"]
-        .as_str()
-        .map(|s| s.split(',').map(|f| f.trim().to_string()).collect());
-    let prefer_fams: Option<Vec<String>> = args["prefer_reaction_families"]
-        .as_str()
-        .map(|s| s.split(',').map(|f| f.trim().to_string()).collect());
+    let require_fams: Option<Vec<String>> =
+        match optional_string_arg(args, "require_reaction_families") {
+            Ok(value) => value.map(|s| s.split(',').map(|f| f.trim().to_string()).collect()),
+            Err(message) => return tool_error(&message),
+        };
+    let avoid_fams: Option<Vec<String>> = match optional_string_arg(args, "avoid_reaction_families")
+    {
+        Ok(value) => value.map(|s| s.split(',').map(|f| f.trim().to_string()).collect()),
+        Err(message) => return tool_error(&message),
+    };
+    let prefer_fams: Option<Vec<String>> =
+        match optional_string_arg(args, "prefer_reaction_families") {
+            Ok(value) => value.map(|s| s.split(',').map(|f| f.trim().to_string()).collect()),
+            Err(message) => return tool_error(&message),
+        };
 
     let (env, rules) = load_env_and_rules();
     let config = SearchConfig {
@@ -1304,6 +1338,25 @@ mod tests {
             assert_eq!(response["isError"], json!(true));
             assert!(response["content"][0]["text"].is_string());
         }
+    }
+
+    #[test]
+    fn constraint_arguments_fail_closed_on_wrong_types() {
+        let mut arguments = serde_json::Map::from_iter([
+            ("smiles".to_string(), json!("CCO")),
+            ("max_route_cost".to_string(), json!("cheap")),
+        ]);
+        let response = handle_tools_call(&json!({
+            "params": {
+                "name": "plan_with_constraints",
+                "arguments": Value::Object(std::mem::take(&mut arguments))
+            }
+        }));
+        assert_eq!(response["isError"], json!(true));
+        assert_eq!(
+            response["content"][0]["text"],
+            "max_route_cost must be a number"
+        );
     }
 
     #[test]

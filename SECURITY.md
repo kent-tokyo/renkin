@@ -106,6 +106,8 @@ types; malformed values cannot silently default or wrap into a smaller budget.
 Optional `find_routes` strings and numeric controls are also type-checked when
 present; a supplied boolean, string, or other incompatible JSON value is not
 treated as an omitted option.
+The same fail-closed rule applies to `plan_with_constraints` route filters,
+including numeric thresholds and comma-separated string filters.
 
 MCP request lines are capped at 1 MiB before JSON parsing. An oversized line is
 drained through its newline and rejected as `-32600 resource_exhausted: request

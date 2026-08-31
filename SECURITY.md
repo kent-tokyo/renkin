@@ -124,6 +124,9 @@ The forward CLI integration suite includes an oversized-stdin regression case,
 so this boundary is exercised through the real subprocess rather than only
 through the shared reader unit test.
 
+The same suite also rejects invalid UTF-8 from stdin before JSON parsing,
+keeping encoding failures distinct from malformed JSON.
+
 `audit-route` route exports are capped at 64MiB both before and after gzip
 decompression. Non-regular files, invalid UTF-8, and decompressed expansion
 past the cap are rejected before route normalization.

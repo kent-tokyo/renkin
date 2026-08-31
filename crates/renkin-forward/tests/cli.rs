@@ -16,6 +16,10 @@ fn run(args: &[&str]) -> std::process::Output {
 }
 
 fn run_stdin(args: &[&str], stdin_data: &str) -> std::process::Output {
+    run_stdin_bytes(args, stdin_data.as_bytes())
+}
+
+fn run_stdin_bytes(args: &[&str], stdin_data: &[u8]) -> std::process::Output {
     let mut child = Command::new(bin())
         .args(args)
         .stdin(Stdio::piped())
@@ -23,12 +27,7 @@ fn run_stdin(args: &[&str], stdin_data: &str) -> std::process::Output {
         .stderr(Stdio::piped())
         .spawn()
         .expect("failed to spawn renkin-forward");
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(stdin_data.as_bytes())
-        .unwrap();
+    child.stdin.as_mut().unwrap().write_all(stdin_data).unwrap();
     child.wait_with_output().expect("failed to wait on child")
 }
 
@@ -142,6 +141,14 @@ fn oversized_route_json_on_stdin_is_rejected_before_parsing() {
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
+}
+
+#[test]
+fn invalid_utf8_route_json_on_stdin_is_rejected_before_parsing() {
+    let out = run_stdin_bytes(&["validate"], b"{\"steps\":[]}\xff");
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("not valid UTF-8"), "{stderr}");
 }
 
 #[test]

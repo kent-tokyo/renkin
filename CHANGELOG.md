@@ -25,6 +25,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   template-coverage target list with the shared 64MiB reader.
 - Added a process-level regression test proving oversized forward route JSON
   on stdin is rejected before parsing.
+- Added a process-level regression test proving invalid UTF-8 on forward
+  stdin is rejected before JSON parsing.
 - Added fail-closed MCP `tools/call` validation: malformed `params` or
   `arguments` are rejected, and unknown tool names no longer fall through to
   `find_routes`.

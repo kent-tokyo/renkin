@@ -29,6 +29,9 @@ renkin.find_routes(
     search_diagnostics: bool = False,
     avoid_building_blocks: str = "",
     require_building_blocks: str = "",
+    max_route_cost: float | None = None,
+    min_confidence: float | None = None,
+    min_success_probability: float | None = None,
 ) -> str
 ```
 
@@ -48,6 +51,9 @@ a `dict` — parse it with `json.loads()` before accessing fields.
 | `require_elements` | `str` | `""` | Comma-separated element symbols that must each appear in at least one leaf building block (e.g. `"B"` for Suzuki-type routes) |
 | `avoid_building_blocks` | `str` | `""` | Comma-separated canonical building-block SMILES to exclude from route leaves |
 | `require_building_blocks` | `str` | `""` | Comma-separated canonical building-block SMILES; each returned route must contain at least one |
+| `max_route_cost` | `float | None` | `None` | Inclusive upper bound for computed `route_cost`; with `bb_prices_path`, uses the supplied price-map units |
+| `min_confidence` | `float | None` | `None` | Minimum route template-confidence threshold |
+| `min_success_probability` | `float | None` | `None` | Minimum frequency-derived route score threshold; not a calibrated experimental probability |
 | `verbose` | `bool` | `False` | Print search statistics (nodes expanded, elapsed time) to stderr |
 | `bb_prices_path` | `str \| None` | `None` | CSV (`SMILES,price_per_gram`) for route cost scoring |
 | `templates_path` | `str \| None` | `None` | Path to an extracted SMIRKS templates `.smi` file (tab-separated). `None` = hand-crafted rules only |

@@ -26,6 +26,12 @@ use crate::search::{SearchConfig, diagnose, find_routes};
 ///         to exclude from returned routes. Default: ``""`` (no constraint).
 ///     require_building_blocks (str): Comma-separated canonical SMILES of leaf BBs;
 ///         each returned route must contain at least one. Default: ``""`` (no constraint).
+///     max_route_cost (float | None): Keep routes whose computed route cost is at
+///         or below this inclusive limit. Default: ``None``.
+///     min_confidence (float | None): Keep routes at or above this template-confidence
+///         threshold. Default: ``None``.
+///     min_success_probability (float | None): Keep routes at or above this
+///         frequency-derived route score threshold. Default: ``None``.
 ///     verbose (bool): Print search statistics (nodes expanded, elapsed time) to
 ///         stderr after the search completes. Default: ``False``.
 ///     templates_path (str | None): Path to an extracted SMIRKS templates .smi
@@ -153,7 +159,7 @@ use crate::search::{SearchConfig, diagnose, find_routes};
 ///     routes = json.loads(renkin.find_routes("CC(=O)Oc1ccccc1C(=O)O", depth=3))
 ///     print(routes["routes_found"])
 #[pyfunction]
-#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None, search_diagnostics=false, spectator_bond_policy="off", element_accounting_policy="off", beam_diversity_policy="off", beam_diversity_slots=0, avoid_building_blocks="", require_building_blocks=""))]
+#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None, search_diagnostics=false, spectator_bond_policy="off", element_accounting_policy="off", beam_diversity_policy="off", beam_diversity_slots=0, avoid_building_blocks="", require_building_blocks="", max_route_cost=None, min_confidence=None, min_success_probability=None))]
 #[allow(clippy::too_many_arguments)]
 pub fn find_routes_py(
     target: &str,
@@ -180,6 +186,9 @@ pub fn find_routes_py(
     beam_diversity_slots: usize,
     avoid_building_blocks: &str,
     require_building_blocks: &str,
+    max_route_cost: Option<f64>,
+    min_confidence: Option<f64>,
+    min_success_probability: Option<f64>,
 ) -> PyResult<String> {
     if search_mode != "standard" && search_mode != "coverage" {
         return Err(PyValueError::new_err(format!(
@@ -405,6 +414,15 @@ pub fn find_routes_py(
                     .any(|candidate| candidate == bb)
             })
         });
+    }
+    if let Some(max_cost) = max_route_cost {
+        routes.retain(|route| route.route_cost <= max_cost);
+    }
+    if let Some(minimum) = min_confidence {
+        routes.retain(|route| route.confidence >= minimum);
+    }
+    if let Some(minimum) = min_success_probability {
+        routes.retain(|route| route.success_probability >= minimum);
     }
 
     let reranker_failures_for_output = coverage_meta

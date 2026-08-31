@@ -2778,7 +2778,7 @@ pub const MAX_TEMPLATE_LINE_BYTES: usize = 64 * 1024;
 
 pub fn validate_template_file(path: &str) -> Result<()> {
     let metadata = fs::metadata(path)
-        .with_context(|| format!("template file {path:?} does not exist or is not accessible"))?;
+        .with_context(|| format!("template file {path:?} does not exist or is not readable"))?;
     if !metadata.is_file() {
         anyhow::bail!("template path {path:?} is not a regular file");
     }

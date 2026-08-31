@@ -981,6 +981,10 @@ struct ConstraintSpec {
     avoid_elements: Option<Vec<String>>,
     require_elements: Option<Vec<String>>,
     max_steps: Option<usize>,
+    /// Keep routes whose computed route cost is at or below this limit.
+    /// The unit follows `route_cost`: price-map units when `--bb-prices` is
+    /// supplied, otherwise the existing SA-score-based estimate.
+    max_route_cost: Option<f64>,
     max_depth: Option<u32>,
     min_confidence: Option<f64>,
     min_success_probability: Option<f64>,
@@ -991,6 +995,9 @@ struct ConstraintSpec {
 fn apply_constraints(routes: &mut Vec<search::Route>, c: &ConstraintSpec) {
     if let Some(n) = c.max_steps {
         routes.retain(|r| r.steps.len() <= n);
+    }
+    if let Some(max_cost) = c.max_route_cost {
+        routes.retain(|r| r.route_cost <= max_cost);
     }
     if let Some(v) = c.min_confidence {
         routes.retain(|r| r.confidence >= v);
@@ -1979,6 +1986,26 @@ mod pareto_tests {
     #[test]
     fn atom_economy_objective_is_none_for_a_zero_step_route() {
         assert_eq!(atom_economy_objective(&route(vec![])), None);
+    }
+
+    #[test]
+    fn max_route_cost_constraint_keeps_boundary_and_filters_expensive_routes() {
+        let mut affordable = route(vec![]);
+        affordable.route_cost = 10.0;
+        let mut expensive = route(vec![]);
+        expensive.route_cost = 10.01;
+        let mut routes = vec![expensive, affordable];
+
+        apply_constraints(
+            &mut routes,
+            &ConstraintSpec {
+                max_route_cost: Some(10.0),
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].route_cost, 10.0);
     }
 
     #[test]

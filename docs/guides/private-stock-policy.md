@@ -52,3 +52,19 @@ forward-validation status.
 The output includes the policy source and a SHA-256 digest of the policy in
 `audit_manifest.private_stock_policy_sha256`. The vendor table itself is not
 uploaded or embedded in the report.
+
+## Route cost constraint
+
+When planning with `--constraints`, set `max_route_cost` to keep only routes
+whose computed `route_cost` is at or below the limit:
+
+```json
+{
+  "max_route_cost": 25.0
+}
+```
+
+With `--bb-prices`, the limit uses the supplied price-map units. Without a
+price map, it uses RENKIN's existing SA-score-based route-cost estimate. The
+boundary is inclusive; missing price entries continue to use the documented
+fallback and are not treated as free.

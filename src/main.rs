@@ -990,6 +990,8 @@ struct ConstraintSpec {
     min_success_probability: Option<f64>,
     /// Require at least one step from one of these named reaction families.
     require_reaction_families: Option<Vec<String>>,
+    /// Reject routes containing a step from one of these named reaction families.
+    avoid_reaction_families: Option<Vec<String>>,
     prefer_reaction_families: Option<Vec<String>>,
     objectives: Option<String>,
 }
@@ -1007,6 +1009,15 @@ fn apply_constraints(routes: &mut Vec<search::Route>, c: &ConstraintSpec) {
                 s.reaction_family
                     .as_deref()
                     .is_some_and(|f| fams.iter().any(|required| required == f))
+            })
+        });
+    }
+    if let Some(ref fams) = c.avoid_reaction_families {
+        routes.retain(|r| {
+            !r.steps.iter().any(|s| {
+                s.reaction_family
+                    .as_deref()
+                    .is_some_and(|f| fams.iter().any(|avoided| avoided == f))
             })
         });
     }
@@ -2039,6 +2050,25 @@ mod pareto_tests {
             routes[0].steps[0].reaction_family.as_deref(),
             Some("suzuki_coupling")
         );
+    }
+
+    #[test]
+    fn avoided_reaction_family_constraint_filters_routes_with_a_matching_step() {
+        let mut avoided = route(vec![step(search::AtomEconomyStatus::Normal, Some(90.0))]);
+        avoided.steps[0].reaction_family = Some("heck_reaction".to_string());
+        let allowed = route(vec![step(search::AtomEconomyStatus::Normal, Some(90.0))]);
+        let mut routes = vec![avoided, allowed];
+
+        apply_constraints(
+            &mut routes,
+            &ConstraintSpec {
+                avoid_reaction_families: Some(vec!["heck_reaction".to_string()]),
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].steps[0].reaction_family, None);
     }
 
     #[test]

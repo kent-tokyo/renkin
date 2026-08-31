@@ -369,7 +369,7 @@ CC-BY-SA-4.0であり、RENKIN本体コードのMITとは別ライセンスで�
 | **ルートスコアリング** | `confidence`, `step_confidence`, `success_probability`（Retro-prob方式）, `convergency`, `atom_economy`, `route_cost`（`Σ(BB価格) + ステップ数×0.5`、または`--bb-prices`/`--stock`で実価格）— 下の注記も参照 |
 | **ステップメタデータの出所表示** | 各ステップに `metadata_source`/`metadata_scope` を付与し、`conditions`/`reaction_family` がルール作者による既定値かそれ以上の根拠があるかを機械可読に区別。extracted templateには付与しない（捏造しない） |
 | **Pareto多目的探索** | `--format pareto` で `route_cost`・`success_probability`・`steps` 等のパレートフロントを返す；`--objectives` で目的関数をカスタム設定 |
-| **制約 DSL** | `--constraints constraints.json` — 元素フィルタ・ステップ/コスト制限・信頼度閾値・必須/優先反応族；LLM → RENKIN パイプラインに対応 |
+| **制約 DSL** | `--constraints constraints.json` — 元素フィルタ・ステップ/コスト制限・信頼度閾値・必須/除外/優先反応族；LLM → RENKIN パイプラインに対応 |
 | **出力フォーマット & 診断** | `--format json\|tree\|mermaid\|explain\|compare\|compare-json\|pareto`；ルートが見つからない場合はJSONに `diagnostics`（`likely_causes`/`suggestions`）を付加 |
 | **`renkin-forward` ツール群** | `predict`（順反応生成物のランキング）、`enumerate`（1反応物+partnerライブラリからの境界付き列挙）、`hints`（partner不要の検索用ヒント、具体的生成物は出さない）、`validate`（各retroステップの順方向検証）— [Forward guides](docs/guides/forward-retrieval-hints.md#predict--enumerate--hints-at-a-glance)（英語）参照 |
 | **`renkin-bench`** | USPTO-50k/PaRoutes評価、`--plausibility`（順方向検証済み複合スコア）、`--failure-taxonomy`、原子収支チェック（`target_MW > Σ precursor_MW`）、未解決ターゲットを対象にした多段階`cascade`再実行 — [ベンチマーク](#ベンチマーク)参照 |
@@ -472,7 +472,7 @@ USPTO-50kテストセット（全4,907分子評価）:
 | `validate_route` | 逆合成ルートを順方向検証 |
 | `explain_route` | ルートごとの強み/弱みを人間可読形式で出力 |
 | `find_pareto_routes` | 多目的パレートフロント探索 |
-| `plan_with_constraints` | 制約 DSL による合成計画（元素フィルタ・ステップ/コスト・信頼度閾値・必須/優先反応族） |
+| `plan_with_constraints` | 制約 DSL による合成計画（元素フィルタ・ステップ/コスト・信頼度閾値・必須/除外/優先反応族） |
 | `estimate_diversity` | ルート多様性・カバレッジ指標 |
 
 `find_routes` は、必須の `coverage_templates` パスと

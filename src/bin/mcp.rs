@@ -143,7 +143,7 @@ fn handle_tools_list() -> Value {
             },
             {
                 "name": "plan_with_constraints",
-                "description": "Find retrosynthetic routes applying explicit constraints: avoid/require elements, max steps/cost, confidence thresholds, required or preferred reaction families. Designed for LLM-driven synthesis planning (Project Ariadne style).",
+                "description": "Find retrosynthetic routes applying explicit constraints: avoid/require elements, max steps/cost, confidence thresholds, required/avoided/preferred reaction families. Designed for LLM-driven synthesis planning (Project Ariadne style).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -157,6 +157,7 @@ fn handle_tools_list() -> Value {
                         "min_confidence": {"type": "number", "description": "Minimum template confidence [0,1]"},
                         "min_success_probability": {"type": "number", "description": "Minimum route success probability [0,1]"},
                         "require_reaction_families": {"type": "string", "description": "Comma-separated reaction families; at least one must occur in each returned route"},
+                        "avoid_reaction_families": {"type": "string", "description": "Comma-separated reaction families; routes containing any are excluded"},
                         "prefer_reaction_families": {"type": "string", "description": "Comma-separated reaction families to rank first (e.g. \"amide_coupling,suzuki_retro\")"}
                     },
                     "required": ["smiles"]
@@ -360,6 +361,9 @@ fn handle_plan_with_constraints(smiles: &str, args: &Value) -> Value {
     let require_fams: Option<Vec<String>> = args["require_reaction_families"]
         .as_str()
         .map(|s| s.split(',').map(|f| f.trim().to_string()).collect());
+    let avoid_fams: Option<Vec<String>> = args["avoid_reaction_families"]
+        .as_str()
+        .map(|s| s.split(',').map(|f| f.trim().to_string()).collect());
     let prefer_fams: Option<Vec<String>> = args["prefer_reaction_families"]
         .as_str()
         .map(|s| s.split(',').map(|f| f.trim().to_string()).collect());
@@ -396,6 +400,15 @@ fn handle_plan_with_constraints(smiles: &str, args: &Value) -> Value {
                 s.reaction_family
                     .as_deref()
                     .is_some_and(|f| fams.iter().any(|required| required == f))
+            })
+        });
+    }
+    if let Some(ref fams) = avoid_fams {
+        routes.retain(|r| {
+            !r.steps.iter().any(|s| {
+                s.reaction_family
+                    .as_deref()
+                    .is_some_and(|f| fams.iter().any(|avoided| avoided == f))
             })
         });
     }

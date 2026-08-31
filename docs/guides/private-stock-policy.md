@@ -61,7 +61,8 @@ whose computed `route_cost` is at or below the limit:
 ```json
 {
   "max_route_cost": 25.0,
-  "require_reaction_families": ["suzuki_coupling"]
+  "require_reaction_families": ["suzuki_coupling"],
+  "avoid_reaction_families": ["heck_reaction"]
 }
 ```
 
@@ -73,4 +74,5 @@ fallback and are not treated as free.
 `require_reaction_families` is a hard route filter: every returned route must
 contain at least one step whose recorded reaction family matches one of the
 listed names. `prefer_reaction_families` remains an ordering preference and
-does not remove routes.
+does not remove routes. `avoid_reaction_families` is also a hard filter and
+removes any route containing a listed family.

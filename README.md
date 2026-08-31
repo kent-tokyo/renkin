@@ -414,7 +414,7 @@ for the full acceptance criteria and licensing split.
 | **Route scoring** | `confidence`, `step_confidence`, `success_probability` (Retro-prob style), `convergency`, `atom_economy`, `route_cost` (`Σ BB cost + steps×0.5`, or actual prices via `--bb-prices`/`--stock`) per step/route — see caveat below the table |
 | **Step metadata provenance** | Each step reports `metadata_source`/`metadata_scope` so it's machine-readable whether `conditions`/`reaction_family` came from a rule-author default vs. something more grounded; absent (not fabricated) for extracted templates |
 | **Pareto multi-objective search** | `--format pareto` returns a Pareto front across `route_cost`/`success_probability`/`steps`; objectives configurable via `--objectives` |
-| **Constraint DSL** | `--constraints constraints.json` — element filters, step/cost limits, confidence thresholds, required/preferred reaction families; enables LLM → RENKIN pipelines |
+| **Constraint DSL** | `--constraints constraints.json` — element filters, step/cost limits, confidence thresholds, required/avoided/preferred reaction families; enables LLM → RENKIN pipelines |
 | **Output formats & diagnostics** | `--format json\|tree\|mermaid\|explain\|compare\|compare-json\|pareto`; zero-route JSON includes a `diagnostics` block with `likely_causes`/`suggestions` |
 | **`renkin-forward` toolkit** | `predict` (rank forward products), `enumerate` (bounded products from one reactant + partner library), `hints` (partner-free retrieval hints, no concrete product), `validate` (forward-verify each retro step) — see the [Forward guides](docs/guides/forward-retrieval-hints.md#predict--enumerate--hints-at-a-glance) |
 | **`renkin-bench`** | USPTO-50k/PaRoutes evaluation with `--plausibility` (forward-validated composite score), `--failure-taxonomy`, atom-balance checks (`target_MW > Σ precursor_MW`), and multi-stage `cascade` re-runs on unsolved targets — see [Benchmark](#benchmark) |
@@ -565,7 +565,7 @@ The JSON output includes `avg_nodes_expanded`, `avg_confidence`, `avg_convergenc
 | `validate_route` | Forward-validate a retrosynthetic route |
 | `explain_route` | Human-readable strengths/weaknesses per route |
 | `find_pareto_routes` | Pareto-front multi-objective route search |
-| `plan_with_constraints` | Constraint-DSL planning (element filters, step/cost limits, confidence thresholds, required/preferred reaction families) |
+| `plan_with_constraints` | Constraint-DSL planning (element filters, step/cost limits, confidence thresholds, required/avoided/preferred reaction families) |
 | `estimate_diversity` | Route diversity and coverage metrics |
 
 `find_routes` also accepts `search_mode: "coverage"` with a required

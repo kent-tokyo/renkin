@@ -392,6 +392,9 @@ fn handle_tools_call(msg: &Value) -> Value {
     if !args.is_object() {
         return tool_error("tools/call arguments must be an object");
     }
+    if let Err(message) = validate_tool_arguments(tool_name, args) {
+        return tool_error(&message);
+    }
     let smiles = match args["smiles"].as_str() {
         Some(s) => s,
         None => return tool_error("missing required argument: smiles"),
@@ -419,6 +422,53 @@ fn is_known_tool(name: &str) -> bool {
             | "estimate_diversity"
             | "diagnose_failure"
     )
+}
+
+fn validate_tool_arguments(tool_name: &str, args: &Value) -> Result<(), String> {
+    let allowed: &[&str] = match tool_name {
+        "find_routes" => &[
+            "smiles",
+            "depth",
+            "max_routes",
+            "avoid_elements",
+            "require_elements",
+            "search_mode",
+            "coverage_templates",
+            "coverage_timeout_secs",
+            "candidate_trace_limit",
+        ],
+        "validate_route" | "diagnose_failure" => &["smiles", "depth"],
+        "explain_route" => &["smiles", "depth", "max_routes"],
+        "find_pareto_routes" => &["smiles", "depth", "max_routes", "objectives"],
+        "estimate_diversity" => &["smiles", "depth", "max_routes"],
+        "plan_with_constraints" => &[
+            "smiles",
+            "depth",
+            "max_routes",
+            "avoid_elements",
+            "require_elements",
+            "avoid_building_blocks",
+            "require_building_blocks",
+            "max_steps",
+            "max_route_cost",
+            "min_confidence",
+            "min_success_probability",
+            "require_reaction_families",
+            "avoid_reaction_families",
+            "prefer_reaction_families",
+        ],
+        _ => return Err(format!("unknown tool: {tool_name}")),
+    };
+    for key in args
+        .as_object()
+        .expect("arguments was checked as an object")
+        .keys()
+    {
+        if !allowed.contains(&key.as_str()) {
+            return Err(format!("unknown argument for {tool_name}: {key}"));
+        }
+    }
+    Ok(())
 }
 
 fn handle_find_routes(smiles: &str, args: &Value) -> Value {
@@ -1234,6 +1284,21 @@ mod tests {
         assert_eq!(
             response["content"][0]["text"],
             json!("unknown tool: future_tool")
+        );
+    }
+
+    #[test]
+    fn tools_call_rejects_unknown_arguments_instead_of_ignoring_them() {
+        let response = handle_tools_call(&json!({
+            "params": {
+                "name": "find_routes",
+                "arguments": {"smiles": "CCO", "deph": 2}
+            }
+        }));
+        assert_eq!(response["isError"], json!(true));
+        assert_eq!(
+            response["content"][0]["text"],
+            "unknown argument for find_routes: deph"
         );
     }
 

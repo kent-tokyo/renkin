@@ -47,6 +47,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   silently selecting the default objective set.
 - MCP Pareto objective entries now reject empty, unknown, malformed, or
   unsupported-direction specifications before route search.
+- MCP `tools/call` now rejects unknown or misspelled arguments per tool instead
+  of silently ignoring them.
 - Added fail-closed MCP `tools/call` validation: malformed `params` or
   `arguments` are rejected, and unknown tool names no longer fall through to
   `find_routes`.

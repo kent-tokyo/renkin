@@ -49,6 +49,40 @@ Out of scope:
 - Performance issues without DoS impact
 - Reports against unsupported versions
 
+## Surface inventory and release contract
+
+RENKIN treats target SMILES, route JSON, reaction templates, stock files,
+evidence files, and MCP messages as attacker-controlled unless a local bundle
+has been explicitly identified and hash-verified. The supported surfaces have
+different trust boundaries but share the same security cases:
+
+| Surface | Untrusted boundary | Primary controls | Owner |
+|---|---|---|---|
+| CLI | arguments, route/template/stock paths and contents | typed validation, bounded search, fail-closed file checks | maintainers |
+| Python | PyO3 arguments and serialized route data | parser errors, no panic across the binding, bounded options | maintainers |
+| WASM | browser-provided strings and JSON | local-only execution, explicit limits, structured errors | maintainers |
+| MCP | JSON-RPC lines, ids, methods, params | protocol validation, bounded request work, stdout discipline | maintainers |
+| Library | caller-provided molecules, rules, and policies | `Result` boundaries, deterministic validation, no new `unsafe` | maintainers |
+| CI/release | workflows, dependencies, generated artifacts | pinned inputs, hash/provenance checks, release gates | maintainers |
+
+The comparison run manifest is the machine-readable S0 record. It includes
+`security_contract.version`, the threat-case list, the resource budget used for
+the run, and release blockers. Every threat case uses a stable
+`security_case_id`, severity, affected surfaces, and a blocker condition. A
+manifest with changed input hashes, missing bounds, or an unclassified process
+failure is not release evidence.
+
+Minimum release blockers:
+
+- no newly reachable panic, memory-unsafe code, or unbounded resource path;
+- input and bundle hashes are captured and unchanged for the whole run;
+- malformed input and protocol errors are classified rather than silently
+  discarded;
+- timeout, budget exhaustion, parse rejection, and validation failure remain
+  distinct outcomes;
+- no local username, unredacted home path, secret, or stack trace is emitted
+  into a shareable manifest or error response.
+
 ## Disclosure
 
 Please allow reasonable time for a fix before public disclosure.

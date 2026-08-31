@@ -21,6 +21,39 @@ import time
 from compare_sampling import sha256_file
 
 
+SECURITY_CONTRACT_VERSION = 1
+SECURITY_CASES = [
+    {
+        "security_case_id": "RENKIN-S0-INPUT-001",
+        "severity": "medium",
+        "surfaces": ["cli", "python", "wasm", "mcp", "library"],
+        "scenario": "malformed or adversarial chemical/route input",
+        "release_blocker": "panic, silent acceptance, or secret disclosure",
+    },
+    {
+        "security_case_id": "RENKIN-S0-RESOURCE-001",
+        "severity": "high",
+        "surfaces": ["cli", "python", "wasm", "mcp", "library"],
+        "scenario": "resource exhaustion through depth, branching, or oversized input",
+        "release_blocker": "unbounded work or an unclassified timeout",
+    },
+    {
+        "security_case_id": "RENKIN-S0-DATA-001",
+        "severity": "high",
+        "surfaces": ["cli", "python", "mcp", "ci"],
+        "scenario": "path traversal, swapped local bundle, or changed input artifact",
+        "release_blocker": "input hash mismatch or unverified bundle provenance",
+    },
+    {
+        "security_case_id": "RENKIN-S0-PROTOCOL-001",
+        "severity": "high",
+        "surfaces": ["mcp"],
+        "scenario": "malformed, unknown, duplicate, or out-of-order JSON-RPC request",
+        "release_blocker": "crash, silent drop, or non-fail-closed response",
+    },
+]
+
+
 def _run(argv: list[str]) -> str:
     try:
         out = subprocess.run(argv, capture_output=True, text=True, timeout=10)
@@ -94,6 +127,7 @@ def capture_start_manifest(
     binary_path: str | None,
     docker_image: str | None,
     input_files: dict[str, str],
+    resource_budget: dict | None = None,
 ) -> dict:
     """input_files maps a label (e.g. 'building_blocks', 'templates') to path."""
     git_commit = _run(["git", "-C", repo_root, "rev-parse", "HEAD"])
@@ -112,6 +146,17 @@ def capture_start_manifest(
         "docker_image": docker_image,
         "docker_image_digest": docker_image_digest(docker_image) if docker_image else None,
         "input_file_sha256": {label: sha256_file(path) for label, path in input_files.items()},
+        "security_contract": {
+            "version": SECURITY_CONTRACT_VERSION,
+            "trusted_boundary": "caller-controlled targets and route data are untrusted; local bundles are identified by hash",
+            "resource_budget": resource_budget or {},
+            "threat_cases": SECURITY_CASES,
+            "release_blockers": [
+                "input_files_unchanged_during_run=false",
+                "resource budget missing for a bounded comparison run",
+                "unclassified timeout or external process error",
+            ],
+        },
         "start_time_unix": time.time(),
         "start_environment": capture_environment(),
         "end_time_unix": None,

@@ -9,6 +9,9 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Added Security S0 metadata to comparison run manifests: a versioned threat
+  case inventory, explicit trust boundary, resource budget, and release
+  blocker list are now recorded alongside run provenance.
 - Added `require_building_blocks` to CLI constraint JSON and the MCP
   `plan_with_constraints` tool. Routes can now require at least one exact
   canonical building-block leaf, complementing `avoid_building_blocks` for

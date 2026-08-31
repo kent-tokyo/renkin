@@ -309,6 +309,14 @@ def main(argv: list[str] | None = None) -> int:
                 binary_path=args.renkin_binary if args.tool == "renkin" else None,
                 docker_image=args.aizynthfinder_image if args.tool == "aizynthfinder" else None,
                 input_files=input_files,
+                resource_budget={
+                    "depth": args.depth,
+                    "beam_width": args.beam_width,
+                    "timeout_s": args.timeout_s,
+                    "grace_s": args.grace_s,
+                    "max_routes": 1,
+                    "search_mode": args.search_mode,
+                },
             )
             with open(args.manifest_path, "w", encoding="utf-8") as f:
                 json.dump(run_manifest, f, indent=2, sort_keys=True, default=str)

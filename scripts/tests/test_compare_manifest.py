@@ -67,6 +67,25 @@ class TestRedactHomeDir(unittest.TestCase):
         )
         self.assertNotIn("exampleuser", " ".join(manifest["command_line"]))
 
+    @patch("compare_manifest.sha256_file", return_value="sha256:test")
+    def test_manifest_records_security_contract_and_budget(self, _mock):
+        manifest = cm.capture_start_manifest(
+            tool="renkin",
+            comparison_mode="native",
+            ring_context_policy="conservative",
+            command_line=["renkin"],
+            repo_root=".",
+            binary_path=None,
+            docker_image=None,
+            input_files={"sample_list": "samples.jsonl"},
+            resource_budget={"depth": 5, "beam_width": 100, "timeout_s": 30},
+        )
+        contract = manifest["security_contract"]
+        self.assertEqual(contract["version"], cm.SECURITY_CONTRACT_VERSION)
+        self.assertEqual(contract["resource_budget"]["timeout_s"], 30)
+        self.assertTrue(contract["threat_cases"])
+        self.assertTrue(all("security_case_id" in case for case in contract["threat_cases"]))
+
 
 if __name__ == "__main__":
     unittest.main()

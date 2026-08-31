@@ -8,6 +8,14 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.56.0] - 2026-08-31 "Reaction-Family Regression Gates"
+
+### Added
+- Added end-to-end regression fixtures that verify Suzuki reaction-family
+  metadata on generated steps and prevent ester cleavages from being labeled
+  as Ullmann ether disconnections.
+- Marked the reaction-family mislabel regression design slice as implemented.
+
 ## [0.55.1] - 2026-08-31 "Documentation Link Fix"
 
 ### Fixed

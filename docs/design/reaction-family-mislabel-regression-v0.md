@@ -1,13 +1,15 @@
 # Reaction-Family Mislabel Regression Suite — Design Doc (ROADMAP Item 5, v1 slice)
 
-Status: **Design only, not yet implemented.** Scopes the smallest real
+Status: **Implemented in v0.56.0.** Scopes the smallest real
 first slice of `internal_docs/ROADMAP.md`'s "Disconnection vs.
 named-reaction-family separation" item (P1). Full item's ask is a 3-layer
 schema redesign (`disconnection` / `reaction_family_candidates` with
 confidence / `conditions`); this doc found that two of those three layers
 already exist in reasonable form, and scopes only the concretely missing
 piece: a regression suite that catches the *defect class* PR #171 already
-fixed one instance of, before it recurs on a different rule.
+fixed one instance of, before it recurs on a different rule. The first
+shipping slice now covers the live Suzuki mapping and the ester/aryl-ether
+boundary through end-to-end `ReactionStep` fixtures in `search.rs`.
 
 ## 0. What this is, in one paragraph
 

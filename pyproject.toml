@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "renkin"
-version = "0.55.1"
+version = "0.56.0"
 description = "Local retrosynthesis route auditor and planning engine for AiZynthFinder, Syntheseus and RENKIN"
 readme = "README.md"
 license = { text = "MIT" }

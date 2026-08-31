@@ -4275,6 +4275,72 @@ mod tests {
             );
         }
     }
+
+    /// End-to-end fixtures for the reaction-family metadata attached to real
+    /// search steps.  The mapping-table tests above catch stale arms, while
+    /// these fixtures catch a broader rule claiming a family on the wrong
+    /// substrate (the aryl-ether/ester regression that motivated this suite).
+    #[test]
+    fn reaction_family_fixtures_preserve_suzuki_and_ester_boundaries() {
+        let biaryl_env = ChemEnv::in_memory(&["Brc1ccccc1", "OB(O)c1ccccc1"]);
+        let biaryl_config = SearchConfig {
+            max_depth: 2,
+            max_routes: 10,
+            beam_width: 0,
+            ..Default::default()
+        };
+        let biaryl_routes = find_routes(
+            "c1ccc(-c2ccccc2)cc1",
+            &biaryl_env,
+            &default_rules(),
+            &biaryl_config,
+        )
+        .unwrap()
+        .0;
+        let suzuki_steps: Vec<_> = biaryl_routes
+            .iter()
+            .flat_map(|route| route.steps.iter())
+            .filter(|step| step.rule == "suzuki_retro")
+            .collect();
+        assert!(
+            !suzuki_steps.is_empty(),
+            "biphenyl must exercise suzuki_retro"
+        );
+        assert!(
+            suzuki_steps
+                .iter()
+                .all(|step| { step.reaction_family.as_deref() == Some("suzuki_coupling") })
+        );
+
+        let aspirin_routes = find_routes(
+            "CC(=O)Oc1ccccc1C(=O)O",
+            &aspirin_env(),
+            &default_rules(),
+            &cfg(3),
+        )
+        .unwrap()
+        .0;
+        assert!(
+            !aspirin_routes.is_empty(),
+            "aspirin must exercise the boundary fixture"
+        );
+        assert!(
+            aspirin_routes
+                .iter()
+                .flat_map(|route| route.steps.iter())
+                .filter(|step| step.rule == "ester_cleavage")
+                .all(|step| step.reaction_family.as_deref() == Some("esterification")),
+            "ester cleavage must retain esterification metadata"
+        );
+        assert!(
+            aspirin_routes
+                .iter()
+                .flat_map(|route| route.steps.iter())
+                .filter(|step| step.target == "CC(=O)Oc1ccccc1C(=O)O")
+                .all(|step| step.rule != "aryl_ether_retro"),
+            "the ester oxygen must never be mislabeled as an Ullmann ether disconnection"
+        );
+    }
 }
 
 /// Cooperative cancellation foundation (v0.24 coverage-mode Phase 41.18A):

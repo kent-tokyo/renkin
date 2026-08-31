@@ -89,6 +89,10 @@ non-scalar request ID is a `-32600` Invalid Request, and an unknown method is a
 `-32601` Method not found. These errors are structured JSON-RPC responses and
 never echo the rejected input.
 
+Within `tools/call`, `params` and `arguments` must be JSON objects, the tool
+name must be present in the advertised allowlist, and unknown names are
+rejected instead of falling through to the default `find_routes` handler.
+
 MCP request lines are capped at 1 MiB before JSON parsing. An oversized line is
 drained through its newline and rejected as `-32600 resource_exhausted: request
 too large`, so it

@@ -311,8 +311,19 @@ fn load_env_and_rules() -> (chem_env::ChemEnv, Vec<chem_env::RetroRule>) {
 }
 
 fn handle_tools_call(msg: &Value) -> Value {
-    let tool_name = msg["params"]["name"].as_str().unwrap_or("find_routes");
-    let args = &msg["params"]["arguments"];
+    let Some(params) = msg.get("params").and_then(Value::as_object) else {
+        return tool_error("tools/call params must be an object");
+    };
+    let Some(tool_name) = params.get("name").and_then(Value::as_str) else {
+        return tool_error("tools/call requires a string name");
+    };
+    if !is_known_tool(tool_name) {
+        return tool_error(&format!("unknown tool: {tool_name}"));
+    }
+    let args = params.get("arguments").unwrap_or(&Value::Null);
+    if !args.is_object() {
+        return tool_error("tools/call arguments must be an object");
+    }
     let smiles = match args["smiles"].as_str() {
         Some(s) => s,
         None => return tool_error("missing required argument: smiles"),
@@ -324,8 +335,22 @@ fn handle_tools_call(msg: &Value) -> Value {
         "find_pareto_routes" => handle_find_pareto_routes(smiles, args),
         "plan_with_constraints" => handle_plan_with_constraints(smiles, args),
         "diagnose_failure" => handle_diagnose_failure(smiles, args),
-        _ => handle_find_routes(smiles, args),
+        "find_routes" => handle_find_routes(smiles, args),
+        _ => unreachable!("known tool without a dispatch arm"),
     }
+}
+
+fn is_known_tool(name: &str) -> bool {
+    matches!(
+        name,
+        "find_routes"
+            | "validate_route"
+            | "explain_route"
+            | "find_pareto_routes"
+            | "plan_with_constraints"
+            | "estimate_diversity"
+            | "diagnose_failure"
+    )
 }
 
 fn handle_find_routes(smiles: &str, args: &Value) -> Value {
@@ -1010,6 +1035,38 @@ mod tests {
                 .unwrap()
                 .contains("requires coverage_templates")
         );
+    }
+
+    #[test]
+    fn tools_call_rejects_missing_or_invalid_params_instead_of_defaulting() {
+        for request in [
+            json!({}),
+            json!({"params": null}),
+            json!({"params": {"name": "find_routes", "arguments": []}}),
+        ] {
+            let response = handle_tools_call(&request);
+            assert_eq!(response["isError"], json!(true));
+        }
+    }
+
+    #[test]
+    fn tools_call_rejects_unknown_tool_instead_of_running_find_routes() {
+        let response = handle_tools_call(&json!({
+            "params": {"name": "future_tool", "arguments": {"smiles": "CCO"}}
+        }));
+        assert_eq!(response["isError"], json!(true));
+        assert_eq!(
+            response["content"][0]["text"],
+            json!("unknown tool: future_tool")
+        );
+    }
+
+    #[test]
+    fn known_tool_names_are_explicitly_allowlisted() {
+        assert!(is_known_tool("find_routes"));
+        assert!(is_known_tool("diagnose_failure"));
+        assert!(!is_known_tool(""));
+        assert!(!is_known_tool("find_route"));
     }
 
     #[test]

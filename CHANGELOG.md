@@ -9,6 +9,9 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Added fail-closed MCP `tools/call` validation: malformed `params` or
+  `arguments` are rejected, and unknown tool names no longer fall through to
+  `find_routes`.
 - Added shared audit text-input limits for Python and WASM: route and stock
   text are capped at 64MiB, and stock lines at 64KiB, before JSON parsing or
   stock scanning begins.

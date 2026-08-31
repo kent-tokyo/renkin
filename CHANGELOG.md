@@ -33,6 +33,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   doctor, and pool-generation artifact reads now share the same file limits.
 - Extended bounded fail-closed loading to custom template validation and
   ring-context sidecars, removing remaining unbounded production text reads.
+- MCP now requires the exact JSON-RPC `2.0` envelope before dispatch, rejecting
+  missing or unsupported protocol versions as structured invalid requests.
 - Added fail-closed MCP `tools/call` validation: malformed `params` or
   `arguments` are rejected, and unknown tool names no longer fall through to
   `find_routes`.

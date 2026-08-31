@@ -125,6 +125,11 @@ fn main() {
             continue;
         };
 
+        if !is_json_rpc_request(&msg) {
+            write_error(&mut out, Value::Null, -32600, "Invalid Request");
+            continue;
+        }
+
         let id = object.get("id").cloned().unwrap_or(Value::Null);
         if !valid_request_id(&id) {
             write_error(&mut out, Value::Null, -32600, "Invalid Request");
@@ -159,6 +164,13 @@ fn main() {
 
 fn valid_request_id(id: &Value) -> bool {
     id.is_null() || id.is_string() || id.is_number()
+}
+
+fn is_json_rpc_request(value: &Value) -> bool {
+    value
+        .as_object()
+        .and_then(|object| object.get("jsonrpc"))
+        .is_some_and(|version| version == "2.0")
 }
 
 fn write_error(out: &mut impl Write, id: Value, code: i32, message: &str) {
@@ -1090,6 +1102,14 @@ mod tests {
         assert!(valid_request_id(&json!("request-7")));
         assert!(!valid_request_id(&json!({"nested": true})));
         assert!(!valid_request_id(&json!([7])));
+    }
+
+    #[test]
+    fn json_rpc_version_is_required_and_pinned() {
+        assert!(is_json_rpc_request(&json!({"jsonrpc": "2.0"})));
+        assert!(!is_json_rpc_request(&json!({})));
+        assert!(!is_json_rpc_request(&json!({"jsonrpc": "1.0"})));
+        assert!(!is_json_rpc_request(&json!({"jsonrpc": 2})));
     }
 
     #[test]

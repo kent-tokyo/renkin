@@ -227,10 +227,23 @@ def load_sample(list_path: str, n: int | None = None) -> list[dict]:
                     raise ValueError("sample list rows must be JSON objects")
                 rank = row.get("sample_rank")
                 target_id = row.get("target_id")
+                canonical = row.get("canonical_smiles")
+                source_line = row.get("source_line_number")
+                sample_key_value = row.get("sample_key")
                 if isinstance(rank, bool) or not isinstance(rank, int) or rank < 0:
                     raise ValueError("sample list row has an invalid sample_rank")
                 if not isinstance(target_id, str) or not target_id:
                     raise ValueError("sample list row has an invalid target_id")
+                if not isinstance(canonical, str) or not canonical:
+                    raise ValueError("sample list row has an invalid canonical_smiles")
+                if isinstance(source_line, bool) or not isinstance(source_line, int) or source_line < 1:
+                    raise ValueError("sample list row has an invalid source_line_number")
+                if (
+                    not isinstance(sample_key_value, str)
+                    or len(sample_key_value) != 64
+                    or any(character not in "0123456789abcdef" for character in sample_key_value)
+                ):
+                    raise ValueError("sample list row has an invalid sample_key")
                 if rank in seen_ranks:
                     raise ValueError(f"sample list contains duplicate sample_rank {rank}")
                 if target_id in seen_target_ids:

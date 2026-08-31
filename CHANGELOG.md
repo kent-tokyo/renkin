@@ -63,6 +63,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   flushing and syncing temporary files.
 - Frozen sample-list rows now require a validated object schema and reject
   invalid ranks, target IDs, and negative sample sizes before sorting.
+- Frozen sample-list rows now also require non-empty canonical SMILES, a
+  positive source line number, and a lowercase 64-character SHA-256 sample key.
 - Frozen sample lists now reject duplicate rows and non-contiguous ranks,
   preserving deterministic sample membership after sorting.
 - Comparison manifests are now written through an fsync-and-rename atomic

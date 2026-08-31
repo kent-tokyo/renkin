@@ -1,3 +1,5 @@
+import hashlib
+import json
 import os
 import sys
 import tempfile
@@ -10,6 +12,16 @@ import compare_sampling as cs  # noqa: E402
 
 
 class TestSampleInputBounds(unittest.TestCase):
+    @staticmethod
+    def row(rank, target):
+        return {
+            "sample_rank": rank,
+            "target_id": target,
+            "canonical_smiles": "CCO",
+            "source_line_number": rank + 1,
+            "sample_key": hashlib.sha256(f"{rank}:{target}".encode()).hexdigest(),
+        }
+
     def test_candidate_loader_rejects_oversized_file(self):
         with tempfile.NamedTemporaryFile("wb") as handle:
             handle.write(b"CCO ethanol\n")
@@ -72,8 +84,8 @@ class TestSampleInputBounds(unittest.TestCase):
 
     def test_sample_loader_returns_ranked_rows(self):
         with tempfile.NamedTemporaryFile("w", encoding="utf-8") as handle:
-            handle.write('{"sample_rank": 1, "target_id": "b"}\n')
-            handle.write('{"sample_rank": 0, "target_id": "a"}\n')
+            handle.write(json.dumps(self.row(1, "b")) + "\n")
+            handle.write(json.dumps(self.row(0, "a")) + "\n")
             handle.flush()
             self.assertEqual([row["target_id"] for row in cs.load_sample(handle.name)], ["a", "b"])
 
@@ -83,6 +95,8 @@ class TestSampleInputBounds(unittest.TestCase):
             '{"target_id": "a"}\n',
             '{"sample_rank": true, "target_id": "a"}\n',
             '{"sample_rank": 0, "target_id": ""}\n',
+            '{"sample_rank": 0, "target_id": "a", "canonical_smiles": "CCO", "source_line_number": 1}\n',
+            json.dumps({**self.row(0, "a"), "sample_key": "g" * 64}) + "\n",
         ]
         for content in cases:
             with self.subTest(content=content):
@@ -94,9 +108,9 @@ class TestSampleInputBounds(unittest.TestCase):
 
     def test_sample_loader_rejects_duplicate_or_non_contiguous_rows(self):
         cases = [
-            '{"sample_rank": 0, "target_id": "a"}\n{"sample_rank": 0, "target_id": "b"}\n',
-            '{"sample_rank": 0, "target_id": "a"}\n{"sample_rank": 1, "target_id": "a"}\n',
-            '{"sample_rank": 0, "target_id": "a"}\n{"sample_rank": 2, "target_id": "b"}\n',
+            json.dumps(self.row(0, "a")) + "\n" + json.dumps(self.row(0, "b")) + "\n",
+            json.dumps(self.row(0, "a")) + "\n" + json.dumps(self.row(1, "a")) + "\n",
+            json.dumps(self.row(0, "a")) + "\n" + json.dumps(self.row(2, "b")) + "\n",
         ]
         for content in cases:
             with self.subTest(content=content):
@@ -108,7 +122,7 @@ class TestSampleInputBounds(unittest.TestCase):
 
     def test_sample_loader_rejects_negative_size(self):
         with tempfile.NamedTemporaryFile("w", encoding="utf-8") as handle:
-            handle.write('{"sample_rank": 0, "target_id": "a"}\n')
+            handle.write(json.dumps(self.row(0, "a")) + "\n")
             handle.flush()
             with self.assertRaisesRegex(ValueError, "non-negative"):
                 cs.load_sample(handle.name, -1)

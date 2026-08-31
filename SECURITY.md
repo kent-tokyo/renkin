@@ -182,6 +182,9 @@ mutating one in post-processing cannot alter later manifests in the process.
 Frozen sample-list parsing also validates each row as an object with a
 non-negative integer `sample_rank` and non-empty `target_id`, preventing
 malformed rows from reaching downstream sorting or benchmark code.
+Rows must also carry non-empty `canonical_smiles`, a positive
+`source_line_number`, and a lowercase hexadecimal 64-character `sample_key`,
+so downstream consumers cannot silently discard provenance fields.
 Duplicate `sample_rank`／`target_id` values and gaps in the zero-based rank
 sequence are rejected as well, preventing ambiguous or silently shifted
 benchmark membership.

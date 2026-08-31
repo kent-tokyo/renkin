@@ -36,6 +36,10 @@ pub const MAX_AUDIT_ROUTE_TEXT_BYTES: usize = 64 * 1024 * 1024;
 pub const MAX_AUDIT_STOCK_TEXT_BYTES: usize = 64 * 1024 * 1024;
 /// Maximum line length accepted by the in-memory stock parser.
 pub const MAX_AUDIT_STOCK_LINE_BYTES: usize = 64 * 1024;
+/// Maximum nesting depth accepted by route JSON preflight.
+pub const MAX_AUDIT_JSON_DEPTH: usize = 256;
+/// Maximum structural JSON delimiters accepted by route JSON preflight.
+pub const MAX_AUDIT_JSON_TOKENS: usize = 1_000_000;
 
 /// Validate text inputs before an in-memory audit parses or scans them.
 ///
@@ -55,6 +59,53 @@ pub fn validate_audit_text_inputs(content: &str, stock_text: &str) -> anyhow::Re
         .any(|line| line.len() > MAX_AUDIT_STOCK_LINE_BYTES)
     {
         bail!("resource_exhausted: audit stock line exceeds {MAX_AUDIT_STOCK_LINE_BYTES} bytes");
+    }
+    Ok(())
+}
+
+/// Bound JSON nesting and structural complexity before invoking serde_json.
+///
+/// This is a lexical preflight, not a JSON parser: malformed syntax is still
+/// reported by serde_json with its normal diagnostics. Brackets inside JSON
+/// strings are ignored so valid route content is not misclassified.
+pub fn validate_audit_json_structure(content: &str) -> anyhow::Result<()> {
+    use anyhow::bail;
+
+    let mut depth = 0usize;
+    let mut tokens = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    for byte in content.bytes() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == b'"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match byte {
+            b'"' => in_string = true,
+            b'{' | b'[' => {
+                tokens += 1;
+                depth += 1;
+                if depth > MAX_AUDIT_JSON_DEPTH {
+                    bail!("resource_exhausted: audit JSON nesting exceeds {MAX_AUDIT_JSON_DEPTH}");
+                }
+            }
+            b'}' | b']' => {
+                tokens += 1;
+                depth = depth.saturating_sub(1);
+            }
+            _ => {}
+        }
+        if tokens > MAX_AUDIT_JSON_TOKENS {
+            bail!(
+                "resource_exhausted: audit JSON structure exceeds {MAX_AUDIT_JSON_TOKENS} tokens"
+            );
+        }
     }
     Ok(())
 }
@@ -488,6 +539,7 @@ pub fn build_audit_route_report_with_options(
     // wrappers. Callers that already hold a parsed stock set have no stock
     // text to validate here, so only the route-content bound applies.
     validate_audit_text_inputs(content, "")?;
+    validate_audit_json_structure(content)?;
 
     if ![
         "auto",
@@ -755,6 +807,22 @@ mod tests {
         let stock = format!("{}\n", "C".repeat(MAX_AUDIT_STOCK_LINE_BYTES + 1));
         let err = validate_audit_text_inputs("{}", &stock).unwrap_err();
         assert!(err.to_string().contains("audit stock line"));
+    }
+
+    #[test]
+    fn audit_json_structure_limits_ignore_brackets_in_strings() {
+        validate_audit_json_structure(r#"{"text":"[[[["}"#).expect("string content is safe");
+    }
+
+    #[test]
+    fn audit_json_structure_limits_reject_depth_and_token_storms() {
+        let deeply_nested = "[".repeat(MAX_AUDIT_JSON_DEPTH + 1);
+        let err = validate_audit_json_structure(&deeply_nested).unwrap_err();
+        assert!(err.to_string().contains("nesting"));
+
+        let token_storm = "[]".repeat((MAX_AUDIT_JSON_TOKENS / 2) + 1);
+        let err = validate_audit_json_structure(&token_storm).unwrap_err();
+        assert!(err.to_string().contains("tokens"));
     }
 
     fn load_synplanner_fixture(name: &str) -> String {

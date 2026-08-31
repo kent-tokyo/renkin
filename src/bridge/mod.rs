@@ -87,7 +87,7 @@ pub use audit::{
 pub use audit_route::{
     AuditManifest, AuditRouteReport, AuditRouteSummary, build_audit_route_report,
     build_audit_route_report_with_options, build_audit_route_report_with_policy, parse_stock_text,
-    validate_audit_text_inputs,
+    validate_audit_json_structure, validate_audit_text_inputs,
 };
 pub use forward::{
     EvidenceBasis, ForwardNotEvaluableReason, ForwardValidationResult, validate_step_forward,

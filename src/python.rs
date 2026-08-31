@@ -699,6 +699,8 @@ pub fn validate_forward_py(
             "resource_exhausted: route JSON exceeds {MAX_ROUTE_JSON_BYTES} bytes"
         )));
     }
+    bridge::validate_audit_json_structure(route_json)
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
     let v: serde_json::Value = serde_json::from_str(route_json)
         .map_err(|e| PyValueError::new_err(format!("invalid JSON: {e}")))?;

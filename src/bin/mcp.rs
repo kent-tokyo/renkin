@@ -80,7 +80,12 @@ fn main() {
         let line = match read_bounded_line(&mut input) {
             Ok(BoundedLine::Eof) => break,
             Ok(BoundedLine::TooLarge) => {
-                write_error(&mut out, Value::Null, -32600, "Request too large");
+                write_error(
+                    &mut out,
+                    Value::Null,
+                    -32600,
+                    "resource_exhausted: request too large",
+                );
                 continue;
             }
             Ok(BoundedLine::Complete(bytes)) => match String::from_utf8(bytes) {
@@ -98,7 +103,12 @@ fn main() {
         }
 
         if renkin::bridge::validate_audit_json_structure(line).is_err() {
-            write_error(&mut out, Value::Null, -32700, "Parse error");
+            write_error(
+                &mut out,
+                Value::Null,
+                -32600,
+                "resource_exhausted: JSON structure exceeds server budget",
+            );
             continue;
         }
 

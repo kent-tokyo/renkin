@@ -90,7 +90,8 @@ non-scalar request ID is a `-32600` Invalid Request, and an unknown method is a
 never echo the rejected input.
 
 MCP request lines are capped at 1 MiB before JSON parsing. An oversized line is
-drained through its newline and rejected as `-32600 Request too large`, so it
+drained through its newline and rejected as `-32600 resource_exhausted: request
+too large`, so it
 cannot cause an unbounded allocation or shift subsequent request framing.
 
 The shared search entry point rejects oversized target SMILES and excessive

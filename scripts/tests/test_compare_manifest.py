@@ -201,6 +201,14 @@ class TestRedactHomeDir(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "symlink"):
                 cm.load_and_validate_manifest(link)
 
+    def test_manifest_input_hash_rejects_oversized_file(self):
+        with tempfile.NamedTemporaryFile("wb") as handle:
+            handle.write(b"x" * 40)
+            handle.flush()
+            with patch.object(cm, "MAX_MANIFEST_BYTES", 32):
+                with self.assertRaisesRegex(ValueError, "exceeds"):
+                    cm.sha256_file(handle.name)
+
 
 if __name__ == "__main__":
     unittest.main()

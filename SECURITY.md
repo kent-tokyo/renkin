@@ -161,6 +161,8 @@ schema drift or malformed evidence fails fast rather than after an expensive
 run.
 Manifest loading also enforces a 64MiB bound and rejects symlinks and
 non-regular files before deserialization.
+Files hashed into comparison provenance use the same boundary before hashing,
+covering sample, stock, template, model, and binary inputs.
 
 The streaming stock importer applies independent bounds of 64MiB total input,
 64KiB per line, and one million data rows. It rejects invalid UTF-8 and

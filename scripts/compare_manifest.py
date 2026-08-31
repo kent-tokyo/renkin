@@ -19,11 +19,27 @@ import subprocess
 import sys
 import time
 
-from compare_sampling import sha256_file
+from compare_sampling import sha256_file as _unbounded_sha256_file
 
 
 SECURITY_CONTRACT_VERSION = 1
 MAX_MANIFEST_BYTES = 64 * 1024 * 1024
+
+
+def sha256_file(path: str) -> str:
+    """Hash a manifest input only after applying its file boundary policy."""
+    metadata = os.lstat(path)
+    if stat.S_ISLNK(metadata.st_mode):
+        raise ValueError(f"manifest input must not be a symlink: {path!r}")
+    if not stat.S_ISREG(metadata.st_mode):
+        raise ValueError(f"manifest input must be a regular file: {path!r}")
+    if metadata.st_size > MAX_MANIFEST_BYTES:
+        raise ValueError(
+            f"manifest input exceeds {MAX_MANIFEST_BYTES} bytes: {path!r}"
+        )
+    # Keep the established streaming implementation for ordinary files; the
+    # preflight above prevents an unexpectedly large artifact from entering it.
+    return _unbounded_sha256_file(path)
 SECURITY_CASES = [
     {
         "security_case_id": "RENKIN-S0-INPUT-001",

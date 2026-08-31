@@ -8,6 +8,14 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.55.0] - 2026-08-31 "Current-master Benchmark Contract"
+
+### Added
+- Added a reproducible current-master benchmark snapshot with per-target
+  rows, aggregate metrics, and commit/binary/input provenance hashes.
+- Documented the Phase 0 distinction between a current-master smoke snapshot,
+  historical comparison artifacts, and the future formal TEST run.
+
 ## [0.54.1] - 2026-08-31 "CI Lint Compatibility"
 
 ### Fixed

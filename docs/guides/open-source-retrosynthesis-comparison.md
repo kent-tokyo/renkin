@@ -510,6 +510,16 @@ directly, same mechanism as the RENKIN adapter's own stock-leaf check).
 
 ## 500/full run gate
 
+### Current-master snapshot (2026-08-31)
+
+The current-master Phase 0 snapshot is recorded separately in
+[`data/comparison/current_master_2026-08-31_report.md`](../../data/comparison/current_master_2026-08-31_report.md).
+It covers 50 targets at commit `65e158a` and exists to freeze the current
+binary, input hashes, failure taxonomy, and resource measurements before a
+larger rerun. Its 4/50 route-to-configured-stock result is not comparable to
+the historical 500-target artifact below, which used an older commit and
+configuration, and it is not a formal 4,903-target result.
+
 **500-target round: complete** (see "500-target results" above,
 `data/comparison/results_500/`). **4,903-target full-corpus round: not
 started**, and out of scope for this document's current results — per

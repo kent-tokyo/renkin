@@ -27,6 +27,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Added Python `find_routes()` `candidate_trace_limit`, matching the CLI's
   bounded candidate-level crowd-out trace and automatically exposing the
   `search_diagnostics` block when requested.
+- Added MCP `find_routes` `candidate_trace_limit`, exposing the same bounded
+  candidate-level crowd-out trace in the human-readable response.
 
 ## [0.61.0] - 2026-08-31 "Carbamate Graph Cleavage"
 

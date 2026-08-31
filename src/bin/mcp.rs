@@ -97,7 +97,8 @@ fn handle_tools_list() -> Value {
                         "require_elements": {"type": "string", "description": "Elements that must appear in ≥1 building block (e.g. \"B\")"},
                         "search_mode": {"type": "string", "enum": ["standard", "coverage"], "description": "Search mode (default: standard). Coverage runs Stage 2 only when Stage 1 finds no route."},
                         "coverage_templates": {"type": "string", "description": "Stage-2 template file; required when search_mode is coverage. Invalid or empty files fail loudly."},
-                        "coverage_timeout_secs": {"type": "integer", "minimum": 1, "description": "Optional cooperative Stage-2 timeout in seconds."}
+                        "coverage_timeout_secs": {"type": "integer", "minimum": 1, "description": "Optional cooperative Stage-2 timeout in seconds."},
+                        "candidate_trace_limit": {"type": "integer", "minimum": 0, "description": "Optional maximum number of candidate-level crowd-out trace records; adds a diagnostic section to the response."}
                     },
                     "required": ["smiles"]
                 }
@@ -239,6 +240,7 @@ fn handle_find_routes(smiles: &str, args: &Value) -> Value {
         return tool_error("invalid search_mode (expected standard or coverage)");
     }
     let coverage_path = args["coverage_templates"].as_str();
+    let candidate_trace_limit = args["candidate_trace_limit"].as_u64().map(|n| n as usize);
     let coverage_timeout = match args["coverage_timeout_secs"].as_u64() {
         Some(0) => return tool_error("coverage_timeout_secs must be a positive integer"),
         Some(seconds) => Some(std::time::Duration::from_secs(seconds)),
@@ -263,6 +265,7 @@ fn handle_find_routes(smiles: &str, args: &Value) -> Value {
         max_routes,
         forbidden_elements: elem_symbols_to_mask(avoid),
         required_element_present: elem_symbols_to_mask(require),
+        candidate_trace_cap: candidate_trace_limit,
         ..Default::default()
     };
 
@@ -320,6 +323,28 @@ fn handle_find_routes(smiles: &str, args: &Value) -> Value {
             text.push_str(&format!(
                 "  Building blocks: {}\n\n",
                 route.building_blocks.join(", ")
+            ));
+        }
+    }
+    if let Some(limit) = candidate_trace_limit {
+        text.push_str(&format!(
+            "\nCandidate trace ({} records, limit={}):\n",
+            stats.crowd_out.candidate_trace.len(),
+            limit
+        ));
+        for record in &stats.crowd_out.candidate_trace {
+            let rank = record
+                .rank_before_prune
+                .map(|rank| rank.to_string())
+                .unwrap_or_else(|| "n/a".to_string());
+            text.push_str(&format!(
+                "  depth={} template={} provenance={:?} rank={} survived={} later_reached_stock={}\n",
+                record.depth,
+                record.template_id,
+                record.provenance,
+                rank,
+                record.survived_beam,
+                record.later_reached_stock,
             ));
         }
     }
@@ -868,6 +893,7 @@ mod tests {
         );
         assert!(properties["coverage_templates"].is_object());
         assert!(properties["coverage_timeout_secs"].is_object());
+        assert!(properties["candidate_trace_limit"].is_object());
     }
 
     #[test]

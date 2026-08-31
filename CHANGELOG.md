@@ -8,6 +8,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.62.0] - 2026-08-31 "Security Boundary Hardening"
+
 ### Added
 - Extended bounded fail-closed reading to stock doctor manifests and forward
   benchmark manifest verification; oversized or symlinked verification inputs
@@ -1939,7 +1941,8 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
 
 ---
 
-[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.53.0...HEAD
+[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.62.0...HEAD
+[0.62.0]: https://github.com/kent-tokyo/renkin/compare/v0.61.0...v0.62.0
 [0.54.0]: https://github.com/kent-tokyo/renkin/compare/v0.53.0...v0.54.0
 [0.53.0]: https://github.com/kent-tokyo/renkin/compare/v0.52.0...v0.53.0
 [0.52.0]: https://github.com/kent-tokyo/renkin/compare/v0.51.0...v0.52.0

@@ -33,6 +33,7 @@ fn run_failure(args: &[&str]) -> String {
 
 const ASPIRIN: &str = "CC(=O)Oc1ccccc1C(=O)O";
 const BUILDING_BLOCK: &str = "CC(=O)O"; // acetic acid: a depth-0 (routes_found>0) target
+const EMPTY_STOCK: &str = "tests/fixtures/empty_stock.smi";
 
 #[test]
 fn default_output_omits_search_diagnostics_when_route_found() {
@@ -109,7 +110,7 @@ fn default_output_omits_search_diagnostics_when_no_route_found() {
         "--max-routes",
         "1",
         "--building-blocks",
-        "/dev/null",
+        EMPTY_STOCK,
     ]);
     assert_eq!(v["routes_found"], 0);
     assert!(
@@ -157,7 +158,7 @@ fn search_diagnostics_flag_adds_block_when_no_route_found() {
         "--max-routes",
         "1",
         "--building-blocks",
-        "/dev/null",
+        EMPTY_STOCK,
         "--search-diagnostics",
     ]);
     assert_eq!(v["routes_found"], 0);

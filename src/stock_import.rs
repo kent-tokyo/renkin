@@ -33,6 +33,9 @@ use crate::chem_env::{STANDARDIZE_OPTS, canonical_stock_identity_from_smiles};
 /// must not silently treat as the same schema (same discipline as
 /// `pool_export::MANIFEST_SCHEMA_VERSION`).
 pub const STOCK_MANIFEST_SCHEMA_VERSION: u32 = 1;
+pub const MAX_STOCK_INPUT_BYTES: u64 = 64 * 1024 * 1024;
+pub const MAX_STOCK_LINE_BYTES: usize = 64 * 1024;
+pub const MAX_STOCK_DATA_ROWS: u64 = 1_000_000;
 
 /// Caller-supplied provenance for one import run. Never guessed: a
 /// missing `source_revision`/`license` is recorded as `None`, not
@@ -169,6 +172,37 @@ impl<R: Read> Read for HashingReader<R> {
     }
 }
 
+fn read_bounded_line<R: BufRead>(reader: &mut R, total_bytes: &mut u64) -> Result<Option<Vec<u8>>> {
+    let mut line = Vec::new();
+    loop {
+        let buffer = reader.fill_buf().context("failed reading stock input")?;
+        if buffer.is_empty() {
+            return Ok((!line.is_empty()).then_some(line));
+        }
+        let newline = buffer.iter().position(|byte| *byte == b'\n');
+        let content_len = newline.unwrap_or(buffer.len());
+        let consumed = newline.map_or(buffer.len(), |index| index + 1);
+        if *total_bytes + consumed as u64 > MAX_STOCK_INPUT_BYTES {
+            anyhow::bail!(
+                "resource_exhausted: stock input exceeds {} bytes",
+                MAX_STOCK_INPUT_BYTES
+            );
+        }
+        if line.len() + content_len > MAX_STOCK_LINE_BYTES {
+            anyhow::bail!(
+                "resource_exhausted: stock line exceeds {} bytes",
+                MAX_STOCK_LINE_BYTES
+            );
+        }
+        line.extend_from_slice(&buffer[..content_len]);
+        reader.consume(consumed);
+        *total_bytes += consumed as u64;
+        if newline.is_some() {
+            return Ok(Some(line));
+        }
+    }
+}
+
 /// Imports a line-oriented `.smi` stock file from any `Read`. Returns the
 /// deterministically sorted, deduped list of accepted canonical SMILES
 /// (the exact content [`render_output`] would write to an output `.smi`)
@@ -192,22 +226,25 @@ pub fn import_stock(
     let mut seen: FxHashMap<String, u64> = FxHashMap::default();
     let mut input_rows: u64 = 0;
 
-    let mut line = String::new();
     let mut line_no: u64 = 0;
+    let mut total_bytes: u64 = 0;
     loop {
-        line.clear();
-        let n = reader
-            .read_line(&mut line)
-            .context("failed reading a line from the stock input")?;
-        if n == 0 {
+        let Some(line_bytes) = read_bounded_line(&mut reader, &mut total_bytes)? else {
             break;
-        }
+        };
+        let line = String::from_utf8(line_bytes).context("stock input contains invalid UTF-8")?;
         line_no += 1;
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue; // comment / blank line: not a data row, not counted
         }
         input_rows += 1;
+        if input_rows > MAX_STOCK_DATA_ROWS {
+            anyhow::bail!(
+                "resource_exhausted: stock input exceeds {} data rows",
+                MAX_STOCK_DATA_ROWS
+            );
+        }
 
         // `trimmed` is non-empty (checked above), so this is always
         // `Some` for this whitespace-tokenized format -- see
@@ -372,6 +409,21 @@ mod tests {
         assert_eq!(accepted.len(), 1);
         // Only the first whitespace-separated token was used as the SMILES.
         assert!(!accepted[0].contains("ethanol"));
+    }
+
+    #[test]
+    fn oversized_stock_line_is_rejected_before_smiles_parsing() {
+        let input = format!("{}\n", "C".repeat(MAX_STOCK_LINE_BYTES + 1));
+        let error = import_stock(input.as_bytes(), &opts())
+            .expect_err("oversized stock line must be rejected");
+        assert!(error.to_string().contains("resource_exhausted"));
+    }
+
+    #[test]
+    fn invalid_utf8_stock_input_is_rejected() {
+        let error = import_stock([0xff, 0xfe].as_slice(), &opts())
+            .expect_err("invalid UTF-8 stock input must be rejected");
+        assert!(error.to_string().contains("invalid UTF-8"));
     }
 
     #[test]

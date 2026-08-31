@@ -9,6 +9,10 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Added bounded streaming limits to stock import: 64MiB total input, 64KiB
+  per line, and one million data rows. Oversized or non-UTF-8 stock input now
+  fails explicitly instead of allocating without a bound or silently dropping
+  the source.
 - Added shared search budget validation across the Rust library and all
   connected CLI/Python/WASM/MCP surfaces: target SMILES, depth, route count,
   beam width, and candidate-trace collection are now bounded before parsing

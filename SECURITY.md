@@ -99,6 +99,10 @@ or expansion. The resulting `resource_exhausted` error is propagated through
 the library, CLI, Python, WASM, and MCP adapters rather than being treated as
 an empty search result.
 
+The streaming stock importer applies independent bounds of 64MiB total input,
+64KiB per line, and one million data rows. It rejects invalid UTF-8 and
+resource exhaustion before producing a stock manifest.
+
 ## Disclosure
 
 Please allow reasonable time for a fix before public disclosure.

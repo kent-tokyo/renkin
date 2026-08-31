@@ -101,6 +101,14 @@ interface Step {
 }
 ```
 
+## `find_routes_v6`
+
+`find_routes_v6` keeps the policy arguments from `find_routes_v5` and adds a
+final `candidate_trace_limit` argument. It always returns a
+`search_diagnostics` object; the candidate trace is capped at the requested
+limit and does not change route selection. Existing versioned exports remain
+available for compatibility.
+
 ## `audit_route_v2`
 
 ```typescript

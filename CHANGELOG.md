@@ -29,6 +29,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `search_diagnostics` block when requested.
 - Added MCP `find_routes` `candidate_trace_limit`, exposing the same bounded
   candidate-level crowd-out trace in the human-readable response.
+- Added WASM `find_routes_v6`, preserving the prior policy controls while
+  exposing bounded candidate traces and the full `search_diagnostics` block.
 
 ## [0.61.0] - 2026-08-31 "Carbamate Graph Cleavage"
 

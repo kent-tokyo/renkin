@@ -384,6 +384,103 @@ pub fn find_routes_v5(
     }
 }
 
+/// Same as [`find_routes_v5`], plus bounded candidate-level diagnostics.
+/// `candidate_trace_limit` is an explicit collection cap; `0` collects no
+/// records while still returning the aggregate `search_diagnostics` block.
+/// The diagnostics are read-only and do not affect route selection. A new
+/// export preserves the fail-loud compatibility behavior of the earlier
+/// versioned WASM functions.
+#[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
+pub fn find_routes_v6(
+    target: &str,
+    depth: u32,
+    max_routes: usize,
+    beam_width: usize,
+    avoid_elements: &str,
+    require_elements: &str,
+    spectator_bond_policy: &str,
+    element_accounting_policy: &str,
+    beam_diversity_policy: &str,
+    beam_diversity_slots: usize,
+    candidate_trace_limit: usize,
+) -> String {
+    let spectator_policy = match spectator_bond_policy {
+        "off" => crate::spectator_bond::SpectatorBondPolicy::Off,
+        "diagnostics_only" => crate::spectator_bond::SpectatorBondPolicy::DiagnosticsOnly,
+        "gated" => crate::spectator_bond::SpectatorBondPolicy::Gated,
+        other => {
+            return wasm_error(&format!(
+                "invalid spectator_bond_policy {other:?} (expected \"off\", \"diagnostics_only\", or \"gated\")"
+            ));
+        }
+    };
+    let element_policy = match element_accounting_policy {
+        "off" => crate::search::ElementAccountingGatePolicy::Off,
+        "diagnostics_only" => crate::search::ElementAccountingGatePolicy::DiagnosticsOnly,
+        "gated" => crate::search::ElementAccountingGatePolicy::Gated,
+        other => {
+            return wasm_error(&format!(
+                "invalid element_accounting_policy {other:?} (expected \"off\", \"diagnostics_only\", or \"gated\")"
+            ));
+        }
+    };
+    let diversity_policy = match beam_diversity_policy {
+        "off" => crate::search::BeamDiversityPolicy::Off,
+        "diagnostics_only" => crate::search::BeamDiversityPolicy::DiagnosticsOnly,
+        "active" => crate::search::BeamDiversityPolicy::Active,
+        other => {
+            return wasm_error(&format!(
+                "invalid beam_diversity_policy {other:?} (expected \"off\", \"diagnostics_only\", or \"active\")"
+            ));
+        }
+    };
+    let env = ChemEnv::in_memory(DEFAULT_BUILDING_BLOCKS);
+    let rules = default_rules();
+    let config = SearchConfig {
+        max_depth: depth,
+        max_routes,
+        beam_width,
+        forbidden_elements: chem_env::elem_symbols_to_mask(avoid_elements),
+        required_element_present: chem_env::elem_symbols_to_mask(require_elements),
+        spectator_bond_policy: spectator_policy,
+        element_accounting_policy: element_policy,
+        beam_diversity_policy: diversity_policy,
+        beam_diversity_slots,
+        candidate_trace_cap: Some(candidate_trace_limit),
+        ..Default::default()
+    };
+
+    match rs_find_routes(target, &env, &rules, &config) {
+        Ok((routes, stats)) => {
+            let mut output = if routes.is_empty() {
+                serde_json::json!({
+                    "target": target,
+                    "routes_found": 0,
+                    "routes": [],
+                    "diagnostics": {"nodes_expanded": stats.nodes_expanded}
+                })
+            } else {
+                serde_json::json!({
+                    "target": target,
+                    "routes_found": routes.len(),
+                    "routes": routes,
+                })
+            };
+            output["search_diagnostics"] = serde_json::to_value(stats.crowd_out)
+                .unwrap_or_else(|e| serde_json::json!({"serialization_error": e.to_string()}));
+            serde_json::to_string(&output)
+                .unwrap_or_else(|e| format!(r#"{{"error":"serialization: {e}"}}"#))
+        }
+        Err(e) => wasm_error(&e.to_string()),
+    }
+}
+
+fn wasm_error(message: &str) -> String {
+    serde_json::to_string(&serde_json::json!({"error": message}))
+        .unwrap_or_else(|_| r#"{"error":"WASM error"}"#.to_string())
+}
+
 /// Return the crate version string.
 #[wasm_bindgen]
 pub fn version() -> String {

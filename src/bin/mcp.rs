@@ -366,6 +366,13 @@ fn handle_plan_with_constraints(smiles: &str, args: &Value) -> Value {
     let max_route_cost = args["max_route_cost"].as_f64();
     let min_confidence = args["min_confidence"].as_f64();
     let min_success_prob = args["min_success_probability"].as_f64();
+    if let Err(message) = renkin::constraints::validate_route_thresholds(
+        max_route_cost,
+        min_confidence,
+        min_success_prob,
+    ) {
+        return tool_error(&message);
+    }
     let require_fams: Option<Vec<String>> = args["require_reaction_families"]
         .as_str()
         .map(|s| s.split(',').map(|f| f.trim().to_string()).collect());

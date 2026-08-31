@@ -202,6 +202,12 @@ pub fn find_routes_py(
     prefer_reaction_families: &str,
     max_steps: Option<usize>,
 ) -> PyResult<String> {
+    crate::constraints::validate_route_thresholds(
+        max_route_cost,
+        min_confidence,
+        min_success_probability,
+    )
+    .map_err(PyValueError::new_err)?;
     if search_mode != "standard" && search_mode != "coverage" {
         return Err(PyValueError::new_err(format!(
             "invalid search_mode {search_mode:?} (expected \"standard\" or \"coverage\")"

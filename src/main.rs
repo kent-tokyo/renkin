@@ -697,6 +697,13 @@ fn main() -> Result<()> {
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();
 
+    renkin::constraints::validate_route_thresholds(
+        constraints.max_route_cost,
+        constraints.min_confidence,
+        constraints.min_success_probability,
+    )
+    .map_err(|message| anyhow::anyhow!(message))?;
+
     // constraints override CLI flags when present
     let eff_depth = constraints.max_depth.unwrap_or(max_depth);
     let avoid_mask = chem_env::elem_symbols_to_mask(&avoid_elements)

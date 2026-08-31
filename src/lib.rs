@@ -3,6 +3,7 @@
 pub mod bridge;
 pub mod candidate;
 pub mod chem_env;
+pub mod constraints;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod coverage_mode;
 pub mod display;

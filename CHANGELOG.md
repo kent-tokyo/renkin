@@ -21,6 +21,9 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   avoided, and preferred families, matching the CLI/MCP planning semantics.
 - Added Python `find_routes()` `max_steps` post-filter, distinct from the
   search-depth limit and preserving the legacy default when omitted.
+- Added shared validation for numeric route constraints across CLI, Python,
+  and MCP: costs must be finite and non-negative, while confidence and
+  success-probability thresholds must be finite values in `[0,1]`.
 
 ## [0.61.0] - 2026-08-31 "Carbamate Graph Cleavage"
 

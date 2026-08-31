@@ -8,14 +8,21 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.54.0] - 2026-08-31 "MCP Coverage Search"
+
+### Added
+- Added opt-in progressive coverage search to the MCP `find_routes` tool,
+  matching the existing CLI and Python Stage 1/Stage 2 contract.
+- MCP coverage responses now report the selected stage, Stage 2 invocation,
+  timeout status, and per-stage elapsed time.
+
 ### Changed
-- Refreshed public documentation to match the current 0.44.0 implementation,
+- MCP `find_routes` now rejects missing, empty, or invalid coverage template
+  files before searching, rather than silently falling back.
+- Updated MCP documentation and the stale building-block description.
+- Refreshed public documentation to match the 0.54.0 implementation,
   including the 21 built-in rules, exact canonical-SMILES stock identity, and
   current package-version examples.
-- Removed duplicate internal design, validation, roadmap, comparison,
-  benchmark, and reranker-training notes from the public documentation
-  navigation. These files remain locally available and ignored for
-  development.
 
 ## [0.53.0] - 2026-08-31 "Schematic 0.26 Compatibility"
 
@@ -1704,6 +1711,7 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
 ---
 
 [Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.53.0...HEAD
+[0.54.0]: https://github.com/kent-tokyo/renkin/compare/v0.53.0...v0.54.0
 [0.53.0]: https://github.com/kent-tokyo/renkin/compare/v0.52.0...v0.53.0
 [0.52.0]: https://github.com/kent-tokyo/renkin/compare/v0.51.0...v0.52.0
 [0.51.0]: https://github.com/kent-tokyo/renkin/compare/v0.50.0...v0.51.0

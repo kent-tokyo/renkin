@@ -56,7 +56,7 @@ RENKIN is a **retrosynthesis engine** that automatically plans multi-step chemic
 | **Failure diagnostics** | `renkin-bench --failure-taxonomy` classifies unsolved targets by cause (beam limit, depth limit, template gap, stock near-miss) |
 | **Cascade search** | Two-stage search: fast defaults → hard cases re-run at higher beam/depth |
 | **Stability testing** | `--quietset-out` exports observations for [quietset](https://crates.io/crates/quietset-cli) cross-config stability analysis |
-| **MCP server** | `renkin-mcp` exposes `find_routes`, `diagnose_failure`, `validate_route` to Claude Desktop |
+| **MCP server** | `renkin-mcp` exposes six route, validation, Pareto, constraint, diversity, and diagnostic tools to Claude Desktop; `find_routes` also supports opt-in coverage search |
 
 ## Quick Example
 

@@ -372,6 +372,10 @@ JSON 输出除标准的 solved/success_rate 指标外，还包含 `avg_nodes_exp
 | `plan_with_constraints` | 基于约束 DSL 的规划（元素过滤、步数限制、置信度阈值） |
 | `estimate_diversity` | 路线多样性与覆盖率指标 |
 
+`find_routes` 也支持 `search_mode: "coverage"`，此时必须提供
+`coverage_templates` 路径。它先运行 Stage 1，仅当没有找到路线时才升级到 Stage 2，
+并在响应中报告所选阶段、超时状态和各阶段耗时。
+
 服务器会自动检测工作目录下的 `data/building_blocks.smi` 与 `data/templates_extracted_5000.smi`；若未找到，则回退到内置的 `DEFAULT_BUILDING_BLOCKS` / `default_rules()` 默认值（根据 `ChemEnv::bb_count()`，为 152 种去重起始原料、21 条人工编写规则——已于 2026-08-29 核实，`heck_retro`（稠环内部烯烃与离去基团 Br 所连的同一芳环发生连通性坍缩缺陷，经直接 `apply_retro` 在茚上复现确认）被移除后数量从 22 降为 21；此前 `negishi_retro` 与 `grignard_addition_retro`（v0.36.0 规则安全普查：与 `aryl_amine_retro`/`buchwald_hartwig_retro` 相同的稠环原子重复缺陷）被移除后数量已从 24 降为 22；此前此处曾记载过"509 种起始原料 / 20 条规则"的数字，但未经核实）。
 
 ```bash

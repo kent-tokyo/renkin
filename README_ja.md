@@ -475,6 +475,11 @@ USPTO-50kテストセット（全4,907分子評価）:
 | `plan_with_constraints` | 制約 DSL による合成計画（元素フィルタ・ステップ数・信頼度閾値） |
 | `estimate_diversity` | ルート多様性・カバレッジ指標 |
 
+`find_routes` は、必須の `coverage_templates` パスと
+`search_mode: "coverage"` を指定すると、coverage modeにも対応します。
+Stage 1で見つからない場合だけStage 2へ進み、選択Stage・timeout状態・各Stageの
+経過時間を応答に含めます。
+
 ```bash
 cargo build --release
 # binary: target/release/renkin-mcp

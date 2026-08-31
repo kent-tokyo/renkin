@@ -86,7 +86,7 @@ fn handle_tools_list() -> Value {
         "tools": [
             {
                 "name": "find_routes",
-                "description": "Find retrosynthetic routes for a target molecule back to commercially available building blocks. Uses A* / AND-OR tree search with SMIRKS templates and 509 curated building blocks.",
+                "description": "Find retrosynthetic routes for a target molecule back to commercially available building blocks. Uses deterministic A* / AND-OR tree search with SMIRKS templates; supports standard search and opt-in progressive coverage search.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -94,7 +94,10 @@ fn handle_tools_list() -> Value {
                         "depth": {"type": "integer", "description": "Max retrosynthesis depth (default: 5)"},
                         "max_routes": {"type": "integer", "description": "Routes to return (default: 5)"},
                         "avoid_elements": {"type": "string", "description": "Comma-separated elements to exclude from BBs (e.g. \"Br,I\")"},
-                        "require_elements": {"type": "string", "description": "Elements that must appear in ≥1 building block (e.g. \"B\")"}
+                        "require_elements": {"type": "string", "description": "Elements that must appear in ≥1 building block (e.g. \"B\")"},
+                        "search_mode": {"type": "string", "enum": ["standard", "coverage"], "description": "Search mode (default: standard). Coverage runs Stage 2 only when Stage 1 finds no route."},
+                        "coverage_templates": {"type": "string", "description": "Stage-2 template file; required when search_mode is coverage. Invalid or empty files fail loudly."},
+                        "coverage_timeout_secs": {"type": "integer", "minimum": 1, "description": "Optional cooperative Stage-2 timeout in seconds."}
                     },
                     "required": ["smiles"]
                 }
@@ -226,6 +229,28 @@ fn handle_find_routes(smiles: &str, args: &Value) -> Value {
     let max_routes = args["max_routes"].as_u64().unwrap_or(5) as usize;
     let avoid = args["avoid_elements"].as_str().unwrap_or("");
     let require = args["require_elements"].as_str().unwrap_or("");
+    let search_mode = args["search_mode"].as_str().unwrap_or("standard");
+    if search_mode != "standard" && search_mode != "coverage" {
+        return tool_error("invalid search_mode (expected standard or coverage)");
+    }
+    let coverage_path = args["coverage_templates"].as_str();
+    let coverage_timeout = match args["coverage_timeout_secs"].as_u64() {
+        Some(0) => return tool_error("coverage_timeout_secs must be a positive integer"),
+        Some(seconds) => Some(std::time::Duration::from_secs(seconds)),
+        None => None,
+    };
+    if search_mode == "standard" && (coverage_path.is_some() || coverage_timeout.is_some()) {
+        return tool_error(
+            "coverage_templates and coverage_timeout_secs require search_mode=coverage",
+        );
+    }
+    let coverage_path = match (search_mode, coverage_path) {
+        ("coverage", Some(path)) => path,
+        ("coverage", None) => {
+            return tool_error("search_mode=coverage requires coverage_templates");
+        }
+        _ => "",
+    };
 
     let (env, rules) = load_env_and_rules();
     let config = SearchConfig {
@@ -236,12 +261,49 @@ fn handle_find_routes(smiles: &str, args: &Value) -> Value {
         ..Default::default()
     };
 
-    let (routes, stats) = match search::find_routes(smiles, &env, &rules, &config) {
-        Ok(r) => r,
-        Err(e) => return tool_error(&format!("search error: {e}")),
+    let (routes, stats, coverage_summary) = if search_mode == "coverage" {
+        let coverage_rules = match renkin::coverage_mode::load_coverage_rules(coverage_path) {
+            Ok(rules) => rules,
+            Err(e) => return tool_error(&format!("coverage template error: {e}")),
+        };
+        let result = match renkin::coverage_mode::run_coverage_mode(
+            smiles,
+            &env,
+            &rules,
+            &config,
+            &coverage_rules,
+            coverage_timeout,
+        ) {
+            Ok(result) => result,
+            Err(e) => return tool_error(&format!("coverage search error: {e}")),
+        };
+        let summary = format!(
+            "Search mode: coverage\nSelected stage: {:?}\nStage 2 invoked: {}\nStage 1 timeout: {}\nStage 2 timeout: {}\nStage 1 elapsed: {:.1} ms\nStage 2 elapsed: {}\nTotal elapsed: {:.1} ms\n\n",
+            result.selected_stage,
+            result.stage2_invoked,
+            result.stage1_timeout,
+            result.stage2_timeout,
+            result.stage1_elapsed_ms,
+            result
+                .stage2_elapsed_ms
+                .map(|elapsed| format!("{elapsed:.1} ms"))
+                .unwrap_or_else(|| "not_run".to_string()),
+            result.total_elapsed_ms,
+        );
+        (result.routes, result.stats, Some(summary))
+    } else {
+        let result = match search::find_routes(smiles, &env, &rules, &config) {
+            Ok(r) => r,
+            Err(e) => return tool_error(&format!("search error: {e}")),
+        };
+        (result.0, result.1, None)
     };
 
-    let mut text = format!("Target: {smiles}\nRoutes found: {}\n\n", routes.len());
+    let mut text = coverage_summary.unwrap_or_default();
+    text.push_str(&format!(
+        "Target: {smiles}\nRoutes found: {}\n\n",
+        routes.len()
+    ));
     if routes.is_empty() {
         text.push_str(&format!(
             "No routes found (nodes expanded: {}). Try increasing depth, or remove element constraints if set.",
@@ -257,6 +319,41 @@ fn handle_find_routes(smiles: &str, args: &Value) -> Value {
         }
     }
     json!({"content": [{"type": "text", "text": text}]})
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn find_routes_schema_advertises_coverage_mode() {
+        let tools = handle_tools_list();
+        let find_routes = &tools["tools"].as_array().expect("tools must be an array")[0];
+        let properties = &find_routes["inputSchema"]["properties"];
+        assert_eq!(
+            properties["search_mode"]["enum"],
+            json!(["standard", "coverage"])
+        );
+        assert!(properties["coverage_templates"].is_object());
+        assert!(properties["coverage_timeout_secs"].is_object());
+    }
+
+    #[test]
+    fn coverage_mode_requires_template_path() {
+        let response = handle_tools_call(&json!({
+            "params": {
+                "name": "find_routes",
+                "arguments": {"smiles": "CCO", "search_mode": "coverage"}
+            }
+        }));
+        assert_eq!(response["isError"], json!(true));
+        assert!(
+            response["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("requires coverage_templates")
+        );
+    }
 }
 
 fn handle_explain_route(smiles: &str, args: &Value) -> Value {

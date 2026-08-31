@@ -39,6 +39,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   security workflow, with least-privilege job permissions.
 - Added a dedicated scheduled adversarial-regression job for the MCP stdio
   boundary and comparison-manifest security contract tests.
+- Added a local fail-fast security regression gate shared by the scheduled
+  workflow and crates-restricted development.
 - MCP now requires the exact JSON-RPC `2.0` envelope before dispatch, rejecting
   missing or unsupported protocol versions as structured invalid requests.
 - MCP now suppresses responses for all JSON-RPC notifications based on the

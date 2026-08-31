@@ -21,6 +21,9 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - User-supplied template, metadata, stock-import, and bounded CLI text paths
   now reject symlinks before reading, preventing path indirection at file
   trust boundaries.
+- Extended bounded file loading to evidence-match, template diagnostics,
+  ring-context inputs, template utilities, and constraint JSON; malformed
+  constraint files now fail loudly instead of silently becoming defaults.
 - Added Python forward-boundary limits: at most 32 reactants and 64KiB of
   reactant text per call, 1,000 results, and 64MiB/10,000 steps for route JSON
   validation; oversized inputs fail with `resource_exhausted`.

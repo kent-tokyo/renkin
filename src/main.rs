@@ -624,10 +624,11 @@ fn main() -> Result<()> {
                 );
                 std::process::exit(1);
             };
-            let templates_content = std::fs::read_to_string(templates_path).unwrap_or_else(|e| {
-                eprintln!("error: could not read --templates file {templates_path}: {e}");
-                std::process::exit(1);
-            });
+            let templates_content = read_bounded_text_file(templates_path, "--templates")
+                .unwrap_or_else(|e| {
+                    eprintln!("error: could not read --templates file {templates_path}: {e}");
+                    std::process::exit(1);
+                });
             match ring_context::RingContextGuard::load(sidecar_path, &templates_content) {
                 Ok(g) => ring_context::RingContextConfig::Guarded {
                     guard: std::sync::Arc::new(g),
@@ -692,11 +693,14 @@ fn main() -> Result<()> {
         },
     };
 
-    let constraints: ConstraintSpec = constraints_path
-        .as_deref()
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default();
+    let constraints: ConstraintSpec = match constraints_path.as_deref() {
+        Some(path) => {
+            let content = read_bounded_text_file(path, "--constraints")?;
+            serde_json::from_str(&content)
+                .with_context(|| format!("failed to parse --constraints {path}"))?
+        }
+        None => ConstraintSpec::default(),
+    };
 
     renkin::constraints::validate_route_thresholds(
         constraints.max_route_cost,
@@ -1531,11 +1535,7 @@ fn template_ids(args: &[String]) -> Result<()> {
         .unwrap_or("data/templates_extracted_5000.smi");
     // load_rules_from_file warns-and-returns-empty on a read error (matching its
     // use in the main search path); this subcommand must fail loudly instead.
-    let meta =
-        std::fs::metadata(path).with_context(|| format!("cannot read template file {path}"))?;
-    if !meta.is_file() {
-        bail!("template file {path} is not a file");
-    }
+    chem_env::validate_template_file(path)?;
     let format = args
         .windows(2)
         .find(|w| w[0] == "--format")
@@ -1581,7 +1581,7 @@ fn template_ids(args: &[String]) -> Result<()> {
 
 /// Read raw template file → Vec<(smirks, count)>, skipping comments and blank lines.
 fn read_template_lines(path: &str) -> Result<Vec<(String, f64)>> {
-    let content = std::fs::read_to_string(path)?;
+    let content = read_bounded_text_file(path, "template file")?;
     Ok(content
         .lines()
         .map(str::trim)
@@ -2996,7 +2996,7 @@ fn build_template_doctor_report(args: &[String]) -> Result<TemplateDoctorReport>
     let templates_path = flag_value(args, "--templates")
         .context("renkin doctor templates: --templates <path> is required")?;
 
-    let content = std::fs::read_to_string(templates_path).with_context(|| {
+    let content = read_bounded_text_file(templates_path, "--templates").with_context(|| {
         format!("renkin doctor templates: failed to read --templates {templates_path:?}")
     })?;
 

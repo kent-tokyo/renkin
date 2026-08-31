@@ -135,6 +135,9 @@ tool handler.
 
 User-supplied template, metadata, stock-import, and bounded CLI text paths are
 checked with `symlink_metadata` and reject symlinks before opening the target.
+Evidence-match, template diagnostics, ring-context, template utility, and
+constraint JSON paths use the same bounded reader; malformed constraint JSON is
+reported as an input error rather than silently ignored.
 
 ## Disclosure
 

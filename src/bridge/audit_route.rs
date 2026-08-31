@@ -484,6 +484,11 @@ pub fn build_audit_route_report_with_options(
 ) -> anyhow::Result<AuditRouteReport> {
     use anyhow::{Context, bail};
 
+    // Keep the library entry point fail-closed as well as its CLI/Python/WASM
+    // wrappers. Callers that already hold a parsed stock set have no stock
+    // text to validate here, so only the route-content bound applies.
+    validate_audit_text_inputs(content, "")?;
+
     if ![
         "auto",
         "renkin",
@@ -735,6 +740,9 @@ mod tests {
     fn audit_text_input_limits_reject_oversized_route_and_stock() {
         let oversized_route = "x".repeat(MAX_AUDIT_ROUTE_TEXT_BYTES + 1);
         let err = validate_audit_text_inputs(&oversized_route, "").unwrap_err();
+        assert!(err.to_string().contains("audit route input"));
+
+        let err = build_audit_route_report(&oversized_route, "auto", None, &[]).unwrap_err();
         assert!(err.to_string().contains("audit route input"));
 
         let oversized_stock = "x".repeat(MAX_AUDIT_STOCK_TEXT_BYTES + 1);

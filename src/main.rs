@@ -1251,7 +1251,8 @@ fn load_audit_stock(path: &str) -> Result<std::collections::HashSet<String>> {
 }
 
 /// `renkin audit-route <PATH> [--format auto|renkin|aizynthfinder|syntheseus|synplanner] [--stock <PATH>]
-/// [--policy informational|standard|strict] [--chemical-review] [--output human|json]` --
+/// [--private-stock <CSV|TSV>] [--stock-policy <JSON>] [--policy informational|standard|strict]
+/// [--chemical-review] [--output human|json]` --
 /// audits every route in a RENKIN `--format json`
 /// output file via `bridge::route_graph::normalize_renkin_route` +
 /// `bridge::audit::audit`. RENKIN-native input only: no AiZynthFinder
@@ -1289,7 +1290,7 @@ fn run_audit_route(args: &[String]) -> Result<()> {
         .iter()
         .find(|a| !a.starts_with("--"))
         .cloned()
-        .context("renkin audit-route: <PATH> is required (usage: renkin audit-route <PATH> [--format auto|renkin|aizynthfinder|syntheseus|synplanner] [--stock <PATH>] [--policy informational|standard|strict] [--chemical-review] [--output human|json])")?;
+        .context("renkin audit-route: <PATH> is required (usage: renkin audit-route <PATH> [--format auto|renkin|aizynthfinder|syntheseus|synplanner] [--stock <PATH>] [--private-stock <CSV|TSV>] [--stock-policy <JSON>] [--policy informational|standard|strict] [--chemical-review] [--output human|json])")?;
     let format = flag_value(args, "--format").unwrap_or("auto");
     if ![
         "auto",
@@ -1323,7 +1324,7 @@ fn run_audit_route(args: &[String]) -> Result<()> {
         .transpose()?;
     let rules = chem_env::default_rules();
 
-    let out = bridge::build_audit_route_report_with_options(
+    let mut out = bridge::build_audit_route_report_with_options(
         &content,
         format,
         stock.as_ref(),
@@ -1332,6 +1333,28 @@ fn run_audit_route(args: &[String]) -> Result<()> {
         args.iter().any(|a| a == "--chemical-review"),
     )
     .with_context(|| format!("{path}: audit input rejected"))?;
+
+    let private_stock_path = flag_value(args, "--private-stock");
+    let stock_policy_path = flag_value(args, "--stock-policy");
+    match (private_stock_path, stock_policy_path) {
+        (Some(vendor_path), Some(policy_path)) => {
+            let vendor_content = std::fs::read_to_string(vendor_path)
+                .with_context(|| format!("failed to read --private-stock {vendor_path}"))?;
+            let records = vendor_stock::import_vendor_table(&vendor_content, None)
+                .with_context(|| format!("failed to parse --private-stock {vendor_path}"))?;
+            let index = vendor_stock::VendorStockIndex::from_records(records)
+                .with_context(|| format!("failed to index --private-stock {vendor_path}"))?;
+            let policy_content = std::fs::read_to_string(policy_path)
+                .with_context(|| format!("failed to read --stock-policy {policy_path}"))?;
+            let policy: bridge::PrivateStockPolicy = serde_json::from_str(&policy_content)
+                .with_context(|| format!("failed to parse --stock-policy {policy_path}"))?;
+            out.attach_private_stock(&index, &policy)?;
+        }
+        (None, None) => {}
+        _ => bail!(
+            "renkin audit-route: --private-stock and --stock-policy must be provided together"
+        ),
+    }
 
     if output_format == "json" {
         println!("{}", serde_json::to_string_pretty(&out)?);

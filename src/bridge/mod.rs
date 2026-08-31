@@ -71,6 +71,7 @@ pub mod aizynthfinder;
 pub mod audit;
 pub mod audit_route;
 pub mod forward;
+pub mod private_stock;
 pub mod review;
 pub mod route_graph;
 pub mod synplanner;
@@ -88,6 +89,10 @@ pub use audit_route::{
 };
 pub use forward::{
     EvidenceBasis, ForwardNotEvaluableReason, ForwardValidationResult, validate_step_forward,
+};
+pub use private_stock::{
+    PRIVATE_STOCK_POLICY_SCHEMA_VERSION, PrivateStockDecision, PrivateStockDecisionRecord,
+    PrivateStockPolicy, PrivateStockReason, PrivateStockReport, assess_report,
 };
 pub use review::{
     CHEMICAL_REVIEW_RUBRIC_VERSION, ChemicalReview, ReviewDimension, ReviewFinding, ReviewSeverity,

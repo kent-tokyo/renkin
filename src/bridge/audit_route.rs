@@ -157,6 +157,8 @@ pub struct AuditManifest {
     chemical_review_rubric_version: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     chemical_review_judge_id: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    private_stock_policy_sha256: Option<String>,
 }
 
 /// Hashes the route-input text actually parsed and audited (already
@@ -201,6 +203,8 @@ pub struct AuditRouteReport {
     /// Present only when explicitly requested; omitted by default for JSON compatibility.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chemical_review: Option<Vec<crate::bridge::review::ChemicalReview>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub private_stock: Option<Vec<crate::bridge::private_stock::PrivateStockReport>>,
 }
 
 #[derive(Debug, Serialize, Default)]
@@ -219,6 +223,30 @@ impl AuditRouteSummary {
             AuditStatus::Partial => self.partial += 1,
         }
         self.routes_total += 1;
+    }
+}
+
+impl AuditRouteReport {
+    /// Attach local vendor-policy decisions after normal route auditing. The
+    /// vendor table and policy never leave the caller's machine.
+    pub fn attach_private_stock(
+        &mut self,
+        index: &crate::vendor_stock::VendorStockIndex,
+        policy: &crate::bridge::private_stock::PrivateStockPolicy,
+    ) -> anyhow::Result<()> {
+        policy.validate()?;
+        let policy_bytes = serde_json::to_vec(policy)?;
+        self.audit_manifest.private_stock_policy_sha256 = Some(format!(
+            "sha256:{}",
+            crate::sha256_hex(Sha256::digest(&policy_bytes))
+        ));
+        self.private_stock = Some(
+            self.routes
+                .iter()
+                .map(|report| crate::bridge::private_stock::assess_report(report, index, policy))
+                .collect(),
+        );
+        Ok(())
     }
 }
 
@@ -476,6 +504,7 @@ pub fn build_audit_route_report_with_options(
         chemical_review_rubric_version: chemical_review
             .then_some(crate::bridge::review::CHEMICAL_REVIEW_RUBRIC_VERSION),
         chemical_review_judge_id: chemical_review.then_some("renkin-deterministic"),
+        private_stock_policy_sha256: None,
     };
 
     Ok(AuditRouteReport {
@@ -489,6 +518,7 @@ pub fn build_audit_route_report_with_options(
                 .map(crate::bridge::review::review_report)
                 .collect()
         }),
+        private_stock: None,
         routes: reports,
     })
 }

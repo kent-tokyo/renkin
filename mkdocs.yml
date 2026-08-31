@@ -69,6 +69,7 @@ nav:
     - Forward Retrieval Hints: guides/forward-retrieval-hints.md
     - Reaction Evidence Metadata: guides/reaction-evidence.md
     - Deterministic Chemical Review: guides/chemical-review-rubric.md
+    - Private Stock Policy: guides/private-stock-policy.md
     - Audit a Real AiZynthFinder Route: guides/aizynthfinder-audit-demo.md
     - Audit a Syntheseus Route: guides/syntheseus-audit-demo.md
     - Audit a Real SynPlanner Route: guides/synplanner-audit-demo.md

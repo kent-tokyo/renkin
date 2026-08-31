@@ -209,6 +209,17 @@ class TestRedactHomeDir(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "exceeds"):
                     cm.sha256_file(handle.name)
 
+    def test_json_depth_ignores_brackets_in_strings(self):
+        self.assertEqual(cm._json_depth('{"note": "[[[not nesting]]]"}'), 1)
+
+    def test_json_depth_rejects_deep_manifest(self):
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8") as handle:
+            handle.write("{" * 4 + "\"security_contract\": {}" + "}" * 4)
+            handle.flush()
+            with patch.object(cm, "MAX_MANIFEST_JSON_DEPTH", 3):
+                with self.assertRaisesRegex(ValueError, "JSON levels"):
+                    cm.load_and_validate_manifest(handle.name)
+
 
 if __name__ == "__main__":
     unittest.main()

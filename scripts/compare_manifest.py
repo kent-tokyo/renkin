@@ -24,6 +24,7 @@ import time
 
 SECURITY_CONTRACT_VERSION = 1
 MAX_MANIFEST_BYTES = 64 * 1024 * 1024
+MAX_MANIFEST_JSON_DEPTH = 256
 
 
 def sha256_file(path: str) -> str:
@@ -48,6 +49,31 @@ def sha256_file(path: str) -> str:
                 )
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _json_depth(text: str) -> int:
+    """Return JSON nesting depth while ignoring delimiters in strings."""
+    depth = 0
+    maximum = 0
+    in_string = False
+    escaped = False
+    for character in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                in_string = False
+            continue
+        if character == '"':
+            in_string = True
+        elif character in "[{":
+            depth += 1
+            maximum = max(maximum, depth)
+        elif character in "]}":
+            depth -= 1
+    return maximum
 SECURITY_CASES = [
     {
         "security_case_id": "RENKIN-S0-INPUT-001",
@@ -192,8 +218,13 @@ def load_and_validate_manifest(path: str) -> dict:
             raw = handle.read(MAX_MANIFEST_BYTES + 1)
         if len(raw) > MAX_MANIFEST_BYTES:
             raise ValueError(f"comparison manifest exceeds {MAX_MANIFEST_BYTES} bytes")
-        manifest = json.loads(raw.decode("utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        text = raw.decode("utf-8")
+        if _json_depth(text) > MAX_MANIFEST_JSON_DEPTH:
+            raise ValueError(
+                f"comparison manifest exceeds {MAX_MANIFEST_JSON_DEPTH} JSON levels"
+            )
+        manifest = json.loads(text)
+    except (OSError, UnicodeError, json.JSONDecodeError, RecursionError) as exc:
         raise ValueError(f"cannot load comparison manifest {path!r}: {exc}") from exc
     if not isinstance(manifest, dict):
         raise ValueError("comparison manifest must be a JSON object")

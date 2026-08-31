@@ -51,6 +51,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   boundary before recording benchmark provenance.
 - Provenance hashing now enforces the bound during streaming reads as well as
   the initial stat preflight, covering files that grow during hashing.
+- Comparison manifests now reject excessive JSON nesting before
+  deserialization, while ignoring bracket characters inside JSON strings.
 - MCP now requires the exact JSON-RPC `2.0` envelope before dispatch, rejecting
   missing or unsupported protocol versions as structured invalid requests.
 - MCP now suppresses responses for all JSON-RPC notifications based on the

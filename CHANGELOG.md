@@ -1783,3 +1783,11 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
   to `renkin-bench` coverage-mode reports for direct paired comparisons.
 - Added regression coverage for the new benchmark summary fields while
   preserving standard-mode report output.
+## [0.60.0] - 2026-08-31 "Evidence-Aware Benchmark Contract"
+
+### Added
+- Added optional template-evidence sidecar loading to `renkin-bench`.
+- Added best-route counts for attached evidence, exact-substrate examples,
+  reported yields, and condition candidates without fabricating predictions.
+- Added aggregate evidence coverage totals while preserving standard-mode
+  output when no sidecar is supplied.

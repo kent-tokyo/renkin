@@ -164,6 +164,16 @@ struct BenchResult {
     /// see `nn_rank` in search.rs), hits == reuses that needed no inference.
     retro_cache_hits: u64,
     retro_cache_misses: u64,
+    /// Evidence coverage for the best route; omitted unless a metadata
+    /// sidecar was supplied.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    evidence_steps: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    exact_substrate_evidence_steps: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reported_yield_steps: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    condition_steps: Option<usize>,
     /// Coverage-mode observability; omitted in standard mode.
     #[serde(skip_serializing_if = "Option::is_none")]
     coverage_selected_stage: Option<&'static str>,
@@ -195,6 +205,16 @@ struct BenchReport {
     coverage_stage2_invoked_targets: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     coverage_stage2_timeout_targets: Option<usize>,
+    /// Evidence coverage totals across best routes; omitted without a
+    /// metadata sidecar.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    evidence_steps_total: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    exact_substrate_evidence_steps_total: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reported_yield_steps_total: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    condition_steps_total: Option<usize>,
     total: usize,
     solved: usize,
     success_rate: f64,
@@ -734,6 +754,7 @@ fn main() -> Result<()> {
     let mut input_format = "smi".to_string();
     let mut bb_path: Option<String> = None;
     let mut templates_path: Option<String> = None;
+    let mut template_metadata_path: Option<String> = None;
     let mut top_templates: Option<usize> = None;
     let mut max_depth: u32 = 5;
     let mut beam_width: usize = 0;
@@ -792,6 +813,10 @@ fn main() -> Result<()> {
             "--coverage-timeout-secs" => {
                 i += 1;
                 coverage_timeout_secs = args.get(i).and_then(|s| s.parse().ok());
+            }
+            "--template-metadata" => {
+                i += 1;
+                template_metadata_path = args.get(i).cloned();
             }
             "--max-routes" | "-n" => {
                 i += 1;
@@ -861,7 +886,7 @@ fn main() -> Result<()> {
              [--input-format smi|paroutes] [--depth <N>] \
              [--beam-width <N>] [--search-mode standard|coverage] \
              [--coverage-templates <path>] [--coverage-timeout-secs <N>] \
-             [--building-blocks <path>] [--templates <path>] \
+             [--building-blocks <path>] [--templates <path>] [--template-metadata <path>] \
              [--scorer <onnx_path>]"
         );
     };
@@ -923,6 +948,15 @@ fn main() -> Result<()> {
         .as_deref()
         .map(renkin::coverage_mode::load_coverage_rules)
         .transpose()?;
+    let template_metadata = template_metadata_path
+        .as_deref()
+        .map(renkin::evidence::load_template_metadata)
+        .transpose()?;
+    if let Some(ref metadata) = template_metadata {
+        let known_ids: std::collections::HashSet<&str> =
+            rules.iter().map(|rule| rule.template_id.as_str()).collect();
+        renkin::evidence::warn_unknown_templates(metadata, &known_ids);
+    }
     #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
     let nn_scorer: Option<std::sync::Arc<renkin::scorer::nn::TemplateScorer>> =
         scorer_path.as_deref().map(|p| {
@@ -941,6 +975,7 @@ fn main() -> Result<()> {
         max_depth,
         max_routes,
         beam_width,
+        template_metadata: template_metadata.map(|metadata| metadata.templates),
         bond_index,
         #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
         nn_scorer,
@@ -1036,6 +1071,48 @@ fn main() -> Result<()> {
             (None, None)
         };
         let low_template_confidence = routes.first().map(route_low_confidence);
+        let evidence_summary = routes.first().map(|route| {
+            let evidence_steps = route
+                .steps
+                .iter()
+                .filter(|step| step.evidence.is_some())
+                .count();
+            let exact_substrate_evidence_steps = route
+                .steps
+                .iter()
+                .filter(|step| {
+                    step.evidence.as_ref().is_some_and(|evidence| {
+                        evidence.examples.iter().any(|example| {
+                            example.match_kind == renkin::evidence::ExampleMatch::ExactSubstrate
+                        })
+                    })
+                })
+                .count();
+            let reported_yield_steps = route
+                .steps
+                .iter()
+                .filter(|step| {
+                    step.evidence
+                        .as_ref()
+                        .is_some_and(|evidence| !evidence.reported_yields.is_empty())
+                })
+                .count();
+            let condition_steps = route
+                .steps
+                .iter()
+                .filter(|step| {
+                    step.evidence
+                        .as_ref()
+                        .is_some_and(|evidence| !evidence.condition_candidates.is_empty())
+                })
+                .count();
+            (
+                evidence_steps,
+                exact_substrate_evidence_steps,
+                reported_yield_steps,
+                condition_steps,
+            )
+        });
         let (
             coverage_selected_stage,
             coverage_stage2_invoked,
@@ -1091,6 +1168,10 @@ fn main() -> Result<()> {
             coverage_stage1_timeout,
             coverage_stage2_timeout,
             coverage_stage2_elapsed_ms,
+            evidence_steps: evidence_summary.map(|summary| summary.0),
+            exact_substrate_evidence_steps: evidence_summary.map(|summary| summary.1),
+            reported_yield_steps: evidence_summary.map(|summary| summary.2),
+            condition_steps: evidence_summary.map(|summary| summary.3),
         });
     }
 
@@ -1125,6 +1206,30 @@ fn main() -> Result<()> {
     } else {
         None
     };
+    let evidence_steps_total = template_metadata_path.as_ref().map(|_| {
+        results
+            .iter()
+            .filter_map(|result| result.evidence_steps)
+            .sum()
+    });
+    let exact_substrate_evidence_steps_total = template_metadata_path.as_ref().map(|_| {
+        results
+            .iter()
+            .filter_map(|result| result.exact_substrate_evidence_steps)
+            .sum()
+    });
+    let reported_yield_steps_total = template_metadata_path.as_ref().map(|_| {
+        results
+            .iter()
+            .filter_map(|result| result.reported_yield_steps)
+            .sum()
+    });
+    let condition_steps_total = template_metadata_path.as_ref().map(|_| {
+        results
+            .iter()
+            .filter_map(|result| result.condition_steps)
+            .sum()
+    });
     let success_rate = solved_count as f64 / total as f64;
     let avg_depth = if solved_count > 0 {
         total_depth_sum as f64 / solved_count as f64
@@ -1244,6 +1349,10 @@ fn main() -> Result<()> {
         coverage_stage1_selected_targets,
         coverage_stage2_invoked_targets,
         coverage_stage2_timeout_targets,
+        evidence_steps_total,
+        exact_substrate_evidence_steps_total,
+        reported_yield_steps_total,
+        condition_steps_total,
         total,
         solved: solved_count,
         success_rate,

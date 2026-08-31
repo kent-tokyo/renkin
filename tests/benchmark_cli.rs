@@ -71,3 +71,20 @@ fn standard_mode_rejects_coverage_options_before_reading_targets() {
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("requires --search-mode coverage"));
 }
+
+#[test]
+fn metadata_sidecar_failure_is_reported_loudly() {
+    let input = target_fixture();
+    let output = Command::new(bench_bin())
+        .args([
+            "--input",
+            input.to_str().unwrap(),
+            "--template-metadata",
+            "/path/that/does/not/exist.json",
+        ])
+        .output()
+        .unwrap();
+    let _ = fs::remove_file(&input);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("template metadata file"));
+}

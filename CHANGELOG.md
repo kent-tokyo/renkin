@@ -9,6 +9,9 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Added a shared 64MiB bounded text-file reader for CLI stock, private-stock,
+  stock-policy, vendor-index, and vendor-match inputs, with regular-file and
+  UTF-8 checks before parsing.
 - Added a 64MiB bounded audit-route input reader for plain and gzip-compressed
   route exports; compressed input is capped after decompression as well.
 - Added a bounded template-metadata sidecar loader: regular-file, UTF-8, and

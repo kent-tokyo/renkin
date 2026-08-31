@@ -1300,9 +1300,40 @@ fn evidence_validate_sidecar(args: &[String]) -> Result<()> {
 /// the actual line-parsing so the CLI's `--stock <PATH>` and the
 /// playground's pasted/uploaded stock text share identical parsing.
 fn load_audit_stock(path: &str) -> Result<std::collections::HashSet<String>> {
-    let content =
-        std::fs::read_to_string(path).with_context(|| format!("failed to read --stock {path}"))?;
+    let content = read_bounded_text_file(path, "--stock")?;
     Ok(bridge::parse_stock_text(&content))
+}
+
+const MAX_CLI_TEXT_FILE_BYTES: u64 = 64 * 1024 * 1024;
+
+fn read_bounded_text_file(path: &str, label: &str) -> Result<String> {
+    use std::io::Read;
+
+    let file =
+        std::fs::File::open(path).with_context(|| format!("failed to read {label} {path}"))?;
+    let metadata = file
+        .metadata()
+        .with_context(|| format!("failed to inspect {label} {path}"))?;
+    if !metadata.is_file() {
+        bail!("{label} {path:?} is not a regular file");
+    }
+    if metadata.len() > MAX_CLI_TEXT_FILE_BYTES {
+        bail!(
+            "resource_exhausted: {label} exceeds {} bytes",
+            MAX_CLI_TEXT_FILE_BYTES
+        );
+    }
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    file.take(MAX_CLI_TEXT_FILE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .with_context(|| format!("failed to read {label} {path}"))?;
+    if bytes.len() as u64 > MAX_CLI_TEXT_FILE_BYTES {
+        bail!(
+            "resource_exhausted: {label} exceeds {} bytes",
+            MAX_CLI_TEXT_FILE_BYTES
+        );
+    }
+    String::from_utf8(bytes).with_context(|| format!("{label} {path} is not valid UTF-8"))
 }
 
 /// `renkin audit-route <PATH> [--format auto|renkin|aizynthfinder|syntheseus|synplanner] [--stock <PATH>]
@@ -1425,14 +1456,12 @@ fn run_audit_route(args: &[String]) -> Result<()> {
     let stock_policy_path = flag_value(args, "--stock-policy");
     match (private_stock_path, stock_policy_path) {
         (Some(vendor_path), Some(policy_path)) => {
-            let vendor_content = std::fs::read_to_string(vendor_path)
-                .with_context(|| format!("failed to read --private-stock {vendor_path}"))?;
+            let vendor_content = read_bounded_text_file(vendor_path, "--private-stock")?;
             let records = vendor_stock::import_vendor_table(&vendor_content, None)
                 .with_context(|| format!("failed to parse --private-stock {vendor_path}"))?;
             let index = vendor_stock::VendorStockIndex::from_records(records)
                 .with_context(|| format!("failed to index --private-stock {vendor_path}"))?;
-            let policy_content = std::fs::read_to_string(policy_path)
-                .with_context(|| format!("failed to read --stock-policy {policy_path}"))?;
+            let policy_content = read_bounded_text_file(policy_path, "--stock-policy")?;
             let policy: bridge::PrivateStockPolicy = serde_json::from_str(&policy_content)
                 .with_context(|| format!("failed to parse --stock-policy {policy_path}"))?;
             out.attach_private_stock(&index, &policy)?;
@@ -2377,8 +2406,7 @@ fn run_stock(args: &[String]) -> Result<()> {
             let path = args
                 .get(1)
                 .ok_or_else(|| anyhow::anyhow!("vendor-index requires a CSV/TSV path"))?;
-            let content = std::fs::read_to_string(path)
-                .with_context(|| format!("failed to read vendor table: {path}"))?;
+            let content = read_bounded_text_file(path, "vendor table")?;
             let records = vendor_stock::import_vendor_table(&content, None)?;
             let index = vendor_stock::VendorStockIndex::from_records(records)?;
             println!(
@@ -2396,8 +2424,7 @@ fn run_stock(args: &[String]) -> Result<()> {
                 .get(2)
                 .ok_or_else(|| anyhow::anyhow!("vendor-match requires a query SMILES"))?;
             let max_mode = parse_vendor_match_mode(args.get(3).map(String::as_str))?;
-            let content = std::fs::read_to_string(path)
-                .with_context(|| format!("failed to read vendor table: {path}"))?;
+            let content = read_bounded_text_file(path, "vendor table")?;
             let index = vendor_stock::VendorStockIndex::from_records(
                 vendor_stock::import_vendor_table(&content, None)?,
             )?;

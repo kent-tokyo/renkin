@@ -111,6 +111,10 @@ grow after an initial metadata check) before JSON parsing begins.
 decompression. Non-regular files, invalid UTF-8, and decompressed expansion
 past the cap are rejected before route normalization.
 
+CLI stock, private-stock, stock-policy, vendor-index, and vendor-match text
+files use the same 64MiB regular-file/UTF-8 preflight before CSV, TSV, or JSON
+parsing.
+
 ## Disclosure
 
 Please allow reasonable time for a fix before public disclosure.

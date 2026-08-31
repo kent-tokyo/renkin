@@ -36,6 +36,18 @@ pub fn read_bounded_text_file(path: &str, label: &str) -> Result<String> {
 
 /// Path-generic variant used by APIs that accept Path values directly.
 pub fn read_bounded_text_path(path: impl AsRef<Path>, label: &str) -> Result<String> {
+    let path_display = path.as_ref().display().to_string();
+    let bytes = read_bounded_bytes_path(path, label)?;
+    String::from_utf8(bytes).with_context(|| format!("{label} {path_display} is not valid UTF-8"))
+}
+
+/// Open and read one regular, non-symlink file with a hard byte cap.
+pub fn read_bounded_bytes_file(path: &str, label: &str) -> Result<Vec<u8>> {
+    read_bounded_bytes_path(path, label)
+}
+
+/// Path-generic byte reader for binary artifacts and provenance hashing.
+pub fn read_bounded_bytes_path(path: impl AsRef<Path>, label: &str) -> Result<Vec<u8>> {
     let path = path.as_ref();
     let link_metadata = std::fs::symlink_metadata(path)
         .with_context(|| format!("failed to inspect {label} {}", path.display()))?;
@@ -56,7 +68,17 @@ pub fn read_bounded_text_path(path: impl AsRef<Path>, label: &str) -> Result<Str
             MAX_TEXT_FILE_BYTES
         );
     }
-    read_bounded_reader(file, &format!("{label} {}", path.display()))
+    let mut bytes = Vec::new();
+    file.take(MAX_TEXT_FILE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .with_context(|| format!("failed to read {label} {}", path.display()))?;
+    if bytes.len() as u64 > MAX_TEXT_FILE_BYTES {
+        bail!(
+            "resource_exhausted: {label} exceeds {} bytes",
+            MAX_TEXT_FILE_BYTES
+        );
+    }
+    Ok(bytes)
 }
 
 #[cfg(test)]

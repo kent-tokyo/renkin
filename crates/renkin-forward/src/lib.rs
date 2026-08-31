@@ -865,8 +865,8 @@ pub fn validate_route(route: &Route, rules: &[RetroRule]) -> Result<Vec<StepVali
 /// SHA-256 hex digest of a file's raw bytes, for provenance recording (e.g.
 /// [`ForwardEnumerationStats::templates_file_sha256`]/`partners_file_sha256`).
 pub fn sha256_hex_of_file(path: &str) -> Result<String> {
-    let bytes =
-        std::fs::read(path).with_context(|| format!("failed to read {path:?} for hashing"))?;
+    let bytes = renkin::io_limits::read_bounded_bytes_file(path, "file")
+        .with_context(|| format!("failed to read {path:?} for hashing"))?;
     let mut hasher = Sha256::new();
     hasher.update(&bytes);
     Ok(renkin::sha256_hex(hasher.finalize()))

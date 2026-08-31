@@ -33,6 +33,7 @@ use renkin::candidate::{
     CandidateProposalContext, ProposalConfig, propose_phase_nanos, reset_propose_phase_nanos,
 };
 use renkin::chem_env::{load_rules_from_file, mol_from_smiles};
+use renkin::io_limits::read_bounded_bytes_file;
 use renkin::pool_export::{
     PoolProvenance, build_manifest, candidate_rows_for_pool, target_pool_record_for_failure,
     target_pool_record_for_pool, target_pool_record_for_target_id_mismatch, write_jsonl,
@@ -68,7 +69,8 @@ fn arg_opt(flag: &str) -> Option<String> {
 }
 
 fn sha256_of_file(path: &str) -> String {
-    let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+    let bytes =
+        read_bounded_bytes_file(path, "input file").unwrap_or_else(|e| panic!("read {path}: {e}"));
     format!("sha256:{}", renkin::sha256_hex(Sha256::digest(&bytes)))
 }
 

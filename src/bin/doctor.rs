@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 use renkin::DEFAULT_BUILDING_BLOCKS;
+use renkin::io_limits::{read_bounded_bytes_file, read_bounded_text_file};
 use sha2::{Digest, Sha256};
 use std::path::Path;
 use std::process::Command;
@@ -24,7 +25,7 @@ fn check_asset_hash(label: &str, local_path: &str, manifest_path: &str, asset_fi
         check(label, &format!("not found  {local_path}"));
         return;
     }
-    let manifest_text = match std::fs::read_to_string(manifest_path) {
+    let manifest_text = match read_bounded_text_file(manifest_path, "manifest") {
         Ok(t) => t,
         Err(e) => {
             check(
@@ -57,7 +58,7 @@ fn check_asset_hash(label: &str, local_path: &str, manifest_path: &str, asset_fi
         return;
     };
     let expected = expected.strip_prefix("sha256:").unwrap_or(expected);
-    let bytes = match std::fs::read(local_path) {
+    let bytes = match read_bounded_bytes_file(local_path, "asset") {
         Ok(b) => b,
         Err(e) => {
             check(label, &format!("unreadable  {local_path} ({e})"));
@@ -101,7 +102,7 @@ fn main() {
     // Templates
     let templates_path = "data/templates_extracted_5000.smi";
     if Path::new(templates_path).exists() {
-        let count = std::fs::read_to_string(templates_path)
+        let count = read_bounded_text_file(templates_path, "templates")
             .map(|s| s.lines().filter(|l| !l.trim().is_empty()).count())
             .unwrap_or(0);
         check(

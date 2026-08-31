@@ -1998,7 +1998,7 @@ fn rules_content_hash(rules: &[RetroRule]) -> String {
 /// be read.
 fn binary_sha256() -> Option<String> {
     let path = std::env::current_exe().ok()?;
-    let bytes = std::fs::read(path).ok()?;
+    let bytes = renkin::io_limits::read_bounded_bytes_path(path, "executable").ok()?;
     let mut hasher = Sha256::new();
     hasher.update(&bytes);
     Some(renkin::sha256_hex(hasher.finalize()))

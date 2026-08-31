@@ -130,6 +130,9 @@ keeping encoding failures distinct from malformed JSON.
 Reranker model and frequency-table artifacts use the same regular-file,
 non-symlink, UTF-8, 64MiB bounded reader before model or JSON parsing.
 
+Binary artifact hashing uses the equivalent regular-file, non-symlink, 64MiB
+byte reader, preventing provenance-only paths from bypassing input limits.
+
 `audit-route` route exports are capped at 64MiB both before and after gzip
 decompression. Non-regular files, invalid UTF-8, and decompressed expansion
 past the cap are rejected before route normalization.

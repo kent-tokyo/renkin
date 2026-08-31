@@ -184,6 +184,21 @@ fn is_notification(value: &Value) -> bool {
         .is_some_and(|object| !object.contains_key("id"))
 }
 
+fn bounded_u64_arg(args: &Value, name: &str, default: u64, maximum: u64) -> Result<u64, String> {
+    let Some(value) = args.get(name) else {
+        return Ok(default);
+    };
+    let Some(number) = value.as_u64() else {
+        return Err(format!("{name} must be a non-negative integer"));
+    };
+    if number > maximum {
+        return Err(format!(
+            "resource_exhausted: {name} exceeds configured maximum {maximum}"
+        ));
+    }
+    Ok(number)
+}
+
 fn write_error(out: &mut impl Write, id: Value, code: i32, message: &str) {
     let resp = json!({
         "jsonrpc": "2.0",
@@ -377,8 +392,14 @@ fn is_known_tool(name: &str) -> bool {
 }
 
 fn handle_find_routes(smiles: &str, args: &Value) -> Value {
-    let depth = args["depth"].as_u64().unwrap_or(5) as u32;
-    let max_routes = args["max_routes"].as_u64().unwrap_or(5) as usize;
+    let depth = match bounded_u64_arg(args, "depth", 5, search::MAX_SEARCH_DEPTH as u64) {
+        Ok(value) => value as u32,
+        Err(message) => return tool_error(&message),
+    };
+    let max_routes = match bounded_u64_arg(args, "max_routes", 5, search::MAX_ROUTES as u64) {
+        Ok(value) => value as usize,
+        Err(message) => return tool_error(&message),
+    };
     let avoid = args["avoid_elements"].as_str().unwrap_or("");
     let require = args["require_elements"].as_str().unwrap_or("");
     let search_mode = args["search_mode"].as_str().unwrap_or("standard");
@@ -498,8 +519,14 @@ fn handle_find_routes(smiles: &str, args: &Value) -> Value {
 }
 
 fn handle_explain_route(smiles: &str, args: &Value) -> Value {
-    let depth = args["depth"].as_u64().unwrap_or(5) as u32;
-    let max_routes = args["max_routes"].as_u64().unwrap_or(1) as usize;
+    let depth = match bounded_u64_arg(args, "depth", 5, search::MAX_SEARCH_DEPTH as u64) {
+        Ok(value) => value as u32,
+        Err(message) => return tool_error(&message),
+    };
+    let max_routes = match bounded_u64_arg(args, "max_routes", 1, search::MAX_ROUTES as u64) {
+        Ok(value) => value as usize,
+        Err(message) => return tool_error(&message),
+    };
     let (env, rules) = load_env_and_rules();
     let config = SearchConfig {
         max_depth: depth,
@@ -523,8 +550,14 @@ fn handle_explain_route(smiles: &str, args: &Value) -> Value {
 }
 
 fn handle_plan_with_constraints(smiles: &str, args: &Value) -> Value {
-    let depth = args["depth"].as_u64().unwrap_or(5) as u32;
-    let max_routes = args["max_routes"].as_u64().unwrap_or(5) as usize;
+    let depth = match bounded_u64_arg(args, "depth", 5, search::MAX_SEARCH_DEPTH as u64) {
+        Ok(value) => value as u32,
+        Err(message) => return tool_error(&message),
+    };
+    let max_routes = match bounded_u64_arg(args, "max_routes", 5, search::MAX_ROUTES as u64) {
+        Ok(value) => value as usize,
+        Err(message) => return tool_error(&message),
+    };
     let avoid = args["avoid_elements"].as_str().unwrap_or("");
     let require = args["require_elements"].as_str().unwrap_or("");
     let avoid_bbs: Option<Vec<String>> = args["avoid_building_blocks"]
@@ -533,7 +566,16 @@ fn handle_plan_with_constraints(smiles: &str, args: &Value) -> Value {
     let require_bbs: Option<Vec<String>> = args["require_building_blocks"]
         .as_str()
         .map(|s| s.split(',').map(|bb| bb.trim().to_string()).collect());
-    let max_steps = args["max_steps"].as_u64().map(|n| n as usize);
+    let max_steps = match args.get("max_steps") {
+        None => None,
+        Some(value) => match value.as_u64() {
+            Some(number) => match usize::try_from(number) {
+                Ok(number) => Some(number),
+                Err(_) => return tool_error("max_steps exceeds the platform limit"),
+            },
+            None => return tool_error("max_steps must be a non-negative integer"),
+        },
+    };
     let max_route_cost = args["max_route_cost"].as_f64();
     let min_confidence = args["min_confidence"].as_f64();
     let min_success_prob = args["min_success_probability"].as_f64();
@@ -645,8 +687,14 @@ fn handle_plan_with_constraints(smiles: &str, args: &Value) -> Value {
 }
 
 fn handle_find_pareto_routes(smiles: &str, args: &Value) -> Value {
-    let depth = args["depth"].as_u64().unwrap_or(5) as u32;
-    let max_routes = args["max_routes"].as_u64().unwrap_or(10) as usize;
+    let depth = match bounded_u64_arg(args, "depth", 5, search::MAX_SEARCH_DEPTH as u64) {
+        Ok(value) => value as u32,
+        Err(message) => return tool_error(&message),
+    };
+    let max_routes = match bounded_u64_arg(args, "max_routes", 10, search::MAX_ROUTES as u64) {
+        Ok(value) => value as usize,
+        Err(message) => return tool_error(&message),
+    };
     let obj_spec = args["objectives"]
         .as_str()
         .unwrap_or("cost:min,success_probability:max,steps:min");
@@ -831,7 +879,10 @@ fn mcp_tradeoff_label(
 }
 
 fn handle_validate_route(smiles: &str, args: &Value) -> Value {
-    let depth = args["depth"].as_u64().unwrap_or(5) as u32;
+    let depth = match bounded_u64_arg(args, "depth", 5, search::MAX_SEARCH_DEPTH as u64) {
+        Ok(value) => value as u32,
+        Err(message) => return tool_error(&message),
+    };
     let (env, rules) = load_env_and_rules();
     let config = SearchConfig {
         max_depth: depth,
@@ -912,8 +963,14 @@ fn route_diversity(routes: &[Route]) -> f64 {
 }
 
 fn handle_estimate_diversity(smiles: &str, args: &Value) -> Value {
-    let depth = args["depth"].as_u64().unwrap_or(5) as u32;
-    let max_routes = args["max_routes"].as_u64().unwrap_or(5) as usize;
+    let depth = match bounded_u64_arg(args, "depth", 5, search::MAX_SEARCH_DEPTH as u64) {
+        Ok(value) => value as u32,
+        Err(message) => return tool_error(&message),
+    };
+    let max_routes = match bounded_u64_arg(args, "max_routes", 5, search::MAX_ROUTES as u64) {
+        Ok(value) => value as usize,
+        Err(message) => return tool_error(&message),
+    };
     let (env, rules) = load_env_and_rules();
     let config = SearchConfig {
         max_depth: depth,
@@ -955,7 +1012,10 @@ fn handle_estimate_diversity(smiles: &str, args: &Value) -> Value {
 }
 
 fn handle_diagnose_failure(smiles: &str, args: &Value) -> Value {
-    let depth = args["depth"].as_u64().unwrap_or(5) as u32;
+    let depth = match bounded_u64_arg(args, "depth", 5, search::MAX_SEARCH_DEPTH as u64) {
+        Ok(value) => value as u32,
+        Err(message) => return tool_error(&message),
+    };
     let (env, rules) = load_env_and_rules();
     let config = SearchConfig {
         max_depth: depth,
@@ -1138,6 +1198,46 @@ mod tests {
             "id": null,
             "method": "tools/list"
         })));
+    }
+
+    #[test]
+    fn numeric_tool_arguments_fail_closed_instead_of_defaulting_or_wrapping() {
+        for (name, value, expected) in [
+            ("depth", json!(-1), "must be a non-negative integer"),
+            (
+                "depth",
+                json!(u64::from(u32::MAX) + 1),
+                "exceeds configured maximum",
+            ),
+            (
+                "max_routes",
+                json!("many"),
+                "must be a non-negative integer",
+            ),
+            (
+                "max_routes",
+                json!(search::MAX_ROUTES + 1),
+                "exceeds configured maximum",
+            ),
+        ] {
+            let mut arguments = serde_json::Map::from_iter([
+                ("smiles".to_string(), json!("CCO")),
+                (name.to_string(), value),
+            ]);
+            let response = handle_tools_call(&json!({
+                "params": {
+                    "name": "find_routes",
+                    "arguments": Value::Object(std::mem::take(&mut arguments))
+                }
+            }));
+            assert_eq!(response["isError"], json!(true));
+            assert!(
+                response["content"][0]["text"]
+                    .as_str()
+                    .expect("error text")
+                    .contains(expected)
+            );
+        }
     }
 
     #[test]

@@ -100,6 +100,9 @@ explicit JSON `null` id remains a request id and receives a correlated response.
 Within `tools/call`, `params` and `arguments` must be JSON objects, the tool
 name must be present in the advertised allowlist, and unknown names are
 rejected instead of falling through to the default `find_routes` handler.
+Numeric search limits are parsed as non-negative integers and checked against
+the shared depth and route-count maxima before conversion to native integer
+types; malformed values cannot silently default or wrap into a smaller budget.
 
 MCP request lines are capped at 1 MiB before JSON parsing. An oversized line is
 drained through its newline and rejected as `-32600 resource_exhausted: request

@@ -314,9 +314,7 @@ pub type CorpusLoadResult = Result<(
 /// enough to predict from still becomes an [`InvalidReactionAttempt`] (see
 /// that type's docs for exactly which rejections qualify).
 pub fn load_corpus(path: &str) -> CorpusLoadResult {
-    let content = std::fs::read_to_string(path).map_err(|e| {
-        anyhow::anyhow!("corpus file {path:?} does not exist or is not readable: {e}")
-    })?;
+    let content = renkin::io_limits::read_bounded_text_file(path, "corpus file")?;
 
     let mut stats = CorpusLoadStats::default();
     let mut warnings: Vec<CorpusLoadWarning> = Vec::new();

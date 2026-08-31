@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 
-use crate::chem_env::{ChemEnv, RetroRule, default_rules, load_rules_from_file};
+use crate::chem_env::{ChemEnv, RetroRule, default_rules};
 use crate::search::{self, Route, SearchConfig, SearchControl, SearchStats, SearchTermination};
 
 /// Which stage's routes were actually returned.
@@ -172,13 +172,9 @@ pub fn load_coverage_rules(coverage_templates_path: &str) -> Result<Vec<RetroRul
     // the file is read twice (here, and again inside
     // `load_rules_from_file`'s own parse pass) -- accepted: this runs once
     // per coverage-mode invocation, on a small text file, not a hot path.
-    std::fs::read_to_string(coverage_templates_path).with_context(|| {
-        format!(
-            "--coverage-templates path exists but could not be read as valid UTF-8 text \
-             (permission error or binary/non-UTF-8 content): {coverage_templates_path}"
-        )
-    })?;
-    let extra = load_rules_from_file(coverage_templates_path);
+    let content =
+        crate::io_limits::read_bounded_text_file(coverage_templates_path, "--coverage-templates")?;
+    let extra = crate::chem_env::load_rules_from_content(&content);
     if extra.is_empty() {
         bail!("--coverage-templates file contains no valid templates: {coverage_templates_path}");
     }
@@ -328,7 +324,7 @@ pub fn run_coverage_mode(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chem_env::default_rules;
+    use crate::chem_env::{default_rules, load_rules_from_file};
 
     fn env() -> ChemEnv {
         ChemEnv::load("data/building_blocks.smi").unwrap_or_else(|_| {

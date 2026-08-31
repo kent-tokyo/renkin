@@ -143,6 +143,11 @@ Evidence-match, template diagnostics, ring-context, template utility, and
 constraint JSON paths use the same bounded reader; malformed constraint JSON is
 reported as an input error rather than silently ignored.
 
+Forward partner files, benchmark corpora, and coverage templates also use the
+descriptor-bounded reader. Coverage template parsing consumes the bounded
+content already read from the descriptor, avoiding a second path-based read
+after validation.
+
 ## Disclosure
 
 Please allow reasonable time for a fix before public disclosure.

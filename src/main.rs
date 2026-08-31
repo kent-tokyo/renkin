@@ -5,6 +5,7 @@ use renkin::bridge;
 use renkin::chem_env;
 use renkin::display;
 use renkin::evidence_match;
+use renkin::io_limits::read_bounded_text_file;
 use renkin::ring_context;
 use renkin::search::{self, SearchConfig};
 use renkin::stock_import;
@@ -1306,43 +1307,6 @@ fn evidence_validate_sidecar(args: &[String]) -> Result<()> {
 fn load_audit_stock(path: &str) -> Result<std::collections::HashSet<String>> {
     let content = read_bounded_text_file(path, "--stock")?;
     Ok(bridge::parse_stock_text(&content))
-}
-
-const MAX_CLI_TEXT_FILE_BYTES: u64 = 64 * 1024 * 1024;
-
-fn read_bounded_text_file(path: &str, label: &str) -> Result<String> {
-    use std::io::Read;
-
-    let link_metadata = std::fs::symlink_metadata(path)
-        .with_context(|| format!("failed to inspect {label} {path}"))?;
-    if link_metadata.file_type().is_symlink() {
-        bail!("{label} {path:?} must not be a symlink");
-    }
-    let file =
-        std::fs::File::open(path).with_context(|| format!("failed to read {label} {path}"))?;
-    let metadata = file
-        .metadata()
-        .with_context(|| format!("failed to inspect {label} {path}"))?;
-    if !metadata.is_file() {
-        bail!("{label} {path:?} is not a regular file");
-    }
-    if metadata.len() > MAX_CLI_TEXT_FILE_BYTES {
-        bail!(
-            "resource_exhausted: {label} exceeds {} bytes",
-            MAX_CLI_TEXT_FILE_BYTES
-        );
-    }
-    let mut bytes = Vec::with_capacity(metadata.len() as usize);
-    file.take(MAX_CLI_TEXT_FILE_BYTES + 1)
-        .read_to_end(&mut bytes)
-        .with_context(|| format!("failed to read {label} {path}"))?;
-    if bytes.len() as u64 > MAX_CLI_TEXT_FILE_BYTES {
-        bail!(
-            "resource_exhausted: {label} exceeds {} bytes",
-            MAX_CLI_TEXT_FILE_BYTES
-        );
-    }
-    String::from_utf8(bytes).with_context(|| format!("{label} {path} is not valid UTF-8"))
 }
 
 /// `renkin audit-route <PATH> [--format auto|renkin|aizynthfinder|syntheseus|synplanner] [--stock <PATH>]
@@ -3338,7 +3302,8 @@ mod evidence_cli_tests {
             .write(true)
             .open(&input)
             .unwrap();
-        file.set_len(MAX_CLI_TEXT_FILE_BYTES + 1).unwrap();
+        file.set_len(renkin::io_limits::MAX_TEXT_FILE_BYTES + 1)
+            .unwrap();
         let output = std::env::temp_dir()
             .join("evidence_match_oversized_output.jsonl")
             .to_str()

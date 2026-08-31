@@ -2833,6 +2833,13 @@ pub fn load_rules_from_file(path: &str) -> Vec<RetroRule> {
             return vec![];
         }
     };
+    load_rules_from_content(&content)
+}
+
+/// Parse extracted templates from already-bounded UTF-8 content.
+/// Keeping parsing separate lets callers that opened a bounded file descriptor
+/// avoid a second path lookup and a TOCTOU-sized reread.
+pub fn load_rules_from_content(content: &str) -> Vec<RetroRule> {
     content
         .lines()
         .map(str::trim)

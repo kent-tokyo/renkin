@@ -930,10 +930,8 @@ pub struct PartnerLoadOutcome {
 /// SMILES: partner multiplicity and row identity must be preserved (two
 /// lines with the same SMILES are two distinct partners).
 pub fn load_partners_strict(path: &str) -> Result<PartnerLoadOutcome> {
-    std::fs::metadata(path)
+    let content = renkin::io_limits::read_bounded_text_file(path, "partners file")
         .with_context(|| format!("partners file {path:?} does not exist or is not accessible"))?;
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("partners file {path:?} could not be read"))?;
 
     let mut records = Vec::new();
     let mut skipped_malformed = 0usize;

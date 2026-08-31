@@ -136,6 +136,10 @@ an empty search result.
 The dependency policy explicitly allows only the reviewed licenses present in
 the locked graph (`MIT`, `Apache-2.0`, `0BSD`, `Unicode-3.0`, and `Zlib`). A
 new license therefore fails the local `cargo-deny` gate until reviewed.
+The local bans policy rejects wildcard dependencies and keeps duplicate-version
+drift visible. The current graph reports only the known transitive `syn` 2/3
+split (`wasm-bindgen` versus the serde proc-macro stack); it remains a warning
+until an upstream-compatible dependency upgrade can remove it.
 
 The streaming stock importer applies independent bounds of 64MiB total input,
 64KiB per line, and one million data rows. It rejects invalid UTF-8 and

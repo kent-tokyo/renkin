@@ -4,6 +4,15 @@ db-urls = ["https://github.com/rustsec/advisory-db"]
 version = 2
 ignore = []
 
+[bans]
+# Keep duplicate-version drift visible without blocking the current graph:
+# serde's proc-macro stack requires syn 3 while wasm-bindgen still requires
+# syn 2. A future upgrade may remove this warning, but must not hide new
+# duplicate crates by changing this policy to an allow-all setting.
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+
 [licenses]
 # Keep the dependency policy explicit. These are the permissive licenses used
 # by the current offline-resolved graph; a newly introduced license must be

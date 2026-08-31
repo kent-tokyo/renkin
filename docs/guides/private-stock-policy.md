@@ -43,6 +43,12 @@ deterministically: lowest known price, then shortest known lead time, then
 vendor and catalog ID. This makes the selected offer reproducible without
 uploading the vendor table.
 
+For multi-route reports, `route_score` adds a deterministic planning signal:
+routes are ranked first by fewer rejected leaves, then fewer unknown leaves,
+fewer matched leaves with missing prices, lower known-price total, and shorter
+maximum lead time. The rank is advisory and does not replace structural or
+forward-validation status.
+
 The output includes the policy source and a SHA-256 digest of the policy in
 `audit_manifest.private_stock_policy_sha256`. The vendor table itself is not
 uploaded or embedded in the report.

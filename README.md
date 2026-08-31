@@ -718,6 +718,7 @@ see "Earlier milestones" below for older shipped work.
   - [x] Deterministic policy-aware vendor-offer selection (price, lead time,
     availability) for exact private-stock matches
   - [x] Optional local hazard labels and blocked-hazard policy decisions
+  - [x] Route-level stock score and deterministic multi-route ranking metadata
 
 <details>
 <summary>Earlier milestones</summary>

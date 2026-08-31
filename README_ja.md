@@ -621,6 +621,7 @@ renkin/                          ← Cargo workspace ルート
   - [x] exactなprivate stock候補に対する、価格・納期・入手性を考慮した
     決定論的なvendor offer選択
   - [x] ローカルcatalogの任意hazardラベルとblocked-hazard policy判定
+  - [x] route単位のstock scoreと、複数route向け決定論的ランキングmetadata
 
 <details>
 <summary>過去のマイルストーン</summary>

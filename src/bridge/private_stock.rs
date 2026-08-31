@@ -86,7 +86,24 @@ pub struct PrivateStockReport {
     pub source_label: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_revision: Option<String>,
+    pub route_score: PrivateStockRouteScore,
     pub decisions: Vec<PrivateStockDecisionRecord>,
+}
+
+/// Deterministic route-level stock score. This is an explainable ranking
+/// signal, not a chemical feasibility verdict: structural and forward
+/// validation remain independent checks in the audit report.
+#[derive(Debug, Clone, Serialize)]
+pub struct PrivateStockRouteScore {
+    pub matched_leaves: usize,
+    pub rejected_leaves: usize,
+    pub unknown_leaves: usize,
+    pub known_price_total: f64,
+    pub missing_price_leaves: usize,
+    pub max_lead_time_days: Option<u32>,
+    /// `None` until the caller compares this route with sibling routes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rank: Option<usize>,
 }
 
 impl PrivateStockPolicy {
@@ -268,11 +285,62 @@ pub fn assess_report(
             });
         }
     }
+    let matched_leaves = decisions
+        .iter()
+        .filter(|d| d.decision == PrivateStockDecision::Matched)
+        .count();
+    let rejected_leaves = decisions
+        .iter()
+        .filter(|d| d.decision == PrivateStockDecision::Rejected)
+        .count();
+    let unknown_leaves = decisions
+        .iter()
+        .filter(|d| d.decision == PrivateStockDecision::Unknown)
+        .count();
+    let known_price_total = decisions.iter().filter_map(|d| d.price).sum();
+    let missing_price_leaves = decisions
+        .iter()
+        .filter(|d| d.decision == PrivateStockDecision::Matched && d.price.is_none())
+        .count();
+    let max_lead_time_days = decisions.iter().filter_map(|d| d.lead_time_days).max();
     PrivateStockReport {
         schema_version: PRIVATE_STOCK_POLICY_SCHEMA_VERSION,
         source_label: policy.source_label.clone(),
         source_revision: policy.source_revision.clone(),
+        route_score: PrivateStockRouteScore {
+            matched_leaves,
+            rejected_leaves,
+            unknown_leaves,
+            known_price_total,
+            missing_price_leaves,
+            max_lead_time_days,
+            rank: None,
+        },
         decisions,
+    }
+}
+
+/// Assign a stable 1-based rank across sibling route reports. Ties retain
+/// their input order, which is already adapter-defined and reproducible.
+pub fn assign_route_ranks(reports: &mut [PrivateStockReport]) {
+    let mut order: Vec<usize> = (0..reports.len()).collect();
+    order.sort_by(|&left, &right| {
+        let a = &reports[left].route_score;
+        let b = &reports[right].route_score;
+        a.rejected_leaves
+            .cmp(&b.rejected_leaves)
+            .then(a.unknown_leaves.cmp(&b.unknown_leaves))
+            .then(a.missing_price_leaves.cmp(&b.missing_price_leaves))
+            .then(
+                a.known_price_total
+                    .partial_cmp(&b.known_price_total)
+                    .unwrap_or(std::cmp::Ordering::Equal),
+            )
+            .then(a.max_lead_time_days.cmp(&b.max_lead_time_days))
+            .then(left.cmp(&right))
+    });
+    for (rank, index) in order.into_iter().enumerate() {
+        reports[index].route_score.rank = Some(rank + 1);
     }
 }
 
@@ -441,5 +509,40 @@ mod tests {
         assert_eq!(ethanol.decision, PrivateStockDecision::Matched);
         assert_eq!(ethanol.catalog_id.as_deref(), Some("safe"));
         assert_eq!(ethanol.hazard.as_deref(), Some("low"));
+    }
+
+    #[test]
+    fn route_ranks_prioritize_policy_failures_then_cost() {
+        let index = VendorStockIndex::from_records(vec![VendorStockRecord {
+            id: Some("e".into()),
+            smiles: "CCO".into(),
+            vendor: Some("Acme".into()),
+            price: Some(10.0),
+            lead_time_days: Some(4),
+            hazard: None,
+            available: true,
+        }])
+        .unwrap();
+        let policy = PrivateStockPolicy {
+            schema_version: 1,
+            source_label: "private".into(),
+            source_revision: None,
+            allowed_vendors: vec![],
+            blocked_vendors: vec![],
+            max_price: None,
+            max_lead_time_days: None,
+            blocked_hazards: vec![],
+            require_available: true,
+            blocked_smiles: vec![],
+        };
+        let mut reports = vec![
+            assess_report(&report(), &index, &policy),
+            assess_report(&report(), &index, &policy),
+        ];
+        reports[0].route_score.known_price_total = 20.0;
+        reports[1].route_score.known_price_total = 5.0;
+        assign_route_ranks(&mut reports);
+        assert_eq!(reports[1].route_score.rank, Some(1));
+        assert_eq!(reports[0].route_score.rank, Some(2));
     }
 }

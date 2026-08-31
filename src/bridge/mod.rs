@@ -97,7 +97,8 @@ pub use interchange::{
 };
 pub use private_stock::{
     PRIVATE_STOCK_POLICY_SCHEMA_VERSION, PrivateStockDecision, PrivateStockDecisionRecord,
-    PrivateStockPolicy, PrivateStockReason, PrivateStockReport, assess_report,
+    PrivateStockPolicy, PrivateStockReason, PrivateStockReport, PrivateStockRouteScore,
+    assess_report, assign_route_ranks,
 };
 pub use review::{
     CHEMICAL_REVIEW_RUBRIC_VERSION, ChemicalReview, ReviewDimension, ReviewFinding, ReviewSeverity,

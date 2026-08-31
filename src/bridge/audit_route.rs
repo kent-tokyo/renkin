@@ -253,12 +253,13 @@ impl AuditRouteReport {
             "sha256:{}",
             crate::sha256_hex(Sha256::digest(&policy_bytes))
         ));
-        self.private_stock = Some(
-            self.routes
-                .iter()
-                .map(|report| crate::bridge::private_stock::assess_report(report, index, policy))
-                .collect(),
-        );
+        let mut private_stock = self
+            .routes
+            .iter()
+            .map(|report| crate::bridge::private_stock::assess_report(report, index, policy))
+            .collect::<Vec<_>>();
+        crate::bridge::private_stock::assign_route_ranks(&mut private_stock);
+        self.private_stock = Some(private_stock);
         Ok(())
     }
 

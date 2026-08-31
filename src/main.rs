@@ -988,6 +988,8 @@ struct ConstraintSpec {
     max_depth: Option<u32>,
     min_confidence: Option<f64>,
     min_success_probability: Option<f64>,
+    /// Require at least one step from one of these named reaction families.
+    require_reaction_families: Option<Vec<String>>,
     prefer_reaction_families: Option<Vec<String>>,
     objectives: Option<String>,
 }
@@ -998,6 +1000,15 @@ fn apply_constraints(routes: &mut Vec<search::Route>, c: &ConstraintSpec) {
     }
     if let Some(max_cost) = c.max_route_cost {
         routes.retain(|r| r.route_cost <= max_cost);
+    }
+    if let Some(ref fams) = c.require_reaction_families {
+        routes.retain(|r| {
+            r.steps.iter().any(|s| {
+                s.reaction_family
+                    .as_deref()
+                    .is_some_and(|f| fams.iter().any(|required| required == f))
+            })
+        });
     }
     if let Some(v) = c.min_confidence {
         routes.retain(|r| r.confidence >= v);
@@ -2006,6 +2017,28 @@ mod pareto_tests {
 
         assert_eq!(routes.len(), 1);
         assert_eq!(routes[0].route_cost, 10.0);
+    }
+
+    #[test]
+    fn required_reaction_family_constraint_filters_routes_without_a_matching_step() {
+        let mut matching = route(vec![step(search::AtomEconomyStatus::Normal, Some(90.0))]);
+        matching.steps[0].reaction_family = Some("suzuki_coupling".to_string());
+        let non_matching = route(vec![step(search::AtomEconomyStatus::Normal, Some(90.0))]);
+        let mut routes = vec![non_matching, matching];
+
+        apply_constraints(
+            &mut routes,
+            &ConstraintSpec {
+                require_reaction_families: Some(vec!["suzuki_coupling".to_string()]),
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(routes.len(), 1);
+        assert_eq!(
+            routes[0].steps[0].reaction_family.as_deref(),
+            Some("suzuki_coupling")
+        );
     }
 
     #[test]

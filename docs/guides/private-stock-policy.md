@@ -60,7 +60,8 @@ whose computed `route_cost` is at or below the limit:
 
 ```json
 {
-  "max_route_cost": 25.0
+  "max_route_cost": 25.0,
+  "require_reaction_families": ["suzuki_coupling"]
 }
 ```
 
@@ -68,3 +69,8 @@ With `--bb-prices`, the limit uses the supplied price-map units. Without a
 price map, it uses RENKIN's existing SA-score-based route-cost estimate. The
 boundary is inclusive; missing price entries continue to use the documented
 fallback and are not treated as free.
+
+`require_reaction_families` is a hard route filter: every returned route must
+contain at least one step whose recorded reaction family matches one of the
+listed names. `prefer_reaction_families` remains an ordering preference and
+does not remove routes.

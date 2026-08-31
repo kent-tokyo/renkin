@@ -143,7 +143,7 @@ fn handle_tools_list() -> Value {
             },
             {
                 "name": "plan_with_constraints",
-                "description": "Find retrosynthetic routes applying explicit constraints: avoid elements, require elements, max steps, min confidence, min success probability, preferred reaction families. Designed for LLM-driven synthesis planning (Project Ariadne style).",
+                "description": "Find retrosynthetic routes applying explicit constraints: avoid/require elements, max steps/cost, confidence thresholds, required or preferred reaction families. Designed for LLM-driven synthesis planning (Project Ariadne style).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -153,8 +153,10 @@ fn handle_tools_list() -> Value {
                         "avoid_elements": {"type": "string", "description": "Comma-separated elements to ban from BBs (e.g. \"Br,I\")"},
                         "require_elements": {"type": "string", "description": "Elements that must appear in ≥1 BB (e.g. \"B\")"},
                         "max_steps": {"type": "integer", "description": "Maximum number of synthesis steps per route"},
+                        "max_route_cost": {"type": "number", "description": "Maximum computed route cost (inclusive)"},
                         "min_confidence": {"type": "number", "description": "Minimum template confidence [0,1]"},
                         "min_success_probability": {"type": "number", "description": "Minimum route success probability [0,1]"},
+                        "require_reaction_families": {"type": "string", "description": "Comma-separated reaction families; at least one must occur in each returned route"},
                         "prefer_reaction_families": {"type": "string", "description": "Comma-separated reaction families to rank first (e.g. \"amide_coupling,suzuki_retro\")"}
                     },
                     "required": ["smiles"]
@@ -352,8 +354,12 @@ fn handle_plan_with_constraints(smiles: &str, args: &Value) -> Value {
     let avoid = args["avoid_elements"].as_str().unwrap_or("");
     let require = args["require_elements"].as_str().unwrap_or("");
     let max_steps = args["max_steps"].as_u64().map(|n| n as usize);
+    let max_route_cost = args["max_route_cost"].as_f64();
     let min_confidence = args["min_confidence"].as_f64();
     let min_success_prob = args["min_success_probability"].as_f64();
+    let require_fams: Option<Vec<String>> = args["require_reaction_families"]
+        .as_str()
+        .map(|s| s.split(',').map(|f| f.trim().to_string()).collect());
     let prefer_fams: Option<Vec<String>> = args["prefer_reaction_families"]
         .as_str()
         .map(|s| s.split(',').map(|f| f.trim().to_string()).collect());
@@ -375,11 +381,23 @@ fn handle_plan_with_constraints(smiles: &str, args: &Value) -> Value {
     if let Some(n) = max_steps {
         routes.retain(|r| r.steps.len() <= n);
     }
+    if let Some(max_cost) = max_route_cost {
+        routes.retain(|r| r.route_cost <= max_cost);
+    }
     if let Some(v) = min_confidence {
         routes.retain(|r| r.confidence >= v);
     }
     if let Some(v) = min_success_prob {
         routes.retain(|r| r.success_probability >= v);
+    }
+    if let Some(ref fams) = require_fams {
+        routes.retain(|r| {
+            r.steps.iter().any(|s| {
+                s.reaction_family
+                    .as_deref()
+                    .is_some_and(|f| fams.iter().any(|required| required == f))
+            })
+        });
     }
     if let Some(ref fams) = prefer_fams {
         routes.sort_by_key(|r| {

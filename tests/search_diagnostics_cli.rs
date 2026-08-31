@@ -22,6 +22,15 @@ fn run(args: &[&str]) -> serde_json::Value {
     serde_json::from_slice(&out.stdout).expect("stdout must be valid JSON")
 }
 
+fn run_failure(args: &[&str]) -> String {
+    let out = Command::new(bin())
+        .args(args)
+        .output()
+        .expect("failed to spawn renkin");
+    assert!(!out.status.success(), "renkin unexpectedly succeeded");
+    String::from_utf8_lossy(&out.stderr).into_owned()
+}
+
 const ASPIRIN: &str = "CC(=O)Oc1ccccc1C(=O)O";
 const BUILDING_BLOCK: &str = "CC(=O)O"; // acetic acid: a depth-0 (routes_found>0) target
 
@@ -39,6 +48,28 @@ fn default_output_omits_search_diagnostics_when_route_found() {
         v.get("search_diagnostics").is_none(),
         "search_diagnostics must be absent by default: {v}"
     );
+}
+
+#[test]
+fn malformed_numeric_limits_fail_closed_instead_of_using_defaults() {
+    for flag in ["--depth", "--max-routes", "--beam-width", "--top-templates"] {
+        let stderr = run_failure(&["--target", BUILDING_BLOCK, flag, "not-a-number"]);
+        assert!(
+            stderr.contains("must be a non-negative integer"),
+            "{flag} must reject malformed numeric input: {stderr}"
+        );
+    }
+}
+
+#[test]
+fn missing_numeric_limit_values_fail_closed() {
+    for flag in ["--depth", "--max-routes", "--beam-width", "--top-templates"] {
+        let stderr = run_failure(&["--target", BUILDING_BLOCK, flag]);
+        assert!(
+            stderr.contains("requires a value"),
+            "{flag} must reject a missing value: {stderr}"
+        );
+    }
 }
 
 #[test]

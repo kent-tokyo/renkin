@@ -65,6 +65,13 @@ struct Output {
     total_elapsed_ms: Option<f64>,
 }
 
+fn required_flag_value<'a>(args: &'a [String], index: &mut usize, flag: &str) -> Result<&'a str> {
+    *index += 1;
+    args.get(*index)
+        .map(String::as_str)
+        .ok_or_else(|| anyhow::anyhow!("{flag} requires a value"))
+}
+
 /// Issue #99: which loaded templates are `Unsupported` for concrete
 /// application (their `[#N]` hash-atoms have no usable concrete-element
 /// reading, so they can never produce a route), grouped by reason. Pure
@@ -185,10 +192,10 @@ fn main() -> Result<()> {
                 }
             }
             "--depth" | "-d" => {
-                i += 1;
-                if i < args.len() {
-                    max_depth = args[i].parse().unwrap_or(5);
-                }
+                let value = required_flag_value(&args, &mut i, "--depth")?;
+                max_depth = value.parse().map_err(|_| {
+                    anyhow::anyhow!("--depth value must be a non-negative integer, got {value:?}")
+                })?;
             }
             "--building-blocks" | "-b" => {
                 i += 1;
@@ -209,22 +216,28 @@ fn main() -> Result<()> {
                 }
             }
             "--top-templates" => {
-                i += 1;
-                if i < args.len() {
-                    top_templates = args[i].parse().ok();
-                }
+                let value = required_flag_value(&args, &mut i, "--top-templates")?;
+                top_templates = Some(value.parse().map_err(|_| {
+                    anyhow::anyhow!(
+                        "--top-templates value must be a non-negative integer, got {value:?}"
+                    )
+                })?);
             }
             "--max-routes" | "-n" => {
-                i += 1;
-                if i < args.len() {
-                    max_routes = args[i].parse().unwrap_or(5);
-                }
+                let value = required_flag_value(&args, &mut i, "--max-routes")?;
+                max_routes = value.parse().map_err(|_| {
+                    anyhow::anyhow!(
+                        "--max-routes value must be a non-negative integer, got {value:?}"
+                    )
+                })?;
             }
             "--beam-width" | "-w" => {
-                i += 1;
-                if i < args.len() {
-                    beam_width = args[i].parse().unwrap_or(0);
-                }
+                let value = required_flag_value(&args, &mut i, "--beam-width")?;
+                beam_width = value.parse().map_err(|_| {
+                    anyhow::anyhow!(
+                        "--beam-width value must be a non-negative integer, got {value:?}"
+                    )
+                })?;
             }
             "--format" | "-f" => {
                 i += 1;

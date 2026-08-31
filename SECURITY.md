@@ -188,6 +188,9 @@ so downstream consumers cannot silently discard provenance fields.
 Duplicate `sample_rank`／`target_id` values and gaps in the zero-based rank
 sequence are rejected as well, preventing ambiguous or silently shifted
 benchmark membership.
+The main CLI also rejects malformed or missing values for its depth,
+route-count, beam-width, and template-count limits instead of silently using
+defaults, preventing boundary bypasses through parser fallback.
 
 The streaming stock importer applies independent bounds of 64MiB total input,
 64KiB per line, and one million data rows. It rejects invalid UTF-8 and

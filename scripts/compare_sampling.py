@@ -208,6 +208,8 @@ def load_sample(list_path: str, n: int | None = None) -> list[dict]:
         raise ValueError("sample size must be a non-negative integer")
     _validated_sample_file(list_path)
     rows = []
+    seen_ranks: set[int] = set()
+    seen_target_ids: set[str] = set()
     total_bytes = 0
     with open(list_path, "rb") as handle:
         for raw_bytes in handle:
@@ -229,8 +231,18 @@ def load_sample(list_path: str, n: int | None = None) -> list[dict]:
                     raise ValueError("sample list row has an invalid sample_rank")
                 if not isinstance(target_id, str) or not target_id:
                     raise ValueError("sample list row has an invalid target_id")
+                if rank in seen_ranks:
+                    raise ValueError(f"sample list contains duplicate sample_rank {rank}")
+                if target_id in seen_target_ids:
+                    raise ValueError(f"sample list contains duplicate target_id {target_id!r}")
+                seen_ranks.add(rank)
+                seen_target_ids.add(target_id)
                 rows.append(row)
     rows.sort(key=lambda r: r["sample_rank"])
+    expected_ranks = list(range(len(rows)))
+    actual_ranks = [row["sample_rank"] for row in rows]
+    if actual_ranks != expected_ranks:
+        raise ValueError("sample list ranks must be contiguous from zero")
     return rows if n is None else rows[:n]
 
 

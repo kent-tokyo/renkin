@@ -92,6 +92,20 @@ class TestSampleInputBounds(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         cs.load_sample(handle.name)
 
+    def test_sample_loader_rejects_duplicate_or_non_contiguous_rows(self):
+        cases = [
+            '{"sample_rank": 0, "target_id": "a"}\n{"sample_rank": 0, "target_id": "b"}\n',
+            '{"sample_rank": 0, "target_id": "a"}\n{"sample_rank": 1, "target_id": "a"}\n',
+            '{"sample_rank": 0, "target_id": "a"}\n{"sample_rank": 2, "target_id": "b"}\n',
+        ]
+        for content in cases:
+            with self.subTest(content=content):
+                with tempfile.NamedTemporaryFile("w", encoding="utf-8") as handle:
+                    handle.write(content)
+                    handle.flush()
+                    with self.assertRaisesRegex(ValueError, "duplicate|contiguous"):
+                        cs.load_sample(handle.name)
+
     def test_sample_loader_rejects_negative_size(self):
         with tempfile.NamedTemporaryFile("w", encoding="utf-8") as handle:
             handle.write('{"sample_rank": 0, "target_id": "a"}\n')

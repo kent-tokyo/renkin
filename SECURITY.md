@@ -182,6 +182,9 @@ mutating one in post-processing cannot alter later manifests in the process.
 Frozen sample-list parsing also validates each row as an object with a
 non-negative integer `sample_rank` and non-empty `target_id`, preventing
 malformed rows from reaching downstream sorting or benchmark code.
+Duplicate `sample_rank`／`target_id` values and gaps in the zero-based rank
+sequence are rejected as well, preventing ambiguous or silently shifted
+benchmark membership.
 
 The streaming stock importer applies independent bounds of 64MiB total input,
 64KiB per line, and one million data rows. It rejects invalid UTF-8 and

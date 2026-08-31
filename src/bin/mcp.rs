@@ -771,9 +771,10 @@ fn handle_find_pareto_routes(smiles: &str, args: &Value) -> Value {
         Ok(value) => value as usize,
         Err(message) => return tool_error(&message),
     };
-    let obj_spec = args["objectives"]
-        .as_str()
-        .unwrap_or("cost:min,success_probability:max,steps:min");
+    let obj_spec = match optional_string_arg(args, "objectives") {
+        Ok(value) => value.unwrap_or("cost:min,success_probability:max,steps:min"),
+        Err(message) => return tool_error(&message),
+    };
 
     let (env, rules) = load_env_and_rules();
     let config = SearchConfig {
@@ -1356,6 +1357,21 @@ mod tests {
         assert_eq!(
             response["content"][0]["text"],
             "max_route_cost must be a number"
+        );
+    }
+
+    #[test]
+    fn pareto_objectives_fail_closed_on_wrong_type() {
+        let response = handle_tools_call(&json!({
+            "params": {
+                "name": "find_pareto_routes",
+                "arguments": {"smiles": "CCO", "objectives": []}
+            }
+        }));
+        assert_eq!(response["isError"], json!(true));
+        assert_eq!(
+            response["content"][0]["text"],
+            "objectives must be a string"
         );
     }
 

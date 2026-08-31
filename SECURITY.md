@@ -108,6 +108,9 @@ present; a supplied boolean, string, or other incompatible JSON value is not
 treated as an omitted option.
 The same fail-closed rule applies to `plan_with_constraints` route filters,
 including numeric thresholds and comma-separated string filters.
+Pareto objective specifications are likewise type-checked before route search;
+an array or other incompatible value cannot silently select the default
+objective set.
 
 MCP request lines are capped at 1 MiB before JSON parsing. An oversized line is
 drained through its newline and rejected as `-32600 resource_exhausted: request

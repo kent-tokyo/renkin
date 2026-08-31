@@ -488,6 +488,11 @@ where
 /// any search runs) on malformed JSON or any of the checks in
 /// `validate_template_metadata`.
 pub fn load_template_metadata(path: &str) -> Result<TemplateMetadataFile> {
+    let link_metadata = std::fs::symlink_metadata(path)
+        .with_context(|| format!("failed to inspect template metadata file {path}"))?;
+    if link_metadata.file_type().is_symlink() {
+        bail!("template metadata path {path:?} must not be a symlink");
+    }
     let file = std::fs::File::open(path)
         .with_context(|| format!("failed to read template metadata file {path}"))?;
     let metadata = file

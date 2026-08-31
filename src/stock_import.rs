@@ -347,6 +347,11 @@ pub fn import_stock_from_path(
     path: &Path,
     options: &StockImportOptions,
 ) -> Result<(Vec<String>, StockManifest)> {
+    let link_metadata = std::fs::symlink_metadata(path)
+        .with_context(|| format!("Failed to inspect stock file: {}", path.display()))?;
+    if link_metadata.file_type().is_symlink() {
+        anyhow::bail!("Stock path must not be a symlink: {}", path.display());
+    }
     let file = std::fs::File::open(path)
         .with_context(|| format!("Failed to open stock file: {}", path.display()))?;
     import_stock(file, options)

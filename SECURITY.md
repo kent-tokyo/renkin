@@ -133,6 +133,9 @@ MCP request lines apply the same structural preflight before JSON-RPC dispatch;
 requests over the structural budget return a parse error and do not reach a
 tool handler.
 
+User-supplied template, metadata, stock-import, and bounded CLI text paths are
+checked with `symlink_metadata` and reject symlinks before opening the target.
+
 ## Disclosure
 
 Please allow reasonable time for a fix before public disclosure.

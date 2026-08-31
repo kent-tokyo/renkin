@@ -1309,6 +1309,11 @@ const MAX_CLI_TEXT_FILE_BYTES: u64 = 64 * 1024 * 1024;
 fn read_bounded_text_file(path: &str, label: &str) -> Result<String> {
     use std::io::Read;
 
+    let link_metadata = std::fs::symlink_metadata(path)
+        .with_context(|| format!("failed to inspect {label} {path}"))?;
+    if link_metadata.file_type().is_symlink() {
+        bail!("{label} {path:?} must not be a symlink");
+    }
     let file =
         std::fs::File::open(path).with_context(|| format!("failed to read {label} {path}"))?;
     let metadata = file

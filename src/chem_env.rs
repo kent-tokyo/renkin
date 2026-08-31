@@ -2777,6 +2777,11 @@ pub const MAX_TEMPLATE_LINES: usize = 200_000;
 pub const MAX_TEMPLATE_LINE_BYTES: usize = 64 * 1024;
 
 pub fn validate_template_file(path: &str) -> Result<()> {
+    let link_metadata = fs::symlink_metadata(path)
+        .with_context(|| format!("template file {path:?} does not exist or is not readable"))?;
+    if link_metadata.file_type().is_symlink() {
+        anyhow::bail!("template path {path:?} must not be a symlink");
+    }
     let metadata = fs::metadata(path)
         .with_context(|| format!("template file {path:?} does not exist or is not readable"))?;
     if !metadata.is_file() {

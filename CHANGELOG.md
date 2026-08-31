@@ -18,6 +18,9 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   nested or structurally excessive requests fail as protocol parse errors.
 - MCP resource-limit failures now identify `resource_exhausted` separately
   from malformed JSON parse errors while preserving JSON-RPC error codes.
+- User-supplied template, metadata, stock-import, and bounded CLI text paths
+  now reject symlinks before reading, preventing path indirection at file
+  trust boundaries.
 - Added Python forward-boundary limits: at most 32 reactants and 64KiB of
   reactant text per call, 1,000 results, and 64MiB/10,000 steps for route JSON
   validation; oversized inputs fail with `resource_exhausted`.

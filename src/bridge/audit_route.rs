@@ -666,9 +666,19 @@ mod tests {
     fn synplanner_real_fixture_auto_detects_and_audits() {
         let content = load_synplanner_fixture("real_planning_route_2step.json");
         let rules: Vec<RetroRule> = Vec::new();
-        let report = build_audit_route_report(&content, "auto", None, &rules).expect("audits");
+        let mut report = build_audit_route_report(&content, "auto", None, &rules).expect("audits");
         assert_eq!(report.audit_manifest.source_format, "synplanner");
         assert_eq!(report.summary.routes_total, 1);
+        report.attach_interchange();
+        let interchange = &report.route_interchange.as_ref().expect("interchange")[0];
+        assert_eq!(interchange.source_tool, "synplanner");
+        assert_eq!(interchange.steps.len(), 2);
+        assert!(
+            interchange
+                .steps
+                .iter()
+                .all(|step| step.reaction_provenance.reaction_evidence.is_some())
+        );
     }
 
     #[test]

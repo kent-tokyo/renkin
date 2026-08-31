@@ -254,6 +254,7 @@ mod tests {
             steps: vec![crate::bridge::audit::AuditedStep {
                 target: "CC=O".into(),
                 precursors: vec!["CCO".into(), "CO".into()],
+                reaction_evidence: None,
                 forward_validation: crate::bridge::forward::ForwardValidationResult {
                     status: CheckStatus::NotEvaluable,
                     method: "test",

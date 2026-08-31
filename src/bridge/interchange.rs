@@ -10,6 +10,7 @@ use serde::Serialize;
 use crate::bridge::audit::{AuditFinding, AuditReport, AuditStatus, CheckStatus};
 use crate::bridge::forward::EvidenceBasis;
 use crate::bridge::private_stock::PrivateStockReport;
+use crate::bridge::route_graph::ReactionEvidence;
 
 pub const ROUTE_INTERCHANGE_SCHEMA_VERSION: u32 = 1;
 
@@ -40,11 +41,12 @@ pub struct InterchangeStep {
 #[derive(Debug, Clone, Serialize)]
 pub struct ReactionProvenance {
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub reaction_evidence: Option<ReactionEvidence>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub evidence_basis: Option<EvidenceBasis>,
     pub forward_replay_status: CheckStatus,
-    /// Whether this export retained the source tool's original reaction
-    /// representation. `false` is explicit: this adapter only retained its
-    /// replay classification, not a guessed SMIRKS string.
+    /// Whether this export retained the source tool's reaction representation.
+    /// `false` is explicit when the adapter supplied no reaction evidence.
     pub source_representation_retained: bool,
 }
 
@@ -78,9 +80,10 @@ pub fn from_audit_report(
             target: step.target.clone(),
             precursors: step.precursors.clone(),
             reaction_provenance: ReactionProvenance {
+                source_representation_retained: step.reaction_evidence.is_some(),
+                reaction_evidence: step.reaction_evidence.clone(),
                 evidence_basis: step.forward_validation.evidence_basis,
                 forward_replay_status: step.forward_validation.status,
-                source_representation_retained: false,
             },
         })
         .collect();
@@ -115,6 +118,9 @@ mod tests {
             steps: vec![AuditedStep {
                 target: "CCO".into(),
                 precursors: vec!["C".into(), "CO".into()],
+                reaction_evidence: Some(ReactionEvidence::SyntheseusReaction {
+                    reaction_smiles: "C.CO>>CCO".into(),
+                }),
                 forward_validation: crate::bridge::forward::ForwardValidationResult {
                     status: CheckStatus::NotEvaluable,
                     method: "declared_reaction_replay",
@@ -129,9 +135,13 @@ mod tests {
         assert!(interchange.source_version.is_none());
         assert!(interchange.steps[0].original_node_id.is_none());
         assert!(
-            !interchange.steps[0]
+            interchange.steps[0]
                 .reaction_provenance
                 .source_representation_retained
         );
+        assert!(matches!(
+            interchange.steps[0].reaction_provenance.reaction_evidence,
+            Some(ReactionEvidence::SyntheseusReaction { .. })
+        ));
     }
 }

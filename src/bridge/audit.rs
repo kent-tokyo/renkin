@@ -260,6 +260,10 @@ pub struct StockValidationResult {
 pub struct AuditedStep {
     pub target: String,
     pub precursors: Vec<String>,
+    /// Kept out of the legacy audit JSON; exported by the canonical
+    /// evidence-carrying interchange schema when requested.
+    #[serde(skip)]
+    pub reaction_evidence: Option<crate::bridge::route_graph::ReactionEvidence>,
     pub forward_validation: crate::bridge::forward::ForwardValidationResult,
 }
 
@@ -630,6 +634,7 @@ pub fn audit_document_with_policy(
             AuditedStep {
                 target: step.target,
                 precursors: step.precursors,
+                reaction_evidence: step.reaction_evidence,
                 forward_validation,
             }
         })

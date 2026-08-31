@@ -8,6 +8,12 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.55.1] - 2026-08-31 "Documentation Link Fix"
+
+### Fixed
+- Fixed the strict documentation build by linking the current-master
+  benchmark artifact to its GitHub source path.
+
 ## [0.55.0] - 2026-08-31 "Current-master Benchmark Contract"
 
 ### Added

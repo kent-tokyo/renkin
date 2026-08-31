@@ -513,7 +513,7 @@ directly, same mechanism as the RENKIN adapter's own stock-leaf check).
 ### Current-master snapshot (2026-08-31)
 
 The current-master Phase 0 snapshot is recorded separately in
-[`data/comparison/current_master_2026-08-31_report.md`](../../data/comparison/current_master_2026-08-31_report.md).
+[`data/comparison/current_master_2026-08-31_report.md`](https://github.com/kent-tokyo/renkin/blob/master/data/comparison/current_master_2026-08-31_report.md).
 It covers 50 targets at commit `65e158a` and exists to freeze the current
 binary, input hashes, failure taxonomy, and resource measurements before a
 larger rerun. Its 4/50 route-to-configured-stock result is not comparable to

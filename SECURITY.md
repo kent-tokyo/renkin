@@ -148,6 +148,9 @@ until an upstream-compatible dependency upgrade can remove it.
 The same license, bans, and source checks run in the scheduled security
 workflow, so a newly introduced policy violation is a release-blocking CI
 failure rather than only a local convention.
+The scheduled security workflow also runs the dedicated adversarial regression
+suite for the MCP stdio boundary and the manifest security contract, separate
+from the general build-and-test workflow.
 
 The streaming stock importer applies independent bounds of 64MiB total input,
 64KiB per line, and one million data rows. It rejects invalid UTF-8 and

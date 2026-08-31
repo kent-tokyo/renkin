@@ -267,6 +267,21 @@ fn rejects_unreadable_path() {
 }
 
 #[test]
+fn rejects_oversized_audit_input_before_json_parsing() {
+    let path = unique_temp_path("oversized");
+    let file = std::fs::File::create(&path).unwrap();
+    file.set_len(64 * 1024 * 1024 + 1).unwrap();
+    let out = run(&["audit-route", path.to_str().unwrap()]);
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("resource_exhausted"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    std::fs::remove_file(&path).ok();
+}
+
+#[test]
 fn rejects_malformed_json_with_context() {
     // RENKIN Bridge PR6: format auto-detection parses a generic
     // `serde_json::Value` first, so syntactically invalid JSON now fails at

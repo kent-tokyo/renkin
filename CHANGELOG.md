@@ -9,6 +9,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Added a 64MiB bounded audit-route input reader for plain and gzip-compressed
+  route exports; compressed input is capped after decompression as well.
 - Added a bounded template-metadata sidecar loader: regular-file, UTF-8, and
   64MiB input checks now run before JSON parsing and evidence validation.
 - Added bounded streaming limits to stock import: 64MiB total input, 64KiB

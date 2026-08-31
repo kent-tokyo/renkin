@@ -1325,16 +1325,48 @@ fn load_audit_stock(path: &str) -> Result<std::collections::HashSet<String>> {
 /// `aizynthcli`'s own batch output is `.json.gz` by convention, but nothing
 /// enforces the extension actually matches the content, so this sniffs the
 /// real bytes rather than trusting the filename.
+const MAX_AUDIT_INPUT_BYTES: u64 = 64 * 1024 * 1024;
+
 fn read_maybe_gzip(path: &str) -> Result<String> {
-    let bytes = std::fs::read(path).with_context(|| format!("failed to read {path}"))?;
+    use std::io::Read;
+
+    let file = std::fs::File::open(path).with_context(|| format!("failed to read {path}"))?;
+    let metadata = file
+        .metadata()
+        .with_context(|| format!("failed to inspect {path}"))?;
+    if !metadata.is_file() {
+        bail!("audit input {path:?} is not a regular file");
+    }
+    if metadata.len() > MAX_AUDIT_INPUT_BYTES {
+        bail!(
+            "resource_exhausted: audit input exceeds {} bytes",
+            MAX_AUDIT_INPUT_BYTES
+        );
+    }
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    file.take(MAX_AUDIT_INPUT_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .with_context(|| format!("failed to read {path}"))?;
+    if bytes.len() as u64 > MAX_AUDIT_INPUT_BYTES {
+        bail!(
+            "resource_exhausted: audit input exceeds {} bytes",
+            MAX_AUDIT_INPUT_BYTES
+        );
+    }
     if bytes.starts_with(&[0x1f, 0x8b]) {
-        use std::io::Read;
-        let mut decoder = flate2::read::GzDecoder::new(&bytes[..]);
-        let mut out = String::new();
+        let decoder = flate2::read::GzDecoder::new(&bytes[..]);
+        let mut decompressed = Vec::new();
         decoder
-            .read_to_string(&mut out)
+            .take(MAX_AUDIT_INPUT_BYTES + 1)
+            .read_to_end(&mut decompressed)
             .with_context(|| format!("{path}: failed to gzip-decompress"))?;
-        Ok(out)
+        if decompressed.len() as u64 > MAX_AUDIT_INPUT_BYTES {
+            bail!(
+                "resource_exhausted: decompressed audit input exceeds {} bytes",
+                MAX_AUDIT_INPUT_BYTES
+            );
+        }
+        String::from_utf8(decompressed).with_context(|| format!("{path}: not valid UTF-8"))
     } else {
         String::from_utf8(bytes).with_context(|| format!("{path}: not valid UTF-8"))
     }

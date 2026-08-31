@@ -107,6 +107,10 @@ Template metadata sidecars are likewise restricted to regular UTF-8 files of
 at most 64MiB, with the bound enforced while reading (including files that
 grow after an initial metadata check) before JSON parsing begins.
 
+`audit-route` route exports are capped at 64MiB both before and after gzip
+decompression. Non-regular files, invalid UTF-8, and decompressed expansion
+past the cap are rejected before route normalization.
+
 ## Disclosure
 
 Please allow reasonable time for a fix before public disclosure.

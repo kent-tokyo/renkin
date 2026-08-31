@@ -22,15 +22,74 @@ use renkin::validation::step_balanced;
 use serde_json::{Value, json};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+const MAX_REQUEST_BYTES: usize = 1024 * 1024;
+
+enum BoundedLine {
+    Eof,
+    Complete(Vec<u8>),
+    TooLarge,
+}
+
+/// Read one newline-delimited request without allowing an attacker-controlled
+/// line to grow the allocation without bound. When a line is too large, the
+/// remainder through its newline is consumed before returning, preserving the
+/// framing of the next request.
+fn read_bounded_line(reader: &mut impl BufRead) -> io::Result<BoundedLine> {
+    let mut line = Vec::new();
+    let mut too_large = false;
+    loop {
+        let buf = reader.fill_buf()?;
+        if buf.is_empty() {
+            return if too_large {
+                Ok(BoundedLine::TooLarge)
+            } else if line.is_empty() {
+                Ok(BoundedLine::Eof)
+            } else {
+                Ok(BoundedLine::Complete(line))
+            };
+        }
+
+        let newline = buf.iter().position(|byte| *byte == b'\n');
+        let content_len = newline.unwrap_or(buf.len());
+        if !too_large && line.len() + content_len > MAX_REQUEST_BYTES {
+            too_large = true;
+            line.clear();
+        } else if !too_large {
+            line.extend_from_slice(&buf[..content_len]);
+        }
+
+        let consumed = newline.map_or(buf.len(), |index| index + 1);
+        reader.consume(consumed);
+        if newline.is_some() {
+            return Ok(if too_large {
+                BoundedLine::TooLarge
+            } else {
+                BoundedLine::Complete(line)
+            });
+        }
+    }
+}
 
 fn main() {
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut out = stdout.lock();
 
-    for line in stdin.lock().lines() {
-        let line = match line {
-            Ok(l) => l,
+    let mut input = stdin.lock();
+    loop {
+        let line = match read_bounded_line(&mut input) {
+            Ok(BoundedLine::Eof) => break,
+            Ok(BoundedLine::TooLarge) => {
+                write_error(&mut out, Value::Null, -32600, "Request too large");
+                continue;
+            }
+            Ok(BoundedLine::Complete(bytes)) => match String::from_utf8(bytes) {
+                Ok(line) => line,
+                Err(_) => {
+                    write_error(&mut out, Value::Null, -32700, "Parse error");
+                    continue;
+                }
+            },
             Err(_) => break,
         };
         let line = line.trim();
@@ -905,6 +964,7 @@ fn tool_error(msg: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Cursor;
 
     #[test]
     fn find_routes_schema_advertises_coverage_mode() {
@@ -969,5 +1029,31 @@ mod tests {
         assert_eq!(response["id"], Value::Null);
         assert_eq!(response["error"]["code"], json!(-32700));
         assert_eq!(response["error"]["message"], json!("Parse error"));
+    }
+
+    #[test]
+    fn bounded_reader_rejects_large_lines_and_preserves_following_frame() {
+        let mut input = Cursor::new(
+            format!(
+                "{}\n{{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}}\n",
+                "x".repeat(MAX_REQUEST_BYTES + 1)
+            )
+            .into_bytes(),
+        );
+        assert!(matches!(
+            read_bounded_line(&mut input).unwrap(),
+            BoundedLine::TooLarge
+        ));
+        let next = read_bounded_line(&mut input).unwrap();
+        assert!(matches!(next, BoundedLine::Complete(bytes) if bytes.starts_with(b"{")));
+    }
+
+    #[test]
+    fn bounded_reader_accepts_exact_limit_without_newline() {
+        let mut input = Cursor::new(vec![b'x'; MAX_REQUEST_BYTES]);
+        assert!(matches!(
+            read_bounded_line(&mut input).unwrap(),
+            BoundedLine::Complete(bytes) if bytes.len() == MAX_REQUEST_BYTES
+        ));
     }
 }

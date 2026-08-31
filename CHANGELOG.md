@@ -9,6 +9,9 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Added a 1 MiB bounded request-line reader to `renkin-mcp`; oversized
+  newline-delimited requests are rejected without allowing unbounded line
+  allocation or corrupting the framing of the following request.
 - Added fail-closed JSON-RPC boundary handling to `renkin-mcp`: malformed
   JSON now returns `-32700`, invalid request shapes or non-scalar IDs return
   `-32600`, and unknown methods continue to return `-32601`.

@@ -89,6 +89,10 @@ non-scalar request ID is a `-32600` Invalid Request, and an unknown method is a
 `-32601` Method not found. These errors are structured JSON-RPC responses and
 never echo the rejected input.
 
+MCP request lines are capped at 1 MiB before JSON parsing. An oversized line is
+drained through its newline and rejected as `-32600 Request too large`, so it
+cannot cause an unbounded allocation or shift subsequent request framing.
+
 ## Disclosure
 
 Please allow reasonable time for a fix before public disclosure.

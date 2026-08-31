@@ -400,7 +400,7 @@ USPTO-50kテストセット（全4,907分子評価）:
 | Atom-balance-filtered rate | `atom_balanced_solved_rate` | **15.41%**（756/4,907）— search-to-stockの部分集合 |
 | Current-validator-confirmed rate | `provenance_validated_solved_rate` | **0.88%**（43/4,907）— atom-balance-filteredの部分集合 |
 
-402件（`data/building_blocks.smi`から実際にロードされたユニーク化合物数）の市販ビルディングブロック、5,000件の抽出テンプレート、28件のハンドクラフトルール、depth=5・beam=100。3つの数値は同一4,907件に対する入れ子系列であり、独立した数値として比較しないこと。いずれも実験的に検証された合成成功率や人間の化学者によるルート正確性評価ではない。`provenance_validated_solved_rate`は実測の化学的正確性の値でも、証明された正確性の下限でもない——現行validatorが確認できたルートのみを数えており、「invalid」判定のうち未知の割合がvalidator偽陰性である可能性がある一方、実際のrule・route誤りも含まれ得る（比率未計測）。詳細な手法・rule別内訳・再現コマンドは [`tasks/phase31_final_remeasurement_run.md`](https://github.com/kent-tokyo/renkin/blob/master/tasks/phase31_final_remeasurement_run.md) · [ベンチマーク詳細 →](https://kent-tokyo.github.io/renkin/benchmark/)
+402件（`data/building_blocks.smi`から実際にロードされたユニーク化合物数）の市販ビルディングブロック、5,000件の抽出テンプレート、28件のハンドクラフトルール、depth=5・beam=100。3つの数値は同一4,907件に対する入れ子系列であり、独立した数値として比較しないこと。いずれも実験的に検証された合成成功率や人間の化学者によるルート正確性評価ではない。`provenance_validated_solved_rate`は実測の化学的正確性の値でも、証明された正確性の下限でもない——現行validatorが確認できたルートのみを数えており、「invalid」判定のうち未知の割合がvalidator偽陰性である可能性がある一方、実際のrule・route誤りも含まれ得る（比率未計測）。詳細な手法・rule別内訳・再現コマンドは [`tasks/phase31_final_remeasurement_run.md`](https://github.com/kent-tokyo/renkin/blob/master/tasks/phase31_final_remeasurement_run.md) · [ベンチマーク詳細 →](https://kent-tokyo.github.io/renkin/benchmark/) を参照してください。
 
 ### 過去の推移（修正前・無効化済み — 冒頭の注記参照）
 

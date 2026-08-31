@@ -281,7 +281,7 @@ USPTO-50k 测试集（4,907 个分子，全量评估）：
 | 原子平衡过滤后比率 | `atom_balanced_solved_rate` | **15.41%**（756/4,907）—— 是搜索命中库存率的子集 |
 | 当前验证器确认比率 | `provenance_validated_solved_rate` | **0.88%**（43/4,907）—— 是原子平衡过滤后比率的子集 |
 
-402 种起始原料（`data/building_blocks.smi` 中实际加载的去重化合物数，详见下文）、5,000 条提取模板、28 条人工编写规则，depth=5，beam=100。这三个比率是针对同一批 4,907 个目标分子的嵌套序列，并非相互独立的数字，也都不是经过实验验证的合成成功率，或经人类化学家审核的路线准确率。`provenance_validated_solved_rate` 并非实测的化学准确率，也不是经证明的正确率下限——它只统计当前验证器能够正面确认的路线，判定为"无效"的结果中有未知比例可能是验证器的假阴性，而非真实的化学或路线错误（该比例尚未测量）。完整方法说明、按规则细分数据与复现命令参见 [`tasks/phase31_final_remeasurement_run.md`](https://github.com/kent-tokyo/renkin/blob/master/tasks/phase31_final_remeasurement_run.md) · [完整基准测试详情 →](https://kent-tokyo.github.io/renkin/benchmark/)
+402 种起始原料（`data/building_blocks.smi` 中实际加载的去重化合物数，详见下文）、5,000 条提取模板、28 条人工编写规则，depth=5，beam=100。这三个比率是针对同一批 4,907 个目标分子的嵌套序列，并非相互独立的数字，也都不是经过实验验证的合成成功率，或经人类化学家审核的路线准确率。`provenance_validated_solved_rate` 并非实测的化学准确率，也不是经证明的正确率下限——它只统计当前验证器能够正面确认的路线，判定为"无效"的结果中有未知比例可能是验证器的假阴性，而非真实的化学或路线错误（该比例尚未测量）。完整方法说明、按规则细分数据与复现命令参见 [`tasks/phase31_final_remeasurement_run.md`](https://github.com/kent-tokyo/renkin/blob/master/tasks/phase31_final_remeasurement_run.md) · [完整基准测试详情 →](https://kent-tokyo.github.io/renkin/benchmark/)。
 
 ### 历史演进数据（修正前，已判定无效——参见上方提示）
 

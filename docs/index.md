@@ -88,7 +88,7 @@ RENKIN is a **retrosynthesis engine** that automatically plans multi-step chemic
 Target molecule (SMILES)
         │
         ▼
-  Retrosynthetic   ←── 22 built-in + up to 50k extracted (--templates)
+  Retrosynthetic   ←── 21 built-in + up to 50k extracted (--templates)
   rule application
         │
         ▼
@@ -128,7 +128,7 @@ See [Benchmark](benchmark.md) for current USPTO-50k results and methodology — 
 
     ```toml
     [dependencies]
-    renkin = "0.21"
+renkin = "0.53"
     ```
 
 === "npm"

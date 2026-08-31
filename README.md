@@ -602,7 +602,7 @@ Target SMILES
 ┌─────────────────────────┐
 │     chem_env.rs         │  ← chematic wrapper
 │  - SMILES parse         │     canonical-SMILES FxHashSet BB lookup (O(1))
-│  - 22 built-in + up to 50k via --templates  │     fragment sanitization + ring-leak filter
+│  - 21 built-in + up to 50k via --templates  │     fragment sanitization + ring-leak filter
 │  - Building block check │     apply_retro memoization cache
 └────────────┬────────────┘
              │  par_iter (rayon / sequential on WASM)

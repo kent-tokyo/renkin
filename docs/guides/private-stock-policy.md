@@ -63,7 +63,8 @@ whose computed `route_cost` is at or below the limit:
   "max_route_cost": 25.0,
   "require_reaction_families": ["suzuki_coupling"],
   "avoid_reaction_families": ["heck_reaction"],
-  "avoid_building_blocks": ["Brc1ccccc1"]
+  "avoid_building_blocks": ["Brc1ccccc1"],
+  "require_building_blocks": ["c1ccccc1"]
 }
 ```
 
@@ -82,3 +83,7 @@ removes any route containing a listed family.
 matching the route's `building_blocks` entries; matching leaves cause the route
 to be excluded. This keeps private inventory and prohibited-material decisions
 local without changing the shared stock file.
+
+`require_building_blocks` is the complementary house-stock filter: a route must
+contain at least one matching canonical leaf. Both filters are evaluated after
+search and do not alter legacy unconstrained search behavior.

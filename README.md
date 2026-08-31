@@ -721,6 +721,7 @@ see "Earlier milestones" below for older shipped work.
   - [x] Route-level stock score and deterministic multi-route ranking metadata
   - [x] Constraint DSL route-cost cap (`max_route_cost`) with explicit route-cost semantics
   - [x] Exact canonical building-block exclusion (`avoid_building_blocks`) for private/constrained stock policies
+  - [x] Exact canonical building-block requirement (`require_building_blocks`) for house-stock policies
 
 <details>
 <summary>Earlier milestones</summary>

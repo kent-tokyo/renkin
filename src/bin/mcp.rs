@@ -153,6 +153,7 @@ fn handle_tools_list() -> Value {
                         "avoid_elements": {"type": "string", "description": "Comma-separated elements to ban from BBs (e.g. \"Br,I\")"},
                         "require_elements": {"type": "string", "description": "Elements that must appear in ≥1 BB (e.g. \"B\")"},
                         "avoid_building_blocks": {"type": "string", "description": "Comma-separated canonical building-block SMILES to exclude from route leaves"},
+                        "require_building_blocks": {"type": "string", "description": "Comma-separated canonical building-block SMILES; each route must contain at least one"},
                         "max_steps": {"type": "integer", "description": "Maximum number of synthesis steps per route"},
                         "max_route_cost": {"type": "number", "description": "Maximum computed route cost (inclusive)"},
                         "min_confidence": {"type": "number", "description": "Minimum template confidence [0,1]"},
@@ -358,6 +359,9 @@ fn handle_plan_with_constraints(smiles: &str, args: &Value) -> Value {
     let avoid_bbs: Option<Vec<String>> = args["avoid_building_blocks"]
         .as_str()
         .map(|s| s.split(',').map(|bb| bb.trim().to_string()).collect());
+    let require_bbs: Option<Vec<String>> = args["require_building_blocks"]
+        .as_str()
+        .map(|s| s.split(',').map(|bb| bb.trim().to_string()).collect());
     let max_steps = args["max_steps"].as_u64().map(|n| n as usize);
     let max_route_cost = args["max_route_cost"].as_f64();
     let min_confidence = args["min_confidence"].as_f64();
@@ -394,6 +398,13 @@ fn handle_plan_with_constraints(smiles: &str, args: &Value) -> Value {
             !r.building_blocks
                 .iter()
                 .any(|bb| blocked.iter().any(|candidate| candidate == bb))
+        });
+    }
+    if let Some(ref required) = require_bbs {
+        routes.retain(|r| {
+            r.building_blocks
+                .iter()
+                .any(|bb| required.iter().any(|candidate| candidate == bb))
         });
     }
     if let Some(max_cost) = max_route_cost {

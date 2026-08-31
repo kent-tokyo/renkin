@@ -624,6 +624,7 @@ renkin/                          ← Cargo workspace ルート
   - [x] route単位のstock scoreと、複数route向け決定論的ランキングmetadata
   - [x] Constraint DSLの`max_route_cost`によるroute cost上限
   - [x] private/constrained stock向けcanonical building block除外（`avoid_building_blocks`）
+  - [x] house stock向けcanonical building block必須化（`require_building_blocks`）
 
 <details>
 <summary>過去のマイルストーン</summary>

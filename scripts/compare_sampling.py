@@ -40,6 +40,17 @@ MAX_SAMPLE_BYTES = 64 * 1024 * 1024
 MAX_SAMPLE_LINE_BYTES = 64 * 1024
 
 
+def _validated_sample_file(path: str) -> os.stat_result:
+    metadata = os.lstat(path)
+    if stat.S_ISLNK(metadata.st_mode):
+        raise ValueError(f"sample input must not be a symlink: {path!r}")
+    if not stat.S_ISREG(metadata.st_mode):
+        raise ValueError(f"sample input must be a regular file: {path!r}")
+    if metadata.st_size > MAX_SAMPLE_BYTES:
+        raise ValueError(f"sample input exceeds {MAX_SAMPLE_BYTES} bytes: {path!r}")
+    return metadata
+
+
 def canonical_smiles(raw_smiles: str) -> str | None:
     if not HAVE_RDKIT:
         raise RuntimeError(
@@ -59,13 +70,7 @@ def sample_key(canonical: str) -> str:
 
 
 def sha256_file(path: str) -> str:
-    metadata = os.lstat(path)
-    if stat.S_ISLNK(metadata.st_mode):
-        raise ValueError(f"sample input must not be a symlink: {path!r}")
-    if not stat.S_ISREG(metadata.st_mode):
-        raise ValueError(f"sample input must be a regular file: {path!r}")
-    if metadata.st_size > MAX_SAMPLE_BYTES:
-        raise ValueError(f"sample input exceeds {MAX_SAMPLE_BYTES} bytes: {path!r}")
+    _validated_sample_file(path)
     h = hashlib.sha256()
     total = 0
     with open(path, "rb") as handle:
@@ -98,13 +103,7 @@ def load_candidate_lines(corpus_path: str) -> tuple[list[CandidateLine], int, in
     candidates: list[CandidateLine] = []
     total_lines = 0
     comment_or_blank = 0
-    metadata = os.lstat(corpus_path)
-    if stat.S_ISLNK(metadata.st_mode):
-        raise ValueError(f"sample input must not be a symlink: {corpus_path!r}")
-    if not stat.S_ISREG(metadata.st_mode):
-        raise ValueError(f"sample input must be a regular file: {corpus_path!r}")
-    if metadata.st_size > MAX_SAMPLE_BYTES:
-        raise ValueError(f"sample input exceeds {MAX_SAMPLE_BYTES} bytes: {corpus_path!r}")
+    _validated_sample_file(corpus_path)
     total_bytes = 0
     with open(corpus_path, "rb") as handle:
         for line_number, raw_bytes in enumerate(handle, start=1):
@@ -204,10 +203,19 @@ def load_sample(list_path: str, n: int | None = None) -> list[dict]:
     This is the ONLY way downstream code should obtain sample_100/sample_500 --
     both are prefixes of the same file, never independently recomputed.
     """
+    _validated_sample_file(list_path)
     rows = []
-    with open(list_path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
+    total_bytes = 0
+    with open(list_path, "rb") as handle:
+        for raw_bytes in handle:
+            total_bytes += len(raw_bytes)
+            if total_bytes > MAX_SAMPLE_BYTES:
+                raise ValueError(f"sample input exceeds {MAX_SAMPLE_BYTES} bytes: {list_path!r}")
+            if len(raw_bytes) > MAX_SAMPLE_LINE_BYTES:
+                raise ValueError(
+                    f"sample input line exceeds {MAX_SAMPLE_LINE_BYTES} bytes: {list_path!r}"
+                )
+            line = raw_bytes.decode("utf-8").strip()
             if line:
                 rows.append(json.loads(line))
     rows.sort(key=lambda r: r["sample_rank"])

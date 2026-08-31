@@ -57,6 +57,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   deserialization to bound shallow delimiter storms.
 - Benchmark sample-corpus loading now rejects oversized, symlinked, and
   non-regular inputs, including oversized individual lines.
+- Frozen sample-list loading now uses the same bounded file and line policy
+  before JSONL parsing.
 - MCP now requires the exact JSON-RPC `2.0` envelope before dispatch, rejecting
   missing or unsupported protocol versions as structured invalid requests.
 - MCP now suppresses responses for all JSON-RPC notifications based on the

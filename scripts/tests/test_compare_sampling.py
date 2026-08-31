@@ -49,6 +49,34 @@ class TestSampleInputBounds(unittest.TestCase):
         self.assertEqual(candidates[0].line_number, 2)
         self.assertEqual(candidates[0].raw_smiles, "CCO")
 
+    def test_sample_loader_rejects_oversized_line(self):
+        with tempfile.NamedTemporaryFile("wb") as handle:
+            handle.write(b'{"sample_rank": 0}\n')
+            handle.flush()
+            with patch.object(cs, "MAX_SAMPLE_LINE_BYTES", 4):
+                with self.assertRaisesRegex(ValueError, "line exceeds"):
+                    cs.load_sample(handle.name)
+
+    def test_sample_loader_rejects_symlink(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = os.path.join(directory, "sample.jsonl")
+            link = os.path.join(directory, "sample-link.jsonl")
+            with open(target, "w", encoding="utf-8") as handle:
+                handle.write('{"sample_rank": 0}\n')
+            try:
+                os.symlink(target, link)
+            except (NotImplementedError, OSError) as exc:
+                self.skipTest(f"symlinks unavailable: {exc}")
+            with self.assertRaisesRegex(ValueError, "symlink"):
+                cs.load_sample(link)
+
+    def test_sample_loader_returns_ranked_rows(self):
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8") as handle:
+            handle.write('{"sample_rank": 1, "target_id": "b"}\n')
+            handle.write('{"sample_rank": 0, "target_id": "a"}\n')
+            handle.flush()
+            self.assertEqual([row["target_id"] for row in cs.load_sample(handle.name)], ["a", "b"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -171,6 +171,7 @@ It is additionally limited to 1,000,000 structural JSON tokens, with string
 contents excluded from the count.
 The benchmark sample corpus applies the same 64MiB regular-file and symlink
 boundary, plus a 64KiB per-line limit, before candidate parsing and hashing.
+The frozen JSONL sample list is subject to the same limits before row parsing.
 
 The streaming stock importer applies independent bounds of 64MiB total input,
 64KiB per line, and one million data rows. It rejects invalid UTF-8 and

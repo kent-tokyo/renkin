@@ -8,6 +8,14 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.58.0] - 2026-08-31 "Coverage Benchmark Contract"
+
+### Added
+- Added staged coverage-mode execution to `renkin-bench` with explicit
+  search-mode, coverage-template, and timeout validation.
+- Added coverage-mode and template-budget metadata to benchmark reports so
+  standard and coverage results remain directly distinguishable.
+
 ## [0.57.0] - 2026-08-31 "Exploration Contract"
 
 ### Added

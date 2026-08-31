@@ -22,7 +22,7 @@
 ///     "results": [...]
 ///   }
 use std::io::Write as _;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use anyhow::{Result, bail};
 use renkin::DEFAULT_BUILDING_BLOCKS;
@@ -164,6 +164,17 @@ struct BenchResult {
     /// see `nn_rank` in search.rs), hits == reuses that needed no inference.
     retro_cache_hits: u64,
     retro_cache_misses: u64,
+    /// Coverage-mode observability; omitted in standard mode.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    coverage_selected_stage: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    coverage_stage2_invoked: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    coverage_stage1_timeout: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    coverage_stage2_timeout: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    coverage_stage2_elapsed_ms: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -172,8 +183,11 @@ struct BenchReport {
     exploration_contract: renkin::search::ExplorationContract,
     /// Search strategy selected by `beam_width` (`a_star` or `beam`).
     search_strategy: &'static str,
+    /// Orchestration mode (`standard` or staged `coverage`).
+    search_mode: String,
     search_depth: u32,
     search_beam_width: usize,
+    coverage_template_count: Option<usize>,
     total: usize,
     solved: usize,
     success_rate: f64,
@@ -716,6 +730,9 @@ fn main() -> Result<()> {
     let mut top_templates: Option<usize> = None;
     let mut max_depth: u32 = 5;
     let mut beam_width: usize = 0;
+    let mut search_mode = "standard".to_string();
+    let mut coverage_templates_path: Option<String> = None;
+    let mut coverage_timeout_secs: Option<u64> = None;
     let mut max_routes: usize = 1;
     let mut bond_index = false;
     let mut plausibility = false;
@@ -754,6 +771,20 @@ fn main() -> Result<()> {
                 if i < args.len() {
                     beam_width = args[i].parse().unwrap_or(0);
                 }
+            }
+            "--search-mode" => {
+                i += 1;
+                if let Some(value) = args.get(i) {
+                    search_mode = value.clone();
+                }
+            }
+            "--coverage-templates" => {
+                i += 1;
+                coverage_templates_path = args.get(i).cloned();
+            }
+            "--coverage-timeout-secs" => {
+                i += 1;
+                coverage_timeout_secs = args.get(i).and_then(|s| s.parse().ok());
             }
             "--max-routes" | "-n" => {
                 i += 1;
@@ -821,10 +852,29 @@ fn main() -> Result<()> {
         bail!(
             "Usage: renkin-bench --input <smiles_file|paroutes.json> \
              [--input-format smi|paroutes] [--depth <N>] \
-             [--beam-width <N>] [--building-blocks <path>] [--templates <path>] \
+             [--beam-width <N>] [--search-mode standard|coverage] \
+             [--coverage-templates <path>] [--coverage-timeout-secs <N>] \
+             [--building-blocks <path>] [--templates <path>] \
              [--scorer <onnx_path>]"
         );
     };
+
+    if !matches!(search_mode.as_str(), "standard" | "coverage") {
+        bail!("invalid --search-mode '{search_mode}' (expected standard|coverage)");
+    }
+    if search_mode == "coverage" && coverage_templates_path.is_none() {
+        bail!("--search-mode coverage requires --coverage-templates <path>");
+    }
+    if search_mode == "standard" && coverage_templates_path.is_some() {
+        bail!("--coverage-templates requires --search-mode coverage");
+    }
+    if search_mode == "standard" && coverage_timeout_secs.is_some() {
+        bail!("--coverage-timeout-secs requires --search-mode coverage");
+    }
+    if coverage_timeout_secs == Some(0) {
+        bail!("--coverage-timeout-secs must be a positive integer");
+    }
+    let coverage_timeout = coverage_timeout_secs.map(Duration::from_secs);
 
     // Parse targets depending on format
     let targets: Vec<(String, String, Option<u32>)> = if input_format == "paroutes" {
@@ -862,6 +912,10 @@ fn main() -> Result<()> {
         eprintln!("Loaded {} templates from {path}", extra.len());
         rules.extend(extra);
     }
+    let coverage_rules = coverage_templates_path
+        .as_deref()
+        .map(renkin::coverage_mode::load_coverage_rules)
+        .transpose()?;
     #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
     let nn_scorer: Option<std::sync::Arc<renkin::scorer::nn::TemplateScorer>> =
         scorer_path.as_deref().map(|p| {
@@ -887,9 +941,10 @@ fn main() -> Result<()> {
     };
 
     eprintln!(
-        "Benchmarking {} targets (format={}, depth={}, beam_width={}) ...",
+        "Benchmarking {} targets (format={}, mode={}, depth={}, beam_width={}) ...",
         targets.len(),
         input_format,
+        search_mode.clone(),
         max_depth,
         beam_width
     );
@@ -907,7 +962,30 @@ fn main() -> Result<()> {
 
     for (smiles, name, gt_depth) in &targets {
         let t0 = Instant::now();
-        let (routes, stats) = find_routes(smiles, &env, &rules, &config).unwrap_or_default();
+        let (routes, stats, coverage_meta) = if let Some(ref stage2_rules) = coverage_rules {
+            let result = renkin::coverage_mode::run_coverage_mode(
+                smiles,
+                &env,
+                &rules,
+                &config,
+                stage2_rules,
+                coverage_timeout,
+            )?;
+            let meta = (
+                Some(match result.selected_stage {
+                    renkin::coverage_mode::SelectedStage::Stage1 => "stage1",
+                    renkin::coverage_mode::SelectedStage::Stage2 => "stage2",
+                }),
+                Some(result.stage2_invoked),
+                Some(result.stage1_timeout),
+                Some(result.stage2_timeout),
+                result.stage2_elapsed_ms,
+            );
+            (result.routes, result.stats, Some(meta))
+        } else {
+            let (routes, stats) = find_routes(smiles, &env, &rules, &config).unwrap_or_default();
+            (routes, stats, None)
+        };
         let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
         let solved = !routes.is_empty();
@@ -929,7 +1007,8 @@ fn main() -> Result<()> {
         let (forward_validated, route_validation_status) = if plausibility {
             match routes.first() {
                 Some(r) => {
-                    let (statuses, route_status) = validate_route_steps(&r.steps, &rules);
+                    let validation_rules = coverage_rules.as_deref().unwrap_or(&rules);
+                    let (statuses, route_status) = validate_route_steps(&r.steps, validation_rules);
                     steps_checked += statuses.len();
                     steps_evaluable += statuses
                         .iter()
@@ -950,6 +1029,13 @@ fn main() -> Result<()> {
             (None, None)
         };
         let low_template_confidence = routes.first().map(route_low_confidence);
+        let (
+            coverage_selected_stage,
+            coverage_stage2_invoked,
+            coverage_stage1_timeout,
+            coverage_stage2_timeout,
+            coverage_stage2_elapsed_ms,
+        ) = coverage_meta.unwrap_or((None, None, None, None, None));
 
         if solved {
             solved_count += 1;
@@ -993,6 +1079,11 @@ fn main() -> Result<()> {
             stock_hits: stats.stock_hits,
             retro_cache_hits: stats.retro_cache_hits,
             retro_cache_misses: stats.retro_cache_misses,
+            coverage_selected_stage,
+            coverage_stage2_invoked,
+            coverage_stage1_timeout,
+            coverage_stage2_timeout,
+            coverage_stage2_elapsed_ms,
         });
     }
 
@@ -1109,8 +1200,10 @@ fn main() -> Result<()> {
     let report = BenchReport {
         exploration_contract: exploration_contract(),
         search_strategy: config.strategy_name(),
+        search_mode,
         search_depth: max_depth,
         search_beam_width: beam_width,
+        coverage_template_count: coverage_rules.as_ref().map(Vec::len),
         total,
         solved: solved_count,
         success_rate,

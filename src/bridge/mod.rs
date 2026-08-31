@@ -71,6 +71,7 @@ pub mod aizynthfinder;
 pub mod audit;
 pub mod audit_route;
 pub mod forward;
+pub mod review;
 pub mod route_graph;
 pub mod synplanner;
 pub mod syntheseus;
@@ -83,10 +84,14 @@ pub use audit::{
 };
 pub use audit_route::{
     AuditManifest, AuditRouteReport, AuditRouteSummary, build_audit_route_report,
-    build_audit_route_report_with_policy, parse_stock_text,
+    build_audit_route_report_with_options, build_audit_route_report_with_policy, parse_stock_text,
 };
 pub use forward::{
     EvidenceBasis, ForwardNotEvaluableReason, ForwardValidationResult, validate_step_forward,
+};
+pub use review::{
+    CHEMICAL_REVIEW_RUBRIC_VERSION, ChemicalReview, ReviewDimension, ReviewFinding, ReviewSeverity,
+    ReviewStatus, review_report,
 };
 pub use route_graph::{
     ParseOutcome, ReactionEvidence, RouteDocument, RouteNode, RouteSource, RouteStep,

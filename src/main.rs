@@ -1251,7 +1251,7 @@ fn load_audit_stock(path: &str) -> Result<std::collections::HashSet<String>> {
 }
 
 /// `renkin audit-route <PATH> [--format auto|renkin|aizynthfinder|syntheseus|synplanner] [--stock <PATH>]
-/// [--policy informational|standard|strict] [--output human|json]` --
+/// [--policy informational|standard|strict] [--chemical-review] [--output human|json]` --
 /// audits every route in a RENKIN `--format json`
 /// output file via `bridge::route_graph::normalize_renkin_route` +
 /// `bridge::audit::audit`. RENKIN-native input only: no AiZynthFinder
@@ -1289,7 +1289,7 @@ fn run_audit_route(args: &[String]) -> Result<()> {
         .iter()
         .find(|a| !a.starts_with("--"))
         .cloned()
-        .context("renkin audit-route: <PATH> is required (usage: renkin audit-route <PATH> [--format auto|renkin|aizynthfinder|syntheseus|synplanner] [--stock <PATH>] [--policy informational|standard|strict] [--output human|json])")?;
+        .context("renkin audit-route: <PATH> is required (usage: renkin audit-route <PATH> [--format auto|renkin|aizynthfinder|syntheseus|synplanner] [--stock <PATH>] [--policy informational|standard|strict] [--chemical-review] [--output human|json])")?;
     let format = flag_value(args, "--format").unwrap_or("auto");
     if ![
         "auto",
@@ -1323,12 +1323,13 @@ fn run_audit_route(args: &[String]) -> Result<()> {
         .transpose()?;
     let rules = chem_env::default_rules();
 
-    let out = bridge::build_audit_route_report_with_policy(
+    let out = bridge::build_audit_route_report_with_options(
         &content,
         format,
         stock.as_ref(),
         &rules,
         policy,
+        args.iter().any(|a| a == "--chemical-review"),
     )
     .with_context(|| format!("{path}: audit input rejected"))?;
 

@@ -153,6 +153,10 @@ pub struct AuditManifest {
     /// derived -- every finding is reported in full regardless, matching
     /// what `audit-route`/the playground's Audit tab have always done.
     policy: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    chemical_review_rubric_version: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    chemical_review_judge_id: Option<&'static str>,
 }
 
 /// Hashes the route-input text actually parsed and audited (already
@@ -194,6 +198,9 @@ pub struct AuditRouteReport {
     pub audit_manifest: AuditManifest,
     pub summary: AuditRouteSummary,
     pub routes: Vec<AuditReport>,
+    /// Present only when explicitly requested; omitted by default for JSON compatibility.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chemical_review: Option<Vec<crate::bridge::review::ChemicalReview>>,
 }
 
 #[derive(Debug, Serialize, Default)]
@@ -330,7 +337,14 @@ pub fn build_audit_route_report(
     stock: Option<&HashSet<String>>,
     rules: &[RetroRule],
 ) -> anyhow::Result<AuditRouteReport> {
-    build_audit_route_report_with_policy(content, format, stock, rules, AuditPolicy::Standard)
+    build_audit_route_report_with_options(
+        content,
+        format,
+        stock,
+        rules,
+        AuditPolicy::Standard,
+        false,
+    )
 }
 
 /// Same as [`build_audit_route_report`], with an explicit [`AuditPolicy`]
@@ -343,6 +357,17 @@ pub fn build_audit_route_report_with_policy(
     stock: Option<&HashSet<String>>,
     rules: &[RetroRule],
     policy: AuditPolicy,
+) -> anyhow::Result<AuditRouteReport> {
+    build_audit_route_report_with_options(content, format, stock, rules, policy, false)
+}
+
+pub fn build_audit_route_report_with_options(
+    content: &str,
+    format: &str,
+    stock: Option<&HashSet<String>>,
+    rules: &[RetroRule],
+    policy: AuditPolicy,
+    chemical_review: bool,
 ) -> anyhow::Result<AuditRouteReport> {
     use anyhow::{Context, bail};
 
@@ -448,6 +473,9 @@ pub fn build_audit_route_report_with_policy(
         input_sha256: input_content_sha256(content),
         stock_sha256: stock.map(stock_set_sha256),
         policy: policy.as_str(),
+        chemical_review_rubric_version: chemical_review
+            .then_some(crate::bridge::review::CHEMICAL_REVIEW_RUBRIC_VERSION),
+        chemical_review_judge_id: chemical_review.then_some("renkin-deterministic"),
     };
 
     Ok(AuditRouteReport {
@@ -455,6 +483,12 @@ pub fn build_audit_route_report_with_policy(
         source_format,
         audit_manifest: manifest,
         summary,
+        chemical_review: chemical_review.then(|| {
+            reports
+                .iter()
+                .map(crate::bridge::review::review_report)
+                .collect()
+        }),
         routes: reports,
     })
 }
@@ -484,6 +518,48 @@ mod tests {
         assert_eq!(report.summary.partial, 1);
         assert_eq!(report.audit_manifest.source_format, "renkin");
         assert!(report.audit_manifest.stock_sha256.is_none());
+        assert!(report.chemical_review.is_none());
+        assert!(
+            report
+                .audit_manifest
+                .chemical_review_rubric_version
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn chemical_review_is_opt_in_and_marks_missing_evidence_honestly() {
+        let rules: Vec<RetroRule> = Vec::new();
+        let report = build_audit_route_report_with_options(
+            RENKIN_FIXTURE,
+            "auto",
+            None,
+            &rules,
+            AuditPolicy::Standard,
+            true,
+        )
+        .expect("audits");
+        let review = &report.chemical_review.as_ref().expect("review")[0];
+        assert_eq!(review.rubric_version, 1);
+        assert_eq!(review.judge_id, "renkin-deterministic");
+        assert_eq!(
+            review.status,
+            crate::bridge::review::ReviewStatus::NotEvaluable
+        );
+        assert_eq!(
+            report.audit_manifest.chemical_review_rubric_version,
+            Some(1)
+        );
+        assert_eq!(
+            report.audit_manifest.chemical_review_judge_id,
+            Some("renkin-deterministic")
+        );
+        assert!(
+            review
+                .findings
+                .iter()
+                .any(|f| f.code == "condition_evidence_not_provided")
+        );
     }
 
     #[test]

@@ -414,7 +414,7 @@ for the full acceptance criteria and licensing split.
 | **Route scoring** | `confidence`, `step_confidence`, `success_probability` (Retro-prob style), `convergency`, `atom_economy`, `route_cost` (`Σ BB cost + steps×0.5`, or actual prices via `--bb-prices`/`--stock`) per step/route — see caveat below the table |
 | **Step metadata provenance** | Each step reports `metadata_source`/`metadata_scope` so it's machine-readable whether `conditions`/`reaction_family` came from a rule-author default vs. something more grounded; absent (not fabricated) for extracted templates |
 | **Pareto multi-objective search** | `--format pareto` returns a Pareto front across `route_cost`/`success_probability`/`steps`; objectives configurable via `--objectives` |
-| **Constraint DSL** | `--constraints constraints.json` — element filters, step/cost limits, confidence thresholds, required/avoided/preferred reaction families; enables LLM → RENKIN pipelines |
+| **Constraint DSL** | `--constraints constraints.json` — element/building-block filters, step/cost limits, confidence thresholds, required/avoided/preferred reaction families; enables LLM → RENKIN pipelines |
 | **Output formats & diagnostics** | `--format json\|tree\|mermaid\|explain\|compare\|compare-json\|pareto`; zero-route JSON includes a `diagnostics` block with `likely_causes`/`suggestions` |
 | **`renkin-forward` toolkit** | `predict` (rank forward products), `enumerate` (bounded products from one reactant + partner library), `hints` (partner-free retrieval hints, no concrete product), `validate` (forward-verify each retro step) — see the [Forward guides](docs/guides/forward-retrieval-hints.md#predict--enumerate--hints-at-a-glance) |
 | **`renkin-bench`** | USPTO-50k/PaRoutes evaluation with `--plausibility` (forward-validated composite score), `--failure-taxonomy`, atom-balance checks (`target_MW > Σ precursor_MW`), and multi-stage `cascade` re-runs on unsolved targets — see [Benchmark](#benchmark) |
@@ -720,6 +720,7 @@ see "Earlier milestones" below for older shipped work.
   - [x] Optional local hazard labels and blocked-hazard policy decisions
   - [x] Route-level stock score and deterministic multi-route ranking metadata
   - [x] Constraint DSL route-cost cap (`max_route_cost`) with explicit route-cost semantics
+  - [x] Exact canonical building-block exclusion (`avoid_building_blocks`) for private/constrained stock policies
 
 <details>
 <summary>Earlier milestones</summary>

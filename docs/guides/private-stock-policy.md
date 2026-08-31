@@ -62,7 +62,8 @@ whose computed `route_cost` is at or below the limit:
 {
   "max_route_cost": 25.0,
   "require_reaction_families": ["suzuki_coupling"],
-  "avoid_reaction_families": ["heck_reaction"]
+  "avoid_reaction_families": ["heck_reaction"],
+  "avoid_building_blocks": ["Brc1ccccc1"]
 }
 ```
 
@@ -76,3 +77,8 @@ contain at least one step whose recorded reaction family matches one of the
 listed names. `prefer_reaction_families` remains an ordering preference and
 does not remove routes. `avoid_reaction_families` is also a hard filter and
 removes any route containing a listed family.
+
+`avoid_building_blocks` is an exact leaf filter. Values must be canonical SMILES
+matching the route's `building_blocks` entries; matching leaves cause the route
+to be excluded. This keeps private inventory and prohibited-material decisions
+local without changing the shared stock file.

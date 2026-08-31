@@ -980,6 +980,8 @@ fn main() -> Result<()> {
 struct ConstraintSpec {
     avoid_elements: Option<Vec<String>>,
     require_elements: Option<Vec<String>>,
+    /// Reject routes containing any of these canonical building-block leaves.
+    avoid_building_blocks: Option<Vec<String>>,
     max_steps: Option<usize>,
     /// Keep routes whose computed route cost is at or below this limit.
     /// The unit follows `route_cost`: price-map units when `--bb-prices` is
@@ -999,6 +1001,13 @@ struct ConstraintSpec {
 fn apply_constraints(routes: &mut Vec<search::Route>, c: &ConstraintSpec) {
     if let Some(n) = c.max_steps {
         routes.retain(|r| r.steps.len() <= n);
+    }
+    if let Some(ref blocked) = c.avoid_building_blocks {
+        routes.retain(|r| {
+            !r.building_blocks
+                .iter()
+                .any(|bb| blocked.iter().any(|candidate| candidate == bb))
+        });
     }
     if let Some(max_cost) = c.max_route_cost {
         routes.retain(|r| r.route_cost <= max_cost);
@@ -2069,6 +2078,26 @@ mod pareto_tests {
 
         assert_eq!(routes.len(), 1);
         assert_eq!(routes[0].steps[0].reaction_family, None);
+    }
+
+    #[test]
+    fn avoided_building_block_constraint_filters_routes_with_a_matching_leaf() {
+        let mut blocked = route(vec![]);
+        blocked.building_blocks = vec!["Brc1ccccc1".to_string()];
+        let mut allowed = route(vec![]);
+        allowed.building_blocks = vec!["c1ccccc1".to_string()];
+        let mut routes = vec![blocked, allowed];
+
+        apply_constraints(
+            &mut routes,
+            &ConstraintSpec {
+                avoid_building_blocks: Some(vec!["Brc1ccccc1".to_string()]),
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].building_blocks[0], "c1ccccc1");
     }
 
     #[test]

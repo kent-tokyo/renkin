@@ -120,6 +120,22 @@ class TestRedactHomeDir(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "duplicate"):
             cm.validate_security_contract(manifest)
 
+    @patch("compare_manifest.sha256_file", return_value="sha256:test")
+    def test_security_contract_rejects_unknown_version(self, _mock):
+        manifest = cm.capture_start_manifest(
+            tool="renkin",
+            comparison_mode="native",
+            ring_context_policy=None,
+            command_line=["renkin"],
+            repo_root=".",
+            binary_path=None,
+            docker_image=None,
+            input_files={},
+        )
+        manifest["security_contract"]["version"] = cm.SECURITY_CONTRACT_VERSION + 1
+        with self.assertRaisesRegex(ValueError, "unsupported"):
+            cm.validate_security_contract(manifest)
+
 
 if __name__ == "__main__":
     unittest.main()

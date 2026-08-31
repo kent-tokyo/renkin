@@ -25,6 +25,7 @@ import json
 import os
 import sys
 import stat
+import tempfile
 from dataclasses import dataclass, field
 
 try:
@@ -222,6 +223,27 @@ def load_sample(list_path: str, n: int | None = None) -> list[dict]:
     return rows if n is None else rows[:n]
 
 
+def write_text_atomic(path: str, text: str) -> None:
+    """Write a generated sample artifact without exposing partial output."""
+    directory = os.path.dirname(os.path.abspath(path))
+    basename = os.path.basename(path)
+    fd, temporary_path = tempfile.mkstemp(
+        prefix=f".{basename}.", suffix=".tmp", dir=directory
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, path)
+    except BaseException:
+        try:
+            os.unlink(temporary_path)
+        except OSError:
+            pass
+        raise
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--corpus", default="data/uspto50k_test.smi")
@@ -231,13 +253,14 @@ def main(argv: list[str] | None = None) -> int:
 
     result = build_sample(args.corpus)
 
-    with open(args.output_list, "w", encoding="utf-8") as f:
-        for row in result.ordered_rows:
-            f.write(json.dumps(row, sort_keys=True) + "\n")
-
-    with open(args.output_manifest, "w", encoding="utf-8") as f:
-        json.dump(result.manifest, f, indent=2, sort_keys=True)
-        f.write("\n")
+    write_text_atomic(
+        args.output_list,
+        "".join(json.dumps(row, sort_keys=True) + "\n" for row in result.ordered_rows),
+    )
+    write_text_atomic(
+        args.output_manifest,
+        json.dumps(result.manifest, indent=2, sort_keys=True) + "\n",
+    )
 
     print(json.dumps(result.manifest, indent=2, sort_keys=True))
     return 0

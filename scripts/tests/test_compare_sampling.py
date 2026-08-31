@@ -77,6 +77,16 @@ class TestSampleInputBounds(unittest.TestCase):
             handle.flush()
             self.assertEqual([row["target_id"] for row in cs.load_sample(handle.name)], ["a", "b"])
 
+    def test_write_text_atomic_round_trips_without_temp_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "sample.jsonl")
+            cs.write_text_atomic(path, "first\nsecond\n")
+            with open(path, encoding="utf-8") as handle:
+                self.assertEqual(handle.read(), "first\nsecond\n")
+            self.assertEqual(
+                [name for name in os.listdir(directory) if name.endswith(".tmp")], []
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

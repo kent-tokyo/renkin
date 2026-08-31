@@ -172,6 +172,9 @@ contents excluded from the count.
 The benchmark sample corpus applies the same 64MiB regular-file and symlink
 boundary, plus a 64KiB per-line limit, before candidate parsing and hashing.
 The frozen JSONL sample list is subject to the same limits before row parsing.
+Sample manifests and frozen lists use a synced temporary file and atomic
+replacement, preventing interrupted generation from exposing partial
+reproducibility artifacts.
 Manifest writes use a same-directory temporary file, `fsync`, and atomic
 replacement so an interrupted benchmark cannot publish truncated evidence.
 Each manifest also receives an independent security-contract snapshot, so

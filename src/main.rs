@@ -1252,7 +1252,7 @@ fn load_audit_stock(path: &str) -> Result<std::collections::HashSet<String>> {
 
 /// `renkin audit-route <PATH> [--format auto|renkin|aizynthfinder|syntheseus|synplanner] [--stock <PATH>]
 /// [--private-stock <CSV|TSV>] [--stock-policy <JSON>] [--policy informational|standard|strict]
-/// [--chemical-review] [--output human|json]` --
+/// [--chemical-review] [--interchange] [--output human|json]` --
 /// audits every route in a RENKIN `--format json`
 /// output file via `bridge::route_graph::normalize_renkin_route` +
 /// `bridge::audit::audit`. RENKIN-native input only: no AiZynthFinder
@@ -1290,7 +1290,7 @@ fn run_audit_route(args: &[String]) -> Result<()> {
         .iter()
         .find(|a| !a.starts_with("--"))
         .cloned()
-        .context("renkin audit-route: <PATH> is required (usage: renkin audit-route <PATH> [--format auto|renkin|aizynthfinder|syntheseus|synplanner] [--stock <PATH>] [--private-stock <CSV|TSV>] [--stock-policy <JSON>] [--policy informational|standard|strict] [--chemical-review] [--output human|json])")?;
+        .context("renkin audit-route: <PATH> is required (usage: renkin audit-route <PATH> [--format auto|renkin|aizynthfinder|syntheseus|synplanner] [--stock <PATH>] [--private-stock <CSV|TSV>] [--stock-policy <JSON>] [--policy informational|standard|strict] [--chemical-review] [--interchange] [--output human|json])")?;
     let format = flag_value(args, "--format").unwrap_or("auto");
     if ![
         "auto",
@@ -1354,6 +1354,10 @@ fn run_audit_route(args: &[String]) -> Result<()> {
         _ => bail!(
             "renkin audit-route: --private-stock and --stock-policy must be provided together"
         ),
+    }
+
+    if args.iter().any(|a| a == "--interchange") {
+        out.attach_interchange();
     }
 
     if output_format == "json" {

@@ -71,6 +71,7 @@ pub mod aizynthfinder;
 pub mod audit;
 pub mod audit_route;
 pub mod forward;
+pub mod interchange;
 pub mod private_stock;
 pub mod review;
 pub mod route_graph;
@@ -89,6 +90,10 @@ pub use audit_route::{
 };
 pub use forward::{
     EvidenceBasis, ForwardNotEvaluableReason, ForwardValidationResult, validate_step_forward,
+};
+pub use interchange::{
+    InterchangeStep, ROUTE_INTERCHANGE_SCHEMA_VERSION, ReactionProvenance, RouteInterchange,
+    StockProvenance, from_audit_report,
 };
 pub use private_stock::{
     PRIVATE_STOCK_POLICY_SCHEMA_VERSION, PrivateStockDecision, PrivateStockDecisionRecord,

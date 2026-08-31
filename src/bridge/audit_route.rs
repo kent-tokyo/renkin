@@ -205,6 +205,8 @@ pub struct AuditRouteReport {
     pub chemical_review: Option<Vec<crate::bridge::review::ChemicalReview>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub private_stock: Option<Vec<crate::bridge::private_stock::PrivateStockReport>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub route_interchange: Option<Vec<crate::bridge::interchange::RouteInterchange>>,
 }
 
 #[derive(Debug, Serialize, Default)]
@@ -247,6 +249,45 @@ impl AuditRouteReport {
                 .collect(),
         );
         Ok(())
+    }
+
+    /// Attach the versioned canonical route interchange export. Source
+    /// versions and original node IDs remain unknown unless an adapter has
+    /// explicitly captured them.
+    pub fn attach_interchange(&mut self) {
+        self.route_interchange = Some(
+            self.routes
+                .iter()
+                .enumerate()
+                .map(|(index, report)| {
+                    let private_stock = self
+                        .private_stock
+                        .as_ref()
+                        .and_then(|reports| reports.get(index).cloned());
+                    let stock = if self.audit_manifest.stock_sha256.is_some()
+                        || self.audit_manifest.private_stock_policy_sha256.is_some()
+                        || private_stock.is_some()
+                    {
+                        Some(crate::bridge::interchange::StockProvenance {
+                            configured_stock_sha256: self.audit_manifest.stock_sha256.clone(),
+                            private_stock_policy_sha256: self
+                                .audit_manifest
+                                .private_stock_policy_sha256
+                                .clone(),
+                            private_stock,
+                        })
+                    } else {
+                        None
+                    };
+                    crate::bridge::interchange::from_audit_report(
+                        self.source_format,
+                        self.audit_manifest.source_version.clone(),
+                        report,
+                        stock,
+                    )
+                })
+                .collect(),
+        );
     }
 }
 
@@ -519,6 +560,7 @@ pub fn build_audit_route_report_with_options(
                 .collect()
         }),
         private_stock: None,
+        route_interchange: None,
         routes: reports,
     })
 }

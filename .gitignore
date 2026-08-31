@@ -32,6 +32,15 @@ ROADMAP.md
 # the two files it happens to hold today (those already matched the bare
 # ROADMAP.md/memo.txt patterns above by coincidence).
 /internal_docs/
+# Internal design, validation, roadmap, and comparison notes are not public
+# documentation. Keep them locally when useful, but never publish them.
+/docs/design/
+/docs/validation/
+/docs/roadmap/
+/docs/comparison/
+docs/guides/forward-benchmark.md
+docs/guides/open-source-retrosynthesis-comparison.md
+docs/guides/reranker-candidate-pools.md
 tasks/todo.md
 # `tasks/*` (not `tasks/`) deliberately: a trailing-slash directory pattern
 # excludes the directory itself, and git cannot re-include a file whose

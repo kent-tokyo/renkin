@@ -96,7 +96,7 @@ unresolvable `template_id`):
 | `evidence_basis` | What it means | When it applies |
 |---|---|---|
 | `declared_rule_template` | An independently-authored `RetroRule.smirks` string, resolved from the rule corpus by `template_id` and replayed as-is. | RENKIN-native steps using a SMIRKS-based rule (most default and all extracted templates). |
-| `derived_graph_rule_roundtrip` | A forward SMIRKS `chem_env::declared_forward_smirks` *derived* for this exact step, by re-running a graph-based rule's own cleavage function against the step's target and matching the outcome to its declared precursors — see `docs/design/retro-rule-precision-gaps-v0.md` #5. | RENKIN-native steps using one of the 8 graph-based default rules (`ester_cleavage`, `amide_cleavage`, `aryl_ether_retro`, `suzuki_retro`, `sulfonamide_retro`, `diaryl_sulfone_retro`, `boc_deprotection_retro`, `cbz_deprotection_retro`), which have no independently-authored SMIRKS string at all. |
+| `derived_graph_rule_roundtrip` | A forward SMIRKS `chem_env::declared_forward_smirks` *derived* for this exact step by re-running the graph-based rule's cleavage function and matching the outcome to its declared precursors. | RENKIN-native steps using one of the graph-based default rules, which have no independently-authored SMIRKS string. |
 | `source_tool_reaction` | The source planner's own reaction record, replayed as declared. | AiZynthFinder, Syntheseus, and SynPlanner steps. |
 
 **`derived_graph_rule_roundtrip` is real evidence, but weaker evidence

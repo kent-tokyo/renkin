@@ -67,10 +67,8 @@ nav:
     - Forward Reaction Prediction: guides/forward-prediction.md
     - Forward Enumeration: guides/forward-enumeration.md
     - Forward Retrieval Hints: guides/forward-retrieval-hints.md
-    - Forward-Prediction Benchmark: guides/forward-benchmark.md
     - Reaction Evidence Metadata: guides/reaction-evidence.md
-    - Candidate Pools and Reranker Training: guides/reranker-candidate-pools.md
-    - Open-Source Retrosynthesis Comparison: guides/open-source-retrosynthesis-comparison.md
+    - Deterministic Chemical Review: guides/chemical-review-rubric.md
     - Audit a Real AiZynthFinder Route: guides/aizynthfinder-audit-demo.md
     - Audit a Syntheseus Route: guides/syntheseus-audit-demo.md
     - Audit a Real SynPlanner Route: guides/synplanner-audit-demo.md
@@ -82,9 +80,6 @@ nav:
   - Examples:
     - Aspirin Retrosynthesis: examples/aspirin.md
     - Drug-like Molecules: examples/druglike.md
-  - Comparison:
-    - Open-Source Retrosynthesis Tools: comparison/open-source-retrosynthesis-tools.md
-    - "ASKCOS Feasibility (Issue #66)": comparison/askcos-feasibility-issue-66.md
   - Playground: playground/index.html
   - Historical Benchmark (Frozen):
     - Results (EN): benchmark.md

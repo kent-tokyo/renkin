@@ -46,8 +46,7 @@ npm install renkin          # JavaScript (browser / bundler -- see docs/api/wasm
 ```
 
 审计 Syntheseus 路径还需要一个可选依赖：
-`pip install renkin[syntheseus]`（已针对 Syntheseus `0.7.2` 与 `0.8.0` 验证——详见
-[兼容性 spike 报告](https://github.com/kent-tokyo/renkin/blob/master/docs/design/syntheseus-0.8-compatibility-spike.md)）。
+`pip install renkin[syntheseus]`（已针对 Syntheseus `0.7.2` 与 `0.8.0` 验证）。
 
 ---
 
@@ -478,7 +477,7 @@ renkin/                          ← Cargo workspace 根目录
 ├── scripts/
 │   ├── extract_templates.py         # rdchiral 模板提取流水线
 │   ├── run_benchmark_chunks.sh      # 可续跑的分块基准测试脚本
-│   ├── train_reranker.py            # 候选重排序器训练/评估（开发工具，仅限离线 — 参见 docs/guides/reranker-candidate-pools.md）
+│   ├── train_reranker.py            # 候选重排序器训练/评估（开发工具，仅限离线）
 │   └── tests/                       # train_reranker.py 的 unittest 套件
 ├── docs/                # MkDocs 源文件 → kent-tokyo.github.io/renkin/
 └── mkdocs.yml
@@ -495,7 +494,7 @@ renkin/                          ← Cargo workspace 根目录
 
 - [x] 让重排序器真正可用：Python 接口（`find_routes()` 的 `reranker_model_path`/`reranker_freq_table_path`）与 batteries-included 模型分发（`scripts/fetch_reranker_model.py`，从 v0.22.0 GitHub Release 的正式 asset 下载并做 SHA-256 校验）（[#101](https://github.com/kent-tokyo/renkin/issues/101)，v0.23.0 发布）——v0.22.0 已证明重排序器有效，v0.23.0 是可用性/分发层面的解锁，而非新的精度提升主张
 - [x] 将 LightGBM 候选重排序器离线训练、通过门控，并接入 route search（[#101](https://github.com/kent-tokyo/renkin/issues/101) Task 35，CLI 已在 v0.22.0 发布）— 基于真实 USPTO-50k 标签训练 LambdaMART 模型，通过 VAL screening gate（top1 +11.7pp、MRR +11.3pp、top10 +9.3pp，均经 bootstrap CI 确认），冻结模型后对该 frozen 模型仅执行一次正式的 4,903-target TEST 评估并通过（top1 +12.7pp、MRR +11.9pp、top10 +9.1pp——与 VAL 幅度一致，无过拟合迹象），随后作为 ordering-only 的 rank bonus 接入 `find_routes`，并通过 paired 100-target route-search 门控确认：`route_to_configured_stock` 16→20/100（+4/-0）。详见上方 Key Features 表
-- [x] 500-target规模的RENKIN vs AiZynthFinder正式比较（[#66](https://github.com/kent-tokyo/renkin/issues/66)）— 在固定500-target样本、共享393化合物库存、各工具自身配置下，RENKIN Conservative的`route_to_shared_stock`比AiZynthFinder高9.8个百分点（73/500对24/500，95% CI [7.0, 12.8]，exact McNemar p≈1.9e-11）——在该协议下具有统计显著性的配对差异，并非泛化的搜索能力优越性主张。各工具原生配置下方向相反，主要受库存规模等未受控条件支配。详见[比较指南](docs/guides/open-source-retrosynthesis-comparison.md)（英文）
+- [x] 500-target规模的RENKIN vs AiZynthFinder正式比较（[#66](https://github.com/kent-tokyo/renkin/issues/66)）— 在固定500-target样本、共享393化合物库存、各工具自身配置下，RENKIN Conservative的`route_to_shared_stock`比AiZynthFinder高9.8个百分点（73/500对24/500，95% CI [7.0, 12.8]，exact McNemar p≈1.9e-11）。这是该协议下的配对结果，并非泛化的搜索能力优越性主张；原生配置的库存不一致，不能直接比较。
 - [x] extracted template的Ring-context安全护栏（[#72](https://github.com/kent-tokyo/renkin/issues/72)/[#242](https://github.com/kent-tokyo/renkin/pull/242)）— opt-in的`--ring-context-policy`/`--ring-context-sidecar`，检测训练数据中从未观察到环结合的环开闭断裂被extracted template误用的情况。默认仍为`disabled`（既有行为不变）
 - [x] `atom_economy`不再隐式钳制为100%（[#79](https://github.com/kent-tokyo/renkin/issues/79)）— 当路线的呈现前体集合无法解释目标全部质量时，新增`atom_economy_status`字段（`normal`/`above_expected_range`/`not_evaluable`）明确报告
 - [x] Coverage mode（`--search-mode coverage`，[#101](https://github.com/kent-tokyo/renkin/issues/101)，v0.24.0 发布）—— opt-in 的 Stage-1/Stage-2 模板数量升级机制，用于应对下方的 candidate-generation coverage gap。已通过一次性 500-target 规模的 formal-TEST 确认（`data/coverage_mode_formal_test/protocol_v2.md`）：coverage +6.0pp、net gain +30、regression 0、reranker failure 0、Stage-2 timeout 率 0.25%——均达到预注册阈值。已发布范围详见上方核心特性表

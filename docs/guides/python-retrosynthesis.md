@@ -151,7 +151,7 @@ distinction and how to attach real cited evidence.
 - Historical benchmark numbers on this repo predate a validator-accuracy fix
   and are invalidated — see the frozen [Benchmark page](../benchmark.md) for
   the corrected historical baseline, or the
-  [Open-Source Retrosynthesis Comparison](open-source-retrosynthesis-comparison.md)
+  the benchmark page for the scope and limitations of published measurements.
   guide for current, matched-condition results, before citing a success rate.
 
 ## Next Steps

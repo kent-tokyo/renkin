@@ -117,9 +117,9 @@ both cases above (beam-prune/crowd-out counters — see the `renkin` CLI's
 Opt-in Stage-1/Stage-2 escalation: only if the default `templates_path`
 search finds nothing does Stage 2 run, against a separately loaded, larger
 `coverage_templates_path` template set, cooperatively cancellable via
-`coverage_timeout_seconds`. See
-[the design doc](https://github.com/kent-tokyo/renkin/blob/master/docs/design/coverage-mode-v0.md)
-for the full rationale and the formal-TEST confirmation numbers.
+`coverage_timeout_seconds`. Use the CLI help and benchmark artifacts for the
+selected inputs and results; internal design notes are not public API
+documentation.
 
 ```python
 --8<-- "examples/coverage_mode.py"

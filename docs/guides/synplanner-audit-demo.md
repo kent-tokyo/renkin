@@ -106,8 +106,8 @@ across every step boundary in the route, even though SynPlanner's own export
 code documents its default path as using non-cross-step-reconciled
 numbering. `renkin audit-route` doesn't invent this evidence — it's simply
 what SynPlanner's own exporter already writes; RENKIN just doesn't discard
-it the way it has no choice but to for the other two adapters (see
-`docs/design/synplanner-adapter-v1.md` §7 for the full audit trail, and
+it the way it has no choice but to for the other two adapters. The adapter
+tests cover the same invariants, and
 `scripts/tests/test_synplanner_real_route_fixture.py` /
 `src/bridge/synplanner.rs`'s own unit tests for the exact numbers: 317/317
 reaction nodes with valid maps, 150/150 cross-step boundaries consistent,
@@ -175,8 +175,7 @@ route 1/1: PARTIAL
 wrapper format SynPlanner's CLI can also emit (`manifest.json` +
 `results.json.gz`, a target-SMILES-keyed list rather than a route-ID-keyed
 object). Only the `{route_id: RouteNode}` shape every fixture above uses is
-recognized today — a deliberate, tracked scope boundary, not a silent gap
-(see `docs/design/synplanner-adapter-v1.md`).
+recognized today — a deliberate, tracked scope boundary, not a silent gap.
 
 ## Compatibility
 

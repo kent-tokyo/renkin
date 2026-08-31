@@ -7,12 +7,8 @@ description: "A frozen, single-commit USPTO-50k route-to-stock stress test for R
 
 **This entire page is a frozen historical artifact, not a live or current benchmark.** Every number below — including the "Corrected Baseline" section — was measured once, against one specific commit (`e20dc8c`, RENKIN v0.15.5, 2026-07-22), and has not been re-run since. "Corrected" describes the rule set *at that commit*, not RENKIN's present state; treat every figure on this page as a snapshot of what RENKIN did on one day, not as its current performance.
 
-> **Looking for current, matched-condition comparison data?** See the
-> [Open-Source Retrosynthesis Comparison](guides/open-source-retrosynthesis-comparison.md#500-target-results)
-> guide instead: a 500-target, paired-bootstrap, exact-McNemar-tested
-> comparison against AiZynthFinder under both a shared stock and each
-> tool's own native stock, kept current. This page is not kept current
-> and should not be used for that purpose.
+> This page is a frozen historical artifact, not a current cross-tool
+> comparison. Do not use its figures as current performance claims.
 
 > ⚠️ **Notice (2026-07-22): historical 78.0% (single-pass) / 95.9% (cascade) / 81.8% (ChEMBL OOD) figures on this page are invalidated and have NOT been re-measured.** They were measured before fixing four retrosynthesis-rule/validator bugs that inflated solved counts with chemically-invalid or falsely-corroborated routes (full history below). **Only the "Corrected baseline" section below reflects the rule set as it stood at the frozen commit** — everywhere else on this page still shows the old, invalidated numbers for historical continuity, each marked accordingly. Do not cite any figure on this page, marked or unmarked, as current RENKIN performance.
 >
@@ -26,9 +22,9 @@ description: "A frozen, single-commit USPTO-50k route-to-stock stress test for R
 
 USPTO-50k is primarily used as a **single-step** retrosynthesis benchmark (see "Comparison: Single-Step Top-1 Models" below for that use). This page repurposes a frozen, 4,907-row target corpus derived from [USPTO-50k](https://huggingface.co/datasets/bisectgroup/USPTO_50K) as a **route-to-stock stress test** for RENKIN's multi-step search — it is not a canonical multi-step benchmark like [PaRoutes](https://github.com/AstraZeneca/PaRoutes) (which RENKIN also supports directly, via `renkin-bench --input-format paroutes` — see the [README](https://github.com/kent-tokyo/renkin#paroutes-compatibility)).
 
-There is also a known, disclosed provenance gap in this corpus: `data/uspto50k_test.smi`'s header claims "5007 reactions," but the file has 4,907 data rows, and no record in this repository traces the exact upstream Hugging Face revision this file was derived from. See the
-[Open-Source Retrosynthesis Comparison guide's "Known gaps" section](guides/open-source-retrosynthesis-comparison.md#known-gaps-disclosed-not-fixed-in-this-round)
-for the full disclosure — not repeated here to avoid two independently-drifting copies of the same caveat.
+There is also a known provenance gap in this corpus: `data/uspto50k_test.smi`
+claims "5007 reactions" in its header but contains 4,907 data rows, and the
+exact upstream Hugging Face revision is not recorded here.
 
 **What "solved" means:** A target is *solved* if at least one complete retrosynthetic route is found where every leaf precursor is in the building block set (402 unique compounds loaded from `data/building_blocks.smi` for the corrected-baseline run below — see that section for how this differs from the file's raw line count). This is **not** a check against ground-truth reactants from the USPTO dataset.
 

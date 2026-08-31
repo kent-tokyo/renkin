@@ -8,6 +8,23 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Added opt-in `--chemical-review` output for `audit-route`. The deterministic
+  evidence-boundary report records its rubric version, judge ID, dimensions,
+  reason codes, and severity without inventing conditions or selectivity.
+
+## [0.60.0] - 2026-08-31 "Evidence Coverage Benchmark"
+
+### Added
+- Added evidence-coverage metadata and reporting to benchmark output so
+  coverage and ranking results remain separately interpretable.
+
+## [0.59.0] - 2026-08-31 "Coverage Benchmark Stages"
+
+### Added
+- Added staged coverage summaries to benchmark reports, including stage,
+  invocation, timeout, and elapsed-time metadata.
+
 ## [0.58.0] - 2026-08-31 "Coverage Benchmark Contract"
 
 ### Added

@@ -7,12 +7,8 @@ description: "RENKIN v0.15.5、単一コミットに凍結されたUSPTO-50k rou
 
 **このページ全体が凍結された過去の記録であり、現在進行形のベンチマークではありません。** 以下のすべての数値——「Corrected Baseline」セクションを含む——は、単一の特定コミット（`e20dc8c`、RENKIN v0.15.5、2026-07-22）に対して一度だけ計測されたものであり、それ以降再計測されていません。「Corrected」が指すのは、そのコミット時点でのルールセットであり、RENKINの現在の状態ではありません。このページのすべての数値は、ある1日にRENKINが行ったことのスナップショットとして扱ってください。
 
-> **現在の・条件を揃えた比較データをお探しですか？** 代わりに
-> [Open-Source Retrosynthesis Comparison](guides/open-source-retrosynthesis-comparison.md#500-target-results)
-> ガイドを参照してください：500ターゲット、paired bootstrap、exact McNemar検定による、
-> shared stockと各ツール自身のnative stockの両条件でのAiZynthFinderとの比較で、
-> 常に最新の状態に保たれています。このページは最新の状態に保たれておらず、
-> その目的には使用しないでください。
+> このページは凍結された過去の記録であり、現在のツール間比較では
+> ありません。数値を現在の性能として使用しないでください。
 
 > ⚠️ **注記（2026-07-22）: このページに残る78.0%（単一パス）/95.9%（cascade）/81.8%（ChEMBL OOD）は無効化された過去の計測値であり、再計測されていません。** これらは、解決数を化学的に不正な経路や誤って肯定判定されたルートで水増ししていた4件の逆合成ルール・validatorバグを修正する前に計測されたものです（経緯は下記）。**「Corrected baseline」セクションのみが凍結時点のルールセットを反映しています**——このページの他の箇所は歴史的な連続性のために旧い無効化済みの数値をそのまま残しており、それぞれその旨を明記しています。マークの有無にかかわらず、このページのいかなる数値もRENKINの現在の性能として引用しないでください。
 >
@@ -26,9 +22,9 @@ description: "RENKIN v0.15.5、単一コミットに凍結されたUSPTO-50k rou
 
 USPTO-50kは主に**単一ステップ**逆合成のベンチマークとして使われています（単一ステップでの利用は下記の「比較: 単一ステップTop-1モデル」を参照）。このページでは、[USPTO-50k](https://huggingface.co/datasets/bisectgroup/USPTO_50K) から派生した4,907件の凍結ターゲットコーパスを、RENKINの多段階探索に対する**route-to-stockストレステスト**として転用しています——[PaRoutes](https://github.com/AstraZeneca/PaRoutes)（RENKINも`renkin-bench --input-format paroutes`で直接対応済み。[README](https://github.com/kent-tokyo/renkin#paroutes-compatibility)参照）のような、多段階の標準ベンチマークではありません。
 
-このコーパスには、既知の・開示済みのprovenance gapもあります：`data/uspto50k_test.smi`のヘッダーは「5007 reactions」と記載していますが、実際のデータ行数は4,907件であり、このリポジトリにはこのファイルの由来となったHugging Face上の正確なrevisionを追跡する記録がありません。詳細な開示は
-[Open-Source Retrosynthesis Comparisonガイドの「Known gaps」セクション](guides/open-source-retrosynthesis-comparison.md#known-gaps-disclosed-not-fixed-in-this-round)
-を参照してください——同じ注意書きが2箇所で独立にずれていくのを避けるため、ここでは繰り返しません。
+このコーパスには既知のprovenance gapもあります：`data/uspto50k_test.smi`の
+ヘッダーは「5007 reactions」ですが、実際のデータ行数は4,907件で、由来となった
+Hugging Face上の正確なrevisionも記録されていません。
 
 **「解決（solved）」の意味:** ターゲットは、すべてのリーフ前駆体がビルディングブロック集合に含まれる完全な逆合成経路が1つ以上見つかった場合に*solved*と判定されます（下記のcorrected-baseline実行では`data/building_blocks.smi`から読み込んだ402件のユニークな化合物——ファイルの生の行数と異なる理由は同セクション参照）。これはUSPTOデータセットのground-truth試薬との照合では**ありません**。
 

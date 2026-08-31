@@ -116,8 +116,7 @@ reachable via two different reaction paths in this convergent route, and
 RENKIN's route representation has no way to express a shared node with two
 parents, so it's expanded independently under each parent — the same
 duplication-on-flatten behavior RENKIN-native routes already have for this
-case, not something new invented for Syntheseus (see
-`docs/design/syntheseus-bridge-v0.md` §7.1).
+case, not something new invented for Syntheseus.
 
 ## What `--format auto` does here
 
@@ -141,9 +140,8 @@ these are two different claims, not one:**
   install.
 - Individually verified against real, artifact-pinned PyPI packages:
   **only `0.7.2`** (the original named target) **and `0.8.0`** (added in
-  v0.31.0 Phase 1 after a real dual-version compatibility spike — see
-  [`docs/design/syntheseus-0.8-compatibility-spike.md`](https://github.com/kent-tokyo/renkin/blob/master/docs/design/syntheseus-0.8-compatibility-spike.md)
-  for the full report). The interval's upper bound is deliberately
+  v0.31.0 Phase 1 after a real dual-version compatibility check). The
+  interval's upper bound is deliberately
   capped at `<=0.8.0`, not an open-ended `<0.9` — an unverified release
   *above* the verified range (`0.8.1`, `0.9.0`, ...) isn't silently
   accepted just because it would likely still work. Note the interval

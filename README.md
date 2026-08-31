@@ -47,7 +47,7 @@ npm install renkin          # JavaScript (browser / bundler -- see docs/api/wasm
 
 Auditing Syntheseus routes needs one more, optional package:
 `pip install renkin[syntheseus]` (verified against Syntheseus `0.7.2` and
-`0.8.0` — see the [compatibility spike](https://github.com/kent-tokyo/renkin/blob/master/docs/design/syntheseus-0.8-compatibility-spike.md)).
+`0.8.0`).
 
 ---
 
@@ -72,6 +72,11 @@ report = json.loads(
 )
 print(report["summary"])
 ```
+
+For an evidence-boundary report, add `--chemical-review` to
+`renkin audit-route ... --output json`. The optional report is deterministic;
+missing conditions, selectivity, and substrate-scope evidence remain
+`not_evaluable`. See the [chemical review rubric](https://kent-tokyo.github.io/renkin/guides/chemical-review-rubric/).
 
 **Syntheseus** (`pip install renkin[syntheseus]`)
 
@@ -670,7 +675,7 @@ renkin/                          ← Cargo workspace root
 ├── scripts/
 │   ├── extract_templates.py         # rdchiral template extraction pipeline
 │   ├── run_benchmark_chunks.sh      # resumable chunked benchmark runner
-│   ├── train_reranker.py            # candidate reranker training/evaluation (dev tool, offline only — see docs/guides/reranker-candidate-pools.md)
+│   ├── train_reranker.py            # candidate reranker training/evaluation (dev tool, offline only)
 │   └── tests/                       # unittest suite for train_reranker.py
 ├── docs/                # MkDocs source → kent-tokyo.github.io/renkin/
 └── mkdocs.yml
@@ -695,7 +700,7 @@ see "Earlier milestones" below for older shipped work.
 - [x] Coverage mode (`--search-mode coverage`, [#101](https://github.com/kent-tokyo/renkin/issues/101), shipped v0.24.0) — opt-in Stage-1/Stage-2 template-count escalation, addressing the candidate-generation coverage gap below. Confirmed by a one-shot 500-target formal-TEST (`data/coverage_mode_formal_test/protocol_v2.md`): coverage +6.0pp, net gain +30, zero regressions, zero reranker failures, Stage-2 timeout rate 0.25% — all against pre-registered thresholds. See the Key Features table above for the shipped surface
 - [x] Reranker made actually usable: Python exposure (`find_routes()`'s `reranker_model_path`/`reranker_freq_table_path`) and batteries-included model distribution (`scripts/fetch_reranker_model.py`, SHA-256-verified fetch from the v0.22.0 GitHub Release's canonical assets) ([#101](https://github.com/kent-tokyo/renkin/issues/101), shipped v0.23.0) — v0.22.0 proved the reranker works; v0.23.0 is the usability/distribution unlock, not a new accuracy claim
 - [x] LightGBM candidate reranker, trained/gated offline and wired into route search ([#101](https://github.com/kent-tokyo/renkin/issues/101) Task 35, CLI shipped v0.22.0) — LambdaMART model trained on real USPTO-50k labels, passed its VAL screening gate (top1 +11.7pp, MRR +11.3pp, top10 +9.3pp, bootstrap-CI-confirmed) and a formal 4,903-target TEST evaluation against the frozen model exactly once (top1 +12.7pp, MRR +11.9pp, top10 +9.1pp — consistent magnitude with VAL, no overfitting signal), then wired into `find_routes` as an ordering-only rank bonus and confirmed with a paired 100-target route-search gate: `route_to_configured_stock` 16→20/100 (+4/-0). See the Key Features table above
-- [x] Formal 500-target RENKIN vs AiZynthFinder comparison ([#66](https://github.com/kent-tokyo/renkin/issues/66)) — under a fixed 500-target sample, shared 393-compound stock, and each tool's configured policy/budget, RENKIN Conservative's `route_to_shared_stock` outcome was 9.8 percentage points higher than AiZynthFinder's (73/500 vs 24/500, 95% CI [7.0, 12.8], exact McNemar p≈1.9e-11) — a statistically significant paired difference under this protocol, not a general search-capability superiority claim. Native-mode configurations (each tool's own stock) diverge in the opposite direction, dominated by unmatched conditions including a large stock-size gap. See the [comparison guide](docs/guides/open-source-retrosynthesis-comparison.md) for the full, deliberately scoped interpretation.
+- [x] Formal 500-target RENKIN vs AiZynthFinder comparison ([#66](https://github.com/kent-tokyo/renkin/issues/66)) — under a fixed 500-target sample, shared 393-compound stock, and each tool's configured policy/budget, RENKIN Conservative's `route_to_shared_stock` outcome was 9.8 percentage points higher than AiZynthFinder's (73/500 vs 24/500). This is a protocol-specific paired result, not a general search-capability superiority claim; native-mode configurations use unmatched stocks and are not directly comparable.
 - [x] Ring-context safety guard for extracted templates ([#72](https://github.com/kent-tokyo/renkin/issues/72)/[#242](https://github.com/kent-tokyo/renkin/pull/242)) — opt-in `--ring-context-policy`/`--ring-context-sidecar`, catches extracted templates silently misapplying a ring-opening/closing disconnection their training data never saw; default remains `disabled` (unchanged legacy behavior)
 - [x] `atom_economy` no longer silently clamped to 100% when a route's represented precursor set can't account for the target's full mass ([#79](https://github.com/kent-tokyo/renkin/issues/79)) — a new `atom_economy_status` field (`normal`/`above_expected_range`/`not_evaluable`) reports this explicitly instead
 

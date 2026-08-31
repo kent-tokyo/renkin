@@ -111,6 +111,8 @@ including numeric thresholds and comma-separated string filters.
 Pareto objective specifications are likewise type-checked before route search;
 an array or other incompatible value cannot silently select the default
 objective set.
+Each objective entry must name a supported field and use exactly `min` or
+`max`; malformed, unknown, or empty specifications are rejected before search.
 
 MCP request lines are capped at 1 MiB before JSON parsing. An oversized line is
 drained through its newline and rejected as `-32600 resource_exhausted: request

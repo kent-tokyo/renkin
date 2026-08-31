@@ -792,7 +792,10 @@ fn handle_find_pareto_routes(smiles: &str, args: &Value) -> Value {
     }
 
     // ponytail: duplicated from main.rs — lift to lib if a 3rd caller appears.
-    let objs = mcp_parse_objectives(obj_spec);
+    let objs = match mcp_parse_objectives(obj_spec) {
+        Ok(objectives) => objectives,
+        Err(message) => return tool_error(&message),
+    };
     let front = mcp_pareto_front(&routes, &objs);
 
     let mut text = format!(
@@ -816,12 +819,21 @@ fn handle_find_pareto_routes(smiles: &str, args: &Value) -> Value {
 }
 
 // Pareto helpers (duplicated from main.rs — see ponytail comment above)
-fn mcp_parse_objectives(spec: &str) -> Vec<(u8, bool)> {
+fn mcp_parse_objectives(spec: &str) -> Result<Vec<(u8, bool)>, String> {
     // Encoding: field as u8 index, direction as bool (true=min)
     // 0=cost 1=success_prob 2=steps 3=depth 4=confidence 5=convergency 6=atom_economy
+    if spec.trim().is_empty() {
+        return Err("objectives must contain at least one objective".to_string());
+    }
     spec.split(',')
-        .filter_map(|part| {
-            let (f, d) = part.trim().split_once(':')?;
+        .enumerate()
+        .map(|(index, part)| {
+            let (f, d) = part.trim().split_once(':').ok_or_else(|| {
+                format!(
+                    "objectives entry {} must use field:min or field:max",
+                    index + 1
+                )
+            })?;
             let field = match f.trim() {
                 "cost" => 0u8,
                 "success_probability" | "success" => 1,
@@ -830,10 +842,14 @@ fn mcp_parse_objectives(spec: &str) -> Vec<(u8, bool)> {
                 "confidence" => 4,
                 "convergency" => 5,
                 "atom_economy" => 6,
-                _ => return None,
+                other => return Err(format!("unknown Pareto objective field: {other}")),
             };
-            let minimize = d.trim() == "min";
-            Some((field, minimize))
+            let minimize = match d.trim() {
+                "min" => true,
+                "max" => false,
+                other => return Err(format!("invalid Pareto objective direction: {other}")),
+            };
+            Ok((field, minimize))
         })
         .collect()
 }
@@ -1373,6 +1389,30 @@ mod tests {
             response["content"][0]["text"],
             "objectives must be a string"
         );
+    }
+
+    #[test]
+    fn pareto_objectives_fail_closed_on_invalid_entries() {
+        for (spec, expected) in [
+            ("", "objectives must contain at least one objective"),
+            ("unknown:min", "unknown Pareto objective field"),
+            ("cost:average", "invalid Pareto objective direction"),
+            ("cost", "must use field:min or field:max"),
+        ] {
+            let response = handle_tools_call(&json!({
+                "params": {
+                    "name": "find_pareto_routes",
+                    "arguments": {"smiles": "CCO", "objectives": spec}
+                }
+            }));
+            assert_eq!(response["isError"], json!(true));
+            assert!(
+                response["content"][0]["text"]
+                    .as_str()
+                    .expect("error text")
+                    .contains(expected)
+            );
+        }
     }
 
     #[test]

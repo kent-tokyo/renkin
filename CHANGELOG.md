@@ -35,6 +35,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ring-context sidecars, removing remaining unbounded production text reads.
 - Made local cargo-deny bans policy explicit: wildcard dependencies are denied
   and duplicate versions remain visible for dependency-drift review.
+- Connected the cargo-deny license, bans, and source checks to the scheduled
+  security workflow, with least-privilege job permissions.
 - MCP now requires the exact JSON-RPC `2.0` envelope before dispatch, rejecting
   missing or unsupported protocol versions as structured invalid requests.
 - MCP now suppresses responses for all JSON-RPC notifications based on the

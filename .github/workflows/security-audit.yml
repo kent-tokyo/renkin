@@ -7,15 +7,29 @@ on:
   schedule:
     - cron: "0 4 * * 1"
 
-permissions:
-  contents: read
-  checks: write
+permissions: {}
 
 jobs:
   cargo-audit:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
     steps:
       - uses: actions/checkout@v7
       - uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+
+  cargo-deny:
+    name: Dependency policy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+      - name: Check licenses, bans, and sources
+        run: cargo deny check licenses bans sources

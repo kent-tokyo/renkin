@@ -32,6 +32,12 @@ use crate::search::{SearchConfig, diagnose, find_routes};
 ///         threshold. Default: ``None``.
 ///     min_success_probability (float | None): Keep routes at or above this
 ///         frequency-derived route score threshold. Default: ``None``.
+///     require_reaction_families (str): Comma-separated reaction families; each
+///         route must contain at least one. Default: ``""``.
+///     avoid_reaction_families (str): Comma-separated reaction families; routes
+///         containing any are excluded. Default: ``""``.
+///     prefer_reaction_families (str): Comma-separated reaction families to rank
+///         first without excluding other routes. Default: ``""``.
 ///     verbose (bool): Print search statistics (nodes expanded, elapsed time) to
 ///         stderr after the search completes. Default: ``False``.
 ///     templates_path (str | None): Path to an extracted SMIRKS templates .smi
@@ -159,7 +165,7 @@ use crate::search::{SearchConfig, diagnose, find_routes};
 ///     routes = json.loads(renkin.find_routes("CC(=O)Oc1ccccc1C(=O)O", depth=3))
 ///     print(routes["routes_found"])
 #[pyfunction]
-#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None, search_diagnostics=false, spectator_bond_policy="off", element_accounting_policy="off", beam_diversity_policy="off", beam_diversity_slots=0, avoid_building_blocks="", require_building_blocks="", max_route_cost=None, min_confidence=None, min_success_probability=None))]
+#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None, search_diagnostics=false, spectator_bond_policy="off", element_accounting_policy="off", beam_diversity_policy="off", beam_diversity_slots=0, avoid_building_blocks="", require_building_blocks="", max_route_cost=None, min_confidence=None, min_success_probability=None, require_reaction_families="", avoid_reaction_families="", prefer_reaction_families=""))]
 #[allow(clippy::too_many_arguments)]
 pub fn find_routes_py(
     target: &str,
@@ -189,6 +195,9 @@ pub fn find_routes_py(
     max_route_cost: Option<f64>,
     min_confidence: Option<f64>,
     min_success_probability: Option<f64>,
+    require_reaction_families: &str,
+    avoid_reaction_families: &str,
+    prefer_reaction_families: &str,
 ) -> PyResult<String> {
     if search_mode != "standard" && search_mode != "coverage" {
         return Err(PyValueError::new_err(format!(
@@ -423,6 +432,49 @@ pub fn find_routes_py(
     }
     if let Some(minimum) = min_success_probability {
         routes.retain(|route| route.success_probability >= minimum);
+    }
+    let required_families: Vec<&str> = require_reaction_families
+        .split(',')
+        .map(str::trim)
+        .filter(|family| !family.is_empty())
+        .collect();
+    if !required_families.is_empty() {
+        routes.retain(|route| {
+            route.steps.iter().any(|step| {
+                step.reaction_family
+                    .as_deref()
+                    .is_some_and(|family| required_families.contains(&family))
+            })
+        });
+    }
+    let avoided_families: Vec<&str> = avoid_reaction_families
+        .split(',')
+        .map(str::trim)
+        .filter(|family| !family.is_empty())
+        .collect();
+    if !avoided_families.is_empty() {
+        routes.retain(|route| {
+            !route.steps.iter().any(|step| {
+                step.reaction_family
+                    .as_deref()
+                    .is_some_and(|family| avoided_families.contains(&family))
+            })
+        });
+    }
+    let preferred_families: Vec<&str> = prefer_reaction_families
+        .split(',')
+        .map(str::trim)
+        .filter(|family| !family.is_empty())
+        .collect();
+    if !preferred_families.is_empty() {
+        routes.sort_by_key(|route| {
+            let preferred = route.steps.iter().any(|step| {
+                step.reaction_family
+                    .as_deref()
+                    .is_some_and(|family| preferred_families.contains(&family))
+            });
+            u8::from(!preferred)
+        });
     }
 
     let reranker_failures_for_output = coverage_meta

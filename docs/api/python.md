@@ -32,6 +32,9 @@ renkin.find_routes(
     max_route_cost: float | None = None,
     min_confidence: float | None = None,
     min_success_probability: float | None = None,
+    require_reaction_families: str = "",
+    avoid_reaction_families: str = "",
+    prefer_reaction_families: str = "",
 ) -> str
 ```
 
@@ -54,6 +57,9 @@ a `dict` — parse it with `json.loads()` before accessing fields.
 | `max_route_cost` | `float | None` | `None` | Inclusive upper bound for computed `route_cost`; with `bb_prices_path`, uses the supplied price-map units |
 | `min_confidence` | `float | None` | `None` | Minimum route template-confidence threshold |
 | `min_success_probability` | `float | None` | `None` | Minimum frequency-derived route score threshold; not a calibrated experimental probability |
+| `require_reaction_families` | `str` | `""` | Comma-separated families; each returned route must contain at least one |
+| `avoid_reaction_families` | `str` | `""` | Comma-separated families; routes containing any are excluded |
+| `prefer_reaction_families` | `str` | `""` | Comma-separated families to rank first without excluding other routes |
 | `verbose` | `bool` | `False` | Print search statistics (nodes expanded, elapsed time) to stderr |
 | `bb_prices_path` | `str \| None` | `None` | CSV (`SMILES,price_per_gram`) for route cost scoring |
 | `templates_path` | `str \| None` | `None` | Path to an extracted SMIRKS templates `.smi` file (tab-separated). `None` = hand-crafted rules only |

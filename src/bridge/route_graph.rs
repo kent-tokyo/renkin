@@ -64,12 +64,15 @@ pub enum ReactionEvidence {
         template_id: String,
         declared_smirks: Option<String>,
     },
-    /// AiZynthFinder-sourced: whatever reaction SMIRKS/SMILES the route
-    /// metadata carried, if present. No adapter in this codebase
-    /// constructs this from a real AiZynthFinder JSON export yet (RENKIN
-    /// Bridge PR4 scope note) -- only hand-built fixtures do, until a real
-    /// adapter is confirmed against actual `aizynthcli` output.
-    AiZynthFinderTemplate { smirks: String },
+    /// AiZynthFinder-sourced: whatever reaction SMIRKS/SMILES and explicit
+    /// template provenance the route metadata carried, if present.
+    AiZynthFinderTemplate {
+        smirks: String,
+        /// Source template identity, when AiZynthFinder included it.
+        template_hash: Option<String>,
+        /// Human-readable source classification, retained as provenance only.
+        classification: Option<String>,
+    },
     /// Syntheseus-sourced (v0.30.0 Phase 2): a step's `reaction_smiles`,
     /// always present on a real `syntheseus-route-v1` document (a computed
     /// property on every Syntheseus `Reaction` object -- see the schema doc,

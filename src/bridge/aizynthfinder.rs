@@ -16,7 +16,7 @@
 //! what feeds [`ReactionEvidence::AiZynthFinderTemplate`].
 //!
 //! Deliberately unparsed/unused here (forward-compatible, not a gap):
-//! `smiles` on a `reaction` node, `template`/`template_hash`/
+//! `smiles` on a `reaction` node, `template`/
 //! `policy_probability`/etc. in `metadata`, and the root node's own
 //! `scores`/`metadata` (iteration count, solved flag) -- none of it is
 //! needed to build a [`RouteDocument`], and `#[derive(Deserialize)]`
@@ -53,6 +53,10 @@ pub struct AzfNode {
 pub struct AzfMetadata {
     #[serde(default)]
     pub mapped_reaction_smiles: Option<String>,
+    #[serde(default)]
+    pub template_hash: Option<String>,
+    #[serde(default)]
+    pub classification: Option<String>,
 }
 
 fn canonicalize(smiles: &str) -> Option<String> {
@@ -117,11 +121,15 @@ fn azf_mol_to_route_node(node: &AzfNode, defects: &mut Vec<AuditFindingCode>) ->
         };
     }
 
-    let reaction_evidence = reaction
-        .metadata
-        .as_ref()
-        .and_then(|m| m.mapped_reaction_smiles.clone())
-        .map(|smirks| ReactionEvidence::AiZynthFinderTemplate { smirks });
+    let reaction_evidence = reaction.metadata.as_ref().and_then(|metadata| {
+        metadata.mapped_reaction_smiles.clone().map(|smirks| {
+            ReactionEvidence::AiZynthFinderTemplate {
+                smirks,
+                template_hash: metadata.template_hash.clone(),
+                classification: metadata.classification.clone(),
+            }
+        })
+    });
 
     let mut children = Vec::new();
     for precursor in &reaction.children {
@@ -200,6 +208,17 @@ mod tests {
             doc.root.reaction_evidence,
             Some(ReactionEvidence::AiZynthFinderTemplate { .. })
         ));
+        match doc.root.reaction_evidence.as_ref() {
+            Some(ReactionEvidence::AiZynthFinderTemplate {
+                template_hash,
+                classification,
+                ..
+            }) => {
+                assert!(template_hash.is_some());
+                assert_eq!(classification.as_deref(), Some("0.0 Unrecognized"));
+            }
+            other => panic!("expected AiZynthFinder provenance, got {other:?}"),
+        }
     }
 
     #[test]

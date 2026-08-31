@@ -315,6 +315,8 @@ fn azf_reaction(mapped_reaction_smiles: Option<&str>, precursors: Vec<AzfNode>) 
         in_stock: None,
         metadata: Some(renkin::bridge::AzfMetadata {
             mapped_reaction_smiles: mapped_reaction_smiles.map(str::to_string),
+            template_hash: None,
+            classification: None,
         }),
         children: precursors,
     }

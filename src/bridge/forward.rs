@@ -185,7 +185,7 @@ fn declared_smirks<'a>(
                 EvidenceBasis::DeclaredRuleTemplate,
             ))
         }
-        ReactionEvidence::AiZynthFinderTemplate { smirks } => {
+        ReactionEvidence::AiZynthFinderTemplate { smirks, .. } => {
             if smirks.is_empty() {
                 return Err(MissingReactionRepresentation);
             }
@@ -447,6 +447,8 @@ mod tests {
     fn precursor_order_does_not_affect_the_verdict() {
         let evidence = ReactionEvidence::AiZynthFinderTemplate {
             smirks: "[CH3:1][CH2:2][O:3][C:4](=[O:5])[c:6]1[cH:7][cH:8][c:9]([NH2:10])[cH:11][cH:12]1>>[C:4](=[O:5])([c:6]1[cH:7][cH:8][c:9]([NH2:10])[cH:11][cH:12]1)[OH:13].[CH3:1][CH2:2][OH:3]".to_string(),
+            template_hash: None,
+            classification: None,
         };
         let target = "CCOC(=O)c1ccc(N)cc1";
         let ethanol = "CCO".to_string();
@@ -583,6 +585,8 @@ mod tests {
         // two-orientation retry must still find it.
         let evidence = ReactionEvidence::AiZynthFinderTemplate {
             smirks: "[C:1][O:2].[C:3]>>[C:1][O:2][C:3]".to_string(),
+            template_hash: None,
+            classification: None,
         };
         let target = "CCOC";
         let precursors = vec!["CCO".to_string(), "C".to_string()];
@@ -599,6 +603,8 @@ mod tests {
     fn missing_atom_mapping_is_distinguished_from_missing_representation() {
         let evidence = ReactionEvidence::AiZynthFinderTemplate {
             smirks: "CCO.C>>CCOC".to_string(),
+            template_hash: None,
+            classification: None,
         };
         let result = validate_step_forward(
             "CCOC",

@@ -519,6 +519,8 @@ pub fn load_template_metadata(path: &str) -> Result<TemplateMetadataFile> {
     }
     let content = String::from_utf8(bytes)
         .with_context(|| format!("template metadata file {path} is not valid UTF-8"))?;
+    crate::bridge::validate_json_structure(&content)
+        .with_context(|| format!("template metadata file {path} has excessive JSON structure"))?;
     let file: TemplateMetadataFile = serde_json::from_str(&content)
         .with_context(|| format!("failed to parse template metadata file {path}"))?;
     validate_template_metadata(&file)?;

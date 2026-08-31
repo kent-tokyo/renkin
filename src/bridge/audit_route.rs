@@ -68,7 +68,7 @@ pub fn validate_audit_text_inputs(content: &str, stock_text: &str) -> anyhow::Re
 /// This is a lexical preflight, not a JSON parser: malformed syntax is still
 /// reported by serde_json with its normal diagnostics. Brackets inside JSON
 /// strings are ignored so valid route content is not misclassified.
-pub fn validate_audit_json_structure(content: &str) -> anyhow::Result<()> {
+pub fn validate_json_structure(content: &str) -> anyhow::Result<()> {
     use anyhow::bail;
 
     let mut depth = 0usize;
@@ -539,7 +539,7 @@ pub fn build_audit_route_report_with_options(
     // wrappers. Callers that already hold a parsed stock set have no stock
     // text to validate here, so only the route-content bound applies.
     validate_audit_text_inputs(content, "")?;
-    validate_audit_json_structure(content)?;
+    validate_json_structure(content)?;
 
     if ![
         "auto",
@@ -811,17 +811,17 @@ mod tests {
 
     #[test]
     fn audit_json_structure_limits_ignore_brackets_in_strings() {
-        validate_audit_json_structure(r#"{"text":"[[[["}"#).expect("string content is safe");
+        validate_json_structure(r#"{"text":"[[[["}"#).expect("string content is safe");
     }
 
     #[test]
     fn audit_json_structure_limits_reject_depth_and_token_storms() {
         let deeply_nested = "[".repeat(MAX_AUDIT_JSON_DEPTH + 1);
-        let err = validate_audit_json_structure(&deeply_nested).unwrap_err();
+        let err = validate_json_structure(&deeply_nested).unwrap_err();
         assert!(err.to_string().contains("nesting"));
 
         let token_storm = "[]".repeat((MAX_AUDIT_JSON_TOKENS / 2) + 1);
-        let err = validate_audit_json_structure(&token_storm).unwrap_err();
+        let err = validate_json_structure(&token_storm).unwrap_err();
         assert!(err.to_string().contains("tokens"));
     }
 

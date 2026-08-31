@@ -12,10 +12,10 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Added shared audit text-input limits for Python and WASM: route and stock
   text are capped at 64MiB, and stock lines at 64KiB, before JSON parsing or
   stock scanning begins.
-- Added audit JSON structural preflight: nesting is capped at 256 levels and
-  structural delimiters at one million before route JSON parsing.
-- Extended the same JSON structural preflight to MCP request lines, so deeply
-  nested or structurally excessive requests fail as protocol parse errors.
+- Added shared JSON structural preflight: nesting is capped at 256 levels and
+  structural delimiters at one million before route, metadata, or MCP request
+  parsing.
+- Deeply nested or structurally excessive MCP requests fail before dispatch.
 - MCP resource-limit failures now identify `resource_exhausted` separately
   from malformed JSON parse errors while preserving JSON-RPC error codes.
 - User-supplied template, metadata, stock-import, and bounded CLI text paths

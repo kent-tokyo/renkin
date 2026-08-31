@@ -125,9 +125,9 @@ In-memory Python and WASM audit APIs cap route and stock text at 64MiB and
 stock lines at 64KiB before JSON parsing or stock scanning. File-backed CLI
 audit inputs use the equivalent bounded reader.
 
-Audit JSON is also preflighted at 256 nesting levels and one million structural
-delimiters before deserialization, with excess input rejected as
-`resource_exhausted`.
+Route and template-metadata JSON are also preflighted at 256 nesting levels and
+one million structural delimiters before deserialization, with excess input
+rejected as `resource_exhausted`.
 
 MCP request lines apply the same structural preflight before JSON-RPC dispatch;
 requests over the structural budget return a parse error and do not reach a

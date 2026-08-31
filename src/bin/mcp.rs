@@ -102,7 +102,7 @@ fn main() {
             continue;
         }
 
-        if renkin::bridge::validate_audit_json_structure(line).is_err() {
+        if renkin::bridge::validate_json_structure(line).is_err() {
             write_error(
                 &mut out,
                 Value::Null,
@@ -1038,7 +1038,7 @@ mod tests {
     #[test]
     fn request_json_structure_uses_the_shared_depth_budget() {
         let nested = "[".repeat(renkin::bridge::audit_route::MAX_AUDIT_JSON_DEPTH + 1);
-        assert!(renkin::bridge::validate_audit_json_structure(&nested).is_err());
+        assert!(renkin::bridge::validate_json_structure(&nested).is_err());
     }
 
     #[test]

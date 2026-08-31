@@ -11,7 +11,7 @@ renkin audit-route route.json \
 ```
 
 The vendor table requires `smiles` and accepts `id`, `vendor`, `price`,
-`lead_time_days`, and `available`. The policy is versioned JSON:
+`lead_time_days`, `hazard`, and `available`. The policy is versioned JSON:
 
 ```json
 {
@@ -22,6 +22,7 @@ The vendor table requires `smiles` and accepts `id`, `vendor`, `price`,
   "blocked_vendors": ["Legacy"],
   "max_price": 100.0,
   "max_lead_time_days": 14,
+  "blocked_hazards": ["flammable", "acute-toxic"],
   "require_available": true,
   "blocked_smiles": []
 }
@@ -29,9 +30,13 @@ The vendor table requires `smiles` and accepts `id`, `vendor`, `price`,
 
 Each leaf is classified as `matched`, `rejected`, or `unknown`. Rejections
 carry a stable reason such as `vendor_not_allowed`, `price_limit_exceeded`,
-`lead_time_exceeded`, `not_available`, or `prohibited_substance`. A missing
+`lead_time_exceeded`, `hazard_blocked`, `not_available`, or
+`prohibited_substance`. A missing
 exact vendor record is `unknown`; salt-, stereo-, and tautomer-relaxed vendor
 matches do not silently become exact stock identity.
+
+`hazard` is an optional local catalog label. Matching is exact and
+case-sensitive so each organization can define its own controlled vocabulary.
 
 When multiple exact records satisfy the policy, the report selects one
 deterministically: lowest known price, then shortest known lead time, then

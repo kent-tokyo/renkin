@@ -28,6 +28,8 @@ pub struct PrivateStockPolicy {
     pub max_price: Option<f64>,
     #[serde(default)]
     pub max_lead_time_days: Option<u32>,
+    #[serde(default)]
+    pub blocked_hazards: Vec<String>,
     #[serde(default = "default_require_available")]
     pub require_available: bool,
     #[serde(default)]
@@ -54,6 +56,7 @@ pub enum PrivateStockReason {
     VendorBlocked,
     PriceLimitExceeded,
     LeadTimeExceeded,
+    HazardBlocked,
     NotAvailable,
     ProhibitedSubstance,
     NoExactVendorRecord,
@@ -73,6 +76,8 @@ pub struct PrivateStockDecisionRecord {
     pub price: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lead_time_days: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hazard: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -153,6 +158,7 @@ pub fn assess_report(
                 catalog_id: None,
                 price: None,
                 lead_time_days: None,
+                hazard: None,
             });
             continue;
         }
@@ -167,6 +173,7 @@ pub fn assess_report(
                     catalog_id: None,
                     price: None,
                     lead_time_days: None,
+                    hazard: None,
                 });
                 continue;
             }
@@ -180,6 +187,7 @@ pub fn assess_report(
                 catalog_id: None,
                 price: None,
                 lead_time_days: None,
+                hazard: None,
             });
             continue;
         };
@@ -219,6 +227,14 @@ pub fn assess_report(
                 rejected_reason.get_or_insert(PrivateStockReason::LeadTimeExceeded);
                 continue;
             }
+            if record
+                .hazard
+                .as_deref()
+                .is_some_and(|hazard| policy.blocked_hazards.iter().any(|b| b == hazard))
+            {
+                rejected_reason.get_or_insert(PrivateStockReason::HazardBlocked);
+                continue;
+            }
             eligible.push(record_index);
         }
         if let Some(&record_index) = eligible.iter().min_by(|&&left, &&right| {
@@ -235,6 +251,7 @@ pub fn assess_report(
                 catalog_id: record.id.clone(),
                 price: record.price,
                 lead_time_days: record.lead_time_days,
+                hazard: record.hazard.clone(),
             });
             rejected_reason = None;
         }
@@ -247,6 +264,7 @@ pub fn assess_report(
                 catalog_id: None,
                 price: None,
                 lead_time_days: None,
+                hazard: None,
             });
         }
     }
@@ -297,6 +315,7 @@ mod tests {
             vendor: Some("Acme".into()),
             price: Some(12.0),
             lead_time_days: Some(3),
+            hazard: None,
             available: true,
         }])
         .unwrap();
@@ -308,6 +327,7 @@ mod tests {
             blocked_vendors: vec![],
             max_price: Some(20.0),
             max_lead_time_days: Some(5),
+            blocked_hazards: vec![],
             require_available: true,
             blocked_smiles: vec![],
         };
@@ -339,6 +359,7 @@ mod tests {
                 vendor: Some("Acme".into()),
                 price: Some(20.0),
                 lead_time_days: Some(2),
+                hazard: None,
                 available: true,
             },
             VendorStockRecord {
@@ -347,6 +368,7 @@ mod tests {
                 vendor: Some("Beta".into()),
                 price: Some(12.0),
                 lead_time_days: Some(9),
+                hazard: None,
                 available: true,
             },
             VendorStockRecord {
@@ -355,6 +377,7 @@ mod tests {
                 vendor: Some("Gamma".into()),
                 price: Some(12.0),
                 lead_time_days: Some(3),
+                hazard: None,
                 available: true,
             },
         ])
@@ -367,6 +390,7 @@ mod tests {
             blocked_vendors: vec![],
             max_price: None,
             max_lead_time_days: None,
+            blocked_hazards: vec![],
             require_available: true,
             blocked_smiles: vec![],
         };
@@ -375,5 +399,47 @@ mod tests {
         assert_eq!(ethanol.catalog_id.as_deref(), Some("same-price"));
         assert_eq!(ethanol.price, Some(12.0));
         assert_eq!(ethanol.lead_time_days, Some(3));
+    }
+
+    #[test]
+    fn policy_rejects_blocked_hazard_and_keeps_safe_offer() {
+        let index = VendorStockIndex::from_records(vec![
+            VendorStockRecord {
+                id: Some("blocked".into()),
+                smiles: "CCO".into(),
+                vendor: Some("Acme".into()),
+                price: Some(1.0),
+                lead_time_days: Some(1),
+                hazard: Some("flammable".into()),
+                available: true,
+            },
+            VendorStockRecord {
+                id: Some("safe".into()),
+                smiles: "CCO".into(),
+                vendor: Some("Acme".into()),
+                price: Some(2.0),
+                lead_time_days: Some(2),
+                hazard: Some("low".into()),
+                available: true,
+            },
+        ])
+        .unwrap();
+        let policy = PrivateStockPolicy {
+            schema_version: 1,
+            source_label: "private".into(),
+            source_revision: None,
+            allowed_vendors: vec![],
+            blocked_vendors: vec![],
+            max_price: None,
+            max_lead_time_days: None,
+            blocked_hazards: vec!["flammable".into()],
+            require_available: true,
+            blocked_smiles: vec![],
+        };
+        let out = assess_report(&report(), &index, &policy);
+        let ethanol = out.decisions.iter().find(|d| d.smiles == "CCO").unwrap();
+        assert_eq!(ethanol.decision, PrivateStockDecision::Matched);
+        assert_eq!(ethanol.catalog_id.as_deref(), Some("safe"));
+        assert_eq!(ethanol.hazard.as_deref(), Some("low"));
     }
 }

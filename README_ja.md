@@ -620,6 +620,7 @@ renkin/                          ← Cargo workspace ルート
 - [ ] Stock-aware planning（価格・ハザード・入手性による再順位付け）
   - [x] exactなprivate stock候補に対する、価格・納期・入手性を考慮した
     決定論的なvendor offer選択
+  - [x] ローカルcatalogの任意hazardラベルとblocked-hazard policy判定
 
 <details>
 <summary>過去のマイルストーン</summary>

@@ -55,6 +55,8 @@ pub struct VendorStockRecord {
     pub vendor: Option<String>,
     pub price: Option<f64>,
     pub lead_time_days: Option<u32>,
+    /// Optional local hazard class/label supplied by the catalog.
+    pub hazard: Option<String>,
     pub available: bool,
 }
 
@@ -207,6 +209,7 @@ pub fn import_vendor_table(input: &str, delimiter: Option<u8>) -> Result<Vec<Ven
     let vendor_col = col(&["vendor", "supplier"]);
     let price_col = col(&["price", "price_jpy", "price_usd"]);
     let lead_col = col(&["lead_time_days", "lead_time"]);
+    let hazard_col = col(&["hazard", "hazard_class", "hazard_label"]);
     let available_col = col(&["available", "in_stock"]);
     let mut records = Vec::new();
     for (line_no, line) in rows {
@@ -233,6 +236,7 @@ pub fn import_vendor_table(input: &str, delimiter: Option<u8>) -> Result<Vec<Ven
                     .with_context(|| format!("row {} has invalid lead time", line_no + 1))
             })
             .transpose()?;
+        let hazard = field(hazard_col).map(str::to_owned);
         let available = field(available_col)
             .map(|s| match s.to_ascii_lowercase().as_str() {
                 "true" | "1" | "yes" | "y" => Ok(true),
@@ -248,6 +252,7 @@ pub fn import_vendor_table(input: &str, delimiter: Option<u8>) -> Result<Vec<Ven
             vendor: field(vendor_col).map(str::to_owned),
             price,
             lead_time_days,
+            hazard,
             available,
         });
     }
@@ -300,12 +305,13 @@ mod tests {
 
     #[test]
     fn imports_csv_and_tsv_with_metadata() {
-        let csv =
-            "smiles,id,price,vendor,lead_time_days,available\n\"CCO\",ethanol,12.5,Acme,3,yes\n";
+        let csv = "smiles,id,price,vendor,lead_time_days,hazard,available\n\
+            \"CCO\",ethanol,12.5,Acme,3,flammable,yes\n";
         let records = import_vendor_table(csv, None).unwrap();
         assert_eq!(records[0].id.as_deref(), Some("ethanol"));
         assert_eq!(records[0].price, Some(12.5));
         assert_eq!(records[0].lead_time_days, Some(3));
+        assert_eq!(records[0].hazard.as_deref(), Some("flammable"));
         let tsv = "smiles\tid\nCCO\tE1\n";
         assert_eq!(
             import_vendor_table(tsv, None).unwrap()[0].id.as_deref(),
@@ -321,6 +327,7 @@ mod tests {
             vendor: None,
             price: None,
             lead_time_days: None,
+            hazard: None,
             available: true,
         }])
         .unwrap();
@@ -347,6 +354,7 @@ mod tests {
             vendor: None,
             price: None,
             lead_time_days: None,
+            hazard: None,
             available: true,
         }])
         .unwrap();
@@ -375,6 +383,7 @@ mod tests {
                 vendor: Some("A".into()),
                 price: None,
                 lead_time_days: None,
+                hazard: None,
                 available: true,
             },
             VendorStockRecord {
@@ -383,6 +392,7 @@ mod tests {
                 vendor: Some("B".into()),
                 price: None,
                 lead_time_days: None,
+                hazard: None,
                 available: true,
             },
         ])

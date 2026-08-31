@@ -717,6 +717,7 @@ see "Earlier milestones" below for older shipped work.
 - [ ] Stock-aware planning (price / hazard / availability re-ranking)
   - [x] Deterministic policy-aware vendor-offer selection (price, lead time,
     availability) for exact private-stock matches
+  - [x] Optional local hazard labels and blocked-hazard policy decisions
 
 <details>
 <summary>Earlier milestones</summary>

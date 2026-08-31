@@ -20,6 +20,8 @@ pub struct RouteInterchange {
     pub source_tool: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_route_id: Option<String>,
     pub route_id: String,
     pub audit_status: AuditStatus,
     pub steps: Vec<InterchangeStep>,
@@ -63,6 +65,7 @@ pub struct StockProvenance {
 pub fn from_audit_report(
     source_tool: &'static str,
     source_version: Option<String>,
+    source_route_id: Option<String>,
     report: &AuditReport,
     stock: Option<StockProvenance>,
 ) -> RouteInterchange {
@@ -91,6 +94,7 @@ pub fn from_audit_report(
         schema_version: ROUTE_INTERCHANGE_SCHEMA_VERSION,
         source_tool,
         source_version,
+        source_route_id,
         route_id,
         audit_status: report.status,
         steps,
@@ -130,9 +134,10 @@ mod tests {
             }],
             findings: vec![],
         };
-        let interchange = from_audit_report("aizynthfinder", None, &report, None);
+        let interchange = from_audit_report("aizynthfinder", None, None, &report, None);
         assert_eq!(interchange.schema_version, 1);
         assert!(interchange.source_version.is_none());
+        assert!(interchange.source_route_id.is_none());
         assert!(interchange.steps[0].original_node_id.is_none());
         assert!(
             interchange.steps[0]

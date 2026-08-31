@@ -139,10 +139,9 @@ pub struct AuditManifest {
     renkin_version: &'static str,
     report_schema_version: u32,
     source_format: &'static str,
-    /// Always `null` today: no adapter in this codebase captures a
-    /// self-reported source-tool version from route input yet (`RouteSource`
-    /// is a bare `Renkin`/`AiZynthFinder` enum with no version field) --
-    /// genuinely unknown, not a placeholder for a future removal.
+    /// The source tool's self-reported version when the input format exposes
+    /// one (currently Syntheseus); otherwise genuinely unknown, not a
+    /// placeholder for a future removal.
     source_version: Option<String>,
     input_sha256: String,
     /// `None` when no stock was given -- distinct from "unknown", stock
@@ -207,6 +206,12 @@ pub struct AuditRouteReport {
     pub private_stock: Option<Vec<crate::bridge::private_stock::PrivateStockReport>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub route_interchange: Option<Vec<crate::bridge::interchange::RouteInterchange>>,
+    /// Adapter provenance kept out of the legacy audit JSON. These vectors
+    /// align with `routes` and are consumed only by canonical interchange.
+    #[serde(skip)]
+    route_source_versions: Vec<Option<String>>,
+    #[serde(skip)]
+    route_source_ids: Vec<Option<String>>,
 }
 
 #[derive(Debug, Serialize, Default)]
@@ -251,9 +256,8 @@ impl AuditRouteReport {
         Ok(())
     }
 
-    /// Attach the versioned canonical route interchange export. Source
-    /// versions and original node IDs remain unknown unless an adapter has
-    /// explicitly captured them.
+    /// Attach the versioned canonical route interchange export. Only source
+    /// metadata explicitly retained by an adapter is copied into it.
     pub fn attach_interchange(&mut self) {
         self.route_interchange = Some(
             self.routes
@@ -281,7 +285,8 @@ impl AuditRouteReport {
                     };
                     crate::bridge::interchange::from_audit_report(
                         self.source_format,
-                        self.audit_manifest.source_version.clone(),
+                        self.route_source_versions.get(index).cloned().flatten(),
+                        self.route_source_ids.get(index).cloned().flatten(),
                         report,
                         stock,
                     )
@@ -475,6 +480,8 @@ pub fn build_audit_route_report_with_options(
 
     let mut summary = AuditRouteSummary::default();
     let mut reports = Vec::new();
+    let mut route_source_versions = Vec::new();
+    let mut route_source_ids = Vec::new();
     let source_format = match resolved_format {
         AuditRouteFormat::Renkin => {
             let input: AuditRouteInput = serde_json::from_value(value)
@@ -485,6 +492,8 @@ pub fn build_audit_route_report_with_options(
                 let report = audit::audit_with_policy(&outcome, stock, Some(rules), policy);
                 summary.record(report.status);
                 reports.push(report);
+                route_source_versions.push(None);
+                route_source_ids.push(None);
             }
             "renkin"
         }
@@ -496,6 +505,8 @@ pub fn build_audit_route_report_with_options(
                 let report = audit::audit_with_policy(&outcome, stock, Some(rules), policy);
                 summary.record(report.status);
                 reports.push(report);
+                route_source_versions.push(None);
+                route_source_ids.push(None);
             }
             "aizynthfinder"
         }
@@ -508,6 +519,8 @@ pub fn build_audit_route_report_with_options(
                     let report = audit::audit_with_policy(&outcome, stock, Some(rules), policy);
                     summary.record(report.status);
                     reports.push(report);
+                    route_source_versions.push(None);
+                    route_source_ids.push(None);
                 }
             }
             "aizynthfinder"
@@ -519,16 +532,20 @@ pub fn build_audit_route_report_with_options(
             let report = audit::audit_with_policy(&outcome, stock, Some(rules), policy);
             summary.record(report.status);
             reports.push(report);
+            route_source_versions.push(input.source_version.clone());
+            route_source_ids.push(None);
             "syntheseus"
         }
         AuditRouteFormat::SynPlanner => {
             let routes = parse_synplanner_routes(value)
                 .context("input: not a recognized SynPlanner write_routes_json export")?;
-            for node in routes.values() {
+            for (source_route_id, node) in &routes {
                 let outcome = normalize_synplanner_route(node);
                 let report = audit::audit_with_policy(&outcome, stock, Some(rules), policy);
                 summary.record(report.status);
                 reports.push(report);
+                route_source_versions.push(None);
+                route_source_ids.push(Some(source_route_id.clone()));
             }
             "synplanner"
         }
@@ -538,7 +555,7 @@ pub fn build_audit_route_report_with_options(
         renkin_version: env!("CARGO_PKG_VERSION"),
         report_schema_version: 1,
         source_format,
-        source_version: None,
+        source_version: route_source_versions.iter().flatten().next().cloned(),
         input_sha256: input_content_sha256(content),
         stock_sha256: stock.map(stock_set_sha256),
         policy: policy.as_str(),
@@ -561,6 +578,8 @@ pub fn build_audit_route_report_with_options(
         }),
         private_stock: None,
         route_interchange: None,
+        route_source_versions,
+        route_source_ids,
         routes: reports,
     })
 }
@@ -668,10 +687,12 @@ mod tests {
         let rules: Vec<RetroRule> = Vec::new();
         let mut report = build_audit_route_report(&content, "auto", None, &rules).expect("audits");
         assert_eq!(report.audit_manifest.source_format, "synplanner");
+        assert!(report.audit_manifest.source_version.is_none());
         assert_eq!(report.summary.routes_total, 1);
         report.attach_interchange();
         let interchange = &report.route_interchange.as_ref().expect("interchange")[0];
         assert_eq!(interchange.source_tool, "synplanner");
+        assert_eq!(interchange.source_route_id.as_deref(), Some("33"));
         assert_eq!(interchange.steps.len(), 2);
         assert!(
             interchange

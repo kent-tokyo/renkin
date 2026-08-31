@@ -485,6 +485,7 @@ fn syntheseus_route(
 ) -> SyntheseusRouteV1 {
     SyntheseusRouteV1 {
         schema_version: Some(1),
+        source_version: None,
         target: target.to_string(),
         steps: vec![SyntheseusStep {
             product: target.to_string(),

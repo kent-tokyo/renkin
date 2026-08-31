@@ -50,15 +50,17 @@ use crate::bridge::route_graph::{
 };
 use crate::chem_env::{mol_from_smiles, to_canonical};
 
-/// Deserialized view of a `syntheseus-route-v1` document. Declares only the
-/// fields this normalizer reads (`source_metadata` and per-step `identifier`/
-/// `template`/`source`/`reaction_id` are deliberately unparsed here, same
-/// forward-compatible convention as `bridge::aizynthfinder::AzfNode` --
-/// silently ignored by serde without `deny_unknown_fields`, not an error).
+/// Deserialized view of a `syntheseus-route-v1` document. The exporter-owned
+/// `source_version` is retained because it is a stable, explicit provenance
+/// field in the real v0.8.0 fixture. `source_metadata` and per-step
+/// `identifier`/`template`/`source`/`reaction_id` remain deliberately
+/// unparsed, following the adapters' forward-compatible convention.
 #[derive(Debug, Deserialize)]
 pub struct SyntheseusRouteV1 {
     #[serde(default)]
     pub schema_version: Option<u32>,
+    #[serde(default)]
+    pub source_version: Option<String>,
     pub target: String,
     #[serde(default)]
     pub steps: Vec<SyntheseusStep>,

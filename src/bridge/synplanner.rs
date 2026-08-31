@@ -22,11 +22,9 @@
 //!   fields (no `#[serde(deny_unknown_fields)]` anywhere in this codebase's
 //!   adapters), never copied into the report as opaque JSON, never confused
 //!   with RENKIN's own internal node identifiers.
-//! - The top-level `{route_id: RouteNode}` wrapper's `route_id` itself: not
-//!   threaded onto [`RouteDocument`]/`AuditReport`'s public schema (no
-//!   existing RENKIN concept for a source tool's own route identifier;
-//!   deferred to a future shared `source_route_id` design covering every
-//!   adapter, not designed piecemeal here).
+//! - The top-level `{route_id: RouteNode}` wrapper's `route_id` itself is
+//!   retained by the audit-route interchange layer as `source_route_id`, but
+//!   is not threaded onto [`RouteDocument`]/`AuditReport`'s legacy schema.
 //! - The separate, explicitly versioned `--export_routes` "public contract"
 //!   wrapper (`manifest.json` + `results.json.gz`, `{target_smiles:
 //!   [RouteNode, ...]}`, confirmed in Phase 1 PR1.5): not parsed by this
@@ -195,9 +193,9 @@ fn synplanner_mol_to_route_node(
 
 /// Normalizes one real SynPlanner route (one value of the top-level
 /// `{route_id: RouteNode}` object) into a tool-neutral [`ParseOutcome`]. The
-/// source tool's own `route_id` string key is deliberately not a parameter
-/// here -- see this module's own doc comment for why it isn't threaded
-/// through to the public schema.
+/// source tool's own `route_id` string key is retained by the caller when
+/// iterating [`parse_synplanner_routes`]; the normalized document remains
+/// tool-neutral.
 pub fn normalize_synplanner_route(node: &SynPlannerNode) -> ParseOutcome {
     let mut defects = Vec::new();
     let root = synplanner_mol_to_route_node(node, &mut defects);

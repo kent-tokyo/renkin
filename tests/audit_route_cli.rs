@@ -504,6 +504,7 @@ fn syntheseus_explicit_format_audits_the_real_linear_fixture() {
     let report: serde_json::Value =
         serde_json::from_slice(&out.stdout).expect("stdout must be valid JSON");
     assert_eq!(report["audit_manifest"]["source_format"], "syntheseus");
+    assert_eq!(report["audit_manifest"]["source_version"], "0.7.2");
     assert_eq!(report["routes"][0]["source"], "syntheseus");
     // No stock given -> not_evaluable -> partial, never a silent pass.
     assert_eq!(report["routes"][0]["status"], "partial");

@@ -573,7 +573,7 @@ The JSON output includes `avg_nodes_expanded`, `avg_confidence`, `avg_convergenc
 to Stage 2 only when Stage 1 finds no route; the response reports the selected
 stage, timeout status, and per-stage elapsed time.
 
-The server auto-detects `data/building_blocks.smi` and `data/templates_extracted_5000.smi` in the working directory. Falls back to the embedded `DEFAULT_BUILDING_BLOCKS` / `default_rules()` defaults if not found (152 unique building blocks per `ChemEnv::bb_count()`, 21 handcrafted rules — verified 2026-08-29, after `heck_retro`'s removal (ring-fusion connectivity-collapse defect on internal alkenes fused to the same aromatic ring the leaving-group Br attaches to, confirmed by direct `apply_retro` reproduction on indene) dropped the count from 22, which itself followed `negishi_retro`'s and `grignard_addition_retro`'s removal (v0.36.0 rule-safety census: same ring-fused-atom-duplication defect as `aryl_amine_retro`/`buchwald_hartwig_retro`) dropping it from 24; a "509-BB / 20-rule" figure was previously documented here without verification).
+The server auto-detects `data/building_blocks.smi` and `data/templates_extracted_5000.smi` in the working directory. Falls back to the embedded `DEFAULT_BUILDING_BLOCKS` / `default_rules()` defaults if not found (152 unique building blocks per `ChemEnv::bb_count()`, 22 handcrafted rules, including the new graph-based `carbamate_cleavage` rule).
 
 ```bash
 cargo build --release
@@ -712,7 +712,8 @@ see "Earlier milestones" below for older shipped work.
 
 ### Next
 
-- [ ] Graph rule expansion — sulfonamide / carbamate / urea cleavage (one PR per family, each with benchmark delta)
+- [x] Graph rule expansion — sulfonamide and carbamate cleavage (one PR per family, with structural and atom-accounting gates; carbamate shipped v0.61.0)
+- [ ] Urea cleavage — define and validate an atom-balanced disconnection before adding a default rule
 - [ ] Stock-aware planning (price / hazard / availability re-ranking)
 
 <details>

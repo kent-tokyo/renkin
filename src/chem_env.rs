@@ -973,6 +973,74 @@ fn sulfonamide_cleavage_graph(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
     results
 }
 
+/// Graph-based carbamate cleavage: R-O-C(=O)-NHR' → R-O-C(=O)Cl + H2NR'.
+///
+/// Cuts the N–carbonyl-C bond only when the carbonyl is also bonded to an
+/// O-linked organic substituent. This keeps the generic rule distinct from
+/// amide cleavage and from the narrower Boc/Cbz deprotection handlers.
+fn carbamate_cleavage_graph(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
+    let mut results = Vec::new();
+    let mut seen: FxHashSet<String> = FxHashSet::default();
+
+    for (_, bond) in mol.bonds() {
+        if bond.order != BondOrder::Single {
+            continue;
+        }
+        let (a, b) = (bond.atom1, bond.atom2);
+        let (n_idx, c_idx) = {
+            let aa = mol.atom(a);
+            let ab = mol.atom(b);
+            if aa.element == Element::N && ab.element == Element::C {
+                (a, b)
+            } else if aa.element == Element::C && ab.element == Element::N {
+                (b, a)
+            } else {
+                continue;
+            }
+        };
+
+        let has_carbonyl_oxygen = mol.neighbors(c_idx).any(|(nb, bond_idx)| {
+            mol.atom(nb).element == Element::O && mol.bond(bond_idx).order == BondOrder::Double
+        });
+        let has_organic_oxygen = mol.neighbors(c_idx).any(|(nb, bond_idx)| {
+            if mol.atom(nb).element != Element::O || mol.bond(bond_idx).order != BondOrder::Single {
+                return false;
+            }
+            mol.neighbors(nb).any(|(other, other_bond)| {
+                other != c_idx
+                    && mol.bond(other_bond).order == BondOrder::Single
+                    && mol.atom(other).element != Element::H
+            })
+        });
+        if !has_carbonyl_oxygen || !has_organic_oxygen || !is_bridge_bond(mol, n_idx, c_idx) {
+            continue;
+        }
+
+        let comp_n = get_component(mol, n_idx, n_idx, c_idx);
+        let comp_c = get_component(mol, c_idx, n_idx, c_idx);
+        let Some(frag_amine) = build_sub_molecule(mol, &comp_n) else {
+            continue;
+        };
+        let Some(frag_chloroformate) = build_sub_molecule_with_cl(mol, &comp_c, c_idx) else {
+            continue;
+        };
+        let precs_amine = split_fragments(&frag_amine);
+        let precs_chloroformate = split_fragments(&frag_chloroformate);
+        if precs_amine.is_empty() || precs_chloroformate.is_empty() {
+            continue;
+        }
+
+        let mut prec_set = precs_chloroformate;
+        prec_set.extend(precs_amine);
+        let mut key: Vec<&str> = prec_set.iter().map(|p| p.smiles.as_str()).collect();
+        key.sort_unstable();
+        if seen.insert(key.join("|")) {
+            results.push(prec_set);
+        }
+    }
+    results
+}
+
 /// Build a sub-molecule and append an OH group bonded to `cut_atom`.
 fn build_sub_molecule_with_oh(
     mol: &Molecule,
@@ -1090,6 +1158,7 @@ pub fn apply_retro(mol: &Molecule, rule: &RetroRule) -> Vec<Vec<PrecursorMol>> {
             "ester_cleavage" => ester_cleavage_graph(mol),
             "aryl_ether_retro" => aryl_ether_cleavage(mol),
             "sulfonamide_retro" => sulfonamide_cleavage_graph(mol),
+            "carbamate_cleavage" => carbamate_cleavage_graph(mol),
             "boc_deprotection_retro" => boc_deprotection(mol),
             "cbz_deprotection_retro" => cbz_deprotection(mol),
             _ => vec![],
@@ -1160,7 +1229,7 @@ pub fn apply_retro(mol: &Molecule, rule: &RetroRule) -> Vec<Vec<PrecursorMol>> {
 /// *unmodified* graph-based cleavage function through the normal
 /// [`apply_retro`] dispatch is sufficient to recover real atom-level
 /// correspondence between target and precursors, with zero changes needed
-/// to any of the 8 graph-based rule functions themselves.
+/// to any of the graph-based rule functions themselves.
 fn with_sequential_atom_maps(mol: &Molecule) -> Molecule {
     let mut builder = MoleculeBuilder::new();
     for (idx, atom) in mol.atoms() {
@@ -2224,6 +2293,8 @@ pub fn default_rules() -> Vec<RetroRule> {
         rr("sulfonamide_retro", ""),
         // Ar-SO2-Ar' → Ar-SO2Cl + Ar'H (graph-based; Friedel-Crafts sulfonylation retro)
         rr("diaryl_sulfone_retro", ""),
+        // R-O-C(=O)-NHR' → R-O-C(=O)Cl + H2NR' (graph-based carbamate formation)
+        rr("carbamate_cleavage", ""),
         // ── N-protection / deprotection ──────────────────────────────────────
         // N-Boc → N-H (deprotect: TFA removes Boc). Graph-based to avoid leakage.
         rr("boc_deprotection_retro", ""),
@@ -3768,6 +3839,34 @@ mod tests {
         assert!(
             results.is_empty(),
             "non-sulfonyl S-N must not be cleaved as sulfonamide"
+        );
+    }
+
+    #[test]
+    fn carbamate_cleavage_fires_on_open_chain_carbamate() {
+        // Methyl N-methylcarbamate → methyl chloroformate + methylamine.
+        let mol = mol_from_smiles("COC(=O)NC").unwrap();
+        let rule = rr("carbamate_cleavage", "");
+        let results = apply_retro(&mol, &rule);
+        assert!(!results.is_empty(), "carbamate cleavage must fire");
+        let smiles: std::collections::BTreeSet<&str> = results[0]
+            .iter()
+            .map(|precursor| precursor.smiles.as_str())
+            .collect();
+        assert!(
+            smiles.contains("ClC(OC)=O"),
+            "chloroformate missing: {smiles:?}"
+        );
+        assert!(smiles.contains("CN"), "amine missing: {smiles:?}");
+    }
+
+    #[test]
+    fn carbamate_cleavage_skips_plain_amide() {
+        let mol = mol_from_smiles("CC(=O)NC").unwrap();
+        let rule = rr("carbamate_cleavage", "");
+        assert!(
+            apply_retro(&mol, &rule).is_empty(),
+            "a carbonyl without an O-organic substituent is an amide"
         );
     }
 

@@ -8,10 +8,15 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.61.0] - 2026-08-31 "Carbamate Graph Cleavage"
+
 ### Added
 - Added opt-in `--chemical-review` output for `audit-route`. The deterministic
   evidence-boundary report records its rubric version, judge ID, dimensions,
   reason codes, and severity without inventing conditions or selectivity.
+- Added the graph-based `carbamate_cleavage` rule. It recognizes
+  `R-O-C(=O)-NHR'` and returns the atom-accounted chloroformate/amine
+  disconnection, while rejecting plain amides.
 
 ## [0.60.0] - 2026-08-31 "Evidence Coverage Benchmark"
 

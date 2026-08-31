@@ -615,7 +615,8 @@ renkin/                          ← Cargo workspace ルート
 
 ### 次
 
-- [ ] グラフルール拡張 — sulfonamide / carbamate / urea cleavage（family毎に1 PR、それぞれbenchmark差分付き）
+- [x] グラフルール拡張 — sulfonamide / carbamate cleavage（構造・原子収支ゲート付き、carbamateはv0.61.0で出荷）
+- [ ] urea cleavage — 原子収支を満たす切断生成物を定義・検証してからdefault ruleへ追加
 - [ ] Stock-aware planning（価格・ハザード・入手性による再順位付け）
 
 <details>

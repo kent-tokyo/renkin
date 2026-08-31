@@ -954,6 +954,7 @@ pub fn reaction_family_for_rule(rule: &str) -> Option<&'static str> {
         "sonogashira_retro" => Some("sonogashira_coupling"),
         "sulfonamide_retro" => Some("sulfonamide_formation"),
         "diaryl_sulfone_retro" => Some("friedel_crafts_sulfonylation"),
+        "carbamate_cleavage" => Some("carbamate_formation"),
         "boc_deprotection_retro" => Some("boc_deprotection"),
         "cbz_deprotection_retro" => Some("cbz_deprotection"),
         // n_benzylation_retro / michael_retro / negishi_retro /
@@ -4247,6 +4248,7 @@ mod tests {
             ("sonogashira_retro", Some("sonogashira_coupling")),
             ("sulfonamide_retro", Some("sulfonamide_formation")),
             ("diaryl_sulfone_retro", Some("friedel_crafts_sulfonylation")),
+            ("carbamate_cleavage", Some("carbamate_formation")),
             ("boc_deprotection_retro", Some("boc_deprotection")),
             ("cbz_deprotection_retro", Some("cbz_deprotection")),
             ("claisen_retro", Some("claisen_condensation")),

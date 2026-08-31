@@ -145,7 +145,7 @@ struct BenchResult {
     /// "not_evaluable" (no step could be checked). None when --plausibility
     /// not set or no routes found. See `renkin::validation` for why this
     /// replaces the old binary forward_validated as the source of truth:
-    /// 8 graph-based rules (ester/amide/Suzuki/sulfonamide/sulfone/Boc/Cbz/
+    /// 9 graph-based rules (ester/amide/Suzuki/sulfonamide/sulfone/carbamate/Boc/Cbz/
     /// aryl-ether) have no SMIRKS to reverse-apply and need a separate
     /// structural check, so "couldn't be checked" and "checked and wrong"
     /// must stay distinct.

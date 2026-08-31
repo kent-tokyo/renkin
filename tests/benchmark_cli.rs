@@ -43,7 +43,7 @@ fn coverage_mode_report_identifies_the_selected_stage() {
     );
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["search_mode"], "coverage");
-    assert_eq!(report["coverage_template_count"].as_u64(), Some(23));
+    assert_eq!(report["coverage_template_count"].as_u64(), Some(24));
     assert_eq!(report["coverage_stage1_selected_targets"], 1);
     assert_eq!(report["coverage_stage2_invoked_targets"], 0);
     assert_eq!(report["coverage_stage2_timeout_targets"], 0);

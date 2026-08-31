@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-//! Structural validators for RENKIN's 8 graph-based retro rules.
+//! Structural validators for RENKIN's 9 graph-based retro rules.
 //!
 //! These rules cut a bond directly in the target's molecular graph (see
 //! `apply_retro` in `chem_env.rs`) instead of matching a SMIRKS pattern, so
@@ -43,6 +43,7 @@ type ElementDelta = &'static [(Element, i64)];
 const ESTER_AMIDE_DELTA: ElementDelta = &[(Element::H, 2), (Element::O, 1)]; // + H2O
 const SUZUKI_DELTA: ElementDelta = &[(Element::H, 1), (Element::BR, 1)]; // + HBr
 const SULFONYL_DELTA: ElementDelta = &[(Element::H, 1), (Element::CL, 1)]; // + HCl
+const CARBAMATE_DELTA: ElementDelta = &[(Element::H, 1), (Element::CL, 1)]; // + HCl
 const BOC_DELTA: ElementDelta = &[(Element::C, -5), (Element::H, -8), (Element::O, -2)]; // - C5H8O2
 const CBZ_DELTA: ElementDelta = &[(Element::C, -8), (Element::H, -6), (Element::O, -2)]; // - C8H6O2
 
@@ -103,7 +104,7 @@ fn validate_delta(
     }
 }
 
-/// Dispatch to the structural validator for one of the 8 graph-based rules.
+/// Dispatch to the structural validator for one of the 9 graph-based rules.
 /// Rule names not covered here return `NotEvaluable` — never a silent `Valid`.
 pub fn validate_graph_step(
     rule_name: &str,
@@ -125,6 +126,7 @@ pub fn validate_graph_step(
         "sulfonamide_retro" | "diaryl_sulfone_retro" => {
             validate_delta(target, precursors, SULFONYL_DELTA)
         }
+        "carbamate_cleavage" => validate_delta(target, precursors, CARBAMATE_DELTA),
         "boc_deprotection_retro" => validate_delta(target, precursors, BOC_DELTA),
         "cbz_deprotection_retro" => validate_delta(target, precursors, CBZ_DELTA),
         _ => StepValidationStatus::NotEvaluable,
@@ -242,6 +244,22 @@ mod tests {
         assert_eq!(status, StepValidationStatus::Invalid);
     }
 
+    #[test]
+    fn carbamate_cleavage_valid() {
+        let status = validate_graph_step(
+            "carbamate_cleavage",
+            "COC(=O)NC",
+            &precs(&["COC(=O)Cl", "CN"]),
+        );
+        assert_eq!(status, StepValidationStatus::Valid);
+    }
+
+    #[test]
+    fn carbamate_cleavage_invalid_wrong_precursor() {
+        let status = validate_graph_step("carbamate_cleavage", "COC(=O)NC", &precs(&["COC(=O)Cl"]));
+        assert_eq!(status, StepValidationStatus::Invalid);
+    }
+
     // ── diaryl_sulfone_retro ─────────────────────────────────────────────────
     #[test]
     fn diaryl_sulfone_retro_valid() {
@@ -338,6 +356,7 @@ mod tests {
             "suzuki_retro",
             "sulfonamide_retro",
             "diaryl_sulfone_retro",
+            "carbamate_cleavage",
             "boc_deprotection_retro",
             "cbz_deprotection_retro",
         ]

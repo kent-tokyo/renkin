@@ -55,7 +55,7 @@ pub enum RouteValidationStatus {
 ///
 /// - Not found (e.g. an extracted template RENKIN can't match back): `NotEvaluable`.
 /// - Found, graph-based (empty `smirks`): routed to the dedicated structural
-///   check for the 8 graph-based rules.
+///   check for the 9 graph-based rules.
 /// - Found, SMIRKS-based: `Valid` only if *that rule's own* reversed SMIRKS
 ///   reproduces the target from the precursors, `Invalid` otherwise.
 ///

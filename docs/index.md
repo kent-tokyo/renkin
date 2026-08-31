@@ -46,7 +46,7 @@ RENKIN is a **retrosynthesis engine** that automatically plans multi-step chemic
 | **Pure Rust** | Zero C/C++ dependencies — safe, fast, cross-platform |
 | **WebAssembly** | Runs in the browser at near-native speed |
 | **Python bindings** | `pip install renkin` — no RDKit required |
-| **21 hand-crafted rules + up to 50k extracted via `--templates`** | Ester, amide, Suzuki, Heck, Wittig, sulfonamide, and more; extended via rdchiral-extracted templates |
+| **22 hand-crafted rules + up to 50k extracted via `--templates`** | Ester, amide, Suzuki, Heck, Wittig, sulfonamide, carbamate, and more; extended via rdchiral-extracted templates |
 | **Building blocks** | 402 unique compounds in `data/building_blocks.smi` (used when found relative to the current working directory); otherwise CLI/Python fall back to a compiled-in 152-compound set, which WASM always uses. Pass `--building-blocks`/`building_blocks=` to specify explicitly |
 | **A\* / beam search** | Frequency-weighted A* with beam-width control; `step_cost` reduced for high-frequency templates (Phase A) |
 | **Route scoring** | Per-step `confidence`, `success_probability` (Retro-prob), `route_cost` with optional `--bb-prices CSV` |
@@ -103,9 +103,9 @@ Target molecule (SMILES)
 
 ## Reaction Rules
 
-RENKIN ships **21 hand-crafted rules** (a mix of graph-based dispatch and SMIRKS-based patterns) covering common pharmaceutical bond disconnections, plus supports up to 50k rdchiral-extracted templates via `--templates`:
+RENKIN ships **22 hand-crafted rules** (a mix of graph-based dispatch and SMIRKS-based patterns) covering common pharmaceutical bond disconnections, plus supports up to 50k rdchiral-extracted templates via `--templates`:
 
-- **Acyl disconnections**: ester hydrolysis, amide cleavage (graph-based), Friedel-Crafts acylation, acyl chloride formation
+- **Acyl disconnections**: ester hydrolysis, amide cleavage (graph-based), carbamate cleavage (graph-based), Friedel-Crafts acylation, acyl chloride formation
 - **Aryl C-heteroatom**: Ullmann ether (C-O), sulfonamide formation, decarboxylation
 - **Aryl C-halide**: chloride/bromide halogen exchange
 - **Aryl C-C coupling**: Suzuki (graph-based), Heck, Sonogashira

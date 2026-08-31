@@ -57,6 +57,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   response suppression, including following-frame preservation.
 - Added adversarial MCP regression coverage proving repeated rejected requests
   do not poison a later request or echo the rejected SMILES.
+- Added malformed-JSON subprocess coverage proving parse errors do not echo
+  attacker-controlled content and preserve following-frame processing.
 - Extended MCP subprocess coverage to unknown-argument and overflowing-budget
   rejection before chemical search dispatch.
 - Added fail-closed MCP `tools/call` validation: malformed `params` or

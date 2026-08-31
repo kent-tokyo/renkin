@@ -104,3 +104,20 @@ fn repeated_rejections_do_not_poison_a_following_request() {
         .expect("first error text");
     assert!(!first_error.contains("CCO"));
 }
+
+#[test]
+fn malformed_json_does_not_echo_input_and_next_frame_survives() {
+    let secret_like_input = "malformed-secret-smiles-CCN-token";
+    let responses = run_mcp(&format!(
+        "{{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{{\"note\":\"{secret_like_input}}}\n\
+         {{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}}\n"
+    ));
+    assert_eq!(responses.len(), 2);
+    assert_eq!(responses[0]["error"]["code"], -32700);
+    assert_eq!(responses[0]["id"], Value::Null);
+    assert_eq!(responses[1]["id"], 2);
+    assert!(responses[1]["result"]["tools"].is_array());
+
+    let serialized_error = responses[0].to_string();
+    assert!(!serialized_error.contains(secret_like_input));
+}

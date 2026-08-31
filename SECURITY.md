@@ -111,6 +111,8 @@ same process boundary, before any chemical search work starts.
 The same process-level suite sends multiple rejected requests before a valid
 one and verifies that the server remains usable without echoing the rejected
 SMILES.
+Malformed JSON is also tested with secret-like content to ensure parse errors
+remain generic and do not reflect attacker-controlled input.
 Numeric search limits are parsed as non-negative integers and checked against
 the shared depth and route-count maxima before conversion to native integer
 types; malformed values cannot silently default or wrap into a smaller budget.

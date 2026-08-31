@@ -199,6 +199,26 @@ fn bounded_u64_arg(args: &Value, name: &str, default: u64, maximum: u64) -> Resu
     Ok(number)
 }
 
+fn optional_u64_arg(args: &Value, name: &str) -> Result<Option<u64>, String> {
+    let Some(value) = args.get(name) else {
+        return Ok(None);
+    };
+    value
+        .as_u64()
+        .map(Some)
+        .ok_or_else(|| format!("{name} must be a non-negative integer"))
+}
+
+fn optional_string_arg<'a>(args: &'a Value, name: &str) -> Result<Option<&'a str>, String> {
+    let Some(value) = args.get(name) else {
+        return Ok(None);
+    };
+    value
+        .as_str()
+        .map(Some)
+        .ok_or_else(|| format!("{name} must be a string"))
+}
+
 fn write_error(out: &mut impl Write, id: Value, code: i32, message: &str) {
     let resp = json!({
         "jsonrpc": "2.0",
@@ -400,18 +420,40 @@ fn handle_find_routes(smiles: &str, args: &Value) -> Value {
         Ok(value) => value as usize,
         Err(message) => return tool_error(&message),
     };
-    let avoid = args["avoid_elements"].as_str().unwrap_or("");
-    let require = args["require_elements"].as_str().unwrap_or("");
-    let search_mode = args["search_mode"].as_str().unwrap_or("standard");
+    let avoid = match optional_string_arg(args, "avoid_elements") {
+        Ok(value) => value.unwrap_or(""),
+        Err(message) => return tool_error(&message),
+    };
+    let require = match optional_string_arg(args, "require_elements") {
+        Ok(value) => value.unwrap_or(""),
+        Err(message) => return tool_error(&message),
+    };
+    let search_mode = match optional_string_arg(args, "search_mode") {
+        Ok(value) => value.unwrap_or("standard"),
+        Err(message) => return tool_error(&message),
+    };
     if search_mode != "standard" && search_mode != "coverage" {
         return tool_error("invalid search_mode (expected standard or coverage)");
     }
-    let coverage_path = args["coverage_templates"].as_str();
-    let candidate_trace_limit = args["candidate_trace_limit"].as_u64().map(|n| n as usize);
-    let coverage_timeout = match args["coverage_timeout_secs"].as_u64() {
-        Some(0) => return tool_error("coverage_timeout_secs must be a positive integer"),
-        Some(seconds) => Some(std::time::Duration::from_secs(seconds)),
-        None => None,
+    let coverage_path = match optional_string_arg(args, "coverage_templates") {
+        Ok(value) => value,
+        Err(message) => return tool_error(&message),
+    };
+    let candidate_trace_limit = match bounded_u64_arg(
+        args,
+        "candidate_trace_limit",
+        0,
+        search::MAX_CANDIDATE_TRACE as u64,
+    ) {
+        Ok(0) => None,
+        Ok(value) => Some(value as usize),
+        Err(message) => return tool_error(&message),
+    };
+    let coverage_timeout = match optional_u64_arg(args, "coverage_timeout_secs") {
+        Ok(Some(0)) => return tool_error("coverage_timeout_secs must be a positive integer"),
+        Ok(Some(seconds)) => Some(std::time::Duration::from_secs(seconds)),
+        Ok(None) => None,
+        Err(message) => return tool_error(&message),
     };
     if search_mode == "standard" && (coverage_path.is_some() || coverage_timeout.is_some()) {
         return tool_error(
@@ -1237,6 +1279,30 @@ mod tests {
                     .expect("error text")
                     .contains(expected)
             );
+        }
+    }
+
+    #[test]
+    fn optional_find_routes_arguments_fail_closed_on_wrong_types() {
+        for (name, value) in [
+            ("avoid_elements", json!(7)),
+            ("search_mode", json!(true)),
+            ("coverage_templates", json!(false)),
+            ("coverage_timeout_secs", json!("soon")),
+            ("candidate_trace_limit", json!("many")),
+        ] {
+            let mut arguments = serde_json::Map::from_iter([
+                ("smiles".to_string(), json!("CCO")),
+                (name.to_string(), value),
+            ]);
+            let response = handle_tools_call(&json!({
+                "params": {
+                    "name": "find_routes",
+                    "arguments": Value::Object(std::mem::take(&mut arguments))
+                }
+            }));
+            assert_eq!(response["isError"], json!(true));
+            assert!(response["content"][0]["text"].is_string());
         }
     }
 

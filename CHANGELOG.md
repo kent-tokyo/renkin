@@ -39,6 +39,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   missing `id` field, rather than relying on a notification method-name prefix.
 - MCP search limits now reject malformed, negative, and overflowing numeric
   arguments before search instead of silently defaulting or wrapping them.
+- MCP `find_routes` now rejects wrong-typed optional strings and controls
+  instead of silently treating supplied values as absent.
 - Added fail-closed MCP `tools/call` validation: malformed `params` or
   `arguments` are rejected, and unknown tool names no longer fall through to
   `find_routes`.

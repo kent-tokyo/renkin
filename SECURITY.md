@@ -103,6 +103,9 @@ rejected instead of falling through to the default `find_routes` handler.
 Numeric search limits are parsed as non-negative integers and checked against
 the shared depth and route-count maxima before conversion to native integer
 types; malformed values cannot silently default or wrap into a smaller budget.
+Optional `find_routes` strings and numeric controls are also type-checked when
+present; a supplied boolean, string, or other incompatible JSON value is not
+treated as an omitted option.
 
 MCP request lines are capped at 1 MiB before JSON parsing. An oversized line is
 drained through its newline and rejected as `-32600 resource_exhausted: request

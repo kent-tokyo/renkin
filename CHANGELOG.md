@@ -9,6 +9,9 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Extended bounded fail-closed reading to stock doctor manifests and forward
+  benchmark manifest verification; oversized or symlinked verification inputs
+  are rejected before deserialization.
 - CLI and Python building-block price files, plus CLI stock CSV and target
   files, now use bounded fail-closed readers; unreadable input is no longer
   silently treated as an empty stock or price map.

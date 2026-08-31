@@ -16,6 +16,7 @@
 /// diagnostics go to stderr for every subcommand.
 use anyhow::{Result, bail};
 use renkin::chem_env::default_rules;
+use renkin::io_limits::read_bounded_text_file;
 use renkin_forward::bench::{BenchOutcome, BenchmarkManifest, TemplateSource, run_benchmark};
 use renkin_forward::hints::{HintGenerationConfig, generate_retrieval_hints};
 use renkin_forward::{
@@ -487,8 +488,7 @@ fn run_benchmark_subcommand(parsed: &ParsedArgs) -> Result<()> {
     )?;
 
     if let Some(path) = parsed.verify_manifest_path.as_deref() {
-        let manifest_json = std::fs::read_to_string(path)
-            .map_err(|e| anyhow::anyhow!("failed to read --verify-manifest {path:?}: {e}"))?;
+        let manifest_json = read_bounded_text_file(path, "--verify-manifest")?;
         let manifest: BenchmarkManifest = serde_json::from_str(&manifest_json)
             .map_err(|e| anyhow::anyhow!("failed to parse --verify-manifest {path:?}: {e}"))?;
         manifest.verify_against_report(&report)?;

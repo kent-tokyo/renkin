@@ -2614,20 +2614,15 @@ fn build_stock_doctor_report(args: &[String]) -> Result<StockDoctorReport> {
         .context("renkin doctor stock: --manifest <path> is required")?;
     let input_path = flag_value(args, "--input");
 
-    let stock_bytes = std::fs::read(stock_path)
-        .with_context(|| format!("renkin doctor stock: failed to read --stock {stock_path:?}"))?;
-    let manifest_text = std::fs::read_to_string(manifest_path).with_context(|| {
-        format!("renkin doctor stock: failed to read --manifest {manifest_path:?}")
-    })?;
+    let stock_bytes =
+        read_bounded_text_file(stock_path, "renkin doctor stock --stock")?.into_bytes();
+    let manifest_text = read_bounded_text_file(manifest_path, "renkin doctor stock --manifest")?;
     let manifest: stock_import::StockManifest =
         serde_json::from_str(&manifest_text).with_context(|| {
             format!("renkin doctor stock: {manifest_path:?} is not a valid stock manifest")
         })?;
     let input_bytes = input_path
-        .map(|p| {
-            std::fs::read(p)
-                .with_context(|| format!("renkin doctor stock: failed to read --input {p:?}"))
-        })
+        .map(|p| read_bounded_text_file(p, "renkin doctor stock --input").map(String::into_bytes))
         .transpose()?;
 
     let mut checks = Vec::new();

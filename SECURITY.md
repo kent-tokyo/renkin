@@ -129,6 +129,9 @@ use the same fail-closed reader. Missing, unreadable, oversized, symlinked, or
 non-UTF-8 inputs now return an error instead of silently becoming empty policy
 data.
 
+Stock doctor manifests and forward benchmark verification manifests are also
+bounded and checked before JSON deserialization.
+
 Python forward APIs cap a call at 32 reactants and 64KiB of reactant text,
 limit returned predictions to 1,000, and cap route validation input at 64MiB
 and 10,000 steps. These checks return `resource_exhausted` before chemical

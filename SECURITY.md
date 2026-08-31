@@ -194,6 +194,9 @@ defaults, preventing boundary bypasses through parser fallback.
 Required path/string options fail when their value is missing, and unknown main
 CLI options are rejected rather than ignored, preventing malformed invocations
 from being interpreted as a different request.
+The library building-block loader uses the same bounded regular-file and
+symlink checks as the CLI, so callers cannot bypass the stock input boundary by
+invoking `ChemEnv::load` directly.
 
 The streaming stock importer applies independent bounds of 64MiB total input,
 64KiB per line, and one million data rows. It rejects invalid UTF-8 and

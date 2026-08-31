@@ -69,6 +69,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   malformed or missing numeric values instead of silently falling back.
 - Main CLI options now reject missing path/string values and unknown options
   instead of silently ignoring malformed invocation state.
+- Building-block files loaded through the library now use the shared bounded,
+  regular-file reader, rejecting oversized or symlinked stock inputs.
 - Frozen sample lists now reject duplicate rows and non-contiguous ranks,
   preserving deterministic sample membership after sorting.
 - Comparison manifests are now written through an fsync-and-rename atomic

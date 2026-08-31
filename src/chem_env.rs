@@ -73,7 +73,7 @@ pub struct ChemEnv {
 
 impl ChemEnv {
     pub fn load(path: &str) -> Result<Self> {
-        let content = fs::read_to_string(path)
+        let content = crate::io_limits::read_bounded_text_file(path, "building blocks")
             .with_context(|| format!("Failed to read building blocks from {path}"))?;
         let smiles_iter = content
             .lines()
@@ -2991,6 +2991,56 @@ fn cbz_deprotection(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn load_rejects_oversized_building_block_file() {
+        let path =
+            std::env::temp_dir().join(format!("renkin-chem-env-oversized-{}", std::process::id()));
+        let file = std::fs::File::create(&path).expect("create sparse stock file");
+        file.set_len(crate::io_limits::MAX_TEXT_FILE_BYTES + 1)
+            .expect("grow sparse stock file");
+        let result = ChemEnv::load(path.to_str().unwrap());
+        let _ = std::fs::remove_file(&path);
+        let error = match result {
+            Ok(_) => panic!("oversized building-block input unexpectedly succeeded"),
+            Err(error) => error,
+        };
+        assert!(
+            format!("{error:#}").contains("exceeds"),
+            "oversized building-block input must fail closed: {error:#}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn load_rejects_symlinked_building_block_file() {
+        let directory = tempfile_dir();
+        let target = directory.join("stock.smi");
+        let link = directory.join("stock-link.smi");
+        std::fs::write(&target, "CCO\n").expect("write stock fixture");
+        if let Err(error) = std::os::unix::fs::symlink(&target, &link) {
+            let _ = std::fs::remove_dir_all(&directory);
+            panic!("symlinks unavailable: {error}");
+        }
+        let result = ChemEnv::load(link.to_str().unwrap());
+        let _ = std::fs::remove_dir_all(&directory);
+        let error = match result {
+            Ok(_) => panic!("symlinked building-block input unexpectedly succeeded"),
+            Err(error) => error,
+        };
+        assert!(
+            format!("{error:#}").contains("symlink"),
+            "symlinked building-block input must fail closed: {error:#}"
+        );
+    }
+
+    #[cfg(unix)]
+    fn tempfile_dir() -> std::path::PathBuf {
+        let path =
+            std::env::temp_dir().join(format!("renkin-chem-env-symlink-{}", std::process::id()));
+        std::fs::create_dir_all(&path).expect("create stock fixture directory");
+        path
+    }
 
     fn env_aspirin_bbs() -> ChemEnv {
         ChemEnv::in_memory(&["CC(=O)O", "Oc1ccccc1C(=O)O", "c1ccccc1C(=O)O", "C", "O"])

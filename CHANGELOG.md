@@ -8,6 +8,17 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Added the v1.0.0 formal competitor-comparison pre-registration, fixing the
+  4,903-target population, shared-stock primary endpoint, reproducibility
+  requirements, paired confidence-interval gate, and interpretation limits.
+- Added a fail-closed formal-benchmark preflight that verifies the complete
+  target list, stock, and template bundle by row schema, count, and SHA-256
+  before an expensive comparison arm starts.
+- Added regression tests for formal target-count, duplicate-ID, and input-hash
+  rejection. A formal superiority result is intentionally not recorded until
+  every competitor arm has complete paired output.
+
 ## [1.0.0] - 2026-09-01 "Stable Release Boundary"
 
 ### Changed

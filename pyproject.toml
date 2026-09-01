@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "renkin"
-version = "0.61.0"
+version = "1.0.0"
 description = "Local retrosynthesis route auditor and planning engine for AiZynthFinder, Syntheseus and RENKIN"
 readme = "README.md"
 license = { text = "MIT" }
@@ -19,7 +19,7 @@ keywords = [
     "cheminformatics",
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Topic :: Scientific/Engineering :: Chemistry",

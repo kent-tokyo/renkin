@@ -8,6 +8,14 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-09-01 "Stable Release Boundary"
+
+### Changed
+- Synchronized Cargo, Python, and citation metadata for the v1.0.0 release
+  candidate and marked the Python distribution as Production/Stable.
+- Extended the CI version-sync gate to verify `pyproject.toml` in addition to
+  Cargo and citation metadata.
+
 ## [0.66.0] - 2026-08-31 "Bounded Molecular Graphs"
 
 ### Added
@@ -1963,7 +1971,8 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
 
 ---
 
-[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.66.0...HEAD
+[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/kent-tokyo/renkin/compare/v0.66.0...v1.0.0
 [0.66.0]: https://github.com/kent-tokyo/renkin/compare/v0.65.0...v0.66.0
 [0.65.0]: https://github.com/kent-tokyo/renkin/compare/v0.64.0...v0.65.0
 [0.64.0]: https://github.com/kent-tokyo/renkin/compare/v0.63.0...v0.64.0

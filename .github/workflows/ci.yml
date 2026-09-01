@@ -60,6 +60,8 @@ jobs:
           fi
           grep -q "version: \"${VER}\"" CITATION.cff || \
             { echo "ERROR: CITATION.cff version not updated to $VER"; exit 1; }
+          grep -q "^version = \"${VER}\"$" pyproject.toml || \
+            { echo "ERROR: pyproject.toml version not updated to $VER"; exit 1; }
           echo "OK: all version references match $VER"
 
   python-smoke:

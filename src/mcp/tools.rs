@@ -7,6 +7,7 @@
 
 use crate::DEFAULT_BUILDING_BLOCKS;
 use crate::chem_env::{self, elem_symbols_to_mask};
+#[cfg(not(target_arch = "wasm32"))]
 use crate::coverage_mode;
 use crate::display::{explain_route, format_route_tree};
 use crate::search::{self, Route, SearchConfig};
@@ -287,42 +288,52 @@ fn handle_find_routes(smiles: &str, args: &Value) -> ToolOutcome {
         ..Default::default()
     };
 
+    #[cfg(target_arch = "wasm32")]
+    let _ = coverage_path;
+
     let (routes, stats, coverage_summary) = if search_mode == "coverage" {
-        let coverage_rules = match coverage_mode::load_coverage_rules(coverage_path) {
-            Ok(rules) => rules,
-            Err(e) => return ToolOutcome::error(format!("coverage template error: {e}")),
-        };
-        let result = match coverage_mode::run_coverage_mode(
-            smiles,
-            &env,
-            &rules,
-            &config,
-            &coverage_rules,
-            coverage_timeout,
-        ) {
-            Ok(result) => result,
-            Err(e) => return ToolOutcome::error(format!("coverage search error: {e}")),
-        };
-        let summary = format!(
-            "Search mode: coverage\nSelected stage: {:?}\nStage 2 invoked: {}\nStage 1 timeout: {}\nStage 2 timeout: {}\nStage 1 elapsed: {:.1} ms\nStage 2 elapsed: {}\nTotal elapsed: {:.1} ms\n\n",
-            result.selected_stage,
-            result.stage2_invoked,
-            result.stage1_timeout,
-            result.stage2_timeout,
-            result.stage1_elapsed_ms,
-            result
-                .stage2_elapsed_ms
-                .map(|elapsed| format!("{elapsed:.1} ms"))
-                .unwrap_or_else(|| "not_run".to_string()),
-            result.total_elapsed_ms,
-        );
-        (result.routes, result.stats, Some(summary))
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let coverage_rules = match coverage_mode::load_coverage_rules(coverage_path) {
+                Ok(rules) => rules,
+                Err(e) => return ToolOutcome::error(format!("coverage template error: {e}")),
+            };
+            let result = match coverage_mode::run_coverage_mode(
+                smiles,
+                &env,
+                &rules,
+                &config,
+                &coverage_rules,
+                coverage_timeout,
+            ) {
+                Ok(result) => result,
+                Err(e) => return ToolOutcome::error(format!("coverage search error: {e}")),
+            };
+            let summary = format!(
+                "Search mode: coverage\nSelected stage: {:?}\nStage 2 invoked: {}\nStage 1 timeout: {}\nStage 2 timeout: {}\nStage 1 elapsed: {:.1} ms\nStage 2 elapsed: {}\nTotal elapsed: {:.1} ms\n\n",
+                result.selected_stage,
+                result.stage2_invoked,
+                result.stage1_timeout,
+                result.stage2_timeout,
+                result.stage1_elapsed_ms,
+                result
+                    .stage2_elapsed_ms
+                    .map(|elapsed| format!("{elapsed:.1} ms"))
+                    .unwrap_or_else(|| "not_run".to_string()),
+                result.total_elapsed_ms,
+            );
+            (result.routes, result.stats, Some(summary))
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            return ToolOutcome::error("coverage search is unavailable on wasm32");
+        }
     } else {
         let result = match search::find_routes(smiles, &env, &rules, &config) {
             Ok(r) => r,
             Err(e) => return ToolOutcome::error(format!("search error: {e}")),
         };
-        (result.0, result.1, None)
+        (result.0, result.1, None::<String>)
     };
 
     let mut text = coverage_summary.unwrap_or_default();

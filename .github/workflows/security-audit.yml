@@ -45,3 +45,5 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Run local security regression gate
         run: bash scripts/run_security_regressions.sh
+        env:
+          SKIP_DEPENDENCY_POLICY: "1"

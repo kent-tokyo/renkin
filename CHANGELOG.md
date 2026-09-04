@@ -66,6 +66,9 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The checked-in template-loader limit regression now validates the tracked
   500-template fixture instead of depending on a gitignored local 5,000-
   template artifact, so clean-clone CI exercises the intended contract.
+- The adversarial security CI job delegates dependency-policy checks to its
+  dedicated `cargo-deny` job instead of requiring an uninstalled duplicate
+  toolchain component.
 - Diversity-reserved beam selection now backfills unused family-reservation
   slots from score order, so `Active` does not silently shrink the effective
   beam when fewer distinct families are available than requested slots.

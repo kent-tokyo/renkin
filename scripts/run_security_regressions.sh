@@ -5,8 +5,12 @@
 # explicit and fail-fast.
 set -euo pipefail
 
-echo "[security] dependency policy"
-cargo deny check licenses bans sources
+if [[ "${SKIP_DEPENDENCY_POLICY:-0}" != "1" ]]; then
+    echo "[security] dependency policy"
+    cargo deny check licenses bans sources
+else
+    echo "[security] dependency policy (handled by the dedicated CI job)"
+fi
 
 echo "[security] MCP stdio adversarial regressions"
 cargo test --test mcp_cli

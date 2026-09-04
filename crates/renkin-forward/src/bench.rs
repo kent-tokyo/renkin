@@ -30,6 +30,7 @@
 //! either changes, change both, and update both docs.
 
 use std::collections::{BTreeMap, HashMap};
+use std::io::Read;
 
 use anyhow::{Result, bail};
 use chematic::smiles::canonical_smiles;
@@ -1998,9 +1999,16 @@ fn rules_content_hash(rules: &[RetroRule]) -> String {
 /// be read.
 fn binary_sha256() -> Option<String> {
     let path = std::env::current_exe().ok()?;
-    let bytes = renkin::io_limits::read_bounded_bytes_path(path, "executable").ok()?;
+    let mut file = std::fs::File::open(path).ok()?;
     let mut hasher = Sha256::new();
-    hasher.update(&bytes);
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let count = file.read(&mut buffer).ok()?;
+        if count == 0 {
+            break;
+        }
+        hasher.update(&buffer[..count]);
+    }
     Some(renkin::sha256_hex(hasher.finalize()))
 }
 

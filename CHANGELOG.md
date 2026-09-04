@@ -72,6 +72,9 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Coverage-mode cohort conversion now carries the required sample key and
   source-line provenance into comparison sample lists and rejects malformed
   cohort group IDs instead of emitting rows the comparison runner cannot load.
+- `renkin-forward benchmark --strict` now hashes its executable with a fixed-
+  memory streaming reader, so Linux debug binaries larger than the external
+  text-input limit retain complete reproducibility provenance.
 - Diversity-reserved beam selection now backfills unused family-reservation
   slots from score order, so `Active` does not silently shrink the effective
   beam when fewer distinct families are available than requested slots.

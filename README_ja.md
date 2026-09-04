@@ -374,7 +374,7 @@ CC-BY-SA-4.0であり、RENKIN本体コードのMITとは別ライセンスで�
 | **`renkin-forward` ツール群** | `predict`（順反応生成物のランキング）、`enumerate`（1反応物+partnerライブラリからの境界付き列挙）、`hints`（partner不要の検索用ヒント、具体的生成物は出さない）、`validate`（各retroステップの順方向検証）— [Forward guides](docs/guides/forward-retrieval-hints.md#predict--enumerate--hints-at-a-glance)（英語）参照 |
 | **`renkin-bench`** | USPTO-50k/PaRoutes評価、`--plausibility`（順方向検証済み複合スコア）、`--failure-taxonomy`、原子収支チェック（`target_MW > Σ precursor_MW`）、未解決ターゲットを対象にした多段階`cascade`再実行 — [ベンチマーク](#ベンチマーク)参照 |
 | **stock CSV 管理** | `renkin stock stats\|validate\|coverage` — SMILES・名称・ベンダー・価格・ハザード情報 |
-| **MCPサーバー** | `renkin-mcp` が 6 ツールを提供：`find_routes`, `validate_route`, `explain_route`, `find_pareto_routes`, `plan_with_constraints`, `estimate_diversity` |
+| **MCPサーバー** | `renkin-mcp` が stdio 経由で7ツール（`find_routes`, `validate_route`, `explain_route`, `find_pareto_routes`, `plan_with_constraints`, `estimate_diversity`, `diagnose_failure`）を提供し、レガシー `2024-11-05` とモダン `2026-07-28` の両プロトコル改訂に対応。詳細は[MCPガイド](docs/guides/mcp.md)参照 |
 | **`renkin-doctor`** | 環境診断バイナリ — テンプレート・市販品データ・Python インポート・ツールバージョン・データ整合性を検査 |
 | **`renkin-kg`** | 反応知識グラフ構築ツール — ルートから分子↔反応の二部グラフを生成；GraphML / Cypher 形式でエクスポート |
 | **マルチターゲット** | `pip install renkin`（Linux/macOS/Windows プリビルドwheels）· `npm install renkin`（~500 KB WASM、ブラウザでネイティブに近い速度） |
@@ -560,7 +560,8 @@ renkin/                          ← Cargo workspace ルート
 │   ├── bin/benchmark.rs         # renkin-bench バイナリ（--plausibility フラグ対応）
 │   ├── bin/doctor.rs            # renkin-doctor 環境診断バイナリ
 │   ├── bin/fp.rs                # renkin-fp ECFP4 フィンガープリント（nn-scoring フィーチャー）
-│   ├── bin/mcp.rs               # renkin-mcp MCP サーバー（6 ツール）
+│   ├── bin/mcp.rs               # renkin-mcp stdio launcher
+│   ├── mcp/                     # dual-era protocol + 7 tool handlers
 │   ├── chem_env.rs              # 逆合成ルール・市販品判定・テンプレートローダー
 │   ├── score.rs                 # SA Score ヒューリスティック
 │   ├── search.rs                # A* / AND-OR 木探索エンジン
@@ -643,7 +644,7 @@ renkin/                          ← Cargo workspace ルート
 - [x] 制約 DSL — `--constraints JSON`・`plan_with_constraints` MCP ツール
 - [x] `renkin template stats|validate|dedup|explain|coverage` — テンプレート品質ツール
 - [x] `renkin-kg` — 反応知識グラフ（分子↔反応 二部グラフ、GraphML/Cypher エクスポート）
-- [x] MCP サーバー拡張 — 6 ツール体制（`explain_route`・`find_pareto_routes`・`plan_with_constraints` 追加）
+- [x] MCP サーバー — 7ツール、レガシー `2024-11-05` / モダン `2026-07-28` stdioプロトコル対応
 - [x] ルートコストスコアリング — `route_cost` フィールド + `--bb-prices CSV` / `--stock stock.csv`
 - [x] Cargo workspace 整備 — `crates/renkin-forward/` + `crates/renkin-kg/`
 - [x] コア探索エンジンの基盤 — SMIRKS逆反応ルール+フラグメント正規化、A\*/AND-OR木探索（クローズドリスト・縮退ルートフィルタ付き）、SA Scoreヒューリスティック+ビームサーチ、`rayon`並列ルール適用（wasm32は逐次フォールバック）、FxHashMap/SmallVecビームフロンティア/SA Scoreメモ化/`Arc<PathNode>`パス共有等の性能最適化

@@ -419,7 +419,7 @@ for the full acceptance criteria and licensing split.
 | **`renkin-forward` toolkit** | `predict` (rank forward products), `enumerate` (bounded products from one reactant + partner library), `hints` (partner-free retrieval hints, no concrete product), `validate` (forward-verify each retro step) — see the [Forward guides](docs/guides/forward-retrieval-hints.md#predict--enumerate--hints-at-a-glance) |
 | **`renkin-bench`** | USPTO-50k/PaRoutes evaluation with `--plausibility` (forward-validated composite score), `--failure-taxonomy`, atom-balance checks (`target_MW > Σ precursor_MW`), and multi-stage `cascade` re-runs on unsolved targets — see [Benchmark](#benchmark) |
 | **Stock management** | `renkin stock stats\|validate\|coverage` for legacy CSV plus the `vendor_stock` library API for v0.38 CSV/TSV vendor records (SMILES, ID, vendor, price, lead time, availability), explicit exact/parent/stereo/tautomer match modes, and an InChIKey candidate index |
-| **MCP server** | `renkin-mcp` exposes 6 tools: `find_routes`, `validate_route`, `explain_route`, `find_pareto_routes`, `plan_with_constraints`, `estimate_diversity` |
+| **MCP server** | `renkin-mcp` exposes 7 tools over stdio (`find_routes`, `validate_route`, `explain_route`, `find_pareto_routes`, `plan_with_constraints`, `estimate_diversity`, `diagnose_failure`) and supports the legacy `2024-11-05` and modern `2026-07-28` protocol revisions; see the [MCP guide](docs/guides/mcp.md) |
 | **`renkin-doctor`** | Environment diagnostic binary — templates, building blocks, Python import, tool versions, data integrity |
 | **`renkin-kg`** | Reaction knowledge graph builder — bipartite mol↔reaction graphs from routes, GraphML/Cypher export |
 | **Multi-target** | `pip install renkin` (pre-built wheels, Linux/macOS/Windows) · `npm install renkin` (~500 KB WASM, near-native browser speed) |
@@ -655,7 +655,8 @@ renkin/                          ← Cargo workspace root
 │   ├── bin/benchmark.rs         # renkin-bench binary (--plausibility flag)
 │   ├── bin/doctor.rs            # renkin-doctor diagnostic binary
 │   ├── bin/fp.rs                # renkin-fp ECFP4 fingerprint (nn-scoring feature)
-│   ├── bin/mcp.rs               # renkin-mcp MCP server (6 tools)
+│   ├── bin/mcp.rs               # renkin-mcp stdio launcher
+│   ├── mcp/                     # Dual-era protocol + 7 tool handlers
 │   ├── chem_env.rs              # retro rules + BB lookup + template loader
 │   ├── score.rs                 # SA Score heuristic + step cost
 │   ├── search.rs                # A* / AND-OR tree engine + beam pruning
@@ -750,7 +751,7 @@ see [Benchmark](#benchmark) for the corrected historical baseline.
 - [x] Constraint DSL — `--constraints JSON`, `plan_with_constraints` MCP tool
 - [x] `renkin template stats|validate|dedup|explain|coverage` — template quality tools
 - [x] `renkin-kg` — reaction knowledge graph (bipartite mol↔reaction, GraphML/Cypher export)
-- [x] MCP server (`renkin-mcp`) — expanded to 6 tools (`explain_route`, `find_pareto_routes`, `plan_with_constraints`, ...)
+- [x] MCP server (`renkin-mcp`) — 7 tools with legacy `2024-11-05` and modern `2026-07-28` stdio protocol support
 - [x] Core search engine foundation — SMIRKS retro-reaction rules + fragment sanitization, A\*/AND-OR tree search with closed list + degenerate-route filter, SA Score heuristic + beam search, `rayon` parallel rule application (sequential fallback on WASM), FxHashMap/SmallVec beam frontier/SA-Score-memoization/`Arc<PathNode>` path-sharing perf work
 - [x] Multi-target packaging — Python bindings (PyO3 + maturin, `pip install renkin`), WASM build (`npm install renkin`), published to crates.io/PyPI/npm with GitHub Actions CI/CD, WASM browser playground + i18n (EN/JA/ZH)
 - [x] Benchmark CLI (`renkin-bench`) + USPTO-50k evaluation, `--format tree|mermaid` visualization, MkDocs documentation site + GitHub Pages playground

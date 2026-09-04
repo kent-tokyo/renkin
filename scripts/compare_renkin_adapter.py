@@ -77,6 +77,7 @@ class RenkinConfig:
     search_mode: str = "standard"
     coverage_templates_path: str | None = None
     coverage_timeout_secs: int | None = None
+    coverage_beam_width: int | None = None
 
 
 _MAXRSS_RE = re.compile(r"^\s*(\d+)\s+maximum resident set size\s*$", re.MULTILINE)
@@ -192,6 +193,8 @@ def run_one_target(
         argv += ["--search-mode", "coverage", "--coverage-templates", config.coverage_templates_path]
         if config.coverage_timeout_secs is not None:
             argv += ["--coverage-timeout-secs", str(config.coverage_timeout_secs)]
+        if config.coverage_beam_width is not None:
+            argv += ["--coverage-beam-width", str(config.coverage_beam_width)]
 
     (
         returncode,

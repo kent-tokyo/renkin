@@ -33,10 +33,108 @@ fn unique_temp_path(label: &str) -> std::path::PathBuf {
     ))
 }
 
+fn unique_temp_path_with_extension(label: &str, extension: &str) -> std::path::PathBuf {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!(
+        "renkin_stock_import_cli_{label}_{}_{n}.{extension}",
+        std::process::id()
+    ))
+}
+
 fn write_input(label: &str, content: &str) -> std::path::PathBuf {
     let path = unique_temp_path(label);
     std::fs::write(&path, content).unwrap();
     path
+}
+
+// ── renkin stock compile ────────────────────────────────────────────────
+
+#[test]
+fn compiled_stock_loads_through_the_normal_building_blocks_flag() {
+    let input = write_input(
+        "compile_in.smi",
+        "CCO ethanol\nOCC duplicate\nCC(=O)O acetic\n",
+    );
+    let output = unique_temp_path_with_extension("compile_out", "rstock");
+    let compile = run(&[
+        "stock",
+        "compile",
+        "--input",
+        input.to_str().unwrap(),
+        "--output",
+        output.to_str().unwrap(),
+    ]);
+    assert!(
+        compile.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    let summary: serde_json::Value = serde_json::from_slice(&compile.stdout).unwrap();
+    assert_eq!(summary["molecule_count"], 2);
+    assert_eq!(summary["duplicate_rows"], 1);
+
+    let search = run(&[
+        "--target",
+        "CCO",
+        "--depth",
+        "0",
+        "--building-blocks",
+        output.to_str().unwrap(),
+    ]);
+    assert!(
+        search.status.success(),
+        "{}",
+        String::from_utf8_lossy(&search.stderr)
+    );
+    let result: serde_json::Value = serde_json::from_slice(&search.stdout).unwrap();
+    assert!(result["routes_found"].as_u64().unwrap() >= 1);
+    assert_eq!(result["routes"][0]["steps"].as_array().unwrap().len(), 0);
+
+    std::fs::remove_file(input).ok();
+    std::fs::remove_file(output).ok();
+}
+
+#[test]
+fn compile_refuses_existing_output_without_force() {
+    let input = write_input("compile_refuse_in.smi", "CCO\n");
+    let output = unique_temp_path_with_extension("compile_refuse_out", "rstock");
+    std::fs::write(&output, "keep me\n").unwrap();
+    let result = run(&[
+        "stock",
+        "compile",
+        "--input",
+        input.to_str().unwrap(),
+        "--output",
+        output.to_str().unwrap(),
+    ]);
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("already exists"));
+    assert_eq!(std::fs::read_to_string(&output).unwrap(), "keep me\n");
+
+    std::fs::remove_file(input).ok();
+    std::fs::remove_file(output).ok();
+}
+
+#[test]
+fn compile_fail_on_rejection_writes_auditable_artifact_then_fails() {
+    let input = write_input("compile_reject_in.smi", "CCO\nnot(valid(((\n");
+    let output = unique_temp_path_with_extension("compile_reject_out", "rstock");
+    let result = run(&[
+        "stock",
+        "compile",
+        "--input",
+        input.to_str().unwrap(),
+        "--output",
+        output.to_str().unwrap(),
+        "--fail-on-rejection",
+    ]);
+    assert!(!result.status.success());
+    assert!(output.exists());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("1 rows were rejected"));
+
+    std::fs::remove_file(input).ok();
+    std::fs::remove_file(output).ok();
 }
 
 // ── renkin stock import ──────────────────────────────────────────────────

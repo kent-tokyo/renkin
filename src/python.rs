@@ -106,6 +106,9 @@ fn validate_forward_inputs(reactants: &[&str], max_results: usize) -> Result<(),
 ///         not a hard real-time bound -- see ``SearchTermination::
 ///         DeadlineExceeded``'s doc in ``src/search.rs``). ``0`` raises.
 ///         Default: ``None`` (unlimited).
+///     coverage_beam_width (int | None): Optional Stage-2-only beam width;
+///         ``0`` means unlimited. Stage 1 keeps ``beam_width`` unchanged.
+///         Default: ``None`` (same beam width as Stage 1).
 ///     search_diagnostics (bool): When ``True``, adds a
 ///         ``search_diagnostics`` block (beam eviction, cross-template
 ///         dedup, branching factor -- Issue #101) to the JSON output,
@@ -196,7 +199,7 @@ fn validate_forward_inputs(reactants: &[&str], max_results: usize) -> Result<(),
 ///     routes = json.loads(renkin.find_routes("CC(=O)Oc1ccccc1C(=O)O", depth=3))
 ///     print(routes["routes_found"])
 #[pyfunction]
-#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None, search_diagnostics=false, spectator_bond_policy="off", element_accounting_policy="off", beam_diversity_policy="off", beam_diversity_slots=0, avoid_building_blocks="", require_building_blocks="", max_route_cost=None, min_confidence=None, min_success_probability=None, require_reaction_families="", avoid_reaction_families="", prefer_reaction_families="", max_steps=None, candidate_trace_limit=None))]
+#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None, coverage_beam_width=None, search_diagnostics=false, spectator_bond_policy="off", element_accounting_policy="off", beam_diversity_policy="off", beam_diversity_slots=0, avoid_building_blocks="", require_building_blocks="", max_route_cost=None, min_confidence=None, min_success_probability=None, require_reaction_families="", avoid_reaction_families="", prefer_reaction_families="", max_steps=None, candidate_trace_limit=None))]
 #[allow(clippy::too_many_arguments)]
 pub fn find_routes_py(
     target: &str,
@@ -216,6 +219,7 @@ pub fn find_routes_py(
     search_mode: &str,
     coverage_templates_path: Option<&str>,
     coverage_timeout_seconds: Option<u64>,
+    coverage_beam_width: Option<usize>,
     search_diagnostics: bool,
     spectator_bond_policy: &str,
     element_accounting_policy: &str,
@@ -286,6 +290,11 @@ pub fn find_routes_py(
         if coverage_timeout_seconds.is_some() {
             return Err(PyValueError::new_err(
                 "coverage_timeout_seconds requires search_mode=\"coverage\"",
+            ));
+        }
+        if coverage_beam_width.is_some() {
+            return Err(PyValueError::new_err(
+                "coverage_beam_width requires search_mode=\"coverage\"",
             ));
         }
     }
@@ -411,13 +420,14 @@ pub fn find_routes_py(
         let coverage_rules = crate::coverage_mode::load_coverage_rules(coverage_path)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         let coverage_timeout = coverage_timeout_seconds.map(std::time::Duration::from_secs);
-        let result = crate::coverage_mode::run_coverage_mode(
+        let result = crate::coverage_mode::run_coverage_mode_with_stage2_beam(
             target,
             &env,
             &rules,
             &config,
             &coverage_rules,
             coverage_timeout,
+            coverage_beam_width,
         )
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
         let meta = CoverageModeMeta {

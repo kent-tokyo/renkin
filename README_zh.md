@@ -153,7 +153,7 @@ OC(=O)c1ccccc1OC(=O)C
 
 ## 当前局限
 
-⚠️ 基准测试数值正在经历validator准确性修复后的重新测量——本仓库其他位置出现的78.0%/95.9%/81.8%（ChEMBL）均为修复前的历史数值，已被判定无效。RENKIN不预测收率、经过实验校准的成功概率或副反应，也不会自动检索文献（`success_probability` 是基于模板频率的搜索排序分数，并非经过校准的预测值）。修正后的历史测量数值、完整方法说明与已知局限请参见[基准测试](https://kent-tokyo.github.io/renkin/benchmark/)（该页面是单个commit时点的冻结历史测量，并非实时数值）。
+⚠️ v1.0.0 的 4,903-target shared-stock 比较已经完成，统计优越性门槛通过；但冻结的 RENKIN 输出中有两行未通过 route-tree 完整性检查，因此正式发布门槛仍为 HOLD。v1.0.1 candidate 对这两个目标的定向复跑均已得到可解析、到达库存的路线，但更新正式结论仍需用修正版完整复跑 4,903 个目标。本仓库其他位置出现的 78.0%/95.9%/81.8%（ChEMBL）均为 validator 修复前的无效历史数值。RENKIN 不预测收率、经过实验校准的成功概率或副反应，也不会自动检索文献（`success_probability` 是基于模板频率的搜索排序分数，并非经过校准的预测值）。
 
 ---
 
@@ -230,14 +230,14 @@ c1ccccc1-c2ccccc2
 | **Ring-context安全护栏** | `--ring-context-policy conservative --ring-context-sidecar <path>` — opt-in的match-level过滤器，当extracted template的训练数据从未观察到某环开闭断裂时予以拒绝。默认为`disabled`（既有行为不变）——详见[Issue #72](https://github.com/kent-tokyo/renkin/issues/72) |
 | **LightGBM candidate reranker** | `--reranker-model`/`--reranker-freq-table`（CLI）或 `reranker_model_path`/`reranker_freq_table_path`（Python）— opt-in且仅影响排序：绝不改变生成哪些候选，只改变搜索顺序，关闭时与legacy排序逐字节完全一致。Paired 100-target route-search门控结果：`route_to_configured_stock` 16→20（+4/-0）。用`python3 scripts/fetch_reranker_model.py`获取冻结模型（SHA-256验证，不随任何包分发——详见[路线图](#路线图)） |
 | **Coverage mode（opt-in）** | `--search-mode coverage --coverage-templates <path>`（CLI）或 `search_mode="coverage"`、`coverage_templates_path=...`（Python）—— 仅当默认模板集找不到路线时，才自动升级到另一个更大的模板集；可通过 `--coverage-timeout-secs` 协作式取消。未启用时标准模式输出逐字节不变。用 `python3 scripts/fetch_coverage_templates.py` 获取冻结的 2,000 条模板 Stage-2 模板集（SHA-256 验证，不随任何包分发，理由同 reranker 模型——详见[路线图](#路线图)） |
-| **路线评分** | `confidence`、`step_confidence`、`success_probability`（Retro-prob 风格）、`convergency`、`atom_economy`、`route_cost`（`Σ 起始原料成本 + 步数×0.5`，或通过`--bb-prices`/`--stock`使用真实价格）—— 重要说明见表格下方 |
+| **路线评分与诊断** | 分别报告 `confidence`、`success_probability`、cost、feasibility findings、building-block diversity 与 template-proxy chemical-idea diversity；不捏造实验可行性总分——参见 [feasibility](docs/guides/route-feasibility-diagnostics.md) 与 [diversity](docs/guides/route-set-diversity.md) |
 | **帕累托多目标搜索** | `--format pareto` 返回 `route_cost`、`success_probability`、`steps` 等指标上的帕累托前沿；可通过 `--objectives cost:min,success_probability:max,steps:min` 自定义目标函数 |
 | **约束 DSL** | `--constraints constraints.json` —— 元素过滤、步数限制、置信度阈值、优先反应族；支持 LLM → RENKIN 的调用流程 |
 | **输出格式与诊断** | `--format json\|tree\|mermaid\|explain\|compare\|compare-json\|pareto`；未找到路线时 JSON 附带 `diagnostics`（`likely_causes`/`suggestions`） |
 | **`renkin-forward` 工具集** | `predict`（排序正向产物）、`validate`（正向验证每一步，支持 `--route-json` 或 stdin） |
 | **`renkin-bench`** | USPTO-50k/PaRoutes 评估，`--plausibility`（正向验证综合评分）、原子平衡检查（`target_MW > Σ precursor_MW`）——详见[基准测试](#基准测试) |
-| **库存 CSV 管理** | `renkin stock stats\|validate\|coverage` —— SMILES、名称、供应商、价格、危险信息字段 |
-| **MCP 服务器** | `renkin-mcp` 提供 6 个工具：`find_routes`、`validate_route`、`explain_route`、`find_pareto_routes`、`plan_with_constraints`、`estimate_diversity` |
+| **库存管理** | `renkin stock stats\|validate\|coverage\|compile`；带完整性校验的 `.rstock` 快照避免重复解析大型库存，并分别处理供应商、价格、交期与可用性策略 |
+| **MCP 服务器** | `renkin-mcp` 通过 stdio 提供 7 个工具：`find_routes`、`validate_route`、`explain_route`、`find_pareto_routes`、`plan_with_constraints`、`estimate_diversity`、`diagnose_failure`；支持 legacy `2024-11-05` 与 modern `2026-07-28` 协议 |
 | **`renkin-doctor`** | 环境诊断工具 —— 模板、起始原料、Python 导入、工具版本、数据完整性 |
 | **`renkin-kg`** | 反应知识图谱构建工具 —— 从路线构建分子↔反应二部图；可导出为 GraphML 或 Cypher 格式 |
 | **多目标平台** | `pip install renkin`（Linux/macOS/Windows 预编译 wheel）· `npm install renkin`（约 500 KB WASM，接近原生速度） |
@@ -271,6 +271,21 @@ renkin -t "c1ccc(NC(=O)c2ccccc2)cc1" --templates data/templates_extracted_5000.s
 USPTO-50k 测试集（4,907 个分子，全量评估）：
 
 > **评估定义**：若 `find_routes` 在 depth=5、beam=100 的限制下，能返回至少一条叶子前体全部属于起始原料集合的路线，则该分子被视为*已解决（solved）*。**不会**与 USPTO-50k 给出的真实试剂（ground-truth reactants）进行比对——任何可商购原料可达的路线均计入。
+
+### v1.0.0 正式 shared-stock 比较（4,903 个配对目标）
+
+| Arm | Primary route-to-shared-stock 成功数 | Rate |
+|---|---:|---:|
+| RENKIN v1.0.0 | 577 / 4,903 | 11.77% |
+| AiZynthFinder 4.4.1 | 200 / 4,903 | 4.08% |
+
+RENKIN 相对 AiZynthFinder 的配对差值为 **+7.689 个百分点**，paired-bootstrap
+95% CI 为 **[+6.812, +8.566]**，通过预注册统计门槛。但冻结的 RENKIN 输出中有
+两行缺少可解析的 normalized route tree，因此正式发布门槛仍为 **HOLD**。
+v1.0.1 candidate 的修复使这两个目标的定向复跑均可解析并到达库存；只有完整重跑
+4,903 个目标后才能更新冻结结论。这是 shared-stock 路线端点结果，并非实验收率或
+普遍 CASP 优越性声明。[协议与状态](docs/benchmark/formal-v1.0-competitor-comparison.md) ·
+[冻结报告](data/comparison/formal_v1.0/formal_report.md)
 
 ### 修正后基线（commit `e20dc8c`，2026-07-22）
 
@@ -457,7 +472,8 @@ renkin/                          ← Cargo workspace 根目录
 │   ├── bin/benchmark.rs         # renkin-bench 二进制（--plausibility 参数）
 │   ├── bin/doctor.rs            # renkin-doctor 环境诊断二进制
 │   ├── bin/fp.rs                # renkin-fp ECFP4 指纹（nn-scoring 特性）
-│   ├── bin/mcp.rs               # renkin-mcp MCP 服务器（6 个工具）
+│   ├── bin/mcp.rs               # renkin-mcp MCP 服务器入口（7 个工具）
+│   ├── mcp/                     # JSON-RPC、双协议协商、stdio 与工具处理
 │   ├── chem_env.rs              # 逆合成规则 + 起始原料查找 + 模板加载器
 │   ├── score.rs                 # SA Score 启发函数 + 步骤代价
 │   ├── search.rs                # A* / AND-OR 树搜索引擎 + 束剪枝
@@ -535,12 +551,12 @@ renkin/                          ← Cargo workspace 根目录
 - [x] `renkin-doctor` —— 环境诊断工具（模板、起始原料、Python、二进制文件）
 - [x] 失败诊断 —— 未找到路线时的输出包含 `likely_causes` + `suggestions` 的 JSON 区块
 - [x] `--format explain|compare|compare-json` —— 人类可读与表格形式的路线输出
-- [x] `renkin stock stats|validate|coverage` —— 库存 CSV 管理子命令
+- [x] `renkin stock stats|validate|coverage|compile` —— 库存检查与带完整性校验的 `.rstock` 快照
 - [x] 帕累托多目标搜索 —— `--format pareto`、`--objectives`、`find_pareto_routes` MCP 工具
 - [x] 约束 DSL —— `--constraints JSON`、`plan_with_constraints` MCP 工具
 - [x] `renkin template stats|validate|dedup|explain|coverage` —— 模板质量工具
 - [x] `renkin-kg` —— 反应知识图谱（分子↔反应二部图，GraphML/Cypher 导出）
-- [x] MCP 服务器扩展至 6 个工具（`explain_route`、`find_pareto_routes`、`plan_with_constraints`）
+- [x] MCP 服务器扩展至 7 个工具，并支持 legacy `2024-11-05` / modern `2026-07-28` stdio 协议
 - [x] 核心搜索引擎基础 —— SMIRKS 逆反应规则 + 片段净化处理，A\*/AND-OR 树搜索（含 closed list + 退化路线过滤），SA Score 启发函数 + 束搜索，`rayon` 并行规则应用（wasm32 回退为串行），FxHashMap/SmallVec 束搜索前沿/SA Score 记忆化/`Arc<PathNode>` 路径共享等性能优化
 - [x] 多目标分发 —— Python 绑定（PyO3 + maturin，`pip install renkin`）、WASM 构建（`npm install renkin`）、已发布至 crates.io/PyPI/npm 并配备 GitHub Actions CI/CD、WASM 浏览器 Playground + 国际化（EN/JA/ZH）
 - [x] 基准测试 CLI（`renkin-bench`）+ USPTO-50k 评估、`--format tree|mermaid` 可视化、MkDocs 文档站点 + GitHub Pages Playground

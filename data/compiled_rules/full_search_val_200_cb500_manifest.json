@@ -1,0 +1,180 @@
+{
+  "binary_sha256": "eb5333addc69eaa8dce291656481388b85b33497ed5d336c292a72979c5cc4a2",
+  "command_line": [
+    "scripts/compare_run.py",
+    "--sample-list",
+    "data/compiled_rules/val_sample_disjoint_200_compat.jsonl",
+    "--sample-size",
+    "200",
+    "--tool",
+    "renkin",
+    "--comparison-mode",
+    "shared_stock",
+    "--output-rows",
+    "data/compiled_rules/full_search_val_200_cb500_rows.jsonl",
+    "--output-aggregate",
+    "data/compiled_rules/full_search_val_200_cb500_aggregate.json",
+    "--renkin-binary",
+    "target/release/renkin",
+    "--shared-stock-smi",
+    "data/comparison/shared_stock/shared_stock.smi",
+    "--templates",
+    "data/phase_a5_template_scaling/templates/templates_500.smi",
+    "--depth",
+    "5",
+    "--beam-width",
+    "100",
+    "--timeout-s",
+    "750",
+    "--grace-s",
+    "10",
+    "--search-mode",
+    "coverage",
+    "--coverage-templates",
+    "data/phase_a5_template_scaling/templates/templates_2000.smi",
+    "--coverage-timeout-secs",
+    "600",
+    "--coverage-beam-width",
+    "500",
+    "--manifest-path",
+    "data/compiled_rules/full_search_val_200_cb500_manifest.json"
+  ],
+  "comparison_mode": "shared_stock",
+  "docker_image": null,
+  "docker_image_digest": null,
+  "end_environment": {
+    "battery_raw": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=22085731)\t52%; discharging; 3:04 remaining present: true",
+    "caffeinate_active": true,
+    "caffeinate_raw": "25617 caffeinate -dimsu",
+    "cpu_count": 10,
+    "disk_free_raw": "Filesystem      Size    Used   Avail Capacity iused ifree %iused  Mounted on\n/dev/disk2s5   228Gi   172Gi    19Gi    90%    2.5M  202M    1%   /System/Volumes/Data",
+    "load_average": [
+      13.98486328125,
+      8.9833984375,
+      8.51123046875
+    ],
+    "os": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "power_source": "battery",
+    "ram_bytes": 17179869184,
+    "top_cpu_processes_raw": [
+      "PID  %CPU COMM",
+      "99457  57.0 /System/Library/PrivateFrameworks/StorageManagement.framework/PlugIns/ApplicationsStorageExtension.appex/Contents/MacOS/ApplicationsStorageExtension",
+      "99442  37.1 /System/Library/PrivateFrameworks/StorageManagement.framework/PlugIns/StorageManagementService",
+      "  396  36.8 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+      "16109  22.5 /Applications/ChatGPT.app/Contents/Resources/codex",
+      "16112  15.4 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/151.0.7922.174/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+      " 6067  13.8 /Library/Frameworks/Python.framework/Versions/3.13/Resources/Python.app/Contents/MacOS/Python",
+      "16090   9.5 /Applications/ChatGPT.app/Contents/MacOS/ChatGPT"
+    ]
+  },
+  "end_time_unix": 1788524733.095181,
+  "git_commit": "ff86d1c896191d3ceb3a44e1a5376c03b6e30261",
+  "input_file_sha256": {
+    "coverage_templates": "f1e2c7d9e5f5085fbac1f7eaf5daa1c53455d9ad4faa1125cb535bbe8ebfb6b5",
+    "sample_list": "fe05925c7a442933781da1946c96bd2c4f538b18bb4920e6aa9a5d1b0a3ada31",
+    "stock": "9046b2e234efd32a44c9209f1f80c4162ca35c1629deaf3b69d4dfcc82de38b9",
+    "templates": "9e78ed31ef2298aa8b1b5a878c118906598f3ac53e81e9b163c8c9d78be9b26c"
+  },
+  "input_file_sha256_at_end": {
+    "coverage_templates": "f1e2c7d9e5f5085fbac1f7eaf5daa1c53455d9ad4faa1125cb535bbe8ebfb6b5",
+    "sample_list": "fe05925c7a442933781da1946c96bd2c4f538b18bb4920e6aa9a5d1b0a3ada31",
+    "stock": "9046b2e234efd32a44c9209f1f80c4162ca35c1629deaf3b69d4dfcc82de38b9",
+    "templates": "9e78ed31ef2298aa8b1b5a878c118906598f3ac53e81e9b163c8c9d78be9b26c"
+  },
+  "input_files_unchanged_during_run": true,
+  "ring_context_policy": "disabled",
+  "security_contract": {
+    "release_blockers": [
+      "input_files_unchanged_during_run=false",
+      "resource budget missing for a bounded comparison run",
+      "unclassified timeout or external process error"
+    ],
+    "resource_budget": {
+      "beam_width": 100,
+      "depth": 5,
+      "grace_s": 10.0,
+      "max_routes": 1,
+      "search_mode": "coverage",
+      "timeout_s": 750.0
+    },
+    "threat_cases": [
+      {
+        "release_blocker": "panic, silent acceptance, or secret disclosure",
+        "scenario": "malformed or adversarial chemical/route input",
+        "security_case_id": "RENKIN-S0-INPUT-001",
+        "severity": "medium",
+        "surfaces": [
+          "cli",
+          "python",
+          "wasm",
+          "mcp",
+          "library"
+        ]
+      },
+      {
+        "release_blocker": "unbounded work or an unclassified timeout",
+        "scenario": "resource exhaustion through depth, branching, or oversized input",
+        "security_case_id": "RENKIN-S0-RESOURCE-001",
+        "severity": "high",
+        "surfaces": [
+          "cli",
+          "python",
+          "wasm",
+          "mcp",
+          "library"
+        ]
+      },
+      {
+        "release_blocker": "input hash mismatch or unverified bundle provenance",
+        "scenario": "path traversal, swapped local bundle, or changed input artifact",
+        "security_case_id": "RENKIN-S0-DATA-001",
+        "severity": "high",
+        "surfaces": [
+          "cli",
+          "python",
+          "mcp",
+          "ci"
+        ]
+      },
+      {
+        "release_blocker": "crash, silent drop, or non-fail-closed response",
+        "scenario": "malformed, unknown, duplicate, or out-of-order JSON-RPC request",
+        "security_case_id": "RENKIN-S0-PROTOCOL-001",
+        "severity": "high",
+        "surfaces": [
+          "mcp"
+        ]
+      }
+    ],
+    "trusted_boundary": "caller-controlled targets and route data are untrusted; local bundles are identified by hash",
+    "version": 1
+  },
+  "spectator_bond_policy": "off",
+  "start_environment": {
+    "battery_raw": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22085731)\t100%; charged; 0:00 remaining present: true",
+    "caffeinate_active": true,
+    "caffeinate_raw": "25617 caffeinate -dimsu",
+    "cpu_count": 10,
+    "disk_free_raw": "Filesystem      Size    Used   Avail Capacity iused ifree %iused  Mounted on\n/dev/disk2s5   228Gi   185Gi   6.6Gi    97%    2.5M   69M    4%   /System/Volumes/Data",
+    "load_average": [
+      2.4453125,
+      2.3955078125,
+      2.8857421875
+    ],
+    "os": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "power_source": "ac",
+    "ram_bytes": 17179869184,
+    "top_cpu_processes_raw": [
+      "PID  %CPU COMM",
+      " 6030 100.0 <redacted-home>/Documents/Documents/oss_rust/chematic/target/release/deps/mmff94_bench-9a1e86a248befe7d",
+      "99457  29.5 /System/Library/PrivateFrameworks/StorageManagement.framework/PlugIns/ApplicationsStorageExtension.appex/Contents/MacOS/ApplicationsStorageExtension",
+      " 6067  29.1 /Library/Frameworks/Python.framework/Versions/3.13/Resources/Python.app/Contents/MacOS/Python",
+      "99442  23.5 /System/Library/PrivateFrameworks/StorageManagement.framework/PlugIns/StorageManagementService",
+      "16109   2.1 /Applications/ChatGPT.app/Contents/Resources/codex",
+      "16112   1.3 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/151.0.7922.174/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+      "34454   0.6 /Applications/Docker.app/Contents/MacOS/com.docker.backend"
+    ]
+  },
+  "start_time_unix": 1788511609.14204,
+  "tool": "renkin"
+}

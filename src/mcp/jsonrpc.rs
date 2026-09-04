@@ -35,23 +35,30 @@ pub fn is_notification(msg: &Message) -> bool {
 /// framing problem returns an already-built JSON-RPC error response value
 /// (never panics, never silently drops the line).
 pub fn parse(line: &str) -> Result<Message, Value> {
-    let v: Value = serde_json::from_str(line).map_err(|e| {
-        error_response(Value::Null, PARSE_ERROR, &format!("Parse error: {e}"), None)
-    })?;
+    let v: Value = serde_json::from_str(line)
+        .map_err(|_| error_response(Value::Null, PARSE_ERROR, "Parse error", None))?;
+
+    let Some(object) = v.as_object() else {
+        return Err(error_response(
+            Value::Null,
+            INVALID_REQUEST,
+            "Invalid Request",
+            None,
+        ));
+    };
 
     if v.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
-        let id = v.get("id").cloned().unwrap_or(Value::Null);
         return Err(error_response(
-            id,
+            Value::Null,
             INVALID_REQUEST,
             "Invalid Request: missing or unsupported \"jsonrpc\" version",
             None,
         ));
     }
-    let method = match v.get("method").and_then(Value::as_str) {
+    let method = match object.get("method").and_then(Value::as_str) {
         Some(m) => m.to_string(),
         None => {
-            let id = v.get("id").cloned().unwrap_or(Value::Null);
+            let id = object.get("id").cloned().unwrap_or(Value::Null);
             return Err(error_response(
                 id,
                 INVALID_REQUEST,
@@ -60,8 +67,18 @@ pub fn parse(line: &str) -> Result<Message, Value> {
             ));
         }
     };
-    let id = v.get("id").cloned();
-    let params = v.get("params").cloned().unwrap_or(Value::Null);
+    let id = object.get("id").cloned();
+    if let Some(id) = id.as_ref()
+        && !(id.is_null() || id.is_string() || id.is_number())
+    {
+        return Err(error_response(
+            Value::Null,
+            INVALID_REQUEST,
+            "Invalid Request",
+            None,
+        ));
+    }
+    let params = object.get("params").cloned().unwrap_or(Value::Null);
     Ok(Message { id, method, params })
 }
 
@@ -104,5 +121,12 @@ mod tests {
     fn wrong_jsonrpc_version_is_invalid_request() {
         let err = parse(r#"{"jsonrpc":"1.0","id":1,"method":"tools/list"}"#).unwrap_err();
         assert_eq!(err["error"]["code"], INVALID_REQUEST);
+    }
+
+    #[test]
+    fn non_scalar_id_is_invalid_request_with_null_id() {
+        let err = parse(r#"{"jsonrpc":"2.0","id":{},"method":"tools/list"}"#).unwrap_err();
+        assert_eq!(err["error"]["code"], INVALID_REQUEST);
+        assert_eq!(err["id"], Value::Null);
     }
 }

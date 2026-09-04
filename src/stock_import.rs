@@ -35,7 +35,9 @@ use crate::chem_env::{STANDARDIZE_OPTS, canonical_stock_identity_from_smiles};
 pub const STOCK_MANIFEST_SCHEMA_VERSION: u32 = 1;
 pub const MAX_STOCK_INPUT_BYTES: u64 = 64 * 1024 * 1024;
 pub const MAX_STOCK_LINE_BYTES: usize = 64 * 1024;
-pub const MAX_STOCK_DATA_ROWS: u64 = 1_000_000;
+// Covers the measured 1,000,362-entry `union(default, 1M tier)` stock while
+// retaining a hard row bound in addition to the 64 MiB byte bound.
+pub const MAX_STOCK_DATA_ROWS: u64 = 1_100_000;
 
 /// Caller-supplied provenance for one import run. Never guessed: a
 /// missing `source_revision`/`license` is recorded as `None`, not

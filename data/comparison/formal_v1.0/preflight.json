@@ -1,0 +1,18 @@
+{
+  "complete_input_boundary": true,
+  "protocol": "renkin-v1.0.0-formal-competitor-comparison-v1",
+  "stock": {
+    "path": "data/comparison/shared_stock/shared_stock.smi",
+    "sha256": "9046b2e234efd32a44c9209f1f80c4162ca35c1629deaf3b69d4dfcc82de38b9"
+  },
+  "target_count": 4903,
+  "target_list": {
+    "path": "data/comparison/sample_full_sorted.jsonl",
+    "rows": 4903,
+    "sha256": "572f7796f3aec07c85f9487c99803cff491623a59b1258e1e77a774a8c838ce8"
+  },
+  "templates": {
+    "path": "data/templates_extracted_500.smi",
+    "sha256": "01cc64b636f4b4690b00dbb0b606c40b64bc94c511b86f336a30d795aba4bb82"
+  }
+}

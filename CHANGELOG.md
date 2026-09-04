@@ -8,6 +8,14 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-09-05 "Auditable Search Runtime"
+
+### Changed
+- Updated the root, `renkin-forward`, and direct chematic-rxn dependency
+  requirements to 1.0.4, keeping the shared `Molecule` type on one registry
+  dependency instance across the workspace and retiring the temporary local
+  path override.
+
 ### Added
 - **`renkin-mcp`** — dual-era MCP protocol support: the legacy `2024-11-05`
   `initialize` handshake and the modern `2026-07-28` `server/discover` /
@@ -15,6 +23,21 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Modern clients receive `resultType`/`_meta.serverInfo` envelopes,
   `tools/list` caching hints, JSON Schema 2020-12 schemas, and structured
   content for supported tools. See [`docs/guides/mcp.md`](docs/guides/mcp.md).
+- Added a corrected, deterministic template-ID proxy for route-set chemical-
+  idea diversity (Issue #233). Duplicate signatures and strict-superset route
+  variations no longer affect the score, and the all-to-all normalization now
+  remains valid for three or more core routes. The API and documentation state
+  explicitly that this is not exact atom-mapped formed-bond CDS.
+- Added transparent Route Feasibility Diagnostics (Issue #234) as a versioned
+  projection over the existing Synthesizability Kernel assessment. Reports keep
+  stock completion, structure, directional element accounting, forward
+  validation, evidence/condition coverage, limiting steps, and missing
+  information separate, with no learned or aggregate feasibility score and no
+  effect on search or ranking.
+- Added deterministic `renkin stock compile` snapshots (`.rstock`) with
+  normalization-contract, payload, and semantic-content integrity checks.
+  Compiled stocks are accepted transparently by `--building-blocks` and avoid
+  reparsing and recanonicalizing every molecule on each process start.
 - Added the v1.0.0 formal competitor-comparison pre-registration, fixing the
   4,903-target population, shared-stock primary endpoint, reproducibility
   requirements, paired confidence-interval gate, and interpretation limits.
@@ -22,8 +45,12 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   target list, stock, and template bundle by row schema, count, and SHA-256
   before an expensive comparison arm starts.
 - Added regression tests for formal target-count, duplicate-ID, and input-hash
-  rejection. A formal superiority result is intentionally not recorded until
-  every competitor arm has complete paired output.
+  rejection. The completed paired run found 577/4,903 RENKIN primary
+  successes versus 200/4,903 for AiZynthFinder 4.4.1, a +7.689 percentage-
+  point difference with paired-bootstrap 95% CI [+6.812, +8.566]. The frozen
+  v1.0.0 publication gate remains HOLD because two RENKIN rows failed route-
+  tree integrity; both are retained in the artifacts, and this is not a claim
+  of universal CASP superiority.
 
 ### Changed
 - **`renkin-mcp`** — protocol parsing and tool business logic now live in
@@ -31,6 +58,42 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   write/flush failures are no longer silently ignored.
 - **`renkin-mcp`** — both protocol eras preserve the existing opt-in
   progressive coverage-search arguments for `find_routes`.
+- **`renkin-mcp`** — reuses one compiled search engine per server process,
+  exposes candidate traces, full route constraints, and template-proxy
+  chemical-idea diversity through the modular tool layer.
+
+### Fixed
+- Diversity-reserved beam selection now backfills unused family-reservation
+  slots from score order, so `Active` does not silently shrink the effective
+  beam when fewer distinct families are available than requested slots.
+- The comparison route normalizer now represents RENKIN's zero-step
+  direct-purchase route as a valid one-node stock route, preserving its
+  parseability and canonical route hash.
+- Retro-generated non-aromatic bracket atoms with an explicit hydrogen count
+  inconsistent with the surviving graph valence are now rejected. This
+  prevents malformed neutral amine intermediates from being accepted as
+  solved routes while preserving valid aromatic `[nH]` fragments.
+- Fixed both route-tree integrity failures discovered by the formal v1.0.0
+  comparison. A targeted same-input rerun made both rows parseable and
+  stock-terminated; a new full 4,903-target run is still required before the
+  frozen formal publication gate can be changed from HOLD.
+- Hardened `renkin-mcp` with a 1 MiB request-line cap, bounded JSON-structure
+  validation, scalar request-ID enforcement, generic non-reflecting parse
+  errors, and fail-closed unknown-tool/unknown-argument handling in both
+  protocol eras.
+
+### Performance
+- Compiled each SMIRKS and validated hash-atom variant once per search or
+  reusable candidate-proposal context. Normal search, ring-context match
+  auditing, and accepted-match application now share immutable prepared query
+  state instead of reparsing templates per frontier expansion or match.
+- Reused one target SSSR ring-perception result across every active reaction
+  template. A 500-template x 10-target optimized local equivalence gate kept all
+  ordered outputs identical while reducing template-application time from
+  0.777056 s to 0.040014 s (19.4x; scoped microbenchmark, not full-search speed).
+- Memoized repeated non-stock membership checks within a search run and
+  removed the usual per-node heap allocation used to sort closed-set keys.
+  Search ordering and route results are unchanged.
 
 ## [1.0.0] - 2026-09-01 "Stable Release Boundary"
 
@@ -1995,7 +2058,8 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
 
 ---
 
-[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/kent-tokyo/renkin/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/kent-tokyo/renkin/compare/v0.66.0...v1.0.0
 [0.66.0]: https://github.com/kent-tokyo/renkin/compare/v0.65.0...v0.66.0
 [0.65.0]: https://github.com/kent-tokyo/renkin/compare/v0.64.0...v0.65.0

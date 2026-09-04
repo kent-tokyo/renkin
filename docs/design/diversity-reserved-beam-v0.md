@@ -1,7 +1,14 @@
 # Diversity-Reserved Beam — Design Doc (ROADMAP Item 4)
 
-Status: **Design only, not yet implemented.** Scopes the "diversity-reserved
-beam" mechanism from `internal_docs/ROADMAP.md`'s beam-crowd-out item
+Status: **Implemented and opt-in; default remains `Off`.** Rollout stages 1-4
+are complete. The original fixed 100-target VAL sweep found modest positive
+evidence at 10 and 20 reserved slots, but it predates the 2026-09-05 unused-slot
+backfill correction and is therefore historical evidence, not a gate result
+for the corrected implementation. Before that correction, 10 slots added one
+clean solve; 20 slots added two clean solves and one timeout on an
+otherwise-unsolved target. This document scopes the
+"diversity-reserved beam" mechanism from `internal_docs/ROADMAP.md`'s
+beam-crowd-out item
 (P1, issue #101) — a *different* mechanism from PR #104
 (`feat/open-state-dominance-101`), which attacked a related but distinct
 problem (duplicate open-state re-pushes) and ended in a final,
@@ -30,6 +37,11 @@ underrepresented-family candidates always survive pruning regardless of
 how many higher-scoring same-family siblings exist.
 
 ## 1. Existing-code grounding
+
+> Implementation note (2026-09-05): this section records the historical
+> baseline that motivated the design. The current implementation now carries
+> `Node::family_key`, selects survivors in `select_beam_survivors`, and exposes
+> the policy through Rust, CLI, Python, and WASM.
 
 - `beam_prune`'s exact signature: `fn beam_prune(heap: &mut
   BinaryHeap<Node>, beam_width: usize) -> (Option<BeamEvictionStats>,
@@ -158,11 +170,15 @@ step, before truncation:
    already represented in the score-selected set, take its best-scoring
    representative into a "diversity-selected" set, until
    `diversity_slots` is filled or candidates run out.
-3. `Off`: return step 1's set at full `beam_width` (i.e. skip steps 2-3
-   entirely — byte-for-byte today's behavior, not just equivalent).
-   `DiagnosticsOnly`: compute steps 1-2, populate
-   `DiversityReservationStats`, but still return step 1's unmodified
-   full-`beam_width` set. `Active`: return the union of both sets.
+3. If fewer distinct families exist than reserved slots, fill unused slots
+   with the next best score-ranked candidates. `Active` therefore never
+   shrinks the effective beam merely because diversity is unavailable.
+4. Apply the policy. `Off` skips steps 1-3 and returns pure
+   top-`beam_width` — byte-for-byte the original behavior.
+   `DiagnosticsOnly` computes steps 1-3 and populates
+   `DiversityReservationStats`, but still returns the unmodified pure
+   top-`beam_width` set. `Active` returns the score-selected,
+   diversity-selected, and backfill union.
 
 This keeps the mechanism entirely inside `beam_prune`'s own existing
 call site — no change needed anywhere else in the search loop, since
@@ -203,44 +219,39 @@ field, WASM config struct field, same `snake_case` serde convention.
 
 ## 9. Rollout stages
 
-1. Add `family_key: Option<TemplateId>` to `Node`, populated at push time
+1. **Done.** Add `family_key: Option<TemplateId>` to `Node`, populated at push time
    from the already-computed value (§1) — pure plumbing, no behavior
    change, `Off`-equivalent by construction since nothing reads the field
    yet. Regression-test: identical search output before/after.
-2. Implement the 3-step selection (§6) as a new, separately unit-tested
+2. **Done.** Implement the selection (§6) as a new, separately unit-tested
    function taking a `Vec<Node>` + policy + slot count, returning the
    selected set + stats — unit-tested in isolation (synthetic `Node` sets
    with contrived family distributions) before wiring into `beam_prune`
    at all, same discipline as both prior docs' rollout stage 2.
-3. Wire into `beam_prune`/`SearchConfig`/`search_diagnostics` (§4-6).
+3. **Done.** Wire into `beam_prune`/`SearchConfig`/`search_diagnostics` (§4-6).
    `Active` still off by default (`Off`).
-4. CLI/Python/WASM parity (§8).
-5. The parameter sweep + formal gate (§7), reusing PR #104's own sample
-   and criteria — before any default change or release.
-6. Only after a `Active`-policy PASS: revisit whether `template_id` alone
-   was sufficient, or whether the sweep's own diversity-yield numbers
-   make the case for a finer key (precursor-structural-cluster,
-   reaction-center, changed-bond-signature) as a distinct, later phase.
+4. **Done.** CLI/Python/WASM parity (§8).
+5. **Historical measurement complete; corrected implementation not yet
+   remeasured.** The pre-backfill fixed 100-target VAL sweep found one
+   additional clean solve with 10 slots and two with 20 slots, with no
+   solved-target regressions. The 20-slot arm added one timeout on an
+   otherwise-unsolved target. The 2026-09-05 backfill correction preserves
+   full beam width when reservations cannot be filled, so these historical
+   numbers cannot be transferred directly to current `Active`. Rerun this
+   gate before any default change; `Off` is unaffected.
+6. **Pending stronger evidence.** Only after an `Active`-policy PASS: revisit
+   whether `template_id` alone was sufficient, or whether the sweep's own
+   diversity-yield numbers make the case for a finer key
+   (precursor-structural-cluster, reaction-center, changed-bond-signature) as
+   a distinct, later phase.
 
-## Open questions for sign-off before implementation starts
+## Resolved decisions and remaining gate
 
-- OK starting with `template_id` alone as the family key (§2), deferring
-  the roadmap's other three candidate axes (precursor signature,
-  reaction center, changed-bond signature) to a later phase gated on
-  this one's own measured diversity yield?
-- OK reusing PR #104's exact formal-gate criteria and (if reconstructable)
-  its exact 100-target sample for direct comparability (§7), rather than
-  a fresh sample that might be more representative of current
-  `default_rules()`/template-corpus composition but loses that
-  comparability?
-- Is a 2-3 point parameter sweep on `diversity_slots` (§7) sufficient, or
-  does this warrant the same kind of staged frontier search Phase B.1
-  used for template count (multiple sweep rounds, explicit STOP/GO gates
-  per round) given how directly this touches the same crowd-out territory
-  PR #104 already spent significant effort on without a clean win?
-- Given PR #104's own history (one plausible mechanism, extensively
-  measured, ultimately rejected on a real safety bar) — is there
-  appetite to invest another full measurement cycle in this general
-  problem area right now, or does the roadmap's own P1 priority order
-  suggest a different item first? (Not this doc's call to make; flagging
-  it explicitly since it's the most consequential open question of all.)
+- `template_id` is implemented as the v1 family key (§2); finer structural
+  keys remain deferred until measured diversity yield justifies them.
+- PR #104's fixed VAL cohort and formal criteria were reused for direct
+  comparability (§7).
+- The historical 10/20-slot sweep is complete, but predates the unused-slot
+  backfill correction. Neither arm justified enabling `Active` by default;
+  the corrected implementation requires a fresh fixed-cohort gate before any
+  future default-change proposal.

@@ -95,12 +95,25 @@ def normalize_renkin_route(route: dict, requested_target_smiles: str) -> ParseOu
     except (KeyError, TypeError):
         return ParseOutcome(None, False, [RAW_OUTPUT_NOT_DECODABLE])
 
-    if not steps:
-        return ParseOutcome(None, False, [MULTIPLE_OR_ZERO_ROOTS])
-
     requested_canon = canonicalize(requested_target_smiles)
     if requested_canon is None:
         return ParseOutcome(None, False, [UNPARSEABLE_SMILES_IN_ROUTE])
+
+    # RENKIN intentionally emits a zero-step route when the target itself is
+    # directly available in stock (lessons L7).  This is a complete route,
+    # not an empty/malformed route tree: its single node is both root and
+    # stock leaf.  The old adapter rejected it as "zero roots", which made a
+    # native route_found=True impossible to validate and held the formal gate
+    # for direct-buy targets.
+    if not steps:
+        return ParseOutcome(
+            RouteGraph(
+                root=RouteNode(requested_canon, is_stock_leaf=True, children=[]),
+                step_count_collapsed_edges=0,
+            ),
+            True,
+            [],
+        )
 
     bb_canon = set()
     for bb in building_blocks:

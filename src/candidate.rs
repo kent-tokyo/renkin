@@ -1114,6 +1114,7 @@ pub(crate) fn raw_propose(
     target_mol: &Molecule,
     target_smi: &str,
     active_rules: &[ScoredRuleRef<'_>],
+    prepared_rules: Option<&crate::chem_env::PreparedRuleSet>,
     ring: crate::ring_context::RingContextArgs,
     spectator_bond_policy: crate::spectator_bond::SpectatorBondPolicy,
     element_accounting_policy: crate::search::ElementAccountingGatePolicy,
@@ -1128,11 +1129,74 @@ pub(crate) fn raw_propose(
     use crate::spectator_bond::SpectatorBondPolicy;
 
     let target_elem_mask: u64 = crate::search::elem_mask_from_smiles(target_smi);
+    // Ring perception is target-specific but rule-independent. chematic's
+    // default SMARTS entry point computes SSSR per query; prepared proposal
+    // computes it once here and shares it across every active rule.
+    let target_rings = prepared_rules.and_then(|prepared| {
+        active_rules
+            .iter()
+            .any(|rule| prepared.get(rule.rule).is_some())
+            .then(|| chematic::perception::find_sssr(target_mol))
+    });
 
     #[cfg(not(target_arch = "wasm32"))]
     let iter = active_rules.par_iter();
     #[cfg(target_arch = "wasm32")]
     let iter = active_rules.iter();
+
+    // Production-default fast path. The general path below must retain one
+    // diagnostics tuple per rule so it can merge optional ring/spectator/
+    // accounting findings deterministically. With all three policies off,
+    // those tuples contain four empty Vecs and a zeroed diagnostics struct;
+    // collecting thousands of them per expanded molecule is pure overhead.
+    // `flat_map_iter` preserves the ordered parallel iterator's rule/outcome
+    // order while emitting RawCandidate values directly.
+    if matches!(
+        ring.config,
+        crate::ring_context::RingContextConfig::Disabled
+    ) && spectator_bond_policy == SpectatorBondPolicy::Off
+        && element_accounting_policy == ElementAccountingGatePolicy::Off
+    {
+        let eligible = |r: &&ScoredRuleRef<'_>| {
+            r.rule.required_elements == 0
+                || (target_elem_mask & r.rule.required_elements == r.rule.required_elements)
+        };
+        let expand = |r: &ScoredRuleRef<'_>| {
+            let mut diag = crate::ring_context::RingContextDiagnostics::default();
+            crate::ring_context::apply_retro_with_policy_prepared(
+                target_mol,
+                r.rule,
+                &ring.config,
+                &mut diag,
+                prepared_rules.and_then(|rules| rules.get(r.rule)),
+                target_rings.as_ref(),
+            )
+            .into_iter()
+            .filter(|precs| !precs.is_empty() && !precs.iter().any(|p| p.smiles == target_smi))
+            .map(move |precs| RawCandidate {
+                rule_name: r.rule.name.to_string(),
+                template_id: r.rule.template_id.clone(),
+                rule_weight: r.rule.weight,
+                original_rank: r.source_rank,
+                upstream_score: r.upstream_score,
+                upstream_score_status: r.upstream_score_status,
+                precursors: precs,
+                element_accounting_gate: ElementAccountingGateVerdict::NotEvaluable,
+            })
+            .collect::<Vec<_>>()
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        let raw = iter.filter(eligible).flat_map_iter(expand).collect();
+        #[cfg(target_arch = "wasm32")]
+        let raw = iter.filter(eligible).flat_map(expand).collect();
+        return (
+            raw,
+            crate::ring_context::RingContextDiagnostics::default(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        );
+    }
 
     let per_rule: Vec<PerRuleProposal> = iter
         .filter(|r| {
@@ -1141,11 +1205,13 @@ pub(crate) fn raw_propose(
         })
         .map(|r| {
             let mut diag = crate::ring_context::RingContextDiagnostics::default();
-            let mut candidates = crate::ring_context::apply_retro_with_policy(
+            let mut candidates = crate::ring_context::apply_retro_with_policy_prepared(
                 target_mol,
                 r.rule,
                 &ring.config,
                 &mut diag,
+                prepared_rules.and_then(|rules| rules.get(r.rule)),
+                target_rings.as_ref(),
             )
             .into_iter()
             .filter(|precs| !precs.is_empty() && !precs.iter().any(|p| p.smiles == target_smi))
@@ -1581,6 +1647,7 @@ pub fn reset_propose_phase_nanos() {}
 pub struct CandidateProposalContext<'a> {
     rules: &'a [RetroRule],
     bond_index: Option<TemplateBondIndex>,
+    prepared_rules: crate::chem_env::PreparedRuleSet,
 }
 
 impl<'a> CandidateProposalContext<'a> {
@@ -1598,6 +1665,7 @@ impl<'a> CandidateProposalContext<'a> {
         Self {
             rules,
             bond_index: prepare_bond_index.then(|| TemplateBondIndex::build(rules)),
+            prepared_rules: crate::chem_env::PreparedRuleSet::new(rules),
         }
     }
 
@@ -1657,6 +1725,7 @@ impl<'a> CandidateProposalContext<'a> {
                 &target_mol,
                 &canonical_target,
                 &active_rules,
+                Some(&self.prepared_rules),
                 crate::ring_context::RingContextArgs::default(),
                 crate::spectator_bond::SpectatorBondPolicy::Off,
                 crate::search::ElementAccountingGatePolicy::Off,
@@ -2369,16 +2438,36 @@ mod tests {
 
         let active_rules =
             select_active_rules(&target_mol, &rules, &ProposalMode::Exhaustive, None).unwrap();
+        let prepared_rules = crate::chem_env::PreparedRuleSet::new(&rules);
         let (got, _ring_diag, _sbl_findings, _gated_out, _element_accounting_gated_out) =
             raw_propose(
                 &target_mol,
                 &canon_target,
                 &active_rules,
+                None,
                 crate::ring_context::RingContextArgs::default(),
                 crate::spectator_bond::SpectatorBondPolicy::Off,
                 crate::search::ElementAccountingGatePolicy::Off,
             );
+        let (got_prepared, _, _, _, _) = raw_propose(
+            &target_mol,
+            &canon_target,
+            &active_rules,
+            Some(&prepared_rules),
+            crate::ring_context::RingContextArgs::default(),
+            crate::spectator_bond::SpectatorBondPolicy::Off,
+            crate::search::ElementAccountingGatePolicy::Off,
+        );
         let mut got_pairs: Vec<(String, Vec<String>)> = got
+            .into_iter()
+            .map(|p| {
+                (
+                    p.rule_name,
+                    p.precursors.iter().map(|pm| pm.smiles.clone()).collect(),
+                )
+            })
+            .collect();
+        let mut got_prepared_pairs: Vec<(String, Vec<String>)> = got_prepared
             .into_iter()
             .map(|p| {
                 (
@@ -2391,7 +2480,9 @@ mod tests {
         let mut reference_sorted = reference;
         reference_sorted.sort();
         got_pairs.sort();
+        got_prepared_pairs.sort();
         assert_eq!(got_pairs, reference_sorted);
+        assert_eq!(got_prepared_pairs, reference_sorted);
         assert!(
             !got_pairs.is_empty(),
             "expected at least one match for acetophenone"
@@ -2434,6 +2525,7 @@ mod tests {
                 &target_mol,
                 "O=C2NCC(O2)Cc1ccccc1",
                 &active_rules,
+                None,
                 crate::ring_context::RingContextArgs::default(),
                 crate::spectator_bond::SpectatorBondPolicy::Off,
                 crate::search::ElementAccountingGatePolicy::Off,
@@ -2455,6 +2547,7 @@ mod tests {
             &target_mol,
             "O=C2NCC(O2)Cc1ccccc1",
             &active_rules,
+            None,
             crate::ring_context::RingContextArgs::default(),
             crate::spectator_bond::SpectatorBondPolicy::DiagnosticsOnly,
             crate::search::ElementAccountingGatePolicy::Off,
@@ -2493,6 +2586,7 @@ mod tests {
                 &target_mol,
                 "CC(=O)NC",
                 &active_rules,
+                None,
                 crate::ring_context::RingContextArgs::default(),
                 crate::spectator_bond::SpectatorBondPolicy::DiagnosticsOnly,
                 crate::search::ElementAccountingGatePolicy::Off,
@@ -2510,6 +2604,7 @@ mod tests {
             &target_mol,
             "O=C2NCC(O2)Cc1ccccc1",
             &active_rules,
+            None,
             crate::ring_context::RingContextArgs::default(),
             crate::spectator_bond::SpectatorBondPolicy::Gated,
             crate::search::ElementAccountingGatePolicy::Off,
@@ -2549,6 +2644,7 @@ mod tests {
                 &target_mol,
                 "CC(=O)NC",
                 &active_rules,
+                None,
                 crate::ring_context::RingContextArgs::default(),
                 crate::spectator_bond::SpectatorBondPolicy::Gated,
                 crate::search::ElementAccountingGatePolicy::Off,
@@ -2594,6 +2690,7 @@ mod tests {
                 &target_mol,
                 "Brc1ccccc1",
                 &active_rules,
+                None,
                 crate::ring_context::RingContextArgs::default(),
                 crate::spectator_bond::SpectatorBondPolicy::Off,
                 ElementAccountingGatePolicy::Off,
@@ -2620,6 +2717,7 @@ mod tests {
                 &target_mol,
                 "Brc1ccccc1",
                 &active_rules,
+                None,
                 crate::ring_context::RingContextArgs::default(),
                 crate::spectator_bond::SpectatorBondPolicy::Off,
                 ElementAccountingGatePolicy::DiagnosticsOnly,
@@ -2649,6 +2747,7 @@ mod tests {
                 &target_mol,
                 "Brc1ccccc1",
                 &active_rules,
+                None,
                 crate::ring_context::RingContextArgs::default(),
                 crate::spectator_bond::SpectatorBondPolicy::Off,
                 ElementAccountingGatePolicy::Gated,
@@ -2693,6 +2792,7 @@ mod tests {
                 &target_mol,
                 "CC(=O)Oc1ccccc1",
                 &active_rules,
+                None,
                 crate::ring_context::RingContextArgs::default(),
                 crate::spectator_bond::SpectatorBondPolicy::Off,
                 ElementAccountingGatePolicy::Gated,

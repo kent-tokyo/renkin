@@ -51,6 +51,17 @@ def aizynth_single_step_tree(target=TARGET, precursors=(ETHANOL, BENZOIC_ACID)):
 
 @unittest.skipUnless(rg.HAVE_RDKIT, "requires rdkit (see scripts/requirements-compare-66.txt)")
 class TestNormalizeRenkinRoute(unittest.TestCase):
+    def test_zero_step_direct_buy_route_is_a_parseable_stock_leaf(self):
+        outcome = rg.normalize_renkin_route(
+            {"steps": [], "building_blocks": []},
+            "CC(=O)O",
+        )
+        self.assertTrue(outcome.parseable, outcome.defects)
+        self.assertEqual(outcome.graph.step_count_collapsed_edges, 0)
+        self.assertEqual(rg.count_leaves(outcome.graph.root), 1)
+        self.assertTrue(outcome.graph.root.is_stock_leaf)
+        self.assertIsNotNone(rg.normalized_route_sha256(outcome.graph))
+
     def test_single_step_route_parses(self):
         outcome = rg.normalize_renkin_route(renkin_single_step_route(), TARGET)
         self.assertTrue(outcome.parseable, outcome.defects)

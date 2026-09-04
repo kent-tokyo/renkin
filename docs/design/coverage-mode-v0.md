@@ -100,6 +100,7 @@ before Phase 41.17's implementation begins.
 --search-mode standard|coverage      default: standard (unchanged behavior)
 --coverage-templates <PATH>          required iff --search-mode coverage
 --coverage-timeout-secs <N>          optional, Stage 2 only; default: no cutoff (matches today's no-timeout Stage 1 behavior)
+--coverage-beam-width <N>            optional, Stage 2 only; 0 means unlimited; default: Stage 1's --beam-width
 ```
 
 - `--search-mode` absent or `standard` → **zero behavior change**.
@@ -129,6 +130,10 @@ before Phase 41.17's implementation begins.
   opt-in-cost path where an unbounded run is the real risk this flag
   exists to bound (every real timeout Phase B.1/B.2 measured happened
   on a Stage-2-equivalent search, never Stage 1).
+- `--coverage-beam-width` applies **only to Stage 2**. It is a
+  re-evaluation knob for beam crowd-out: Stage 1 remains byte-identical,
+  while Stage 2 can use a wider (or unlimited) frontier without changing
+  the default coverage-mode budget.
 
 ## 3. Python surface
 
@@ -138,6 +143,7 @@ renkin.find_routes(
     search_mode="coverage",             # default: "standard"
     coverage_templates_path="templates_2000.smi",   # required iff search_mode="coverage"
     coverage_timeout_seconds=600,        # optional, Stage 2 only
+    coverage_beam_width=200,              # optional, Stage 2 only; 0 = unlimited
     reranker_model_path="model.txt",     # unchanged, orthogonal
     reranker_freq_table_path="frequency_table.json",
 )
@@ -229,10 +235,12 @@ the benchmark harness (`data/phase_b1_frontier/findings.md`, "Phase
 B.2" section) — the product code gets the same guarantee for free from
 the same control-flow shape, not from re-deriving the rule.
 
-**Stage 2 is a fully independent search call** — same as the
-pre-registered Phase B.2 constraint: no warm-start, no candidate reuse
-between stages, `find_routes_with_control` called fresh with
-`rules_stage2`. `result.routes` on a `DeadlineExceeded` termination is
+**Stage 2 is a fully independent frontier search** — same as the
+pre-registered Phase B.2 constraint: no frontier warm-start and no candidate
+cache reuse between stages; Stage 2 starts fresh with `rules_stage2`. Since
+2026-09-04 both stages do share one immutable `PreparedRuleSet`, eliminating
+duplicate SMIRKS compilation without changing search order, pruning, or route
+semantics. `result.routes` on a `DeadlineExceeded` termination is
 never empty *by policy* -- it is whatever the search's own cooperative-
 cancellation checkpoints had accumulated before stopping (possibly
 zero, possibly all of them, depending on how far the search got --

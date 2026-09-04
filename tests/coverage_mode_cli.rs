@@ -245,6 +245,14 @@ fn coverage_timeout_zero_fails() {
 }
 
 #[test]
+fn coverage_beam_width_requires_coverage_mode() {
+    let out = run(&["--target", BUILDING_BLOCK, "--coverage-beam-width", "200"]);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("--coverage-beam-width"), "stderr: {stderr}");
+}
+
+#[test]
 fn coverage_timeout_non_integer_fails() {
     for bad in ["abc", "12.5", "-3"] {
         let out = run(&[

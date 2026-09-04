@@ -1,5 +1,5 @@
 use std::collections::BinaryHeap;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use anyhow::{Result, bail};
 use chematic::chem::{molecular_weight, sa_score};
@@ -8,8 +8,8 @@ use serde::Serialize;
 use smallvec::{SmallVec, smallvec};
 
 use crate::chem_env::{
-    ChemEnv, RetroRule, TemplateBondIndex, canonical_stock_identity_from_smiles, mol_from_smiles,
-    to_canonical,
+    ChemEnv, Molecule, RetroRule, TemplateBondIndex, canonical_stock_identity_from_smiles,
+    mol_from_smiles, to_canonical,
 };
 use crate::evidence::{EvidenceScope, MetadataSource, StepEvidence, TemplateMetadataEntry};
 use crate::score::{step_cost, template_bonus};
@@ -54,11 +54,12 @@ fn validate_search_budget(target_smiles: &str, config: &SearchConfig) -> Result<
 }
 
 /// Cached expansion for one (target_smiles, rule) combination.
+#[derive(Debug)]
 struct RetroEntry {
     rule_name: String,
     template_id: String,
     step_cost: f64,
-    precursor_smiles: Vec<String>,
+    precursor_smiles: Vec<Arc<str>>,
 }
 type RetroCache = FxHashMap<String, Arc<Vec<RetroEntry>>>;
 
@@ -737,23 +738,60 @@ fn extract_building_blocks(steps: &[ReactionStep]) -> Vec<String> {
     bbs
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 struct FEntry {
-    smiles: String,
+    smiles: Arc<str>,
+    mol: Arc<Molecule>,
+}
+
+impl std::fmt::Debug for FEntry {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("FEntry")
+            .field("smiles", &self.smiles)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Persistent linked-list node for synthesis path sharing.
 /// Children share the parent's prefix via Arc::clone (pointer copy only).
 #[derive(Debug, Clone)]
 struct PathNode {
-    step: ReactionStep,
+    target: String,
+    expansions: Arc<Vec<RetroEntry>>,
+    entry_index: usize,
     prev: Option<Arc<PathNode>>,
 }
 
 fn collect_path(mut cur: Option<&Arc<PathNode>>) -> Vec<ReactionStep> {
     let mut steps = Vec::new();
     while let Some(node) = cur {
-        steps.push(node.step.clone());
+        let entry = node
+            .expansions
+            .get(node.entry_index)
+            .expect("PathNode entry index must refer to its retained expansion set");
+        steps.push(ReactionStep {
+            rule: entry.rule_name.clone(),
+            template_id: entry.template_id.clone(),
+            target: node.target.clone(),
+            precursors: entry
+                .precursor_smiles
+                .iter()
+                .map(|precursor| precursor.to_string())
+                .collect(),
+            conditions: conditions_for_rule(&entry.rule_name),
+            atom_economy: None,
+            atom_economy_raw_percent: None,
+            atom_economy_status: AtomEconomyStatus::NotEvaluable,
+            step_confidence: 0.0,
+            reaction_family: reaction_family_for_rule(&entry.rule_name).map(str::to_string),
+            procedure_hint: procedure_hint_for_rule(&entry.rule_name).map(str::to_string),
+            metadata_source: (!is_extracted_template(&entry.rule_name))
+                .then_some(MetadataSource::HandcraftedDefault),
+            metadata_scope: (!is_extracted_template(&entry.rule_name))
+                .then_some(EvidenceScope::ReactionFamily),
+            evidence: None,
+        });
         cur = node.prev.as_ref();
     }
     steps.reverse();
@@ -857,7 +895,10 @@ pub(crate) fn elem_mask_from_smiles(smiles: &str) -> u64 {
 /// Collision probability is 2^-64 per node pair — negligible in practice.
 fn state_hash(frontier: &[FEntry]) -> u64 {
     use std::hash::{Hash, Hasher};
-    let mut keys: Vec<&str> = frontier.iter().map(|e| e.smiles.as_str()).collect();
+    // Most frontiers fit in SmallVec's inline storage (the common reaction
+    // arity is <= 2). Avoid a heap allocation for this temporary key list on
+    // every closed-set probe while retaining the exact same hash.
+    let mut keys: SmallVec<[&str; 6]> = frontier.iter().map(|e| e.smiles.as_ref()).collect();
     keys.sort_unstable();
     let mut h = FxHasher::default();
     for k in &keys {
@@ -866,17 +907,25 @@ fn state_hash(frontier: &[FEntry]) -> u64 {
     h.finish()
 }
 
-fn is_bb(smiles: &str, env: &ChemEnv) -> bool {
-    // Fast path: direct HashSet lookup (FEntry.smiles is always canonical SMILES).
+/// Stock-membership lookup memoized for one search run.
+///
+/// Generated frontier entries are already canonical, but entries that miss
+/// the direct set lookup still need the comparatively expensive shared-policy
+/// parse/standardize fallback. The same intermediate is commonly inspected
+/// by the frontier scan, heuristic, and forbidden-element filter, so memoize
+/// only those fallback results. Direct stock hits remain allocation-free.
+fn is_bb_cached(smiles: &str, env: &ChemEnv, cache: &mut FxHashMap<String, bool>) -> bool {
     if env.is_building_block_smiles(smiles) {
         return true;
     }
-    // Slow path: re-parse and re-standardize under the same shared
-    // stock-identity policy `ChemEnv` itself uses. Exact identity only (no
-    // subgraph matching) — see `chem_env::canonical_stock_identity`.
-    canonical_stock_identity_from_smiles(smiles)
+    if let Some(&cached) = cache.get(smiles) {
+        return cached;
+    }
+    let result = canonical_stock_identity_from_smiles(smiles)
         .map(|canon| env.is_building_block_smiles(&canon))
-        .unwrap_or(false)
+        .unwrap_or(false);
+    cache.insert(smiles.to_owned(), result);
+    result
 }
 
 /// Pluggable molecule value estimator for the A* heuristic (Retro*-style).
@@ -941,23 +990,22 @@ fn compute_h(
     frontier: &[FEntry],
     env: &ChemEnv,
     sa_cache: &mut FxHashMap<String, f64>,
+    bb_cache: &mut FxHashMap<String, bool>,
     estimator: Option<&std::sync::Arc<dyn MoleculeValueEstimator>>,
 ) -> f64 {
     frontier
         .iter()
-        .filter(|e| !is_bb(&e.smiles, env))
+        .filter(|e| !is_bb_cached(&e.smiles, env, bb_cache))
         .map(|e| {
             if let Some(est) = estimator {
                 return est.estimate_cost(&e.smiles);
             }
             // Default: SA Score (cached)
-            if let Some(&v) = sa_cache.get(&e.smiles) {
+            if let Some(&v) = sa_cache.get(e.smiles.as_ref()) {
                 return 1.0 + 0.5 * (v - 1.0) / 9.0;
             }
-            let v = mol_from_smiles(&e.smiles)
-                .map(|m| sa_score(&m).clamp(1.0, 10.0))
-                .unwrap_or(5.5);
-            sa_cache.insert(e.smiles.clone(), v);
+            let v = sa_score(&e.mol).clamp(1.0, 10.0);
+            sa_cache.insert(e.smiles.to_string(), v);
             1.0 + 0.5 * (v - 1.0) / 9.0
         })
         .sum()
@@ -1219,6 +1267,12 @@ type BeamEvictionStats = (usize, f64, f64, f64);
 /// `(trace_id, rank, survived)` for one traced node -- see [`beam_prune`].
 type TraceRank = (u64, usize, bool);
 
+fn node_score_cmp(a: &Node, b: &Node) -> std::cmp::Ordering {
+    a.f()
+        .partial_cmp(&b.f())
+        .unwrap_or(std::cmp::Ordering::Equal)
+}
+
 /// Returns `(eviction_stats, trace_ranks, diversity_stats)`.
 /// `eviction_stats` is `Some((evicted_count, evicted_f_min, evicted_f_max,
 /// boundary_f))` when a truncation actually happened (diagnostics-only
@@ -1254,11 +1308,8 @@ fn beam_prune(
         return (None, Vec::new(), DiversityReservationStats::default());
     }
     let mut nodes: Vec<Node> = heap.drain().collect();
-    nodes.sort_unstable_by(|a, b| {
-        a.f()
-            .partial_cmp(&b.f())
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+
+    nodes.sort_unstable_by(node_score_cmp);
 
     if diversity_policy == BeamDiversityPolicy::Off {
         // Exact pre-existing behavior, byte-for-byte, zero extra cost --
@@ -1344,9 +1395,8 @@ pub enum ElementAccountingGatePolicy {
 /// `docs/design/diversity-reserved-beam-v0.md` §5. Wired into `beam_prune`
 /// via [`SearchConfig::beam_diversity_policy`] (rollout stage 3) -- `Off`
 /// (the default) reproduces pre-existing behavior exactly, byte-for-byte,
-/// zero extra cost. CLI/Python/WASM exposure is stage 4, not yet done --
-/// `Active` is reachable only by constructing a `SearchConfig` directly
-/// (Rust callers/tests), not from any shipped external surface yet.
+/// zero extra cost. CLI/Python/WASM exposure is complete (rollout stage 4);
+/// measured evidence remains insufficient to change the default.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BeamDiversityPolicy {
     /// Default: identical to today's `beam_prune` (pure top-`beam_width`
@@ -1392,11 +1442,14 @@ impl std::ops::AddAssign for DiversityReservationStats {
 
 /// Computes which of `nodes` survive beam pruning under `policy`, given
 /// `beam_width` total slots and `diversity_slots` of those reserved for
-/// family diversity (design doc §6's 3-step algorithm). `nodes` need not
+/// family diversity (design doc §6's survivor-selection algorithm). `nodes` need not
 /// be pre-sorted. Returns the selected survivors (unsorted relative to
 /// score -- caller's responsibility to re-sort if needed, matching how
 /// `beam_prune` itself rebuilds the heap from an unordered `Vec` today)
-/// plus diagnostics. `diversity_slots` is clamped to `beam_width`.
+/// plus diagnostics. `diversity_slots` is clamped to `beam_width`. When
+/// fewer distinct families are available than reserved slots, the unused
+/// reservation is filled by the next best score-ranked candidates so
+/// `Active` never shrinks the beam merely because diversity is unavailable.
 ///
 /// `Off` and `DiagnosticsOnly` both return byte-for-byte the same survivor
 /// set as pure top-`beam_width`-by-score -- `Off` skips all diversity
@@ -1412,11 +1465,7 @@ fn select_beam_survivors(
     policy: BeamDiversityPolicy,
 ) -> (Vec<Node>, DiversityReservationStats) {
     let mut sorted = nodes;
-    sorted.sort_unstable_by(|a, b| {
-        a.f()
-            .partial_cmp(&b.f())
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    sorted.sort_unstable_by(node_score_cmp);
 
     if policy == BeamDiversityPolicy::Off {
         sorted.truncate(beam_width);
@@ -1445,22 +1494,29 @@ fn select_beam_survivors(
     let families_represented_by_score_alone = represented.len();
 
     let mut diversity_selected: Vec<Node> = Vec::new();
+    let mut score_backfill: Vec<Node> = Vec::new();
     let mut rescued_node_trace_ids = Vec::new();
     for node in remainder {
-        if diversity_selected.len() >= diversity_slots {
-            break;
-        }
-        let Some(key) = node.family_key.clone() else {
-            continue; // design doc §3: no family identity, never eligible
+        let family_to_rescue = if diversity_selected.len() < diversity_slots {
+            node.family_key
+                .as_ref()
+                .filter(|key| !represented.contains(*key))
+                .cloned()
+        } else {
+            None
         };
-        if represented.contains(&key) {
-            continue;
+        if let Some(key) = family_to_rescue {
+            represented.insert(key);
+            if let Some(id) = node.trace_id {
+                rescued_node_trace_ids.push(id);
+            }
+            diversity_selected.push(node);
+        } else {
+            // Repeated-family and no-family nodes cannot consume a diversity
+            // reservation, but they remain eligible to fill any reservation
+            // slots that could not be used. Preserve this score-sorted order.
+            score_backfill.push(node);
         }
-        represented.insert(key);
-        if let Some(id) = node.trace_id {
-            rescued_node_trace_ids.push(id);
-        }
-        diversity_selected.push(node);
     }
 
     let stats = DiversityReservationStats {
@@ -1475,18 +1531,21 @@ fn select_beam_survivors(
         BeamDiversityPolicy::Active => {
             let mut survivors = score_selected;
             survivors.extend(diversity_selected);
+            let unfilled = beam_width.saturating_sub(survivors.len());
+            survivors.extend(score_backfill.into_iter().take(unfilled));
             (survivors, stats)
         }
     }
 }
 
-/// Diagnostics-only (Issue #101 / Phase 1B): for one node's expansion,
+/// Issue #101 / Phase 1B accounting for one node's expansion:
 /// count (a) proposals from *different* templates whose precursor SMILES
 /// multiset (sorted) is identical to an already-seen one -- same as the
 /// original Issue #101 counter -- and (b) how many candidates would remain
-/// under two hypothetical dedup strategies (same-template-only vs.
-/// cross-template), without actually merging, dedupeing, or reordering
-/// `entries`.
+/// under two dedup strategies (same-template-only vs. cross-template).
+/// Search applies the provenance-preserving same-template variant before
+/// child materialization; cross-template merging remains diagnostics-only
+/// because it would discard distinct evidence/provenance.
 ///
 /// Returns `(cross_template_duplicates, after_same_template_dedup,
 /// after_cross_template_dedup)`.
@@ -1498,7 +1557,11 @@ fn dedup_counts(entries: &[RetroEntry]) -> (u64, u64, u64) {
     // Keyed by sorted precursor signature alone: collapses regardless of template.
     let mut seen_cross_template: FxHashMap<Vec<String>, &str> = FxHashMap::default();
     for e in entries {
-        let mut sig = e.precursor_smiles.clone();
+        let mut sig: Vec<String> = e
+            .precursor_smiles
+            .iter()
+            .map(|precursor| precursor.to_string())
+            .collect();
         sig.sort_unstable();
         seen_same_template.insert((e.template_id.as_str(), sig.clone()));
         match seen_cross_template.get(sig.as_slice()) {
@@ -1516,6 +1579,22 @@ fn dedup_counts(entries: &[RetroEntry]) -> (u64, u64, u64) {
         seen_same_template.len() as u64,
         seen_cross_template.len() as u64,
     )
+}
+
+/// Insert the provenance-preserving key used by the hot child-materialization
+/// loop. Returns `false` only for an exact repeat from the same template;
+/// identical precursors from another template remain distinct evidence.
+fn insert_same_template_signature<'a>(
+    seen: &mut FxHashSet<(&'a str, SmallVec<[&'a str; 4]>)>,
+    entry: &'a RetroEntry,
+) -> bool {
+    let mut signature: SmallVec<[&str; 4]> = entry
+        .precursor_smiles
+        .iter()
+        .map(|smiles| smiles.as_ref())
+        .collect();
+    signature.sort_unstable();
+    seen.insert((entry.template_id.as_str(), signature))
 }
 
 /// Issue #101 Task 35 runtime integration: score one expansion's raw
@@ -1586,6 +1665,7 @@ fn classify_provenance(template_id: &str, smirks: &str) -> CandidateProvenance {
     }
 }
 
+#[derive(Clone)]
 pub struct SearchConfig {
     pub max_depth: u32,
     pub max_routes: usize,
@@ -1898,6 +1978,71 @@ pub struct SearchRunResult {
     pub termination: SearchTermination,
 }
 
+/// Reusable, immutable search assets for repeated queries against one stock
+/// and rule set.
+///
+/// The free-standing [`find_routes`] API remains the compatibility entry point
+/// for one-off calls. Long-lived callers should keep one `SearchEngine`: it
+/// compiles reaction templates once and lazily builds the optional bond index
+/// once, instead of repeating target-independent setup for every molecule.
+pub struct SearchEngine {
+    env: ChemEnv,
+    rules: Vec<RetroRule>,
+    prepared_rules: crate::chem_env::PreparedRuleSet,
+    bond_index: OnceLock<TemplateBondIndex>,
+}
+
+impl SearchEngine {
+    pub fn new(env: ChemEnv, rules: Vec<RetroRule>) -> Self {
+        let prepared_rules = crate::chem_env::PreparedRuleSet::new(&rules);
+        Self {
+            env,
+            rules,
+            prepared_rules,
+            bond_index: OnceLock::new(),
+        }
+    }
+
+    pub fn env(&self) -> &ChemEnv {
+        &self.env
+    }
+
+    pub fn rules(&self) -> &[RetroRule] {
+        &self.rules
+    }
+
+    pub fn find_routes(
+        &self,
+        target_smiles: &str,
+        config: &SearchConfig,
+    ) -> Result<(Vec<Route>, SearchStats)> {
+        let result =
+            self.find_routes_with_control(target_smiles, config, &SearchControl::unlimited())?;
+        Ok((result.routes, result.stats))
+    }
+
+    pub fn find_routes_with_control(
+        &self,
+        target_smiles: &str,
+        config: &SearchConfig,
+        control: &SearchControl,
+    ) -> Result<SearchRunResult> {
+        let bond_index = config.bond_index.then(|| {
+            self.bond_index
+                .get_or_init(|| TemplateBondIndex::build(&self.rules))
+        });
+        find_routes_with_control_prepared(
+            target_smiles,
+            &self.env,
+            &self.rules,
+            config,
+            control,
+            &self.prepared_rules,
+            bond_index,
+        )
+    }
+}
+
 /// Same search as [`find_routes`], with an explicit cooperative-cancellation
 /// budget (`control`). [`find_routes`] is a thin wrapper over this function
 /// using [`SearchControl::unlimited`] -- this is the one place the frontier
@@ -1909,6 +2054,27 @@ pub fn find_routes_with_control(
     rules: &[RetroRule],
     config: &SearchConfig,
     control: &SearchControl,
+) -> Result<SearchRunResult> {
+    let prepared_rules = crate::chem_env::PreparedRuleSet::new(rules);
+    find_routes_with_control_prepared(
+        target_smiles,
+        env,
+        rules,
+        config,
+        control,
+        &prepared_rules,
+        None,
+    )
+}
+
+pub(crate) fn find_routes_with_control_prepared(
+    target_smiles: &str,
+    env: &ChemEnv,
+    rules: &[RetroRule],
+    config: &SearchConfig,
+    control: &SearchControl,
+    prepared_rules: &crate::chem_env::PreparedRuleSet,
+    prepared_bond_index: Option<&TemplateBondIndex>,
 ) -> Result<SearchRunResult> {
     validate_search_budget(target_smiles, config)?;
     let target_mol = mol_from_smiles(target_smiles)?;
@@ -1925,7 +2091,6 @@ pub fn find_routes_with_control(
     // on canonical intermediate SMILES, so each unique intermediate still gets
     // exactly one ONNX call for the whole search (cache hits skip it entirely).
     let ranked_rules: Vec<&RetroRule> = rules.iter().collect();
-
     let max_rule_weight = rules.iter().map(|r| r.weight).fold(1.0_f64, f64::max);
 
     // Phase 1B: template_id -> smirks, built once, used only when
@@ -1941,11 +2106,12 @@ pub fn find_routes_with_control(
     };
 
     // Bond-center template index — built once, queried per-expansion (O(bonds) per node).
-    let bond_idx: Option<TemplateBondIndex> = if config.bond_index {
-        Some(TemplateBondIndex::build(rules))
-    } else {
-        None
-    };
+    let local_bond_idx = (config.bond_index && prepared_bond_index.is_none())
+        .then(|| TemplateBondIndex::build(rules));
+    let bond_idx = config
+        .bond_index
+        .then(|| prepared_bond_index.or(local_bond_idx.as_ref()))
+        .flatten();
 
     // Local, mutable "is the reranker still usable this run" handle,
     // separate from `config.reranker` (which is immutable for the whole
@@ -2002,18 +2168,25 @@ pub fn find_routes_with_control(
     let mut closed: FxHashSet<u64> = FxHashSet::default();
     let mut heap: BinaryHeap<Node> = BinaryHeap::new();
     let mut sa_cache: FxHashMap<String, f64> = FxHashMap::default();
+    let mut bb_cache: FxHashMap<String, bool> = FxHashMap::default();
+    let target_smiles_arc: Arc<str> = Arc::from(target_canonical.as_str());
+    let target_mol_arc = Arc::new(target_mol);
+    let mut molecule_cache: FxHashMap<Arc<str>, Arc<Molecule>> = FxHashMap::default();
+    molecule_cache.insert(Arc::clone(&target_smiles_arc), Arc::clone(&target_mol_arc));
     // Opt-D: per-search memoization of apply_retro results.
     // Key: canonical target SMILES. Value: Arc-wrapped filtered expansions.
     // Arc avoids full-Vec cloning on both hit (O(1) Arc::clone) and miss (no extra clone).
     let mut retro_cache: RetroCache = FxHashMap::default();
 
     let initial: SmallVec<[FEntry; 6]> = smallvec![FEntry {
-        smiles: target_canonical.clone(),
+        smiles: target_smiles_arc,
+        mol: target_mol_arc,
     }];
     let h0 = compute_h(
         &initial,
         env,
         &mut sa_cache,
+        &mut bb_cache,
         config.value_estimator.as_ref(),
     );
     heap.push(Node {
@@ -2056,7 +2229,7 @@ pub fn find_routes_with_control(
         let mut n_unsolved = 0usize;
         let mut first_unsolved: Option<&FEntry> = None;
         for e in node.frontier.iter() {
-            if !is_bb(&e.smiles, env) {
+            if !is_bb_cached(&e.smiles, env, &mut bb_cache) {
                 n_unsolved += 1;
                 if first_unsolved.is_none() {
                     first_unsolved = Some(e);
@@ -2111,11 +2284,8 @@ pub fn find_routes_with_control(
         let Some(target_entry) = first_unsolved.or_else(|| node.frontier.first()) else {
             continue;
         };
-        let target_smi = target_entry.smiles.clone();
-
-        let Ok(target_mol) = mol_from_smiles(&target_smi) else {
-            continue;
-        };
+        let target_smi = target_entry.smiles.to_string();
+        let target_mol = Arc::clone(&target_entry.mol);
 
         // Opt-D: look up the memoized expansion for this target molecule.
         // On cache miss: run apply_retro in parallel (native) / sequential (WASM),
@@ -2137,7 +2307,7 @@ pub fn find_routes_with_control(
             // Falls back to ranked_rules unchanged when neither is configured.
             let retrieved: Vec<&RetroRule>;
             let per_node: Vec<&RetroRule>;
-            let active_rules: &[&RetroRule] = if let Some(ref idx) = bond_idx {
+            let active_rules: &[&RetroRule] = if let Some(idx) = bond_idx {
                 let retrieval = idx.retrieve_with_diagnostics(&target_mol, 0, rules);
                 crowd_out.bond_index_candidates_before_element_filter +=
                     retrieval.candidates_before_element_filter as u64;
@@ -2189,6 +2359,7 @@ pub fn find_routes_with_control(
                 &target_mol,
                 &target_smi,
                 &scored_active_rules,
+                Some(prepared_rules),
                 crate::ring_context::RingContextArgs {
                     config: config.ring_context.clone(),
                 },
@@ -2270,21 +2441,27 @@ pub fn find_routes_with_control(
                     let step_c =
                         step_cost(&p.precursors.iter().map(|pm| &pm.mol).collect::<Vec<_>>())
                             - bonus;
-                    let smiles_list: Vec<String> =
-                        p.precursors.iter().map(|pm| pm.smiles.clone()).collect();
+                    let mut precursor_smiles = Vec::with_capacity(p.precursors.len());
+                    for precursor in p.precursors {
+                        let smiles: Arc<str> = Arc::from(precursor.smiles);
+                        molecule_cache
+                            .entry(Arc::clone(&smiles))
+                            .or_insert_with(|| Arc::new(precursor.mol));
+                        precursor_smiles.push(smiles);
+                    }
                     RetroEntry {
                         rule_name: p.rule_name,
                         template_id: p.template_id,
                         step_cost: step_c,
-                        precursor_smiles: smiles_list,
+                        precursor_smiles,
                     }
                 })
                 .collect();
 
-            // Diagnostics-only (Issue #101 / Phase 1B): same-parent
-            // proposals from different templates landing on an identical
-            // precursor multiset, plus what would remain under two
-            // hypothetical dedup strategies. Does not merge or drop any entry.
+            // Account for duplicate outcomes before the child loop. Exact
+            // repeats from one template are skipped there before heuristic,
+            // path, and heap work; cross-template collisions remain intact so
+            // distinct provenance/evidence is never discarded.
             let (cross_dup, after_same_template, after_cross_template) = dedup_counts(&entries);
             crowd_out.cross_template_duplicate_precursor_signatures += cross_dup;
             crowd_out.candidates_generated_before_dedup += entries.len() as u64;
@@ -2319,7 +2496,8 @@ pub fn find_routes_with_control(
             depth_entry.children_produced += expansions.len() as u64;
         }
 
-        for entry in expansions.iter() {
+        let mut seen_same_template: FxHashSet<(&str, SmallVec<[&str; 4]>)> = FxHashSet::default();
+        for (entry_index, entry) in expansions.iter().enumerate() {
             // Checkpoint 3/3 (per child, before its heavier processing):
             // `expansions` can hold thousands of raw proposals at high
             // template counts, and each one below does real work (a fresh
@@ -2336,62 +2514,61 @@ pub fn find_routes_with_control(
                 break 'frontier;
             }
 
+            if !insert_same_template_signature(&mut seen_same_template, entry) {
+                continue;
+            }
+
+            // Reject constrained dead ends before frontier construction,
+            // heuristic evaluation, and path allocation. This branch is
+            // inactive for the default unconstrained search.
+            if config.forbidden_elements != 0 {
+                let mask = config.forbidden_elements;
+                if entry
+                    .precursor_smiles
+                    .iter()
+                    .filter(|p| is_bb_cached(p, env, &mut bb_cache))
+                    .any(|p| (elem_mask_from_smiles(p) & mask) != 0)
+                {
+                    continue;
+                }
+            }
+
             let new_frontier: SmallVec<[FEntry; 6]> = node
                 .frontier
                 .iter()
-                .filter(|e| e.smiles != target_smi)
+                .filter(|e| e.smiles.as_ref() != target_smi.as_str())
                 .cloned()
-                .chain(
-                    entry
-                        .precursor_smiles
-                        .iter()
-                        .map(|s| FEntry { smiles: s.clone() }),
-                )
+                .chain(entry.precursor_smiles.iter().map(|smiles| {
+                    FEntry {
+                        smiles: Arc::clone(smiles),
+                        mol: Arc::clone(
+                            molecule_cache
+                                .get(smiles)
+                                .expect("every generated precursor must be interned"),
+                        ),
+                    }
+                }))
                 .collect();
 
             let new_h = compute_h(
                 &new_frontier,
                 env,
                 &mut sa_cache,
+                &mut bb_cache,
                 config.value_estimator.as_ref(),
             );
 
-            // O(1) Arc::clone — shares the parent prefix without copying.
+            // Retain only a compact reference to the proposal here. Most
+            // children are later evicted by the beam, so materializing their
+            // full ReactionStep (and cloning rule/template/precursor strings)
+            // at push time is wasted work. `collect_path` builds steps only
+            // for nodes that actually reach stock.
             let new_path = Some(Arc::new(PathNode {
-                step: ReactionStep {
-                    rule: entry.rule_name.clone(),
-                    template_id: entry.template_id.clone(),
-                    target: target_smi.clone(),
-                    precursors: entry.precursor_smiles.clone(),
-                    conditions: conditions_for_rule(&entry.rule_name),
-                    atom_economy: None,             // populated in post-processing
-                    atom_economy_raw_percent: None, // populated in post-processing
-                    atom_economy_status: AtomEconomyStatus::NotEvaluable, // populated in post-processing
-                    step_confidence: 0.0, // populated in post-processing
-                    reaction_family: reaction_family_for_rule(&entry.rule_name).map(str::to_string),
-                    procedure_hint: procedure_hint_for_rule(&entry.rule_name).map(str::to_string),
-                    metadata_source: (!is_extracted_template(&entry.rule_name))
-                        .then_some(MetadataSource::HandcraftedDefault),
-                    metadata_scope: (!is_extracted_template(&entry.rule_name))
-                        .then_some(EvidenceScope::ReactionFamily),
-                    evidence: None, // populated in post-processing, routes actually returned only
-                },
+                target: target_smi.clone(),
+                expansions: Arc::clone(&expansions),
+                entry_index,
                 prev: node.path.clone(),
             }));
-
-            // In-search pruning: skip expansions where a BB-precursor contains a
-            // forbidden element. Avoids pushing dead-end nodes onto the heap.
-            if config.forbidden_elements != 0 {
-                let mask = config.forbidden_elements;
-                if entry
-                    .precursor_smiles
-                    .iter()
-                    .filter(|p| is_bb(p, env))
-                    .any(|p| (elem_mask_from_smiles(p) & mask) != 0)
-                {
-                    continue;
-                }
-            }
 
             // Phase 1B: opt-in candidate-level trace record. `trace_id`
             // stays `None` (no record, no lookup) whenever
@@ -2401,7 +2578,11 @@ pub fn find_routes_with_control(
                 if crowd_out.candidate_trace.len() >= cap {
                     return None;
                 }
-                let mut precursor_signature = entry.precursor_smiles.clone();
+                let mut precursor_signature: Vec<String> = entry
+                    .precursor_smiles
+                    .iter()
+                    .map(|precursor| precursor.to_string())
+                    .collect();
                 precursor_signature.sort_unstable();
                 let smirks = template_smirks
                     .get(entry.template_id.as_str())
@@ -2825,11 +3006,20 @@ mod tests {
 
     // ── Crowd-out diagnostics tests (Issue #101) ─────────────────────────────
 
+    fn frontier_entry(smiles: &str) -> FEntry {
+        FEntry {
+            smiles: Arc::from(smiles),
+            mol: Arc::new(mol_from_smiles(smiles).unwrap()),
+        }
+    }
+
+    fn retro_precursors(smiles: &[&str]) -> Vec<Arc<str>> {
+        smiles.iter().map(|smiles| Arc::from(*smiles)).collect()
+    }
+
     fn node(f: f64) -> Node {
         Node {
-            frontier: smallvec![FEntry {
-                smiles: "C".to_string(),
-            }],
+            frontier: smallvec![frontier_entry("C")],
             path: None,
             depth: 0,
             g: f,
@@ -2935,7 +3125,9 @@ mod tests {
     fn select_beam_survivors_nodes_without_family_key_never_diversity_selected() {
         // The remainder pool's only candidate has no family_key (e.g. a
         // root-shaped node) -- it must never be picked for a diversity
-        // slot, even though it would technically be "underrepresented."
+        // slot, even though it would technically be "underrepresented".
+        // The unused reservation is nevertheless backfilled by the next
+        // best score, so Active does not shrink the beam from 2 nodes to 1.
         let nodes = vec![
             family_node(1.0, "A"),
             family_node(2.0, "A"),
@@ -2944,7 +3136,25 @@ mod tests {
         let (survivors, stats) = select_beam_survivors(nodes, 2, 1, BeamDiversityPolicy::Active);
         let mut fs: Vec<f64> = survivors.iter().map(Node::f).collect();
         fs.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
-        assert_eq!(fs, vec![1.0], "score_slots=1 keeps only the best A");
+        assert_eq!(fs, vec![1.0, 2.0]);
+        assert_eq!(stats.families_rescued_by_reservation, 0);
+    }
+
+    #[test]
+    fn select_beam_survivors_backfills_unused_slots_for_one_family() {
+        // beam_width=3, diversity_slots=2 -> score_slots=1. With only one
+        // family available there is nothing to rescue, so both unused
+        // reservation slots must revert to the next two score-ranked nodes.
+        let nodes = vec![
+            family_node(1.0, "A"),
+            family_node(2.0, "A"),
+            family_node(3.0, "A"),
+            family_node(4.0, "A"),
+        ];
+        let (survivors, stats) = select_beam_survivors(nodes, 3, 2, BeamDiversityPolicy::Active);
+        let mut fs: Vec<f64> = survivors.iter().map(Node::f).collect();
+        fs.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_eq!(fs, vec![1.0, 2.0, 3.0]);
         assert_eq!(stats.families_rescued_by_reservation, 0);
     }
 
@@ -3109,18 +3319,18 @@ mod tests {
 
     #[test]
     fn dedup_counts_ignores_same_template_repeats_for_cross_template_duplicates() {
-        let entries = vec![
+        let entries = [
             RetroEntry {
                 rule_name: "extracted_1".to_string(),
                 template_id: "smirks-sha256:aaa".to_string(),
                 step_cost: 1.0,
-                precursor_smiles: vec!["CC".to_string(), "O".to_string()],
+                precursor_smiles: retro_precursors(&["CC", "O"]),
             },
             RetroEntry {
                 rule_name: "extracted_1".to_string(),
                 template_id: "smirks-sha256:aaa".to_string(),
                 step_cost: 1.0,
-                precursor_smiles: vec!["O".to_string(), "CC".to_string()],
+                precursor_smiles: retro_precursors(&["O", "CC"]),
             },
         ];
         let (cross_dup, after_same_template, after_cross_template) = dedup_counts(&entries);
@@ -3142,19 +3352,19 @@ mod tests {
                 rule_name: "extracted_1".to_string(),
                 template_id: "smirks-sha256:aaa".to_string(),
                 step_cost: 1.0,
-                precursor_smiles: vec!["CC".to_string(), "O".to_string()],
+                precursor_smiles: retro_precursors(&["CC", "O"]),
             },
             RetroEntry {
                 rule_name: "extracted_2".to_string(),
                 template_id: "smirks-sha256:bbb".to_string(),
                 // Same multiset, different order -- must still collide (sorted signature).
-                precursor_smiles: vec!["O".to_string(), "CC".to_string()],
+                precursor_smiles: retro_precursors(&["O", "CC"]),
                 step_cost: 1.0,
             },
             RetroEntry {
                 rule_name: "extracted_3".to_string(),
                 template_id: "smirks-sha256:ccc".to_string(),
-                precursor_smiles: vec!["N".to_string()],
+                precursor_smiles: retro_precursors(&["N"]),
                 step_cost: 1.0,
             },
         ];
@@ -3171,6 +3381,35 @@ mod tests {
             after_cross_template, 2,
             "extracted_1/extracted_2 share one signature; extracted_3 is the second"
         );
+    }
+
+    #[test]
+    fn hot_loop_dedup_preserves_cross_template_provenance() {
+        let entries = [
+            RetroEntry {
+                rule_name: "extracted_1".to_string(),
+                template_id: "smirks-sha256:aaa".to_string(),
+                step_cost: 1.0,
+                precursor_smiles: retro_precursors(&["CC", "O"]),
+            },
+            RetroEntry {
+                rule_name: "extracted_1".to_string(),
+                template_id: "smirks-sha256:aaa".to_string(),
+                step_cost: 1.0,
+                precursor_smiles: retro_precursors(&["O", "CC"]),
+            },
+            RetroEntry {
+                rule_name: "extracted_2".to_string(),
+                template_id: "smirks-sha256:bbb".to_string(),
+                step_cost: 1.0,
+                precursor_smiles: retro_precursors(&["CC", "O"]),
+            },
+        ];
+        let mut seen = FxHashSet::default();
+        assert!(insert_same_template_signature(&mut seen, &entries[0]));
+        assert!(!insert_same_template_signature(&mut seen, &entries[1]));
+        assert!(insert_same_template_signature(&mut seen, &entries[2]));
+        assert_eq!(seen.len(), 2);
     }
 
     #[test]
@@ -4089,6 +4328,7 @@ mod tests {
                 &target_mol,
                 target_smi,
                 &scored_active_rules,
+                None,
                 crate::ring_context::RingContextArgs {
                     config: crate::ring_context::RingContextConfig::Disabled,
                 },
@@ -4551,6 +4791,27 @@ mod cooperative_cancellation_tests {
                 serde_json::to_string(&wrapper_stats).unwrap(),
                 serde_json::to_string(&controlled.stats).unwrap(),
                 "wrapper vs. find_routes_with_control(unlimited) stats diverged at beam_width={beam_width}"
+            );
+        }
+    }
+
+    #[test]
+    fn reusable_engine_matches_one_off_search_across_repeated_queries() {
+        let env = env();
+        let rules = default_rules();
+        let config = cfg(10);
+        let (expected_routes, expected_stats) = find_routes(TARGET, &env, &rules, &config).unwrap();
+        let engine = SearchEngine::new(env, rules);
+
+        for _ in 0..2 {
+            let (routes, stats) = engine.find_routes(TARGET, &config).unwrap();
+            assert_eq!(
+                serde_json::to_string(&routes).unwrap(),
+                serde_json::to_string(&expected_routes).unwrap()
+            );
+            assert_eq!(
+                serde_json::to_string(&stats).unwrap(),
+                serde_json::to_string(&expected_stats).unwrap()
             );
         }
     }

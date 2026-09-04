@@ -142,7 +142,7 @@ OC(=O)c1ccccc1OC(=O)C
 
 ## 現在の制約
 
-⚠️ ベンチマーク数値はvalidator精度修正後、再計測が進行中です——このリポジトリの他箇所にある78.0%/95.9%/81.8%(ChEMBL)はこの修正より前の値であり、無効化されています。RENKINは収率・実験的に較正された成功確率・副反応を予測せず、文献の自動検索も行いません（`success_probability`はtemplate頻度由来の探索スコアであり、較正された予測値ではありません）。修正済みの過去計測値・詳細な手法・既知の制約は[ベンチマーク](https://kent-tokyo.github.io/renkin/benchmark/)を参照してください（このページは単一commit時点で凍結された過去の計測であり、リアルタイムの数値ではありません）。
+⚠️ v1.0.0の4,903-target shared-stock比較は完了し、統計的優越性gateはPASSしました。ただし凍結RENKIN出力2件のroute-tree整合性失敗により、正式公開gateはHOLDです。v1.0.1 candidateでの対象限定再実行は2件ともparseable・stock-terminatedになりましたが、正式判定の更新には修正版での全4,903件再実行が必要です。このリポジトリの他箇所にある78.0%/95.9%/81.8%(ChEMBL)はvalidator修正前の値であり無効化されています。RENKINは収率・実験的に較正された成功確率・副反応を予測せず、文献の自動検索も行いません（`success_probability`はtemplate頻度由来の探索スコアであり、較正された予測値ではありません）。
 
 ---
 
@@ -366,14 +366,14 @@ CC-BY-SA-4.0であり、RENKIN本体コードのMITとは別ライセンスで�
 | **LightGBM candidate reranker** | `--reranker-model`/`--reranker-freq-table`（CLI）または `reranker_model_path`/`reranker_freq_table_path`（Python）— opt-inかつordering-onlyな再順位付け。生成される候補そのものは一切変更されず探索順序のみが変わり、オフ時はレガシー順序とbyte単位で完全一致。Paired 100-target route-searchゲート: `route_to_configured_stock` 16→20（+4/-0）。`python3 scripts/fetch_reranker_model.py` で凍結モデルを取得（SHA-256検証つき、パッケージには同梱しない — [ロードマップ](#ロードマップ)参照） |
 | **Coverage mode（opt-in）** | `--search-mode coverage --coverage-templates <path>`（CLI）または `search_mode="coverage"`, `coverage_templates_path=...`（Python）— デフォルトのテンプレートセットでルートが見つからない場合のみ、自動的により大きな別テンプレートセットへエスカレーションする。`--coverage-timeout-secs` で協調的にキャンセル可能。未使用時の標準モード出力はbyte単位で完全不変。`python3 scripts/fetch_coverage_templates.py` で凍結済み2,000テンプレートのStage-2セットを取得（SHA-256検証つき、パッケージには同梱しない、rerankerモデルと同じ理由 — [ロードマップ](#ロードマップ)参照） |
 | **RENKIN Bridge / `audit-route`** | `renkin audit-route route.json [--format auto\|renkin\|aizynthfinder\|syntheseus] [--stock stock.smi] [--output human\|json]` — ツール非依存のroute audit: 構造整合性・stock・宣言済み反応のforward replay検証を、それぞれ独立に `pass`/`fail`/`not_evaluable` で報告し、route全体は `pass`/`fail`/`partial` で判定。RENKIN-native route JSON（v0.25.0）、実物AiZynthFinder route JSON（単一ターゲット・gzip圧縮batch出力、AiZynthFinder 4.3.2／4.4.0／4.4.1で検証済み——全バージョン対応を主張するものではない、v0.26.0、v0.32.0でversion matrixを拡大）、そしてSyntheseus route（Syntheseus自体にはネイティブのroute export機能がないため、任意インストールの`renkin.syntheseus_exporter`が生成する`syntheseus-route-v1`交換schema経由、v0.30.0）に対応。`--format auto` は入力の形状から判定し、曖昧な場合は推測せずエラーにする。[AiZynthFinderデモ →](https://kent-tokyo.github.io/renkin/guides/aizynthfinder-audit-demo/)（英語）・[Syntheseusデモ →](https://kent-tokyo.github.io/renkin/guides/syntheseus-audit-demo/)（英語） |
-| **ルートスコアリング** | `confidence`, `step_confidence`, `success_probability`（Retro-prob方式）, `convergency`, `atom_economy`, `route_cost`（`Σ(BB価格) + ステップ数×0.5`、または`--bb-prices`/`--stock`で実価格）— 下の注記も参照 |
+| **ルートスコアリング・診断** | `confidence`・`success_probability`・cost・feasibility finding・building-block diversity・template proxyのchemical-idea diversityを分離して報告。実験成功確率を集約スコアとして捏造しない — [feasibility](docs/guides/route-feasibility-diagnostics.md)・[diversity](docs/guides/route-set-diversity.md) |
 | **ステップメタデータの出所表示** | 各ステップに `metadata_source`/`metadata_scope` を付与し、`conditions`/`reaction_family` がルール作者による既定値かそれ以上の根拠があるかを機械可読に区別。extracted templateには付与しない（捏造しない） |
 | **Pareto多目的探索** | `--format pareto` で `route_cost`・`success_probability`・`steps` 等のパレートフロントを返す；`--objectives` で目的関数をカスタム設定 |
 | **制約 DSL** | `--constraints constraints.json` — 元素・building blockフィルタ・ステップ/コスト制限・信頼度閾値・必須/除外/優先反応族；LLM → RENKIN パイプラインに対応 |
 | **出力フォーマット & 診断** | `--format json\|tree\|mermaid\|explain\|compare\|compare-json\|pareto`；ルートが見つからない場合はJSONに `diagnostics`（`likely_causes`/`suggestions`）を付加 |
 | **`renkin-forward` ツール群** | `predict`（順反応生成物のランキング）、`enumerate`（1反応物+partnerライブラリからの境界付き列挙）、`hints`（partner不要の検索用ヒント、具体的生成物は出さない）、`validate`（各retroステップの順方向検証）— [Forward guides](docs/guides/forward-retrieval-hints.md#predict--enumerate--hints-at-a-glance)（英語）参照 |
 | **`renkin-bench`** | USPTO-50k/PaRoutes評価、`--plausibility`（順方向検証済み複合スコア）、`--failure-taxonomy`、原子収支チェック（`target_MW > Σ precursor_MW`）、未解決ターゲットを対象にした多段階`cascade`再実行 — [ベンチマーク](#ベンチマーク)参照 |
-| **stock CSV 管理** | `renkin stock stats\|validate\|coverage` — SMILES・名称・ベンダー・価格・ハザード情報 |
+| **stock管理** | `renkin stock stats\|validate\|coverage\|compile` — integrity検証付き`.rstock` snapshotで大規模stockの再parseを省き、vendor・価格・lead-time・availability policyも分離して扱う |
 | **MCPサーバー** | `renkin-mcp` が stdio 経由で7ツール（`find_routes`, `validate_route`, `explain_route`, `find_pareto_routes`, `plan_with_constraints`, `estimate_diversity`, `diagnose_failure`）を提供し、レガシー `2024-11-05` とモダン `2026-07-28` の両プロトコル改訂に対応。詳細は[MCPガイド](docs/guides/mcp.md)参照 |
 | **`renkin-doctor`** | 環境診断バイナリ — テンプレート・市販品データ・Python インポート・ツールバージョン・データ整合性を検査 |
 | **`renkin-kg`** | 反応知識グラフ構築ツール — ルートから分子↔反応の二部グラフを生成；GraphML / Cypher 形式でエクスポート |
@@ -391,6 +391,22 @@ CC-BY-SA-4.0であり、RENKIN本体コードのMITとは別ライセンスで�
 USPTO-50kテストセット（全4,907分子評価）:
 
 > **評価定義**: `find_routes` がbuilding block集合に含まれる末端precursorのみで構成される経路を depth=5・beam=100 以内で1件以上見つけられれば solved。USPTO-50k の正解試薬とは照合しない。
+
+### v1.0.0正式shared-stock比較（4,903件のpaired target）
+
+| Arm | Primary route-to-shared-stock成功 | Rate |
+|---|---:|---:|
+| RENKIN v1.0.0 | 577 / 4,903 | 11.77% |
+| AiZynthFinder 4.4.1 | 200 / 4,903 | 4.08% |
+
+paired差はRENKIN側 **+7.689 percentage points**、paired-bootstrap 95% CIは
+**[+6.812, +8.566]**で、事前登録した統計gateはPASSしました。一方、凍結した
+RENKIN出力2件にparseableなnormalized route treeがなく、正式公開gateは
+**HOLD**です。v1.0.1 candidateの修正後は対象限定再実行2件ともparseable・
+stock-terminatedですが、凍結判定を更新するには全4,903件の再実行が必要です。
+これはshared-stock route endpointの結果であり、実験収率や一般的なCASP優越性の
+主張ではありません。[protocolと状態](docs/benchmark/formal-v1.0-competitor-comparison.md)・
+[凍結report](data/comparison/formal_v1.0/formal_report.md)
 
 ### Corrected baseline（コミット `e20dc8c`、2026-07-22）
 
@@ -646,7 +662,7 @@ renkin/                          ← Cargo workspace ルート
 - [x] `renkin-doctor` — 環境診断バイナリ（テンプレート・BB・Python・ツールバージョン）
 - [x] 失敗時診断 — ルートゼロ時に `likely_causes` + `suggestions` の JSON ブロックを出力
 - [x] `--format explain|compare|compare-json` — 人間可読・表形式ルート出力
-- [x] `renkin stock stats|validate|coverage` — stock CSV 管理サブコマンド
+- [x] `renkin stock stats|validate|coverage|compile` — stock検査とintegrity検証付き`.rstock` snapshot
 - [x] Pareto 多目的探索 — `--format pareto`・`--objectives`・`find_pareto_routes` MCP ツール
 - [x] 制約 DSL — `--constraints JSON`・`plan_with_constraints` MCP ツール
 - [x] `renkin template stats|validate|dedup|explain|coverage` — テンプレート品質ツール

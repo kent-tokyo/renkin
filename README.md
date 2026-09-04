@@ -171,9 +171,12 @@ Use `--format mermaid` for GitHub/Notion-compatible flowcharts.
 
 ## Current Limitations
 
-⚠️ Benchmark numbers are under active re-measurement after a validator-accuracy
-fix — historical 78.0%/95.9%/81.8%(ChEMBL) figures elsewhere in this repo predate
-that fix and are invalidated. RENKIN does not predict yields, calibrated
+⚠️ The 4,903-target v1.0.0 shared-stock comparison is complete: its statistical
+superiority gate passed, but its formal publication gate remains on hold because
+two frozen RENKIN rows failed route-tree integrity. Both failure modes pass a
+targeted v1.0.1-candidate rerun; a full corrected rerun is still required before
+changing the formal verdict. Historical 78.0%/95.9%/81.8%(ChEMBL) figures
+elsewhere in this repo predate validator fixes and are invalidated. RENKIN does not predict yields, calibrated
 experimental success probabilities, or side reactions, and does not search
 the literature automatically (`success_probability` is a template-frequency
 search-ranking score, not a calibrated prediction — see
@@ -411,14 +414,14 @@ for the full acceptance criteria and licensing split.
 | **LightGBM candidate reranker** | `--reranker-model`/`--reranker-freq-table` (CLI) or `reranker_model_path`/`reranker_freq_table_path` (Python) — opt-in, ordering-only re-ranking via a frozen LightGBM model; never changes which candidates are generated, only their order, and reproduces legacy ordering byte-for-byte when off. Paired 100-target route-search gate: `route_to_configured_stock` 16→20 (+4/-0). `python3 scripts/fetch_reranker_model.py` fetches the frozen model (SHA-256-verified, not bundled in any package — see [Roadmap](#roadmap)) |
 | **Coverage mode** (opt-in) | `--search-mode coverage --coverage-templates <path>` (CLI) or `search_mode="coverage"`, `coverage_templates_path=...` (Python) — if the default template set finds no route, automatically escalates to a larger, separately loaded template set, cooperatively cancellable via `--coverage-timeout-secs`. Standard-mode output is byte-for-byte unchanged when not used. `python3 scripts/fetch_coverage_templates.py` fetches the frozen 2,000-template Stage-2 set (SHA-256-verified, not bundled in any package, same reasoning as the reranker model — see [Roadmap](#roadmap)) |
 | **RENKIN Bridge / `audit-route`** | `renkin audit-route route.json [--format auto\|renkin\|aizynthfinder\|syntheseus\|synplanner] [--stock stock.smi] [--output human\|json]` — tool-neutral route audit: structural integrity, stock, and declared-reaction forward-replay validation, each reported independently as `pass`/`fail`/`not_evaluable`, rolled up into a route-level `pass`/`fail`/`partial` verdict. Reads RENKIN-native route JSON (v0.25.0), real AiZynthFinder route JSON — single-target and gzip-compressed batch output, verified against AiZynthFinder 4.3.2, 4.4.0, and 4.4.1 specifically, not claimed for every version (v0.26.0, version matrix widened v0.32.0) — Syntheseus routes via the optional `renkin.syntheseus_exporter`'s `syntheseus-route-v1` interchange schema, since Syntheseus itself has no native route export (v0.30.0) — and real SynPlanner 1.6.0 `write_routes_json` exports directly, no exporter package needed (v0.34.0); `--format auto` detects the input shape and hard-errors rather than guessing on anything ambiguous. [AiZynthFinder walkthrough →](https://kent-tokyo.github.io/renkin/guides/aizynthfinder-audit-demo/) · [Syntheseus walkthrough →](https://kent-tokyo.github.io/renkin/guides/syntheseus-audit-demo/) · [SynPlanner walkthrough →](https://kent-tokyo.github.io/renkin/guides/synplanner-audit-demo/) |
-| **Route scoring** | `confidence`, `step_confidence`, `success_probability` (Retro-prob style), `convergency`, `atom_economy`, `route_cost` (`Σ BB cost + steps×0.5`, or actual prices via `--bb-prices`/`--stock`) per step/route — see caveat below the table |
+| **Route scoring & diagnostics** | Separate `confidence`, `success_probability`, cost, feasibility findings, building-block diversity, and template-proxy chemical-idea diversity; no aggregate laboratory-feasibility score is fabricated — see the caveat below and the [diagnostics](docs/guides/route-feasibility-diagnostics.md) / [diversity](docs/guides/route-set-diversity.md) guides |
 | **Step metadata provenance** | Each step reports `metadata_source`/`metadata_scope` so it's machine-readable whether `conditions`/`reaction_family` came from a rule-author default vs. something more grounded; absent (not fabricated) for extracted templates |
 | **Pareto multi-objective search** | `--format pareto` returns a Pareto front across `route_cost`/`success_probability`/`steps`; objectives configurable via `--objectives` |
 | **Constraint DSL** | `--constraints constraints.json` — element/building-block filters, step/cost limits, confidence thresholds, required/avoided/preferred reaction families; enables LLM → RENKIN pipelines |
 | **Output formats & diagnostics** | `--format json\|tree\|mermaid\|explain\|compare\|compare-json\|pareto`; zero-route JSON includes a `diagnostics` block with `likely_causes`/`suggestions` |
 | **`renkin-forward` toolkit** | `predict` (rank forward products), `enumerate` (bounded products from one reactant + partner library), `hints` (partner-free retrieval hints, no concrete product), `validate` (forward-verify each retro step) — see the [Forward guides](docs/guides/forward-retrieval-hints.md#predict--enumerate--hints-at-a-glance) |
 | **`renkin-bench`** | USPTO-50k/PaRoutes evaluation with `--plausibility` (forward-validated composite score), `--failure-taxonomy`, atom-balance checks (`target_MW > Σ precursor_MW`), and multi-stage `cascade` re-runs on unsolved targets — see [Benchmark](#benchmark) |
-| **Stock management** | `renkin stock stats\|validate\|coverage` for legacy CSV plus the `vendor_stock` library API for v0.38 CSV/TSV vendor records (SMILES, ID, vendor, price, lead time, availability), explicit exact/parent/stereo/tautomer match modes, and an InChIKey candidate index |
+| **Stock management** | `renkin stock stats\|validate\|coverage\|compile`; integrity-checked `.rstock` snapshots avoid reparsing large stocks, while the `vendor_stock` API supports source, price, lead-time, availability, and exact/parent/stereo/tautomer policy |
 | **MCP server** | `renkin-mcp` exposes 7 tools over stdio (`find_routes`, `validate_route`, `explain_route`, `find_pareto_routes`, `plan_with_constraints`, `estimate_diversity`, `diagnose_failure`) and supports the legacy `2024-11-05` and modern `2026-07-28` protocol revisions; see the [MCP guide](docs/guides/mcp.md) |
 | **`renkin-doctor`** | Environment diagnostic binary — templates, building blocks, Python import, tool versions, data integrity |
 | **`renkin-kg`** | Reaction knowledge graph builder — bipartite mol↔reaction graphs from routes, GraphML/Cypher export |
@@ -468,6 +471,23 @@ renkin audit-route tests/fixtures/aizynthfinder/v4.4.1/single_trees.json --forma
 USPTO-50k test set (4,907 molecules, full evaluation):
 
 > **Evaluation definition**: A molecule is *solved* if `find_routes` returns at least one route whose leaf precursors are all in the building block set, within depth=5 and beam=100. Ground-truth reactants from USPTO-50k are **not** checked — any commercially accessible route counts.
+
+### Formal v1.0.0 shared-stock comparison (4,903 paired targets)
+
+| Arm | Primary route-to-shared-stock successes | Rate |
+|---|---:|---:|
+| RENKIN v1.0.0 | 577 / 4,903 | 11.77% |
+| AiZynthFinder 4.4.1 | 200 / 4,903 | 4.08% |
+
+The paired RENKIN-minus-AiZynthFinder difference is **+7.689 percentage
+points**, with paired-bootstrap 95% CI **[+6.812, +8.566]**. This passes the
+pre-registered statistical gate. The formal publication gate is nevertheless
+**HOLD**: two frozen RENKIN rows had no parseable normalized route tree. The
+v1.0.1-candidate fixes make both targeted reruns parseable and stock-terminated,
+but only a fresh full 4,903-target run can change the frozen verdict. This is a
+shared-stock route endpoint, not experimental yield or universal CASP
+superiority. [Protocol and status](docs/benchmark/formal-v1.0-competitor-comparison.md)
+· [frozen report](data/comparison/formal_v1.0/formal_report.md)
 
 ### Corrected baseline (commit `e20dc8c`, 2026-07-22)
 
@@ -573,7 +593,7 @@ The JSON output includes `avg_nodes_expanded`, `avg_confidence`, `avg_convergenc
 to Stage 2 only when Stage 1 finds no route; the response reports the selected
 stage, timeout status, and per-stage elapsed time.
 
-The server auto-detects `data/building_blocks.smi` and `data/templates_extracted_5000.smi` in the working directory. Falls back to the embedded `DEFAULT_BUILDING_BLOCKS` / `default_rules()` defaults if not found (152 unique building blocks per `ChemEnv::bb_count()`, 22 handcrafted rules, including the new graph-based `carbamate_cleavage` rule).
+The server auto-detects `data/building_blocks.smi` and `data/templates_extracted_5000.smi` in the working directory. Falls back to the embedded `DEFAULT_BUILDING_BLOCKS` / `default_rules()` defaults if not found (152 unique building blocks per `ChemEnv::bb_count()`, 23 handcrafted rules, including the new graph-based `carbamate_cleavage` rule).
 
 ```bash
 cargo build --release
@@ -612,7 +632,7 @@ Target SMILES
 ┌─────────────────────────┐
 │     chem_env.rs         │  ← chematic wrapper
 │  - SMILES parse         │     canonical-SMILES FxHashSet BB lookup (O(1))
-│  - 21 built-in + up to 50k via --templates  │     fragment sanitization + ring-leak filter
+│  - 23 built-in + up to 50k via --templates  │     fragment sanitization + ring-leak filter
 │  - Building block check │     apply_retro memoization cache
 └────────────┬────────────┘
              │  par_iter (rayon / sequential on WASM)
@@ -753,7 +773,7 @@ see [Benchmark](#benchmark) for the corrected historical baseline.
 - [x] `renkin-doctor` — environment diagnostic binary (templates, BBs, Python, binaries)
 - [x] Failure diagnostics — zero-route output includes `likely_causes` + `suggestions` JSON block
 - [x] `--format explain|compare|compare-json` — human-readable and tabular route output
-- [x] `renkin stock stats|validate|coverage` — stock CSV management subcommand
+- [x] `renkin stock stats|validate|coverage|compile` — stock inspection plus integrity-checked compiled `.rstock` snapshots
 - [x] Pareto multi-objective search — `--format pareto`, `--objectives`, `find_pareto_routes` MCP
 - [x] Constraint DSL — `--constraints JSON`, `plan_with_constraints` MCP tool
 - [x] `renkin template stats|validate|dedup|explain|coverage` — template quality tools

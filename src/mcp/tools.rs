@@ -10,9 +10,10 @@ use crate::chem_env::{self, elem_symbols_to_mask};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::coverage_mode;
 use crate::display::{explain_route, format_route_tree};
-use crate::search::{self, Route, SearchConfig};
+use crate::search::{self, Route, SearchConfig, SearchEngine};
 use crate::validation::step_balanced;
 use serde_json::{Value, json};
+use std::sync::OnceLock;
 
 /// The result of running a RENKIN tool, independent of wire era.
 pub struct ToolOutcome {
@@ -130,7 +131,7 @@ pub static TOOLS: &[ToolDefinition] = &[
     ToolDefinition {
         name: "plan_with_constraints",
         title: "Plan a route under constraints",
-        description: "Find retrosynthetic routes applying explicit constraints: avoid elements, require elements, max steps, min confidence, min success probability, preferred reaction families. Designed for LLM-driven synthesis planning (Project Ariadne style).",
+        description: "Find retrosynthetic routes applying explicit constraints over elements, building blocks, route cost, step count, confidence, success probability, and required, avoided, or preferred reaction families. Designed for LLM-driven synthesis planning (Project Ariadne style).",
         legacy_input_schema: legacy_schema_plan_with_constraints,
         modern_input_schema: modern_schema_plan_with_constraints,
         modern_output_schema: None,
@@ -139,7 +140,7 @@ pub static TOOLS: &[ToolDefinition] = &[
     ToolDefinition {
         name: "estimate_diversity",
         title: "Estimate route diversity",
-        description: "Find multiple retrosynthetic routes for a target molecule and report the route diversity score (1 - avg pairwise Jaccard similarity of building-block sets). Higher = more diverse options available.",
+        description: "Find multiple retrosynthetic routes and report both building-block-set diversity and a deterministic template-disconnection chemical-idea diversity proxy. Higher values mean more distinct options under the corresponding metric.",
         legacy_input_schema: legacy_schema_estimate_diversity,
         modern_input_schema: modern_schema_estimate_diversity,
         modern_output_schema: Some(output_schema_estimate_diversity),
@@ -160,22 +161,28 @@ pub fn find(name: &str) -> Option<&'static ToolDefinition> {
     TOOLS.iter().find(|t| t.name == name)
 }
 
-/// Legacy 2024-11-05 `tools/call` dispatch — byte-for-byte the pre-refactor
-/// behavior, including the pre-existing "unknown tool name falls back to
-/// find_routes" quirk. Do not "fix" this here: it is a legacy-compat
-/// guarantee, not a design choice. The modern era's own dispatch (in
-/// `protocol.rs`) does not use this function.
+/// Legacy 2024-11-05 `tools/call` dispatch. The wire result shape remains
+/// legacy-compatible, while malformed calls retain RENKIN's v1.0 fail-closed
+/// contract: unknown tools and arguments are rejected before search.
 pub fn dispatch_legacy(msg_params: &Value) -> ToolOutcome {
-    let tool_name = msg_params["name"].as_str().unwrap_or("find_routes");
-    let args = &msg_params["arguments"];
+    let Some(params) = msg_params.as_object() else {
+        return ToolOutcome::error("tools/call params must be an object");
+    };
+    let Some(tool_name) = params.get("name").and_then(Value::as_str) else {
+        return ToolOutcome::error("tools/call name must be a string");
+    };
+    let Some(definition) = find(tool_name) else {
+        return ToolOutcome::error(format!("unknown tool: {tool_name}"));
+    };
+    let args = params.get("arguments").unwrap_or(&Value::Null);
+    if let Err(message) = validate_modern_args(&(definition.modern_input_schema)(), args) {
+        return ToolOutcome::error(message);
+    }
     let smiles = match args["smiles"].as_str() {
         Some(s) => s,
         None => return ToolOutcome::error("missing required argument: smiles"),
     };
-    let handler = find(tool_name)
-        .map(|t| t.handler)
-        .unwrap_or(handle_find_routes);
-    handler(smiles, args)
+    (definition.handler)(smiles, args)
 }
 
 /// Minimal JSON Schema 2020-12 subset check covering exactly the vocabulary
@@ -198,7 +205,7 @@ pub fn validate_modern_args(schema: &Value, args: &Value) -> Result<(), String> 
     for (key, value) in args_obj {
         let Some(prop_schema) = props.and_then(|p| p.get(key)) else {
             if !additional_properties_allowed {
-                return Err(format!("unexpected argument: {key}"));
+                return Err(format!("unknown argument: {key}"));
             }
             continue;
         };
@@ -225,28 +232,33 @@ pub fn validate_modern_args(schema: &Value, args: &Value) -> Result<(), String> 
             if let Some(max) = prop_schema.get("maximum").and_then(Value::as_f64)
                 && n > max
             {
-                return Err(format!("argument {key}={n} is above maximum {max}"));
+                return Err(format!(
+                    "resource_exhausted: {key} exceeds configured maximum {max}"
+                ));
             }
         }
     }
     Ok(())
 }
 
-fn load_env_and_rules() -> (chem_env::ChemEnv, Vec<chem_env::RetroRule>) {
-    let env = chem_env::ChemEnv::load("data/building_blocks.smi")
-        .unwrap_or_else(|_| chem_env::ChemEnv::in_memory(DEFAULT_BUILDING_BLOCKS));
-    let mut rules = chem_env::default_rules();
-    // Load whichever template file is available (prefer larger set)
-    for path in &[
-        "data/templates_extracted_50000.smi",
-        "data/templates_extracted_5000.smi",
-    ] {
-        if std::path::Path::new(path).is_file() {
-            rules.extend(chem_env::load_rules_from_file(path));
-            break;
+fn search_engine() -> &'static SearchEngine {
+    static ENGINE: OnceLock<SearchEngine> = OnceLock::new();
+    ENGINE.get_or_init(|| {
+        let env = chem_env::ChemEnv::load("data/building_blocks.smi")
+            .unwrap_or_else(|_| chem_env::ChemEnv::in_memory(DEFAULT_BUILDING_BLOCKS));
+        let mut rules = chem_env::default_rules();
+        // Load whichever template file is available (prefer larger set).
+        for path in &[
+            "data/templates_extracted_50000.smi",
+            "data/templates_extracted_5000.smi",
+        ] {
+            if std::path::Path::new(path).is_file() {
+                rules.extend(chem_env::load_rules_from_file(path));
+                break;
+            }
         }
-    }
-    (env, rules)
+        SearchEngine::new(env, rules)
+    })
 }
 
 fn handle_find_routes(smiles: &str, args: &Value) -> ToolOutcome {
@@ -259,6 +271,10 @@ fn handle_find_routes(smiles: &str, args: &Value) -> ToolOutcome {
         return ToolOutcome::error("invalid search_mode (expected standard or coverage)");
     }
     let coverage_path = args["coverage_templates"].as_str();
+    let candidate_trace_limit = args["candidate_trace_limit"]
+        .as_u64()
+        .filter(|limit| *limit > 0)
+        .map(|limit| limit as usize);
     let coverage_timeout = match args["coverage_timeout_secs"].as_u64() {
         Some(0) => {
             return ToolOutcome::error("coverage_timeout_secs must be a positive integer");
@@ -279,12 +295,13 @@ fn handle_find_routes(smiles: &str, args: &Value) -> ToolOutcome {
         _ => "",
     };
 
-    let (env, rules) = load_env_and_rules();
+    let engine = search_engine();
     let config = SearchConfig {
         max_depth: depth,
         max_routes,
         forbidden_elements: elem_symbols_to_mask(avoid),
         required_element_present: elem_symbols_to_mask(require),
+        candidate_trace_cap: candidate_trace_limit,
         ..Default::default()
     };
 
@@ -300,8 +317,8 @@ fn handle_find_routes(smiles: &str, args: &Value) -> ToolOutcome {
             };
             let result = match coverage_mode::run_coverage_mode(
                 smiles,
-                &env,
-                &rules,
+                engine.env(),
+                engine.rules(),
                 &config,
                 &coverage_rules,
                 coverage_timeout,
@@ -329,7 +346,7 @@ fn handle_find_routes(smiles: &str, args: &Value) -> ToolOutcome {
             return ToolOutcome::error("coverage search is unavailable on wasm32");
         }
     } else {
-        let result = match search::find_routes(smiles, &env, &rules, &config) {
+        let result = match engine.find_routes(smiles, &config) {
             Ok(r) => r,
             Err(e) => return ToolOutcome::error(format!("search error: {e}")),
         };
@@ -355,19 +372,41 @@ fn handle_find_routes(smiles: &str, args: &Value) -> ToolOutcome {
             ));
         }
     }
+    if let Some(limit) = candidate_trace_limit {
+        text.push_str(&format!(
+            "\nCandidate trace ({} records, limit={}):\n",
+            stats.crowd_out.candidate_trace.len(),
+            limit
+        ));
+        for record in &stats.crowd_out.candidate_trace {
+            let rank = record
+                .rank_before_prune
+                .map(|rank| rank.to_string())
+                .unwrap_or_else(|| "n/a".to_string());
+            text.push_str(&format!(
+                "  depth={} template={} provenance={:?} rank={} survived={} later_reached_stock={}\n",
+                record.depth,
+                record.template_id,
+                record.provenance,
+                rank,
+                record.survived_beam,
+                record.later_reached_stock,
+            ));
+        }
+    }
     ToolOutcome::ok(text)
 }
 
 fn handle_explain_route(smiles: &str, args: &Value) -> ToolOutcome {
     let depth = args["depth"].as_u64().unwrap_or(5) as u32;
     let max_routes = args["max_routes"].as_u64().unwrap_or(1) as usize;
-    let (env, rules) = load_env_and_rules();
+    let engine = search_engine();
     let config = SearchConfig {
         max_depth: depth,
         max_routes,
         ..Default::default()
     };
-    let (routes, _) = match search::find_routes(smiles, &env, &rules, &config) {
+    let (routes, _) = match engine.find_routes(smiles, &config) {
         Ok(r) => r,
         Err(e) => return ToolOutcome::error(format!("search error: {e}")),
     };
@@ -387,14 +426,47 @@ fn handle_plan_with_constraints(smiles: &str, args: &Value) -> ToolOutcome {
     let max_routes = args["max_routes"].as_u64().unwrap_or(5) as usize;
     let avoid = args["avoid_elements"].as_str().unwrap_or("");
     let require = args["require_elements"].as_str().unwrap_or("");
+    let avoid_bbs: Option<Vec<String>> = args["avoid_building_blocks"].as_str().map(|value| {
+        value
+            .split(',')
+            .map(|item| item.trim().to_string())
+            .collect()
+    });
+    let require_bbs: Option<Vec<String>> = args["require_building_blocks"].as_str().map(|value| {
+        value
+            .split(',')
+            .map(|item| item.trim().to_string())
+            .collect()
+    });
     let max_steps = args["max_steps"].as_u64().map(|n| n as usize);
+    let max_route_cost = args["max_route_cost"].as_f64();
     let min_confidence = args["min_confidence"].as_f64();
     let min_success_prob = args["min_success_probability"].as_f64();
+    if let Err(message) = crate::constraints::validate_route_thresholds(
+        max_route_cost,
+        min_confidence,
+        min_success_prob,
+    ) {
+        return ToolOutcome::error(message);
+    }
+    let require_fams: Option<Vec<String>> =
+        args["require_reaction_families"].as_str().map(|value| {
+            value
+                .split(',')
+                .map(|item| item.trim().to_string())
+                .collect()
+        });
+    let avoid_fams: Option<Vec<String>> = args["avoid_reaction_families"].as_str().map(|value| {
+        value
+            .split(',')
+            .map(|item| item.trim().to_string())
+            .collect()
+    });
     let prefer_fams: Option<Vec<String>> = args["prefer_reaction_families"]
         .as_str()
         .map(|s| s.split(',').map(|f| f.trim().to_string()).collect());
 
-    let (env, rules) = load_env_and_rules();
+    let engine = search_engine();
     let config = SearchConfig {
         max_depth: depth,
         max_routes,
@@ -402,7 +474,7 @@ fn handle_plan_with_constraints(smiles: &str, args: &Value) -> ToolOutcome {
         required_element_present: elem_symbols_to_mask(require),
         ..Default::default()
     };
-    let (mut routes, _) = match search::find_routes(smiles, &env, &rules, &config) {
+    let (mut routes, _) = match engine.find_routes(smiles, &config) {
         Ok(r) => r,
         Err(e) => return ToolOutcome::error(format!("search error: {e}")),
     };
@@ -411,11 +483,48 @@ fn handle_plan_with_constraints(smiles: &str, args: &Value) -> ToolOutcome {
     if let Some(n) = max_steps {
         routes.retain(|r| r.steps.len() <= n);
     }
+    if let Some(ref blocked) = avoid_bbs {
+        routes.retain(|route| {
+            !route
+                .building_blocks
+                .iter()
+                .any(|bb| blocked.iter().any(|candidate| candidate == bb))
+        });
+    }
+    if let Some(ref required) = require_bbs {
+        routes.retain(|route| {
+            route
+                .building_blocks
+                .iter()
+                .any(|bb| required.iter().any(|candidate| candidate == bb))
+        });
+    }
+    if let Some(max_cost) = max_route_cost {
+        routes.retain(|r| r.route_cost <= max_cost);
+    }
     if let Some(v) = min_confidence {
         routes.retain(|r| r.confidence >= v);
     }
     if let Some(v) = min_success_prob {
         routes.retain(|r| r.success_probability >= v);
+    }
+    if let Some(ref fams) = require_fams {
+        routes.retain(|route| {
+            route.steps.iter().any(|step| {
+                step.reaction_family
+                    .as_deref()
+                    .is_some_and(|family| fams.iter().any(|required| required == family))
+            })
+        });
+    }
+    if let Some(ref fams) = avoid_fams {
+        routes.retain(|route| {
+            !route.steps.iter().any(|step| {
+                step.reaction_family
+                    .as_deref()
+                    .is_some_and(|family| fams.iter().any(|avoided| avoided == family))
+            })
+        });
     }
     if let Some(ref fams) = prefer_fams {
         routes.sort_by_key(|r| {
@@ -457,13 +566,13 @@ fn handle_find_pareto_routes(smiles: &str, args: &Value) -> ToolOutcome {
         .as_str()
         .unwrap_or("cost:min,success_probability:max,steps:min");
 
-    let (env, rules) = load_env_and_rules();
+    let engine = search_engine();
     let config = SearchConfig {
         max_depth: depth,
         max_routes,
         ..Default::default()
     };
-    let (routes, _) = match search::find_routes(smiles, &env, &rules, &config) {
+    let (routes, _) = match engine.find_routes(smiles, &config) {
         Ok(r) => r,
         Err(e) => return ToolOutcome::error(format!("search error: {e}")),
     };
@@ -639,14 +748,14 @@ fn mcp_tradeoff_label(
 
 fn handle_validate_route(smiles: &str, args: &Value) -> ToolOutcome {
     let depth = args["depth"].as_u64().unwrap_or(5) as u32;
-    let (env, rules) = load_env_and_rules();
+    let engine = search_engine();
     let config = SearchConfig {
         max_depth: depth,
         max_routes: 1,
         ..Default::default()
     };
 
-    let (routes, _) = match search::find_routes(smiles, &env, &rules, &config) {
+    let (routes, _) = match engine.find_routes(smiles, &config) {
         Ok(r) => r,
         Err(e) => return ToolOutcome::error(format!("search error: {e}")),
     };
@@ -739,14 +848,14 @@ fn route_diversity(routes: &[Route]) -> f64 {
 fn handle_estimate_diversity(smiles: &str, args: &Value) -> ToolOutcome {
     let depth = args["depth"].as_u64().unwrap_or(5) as u32;
     let max_routes = args["max_routes"].as_u64().unwrap_or(5) as usize;
-    let (env, rules) = load_env_and_rules();
+    let engine = search_engine();
     let config = SearchConfig {
         max_depth: depth,
         max_routes,
         ..Default::default()
     };
 
-    let (routes, _) = match search::find_routes(smiles, &env, &rules, &config) {
+    let (routes, _) = match engine.find_routes(smiles, &config) {
         Ok(r) => r,
         Err(e) => return ToolOutcome::error(format!("search error: {e}")),
     };
@@ -758,10 +867,12 @@ fn handle_estimate_diversity(smiles: &str, args: &Value) -> ToolOutcome {
         );
     }
     let diversity = route_diversity(&routes);
+    let chemical_idea_cds = crate::diversity::template_disconnection_cds(&routes);
     let mut text = format!(
-        "Target: {smiles}\nRoutes found: {}  Route diversity: {:.3}\n\n",
+        "Target: {smiles}\nRoutes found: {}  Route diversity: {:.3}\nChemical-idea CDS (template proxy): {:.3}\n\n",
         routes.len(),
-        diversity
+        diversity,
+        chemical_idea_cds
     );
     text.push_str(if diversity > 0.5 {
         "High diversity — multiple distinct synthetic strategies available.\n"
@@ -785,6 +896,7 @@ fn handle_estimate_diversity(smiles: &str, args: &Value) -> ToolOutcome {
         json!({
             "routes_found": routes.len(),
             "diversity": diversity,
+            "chemical_idea_cds": chemical_idea_cds,
             "building_block_sets": bb_sets,
         }),
     )
@@ -792,13 +904,13 @@ fn handle_estimate_diversity(smiles: &str, args: &Value) -> ToolOutcome {
 
 fn handle_diagnose_failure(smiles: &str, args: &Value) -> ToolOutcome {
     let depth = args["depth"].as_u64().unwrap_or(5) as u32;
-    let (env, rules) = load_env_and_rules();
+    let engine = search_engine();
     let config = SearchConfig {
         max_depth: depth,
         max_routes: 1,
         ..Default::default()
     };
-    let (routes, stats) = match search::find_routes(smiles, &env, &rules, &config) {
+    let (routes, stats) = match engine.find_routes(smiles, &config) {
         Ok(r) => r,
         Err(e) => return ToolOutcome::error(format!("search error: {e}")),
     };
@@ -871,10 +983,9 @@ fn handle_diagnose_failure(smiles: &str, args: &Value) -> ToolOutcome {
 }
 
 // ---------------------------------------------------------------------
-// Legacy (2024-11-05) input schemas — frozen. Any edit here must be
-// re-verified against tests/fixtures/mcp/2024-11-05/legacy_transcript_output.jsonl.
-// The only permitted change is the removal of the stale "509 curated
-// building blocks" claim from find_routes' description (done above).
+// Legacy (2024-11-05) input schemas. Wire envelopes stay compatible, while
+// additive RENKIN capabilities are advertised here as they are added. Any
+// edit must be re-verified against the legacy transcript fixture.
 // ---------------------------------------------------------------------
 
 fn legacy_schema_find_routes() -> Value {
@@ -888,7 +999,8 @@ fn legacy_schema_find_routes() -> Value {
             "require_elements": {"type": "string", "description": "Elements that must appear in ≥1 building block (e.g. \"B\")"},
             "search_mode": {"type": "string", "enum": ["standard", "coverage"], "description": "Search mode (default: standard). Coverage runs Stage 2 only when Stage 1 finds no route."},
             "coverage_templates": {"type": "string", "description": "Stage-2 template file; required when search_mode is coverage. Invalid or empty files fail loudly."},
-            "coverage_timeout_secs": {"type": "integer", "minimum": 1, "description": "Optional cooperative Stage-2 timeout in seconds."}
+            "coverage_timeout_secs": {"type": "integer", "minimum": 1, "description": "Optional cooperative Stage-2 timeout in seconds."},
+            "candidate_trace_limit": {"type": "integer", "minimum": 0, "description": "Optional maximum number of candidate-level crowd-out trace records; adds a diagnostic section to the response."}
         },
         "required": ["smiles"]
     })
@@ -939,9 +1051,14 @@ fn legacy_schema_plan_with_constraints() -> Value {
             "max_routes": {"type": "integer", "description": "Max routes to return (default: 5)"},
             "avoid_elements": {"type": "string", "description": "Comma-separated elements to ban from BBs (e.g. \"Br,I\")"},
             "require_elements": {"type": "string", "description": "Elements that must appear in ≥1 BB (e.g. \"B\")"},
+            "avoid_building_blocks": {"type": "string", "description": "Comma-separated canonical building-block SMILES to exclude from route leaves"},
+            "require_building_blocks": {"type": "string", "description": "Comma-separated canonical building-block SMILES; each route must contain at least one"},
             "max_steps": {"type": "integer", "description": "Maximum number of synthesis steps per route"},
+            "max_route_cost": {"type": "number", "description": "Maximum computed route cost (inclusive)"},
             "min_confidence": {"type": "number", "description": "Minimum template confidence [0,1]"},
             "min_success_probability": {"type": "number", "description": "Minimum route success probability [0,1]"},
+            "require_reaction_families": {"type": "string", "description": "Comma-separated reaction families; at least one must occur in each returned route"},
+            "avoid_reaction_families": {"type": "string", "description": "Comma-separated reaction families; routes containing any are excluded"},
             "prefer_reaction_families": {"type": "string", "description": "Comma-separated reaction families to rank first (e.g. \"amide_coupling,suzuki_retro\")"}
         },
         "required": ["smiles"]
@@ -1006,7 +1123,8 @@ fn modern_schema_find_routes() -> Value {
             "require_elements": {"type": "string", "description": "Elements that must appear in ≥1 building block (e.g. \"B\")"},
             "search_mode": {"type": "string", "enum": ["standard", "coverage"], "description": "Search mode (default: standard). Coverage runs Stage 2 only when Stage 1 finds no route."},
             "coverage_templates": {"type": "string", "description": "Stage-2 template file; required when search_mode is coverage. Invalid or empty files fail loudly."},
-            "coverage_timeout_secs": {"type": "integer", "minimum": 1, "description": "Optional cooperative Stage-2 timeout in seconds."}
+            "coverage_timeout_secs": {"type": "integer", "minimum": 1, "description": "Optional cooperative Stage-2 timeout in seconds."},
+            "candidate_trace_limit": {"type": "integer", "minimum": 0, "maximum": search::MAX_CANDIDATE_TRACE, "description": "Optional maximum number of candidate-level crowd-out trace records; adds a diagnostic section to the response."}
         },
         "required": ["smiles"],
         "additionalProperties": false
@@ -1092,9 +1210,14 @@ fn modern_schema_plan_with_constraints() -> Value {
             "max_routes": max_routes_prop(5, "Max routes to return (default: 5)"),
             "avoid_elements": {"type": "string", "description": "Comma-separated elements to ban from BBs (e.g. \"Br,I\")"},
             "require_elements": {"type": "string", "description": "Elements that must appear in ≥1 BB (e.g. \"B\")"},
+            "avoid_building_blocks": {"type": "string", "description": "Comma-separated canonical building-block SMILES to exclude from route leaves"},
+            "require_building_blocks": {"type": "string", "description": "Comma-separated canonical building-block SMILES; each route must contain at least one"},
             "max_steps": {"type": "integer", "minimum": 1, "description": "Maximum number of synthesis steps per route"},
+            "max_route_cost": {"type": "number", "minimum": 0, "description": "Maximum computed route cost (inclusive)"},
             "min_confidence": {"type": "number", "minimum": 0, "maximum": 1, "description": "Minimum template confidence [0,1]"},
             "min_success_probability": {"type": "number", "minimum": 0, "maximum": 1, "description": "Minimum route success probability [0,1]"},
+            "require_reaction_families": {"type": "string", "description": "Comma-separated reaction families; at least one must occur in each returned route"},
+            "avoid_reaction_families": {"type": "string", "description": "Comma-separated reaction families; routes containing any are excluded"},
             "prefer_reaction_families": {"type": "string", "description": "Comma-separated reaction families to rank first (e.g. \"amide_coupling,suzuki_retro\")"}
         },
         "required": ["smiles"],
@@ -1123,6 +1246,7 @@ fn output_schema_estimate_diversity() -> Value {
         "properties": {
             "routes_found": {"type": "integer"},
             "diversity": {"type": "number"},
+            "chemical_idea_cds": {"type": "number"},
             "building_block_sets": {"type": "array", "items": {"type": "array", "items": {"type": "string"}}}
         },
         "required": ["routes_found"]
@@ -1214,7 +1338,49 @@ mod tests {
             );
             assert!(properties["coverage_templates"].is_object());
             assert!(properties["coverage_timeout_secs"].is_object());
+            assert!(properties["candidate_trace_limit"].is_object());
         }
+    }
+
+    #[test]
+    fn plan_schemas_advertise_all_route_constraints() {
+        const FIELDS: [&str; 5] = [
+            "avoid_building_blocks",
+            "require_building_blocks",
+            "max_route_cost",
+            "require_reaction_families",
+            "avoid_reaction_families",
+        ];
+        for schema in [
+            legacy_schema_plan_with_constraints(),
+            modern_schema_plan_with_constraints(),
+        ] {
+            for field in FIELDS {
+                assert!(schema["properties"][field].is_object(), "missing {field}");
+            }
+        }
+    }
+
+    #[test]
+    fn diversity_output_advertises_chemical_idea_proxy() {
+        assert!(output_schema_estimate_diversity()["properties"]["chemical_idea_cds"].is_object());
+    }
+
+    #[test]
+    fn legacy_dispatch_rejects_unknown_tools_and_arguments() {
+        let unknown_tool = dispatch_legacy(&json!({
+            "name": "not_a_tool",
+            "arguments": {"smiles": "CCO"}
+        }));
+        assert!(unknown_tool.is_error);
+        assert!(unknown_tool.text.contains("unknown tool"));
+
+        let unknown_argument = dispatch_legacy(&json!({
+            "name": "find_routes",
+            "arguments": {"smiles": "CCO", "bogus": true}
+        }));
+        assert!(unknown_argument.is_error);
+        assert!(unknown_argument.text.contains("unknown argument"));
     }
 
     #[test]

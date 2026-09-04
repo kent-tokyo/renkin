@@ -46,17 +46,17 @@ RENKIN is a **retrosynthesis engine** that automatically plans multi-step chemic
 | **Pure Rust** | Zero C/C++ dependencies — safe, fast, cross-platform |
 | **WebAssembly** | Runs in the browser at near-native speed |
 | **Python bindings** | `pip install renkin` — no RDKit required |
-| **22 hand-crafted rules + up to 50k extracted via `--templates`** | Ester, amide, Suzuki, Heck, Wittig, sulfonamide, carbamate, and more; extended via rdchiral-extracted templates |
+| **23 hand-crafted rules + up to 50k extracted via `--templates`** | Ester, amide, Suzuki, Heck, Wittig, sulfonamide, carbamate, and more; extended via rdchiral-extracted templates |
 | **Building blocks** | 402 unique compounds in `data/building_blocks.smi` (used when found relative to the current working directory); otherwise CLI/Python fall back to a compiled-in 152-compound set, which WASM always uses. Pass `--building-blocks`/`building_blocks=` to specify explicitly |
 | **A\* / beam search** | Frequency-weighted A* with beam-width control; `step_cost` reduced for high-frequency templates (Phase A) |
-| **Route scoring** | Per-step `confidence`, `success_probability` (Retro-prob), `route_cost` with optional `--bb-prices CSV` |
+| **Route scoring & diagnostics** | Separate confidence/cost, route-feasibility findings, building-block diversity, and template-proxy chemical-idea diversity; no fabricated laboratory-success score |
 | **Stable template IDs + evidence sidecar** | Every template has a stable `template_id`; attach curated conditions/yields/warnings via `--template-metadata` — see [Template Evidence](https://github.com/kent-tokyo/renkin#template-evidence-metadata) |
 | **Constraint DSL** | `--avoid-elements Br,I --require-elements B` filters routes by element profile |
 | **Forward validation** | `renkin-forward validate` verifies each retrosynthetic step by forward prediction; pipe-friendly (stdin support) |
 | **Failure diagnostics** | `renkin-bench --failure-taxonomy` classifies unsolved targets by cause (beam limit, depth limit, template gap, stock near-miss) |
 | **Cascade search** | Two-stage search: fast defaults → hard cases re-run at higher beam/depth |
 | **Stability testing** | `--quietset-out` exports observations for [quietset](https://crates.io/crates/quietset-cli) cross-config stability analysis |
-| **MCP server** | `renkin-mcp` exposes six route, validation, Pareto, constraint, diversity, and diagnostic tools to Claude Desktop; `find_routes` also supports opt-in coverage search |
+| **MCP server** | `renkin-mcp` exposes seven route, validation, Pareto, constraint, diversity, and diagnostic tools over legacy `2024-11-05` and modern `2026-07-28` stdio MCP; `find_routes` also supports opt-in coverage search |
 
 ## Quick Example
 
@@ -88,7 +88,7 @@ RENKIN is a **retrosynthesis engine** that automatically plans multi-step chemic
 Target molecule (SMILES)
         │
         ▼
-  Retrosynthetic   ←── 21 built-in + up to 50k extracted (--templates)
+  Retrosynthetic   ←── 23 built-in + up to 50k extracted (--templates)
   rule application
         │
         ▼
@@ -103,7 +103,7 @@ Target molecule (SMILES)
 
 ## Reaction Rules
 
-RENKIN ships **22 hand-crafted rules** (a mix of graph-based dispatch and SMIRKS-based patterns) covering common pharmaceutical bond disconnections, plus supports up to 50k rdchiral-extracted templates via `--templates`:
+RENKIN ships **23 hand-crafted rules** (a mix of graph-based dispatch and SMIRKS-based patterns) covering common pharmaceutical bond disconnections, plus supports up to 50k rdchiral-extracted templates via `--templates`:
 
 - **Acyl disconnections**: ester hydrolysis, amide cleavage (graph-based), carbamate cleavage (graph-based), Friedel-Crafts acylation, acyl chloride formation
 - **Aryl C-heteroatom**: Ullmann ether (C-O), sulfonamide formation, decarboxylation
@@ -115,6 +115,17 @@ RENKIN ships **22 hand-crafted rules** (a mix of graph-based dispatch and SMIRKS
 - **Oxidation**: alcohol → carbonyl
 
 See [Benchmark](benchmark.md) for current USPTO-50k results and methodology — historical figures (78.0%/95.9%/81.8%) shown elsewhere on the web are invalidated and not representative of current performance; do not cite them.
+
+## Formal v1.0 comparison status
+
+The completed 4,903-target shared-stock comparison recorded 577 primary
+successes for RENKIN v1.0.0 (11.77%) and 200 for AiZynthFinder 4.4.1 (4.08%).
+The paired difference was +7.689 percentage points with 95% CI [+6.812,
++8.566], so the statistical gate passed. The formal publication gate remains
+**HOLD** because two frozen RENKIN rows failed route-tree integrity. Both
+failure modes pass a targeted v1.0.1-candidate rerun, but changing the frozen
+verdict requires a fresh full run. See the
+[formal protocol and status](benchmark/formal-v1.0-competitor-comparison.md).
 
 ## Installation
 
@@ -128,7 +139,7 @@ See [Benchmark](benchmark.md) for current USPTO-50k results and methodology — 
 
     ```toml
     [dependencies]
-renkin = "0.53"
+renkin = "1.0.1"
     ```
 
 === "npm"

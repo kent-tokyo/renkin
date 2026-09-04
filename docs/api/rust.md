@@ -73,7 +73,7 @@ A full, CI-compiled-and-run version of this example lives at `examples/quickstar
 ```rust
 use renkin::chem_env::{default_rules, RetroRule};
 
-// Get the default rule set (22 hand-crafted rules)
+// Get the default rule set (23 hand-crafted rules in v1.0.1)
 let rules = default_rules();
 
 // Each rule has a stable template_id, name, and SMIRKS pattern

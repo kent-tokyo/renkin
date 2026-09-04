@@ -1,0 +1,21 @@
+{
+  "primary_metric": "route_to_shared_stock (route_found AND route_tree_parseable AND all_leaves_in_configured_stock)",
+  "route_to_shared_stock_rate_diff_renkin_minus_aizynthfinder": {
+    "ci_high": 0.08566183968998572,
+    "ci_low": 0.06812155822965532,
+    "mcnemar_aizynthfinder_only": 60,
+    "mcnemar_p_value": 1.0039686550276628e-71,
+    "mcnemar_renkin_only": 437,
+    "n_pairs": 4903,
+    "observed": 0.07689169895982051
+  },
+  "secondary_tool_native_route_found_rate_diff_renkin_minus_aizynthfinder": {
+    "ci_high": 0.08586579645115236,
+    "ci_low": 0.06832551499082196,
+    "mcnemar_aizynthfinder_only": 60,
+    "mcnemar_p_value": 5.705444975781538e-72,
+    "mcnemar_renkin_only": 438,
+    "n_pairs": 4903,
+    "observed": 0.07709565572098714
+  }
+}

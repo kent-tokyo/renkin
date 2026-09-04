@@ -94,7 +94,7 @@ method dispatch. Missing, non-string, or unsupported protocol versions are
 rejected as `-32600 Invalid Request` without reaching a tool handler.
 
 Notifications are identified by an omitted `id` field, independent of the
-method name. They may execute their method but never produce a response; an
+method name. The stdio server ignores them and never produces a response; an
 explicit JSON `null` id remains a request id and receives a correlated response.
 
 Within `tools/call`, `params` and `arguments` must be JSON objects, the tool

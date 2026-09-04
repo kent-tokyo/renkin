@@ -1,0 +1,20 @@
+{
+  "PASS": false,
+  "actual_count": 4903,
+  "crash_or_adapter_failures": [],
+  "expected_count": 4903,
+  "malformed_json_lines": 0,
+  "manifest_check": {
+    "end_time_unix_set": true,
+    "input_files_unchanged_during_run": true
+  },
+  "problems": [
+    "2 rows have route_found=true but no normalized_route_sha256: ['uspto50k_test#L1394', 'uspto50k_test#L1080']"
+  ],
+  "route_found_missing_hash_count": 2,
+  "rows_path": "data/comparison/formal_v1.0/renkin_shared_stock.jsonl",
+  "status_counts": {
+    "completed": 4838,
+    "timeout": 65
+  }
+}

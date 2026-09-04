@@ -29,9 +29,21 @@ fn run_mcp(input: &str) -> Vec<Value> {
         .collect()
 }
 
+fn run_legacy(input: &str) -> Vec<Value> {
+    let session = format!(
+        "{{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"initialize\",\"params\":{{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{{}},\"clientInfo\":{{\"name\":\"test\",\"version\":\"1\"}}}}}}\n\
+         {{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}}\n{input}"
+    );
+    let mut responses = run_mcp(&session);
+    assert_eq!(responses[0]["id"], 0);
+    assert_eq!(responses[0]["result"]["protocolVersion"], "2024-11-05");
+    responses.remove(0);
+    responses
+}
+
 #[test]
 fn invalid_json_rpc_envelope_is_rejected_before_dispatch_and_next_frame_survives() {
-    let responses = run_mcp(
+    let responses = run_legacy(
         "{\"id\":1,\"method\":\"tools/list\"}\n\
          {\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}\n",
     );
@@ -43,8 +55,8 @@ fn invalid_json_rpc_envelope_is_rejected_before_dispatch_and_next_frame_survives
 }
 
 #[test]
-fn ordinary_notification_executes_without_emitting_a_response() {
-    let responses = run_mcp(
+fn ordinary_notification_emits_no_response_and_does_not_break_session() {
+    let responses = run_legacy(
         "{\"jsonrpc\":\"2.0\",\"method\":\"tools/list\"}\n\
          {\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}\n",
     );
@@ -55,7 +67,7 @@ fn ordinary_notification_executes_without_emitting_a_response() {
 
 #[test]
 fn unknown_tool_argument_is_rejected_before_search() {
-    let responses = run_mcp(
+    let responses = run_legacy(
         "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"find_routes\",\"arguments\":{\"smiles\":\"CCO\",\"deph\":2}}}\n",
     );
     assert_eq!(responses.len(), 1);
@@ -71,7 +83,7 @@ fn unknown_tool_argument_is_rejected_before_search() {
 
 #[test]
 fn overflowing_search_budget_is_rejected_before_search() {
-    let responses = run_mcp(
+    let responses = run_legacy(
         "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"find_routes\",\"arguments\":{\"smiles\":\"CCO\",\"depth\":18446744073709551615}}}\n",
     );
     assert_eq!(responses.len(), 1);
@@ -86,7 +98,7 @@ fn overflowing_search_budget_is_rejected_before_search() {
 
 #[test]
 fn repeated_rejections_do_not_poison_a_following_request() {
-    let responses = run_mcp(
+    let responses = run_legacy(
         "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"find_routes\",\"arguments\":{\"smiles\":\"CCO\",\"deph\":2}}}\n\
          {\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"find_routes\",\"arguments\":{\"smiles\":\"CCO\",\"depth\":18446744073709551615}}}\n\
          {\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/list\"}\n",
@@ -108,7 +120,7 @@ fn repeated_rejections_do_not_poison_a_following_request() {
 #[test]
 fn malformed_json_does_not_echo_input_and_next_frame_survives() {
     let secret_like_input = "malformed-secret-smiles-CCN-token";
-    let responses = run_mcp(&format!(
+    let responses = run_legacy(&format!(
         "{{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{{\"note\":\"{secret_like_input}}}\n\
          {{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}}\n"
     ));

@@ -7,8 +7,10 @@ Claude Code, and other MCP clients) can call them directly.
 ## Transport
 
 **stdio only.** `renkin-mcp` reads newline-delimited JSON-RPC 2.0 requests
-from stdin and writes one JSON-RPC message per line to stdout. Diagnostics go
-to stderr, never stdout. Streamable HTTP, OAuth-based authorization, MCP
+from stdin and writes one JSON-RPC message per line to stdout. Request lines
+are capped at 1 MiB and JSON structure is checked against the shared nesting
+and token budget before deserialization. Diagnostics go to stderr, never
+stdout. Streamable HTTP, OAuth-based authorization, MCP
 Apps, and the Tasks extension are not implemented — see
 [Non-goals](#non-goals-for-this-release).
 
@@ -16,7 +18,7 @@ Apps, and the Tasks extension are not implemented — see
 
 | Protocol revision | Handshake | Status |
 |---|---|---|
-| `2024-11-05` ("legacy") | `initialize` → `notifications/initialized` → `tools/list` / `tools/call` | Fully supported, unchanged from prior releases |
+| `2024-11-05` ("legacy") | `initialize` → `notifications/initialized` → `tools/list` / `tools/call` | Fully supported; stable envelope with additive tool fields |
 | `2026-07-28` ("modern") | None — `server/discover` (optional) and per-request `_meta`, negotiated on the first request | Supported for the stdio subset RENKIN uses (see [Conformance](#conformance)) |
 
 A single `renkin-mcp` process serves **either** era per connection, decided
@@ -51,7 +53,7 @@ No changes from prior RENKIN releases. Register in
 
 ```
 → {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"legacy-client","version":"1.0"}}}
-← {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"renkin","version":"0.18.0"}}}
+← {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"renkin","version":"1.0.1"}}}
 
 → {"jsonrpc":"2.0","method":"notifications/initialized"}
 
@@ -69,11 +71,11 @@ regression test against a transcript captured from the binary shipped before
 this protocol revision was added
 (`tests/fixtures/mcp/2024-11-05/legacy_transcript_output.jsonl`).
 
-One legacy quirk is deliberately **preserved**, not fixed: calling
-`tools/call` with an unrecognized tool `name` silently falls back to
-`find_routes` rather than erroring. This predates 2026-07-28 support;
-changing it would itself be a legacy behavior break, so it stays for legacy
-clients only. It does not exist in the modern dispatch path (see below).
+Legacy wire envelopes remain compatible, but unsafe dispatch behavior is not
+preserved: unknown tool names, misspelled arguments, and out-of-budget numeric
+values fail closed before search. Legacy clients receive a normal tool result
+with `isError: true`; modern clients receive protocol-level `-32602 Invalid
+Params` (see below).
 
 ## Modern (2026-07-28) clients
 
@@ -93,7 +95,7 @@ No `initialize` handshake. Every request carries protocol negotiation in
     "instructions":"RENKIN provides retrosynthetic route search and route-analysis tools.",
     "ttlMs":3600000,
     "cacheScope":"public",
-    "_meta":{"io.modelcontextprotocol/serverInfo":{"name":"renkin","version":"0.18.0"}}
+    "_meta":{"io.modelcontextprotocol/serverInfo":{"name":"renkin","version":"1.0.1"}}
   }}
 
 → {"jsonrpc":"2.0","id":"t1","method":"tools/list","params":{"_meta":{
@@ -105,7 +107,7 @@ No `initialize` handshake. Every request carries protocol negotiation in
     "tools":[...],
     "ttlMs":3600000,
     "cacheScope":"public",
-    "_meta":{"io.modelcontextprotocol/serverInfo":{"name":"renkin","version":"0.18.0"}}
+    "_meta":{"io.modelcontextprotocol/serverInfo":{"name":"renkin","version":"1.0.1"}}
   }}
 ```
 
@@ -148,10 +150,12 @@ before the tool handler runs — a modern `tools/call` that violates the
 schema never reaches RENKIN's search code; it gets `-32602 Invalid Params`
 immediately.
 
-Legacy schemas remain permissive: they have no `$schema` or
-`additionalProperties: false`, and only retain constraints already exposed
-by the pre-refactor server. In particular, both eras advertise RENKIN's
-existing opt-in progressive coverage-search fields on `find_routes`.
+Legacy schemas retain their older JSON shape: they have no `$schema` or
+`additionalProperties: false`. The server nevertheless validates legacy
+arguments against the same allowlist and numeric bounds before search. Both
+eras advertise progressive coverage search and bounded candidate traces on
+`find_routes`, and the complete element/building-block/cost/step/confidence/
+reaction-family filters on `plan_with_constraints`.
 
 ### Structured tool output
 
@@ -161,13 +165,16 @@ text) in the modern era, validated against a declared `outputSchema`. The
 other four tools (`find_routes`, `explain_route`, `find_pareto_routes`,
 `plan_with_constraints`) do not yet — their `Route` output is large and
 deeply nested; schema-fying it is left to a future PR rather than done
-partially here.
+partially here. `estimate_diversity` reports building-block-set diversity and
+the deterministic template-disconnection `chemical_idea_cds` proxy as
+separate values; the latter is not exact atom-mapped formed-bond CDS.
 
 ### Errors
 
 | Condition | Modern behavior |
 |---|---|
 | Malformed JSON | `-32700 Parse error` (`id: null`) |
+| Request line over 1 MiB or JSON structure over budget | `-32600 resource_exhausted` (`id: null`) |
 | Missing/wrong `jsonrpc` or `method` | `-32600 Invalid Request` |
 | Unknown method | `-32601 Method not found` |
 | Unsupported/missing `_meta.protocolVersion` | `-32022` / `-32602` |

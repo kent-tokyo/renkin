@@ -105,9 +105,9 @@ impl McpServer {
         }
     }
 
-    /// Legacy dispatch — intentionally preserves the pre-refactor binary's
-    /// behavior exactly, including its pre-existing quirks (see
-    /// `tools::dispatch_legacy`). Regression-checked against
+    /// Legacy dispatch preserves the pre-refactor wire envelope while using
+    /// the v1 fail-closed tool contract in `tools::dispatch_legacy`.
+    /// Regression-checked against
     /// `tests/fixtures/mcp/2024-11-05/legacy_transcript_output.jsonl`.
     fn handle_legacy(&self, id: Value, method: &str, params: &Value) -> Value {
         match method {
@@ -302,10 +302,9 @@ fn validate_modern_meta(params: &Value) -> Result<(), ProtocolError> {
 /// split (`InvalidParamsError` doc: "Tools: Unknown tool name or invalid
 /// tool arguments") rather than this task's illustrative example, which
 /// showed a missing-argument case as a tool-level error. That example
-/// predates checking the schema against blog/SDK guesses; the legacy era
-/// keeps the old (tool-level-error) behavior unchanged via
-/// `tools::dispatch_legacy`, since fixing it there would be a legacy
-/// behavior change and is out of scope.
+/// predates checking the schema against blog/SDK guesses. Legacy clients use
+/// the same fail-closed validation but receive a legacy tool-level error
+/// envelope, while modern clients receive protocol-level `Invalid Params`.
 fn modern_tools_call(params: &Value) -> Result<tools::ToolOutcome, ProtocolError> {
     let name = params.get("name").and_then(Value::as_str).ok_or_else(|| {
         (

@@ -33,11 +33,17 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use chematic::core::{AtomIdx, Element};
-use chematic::rxn::{ReactionMatch, apply_reaction_match, find_reaction_matches, parse_reaction};
+use chematic::rxn::{
+    PreparedReaction, ReactionMatch, TransformError, apply_reaction_match, find_reaction_matches,
+    parse_reaction,
+};
 
+#[cfg(test)]
+use crate::chem_env::apply_retro;
 use crate::chem_env::{
-    Molecule, PrecursorMol, RetroRule, apply_retro, aromaticity_integrity_violation,
-    is_bridge_bond, split_fragments,
+    Molecule, PrecursorMol, PreparedRetroRule, RetroRule, apply_retro_prepared,
+    apply_retro_prepared_with_rings, aromaticity_integrity_violation, is_bridge_bond,
+    split_fragments,
 };
 use crate::sha256_hex;
 
@@ -519,6 +525,10 @@ pub struct RingContextDiagnostics {
     pub valence_filtered: u64,
     pub outcomes_element_rejected: u64,
     pub outcomes_accepted: u64,
+    /// Runtime reparses performed by the legacy direct-call path. Search and
+    /// candidate contexts use `PreparedRuleSet`, so this remains zero there;
+    /// one-time ruleset preparation is intentionally outside this per-call
+    /// diagnostic.
     pub reaction_parse_calls: u64,
     pub templates_missing_metadata: u64,
     pub invalid_mapped_bond: u64,
@@ -716,12 +726,31 @@ pub fn apply_retro_with_policy(
     config: &RingContextConfig,
     diagnostics: &mut RingContextDiagnostics,
 ) -> Vec<Vec<PrecursorMol>> {
+    apply_retro_with_policy_prepared(mol, rule, config, diagnostics, None, None)
+}
+
+pub(crate) fn apply_retro_with_policy_prepared(
+    mol: &Molecule,
+    rule: &RetroRule,
+    config: &RingContextConfig,
+    diagnostics: &mut RingContextDiagnostics,
+    prepared: Option<&PreparedRetroRule>,
+    rings: Option<&chematic::perception::RingSet>,
+) -> Vec<Vec<PrecursorMol>> {
     let (guard, policy) = match config {
-        RingContextConfig::Disabled => return apply_retro(mol, rule),
+        RingContextConfig::Disabled => {
+            return match rings {
+                Some(rings) => apply_retro_prepared_with_rings(mol, rule, prepared, rings),
+                None => apply_retro_prepared(mol, rule, prepared),
+            };
+        }
         RingContextConfig::Guarded { guard, policy } => (guard.as_ref(), *policy),
     };
     if !crate::search::is_extracted_template(&rule.name) {
-        return apply_retro(mol, rule);
+        return match rings {
+            Some(rings) => apply_retro_prepared_with_rings(mol, rule, prepared, rings),
+            None => apply_retro_prepared(mol, rule, prepared),
+        };
     }
 
     let Some(compiled) = guard.compiled.get(&rule.template_id) else {
@@ -748,7 +777,10 @@ pub fn apply_retro_with_policy(
         return if policy.ring_context == Enforcement::AuditOnly
             && policy.element_accounting == Enforcement::AuditOnly
         {
-            apply_retro(mol, rule)
+            match rings {
+                Some(rings) => apply_retro_prepared_with_rings(mol, rule, prepared, rings),
+                None => apply_retro_prepared(mol, rule, prepared),
+            }
         } else {
             vec![]
         };
@@ -757,10 +789,13 @@ pub fn apply_retro_with_policy(
     if policy.ring_context == Enforcement::AuditOnly
         && policy.element_accounting == Enforcement::AuditOnly
     {
-        run_diagnostics_pass(mol, rule, compiled, diagnostics);
-        apply_retro(mol, rule)
+        run_diagnostics_pass(mol, rule, compiled, diagnostics, prepared, rings);
+        match rings {
+            Some(rings) => apply_retro_prepared_with_rings(mol, rule, prepared, rings),
+            None => apply_retro_prepared(mol, rule, prepared),
+        }
     } else {
-        run_gated_pass(mol, rule, compiled, policy, diagnostics)
+        run_gated_pass(mol, rule, compiled, policy, diagnostics, prepared, rings)
     }
 }
 
@@ -787,6 +822,48 @@ fn smirks_variants_to_try(smirks: &str) -> std::sync::Arc<Vec<String>> {
     crate::chem_env::application_smirks_variants(smirks)
 }
 
+enum ReactionExecutor<'a> {
+    Prepared(
+        &'a PreparedReaction,
+        Option<&'a chematic::perception::RingSet>,
+    ),
+    Legacy(&'a str),
+}
+
+impl ReactionExecutor<'_> {
+    fn find_matches(
+        &self,
+        mol: &Molecule,
+        diagnostics: &mut RingContextDiagnostics,
+    ) -> Result<Vec<ReactionMatch>, TransformError> {
+        match self {
+            Self::Prepared(reaction, Some(rings)) => {
+                reaction.find_matches_with_rings(&[mol], &[rings])
+            }
+            Self::Prepared(reaction, None) => reaction.find_matches(&[mol]),
+            Self::Legacy(smirks) => {
+                diagnostics.reaction_parse_calls += 1;
+                find_reaction_matches(smirks, &[mol])
+            }
+        }
+    }
+
+    fn apply_match(
+        &self,
+        mol: &Molecule,
+        m: &ReactionMatch,
+        diagnostics: &mut RingContextDiagnostics,
+    ) -> Result<Option<Vec<Molecule>>, TransformError> {
+        match self {
+            Self::Prepared(reaction, _) => reaction.apply_match(&[mol], m, true),
+            Self::Legacy(smirks) => {
+                diagnostics.reaction_parse_calls += 1;
+                apply_reaction_match(smirks, &[mol], m, true)
+            }
+        }
+    }
+}
+
 /// Enumerates and classifies every match purely for `diagnostics`; the
 /// return value is discarded by the caller (`AuditOnly` always returns
 /// `apply_retro(mol, rule)`'s own result instead), so this can never affect
@@ -796,50 +873,78 @@ fn run_diagnostics_pass(
     rule: &RetroRule,
     compiled: &CompiledTemplate,
     diagnostics: &mut RingContextDiagnostics,
+    prepared: Option<&PreparedRetroRule>,
+    rings: Option<&chematic::perception::RingSet>,
 ) {
     let ring_cache = RingBondCache::new(mol);
-    for variant in smirks_variants_to_try(&rule.smirks).iter() {
-        diagnostics.reaction_parse_calls += 1;
-        let matches = match find_reaction_matches(variant, &[mol]) {
-            Ok(m) => m,
-            Err(_) => {
-                diagnostics.reaction_application_failed += 1;
+    if let Some(prepared) = prepared {
+        for reaction in prepared.variants() {
+            run_diagnostics_variant(
+                ReactionExecutor::Prepared(reaction, rings),
+                mol,
+                compiled,
+                &ring_cache,
+                diagnostics,
+            );
+        }
+    } else {
+        for variant in smirks_variants_to_try(&rule.smirks).iter() {
+            run_diagnostics_variant(
+                ReactionExecutor::Legacy(variant),
+                mol,
+                compiled,
+                &ring_cache,
+                diagnostics,
+            );
+        }
+    }
+}
+
+fn run_diagnostics_variant(
+    reaction: ReactionExecutor<'_>,
+    mol: &Molecule,
+    compiled: &CompiledTemplate,
+    ring_cache: &RingBondCache,
+    diagnostics: &mut RingContextDiagnostics,
+) {
+    let matches = match reaction.find_matches(mol, diagnostics) {
+        Ok(m) => m,
+        Err(_) => {
+            diagnostics.reaction_application_failed += 1;
+            return;
+        }
+    };
+    diagnostics.matches_enumerated += matches.len() as u64;
+    for m in &matches {
+        match classify_match(m, compiled, ring_cache, diagnostics) {
+            MatchVerdict::Accept => {}
+            MatchVerdict::Reject(reason) => {
+                record_reject(diagnostics, reason);
                 continue;
             }
-        };
-        diagnostics.matches_enumerated += matches.len() as u64;
-        for m in &matches {
-            match classify_match(m, compiled, &ring_cache, diagnostics) {
-                MatchVerdict::Accept => {}
-                MatchVerdict::Reject(reason) => {
-                    record_reject(diagnostics, reason);
-                    continue;
-                }
+        }
+        // Element-accounting is diagnosed too, on the actual applied
+        // outcome, gated behind the same ring-context accept that
+        // Conservative uses -- so AuditOnly's counters reflect exactly
+        // what Conservative would accept/reject, over the same
+        // denominator, but never filter the returned outcomes here.
+        diagnostics.matches_applied += 1;
+        if let Ok(Some(products)) = reaction.apply_match(mol, m, diagnostics) {
+            if products
+                .iter()
+                .any(|p| aromaticity_integrity_violation(p).is_some())
+            {
+                diagnostics.outcomes_aromaticity_rejected += 1;
+                continue;
             }
-            // Element-accounting is diagnosed too, on the actual applied
-            // outcome, gated behind the same ring-context accept that
-            // Conservative uses -- so AuditOnly's counters reflect exactly
-            // what Conservative would accept/reject, over the same
-            // denominator, but never filter the returned outcomes here.
-            diagnostics.matches_applied += 1;
-            diagnostics.reaction_parse_calls += 1;
-            if let Ok(Some(products)) = apply_reaction_match(variant, &[mol], m, true) {
-                if products
-                    .iter()
-                    .any(|p| aromaticity_integrity_violation(p).is_some())
-                {
-                    diagnostics.outcomes_aromaticity_rejected += 1;
-                    continue;
-                }
-                let precs: Vec<PrecursorMol> = products.iter().flat_map(split_fragments).collect();
-                if !element_accounting_ok(mol, &precs) {
-                    diagnostics.outcomes_element_rejected += 1;
-                } else {
-                    diagnostics.outcomes_accepted += 1;
-                }
+            let precs: Vec<PrecursorMol> = products.iter().flat_map(split_fragments).collect();
+            if !element_accounting_ok(mol, &precs) {
+                diagnostics.outcomes_element_rejected += 1;
             } else {
-                diagnostics.valence_filtered += 1;
+                diagnostics.outcomes_accepted += 1;
             }
+        } else {
+            diagnostics.valence_filtered += 1;
         }
     }
 }
@@ -863,6 +968,8 @@ fn run_gated_pass(
     compiled: &CompiledTemplate,
     policy: ExtractedTemplateSafetyPolicy,
     diagnostics: &mut RingContextDiagnostics,
+    prepared: Option<&PreparedRetroRule>,
+    rings: Option<&chematic::perception::RingSet>,
 ) -> Vec<Vec<PrecursorMol>> {
     let ring_cache = RingBondCache::new(mol);
     let mut outcomes: Vec<Vec<PrecursorMol>> = Vec::new();
@@ -871,72 +978,107 @@ fn run_gated_pass(
     // this molecule must not appear as separate outcomes.
     let mut seen_signatures: FxHashSet<Vec<String>> = FxHashSet::default();
 
-    for variant in smirks_variants_to_try(&rule.smirks).iter() {
-        diagnostics.reaction_parse_calls += 1;
-        let matches = match find_reaction_matches(variant, &[mol]) {
-            Ok(m) => m,
-            Err(_) => {
-                diagnostics.reaction_application_failed += 1;
-                continue;
-            }
-        };
-        diagnostics.matches_enumerated += matches.len() as u64;
-
-        for m in &matches {
-            if let MatchVerdict::Reject(reason) =
-                classify_match(m, compiled, &ring_cache, diagnostics)
-            {
-                record_reject(diagnostics, reason);
-                if policy.ring_context == Enforcement::Enforce {
-                    continue;
-                }
-            }
-            diagnostics.matches_applied += 1;
-            diagnostics.reaction_parse_calls += 1;
-            match apply_reaction_match(variant, &[mol], m, true) {
-                Ok(Some(products)) => {
-                    // Fail-closed, same invariant `apply_retro` enforces
-                    // (Issue #90): reject the whole outcome if any raw
-                    // product molecule fails the aromaticity-integrity
-                    // check, before `split_fragments`'s own text
-                    // round-trip can silently repair or reject it instead.
-                    if products
-                        .iter()
-                        .any(|p| aromaticity_integrity_violation(p).is_some())
-                    {
-                        diagnostics.outcomes_aromaticity_rejected += 1;
-                        continue;
-                    }
-                    let precs: Vec<PrecursorMol> =
-                        products.iter().flat_map(split_fragments).collect();
-                    let accept_for_element_accounting = if element_accounting_ok(mol, &precs) {
-                        diagnostics.outcomes_accepted += 1;
-                        true
-                    } else {
-                        diagnostics.outcomes_element_rejected += 1;
-                        policy.element_accounting != Enforcement::Enforce
-                    };
-                    if accept_for_element_accounting {
-                        let mut signature: Vec<String> =
-                            precs.iter().map(|p| p.smiles.clone()).collect();
-                        signature.sort_unstable();
-                        if seen_signatures.insert(signature) {
-                            outcomes.push(precs);
-                        }
-                    }
-                }
-                Ok(None) => diagnostics.valence_filtered += 1,
-                Err(_) => diagnostics.reaction_application_failed += 1,
-            }
+    if let Some(prepared) = prepared {
+        for reaction in prepared.variants() {
+            run_gated_variant(
+                ReactionExecutor::Prepared(reaction, rings),
+                mol,
+                compiled,
+                policy,
+                &ring_cache,
+                diagnostics,
+                &mut outcomes,
+                &mut seen_signatures,
+            );
+        }
+    } else {
+        for variant in smirks_variants_to_try(&rule.smirks).iter() {
+            run_gated_variant(
+                ReactionExecutor::Legacy(variant),
+                mol,
+                compiled,
+                policy,
+                &ring_cache,
+                diagnostics,
+                &mut outcomes,
+                &mut seen_signatures,
+            );
         }
     }
     outcomes
 }
 
+#[allow(clippy::too_many_arguments)]
+fn run_gated_variant(
+    reaction: ReactionExecutor<'_>,
+    mol: &Molecule,
+    compiled: &CompiledTemplate,
+    policy: ExtractedTemplateSafetyPolicy,
+    ring_cache: &RingBondCache,
+    diagnostics: &mut RingContextDiagnostics,
+    outcomes: &mut Vec<Vec<PrecursorMol>>,
+    seen_signatures: &mut FxHashSet<Vec<String>>,
+) {
+    let matches = match reaction.find_matches(mol, diagnostics) {
+        Ok(m) => m,
+        Err(_) => {
+            diagnostics.reaction_application_failed += 1;
+            return;
+        }
+    };
+    diagnostics.matches_enumerated += matches.len() as u64;
+
+    for m in &matches {
+        if let MatchVerdict::Reject(reason) = classify_match(m, compiled, ring_cache, diagnostics) {
+            record_reject(diagnostics, reason);
+            if policy.ring_context == Enforcement::Enforce {
+                continue;
+            }
+        }
+        diagnostics.matches_applied += 1;
+        match reaction.apply_match(mol, m, diagnostics) {
+            Ok(Some(products)) => {
+                // Fail-closed, same invariant `apply_retro` enforces
+                // (Issue #90): reject the whole outcome if any raw
+                // product molecule fails the aromaticity-integrity
+                // check, before `split_fragments`'s own text
+                // round-trip can silently repair or reject it instead.
+                if products
+                    .iter()
+                    .any(|p| aromaticity_integrity_violation(p).is_some())
+                {
+                    diagnostics.outcomes_aromaticity_rejected += 1;
+                    continue;
+                }
+                let precs: Vec<PrecursorMol> = products.iter().flat_map(split_fragments).collect();
+                let accept_for_element_accounting = if element_accounting_ok(mol, &precs) {
+                    diagnostics.outcomes_accepted += 1;
+                    true
+                } else {
+                    diagnostics.outcomes_element_rejected += 1;
+                    policy.element_accounting != Enforcement::Enforce
+                };
+                if accept_for_element_accounting {
+                    let mut signature: Vec<String> =
+                        precs.iter().map(|p| p.smiles.clone()).collect();
+                    signature.sort_unstable();
+                    if seen_signatures.insert(signature) {
+                        outcomes.push(precs);
+                    }
+                }
+            }
+            Ok(None) => diagnostics.valence_filtered += 1,
+            Err(_) => diagnostics.reaction_application_failed += 1,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chem_env::{load_rules_from_file, mol_from_smiles, template_id_for_smirks};
+    use crate::chem_env::{
+        PreparedRuleSet, load_rules_from_file, mol_from_smiles, template_id_for_smirks,
+    };
 
     const EXTRACTED_9_SMIRKS: &str =
         "[C:4]-[N:5](-[C:1](=[O:2])-[c:3])-[C:6]>>O-[C:1](=[O:2])-[c:3].[C:4]-[NH:5]-[C:6]";
@@ -1170,6 +1312,8 @@ mod tests {
             &compiled,
             ExtractedTemplateSafetyPolicy::CONSERVATIVE,
             &mut diagnostics,
+            None,
+            None,
         );
         assert!(
             outcomes.is_empty(),
@@ -1630,6 +1774,35 @@ mod tests {
         assert_eq!(
             diag.ring_rejects_nonring_intent_on_ring_bond, 1,
             "AuditOnly must still record what Conservative would have rejected"
+        );
+    }
+
+    #[test]
+    fn prepared_auditonly_preserves_output_and_avoids_runtime_reparse() {
+        let rule = extracted_9_rule();
+        let prepared_rules = PreparedRuleSet::new(std::slice::from_ref(&rule));
+        let mol = mol_from_smiles(ISOINDOLINONE_RING_CASE).unwrap();
+        let smi = format!("{EXTRACTED_9_SMIRKS}\t231\n");
+        let guard = load_guard_with_intent(&nonring_sidecar_json("__HASH__"), &smi);
+        let config = guarded(guard, ExtractedTemplateSafetyPolicy::AUDIT_ONLY);
+        let mut diag = RingContextDiagnostics::default();
+        let rings = chematic::perception::find_sssr(&mol);
+
+        let legacy = apply_retro(&mol, &rule);
+        let prepared = apply_retro_with_policy_prepared(
+            &mol,
+            &rule,
+            &config,
+            &mut diag,
+            prepared_rules.get(&rule),
+            Some(&rings),
+        );
+
+        assert_eq!(smiles_of(&prepared), smiles_of(&legacy));
+        assert_eq!(diag.ring_rejects_nonring_intent_on_ring_bond, 1);
+        assert_eq!(
+            diag.reaction_parse_calls, 0,
+            "prepared match enumeration and application must not reparse SMIRKS"
         );
     }
 

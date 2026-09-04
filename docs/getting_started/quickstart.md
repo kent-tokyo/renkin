@@ -17,14 +17,16 @@ diff its output against the text below):
 ```
 Routes found: 3
 Route (depth 1):
-  OC(=O)c1ccccc1OC(=O)C -> O=CC + c1cccc(c1O)C(O)=O
+  CC(Oc1ccccc1C(=O)O)=O -> CC=O + c1cccc(C(O)=O)c1O
   via co_aliphatic_cleavage
 Route (depth 1):
-  OC(=O)c1ccccc1OC(=O)C -> OC(=O)C + c1cccc(c1O)C(O)=O
+  CC(Oc1ccccc1C(=O)O)=O -> CC(O)=O + c1cccc(C(O)=O)c1O
   via ester_cleavage
-Route (depth 1):
-  OC(=O)c1ccccc1OC(=O)C -> c1cccc(c1O)C(O)=O + OC(=O)C
-  via aryl_ether_retro
+Route (depth 2):
+  CC(Oc1ccccc1C(=O)O)=O -> CC=O + c1cccc(C(O)=O)c1O
+  via co_aliphatic_cleavage
+  CC=O -> C + O=C
+  via cc_single_cleavage
 ```
 
 `find_routes` returns a **JSON string** — always `json.loads()` it before

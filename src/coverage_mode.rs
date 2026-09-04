@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 
-use crate::chem_env::{ChemEnv, RetroRule, default_rules};
+use crate::chem_env::{ChemEnv, PreparedRuleSet, RetroRule, default_rules};
 use crate::search::{self, Route, SearchConfig, SearchControl, SearchStats, SearchTermination};
 
 /// Which stage's routes were actually returned.
@@ -65,6 +65,82 @@ pub struct CoverageModeResult {
     /// §5 for why this differs from the research harness's own
     /// selected-stage-only semantic projection.
     pub reranker_failures: u64,
+}
+
+/// Reusable Stage-1/Stage-2 assets for batch coverage searches.
+///
+/// Frontiers and all mutable search caches remain per-target and per-stage;
+/// only immutable compiled reactions are shared. This preserves coverage
+/// mode's fresh Stage-2 semantics while avoiding repeated template compilation
+/// in benchmark and other long-lived callers.
+pub struct CoverageSearchContext<'a> {
+    env: &'a ChemEnv,
+    stage1_rules: &'a [RetroRule],
+    stage2_rules: &'a [RetroRule],
+    prepared_rules: PreparedRuleSet,
+}
+
+impl<'a> CoverageSearchContext<'a> {
+    pub fn new(
+        env: &'a ChemEnv,
+        stage1_rules: &'a [RetroRule],
+        stage2_rules: &'a [RetroRule],
+    ) -> Self {
+        Self {
+            env,
+            stage1_rules,
+            stage2_rules,
+            prepared_rules: PreparedRuleSet::from_rule_sets(&[stage1_rules, stage2_rules]),
+        }
+    }
+
+    pub fn run(
+        &self,
+        target_smiles: &str,
+        config: &SearchConfig,
+        stage2_timeout: Option<Duration>,
+    ) -> Result<CoverageModeResult> {
+        self.run_with_stage2_beam(target_smiles, config, stage2_timeout, None)
+    }
+
+    pub fn run_with_stage2_beam(
+        &self,
+        target_smiles: &str,
+        config: &SearchConfig,
+        stage2_timeout: Option<Duration>,
+        stage2_beam_width: Option<usize>,
+    ) -> Result<CoverageModeResult> {
+        let stage2_config = stage2_beam_width.map(|beam_width| {
+            let mut config = config.clone();
+            config.beam_width = beam_width;
+            config
+        });
+        self.run_with_configs(
+            target_smiles,
+            config,
+            stage2_config.as_ref().unwrap_or(config),
+            stage2_timeout,
+        )
+    }
+
+    pub fn run_with_configs(
+        &self,
+        target_smiles: &str,
+        stage1_config: &SearchConfig,
+        stage2_config: &SearchConfig,
+        stage2_timeout: Option<Duration>,
+    ) -> Result<CoverageModeResult> {
+        run_coverage_mode_with_configs_prepared(
+            target_smiles,
+            self.env,
+            self.stage1_rules,
+            stage1_config,
+            self.stage2_rules,
+            stage2_config,
+            stage2_timeout,
+            &self.prepared_rules,
+        )
+    }
 }
 
 /// Rejects unsupported option combinations by **flag presence alone** --
@@ -207,13 +283,41 @@ pub fn run_coverage_mode_with_configs(
     stage2_config: &SearchConfig,
     stage2_timeout: Option<Duration>,
 ) -> Result<CoverageModeResult> {
+    CoverageSearchContext::new(env, stage1_rules, stage2_rules).run_with_configs(
+        target_smiles,
+        stage1_config,
+        stage2_config,
+        stage2_timeout,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_coverage_mode_with_configs_prepared(
+    target_smiles: &str,
+    env: &ChemEnv,
+    stage1_rules: &[RetroRule],
+    stage1_config: &SearchConfig,
+    stage2_rules: &[RetroRule],
+    stage2_config: &SearchConfig,
+    stage2_timeout: Option<Duration>,
+    prepared_rules: &PreparedRuleSet,
+) -> Result<CoverageModeResult> {
     validate_coverage_mode_config(stage1_config)?;
 
     let total_start = Instant::now();
 
     let stage1_start = Instant::now();
-    let (stage1_routes, stage1_stats) =
-        search::find_routes(target_smiles, env, stage1_rules, stage1_config)?;
+    let stage1_result = search::find_routes_with_control_prepared(
+        target_smiles,
+        env,
+        stage1_rules,
+        stage1_config,
+        &SearchControl::unlimited(),
+        prepared_rules,
+        None,
+    )?;
+    let stage1_routes = stage1_result.routes;
+    let stage1_stats = stage1_result.stats;
     let stage1_elapsed_ms = stage1_start.elapsed().as_secs_f64() * 1000.0;
     let stage1_solved = !stage1_routes.is_empty();
 
@@ -234,20 +338,22 @@ pub fn run_coverage_mode_with_configs(
         });
     }
 
-    // Stage 1 found nothing -- escalate. A fully independent search call:
-    // no warm-start, no candidate reuse between stages, per the
-    // pre-registered Phase B.2 constraint.
+    // Stage 1 found nothing -- escalate. Frontier, closed-set, and candidate
+    // caches remain fully independent per the pre-registered Phase B.2
+    // constraint. Only immutable SMIRKS compilation state is shared.
     let stage2_start = Instant::now();
     let control = match stage2_timeout {
         Some(d) => SearchControl::with_timeout(d),
         None => SearchControl::unlimited(),
     };
-    let stage2_result = search::find_routes_with_control(
+    let stage2_result = search::find_routes_with_control_prepared(
         target_smiles,
         env,
         stage2_rules,
         stage2_config,
         &control,
+        prepared_rules,
+        None,
     )?;
     let stage2_elapsed_ms = stage2_start.elapsed().as_secs_f64() * 1000.0;
 
@@ -310,13 +416,43 @@ pub fn run_coverage_mode(
     coverage_rules: &[RetroRule],
     stage2_timeout: Option<Duration>,
 ) -> Result<CoverageModeResult> {
+    run_coverage_mode_with_stage2_beam(
+        target_smiles,
+        env,
+        stage1_rules,
+        config,
+        coverage_rules,
+        stage2_timeout,
+        None,
+    )
+}
+
+/// Coverage entry point with an optional Stage-2-only beam width override.
+/// Stage 1 remains byte-identical to `config`; when `None`, this is exactly
+/// the legacy `run_coverage_mode` behavior. This lets callers address
+/// Stage-2 beam crowd-out without changing the default search budget.
+pub fn run_coverage_mode_with_stage2_beam(
+    target_smiles: &str,
+    env: &ChemEnv,
+    stage1_rules: &[RetroRule],
+    config: &SearchConfig,
+    coverage_rules: &[RetroRule],
+    stage2_timeout: Option<Duration>,
+    stage2_beam_width: Option<usize>,
+) -> Result<CoverageModeResult> {
+    let stage2_config = stage2_beam_width.map(|beam_width| {
+        let mut config = config.clone();
+        config.beam_width = beam_width;
+        config
+    });
+    let stage2_config = stage2_config.as_ref().unwrap_or(config);
     run_coverage_mode_with_configs(
         target_smiles,
         env,
         stage1_rules,
         config,
         coverage_rules,
-        config,
+        stage2_config,
         stage2_timeout,
     )
 }

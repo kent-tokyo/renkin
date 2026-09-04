@@ -28,7 +28,7 @@ use anyhow::{Result, bail};
 use renkin::DEFAULT_BUILDING_BLOCKS;
 use renkin::chem_env::{ChemEnv, default_rules, load_rules_from_file};
 use renkin::io_limits::read_bounded_text_file;
-use renkin::search::{Route, SearchConfig, exploration_contract, find_routes};
+use renkin::search::{Route, SearchConfig, SearchEngine, exploration_contract};
 use renkin::validation::{
     RouteValidationStatus, StepValidationStatus, route_balanced, validate_route_steps,
 };
@@ -668,6 +668,7 @@ fn cmd_cascade(args: &[String]) -> Result<()> {
             max_routes: 1,
             ..Default::default()
         };
+        let engine = SearchEngine::new(env, rules);
 
         eprintln!(
             "[{}] Attempting {}/{} targets (depth={}, beam={}) ...",
@@ -680,7 +681,7 @@ fn cmd_cascade(args: &[String]) -> Result<()> {
 
         let mut newly_solved = 0usize;
         for (smiles, _name) in &candidates {
-            let (routes, _) = find_routes(smiles, &env, &rules, &config).unwrap_or_default();
+            let (routes, _) = engine.find_routes(smiles, &config).unwrap_or_default();
             if let Some(best) = routes.first()
                 && solved_set.insert(smiles.clone())
             {
@@ -690,7 +691,7 @@ fn cmd_cascade(args: &[String]) -> Result<()> {
                     n_balanced += 1;
                 }
                 if quality {
-                    let (_, route_status) = validate_route_steps(&best.steps, &rules);
+                    let (_, route_status) = validate_route_steps(&best.steps, engine.rules());
                     if route_status == RouteValidationStatus::Validated {
                         n_fwd_validated += 1;
                     }
@@ -983,6 +984,14 @@ fn main() -> Result<()> {
         nn_scorer,
         ..Default::default()
     };
+    let engine = SearchEngine::new(env, rules);
+    let coverage_context = coverage_rules.as_deref().map(|stage2_rules| {
+        renkin::coverage_mode::CoverageSearchContext::new(
+            engine.env(),
+            engine.rules(),
+            stage2_rules,
+        )
+    });
 
     eprintln!(
         "Benchmarking {} targets (format={}, mode={}, depth={}, beam_width={}) ...",
@@ -1006,15 +1015,8 @@ fn main() -> Result<()> {
 
     for (smiles, name, gt_depth) in &targets {
         let t0 = Instant::now();
-        let (routes, stats, coverage_meta) = if let Some(ref stage2_rules) = coverage_rules {
-            let result = renkin::coverage_mode::run_coverage_mode(
-                smiles,
-                &env,
-                &rules,
-                &config,
-                stage2_rules,
-                coverage_timeout,
-            )?;
+        let (routes, stats, coverage_meta) = if let Some(ref context) = coverage_context {
+            let result = context.run(smiles, &config, coverage_timeout)?;
             let meta = (
                 Some(match result.selected_stage {
                     renkin::coverage_mode::SelectedStage::Stage1 => "stage1",
@@ -1027,7 +1029,7 @@ fn main() -> Result<()> {
             );
             (result.routes, result.stats, Some(meta))
         } else {
-            let (routes, stats) = find_routes(smiles, &env, &rules, &config).unwrap_or_default();
+            let (routes, stats) = engine.find_routes(smiles, &config).unwrap_or_default();
             (routes, stats, None)
         };
         let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
@@ -1051,7 +1053,7 @@ fn main() -> Result<()> {
         let (forward_validated, route_validation_status) = if plausibility {
             match routes.first() {
                 Some(r) => {
-                    let validation_rules = coverage_rules.as_deref().unwrap_or(&rules);
+                    let validation_rules = coverage_rules.as_deref().unwrap_or(engine.rules());
                     let (statuses, route_status) = validate_route_steps(&r.steps, validation_rules);
                     steps_checked += statuses.len();
                     steps_evaluable += statuses

@@ -7,7 +7,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use anyhow::{Context, Result};
 use chematic::chem::standardize::{StandardizeOptions, ZwitterionHandling, standardize};
 use chematic::core::{Atom, AtomIdx, BondIdx, BondOrder, Element, MoleculeBuilder};
-use chematic::rxn::run_reactants;
+use chematic::rxn::{PreparedReaction, run_reactants};
 use chematic::smarts::parse_smarts;
 use chematic::smiles::{canonical_smiles, parse};
 use sha2::{Digest, Sha256};
@@ -43,6 +43,72 @@ impl Default for RetroRule {
     }
 }
 
+/// SMIRKS templates compiled once for reuse across every expansion in one
+/// search or candidate-pool run. Graph-based rules have no entry because they
+/// do not pass through chematic's reaction parser.
+pub(crate) struct PreparedRuleSet {
+    by_template_id: FxHashMap<String, PreparedRetroRule>,
+}
+
+pub(crate) struct PreparedRetroRule {
+    source_smirks: String,
+    variants: Vec<PreparedReaction>,
+}
+
+impl PreparedRetroRule {
+    pub(crate) fn variants(&self) -> &[PreparedReaction] {
+        &self.variants
+    }
+}
+
+impl PreparedRuleSet {
+    pub(crate) fn new(rules: &[RetroRule]) -> Self {
+        Self::from_rule_sets(&[rules])
+    }
+
+    /// Compile the union of several rule slices once. This is used by staged
+    /// coverage search so Stage 1 and Stage 2 share immutable query state while
+    /// retaining independent frontier/search semantics.
+    pub(crate) fn from_rule_sets(rule_sets: &[&[RetroRule]]) -> Self {
+        let mut by_template_id = FxHashMap::default();
+        for rule in rule_sets
+            .iter()
+            .flat_map(|rules| rules.iter())
+            .filter(|rule| !rule.smirks.is_empty())
+        {
+            if by_template_id
+                .get(&rule.template_id)
+                .is_some_and(|prepared: &PreparedRetroRule| prepared.source_smirks == rule.smirks)
+            {
+                continue;
+            }
+            let variants = if rule.smirks.contains('#') {
+                application_smirks_variants(&rule.smirks)
+            } else {
+                std::sync::Arc::new(vec![rule.smirks.clone()])
+            };
+            let prepared = variants
+                .iter()
+                .filter_map(|smirks| PreparedReaction::new(smirks).ok())
+                .collect();
+            by_template_id.insert(
+                rule.template_id.clone(),
+                PreparedRetroRule {
+                    source_smirks: rule.smirks.clone(),
+                    variants: prepared,
+                },
+            );
+        }
+        Self { by_template_id }
+    }
+
+    pub(crate) fn get(&self, rule: &RetroRule) -> Option<&PreparedRetroRule> {
+        self.by_template_id
+            .get(&rule.template_id)
+            .filter(|prepared| prepared.source_smirks == rule.smirks)
+    }
+}
+
 /// Stable identity for an extracted SMIRKS template: SHA-256 of the *trimmed*
 /// SMIRKS string, hex-encoded, formatted as `smirks-sha256:<hex>`. Independent
 /// of file position, load order, and count. Purely syntactic — no SMIRKS
@@ -73,8 +139,24 @@ pub struct ChemEnv {
 
 impl ChemEnv {
     pub fn load(path: &str) -> Result<Self> {
-        let content = crate::io_limits::read_bounded_text_file(path, "building blocks")
+        let bytes = crate::io_limits::read_bounded_bytes_file(path, "building blocks")
             .with_context(|| format!("Failed to read building blocks from {path}"))?;
+        let compiled_extension = std::path::Path::new(path)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("rstock"));
+        if compiled_extension
+            || bytes.starts_with(crate::compiled_stock::COMPILED_STOCK_MAGIC.as_bytes())
+        {
+            let decoded = crate::compiled_stock::decode_compiled_stock(&bytes)
+                .with_context(|| format!("Failed to load compiled building blocks from {path}"))?;
+            // Release the file buffer before allocating the hash table. The
+            // decoded strings own their bytes, so retaining the original
+            // artifact here would only inflate peak RSS for million-row stocks.
+            drop(bytes);
+            return Ok(Self::from_canonical_smiles(decoded.canonical_smiles));
+        }
+        let content = String::from_utf8(bytes)
+            .with_context(|| format!("building blocks {path} is not valid UTF-8"))?;
         let smiles_iter = content
             .lines()
             .map(str::trim)
@@ -100,6 +182,19 @@ impl ChemEnv {
             bb_count += 1;
         }
 
+        Self {
+            canon_set,
+            bb_count,
+        }
+    }
+
+    /// Build directly from identities already validated by the compiled-stock
+    /// decoder. This is deliberately not public: arbitrary caller-provided
+    /// strings must still pass through `from_smiles_iter` and the chemistry
+    /// normalization policy.
+    fn from_canonical_smiles(entries: Vec<String>) -> Self {
+        let bb_count = entries.len();
+        let canon_set = entries.into_iter().collect();
         Self {
             canon_set,
             bb_count,
@@ -136,16 +231,7 @@ impl ChemEnv {
     /// silently-truncated one under the same label. This hashes what's
     /// actually IN the stock.
     pub fn content_sha256(&self) -> String {
-        let mut sorted: Vec<&str> = self.canon_set.iter().map(String::as_str).collect();
-        sorted.sort_unstable();
-        let mut hasher = Sha256::new();
-        hasher.update(b"renkin-retrospect-stock-v1\0");
-        hasher.update((sorted.len() as u64).to_be_bytes());
-        for smi in sorted {
-            hasher.update((smi.len() as u64).to_be_bytes());
-            hasher.update(smi.as_bytes());
-        }
-        format!("sha256:{}", crate::sha256_hex(hasher.finalize()))
+        crate::compiled_stock::semantic_content_sha256(self.canon_set.iter().map(String::as_str))
     }
 }
 
@@ -1273,6 +1359,32 @@ fn repair_spectator_oxide_charge(mol: &mut Molecule) {
 /// (keyed by `name`). SMIRKS rules use chematic's run_reactants; fragments are
 /// split on '.' in canonical SMILES and filtered for BFS-leakage artefacts.
 pub fn apply_retro(mol: &Molecule, rule: &RetroRule) -> Vec<Vec<PrecursorMol>> {
+    apply_retro_impl(mol, rule, None, None)
+}
+
+pub(crate) fn apply_retro_prepared(
+    mol: &Molecule,
+    rule: &RetroRule,
+    prepared: Option<&PreparedRetroRule>,
+) -> Vec<Vec<PrecursorMol>> {
+    apply_retro_impl(mol, rule, prepared, None)
+}
+
+pub(crate) fn apply_retro_prepared_with_rings(
+    mol: &Molecule,
+    rule: &RetroRule,
+    prepared: Option<&PreparedRetroRule>,
+    rings: &chematic::perception::RingSet,
+) -> Vec<Vec<PrecursorMol>> {
+    apply_retro_impl(mol, rule, prepared, Some(rings))
+}
+
+fn apply_retro_impl(
+    mol: &Molecule,
+    rule: &RetroRule,
+    prepared: Option<&PreparedRetroRule>,
+    rings: Option<&chematic::perception::RingSet>,
+) -> Vec<Vec<PrecursorMol>> {
     #[cfg(feature = "perf-instrumentation")]
     APPLY_RETRO_CALLS.fetch_add(1, Ordering::Relaxed);
     if rule.smirks.is_empty() {
@@ -1294,8 +1406,18 @@ pub fn apply_retro(mol: &Molecule, rule: &RetroRule) -> Vec<Vec<PrecursorMol>> {
         // Fast path: the ~57% of the corpus with no [#N] atoms, byte-for-
         // byte identical to this function's pre-Issue-88-fix behavior --
         // zero extra allocation or lookup.
-        return run_reactants(&rule.smirks, &[mol])
-            .unwrap_or_default()
+        let products = match prepared {
+            Some(prepared) => prepared
+                .variants
+                .first()
+                .and_then(|reaction| match rings {
+                    Some(rings) => reaction.run_reactants_with_rings(&[mol], &[rings]).ok(),
+                    None => reaction.run_reactants(&[mol]).ok(),
+                })
+                .unwrap_or_default(),
+            None => run_reactants(&rule.smirks, &[mol]).unwrap_or_default(),
+        };
+        return products
             .into_iter()
             .map(|products| {
                 products
@@ -1310,11 +1432,10 @@ pub fn apply_retro(mol: &Molecule, rule: &RetroRule) -> Vec<Vec<PrecursorMol>> {
     // reading (see `application_smirks_variants`), deduping outcomes by
     // their resulting precursor SMILES set so two variants that happen to
     // agree on a real molecule don't double-count as separate outcomes.
-    let variants = application_smirks_variants(&rule.smirks);
     let mut outcomes: Vec<Vec<PrecursorMol>> = Vec::new();
     let mut seen_signatures: FxHashSet<Vec<String>> = FxHashSet::default();
-    for variant in variants.iter() {
-        for mut products in run_reactants(variant, &[mol]).unwrap_or_default() {
+    let mut collect_products = |product_sets: Vec<Vec<Molecule>>| {
+        for mut products in product_sets {
             for product_mol in products.iter_mut() {
                 repair_spectator_oxide_charge(product_mol);
             }
@@ -1338,6 +1459,24 @@ pub fn apply_retro(mol: &Molecule, rule: &RetroRule) -> Vec<Vec<PrecursorMol>> {
             signature.sort_unstable();
             if seen_signatures.insert(signature) {
                 outcomes.push(precursors);
+            }
+        }
+    };
+    match prepared {
+        Some(prepared) => {
+            for reaction in &prepared.variants {
+                let products = match rings {
+                    Some(rings) => reaction
+                        .run_reactants_with_rings(&[mol], &[rings])
+                        .unwrap_or_default(),
+                    None => reaction.run_reactants(&[mol]).unwrap_or_default(),
+                };
+                collect_products(products);
+            }
+        }
+        None => {
+            for variant in application_smirks_variants(&rule.smirks).iter() {
+                collect_products(run_reactants(variant, &[mol]).unwrap_or_default());
             }
         }
     }
@@ -1513,10 +1652,27 @@ fn fragment_has_valence_violation(mol: &Molecule) -> bool {
     }
 
     mol.atoms().any(|(idx, atom)| {
-        atom.hydrogen_count.is_some()
-            && atom.element.is_organic_subset()
-            && atom.hydrogen_count.unwrap_or(0)
-                < chematic::core::valence::valence_inferred_hcount(mol, idx)
+        let Some(explicit_h) = atom.hydrogen_count else {
+            return false;
+        };
+        if !atom.element.is_organic_subset() {
+            return false;
+        }
+        let inferred_h = chematic::core::valence::valence_inferred_hcount(mol, idx);
+
+        // Aromatic `[nH]` is a valid, intentional exception: its explicit H
+        // completes the aromatic valence even though the generic organic
+        // valence inference reports zero implicit H.  For non-aromatic
+        // bracket atoms, however, an explicit H count that differs from the
+        // surviving graph's inferred count is a malformed open-shell or
+        // over-valent fragment.  The old `<` check caught stale-H radicals
+        // but let the opposite defect through, e.g. neutral
+        // `C(C[NH]1CCCC1)OC` (three N bonds plus explicit H).
+        if atom.aromatic {
+            false
+        } else {
+            explicit_h != inferred_h
+        }
     })
 }
 
@@ -3067,6 +3223,26 @@ mod tests {
         );
     }
 
+    #[test]
+    fn rstock_extension_fails_closed_when_magic_is_corrupted() {
+        let path = std::env::temp_dir().join(format!(
+            "renkin-corrupt-compiled-stock-{}.rstock",
+            std::process::id()
+        ));
+        std::fs::write(&path, "XENKIN-COMPILED-STOCK-V1\n{}\nCCO\n")
+            .expect("write corrupt compiled stock fixture");
+        let error = match ChemEnv::load(path.to_str().unwrap()) {
+            Ok(_) => panic!("a .rstock file with corrupt magic fell back to plain SMILES"),
+            Err(error) => error,
+        };
+        let _ = std::fs::remove_file(path);
+        assert!(
+            error
+                .to_string()
+                .contains("Failed to load compiled building blocks")
+        );
+    }
+
     #[cfg(unix)]
     fn tempfile_dir() -> std::path::PathBuf {
         let path =
@@ -3545,6 +3721,18 @@ mod tests {
 
         let target = mol_from_smiles("c1ccc(Nc2ncccn2)cc1").unwrap(); // 2-anilinopyrimidine
         let outcomes = apply_retro(&target, &rule);
+        let prepared_rules = PreparedRuleSet::new(std::slice::from_ref(&rule));
+        let prepared_outcomes = apply_retro_prepared(&target, &rule, prepared_rules.get(&rule));
+        let signatures = |sets: &[Vec<PrecursorMol>]| {
+            sets.iter()
+                .map(|set| set.iter().map(|p| p.smiles.clone()).collect::<Vec<_>>())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            signatures(&prepared_outcomes),
+            signatures(&outcomes),
+            "compile-once hash-atom application must preserve outcome order and contents"
+        );
         assert!(
             !outcomes.is_empty(),
             "apply_retro must succeed on the unmodified rule via the internal variant path"
@@ -3576,6 +3764,59 @@ mod tests {
         // `rule` itself must be untouched by applying it.
         assert_eq!(rule.smirks, hash_atom_retro);
         assert_eq!(rule.name, "extracted_21");
+    }
+
+    #[test]
+    #[ignore = "explicit checked-in corpus equivalence gate"]
+    fn prepared_rules_match_legacy_for_500_templates_and_10_targets() {
+        let rules = load_rules_from_file("data/templates_extracted_500.smi");
+        let prepare_started = std::time::Instant::now();
+        let prepared = PreparedRuleSet::new(&rules);
+        let prepare_elapsed = prepare_started.elapsed();
+        let targets = std::fs::read_to_string("data/uspto50k_test.smi").unwrap();
+        let molecules: Vec<Molecule> = targets
+            .lines()
+            .filter_map(|line| line.split_whitespace().next())
+            .filter_map(|smiles| mol_from_smiles(smiles).ok())
+            .take(10)
+            .collect();
+        assert_eq!(molecules.len(), 10);
+        let mut legacy_elapsed = std::time::Duration::ZERO;
+        let mut ring_perception_elapsed = std::time::Duration::ZERO;
+        let mut prepared_elapsed = std::time::Duration::ZERO;
+
+        for (target_index, mol) in molecules.iter().enumerate() {
+            let started = std::time::Instant::now();
+            let rings = chematic::perception::find_sssr(mol);
+            ring_perception_elapsed += started.elapsed();
+            for rule in &rules {
+                let started = std::time::Instant::now();
+                let legacy = apply_retro(mol, rule);
+                legacy_elapsed += started.elapsed();
+                let started = std::time::Instant::now();
+                let compiled =
+                    apply_retro_prepared_with_rings(mol, rule, prepared.get(rule), &rings);
+                prepared_elapsed += started.elapsed();
+                let smiles = |sets: &[Vec<PrecursorMol>]| {
+                    sets.iter()
+                        .map(|set| set.iter().map(|p| p.smiles.clone()).collect::<Vec<_>>())
+                        .collect::<Vec<_>>()
+                };
+                assert_eq!(
+                    smiles(&compiled),
+                    smiles(&legacy),
+                    "target {target_index}, template {} diverged",
+                    rule.template_id
+                );
+            }
+        }
+        eprintln!(
+            "prepared-rule gate: prepare={:.6}s legacy_apply={:.6}s shared_rings={:.6}s prepared_apply={:.6}s",
+            prepare_elapsed.as_secs_f64(),
+            legacy_elapsed.as_secs_f64(),
+            ring_perception_elapsed.as_secs_f64(),
+            prepared_elapsed.as_secs_f64()
+        );
     }
 
     #[test]
@@ -3728,6 +3969,22 @@ mod tests {
                 "valid fragment must survive splitting: {smiles}"
             );
         }
+    }
+
+    #[test]
+    fn fragment_valence_guard_rejects_over_hydrogenated_neutral_nitrogen() {
+        // This is the exact malformed intermediate emitted by the frozen
+        // v1.0.0 route for USPTO-50k test line 1080.  The neutral ring N has
+        // three heavy-atom bonds and an additional explicit H; it is not a
+        // valid closed-shell molecule even though chematic can round-trip the
+        // graph and its bond-only validator does not flag it.
+        let malformed = mol_from_smiles("C(C[NH]1CCCC1)OC").unwrap();
+        assert!(fragment_has_valence_violation(&malformed));
+        assert!(split_fragments(&malformed).is_empty());
+
+        // Aromatic [nH] is a deliberate exception and must remain accepted.
+        let pyrrole = mol_from_smiles("c1cc[nH]c1").unwrap();
+        assert!(!fragment_has_valence_violation(&pyrrole));
     }
 
     #[test]

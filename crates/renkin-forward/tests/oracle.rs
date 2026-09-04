@@ -26,15 +26,12 @@
 //!   unit test in `hints.rs`,
 //!   `chirality_constraint_is_retained_in_required_features`).
 //!
-//! The amine fixtures use `[NH2:2]` rather than a `[N;H1,H2:2]`-style
-//! multi-condition OR: an earlier draft used the latter and both amine
-//! fixtures failed at the "produced at least one concrete candidate"
-//! precondition -- `enumerate_products_detailed` itself rejects that
-//! SMIRKS (the same `reverse_smirks_validated`/`parse_reaction` limitation
-//! documented in `hints.rs`'s regression-audit tests), so there was no
-//! concrete run to cross-check at all. This is not a hints defect; the
-//! OR-flattening logic that `[N;H1,H2:2]` would exercise is already
-//! covered directly by `hints.rs`'s own feature-extraction fixtures.
+//! The amine fixtures use concrete H counts rather than a
+//! `[N;H1,H2:2]`-style multi-condition OR. The forward product has one less
+//! N-H bond than the free amine partner (`NH2 -> NH`, or `NH3+ -> NH2+`):
+//! schematic 1.0.2 correctly rejects the former fixtures that retained the
+//! partner H count after adding the aryl-N bond. OR-flattening remains covered
+//! directly by `hints.rs`'s feature-extraction fixtures.
 
 use renkin::chem_env::{RetroRule, mol_from_smiles};
 use renkin_forward::hints::{
@@ -82,7 +79,7 @@ fn assert_every_concrete_success_is_covered(
 ) {
     assert!(
         !concrete.candidates.is_empty(),
-        "fixture must produce at least one concrete candidate to cross-check"
+        "fixture must produce at least one concrete candidate to cross-check: {concrete:#?}"
     );
     for candidate in &concrete.candidates {
         for source in &candidate.sources {
@@ -127,7 +124,7 @@ fn assert_every_concrete_success_is_covered(
 
 #[test]
 fn oracle_aryl_electrophile_plus_amine() {
-    let r = rule("aryl_amination", "[c:1][NH2:2]>>[c:1][Br].[NH2:2]");
+    let r = rule("aryl_amination", "[c:1][NH:2]>>[c:1][Br].[NH2:2]");
     let partners = vec![partner_record(1, "NCC")];
     let concrete = enumerate_products_detailed(
         "Brc1ccccc1",
@@ -144,7 +141,7 @@ fn oracle_aryl_electrophile_plus_amine() {
 fn oracle_amine_plus_carbon_electrophile() {
     // Same template, known/partner roles reversed: the amine is now known,
     // the aryl bromide is the explicit partner.
-    let r = rule("aryl_amination", "[c:1][NH2:2]>>[c:1][Br].[NH2:2]");
+    let r = rule("aryl_amination", "[c:1][NH:2]>>[c:1][Br].[NH2:2]");
     let partners = vec![partner_record(1, "Brc1ccccc1")];
     let concrete = enumerate_products_detailed(
         "NCC",
@@ -269,7 +266,7 @@ fn oracle_spectator_slot_produces_no_result_in_either_mode() {
 
 #[test]
 fn oracle_charged_partner_constraint() {
-    let r = rule("charged_amination", "[c:1][NH3+:2]>>[c:1][Br].[NH3+:2]");
+    let r = rule("charged_amination", "[c:1][NH2+:2]>>[c:1][Br].[NH3+:2]");
     let partners = vec![partner_record(1, "C[NH3+]")];
     let concrete = enumerate_products_detailed(
         "Brc1ccccc1",

@@ -3,6 +3,7 @@
 use renkin::DEFAULT_BUILDING_BLOCKS;
 use renkin::bridge;
 use renkin::chem_env;
+use renkin::compiled_stock;
 use renkin::display;
 use renkin::evidence_match;
 use renkin::io_limits::read_bounded_text_file;
@@ -181,6 +182,7 @@ fn main() -> Result<()> {
     let mut search_mode_arg: Option<String> = None;
     let mut coverage_templates_path: Option<String> = None;
     let mut coverage_timeout_secs_arg: Option<String> = None;
+    let mut coverage_beam_width_arg: Option<String> = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -345,6 +347,13 @@ fn main() -> Result<()> {
                 };
                 coverage_timeout_secs_arg = Some(v.clone());
             }
+            "--coverage-beam-width" => {
+                i += 1;
+                let Some(v) = args.get(i) else {
+                    bail!("--coverage-beam-width requires an <N> value");
+                };
+                coverage_beam_width_arg = Some(v.clone());
+            }
             "--bb-prices" => {
                 bb_prices_path =
                     Some(required_flag_value(&args, &mut i, "--bb-prices")?.to_owned());
@@ -431,6 +440,8 @@ fn main() -> Result<()> {
              --search-mode coverage, validated before Stage 1 runs\n  \
              --coverage-timeout-secs <N>   Optional positive-integer wall-clock budget for \
              Stage 2 only (cooperative cancellation, not a hard bound); default: unlimited\n  \
+             --coverage-beam-width <N>    Optional Stage-2-only beam width override; 0 means \
+             unlimited. Stage 1 keeps --beam-width unchanged; default: same as Stage 1\n  \
              coverage mode does not support --bond-index, --scorer, or an active \
              --ring-context-policy in v0 (fails loud before Stage 1 runs)"
         );
@@ -470,6 +481,9 @@ fn main() -> Result<()> {
             if coverage_timeout_secs_arg.is_some() {
                 bail!("--coverage-timeout-secs requires --search-mode coverage");
             }
+            if coverage_beam_width_arg.is_some() {
+                bail!("--coverage-beam-width requires --search-mode coverage");
+            }
         }
         SearchMode::Coverage => {
             if coverage_templates_path.is_none() {
@@ -501,6 +515,13 @@ fn main() -> Result<()> {
             Some(std::time::Duration::from_secs(n))
         }
     };
+    let coverage_beam_width: Option<usize> = coverage_beam_width_arg
+        .map(|s| {
+            s.parse().map_err(|_| {
+                anyhow::anyhow!("--coverage-beam-width must be a non-negative integer, got {s:?}")
+            })
+        })
+        .transpose()?;
 
     // --stock overrides --building-blocks and --bb-prices
     let (env, bb_price_map) = if let Some(ref path) = stock_path {
@@ -774,13 +795,14 @@ fn main() -> Result<()> {
                 .as_deref()
                 .expect("already validated above: SearchMode::Coverage implies Some");
             let coverage_rules = renkin::coverage_mode::load_coverage_rules(coverage_path)?;
-            let result = renkin::coverage_mode::run_coverage_mode(
+            let result = renkin::coverage_mode::run_coverage_mode_with_stage2_beam(
                 &target_smiles,
                 &env,
                 &rules,
                 &config,
                 &coverage_rules,
                 coverage_timeout,
+                coverage_beam_width,
             )?;
             let meta = CoverageModeMeta {
                 selected_stage: match result.selected_stage {
@@ -2277,6 +2299,7 @@ fn run_stock(args: &[String]) -> Result<()> {
     let cmd = args.first().map(|s| s.as_str()).unwrap_or("help");
     match cmd {
         "import" => stock_import_cli(&args[1..])?,
+        "compile" => stock_compile_cli(&args[1..])?,
         "stats" => {
             let path = args.get(1).map(|s| s.as_str()).unwrap_or("data/stock.csv");
             let entries = load_stock_csv(path)?;
@@ -2393,7 +2416,7 @@ fn run_stock(args: &[String]) -> Result<()> {
         }
         _ => {
             println!(
-                "Usage: renkin stock <import|stats|validate|coverage|vendor-index|vendor-match> [args...]"
+                "Usage: renkin stock <import|compile|stats|validate|coverage|vendor-index|vendor-match> [args...]"
             );
             println!("  import --input <in.smi> --output <out.smi> --manifest <out.manifest.json>");
             println!(
@@ -2401,6 +2424,12 @@ fn run_stock(args: &[String]) -> Result<()> {
             );
             println!(
                 "         [--fail-on-rejection] [--force] — deterministic .smi import + provenance manifest"
+            );
+            println!(
+                "  compile --input <in.smi> --output <out.rstock> [--fail-on-rejection] [--force]"
+            );
+            println!(
+                "                                      — compile an integrity-checked fast-load snapshot"
             );
             println!("  stats <file.csv>                  — summary statistics");
             println!("  validate <file.csv>               — check SMILES validity");
@@ -2410,6 +2439,121 @@ fn run_stock(args: &[String]) -> Result<()> {
                 "  vendor-match <file> <SMILES> [exact|parent-ignoring-salts|stereo-ignored|tautomer-related]"
             );
         }
+    }
+    Ok(())
+}
+
+/// `renkin stock compile --input <path> --output <path>
+/// [--fail-on-rejection] [--force]` canonicalizes through the same importer as
+/// `stock import`, then stores the identities in a versioned fast-load
+/// snapshot. The resulting artifact can be passed anywhere a normal
+/// `--building-blocks` path is accepted; `ChemEnv::load` detects its magic.
+fn stock_compile_cli(args: &[String]) -> Result<()> {
+    let input_path =
+        flag_value(args, "--input").context("renkin stock compile: --input <path> is required")?;
+    let output_path = flag_value(args, "--output")
+        .context("renkin stock compile: --output <path> is required")?;
+    let fail_on_rejection = flag_present(args, "--fail-on-rejection");
+    let force = flag_present(args, "--force");
+
+    if same_path(input_path, output_path) {
+        bail!(
+            "renkin stock compile: --input and --output must not be the same path ({input_path:?})"
+        );
+    }
+    if !std::path::Path::new(output_path)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("rstock"))
+    {
+        bail!("renkin stock compile: --output must use the .rstock extension");
+    }
+    if !force && std::path::Path::new(output_path).exists() {
+        bail!(
+            "renkin stock compile: --output {output_path:?} already exists (use --force to overwrite)"
+        );
+    }
+
+    let options = stock_import::StockImportOptions {
+        source_label: "compiled-stock-source".to_string(),
+        source_revision: None,
+        license: None,
+    };
+    let (accepted, import_manifest) =
+        stock_import::import_stock_from_path(std::path::Path::new(input_path), &options)
+            .with_context(|| {
+                format!("renkin stock compile: failed to import --input {input_path:?}")
+            })?;
+    let artifact = compiled_stock::render_compiled_stock(&accepted, &import_manifest.input_sha256)?;
+
+    static COMPILED_STOCK_TMP_COUNTER: std::sync::atomic::AtomicU64 =
+        std::sync::atomic::AtomicU64::new(0);
+    let tmp_id = COMPILED_STOCK_TMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp_path = format!(
+        "{output_path}.compiled-stock-tmp-{}-{tmp_id}",
+        std::process::id()
+    );
+    let write_result = (|| -> Result<()> {
+        use std::io::Write;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp_path)
+            .with_context(|| format!("failed to create compiled-stock temp file {tmp_path:?}"))?;
+        file.write_all(&artifact)
+            .with_context(|| format!("failed to write compiled-stock temp file {tmp_path:?}"))?;
+        file.sync_all()
+            .with_context(|| format!("failed to sync compiled-stock temp file {tmp_path:?}"))?;
+        std::fs::rename(&tmp_path, output_path).with_context(|| {
+            format!("failed to move compiled stock into place at {output_path:?}")
+        })?;
+        Ok(())
+    })();
+    if write_result.is_err() {
+        std::fs::remove_file(&tmp_path).ok();
+    }
+    write_result?;
+
+    if import_manifest.rejected_rows > 0 {
+        eprintln!(
+            "warning: {} of {} stock rows were rejected while compiling ({:?})",
+            import_manifest.rejected_rows,
+            import_manifest.input_rows,
+            import_manifest.rejection_reasons
+        );
+    }
+
+    #[derive(Serialize)]
+    struct StockCompileSummary<'a> {
+        schema_version: u32,
+        input_path: &'a str,
+        output_path: &'a str,
+        source_sha256: &'a str,
+        content_sha256: String,
+        molecule_count: usize,
+        rejected_rows: u64,
+        duplicate_rows: u64,
+    }
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&StockCompileSummary {
+            schema_version: compiled_stock::COMPILED_STOCK_SCHEMA_VERSION,
+            input_path,
+            output_path,
+            source_sha256: &import_manifest.input_sha256,
+            content_sha256: compiled_stock::semantic_content_sha256(
+                accepted.iter().map(String::as_str)
+            ),
+            molecule_count: accepted.len(),
+            rejected_rows: import_manifest.rejected_rows,
+            duplicate_rows: import_manifest.duplicate_rows,
+        })?
+    );
+
+    if fail_on_rejection && import_manifest.rejected_rows > 0 {
+        bail!(
+            "renkin stock compile: --fail-on-rejection: {} rows were rejected (compiled artifact was still written to {output_path:?})",
+            import_manifest.rejected_rows
+        );
     }
     Ok(())
 }

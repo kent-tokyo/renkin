@@ -63,7 +63,7 @@ function find_routes(
 ): string  // JSON-encoded result
 ```
 
-WASM always uses the compiled-in default rule set (22 hand-crafted rules) and
+WASM always uses the compiled-in default rule set (23 hand-crafted rules) and
 building blocks — there is no way to load an external templates file or
 custom building blocks list from the WASM entry point (unlike the CLI/Python
 bindings). See [Rust API](rust.md) or [Python API](python.md) for
@@ -169,7 +169,7 @@ parameter keeps working exactly as before.
 function version(): string
 ```
 
-Returns the RENKIN version string (for example, `"1.0.0"` for the current
+Returns the RENKIN version string (for example, `"1.0.1"` for the current
 release candidate).
 
 ## Minimal Node.js Example (CI-verified)

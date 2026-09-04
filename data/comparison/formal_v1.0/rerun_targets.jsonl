@@ -1,0 +1,2 @@
+{"canonical_smiles": "c1ccc2ncccc2c1", "sample_key": "3b0cb9ba08c570f610086ec9789998ce20ffc7f6b5554c1d593951a7632b7f32", "sample_rank": 0, "source_line_number": 1394, "target_id": "uspto50k_test#L1394"}
+{"canonical_smiles": "COCC[N+]1(C)CCCC1", "sample_key": "5db6ed5ef128e06f5b38432741bee55433f414ab9ac66daef5b65c01b72b53d5", "sample_rank": 1, "source_line_number": 1080, "target_id": "uspto50k_test#L1080"}

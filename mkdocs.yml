@@ -70,6 +70,8 @@ nav:
     - Reaction Evidence Metadata: guides/reaction-evidence.md
     - MCP Server: guides/mcp.md
     - Deterministic Chemical Review: guides/chemical-review-rubric.md
+    - Route-set Chemical-idea Diversity: guides/route-set-diversity.md
+    - Route Feasibility Diagnostics: guides/route-feasibility-diagnostics.md
     - Private Stock Policy: guides/private-stock-policy.md
     - Evidence-Carrying Interchange: guides/evidence-carrying-interchange.md
     - Audit a Real AiZynthFinder Route: guides/aizynthfinder-audit-demo.md
@@ -84,6 +86,7 @@ nav:
     - Aspirin Retrosynthesis: examples/aspirin.md
     - Drug-like Molecules: examples/druglike.md
   - Playground: playground/index.html
+  - Formal Competitor Benchmark: benchmark/formal-v1.0-competitor-comparison.md
   - Historical Benchmark (Frozen):
     - Results (EN): benchmark.md
     - 結果 (JA): benchmark_ja.md

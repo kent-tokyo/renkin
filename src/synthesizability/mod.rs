@@ -10,12 +10,19 @@
 //! extraction), `assessment.rs`/`provenance.rs` (policy + hashing).
 
 mod assessment;
+mod diagnostics;
 mod element_accounting;
 mod provenance;
 mod schema;
 mod signals;
 
 pub use assessment::{AssessmentContext, assess_routes};
+pub use diagnostics::{
+    CoverageStatus, FeasibilityDiagnosticDisposition, FeasibilityDiagnosticsError, LimitingStep,
+    LimitingStepCode, MissingInformation, MissingInformationCode,
+    ROUTE_FEASIBILITY_DIAGNOSTICS_SCHEMA_VERSION, RouteCompletionStatus,
+    RouteFeasibilityDiagnostics, StructuralDiagnosticStatus, diagnose_route_feasibility,
+};
 pub(crate) use element_accounting::{
     compute_element_accounting, heavy_atom_counts, step_element_accounting,
 };

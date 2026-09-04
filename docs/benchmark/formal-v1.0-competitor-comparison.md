@@ -1,12 +1,31 @@
 # v1.0.0 Formal Route-to-Stock Competitor Benchmark
 
-Status: **pre-registered protocol; no superiority claim has been made**.
+Status: **comparison complete; statistical superiority PASS; formal publication
+gate HOLD on the frozen v1.0.0 output**.
 
-This document defines the large-scale, reproducible comparison required before
-claiming that RENKIN v1.0.0 exceeds a competitor in route success rate. The
-existing 50-target current-master snapshot and historical 100/500-target
-artifacts are feasibility or diagnostic evidence only; they cannot be used as
-the formal v1.0.0 claim.
+The completed run found 577/4,903 primary successes for RENKIN v1.0.0 and
+200/4,903 for AiZynthFinder 4.4.1. The paired difference was +7.689 percentage
+points with a fixed 10,000-resample paired-bootstrap 95% CI of [+6.812,
++8.566] percentage points. The statistical gate therefore passed. The formal
+publication gate remains on hold because two RENKIN rows reported a route but
+did not produce a parseable normalized route tree. The existing 50-target
+current-master snapshot and historical 100/500-target artifacts remain
+feasibility or diagnostic evidence only.
+
+The complete report and per-target artifacts are under
+`data/comparison/formal_v1.0/`. This result is specific to the declared shared-
+stock endpoint; it is not a claim of universal CASP superiority, experimental
+yield, or planner replacement.
+
+### v1.0.1 remediation status
+
+The two held targets were rerun with the route-normalization and explicit-H /
+surviving-valence fixes included in the v1.0.1 candidate. Both returned
+parseable, stock-terminated route trees with no crash or timeout. These
+targeted results demonstrate that the observed failure modes are fixed, but
+they do not rewrite the frozen v1.0.0 arm or promote the formal publication
+gate to PASS. That requires a fresh, complete 4,903-target arm and verification
+under the same protocol.
 
 ## Primary claim and endpoint
 

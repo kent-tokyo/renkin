@@ -31,9 +31,9 @@ Open a PR against `master`. Direct pushes to `master` are reserved for Dependabo
 git clone https://github.com/kent-tokyo/renkin.git
 cd renkin
 cargo build          # debug build
-cargo test           # run all 57 unit tests
-cargo clippy -- -D warnings   # lint
-cargo fmt --check              # format check
+cargo test --workspace               # run the full workspace suite
+cargo clippy --workspace --all-targets -- -D warnings
+cargo fmt --all -- --check
 ```
 
 ## Adding a Reaction Rule

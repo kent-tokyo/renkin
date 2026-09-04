@@ -300,6 +300,9 @@ fn replay_orientations(
                 Err(TransformError::ReactantCountMismatch { .. }) => {
                     last_error = ForwardNotEvaluableReason::ReactionApplicationError;
                 }
+                Err(TransformError::ResourceLimit { .. }) => {
+                    last_error = ForwardNotEvaluableReason::ReactionApplicationError;
+                }
                 Ok(results) => {
                     ran_successfully = true;
                     for m in results.into_iter().flatten() {

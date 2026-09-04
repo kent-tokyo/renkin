@@ -1037,7 +1037,16 @@ mod tests {
 
     fn first_match_signature(rule: &RetroRule, target: &Molecule) -> Vec<String> {
         let matches = find_reaction_matches(&rule.smirks, &[target]).unwrap();
-        replay_match_signature(&rule.smirks, target, &matches[0]).unwrap()
+        matches
+            .iter()
+            .find_map(|m| replay_match_signature(&rule.smirks, target, m))
+            .unwrap_or_else(|| {
+                panic!(
+                    "{} matched {} but none of its matches could produce a valid replay",
+                    rule.name,
+                    to_canonical(target)
+                )
+            })
     }
 
     #[test]

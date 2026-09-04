@@ -57,6 +57,7 @@ def renkin_config_and_id(args):
         search_mode=args.search_mode,
         coverage_templates_path=args.coverage_templates,
         coverage_timeout_secs=args.coverage_timeout_secs,
+        coverage_beam_width=args.coverage_beam_width,
     )
     policy_suffix = (
         f"-{args.ring_context_policy}"
@@ -67,6 +68,11 @@ def renkin_config_and_id(args):
         "-reranker_on" if args.reranker_model and args.reranker_freq_table else ""
     )
     coverage_suffix = "-coverage" if args.search_mode == "coverage" else ""
+    coverage_beam_suffix = (
+        f"-cb{args.coverage_beam_width}"
+        if args.search_mode == "coverage" and args.coverage_beam_width is not None
+        else ""
+    )
     # Orthogonal to policy_suffix (ring-context) -- kept as its own suffix
     # segment rather than folded into "-disabled"/etc. so the two guards
     # never collapse into one ambiguous "gated" label in configuration_id.
@@ -77,7 +83,8 @@ def renkin_config_and_id(args):
     )
     configuration_id = (
         f"renkin-{args.comparison_mode}-d{args.depth}-b{args.beam_width}"
-        f"{policy_suffix}{reranker_suffix}{coverage_suffix}{spectator_bond_suffix}"
+        f"{policy_suffix}{reranker_suffix}{coverage_suffix}{coverage_beam_suffix}"
+        f"{spectator_bond_suffix}"
     )
     return config, building_blocks_path, configuration_id
 
@@ -238,6 +245,12 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="RENKIN-only: cooperative-cancellation deadline for --search-mode coverage's "
         "Stage 2 (renkin's own --coverage-timeout-secs). None means no deadline.",
+    )
+    parser.add_argument(
+        "--coverage-beam-width",
+        type=int,
+        default=None,
+        help="RENKIN-only: Stage-2-only beam width for coverage mode; 0 means unlimited.",
     )
     parser.add_argument(
         "--resume",

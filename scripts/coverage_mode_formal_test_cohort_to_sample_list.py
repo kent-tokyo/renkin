@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Converts `data/coverage_mode_formal_test/cohort_manifest.json`'s
-`targets` array into the flat `{target_id, canonical_smiles, sample_rank}`
+`targets` array into the flat `{target_id, canonical_smiles, sample_rank,
+source_line_number, sample_key}`
 JSONL `scripts/compare_sampling.load_sample` (and therefore
 `scripts/compare_run.py --sample-list`) expects. A one-time, auditable-by-
 eye reshape -- `cohort_rank` becomes `sample_rank`, nothing else changes,
@@ -17,7 +18,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
+
+
+def source_line_number(group_id: str) -> int:
+    if not isinstance(group_id, str):
+        raise ValueError("cohort target group_id must be a string")
+    match = re.search(r"#L([1-9][0-9]*)$", group_id)
+    if match is None:
+        raise ValueError(f"cohort target has an invalid group_id: {group_id!r}")
+    return int(match.group(1))
 
 
 def convert(cohort_manifest: dict) -> list[dict]:
@@ -26,6 +37,8 @@ def convert(cohort_manifest: dict) -> list[dict]:
             "target_id": t["group_id"],
             "canonical_smiles": t["canonical_smiles"],
             "sample_rank": t["cohort_rank"],
+            "source_line_number": source_line_number(t["group_id"]),
+            "sample_key": t["sample_key"],
         }
         for t in cohort_manifest["targets"]
     ]

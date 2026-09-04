@@ -16,14 +16,14 @@ class ConvertTests(unittest.TestCase):
                     "group_id": "uspto50k_test#L1",
                     "target_id": "raw smiles here",
                     "canonical_smiles": "CCO",
-                    "sample_key": "abc",
+                    "sample_key": "a" * 64,
                 },
                 {
                     "cohort_rank": 1,
                     "group_id": "uspto50k_test#L2",
                     "target_id": "raw smiles here 2",
                     "canonical_smiles": "CCC",
-                    "sample_key": "def",
+                    "sample_key": "b" * 64,
                 },
             ]
         }
@@ -31,10 +31,36 @@ class ConvertTests(unittest.TestCase):
         self.assertEqual(
             rows,
             [
-                {"target_id": "uspto50k_test#L1", "canonical_smiles": "CCO", "sample_rank": 0},
-                {"target_id": "uspto50k_test#L2", "canonical_smiles": "CCC", "sample_rank": 1},
+                {
+                    "target_id": "uspto50k_test#L1",
+                    "canonical_smiles": "CCO",
+                    "sample_rank": 0,
+                    "source_line_number": 1,
+                    "sample_key": "a" * 64,
+                },
+                {
+                    "target_id": "uspto50k_test#L2",
+                    "canonical_smiles": "CCC",
+                    "sample_rank": 1,
+                    "source_line_number": 2,
+                    "sample_key": "b" * 64,
+                },
             ],
         )
+
+    def test_invalid_group_id_fails_closed(self):
+        manifest = {
+            "targets": [
+                {
+                    "cohort_rank": 0,
+                    "group_id": "uspto50k_test",
+                    "canonical_smiles": "CCO",
+                    "sample_key": "a" * 64,
+                }
+            ]
+        }
+        with self.assertRaisesRegex(ValueError, "invalid group_id"):
+            convert_mod.convert(manifest)
 
     def test_real_committed_cohort_manifest_converts_and_loads(self):
         # Round-trip against the actual committed 500-target manifest --

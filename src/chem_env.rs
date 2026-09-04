@@ -3665,7 +3665,7 @@ mod tests {
 
     #[test]
     fn validate_template_file_accepts_checked_in_corpus() {
-        validate_template_file("data/templates_extracted_5000.smi")
+        validate_template_file("data/templates_extracted_500.smi")
             .expect("checked-in template corpus must satisfy the loader limits");
     }
 

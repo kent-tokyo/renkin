@@ -357,7 +357,9 @@ JSON 输出除标准的 solved/success_rate 指标外，还包含 `avg_nodes_exp
 
 **RENKIN 的目标**：仅依靠人工整理的规则与自动提取的 SMIRKS 模板，就达到最先进水平的准确率——无需 GPU、无需训练数据、没有黑箱。在 RENKIN 当前的基准测试设置下（修正后基线，commit `e20dc8c`，2026-07-22），单次搜索的 `raw_solved_rate` 达到 **20.09%**（986/4,907）——完整的嵌套指标系列，以及为何更严格的 `provenance_validated_solved_rate`（0.88%）并非 RENKIN 实测或有明确边界的正确率，详见上方基准测试章节。RENKIN 可运行于任何地方：浏览器、CLI、Python——只需一次 `cargo build`。
 
-> ⚠️ 上表所列各工具的评估条件各不相同。目前尚未进行过与其他工具在统一条件下的对照实验。
+> ⚠️ 上表汇总的是各工具公开但条件不同的数据，不能横向比较。上文另列的
+> v1.0.0 正式实验在冻结的共享库存、目标集合和端点下直接比较了 RENKIN 与
+> AiZynthFinder；该结论仅适用于那份协议，不能扩展为普遍 CASP 优越性声明。
 
 ---
 
@@ -375,7 +377,7 @@ JSON 输出除标准的 solved/success_rate 指标外，还包含 `avg_nodes_exp
 }
 ```
 
-**工具列表**（6 个）：
+**工具列表**（7 个）：
 
 | 工具 | 说明 |
 |---|---|
@@ -385,12 +387,13 @@ JSON 输出除标准的 solved/success_rate 指标外，还包含 `avg_nodes_exp
 | `find_pareto_routes` | 帕累托前沿多目标路线搜索 |
 | `plan_with_constraints` | 基于约束 DSL 的规划（元素过滤、步数限制、置信度阈值） |
 | `estimate_diversity` | 路线多样性与覆盖率指标 |
+| `diagnose_failure` | 以结构化结果说明搜索未找到路线的原因 |
 
 `find_routes` 也支持 `search_mode: "coverage"`，此时必须提供
 `coverage_templates` 路径。它先运行 Stage 1，仅当没有找到路线时才升级到 Stage 2，
 并在响应中报告所选阶段、超时状态和各阶段耗时。
 
-服务器会自动检测工作目录下的 `data/building_blocks.smi` 与 `data/templates_extracted_5000.smi`；若未找到，则回退到内置的 `DEFAULT_BUILDING_BLOCKS` / `default_rules()` 默认值（根据 `ChemEnv::bb_count()`，为 152 种去重起始原料、21 条人工编写规则——已于 2026-08-29 核实，`heck_retro`（稠环内部烯烃与离去基团 Br 所连的同一芳环发生连通性坍缩缺陷，经直接 `apply_retro` 在茚上复现确认）被移除后数量从 22 降为 21；此前 `negishi_retro` 与 `grignard_addition_retro`（v0.36.0 规则安全普查：与 `aryl_amine_retro`/`buchwald_hartwig_retro` 相同的稠环原子重复缺陷）被移除后数量已从 24 降为 22；此前此处曾记载过"509 种起始原料 / 20 条规则"的数字，但未经核实）。
+服务器会自动检测工作目录下的 `data/building_blocks.smi` 与可选的本地生成文件 `data/templates_extracted_5000.smi`；若未找到，则回退到内置的 `DEFAULT_BUILDING_BLOCKS` / `default_rules()` 默认值（按 `ChemEnv::bb_count()` 计算为 152 种去重起始原料和 23 条手工规则）。
 
 ```bash
 cargo build --release
@@ -487,7 +490,7 @@ renkin/                          ← Cargo workspace 根目录
 │   └── renkin-kg/               # 反应知识图谱构建工具（GraphML / Cypher 导出）
 ├── data/
 │   ├── building_blocks.smi              # 402 种人工整理的市售起始原料（实际加载去重后的数量）
-│   ├── templates_extracted_5000.smi     # 5,000 条自动提取的 SMIRKS 模板
+│   ├── templates_extracted_500.smi      # Git 管理的 500 条自动提取 SMIRKS 模板
 │   ├── benchmark_targets.smi            # 内部基准测试集合
 │   └── bench_chunks/                    # USPTO-50k 按分块的结果
 ├── scripts/

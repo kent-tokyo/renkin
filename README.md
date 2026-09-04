@@ -577,7 +577,7 @@ The JSON output includes `avg_nodes_expanded`, `avg_confidence`, `avg_convergenc
 }
 ```
 
-**Tools** (6):
+**Tools** (7):
 
 | Tool | Description |
 |---|---|
@@ -587,13 +587,18 @@ The JSON output includes `avg_nodes_expanded`, `avg_confidence`, `avg_convergenc
 | `find_pareto_routes` | Pareto-front multi-objective route search |
 | `plan_with_constraints` | Constraint-DSL planning (element/building-block filters, step/cost limits, confidence thresholds, required/avoided/preferred reaction families) |
 | `estimate_diversity` | Route diversity and coverage metrics |
+| `diagnose_failure` | Structured explanation of why a search found no route |
 
 `find_routes` also accepts `search_mode: "coverage"` with a required
 `coverage_templates` path. It runs the standard Stage 1 first and escalates
 to Stage 2 only when Stage 1 finds no route; the response reports the selected
 stage, timeout status, and per-stage elapsed time.
 
-The server auto-detects `data/building_blocks.smi` and `data/templates_extracted_5000.smi` in the working directory. Falls back to the embedded `DEFAULT_BUILDING_BLOCKS` / `default_rules()` defaults if not found (152 unique building blocks per `ChemEnv::bb_count()`, 23 handcrafted rules, including the new graph-based `carbamate_cleavage` rule).
+The server auto-detects `data/building_blocks.smi` and the optional, locally
+generated `data/templates_extracted_5000.smi` in the working directory. It
+falls back to the embedded `DEFAULT_BUILDING_BLOCKS` / `default_rules()`
+defaults if they are not found (152 unique building blocks per
+`ChemEnv::bb_count()`, 23 handcrafted rules).
 
 ```bash
 cargo build --release
@@ -690,7 +695,7 @@ renkin/                          ← Cargo workspace root
 │   └── renkin-kg/               # reaction knowledge graph builder (GraphML / Cypher export)
 ├── data/
 │   ├── building_blocks.smi              # 402 curated commercial starting materials (loaded/deduplicated count)
-│   ├── templates_extracted_5000.smi     # 5,000 auto-extracted SMIRKS templates
+│   ├── templates_extracted_500.smi      # 500 checked-in auto-extracted SMIRKS templates
 │   ├── benchmark_targets.smi            # internal benchmark set
 │   └── bench_chunks/                    # USPTO-50k per-chunk results
 ├── scripts/

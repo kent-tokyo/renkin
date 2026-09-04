@@ -591,7 +591,7 @@ renkin/                          ← Cargo workspace ルート
 │   └── renkin-kg/               # 反応知識グラフ（分子↔反応 二部グラフ、GraphML/Cypher エクスポート）
 ├── data/
 │   ├── building_blocks.smi              # 402件の市販原料（実ロード・重複除去後の数）
-│   ├── templates_extracted_5000.smi     # 5,000件の自動抽出SMIRKSテンプレート
+│   ├── templates_extracted_500.smi      # Git管理された500件の自動抽出SMIRKSテンプレート
 │   ├── benchmark_targets.smi            # 内部ベンチマークセット
 │   └── bench_chunks/                    # USPTO-50k チャンク別結果
 ├── scripts/

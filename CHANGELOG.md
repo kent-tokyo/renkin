@@ -9,6 +9,12 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **`renkin-mcp`** — dual-era MCP protocol support: the legacy `2024-11-05`
+  `initialize` handshake and the modern `2026-07-28` `server/discover` /
+  per-request `_meta` negotiation are served by the same stdio binary.
+  Modern clients receive `resultType`/`_meta.serverInfo` envelopes,
+  `tools/list` caching hints, JSON Schema 2020-12 schemas, and structured
+  content for supported tools. See [`docs/guides/mcp.md`](docs/guides/mcp.md).
 - Added the v1.0.0 formal competitor-comparison pre-registration, fixing the
   4,903-target population, shared-stock primary endpoint, reproducibility
   requirements, paired confidence-interval gate, and interpretation limits.
@@ -18,6 +24,13 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Added regression tests for formal target-count, duplicate-ID, and input-hash
   rejection. A formal superiority result is intentionally not recorded until
   every competitor arm has complete paired output.
+
+### Changed
+- **`renkin-mcp`** — protocol parsing and tool business logic now live in
+  `src/mcp/`; malformed JSON returns JSON-RPC `-32700`, and response
+  write/flush failures are no longer silently ignored.
+- **`renkin-mcp`** — both protocol eras preserve the existing opt-in
+  progressive coverage-search arguments for `find_routes`.
 
 ## [1.0.0] - 2026-09-01 "Stable Release Boundary"
 

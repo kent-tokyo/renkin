@@ -1,0 +1,8 @@
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"legacy-client","version":"1.0"}}}
+{"jsonrpc":"2.0","method":"notifications/initialized"}
+{"jsonrpc":"2.0","id":2,"method":"tools/list"}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"find_routes","arguments":{"smiles":"CC(=O)Nc1ccc(O)cc1","depth":5,"max_routes":2}}}
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"validate_route","arguments":{"smiles":"CC(=O)Nc1ccc(O)cc1"}}}
+{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"find_routes","arguments":{}}}
+{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"nonexistent_tool","arguments":{"smiles":"CCO"}}}
+{"jsonrpc":"2.0","id":7,"method":"unknown/method"}

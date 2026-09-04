@@ -10,6 +10,7 @@ pub mod display;
 pub mod evidence;
 pub mod evidence_match;
 pub mod io_limits;
+pub mod mcp;
 pub mod pool_export;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod reranker;

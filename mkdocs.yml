@@ -68,6 +68,7 @@ nav:
     - Forward Enumeration: guides/forward-enumeration.md
     - Forward Retrieval Hints: guides/forward-retrieval-hints.md
     - Reaction Evidence Metadata: guides/reaction-evidence.md
+    - MCP Server: guides/mcp.md
     - Deterministic Chemical Review: guides/chemical-review-rubric.md
     - Private Stock Policy: guides/private-stock-policy.md
     - Evidence-Carrying Interchange: guides/evidence-carrying-interchange.md

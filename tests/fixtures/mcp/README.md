@@ -14,10 +14,12 @@ target/release/renkin-mcp < tests/fixtures/mcp/2024-11-05/legacy_transcript_inpu
   2> tests/fixtures/mcp/2024-11-05/legacy_transcript_stderr.txt
 ```
 
-This is the falsifiable oracle for "legacy behavior is unchanged": the
-post-refactor binary must produce structurally-equal JSON (same keys/values;
-top-level key order is allowed to differ since `serde_json::Value` doesn't
-guarantee insertion order) for the same input. It intentionally captures the
+This is the falsifiable oracle for legacy behavior at the original refactor
+boundary: the post-refactor binary must produce structurally-equal JSON for
+the same input except for explicitly documented additions made on master
+after capture (currently the `find_routes` coverage-search schema fields).
+Top-level key order is allowed to differ because `serde_json::Value` does not
+guarantee insertion order. The fixture intentionally captures the
 pre-existing "unknown tool name silently falls back to `find_routes`" bug
 (request id 6) — that bug is preserved for legacy clients in this PR (fixing
 it would be a legacy behavior change, out of scope) and is fixed only in the
@@ -69,7 +71,18 @@ phrasing used, which does not claim official conformance.
 
 ### Final-spec delta check
 
-GA for 2026-07-28 is expected 2026-07-28 (the day after this fixture was
-vendored). Before this PR leaves draft, re-run the download above against
-`schema/2026-07-28/` (once it exists, replacing `schema/draft/`) and diff
-against the vendored copy here. Record the result in the PR body.
+Completed 2026-09-05 against the official `2026-07-28` GA tag:
+
+```
+742750af0bb8c716e7030c4977c992b55d1adc4407e9e66997db5846baedc2cd  schema.ts
+ef70b61f99b6d2e5e3b46863822eab08dff6a45bedc7a08914e0e5b133f40203  schema.json
+```
+
+The RC-to-GA semantic delta is confined to `subscriptions/listen`: the
+`SubscriptionsListenResultMeta` type was renamed to
+`SubscriptionsListenResultMetaObject`, a graceful-close result response was
+added, and TypeScript documentation links moved from `/draft/` to
+`/2026-07-28/`. RENKIN does not implement subscriptions, and no
+stdio/tool-schema/error-code shape used by this server changed. The upstream
+license file is byte-identical at GA (SHA-256
+`0382b0057770ca05e9c350a50aa3b1c1fea84da0bc81d723bf00b9aa841be58a`).

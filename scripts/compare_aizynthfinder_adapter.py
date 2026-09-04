@@ -320,6 +320,9 @@ def run_one_target(
     row_kwargs["route_tree_parseable"] = outcome.parseable
     if not outcome.parseable:
         row_kwargs["common_validation_warnings"] = outcome.defects
+        # A route was reported but its own tree doesn't parse -- a concrete,
+        # confirmed defect, not merely "couldn't evaluate".
+        row_kwargs["validator_confirmed_route_found"] = False
         return PlannerComparisonRow(**row_kwargs)
 
     graph = outcome.graph
@@ -370,6 +373,13 @@ def run_one_target(
     row_kwargs["target_element_accounting_status"] = accounting_status
 
     row_kwargs["common_validation_warnings"] = list(step_warnings) + list(accounting_warnings)
+
+    if accounting_status == "not_evaluable":
+        row_kwargs["not_evaluable"] = True
+    else:
+        row_kwargs["validator_confirmed_route_found"] = (
+            steps_ok is True and accounting_status == "accounted"
+        )
 
     return PlannerComparisonRow(**row_kwargs)
 

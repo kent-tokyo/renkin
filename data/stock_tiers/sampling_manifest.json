@@ -1,0 +1,30 @@
+{
+  "hash_function": "SHA-256(\"renkin-stock-tier-v1|\" + line), lowercase hex",
+  "protocol_version": "renkin-stock-tier-v1",
+  "rebuild_command": "python3 scripts/build_stock_tiers.py --source data/building_blocks_emolecules_canonical.smi --output-dir data/stock_tiers --tier 10000 --tier 100000 --tier 1000000",
+  "source_blank_lines": 0,
+  "source_file": "data/building_blocks_emolecules_canonical.smi",
+  "source_file_sha256": "11e623b360edfc630c267aff4b82934822e65f7d41459d1410ba0dfaa8042a2c",
+  "source_ranked_lines": 9481986,
+  "source_total_lines": 9481986,
+  "tiers": [
+    {
+      "actual_row_count": 10000,
+      "cutoff": 10000,
+      "output_path": "data/stock_tiers/tier_10000.smi",
+      "output_sha256": "e07920c90df20adf6e0966f311e1ea819152d760d8a8fd94a9f177c6aa59d2a0"
+    },
+    {
+      "actual_row_count": 100000,
+      "cutoff": 100000,
+      "output_path": "data/stock_tiers/tier_100000.smi",
+      "output_sha256": "05cf49710900a63cb8a3022cee25919514dbf8bafd9f0ec0647589b354080c33"
+    },
+    {
+      "actual_row_count": 1000000,
+      "cutoff": 1000000,
+      "output_path": "data/stock_tiers/tier_1000000.smi",
+      "output_sha256": "a4c1c31e4eebdff169841c1bc6ccfeaaad5a81bd3df2d3853977baa2f669caa4"
+    }
+  ]
+}

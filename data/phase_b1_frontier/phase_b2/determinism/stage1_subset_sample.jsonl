@@ -1,0 +1,5 @@
+{"canonical_smiles": "C1C(N2CCC(Oc3ccc(cc3)N)CC2)CC1", "sample_key": null, "sample_rank": 0, "source_line_number": null, "target_id": "uspto50k_val#L1700"}
+{"canonical_smiles": "C2(CCC(=O)CC2)(CC1CCCC1)N(C)C", "sample_key": null, "sample_rank": 1, "source_line_number": null, "target_id": "uspto50k_val#L4093"}
+{"canonical_smiles": "c2c([nH]c(n2)[C@@H]1CC[C@@H](N1C(=O)OC(C)(C)C)C)I", "sample_key": null, "sample_rank": 2, "source_line_number": null, "target_id": "uspto50k_val#L4470"}
+{"canonical_smiles": "c3(cccc(c3)CN2c1c(cccc1C(C)(C)C2=O)F)F", "sample_key": null, "sample_rank": 3, "source_line_number": null, "target_id": "uspto50k_val#L565"}
+{"canonical_smiles": "C1CNCc2c1cc(OC)cc2", "sample_key": null, "sample_rank": 4, "source_line_number": null, "target_id": "uspto50k_val#L592"}

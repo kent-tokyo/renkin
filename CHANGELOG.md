@@ -9,28 +9,1111 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- **`renkin-mcp`** — dual-era MCP protocol support: the legacy `2024-11-05` `initialize` handshake and the modern `2026-07-28` `server/discover` / per-request `_meta` negotiation are now both served by the same stdio binary, auto-detected from the connection's opening request. Modern clients get `resultType`/`_meta.serverInfo` response envelopes, `tools/list` caching hints (`ttlMs`/`cacheScope`), JSON Schema 2020-12 tool schemas with enforced bounds, and `structuredContent` on `validate_route`/`estimate_diversity`/`diagnose_failure`. See [`docs/guides/mcp.md`](docs/guides/mcp.md) for the full protocol support matrix, error taxonomy, and non-goals (Streamable HTTP, OAuth, MCP Apps, and the Tasks extension are explicitly out of scope for this release). Legacy `2024-11-05` clients are unaffected — verified against a transcript captured from the pre-change binary.
+- **`renkin-mcp`** — dual-era MCP protocol support: the legacy `2024-11-05`
+  `initialize` handshake and the modern `2026-07-28` `server/discover` /
+  per-request `_meta` negotiation are served by the same stdio binary.
+  Modern clients receive `resultType`/`_meta.serverInfo` envelopes,
+  `tools/list` caching hints, JSON Schema 2020-12 schemas, and structured
+  content for supported tools. See [`docs/guides/mcp.md`](docs/guides/mcp.md).
 
 ### Changed
-- **`renkin-mcp`** — `src/bin/mcp.rs` is now a two-line launcher; protocol parsing and RENKIN tool business logic live in the new `src/mcp/` module (`jsonrpc.rs`, `protocol.rs`, `tools.rs`, `stdio.rs`)
-- **`renkin-mcp`** — malformed JSON on stdin now gets a proper JSON-RPC `-32700 Parse error` response instead of being silently dropped; response write/flush failures are no longer silently ignored
-- **`renkin-mcp`** — `find_routes`' tool description no longer claims a stale "509 curated building blocks" figure
+- **`renkin-mcp`** — protocol parsing and tool business logic now live in
+  `src/mcp/`; malformed JSON returns JSON-RPC `-32700`, and response
+  write/flush failures are no longer silently ignored.
+- **`renkin-mcp`** — both protocol eras preserve the existing opt-in
+  progressive coverage-search arguments for `find_routes`.
+
+## [0.61.0] - 2026-08-31 "Carbamate Graph Cleavage"
+
+### Added
+- Added opt-in `--chemical-review` output for `audit-route`. The deterministic
+  evidence-boundary report records its rubric version, judge ID, dimensions,
+  reason codes, and severity without inventing conditions or selectivity.
+- Added the graph-based `carbamate_cleavage` rule. It recognizes
+  `R-O-C(=O)-NHR'` and returns the atom-accounted chloroformate/amine
+  disconnection, while rejecting plain amides.
+
+## [0.60.0] - 2026-08-31 "Evidence Coverage Benchmark"
+
+### Added
+- Added evidence-coverage metadata and reporting to benchmark output so
+  coverage and ranking results remain separately interpretable.
+
+## [0.59.0] - 2026-08-31 "Coverage Benchmark Stages"
+
+### Added
+- Added staged coverage summaries to benchmark reports, including stage,
+  invocation, timeout, and elapsed-time metadata.
+
+## [0.58.0] - 2026-08-31 "Coverage Benchmark Contract"
+
+### Added
+- Added staged coverage-mode execution to `renkin-bench` with explicit
+  search-mode, coverage-template, and timeout validation.
+- Added coverage-mode and template-budget metadata to benchmark reports so
+  standard and coverage results remain directly distinguishable.
+
+## [0.57.0] - 2026-08-31 "Exploration Contract"
+
+### Added
+- Added a stable, machine-readable exploration contract describing the
+  proposer, inventory, search, scorer, and trace boundaries.
+- Added explicit A* / beam strategy and budget metadata to benchmark reports
+  so search configurations are comparable without conflating their metrics.
+
+## [0.56.0] - 2026-08-31 "Reaction-Family Regression Gates"
+
+### Added
+- Added end-to-end regression fixtures that verify Suzuki reaction-family
+  metadata on generated steps and prevent ester cleavages from being labeled
+  as Ullmann ether disconnections.
+- Marked the reaction-family mislabel regression design slice as implemented.
+
+## [0.55.1] - 2026-08-31 "Documentation Link Fix"
 
 ### Fixed
-- **`renkin` lib** — `[#N]`/`[#N:map]` bare atomic-number SMARTS primitives in extracted templates (e.g. `[#7:2]`, "any nitrogen, aromaticity unspecified") no longer silently fail at *apply* time, in **any** of retrosynthesis search, `renkin-forward`, or the ring-context safety guard ([#88](https://github.com/kent-tokyo/renkin/issues/88)). Root cause: `chematic::rxn::run_reactants`/`parse_reaction`/`find_reaction_matches` parse a SMIRKS through `chematic-smiles`'s SMILES grammar, which requires a concrete element symbol — SMILES has no spelling for "any isotope of this element" — while `chem_env::load_rules_from_file`'s load-time validation uses the SMARTS-capable `parse_smarts`, which accepts `[#N]` fine. Load-time success therefore gave no signal about apply-time success. Confirmed empirically (not just by reading the parser source) with a standalone reproduction against real chematic 0.10: applying `data/templates_extracted.smi`'s line 21 (`[#7:2]:[c:1](-[NH:4]-[c:5]):[#7:3]>>Cl-[c:1](:[#7:2]):[#7:3].[NH2:4]-[c:5]`, freq 167) to 2-anilinopyrimidine (a real molecule containing the matched substructure) failed with `invalid bracket atom at position 1: missing element symbol`. Scope: 217/500 templates in the frozen benchmark corpus (`data/templates_extracted.smi` / `_500.smi`, ~43%) were affected this whole time, including during the already-reported/merged Issue #66 500-target comparison — the comparison's *methodology* is unaffected, but RENKIN's own achievable coverage under it may have been understated by this gap. RENKIN ships no built-in extracted-template default (`default_rules()`, always active, is a small hand-crafted rule set unaffected by this bug); an optional, locally generated, gitignored 5,000-template corpus (`_5000.smi`, loaded only when explicitly passed via `--templates`) shows the same class of bug in 3,461/5,000 lines (~69%, and not limited to N/O/S — also B/Si/P/Se/Sn wildcards), included below as a local diagnostic, not a production-default claim.
-  - **Four independently-broken call sites**, found incrementally via testing rather than assumed complete after fixing the first: `chem_env::apply_retro` (retro search), `renkin-forward`'s `reverse_smirks_validated`/product enumeration (forward prediction), `ring_context.rs`'s match-level `find_reaction_matches`/`apply_reaction_match` calls (a separate SMILES-grammar API used by the ring-context guard, [#72](https://github.com/kent-tokyo/renkin/issues/72)/[#242](https://github.com/kent-tokyo/renkin/pull/242), independent of `apply_retro`), and `RingContextGuard::load`'s `lhs_atom_map_table` construction (silently produced an empty atom-map table for hash-atom templates, which — once the match-level path was fixed — would otherwise fail-closed-reject every such match as `InvalidMappedBond` before ring-context classification ever ran). All four now share one fix.
-  - **Design note**: an earlier draft of this fix expanded each `[#N]`-bearing template into extra `RetroRule`s at *load* time (500 templates → 865 rules). That design was reviewed and rejected before landing: it silently breaks the ONNX template scorer's `n_rules` shape contract (`OutputShapeMismatch`, scorer disabled), the candidate-pool exporter's `template_id` uniqueness invariant (hard error), and distorts the search's rule-frequency prior by inflating some templates' cardinality 2–8× more than others. The shipped design keeps `load_rules_from_file`'s output at **exactly 500 logical rules, unchanged** (`RetroRule::{template_id,name,smirks,weight}` byte-identical to the source file, including any `[#N]`); all `[#N]` handling happens at **application time only**, via a shared cached helper (`chem_env::application_smirks_variants`) used by `apply_retro`, `renkin-forward`, and the ring-context guard's match functions. Aromaticity is chosen **independently per side** of `>>` (a matched atom may legitimately go from aromatic to aliphatic or vice versa — only the *element* must agree across a shared atom-map, not aromaticity); if a template's combinatorial space exceeds a fixed cap (64, sized against both the 500-template corpus and the optional locally generated 5,000-template one — the 500-template corpus needs at most 64 for any single template; 154/5,000 lines in the locally generated corpus exceed it and need 256–4,096), the whole template fails closed as `Unsupported`/`VariantLimitExceeded` rather than silently trying a truncated subset; outcomes are deduped by canonical-product signature across variants so multiplying a template's applications doesn't multiply reported routes.
-  - `chem_env::application_smirks_variants` is safe to call on any SMIRKS regardless of caller precision: a bug found via full-workspace testing (not by design) had it return an empty `Vec` for the "not applicable" case, which broke every template using `#` as an ordinary SMILES/SMARTS triple bond (e.g. nitrile hydrolysis, `[C:2]-[C:1]#[N:3]>>...`) whenever a caller's own `contains('#')` fast-path let a false positive through; it now returns the original SMIRKS unchanged in that case. Regression test: `chem_env::tests::triple_bond_hash_character_is_not_mistaken_for_a_hash_atom`.
-  - **Corpus-level effect**: on `data/templates_extracted.smi`, all 500/500 raw template lines load and are concrete-application-supported (283 direct + 217 via hash-atom variants, variant-count distribution `{4: 155, 16: 56, 64: 6}`, zero cap failures, zero load rejections). On the optional, locally generated `_5000.smi` corpus (not committed, not loaded by default — see above), 1 of the 5,000 raw lines fails `load_rules_from_file`'s own load-time `parse_smarts` check for a reason unrelated to `[#N]` (a disconnected-fragment reactant SMARTS chematic's SMARTS parser rejects outright, `UnexpectedChar('.', ..)` — not a hash-atom template); among the 4,999 lines that do load, 4,845 (96.9%) are concrete-application-supported (1,538 direct + 3,307 via hash-atom variants), and the remaining 154 are explicitly reported `Unsupported { VariantLimitExceeded }`, not silently dropped or folded into "supported." Reproducible via the new `examples/hashatom_corpus_stats.rs` diagnostic (`cargo run --release --example hashatom_corpus_stats [file...]`), which reports `raw_template_lines`/`logical_rules_loaded`/`load_rejected` separately from the supported/unsupported breakdown specifically so a load-time rejection can never be silently counted as a hash-atom-fix win.
-  - **Measured practical impact, stated precisely (no overclaim)**: a real-data 100-target native-stock RENKIN-only before/after re-run (`scripts/compare_run.py`, same sample/templates/stock as the existing 100-target benchmark) shows `route_found_rate` 16→21 (`Disabled`, +5) and 14→16 (`Conservative`, +2). Per-target trace confirms all 6 (`Disabled`) / 3 (`Conservative`) newly-solved targets genuinely use a hash-atom-derived template — cross-checked by template_id against the corpus's 217 hash-atom templates, not inferred. One target (`uspto50k_test#L1541`) that was solved before the fix is no longer solved at `--beam-width 100` in either policy; traced to beam-budget crowd-out, not a regression in correctness — the search now surfaces far more real precursor sets per node (previously-inert hash-atom templates now match), which competes for the same fixed beam budget; re-running that one target at `--beam-width 300` recovers the identical (non-hash-atom) route it found before the fix. Under `Conservative`, the ring-context guard's extra verification pass (`ring_context_diagnostics`, real ring-bond rejections observed, `invalid_mapped_bond: 0`, `templates_missing_metadata: 0`) is confirmed working as designed on hash-atom-derived matches, not bypassed or broken — its per-match overhead (~2× `reaction_parse_calls` vs `Disabled`) is the known, pre-existing cost of the safety guard, now paying that cost against a larger set of real matches.
-  - **Provenance note on the optional 5,000-template corpus**: `data/templates_extracted_5000.smi` is gitignored and locally generated; this PR can confirm its current SHA-256 (`517f6a084921141b6080c3827c75e6c51ac148455218695dee6e9712e3731517`), byte size (525,797), and line count (5,004 total lines: a 4-line header + 5,000 raw template lines) from the copy used for this measurement, but the exact generation command, source-dataset revision, and generation date were not recorded when this file was produced (an earlier, separate session, not part of this PR's history) and are not reconstructed here rather than guessed. Treat every 5,000-corpus figure in this entry as a **local diagnostic on one unverified local file**, not an independently auditable claim — unlike the frozen, committed `data/templates_extracted.smi` corpus, which is.
-  - Compatibility proven with dedicated regression tests, not just by absence of failure: `candidate::tests::index_rules_by_template_id_succeeds_on_real_extracted_corpus` (candidate-pool exporter), `scorer::nn::tests::scorer_shape_contract_matches_real_extracted_corpus_rule_count` (ONNX scorer `n_rules` contract), and `ring_context::tests::hash_atom_expanded_template_resolves_sidecar_by_original_template_id_across_all_policies` (a real 2-anilinopyrimidine-family fixture run under `Disabled`/`AuditOnly`/`Conservative`/`RingOnly`/`ElementOnly`, asserting zero missing-metadata and a non-empty, correctly-gated outcome under every policy).
-- **`renkin` lib** — the `[#N]` hash-atom variant expansion above (just-merged) had its own bug: it gave independent, per-side aromaticity choices to **every** shared atom-map on both sides of `>>`, including pure spectators — same atom, same position, unchanged by the reaction. That let a spectator get spelled aromatic (`n`) in the product while the real atom carries no ring or aromatic bond at all: `Atom { aromatic: true }` with zero incident `BondOrder::Aromatic` bonds, confirmed at the raw internal-molecule level, not just as a downstream parse failure ([#90](https://github.com/kent-tokyo/renkin/issues/90)). Re-auditing the prior 100-target measurement for `route_found=true AND route_tree_parseable=false` found this in all 4 arms (5 distinct targets: 3 outright invalid routes, plus 2 silent regressions where a previously-valid route got replaced by an invalid one — both invisible to a raw `route_found` count). Fixed with two changes applied together: (1) `MappedAtomRole` classification (`Spectator`/`ReactionCenter`/`Unknown`, via independently parsing each side of the SMIRKS with `chematic::smarts::parse_smarts` and comparing each shared atom-map's local bonded environment) — only confirmed `ReactionCenter` maps keep independent per-side aromaticity; `Spectator` and `Unknown` maps are forced to one matched reading (`N↔N`/`n↔n` only), never guessed independent for coverage; (2) `chem_env::aromaticity_integrity_violation`, an atom-level check on the **raw**, just-constructed product molecule (before any canonicalizing round-trip that could silently repair or hide the same defect) rejecting any atom flagged aromatic that either isn't on a ring or has no incident aromatic bond — wired into all three of #88's call sites (`apply_retro`, `renkin-forward`'s `canonicalize_outcome`, `ring_context.rs`'s gated/diagnostics passes). **Corpus side effect**: collapsing spectator variants also shrinks combinatorial cost — `templates_extracted_500.smi`'s hash-atom variant-count distribution moves from `{4: 155, 16: 56, 64: 6}` to `{2: 155, 4: 56, 8: 6}`, and on the optional local `_5000.smi` corpus, `VariantLimitExceeded` drops from 154/5,000 to **0/5,000** (not a Wave B completion claim — just a measured aggregate change, re-assess Wave B separately). **Measured practical effect (fresh 3-way 100-target re-run: pre-#89 baseline / #89-as-merged / this fix, same sample as above)**: 0 invalid routes in every arm, down from 4 — this fix's actual job. `route_to_configured_stock` vs. pre-#89 baseline is not uniformly higher, though: −2/−1/−1/−1 across the 4 arms, entirely attributable to two per-target effects, not a new defect — `uspto50k_test#L1541` (a beam-budget crowd-out already disclosed above, present under #89-as-merged too, unrelated to this fix) and `uspto50k_test#L4259` (this fix correctly refuses the invalid route in 3 of 4 arms and then doesn't have enough beam budget left to rediscover the valid alternative, reporting unsolved rather than fabricating an answer — arm-dependent; `shared_stock`/`Disabled` does recover the original valid route byte-identically). One genuinely clean new solve (`uspto50k_test#L1167`) appears in both `Conservative` arms. The 16→21/14→16 figures in the entry above are **withdrawn as official numbers** — they were measured against the buggy binary; see this fix's PR body for the full breakdown. Issue #88 stays open.
+- Fixed the strict documentation build by linking the current-master
+  benchmark artifact to its GitHub source path.
+
+## [0.55.0] - 2026-08-31 "Current-master Benchmark Contract"
+
+### Added
+- Added a reproducible current-master benchmark snapshot with per-target
+  rows, aggregate metrics, and commit/binary/input provenance hashes.
+- Documented the Phase 0 distinction between a current-master smoke snapshot,
+  historical comparison artifacts, and the future formal TEST run.
+
+## [0.54.1] - 2026-08-31 "CI Lint Compatibility"
+
+### Fixed
+- Moved MCP unit tests to the end of the module so the latest Clippy lint
+  configuration passes in CI.
+
+## [0.54.0] - 2026-08-31 "MCP Coverage Search"
+
+### Added
+- Added opt-in progressive coverage search to the MCP `find_routes` tool,
+  matching the existing CLI and Python Stage 1/Stage 2 contract.
+- MCP coverage responses now report the selected stage, Stage 2 invocation,
+  timeout status, and per-stage elapsed time.
+
+### Changed
+- MCP `find_routes` now rejects missing, empty, or invalid coverage template
+  files before searching, rather than silently falling back.
+- Updated MCP documentation and the stale building-block description.
+- Refreshed public documentation to match the 0.54.0 implementation,
+  including the 21 built-in rules, exact canonical-SMILES stock identity, and
+  current package-version examples.
+
+## [0.53.0] - 2026-08-31 "Schematic 0.26 Compatibility"
+
+### Changed
+- Updated `chematic` and `chematic-rxn` from 0.20.1 to 0.26.0 across the
+  root crate and `renkin-forward`, keeping all molecule types on one upstream
+  version.
+- Refreshed the Cargo.lock dependency graph to the latest compatible releases.
+
+## [0.52.0] - 2026-08-31 "Closed-Shell Precursor Guard"
+
+### Fixed
+- Retro-template fragments with over-valent atoms or an explicit-H deficit
+  after bond cleavage are now rejected before entering the search frontier.
+- Added regression coverage for radical-like fragments and valid aromatic and
+  charged molecules, improving route realism without changing standard search
+  output for valid precursors.
+
+## [0.51.0] - 2026-08-31 "One-Step Positive Recall Metrics"
+
+### Added
+- Phase A.5 metrics now report proposal-order positive recall@1/10/50/100,
+  with zero-candidate groups retained in the denominator.
+- The five-arm report carries these one-step recall metrics separately from
+  learned-ranker evaluation.
+
+## [0.50.0] - 2026-08-31 "Reported Candidate Pool Accounting"
+
+### Added
+- Phase A.5's five-arm summary now carries each arm's persisted candidate
+  pool accounting alongside coverage, latency, and deduplication metrics.
+- Reports remain compatible with pre-v0.49 metrics and mark unavailable
+  accounting as `null` rather than reconstructing it silently.
+
+## [0.49.0] - 2026-08-31 "Consumed Candidate Pool Accounting"
+
+### Added
+- Phase A.5 metrics now consume persisted candidate-pool accounting from the
+  target/group index, with an explicit legacy fallback when older exports do
+  not contain the field.
+- The Python consumer rechecks raw/unique/duplicate and rule-level accounting
+  invariants before reporting deduplication metrics.
+
+## [0.48.0] - 2026-08-31 "Persisted Candidate Pool Accounting"
+
+### Added
+- Target/group index JSONL records now preserve successful one-step proposal
+  statistics, including raw, unique, and duplicate candidate counts plus
+  rule-level accounting.
+- Export validation checks the candidate-pool accounting invariants and keeps
+  parse-failure and target-ID-mismatch records explicitly unmeasured.
+
+## [0.47.0] - 2026-08-31 "Explicit Candidate Deduplication Accounting"
+
+### Added
+- One-step candidate pools now expose the number of raw rule-application
+  outcomes removed while merging identical precursor sets.
+- Added regression coverage for the raw/unique/deduplicated accounting
+  invariant.
+
+## [0.46.0] - 2026-08-31 "Per-Rule Candidate Pool Diagnostics"
+
+### Added
+- One-step candidate pools now expose deterministic per-rule accounting with
+  proposal rank, stable template identity, target-element eligibility, and raw
+  candidate yield.
+- Added regression coverage for diagnostic ordering, zero-yield rules, and
+  legacy/context API parity.
+
+## [0.45.0] - 2026-08-31 "Per-Rule Candidate Yield Accounting"
+
+### Added
+- One-step candidate pools now report how many eligible rules produced raw
+  candidates and how many produced none, completing the rule-level accounting
+  needed to diagnose zero-positive pools.
+- Added regression coverage for per-rule candidate-yield accounting.
+
+## [0.44.0] - 2026-08-30 "Target-Eligible Rule Accounting"
+
+### Added
+- One-step candidate pools now distinguish proposal-mode filtering from
+  target-element filtering, and report the number of rules actually attempted.
+- Added regression coverage for the accounting invariants when a selected rule
+  is ineligible for the target's elements.
+
+## [0.43.0] - 2026-08-30 "Explicit Candidate Pool Accounting"
+
+### Added
+- One-step candidate pools now expose deterministic accounting for selected
+  rules, raw rule-application candidates, and unique merged candidates as a
+  first-class metrics contract for Phase 1 coverage evaluation.
+- Added regression coverage for the accounting invariants and legacy/context
+  proposal API parity.
+
+## [0.42.0] - 2026-08-30 "One-Step Candidate Pool Metrics"
+
+### Added
+- One-step candidate pools now expose deterministic counts for considered
+  rules, raw rule-application candidates, and unique candidates after
+  precursor-set merging, enabling coverage measurements without reconstructing
+  them from candidate provenance.
+- Added regression coverage for the new metrics and context/legacy API parity.
+
+## [0.41.0] - 2026-08-30 "Bond-Index Retrieval Diagnostics"
+
+### Added
+- Search diagnostics now report unique bond-index candidates before and after
+  required-element filtering, making Phase 1 candidate-coverage measurements
+  reproducible without changing route selection or ordering.
+- Added regression coverage for retrieval counts and search-level aggregation.
+
+## [0.40.0] - 2026-08-30 "Element-Aware Template Retrieval"
+
+### Added
+- Phase 1 template retrieval now combines reaction-center bond indexing with
+  required-element bitmasks, avoiding template application when the target
+  cannot contain a required element while preserving deterministic top-k order.
+- Added regression coverage for missing-element filtering and eligible fixed
+  rules in bond-index retrieval.
+
+## [0.39.0] - 2026-08-30 "Reproducible Forward Benchmark Contracts"
+
+### Added
+- Compact benchmark manifests and fail-closed rerun verification for
+  `renkin-forward benchmark`, including corpus, rules, split, schema, and
+  reproducibility hashes.
+
+## [0.38.0] - 2026-08-30 "Vendor Stock Intelligence"
+
+### Added
+- v0.38 groundwork: typed CSV/TSV vendor-stock import with ID, vendor,
+  price, lead-time, and availability fields.
+- Explicit vendor match modes (`exact`, `parent-ignoring-salts`,
+  `stereo-ignored`, and `tautomer-related`) with deterministic priority;
+  relaxed matches never become exact stock identity.
+- Pure-Rust InChIKey candidate indexing and `renkin stock vendor-index` /
+  `vendor-match` inspection commands.
+
+## [0.37.0] - 2026-08-30 "Verified Candidate Integrity"
+
+This release makes candidate-level element accounting observable and
+optionally fail-closed, and measures the existing route validator against
+RENKIN's full labeled USPTO-50k test set.
+
+### Added
+- Candidate-time `ElementAccountingGatePolicy` with `off` (default),
+  `diagnostics-only`, and `gated` modes. The gate is independent from
+  `SpectatorBondPolicy`; diagnostics preserve the candidate trail while
+  `gated` excludes only candidates whose target requires an element absent
+  from their precursor set. The policy is available through the CLI,
+  Python, and WASM APIs.
+- Search diagnostics now report element-accounting crowd-out separately,
+  with process-level integration coverage for default, diagnostic-only,
+  and gated behavior. `Gated` remains opt-in because the rollout smoke
+  found an allowlist-consistency issue that requires a separate policy
+  decision.
+- `examples/validator_accuracy_probe.rs` and its reproducibility report
+  under `data/validator_accuracy_probe_2026-08-30/`, measuring all 4,903
+  labeled targets without search-time collection. The report separates
+  blended graph-rule acceptance (46.1%) from genuine rule-specific SMIRKS
+  reproduction (2.4%) and records the deliberately limited true-reject
+  corpus rather than overstating validator accuracy.
+
+### Changed
+- `RawCandidate` carries the element-accounting verdict from the real
+  `raw_propose` path, while the default `Off` mode avoids the parse cost and
+  preserves existing search behavior.
+- WASM exposes `find_routes_v5` as the versioned API extension for the new
+  policy; existing API versions remain unchanged.
+
+## [0.36.0] - 2026-08-30 "Scalable Stock & Audited Coverage"
+
+v0.36.0 Phase 1 (rule-safety census): a mechanical static screen of every
+hand-crafted `default_rules()` SMIRKS against the risk shape that broke
+`aryl_amine_retro`/`buchwald_hartwig_retro`
+([0.32.0](#0320---2026-08-22-typed-reports--verified-planner-matrix)/
+[0.35.0](#0350---2026-08-24-template-integrity--spectator-bond-loss),
+issue #77) -- a minimally-constrained LHS plus a bare single-atom RHS
+product fragment. Four more rules matching that exact shape reproduced
+the same defect on real targets across two rounds and are removed below;
+this closes out the plan's originally-named priority table.
+
+### Added
+- `examples/rule_safety_census.rs`: a static SMIRKS screen of every
+  `default_rules()` entry for the `aryl_amine_retro`/
+  `buchwald_hartwig_retro` risk shape (multi-product RHS + a bare
+  single-atom RHS fragment) -- screening only, never removes or fixes a
+  rule itself. Reproducible via `cargo run --example rule_safety_census`;
+  report at `docs/validation/rule-safety-census-2026-08-24.md` +
+  `data/rule_safety_census_2026-08-24.json`.
+- `stock_import` module (`src/stock_import.rs`, Phase 2 PR 1, #194): a
+  deterministic `.smi` stock importer core with a versioned provenance
+  manifest (`StockManifest`) -- typed rejection/duplicate reasons,
+  input/output SHA-256, and a normalization-policy snapshot, closing the
+  gap where `ChemEnv::load` silently drops unparseable/duplicate rows
+  with no count surfaced anywhere. Library module only in that PR; see
+  `docs/design/stock-import-v0.md`.
+- `renkin stock import` / `renkin doctor stock` CLI subcommands (Phase 2
+  PR 2): a stable, third-party-reproducible CLI around `stock_import`'s
+  core, never reimplementing its canonicalize/dedup/manifest logic.
+  `stock import` writes the output `.smi` + manifest atomically (temp
+  file + rename, never a partial pair), refuses to overwrite an existing
+  destination without `--force`, rejects `--input`/`--output`/
+  `--manifest` collisions, and supports `--fail-on-rejection` for strict
+  pipelines (artifacts are still written first). `doctor stock`
+  independently re-verifies a stock/manifest pair -- hash, row-count
+  arithmetic, re-import idempotency, normalization-contract and
+  importer-version agreement, source-provenance completeness -- with
+  typed PASS/WARN/FAIL severities and stable exit codes (0/1/2). See
+  `docs/design/stock-import-v0.md` §6 for the full CLI/exit-code
+  contract.
+- `PlannerComparisonRow` schema v1.1 (Phase 2 PR 4, Issue #66 open-source
+  comparison harness): `validator_confirmed_route_found`/`not_evaluable`
+  give a validator-gated companion to tool-native `route_found` for both
+  RENKIN and AiZynthFinder, keeping solve rate and route quality as two
+  separate, non-conflated aggregate rates. RENKIN-only
+  `gated_out_candidate_count`/`gated_out_reasons` surface what
+  `--spectator-bond-policy gated` actually excluded per target, via a new
+  `--spectator-bond-policy` flag on `scripts/compare_run.py` (orthogonal to
+  `--ring-context-policy`, its own `spectator_bond_policy` run-manifest
+  field, never the same arm/label). See
+  `docs/guides/open-source-retrosynthesis-comparison.md`, "Common post-hoc
+  validation" and "RENKIN-specific diagnostics".
+- `stock_import::recanonicalize_stock_smiles` + `examples/isotope_sample_check.rs`:
+  a standing tool (not wired into the CLI) that re-applies RENKIN's real
+  stock-identity canonicalization path to every line of a `.smi` sample
+  and reports isotope-label survival, so a future `chematic` bump can be
+  re-checked against a real corpus sample before trusting a `renkin
+  doctor stock reimport_idempotency` PASS. Confirms, against the real
+  12,684-row deuterium/tritium subset of `data/building_blocks_emolecules.smi`,
+  that the `chematic` 0.20.1 bump above genuinely fixes the isotope-loss
+  defect: 0 parse failures, 0 losses (full reversal from pre-fix
+  behavior). A separate 49,912-row stratified sample of the same file
+  (every 190th row, covering canonicalization idempotency broadly rather
+  than isotopes specifically) found 0 cycles / 0 non-convergent lines
+  across up to 8 repeated re-canonicalization passes -- every line
+  reaches a stable fixed point, the actual property `chematic` 0.20.1 was
+  meant to restore. Full investigation record, including the 29
+  structurally-unusual (but never non-idempotent) lines from that sample
+  and what's confirmed vs. still-open about each explanation, at
+  `docs/design/PHASE3A_CHEMATIC_ISOTOPE_FIX_STATUS.md`.
+- **eMolecules stock provenance retrofit (v0.36.0 Phase 2 PR 2):
+  `data/building_blocks_emolecules_canonical.smi`'s manifest**
+  (`data/building_blocks_emolecules_canonical.manifest.json`, tracked;
+  the 385MB stock file itself stays gitignored, matching every other
+  large-stock precedent in this repo). Generated via `renkin stock
+  import` against the existing `data/building_blocks_emolecules.smi`
+  (itself an eMolecules-free-tier-2024-01-01 extract already filtered by
+  `scripts/prepare_emolecules.py`, not raw eMolecules -- the manifest's
+  `source.label` says exactly that): 9,483,212 input rows -> 9,483,209
+  accepted (3 unparseable) -> 9,481,986 unique canonical structures
+  (1,223 duplicates collapsed under chematic identity).
+  `renkin doctor stock` against the result: **8/9 checks PASS, 1 WARN**
+  (`source_provenance`: no license recorded -- honest, not fabricated),
+  **1 FAIL** (`reimport_idempotency`). Root-caused the FAIL directly (a
+  real second `renkin stock import` on the canonical output, diffed
+  byte-for-byte against the first): **31 lines differ out of 9,481,986
+  (0.00033%)**, isolated to a bare-`chematic` `canonical_smiles(x) !=
+  canonical_smiles(canonical_smiles(x))` residual for E/Z-coupled and
+  locally-symmetric-stereocenter inputs -- roughly 1/10th the rate of
+  the original 290/9.47M defect this investigation already root-caused
+  and fixed (chematic #389/#392/#390, shipped in 0.20.1). RDKit InChI/
+  InChIKey confirmed identical real chemistry on 2 of the 31 cases --
+  pure text-representation instability, not a stock-identity or
+  correctness defect. Filed as chematic issue #423 with 3 minimal,
+  isolated (non-corpus) witnesses; **not blocking** -- the stock content
+  itself is complete and chemically correct, this residual only affects
+  whether `renkin doctor stock` can report a byte-for-byte-reproducible
+  PASS. This closes out Phase 2 PR 2's actual scope; the 10k/100k/1M
+  pilot tiers (Phase 2 PR 5) and the exact-ZINC-scale shared-stock arm
+  (Phase 3, issue #86) remain separately gated, not started here.
+- `renkin doctor templates <file.smi>` (issue #100): reports an
+  extracted-template corpus's own SHA-256, whether its header records a
+  revision-pinned source (`# Source: {dataset}@{revision}`, the format
+  `scripts/extract_templates.py` already writes), and load/concrete-
+  application counts -- reusing `load_rules_from_file`/
+  `concrete_application_status` directly (the same functions
+  `examples/hashatom_corpus_stats.rs` already used ad hoc) so the two can
+  never silently disagree. Same `--output human|json` and PASS/WARN/FAIL
+  exit-code contract as `renkin doctor stock`. Unlike `doctor stock`,
+  there's no separate manifest file to verify against -- templates are
+  generated by a Python script this crate doesn't control the output
+  format of, so every check is computed fresh from the file itself.
+  Verified against both real corpora: `data/templates_extracted_5000.smi`
+  reports WARN (unpinned source header, predates the revision-pinning
+  fix) with 4999/5000 loaded, 0 unsupported -- matching
+  `templates_extracted_5000.smi.PROVENANCE.md`'s own hand-verified facts
+  exactly.
+
+### Fixed
+- Removed `n_benzylation_retro` and `michael_retro` from `default_rules()`
+  (round 1): both flagged by the new rule-safety census, and both already
+  carried real (not just flagged) `SpectatorBondLoss` findings from the
+  existing 2026-08-24 smoke measurement. Confirmed by direct `apply_retro`
+  reproduction on real ring-fused targets -- same mechanism as
+  `aryl_amine_retro`/`buchwald_hartwig_retro`: the bare RHS fragment's
+  substituent-carry-through BFS sweeps unchecked across a ring-fusion
+  boundary. `n_benzylation_retro`'s "bare" `[N:1]` fragment carries
+  through nearly the whole molecule on an N-CH2-Ar bond that's part of a
+  ring; `michael_retro`'s "bare" `[C:1]` fragment does the same on a
+  C-CH2-C=O bond in a ring (a glutarimide), with the declared enol
+  fragment coming back as an unreal, garbled piece in both cases.
+- Removed `negishi_retro` and `grignard_addition_retro` from
+  `default_rules()` (round 2): `negishi_retro` was the plan's own
+  top-priority candidate (structurally near-identical to
+  `buchwald_hartwig_retro`) despite producing zero findings in the
+  15-target smoke sample -- confirmed anyway via a deliberately
+  constructed ring-fused (indane/tetralin-type) target, since zero
+  findings in a small right-censored sample isn't evidence of safety.
+  This is a weaker evidence chain than round 1's two rules (real
+  corpus-derived `SpectatorBondLoss` findings *and* reproduction on
+  drug-like smoke-corpus targets): `negishi_retro` rests on a
+  hand-constructed repro target and zero corpus findings, so its removal
+  is confirmed but less independently corroborated than the other three.
+  `grignard_addition_retro` also carries real `SpectatorBondLoss`
+  findings; its first tested target didn't match the rule's LHS at all
+  (0 outcomes, not a negative result), but a second target (a ring-fused
+  tertiary alcohol) confirmed a real defect. Both show the same
+  excess-over-correct duplication direction as round 1's fixes -- the
+  bare fragment's carry-through re-collects atoms the other declared
+  fragment already claims, so the outcome's precursors sum to *more*
+  heavy atoms than chemically correct, not fewer: `negishi_retro`'s
+  broken outcome summed to 49 against a correct 26 (a 25-atom target +
+  one new Br); `grignard_addition_retro`'s summed to 18 against a
+  correct 11 (atom-conserving SMIRKS, no new atom) -- a considerably
+  larger relative excess (~64-88%) than round 1's ~22-25%, so "same
+  mechanism" across all four is inferred from the shared structural
+  precondition and signature shape, not a traced identical BFS path.
+  **The hand-crafted rule count drops from 26 to 22 across both
+  rounds**; any route search that previously depended on any of these
+  four rules will no longer find that route -- this is a correctness
+  fix, not a regression.
+- `crates/renkin-forward/src/bench.rs`'s
+  `compute_row_predicts_from_reactants_original_not_reactants_canonical`
+  and `crates/renkin-forward/tests/bench.rs`'s fixture corpus
+  (`crates/renkin-forward/tests/fixtures/forward_bench_corpus.jsonl`)
+  both pinned a candidate rank that's sensitive to `default_rules()`'s
+  exact composition; both updated to the correct post-removal values
+  (rank 6 -> 4) and the fixture's `stereochemistry-hit-top10` reaction_id
+  renamed to `stereochemistry-hit-top5` to match, rather than leaving a
+  passing-but-misleadingly-named fixture.
+- Removed `heck_retro` from `default_rules()` (found 2026-08-29, separately
+  from the rule-safety census above -- this SMIRKS's 2-atom RHS fragment
+  doesn't match the census's "bare single-atom RHS" screen, so the static
+  tool never flagged it; found instead by hand-inspecting
+  `docs/design/reaction-family-mislabel-regression-v0.md`'s §3 candidate
+  list for a different defect class entirely). On an internal alkene
+  that's endocyclic and fused to the same aromatic ring the leaving-group
+  Br attaches to (e.g. indene), the declared 2-fragment product collapses
+  into a single connected fragment: confirmed by direct `apply_retro`
+  reproduction on indene (9 heavy atoms) producing one 8-atom
+  bromotoluene-shaped outcome instead of two well-formed fragments summing
+  to 10. Same broader ring-fusion/naive-fragment-splitting defect family as
+  the five rules above, but its own distinct signature (connectivity
+  collapse + atom loss, not bare-fragment atom duplication) since this
+  SMIRKS's RHS fragment is 2 atoms, not 1. `heck_retro_terminal` is kept --
+  proven structurally immune (its terminal `[CH2]` endpoint and fully-used
+  `[CH]` valence leave no room for either mapped atom to be part of a
+  ring). **The hand-crafted rule count now drops to 21** (26 -> 22 across
+  the census's two rounds, -> 21 here).
+
+### Known Limitations
+- Six rules remain flagged by the static screen but unattempted:
+  `friedel_crafts_acylation_retro`, `aryl_carboxylation_retro`,
+  `cc_single_cleavage`, `reductive_amination_retro`,
+  `cn_aliphatic_cleavage`, `co_aliphatic_cleavage`. The last three are the
+  plan's own "new, unverified angle" (BFS carry-through from an aliphatic
+  cut site into an adjacent/fused aromatic ring elsewhere in the
+  molecule, never actually tested against a fixture) -- distinct future
+  work, not a completed check that came back clean.
+- `scripts/ord_evidence_audit.py`'s `AUDIT_ONLY_TEMPLATE_IDS` frozenset
+  still names `"rule:michael_retro"`: a deliberate no-op left in place
+  rather than touched this round (the set only gates audit-report
+  classification of *matched* template IDs from real ORD literature
+  data; since the rule no longer exists in `default_rules()`, no future
+  match can ever produce that string, so the entry is inert, not
+  misleading in a way that affects any real audit run). Out of this
+  round's doc-cascade scope (ORD-evidence tooling, not rule-count docs);
+  flagged here so it reads as a decision, not an oversight.
+
+### Dependencies
+- `chematic`/`chematic-rxn`: `0.16` -> `0.20.1`. Not a patch-level jump
+  from RENKIN's own perspective, despite the numbers: this closes out
+  the `renkin doctor stock reimport_idempotency` FAIL discovered during
+  v0.36.0 Phase 2's eMolecules stock provenance retrofit (still frozen,
+  not yet opened as its own PR), root-caused to three independent, upstream
+  `chematic` correctness defects, all fixed and shipped in this range:
+  - Isotope-labeled hydrogen (`[2H]`/`[3H]`) was silently stripped by
+    `remove_hydrogens` on every canonicalization pass, not just
+    re-canonicalization (chematic#389).
+  - `remove_hydrogens` never restored `Molecule`'s
+    `stereo_neighbor_order`/`bond_directions` side tables, which could
+    flip a declared tetrahedral stereocenter to its mirror image on
+    re-canonicalization (chematic#392) -- 289/290 of the originating
+    290-compound eMolecules-derived corpus resolved by this fix alone.
+  - A coupled stereo-alkene E/Z canonicalization defect (chematic#390,
+    two independent root causes in `resolve_ez_markers`'s carrier
+    election and `normalize_ez`'s sign-seeding) could silently change a
+    molecule's real geometry, closing the corpus's one remaining
+    mismatch (290/290).
+  - Also included in this range: two more independent correctness fixes
+    found by chematic's own new idempotency property test
+    (chematic#395, #399) that landed in the same `0.20.1` release, and
+    the `0.17`-`0.20.0` feature/fix history in between (stereo-safe 3D
+    generation, a connectivity-ordered coordinate engine, format/Python/
+    WASM breadth, MMFF94 accuracy fixes -- see chematic's own
+    `CHANGELOG.md` for the full record, not reproduced here).
+  - Verified before merging this bump (all against the exact published
+    `chematic` v0.20.1, not a local checkout): the real 290-compound
+    eMolecules-derived corpus this investigation originated from,
+    two independent ways -- idempotence 290/290 and, independently, an
+    RDKit InChIKey cross-check, 290/290 (corpus itself not committed,
+    only aggregate counts, matching this investigation's own standing
+    discipline); `renkin doctor stock reimport_idempotency` against
+    `data/building_blocks.smi` (402 compounds) now **PASSes** (was the
+    originating FAIL); isotope and issue #390 witness fixtures directly;
+    full RENKIN workspace test suite (`cargo test --workspace --lib`
+    and `--tests`); `cargo check --target wasm32-unknown-unknown --lib`
+    and `--features python`; `cargo package --list`; `doc_facts`
+    (`HAND_CRAFTED_RULE_COUNT`/`BUILDING_BLOCK_FILE_COUNT`/
+    `BUILDING_BLOCK_FALLBACK_COUNT`) unchanged (22/402/152); a
+    small-scale retrosynthesis smoke test (aspirin's real ester-cleavage
+    route still found and correctly scored; an E/Z-stereo hydrazone
+    target parses and searches cleanly, exercising the fixed code path
+    directly, even though it returns zero routes -- no template covers
+    that bond, not a regression).
+  - Not run this round, deliberately: the formal 4,907-target Step 0
+    remeasurement, the full 9.47M-compound eMolecules re-import, and any
+    change to the provenance retrofit's own frozen scope -- this bump is
+    the dependency update alone, Phase 5's own re-verification ladder
+    (minimal fixtures already covered above -> 290-case corpus already
+    covered above -> a 12,688-row raw isotopic-H subset -> the
+    402-compound stock doctor already covered above -> a lightweight
+    9.47M-row probe -> exactly one full re-import -> `renkin doctor
+    stock` all-PASS) is separate, later work before that provenance
+    retrofit itself resumes.
+
+## [0.35.0] - 2026-08-24 "Template Integrity & Spectator Bond Loss"
+
+A retro-rule (hand-crafted or extracted) whose matched/product-fragment
+atoms sit on a real ring-fusion junction can have chematic's own
+substituent-carry-through BFS sweep unchecked into the wrong side of that
+ring — producing a precursor that looks atom-balanced but has silently
+lost real target atoms. This release adds `SpectatorBondLoss`: detection
+of that exact mechanism (two independent sub-cases), an opt-in fail-closed
+gate that excludes only the candidates it can identify with confidence,
+and the CLI/Python/WASM surface to actually use it — plus the hand-crafted
+rule fix (`buchwald_hartwig_retro`) this same investigation found along
+the way.
+
+### Added
+- `SpectatorBondLoss` detection (`src/spectator_bond.rs`, PR #186): two
+  independent sub-cases sharing one typed
+  `SpectatorBondLossFinding`/`SpectatorBondLossCase` shape —
+  `MatchedPairUndeclared` (Case A: a real target bond directly connects
+  two matched atoms but neither the LHS nor any RHS fragment declares it)
+  and `CrossProductTerritory` (Case B: a real target path connects matched
+  atoms belonging to *different* RHS product fragments, running only
+  through genuinely unmatched atoms — RENKIN's own independent BFS
+  territory model, not a port of chematic's private internals).
+- `SpectatorBondLossFinding.target_smiles`: canonical SMILES of the exact
+  target a finding was detected against, so findings accumulated across a
+  whole search can be traced back to the specific candidate/route step
+  they apply to (PR #187).
+- `SearchConfig::spectator_bond_policy: SpectatorBondPolicy` (`Off` /
+  `DiagnosticsOnly` / `Gated`), wired through `raw_propose` and shared by
+  `find_routes` and the standalone candidate-pool API. `DiagnosticsOnly`
+  records every finding in `CrowdOutDiagnostics::spectator_bond_loss_findings`
+  without excluding any candidate. `Gated` additionally runs
+  `gate_candidates` — per-candidate correlation to the specific match that
+  produced it (via `find_reaction_matches`/`apply_reaction_match`,
+  provably identical to what `run_reactants` itself would have produced
+  for that match), so a rule with several matches against one target only
+  rejects the actually-defective candidate, never a clean sibling. v1
+  scope: only rules with no `#` in their SMIRKS (PR #188).
+- `CrowdOutDiagnostics::spectator_bond_gated_out`: every candidate `Gated`
+  actually excluded, with the finding(s) that justified it — an exclusion
+  is never silent, even though the candidate no longer appears anywhere
+  else in the run (PR #188).
+- CLI `--spectator-bond-policy <off|diagnostics-only|gated>`, Python
+  `find_routes(..., spectator_bond_policy="off")`, and WASM
+  `find_routes_v3` (extends `find_routes_v2`, not a breaking signature
+  change) — the same policy, same three values, on every surface (PR
+  #189).
+- `examples/spectator_bond_smoke.rs`, a reusable lightweight measurement
+  tool, plus a real 15-target `DiagnosticsOnly` run
+  (`docs/validation/spectator-bond-smoke-2026-08-24.md`): 19,606 findings
+  (893 Case A, 18,713 Case B) across 276 distinct rules from just 15
+  targets — far more findings than the 4 originally-known instances, not
+  a corpus-wide defect-rate claim (small, right-censored sample; see
+  Known Limitations). One hand-verified, previously-unknown template
+  defect found on a real search trace (not a constructed fixture):
+  `extracted_288` mismodels a 4-membered β-lactone ring-opening as an
+  intermolecular ester cleavage, silently dropping a methyl substituent —
+  the exact same ring-tether-blindness pattern as the four templates
+  Finding #4 already confirmed, now shown to generalize beyond them (PR
+  #187).
+
+### Fixed
+- `declared_map_pairs` (`src/spectator_bond.rs`) now returns `None` on an
+  unparseable LHS/RHS fragment instead of silently treating it as
+  "declares nothing" — the latter is a diagnostics-only blind spot but a
+  real false-reject risk for `Gated`, so `gate_candidates` refuses to
+  trust it and reports `NotEvaluable("unparseable_declared_bonds")`
+  instead (PR #188).
+- `gate_candidates` never silently accepts or rejects when confidence
+  can't be established: a `#`-bearing rule, a match that can't be
+  correlated back to any candidate, or the same candidate signature
+  reached by both a defective and a clean match all resolve to
+  `NotEvaluable`, never a guess in either direction (PR #188).
+- Removed `buchwald_hartwig_retro` from `default_rules()`: the same
+  ring-fused-nitrogen atom-loss defect `aryl_amine_retro` was removed for
+  ([0.32.0](#0320---2026-08-22-typed-reports--verified-planner-matrix),
+  issue #77) — substituent-carry-through BFS sweeps unchecked across the
+  ring-fusion boundary — but worse: the surviving "aryl" fragment comes
+  back corrupted too (a spurious extra bromine plus a dangling alkyl
+  chain leaked in from the far side of the ring), not just a missing
+  fragment. Confirmed by direct reproduction on the same target shape as
+  the original `aryl_amine_retro` repro. **The hand-crafted rule count
+  drops from 27 to 26** — any route search that previously depended on
+  this rule for a Buchwald-Hartwig-type Ar-N disconnection will no longer
+  find that route; this is a correctness fix (the routes it produced
+  could be chemically wrong, not just missing), not a regression.
+- 3 pre-existing `clippy::redundant_closure` findings under
+  `--features python` (never caught by CI, which only runs the
+  default-features clippy check) in `predict_forward_py`/
+  `validate_forward_py`'s error mapping — unrelated to this release's own
+  changes, found incidentally while verifying them.
+
+### Known Limitations
+- `Gated` policy only ever rejects candidates from rules with no `#` in
+  their SMIRKS (~57% of a typical extracted-template corpus); `[#N]`
+  hash-atom rules stay `DiagnosticsOnly` regardless of policy, since the
+  match-replay correlation this relies on doesn't hold for
+  `application_smirks_variants`'s concrete-element expansion path.
+- `spectator_bond_policy` defaults to `Off` on every surface (CLI/Python/
+  WASM/Rust) — zero behavior change and zero extra cost unless a caller
+  explicitly opts in.
+- The 15-target smoke measurement is a small, right-censored sample (a
+  90-second per-target timeout under-represents slow searches) and must
+  not be read as "N% of the template corpus is defective" or any other
+  corpus-wide population claim — see the measurement doc's own caveats.
+- No full 4,907-target (or 5,000-template corpus-wide) remeasurement was
+  run for this release; a `Gated`-policy smoke re-run (excluded-candidate
+  counts, route-count deltas) is deferred to post-release evidence or a
+  v0.35.1 decision, not blocking this release.
+- The unrelated chematic-side search-performance regression tracked by
+  issue #128 is followed upstream separately and is not addressed by
+  this release.
+
+## [0.34.0] - 2026-08-23 "SynPlanner Bridge"
+
+RENKIN Bridge's fourth route-source adapter: unlike Syntheseus (no native
+export at all) or AiZynthFinder (route metadata *optionally* carries atom
+mapping), SynPlanner ships a real native route export whose reaction SMILES
+genuinely carries usable, forward-replayable atom maps — the first adapter
+in this codebase whose routes can reach a real `pass` verdict, not just
+`not_evaluable`.
+
+### Added
+- `renkin audit-route`: a new `--format synplanner` (and `auto`-detection
+  support) for real SynPlanner 1.6.0 `write_routes_json` exports
+  (`{route_id: RouteNode}` shape). Confirmed against real SynPlanner output
+  twice -- hand-constructed reactions run through SynPlanner's own real
+  exporter, and a real CPU-only MCTS-searched planning run through the real
+  `synplan planning` CLI end to end -- see
+  `docs/design/synplanner-adapter-v1.md` and
+  `tests/fixtures/synplanner/v1.6.0/`. Across 317 real reaction nodes in a
+  167-route real search: every one carries a structurally valid atom map
+  (no duplicates, no orphans), and every real cross-step boundary is
+  consistent, despite SynPlanner's own exporter documenting its default
+  path as non-reconciled. The separate `--export_routes` "public contract"
+  wrapper format is not yet supported (tracked, not a silent gap).
+- Playground Audit tab gained SynPlanner as a fourth format option, with a
+  "Load SynPlanner example" button demonstrating a genuine `PASS` verdict
+  on real MCTS-planning output — audits entirely client-side via the
+  existing `audit_route_v2` WASM export, no new export needed.
+- [Audit a Real SynPlanner Route](https://github.com/kent-tokyo/renkin/blob/master/docs/guides/synplanner-audit-demo.md):
+  a 5-minute walkthrough against the real committed fixtures, including a
+  companion example showing a deliberately-invalid-chemistry fixture
+  correctly failing.
+- 4-way (RENKIN-native/AiZynthFinder/Syntheseus/SynPlanner) structural and
+  policy-verdict parity tests in `tests/cross_tool_audit.rs`, extending the
+  existing 3-way cross-tool conformance suite.
+
+## [0.33.0] - 2026-08-23 "Chemical Integrity & Reproducible Templates"
+
+Reproducibility and diagnostics for the template-extraction pipeline, plus
+a privacy fix -- no shipped-package chemistry behavior changes beyond the
+CLI diagnostic below. `aryl_amine_retro`'s removal (issue #77) and the
+benchmark-page accuracy fix already shipped in
+[0.32.0](#0320---2026-08-22-typed-reports--verified-planner-matrix); not
+recounted here.
+
+### Added
+- CLI: a loaded `--templates` file with hash-atom (`[#N]`) templates that
+  are `Unsupported` for concrete application (issue #99) now reports a
+  reason-broken-down count to stderr right after the existing "Loaded N
+  templates" line -- e.g. `1 of 1 loaded templates are unsupported for
+  concrete application (will never produce a route):
+  inconsistent_element=1`. Silent when there's nothing to report (both
+  checked-in corpora currently have zero unsupported templates); previously
+  the only way to see this was the offline `examples/hashatom_corpus_stats.rs`
+  audit tool, run separately against a template file. This is the only
+  change in this release that affects the shipped `renkin` binary/package;
+  everything else below is dev-tooling (`scripts/`) or repository data.
+- `scripts/extract_templates.py --dataset-revision`/`--resolve-latest`
+  (issue #100): pins a HuggingFace dataset revision by default
+  (`PINNED_DATASET_REVISION`, mirroring `generate_ring_context_metadata.py`'s
+  existing pattern) instead of always resolving to whatever HEAD happens to
+  be at generation time. The output file's `# Source:` header now records
+  `{dataset_id}@{revision}`. Forward-looking only -- does not recover the
+  exact dataset revision or package versions that produced the existing,
+  gitignored `data/templates_extracted_5000.smi` (that history is genuinely
+  unrecoverable; see the new `data/templates_extracted_5000.smi.PROVENANCE.md`
+  for what is and isn't known about that file). Issue #100 stays open.
+
+### Fixed
+- `scripts/extract_templates.py` (issue #98): rejects a disconnected-fragment
+  reactant SMARTS (`A.B>>...`) at extraction time instead of letting RDKit's
+  looser proxy check wave it through. Confirmed by reading `chematic-smarts`
+  0.16.0's actual parser source: a reactant-side `.` always fails to load in
+  chematic, unconditionally. Forward-looking only -- the one already-affected
+  line in the existing, gitignored `data/templates_extracted_5000.smi` is
+  untouched by design. Issue #98 stays open.
+- Privacy: redacted the local machine username that had leaked into 12
+  committed manifest JSON files (`data/coverage_mode_formal_test/`,
+  `data/phase_b1_frontier/`) via `ps`'s full-executable-path output and
+  captured command-line arguments. Root-caused and fixed in
+  `scripts/compare_manifest.py` (`redact_home_dir`, derived from
+  `os.path.expanduser("~")` at call time, never a hardcoded name) so future
+  manifests can't leak it the same way. Content-only redaction; git history
+  itself was left untouched at the user's explicit instruction.
+
+### Changed
+- `huggingface_hub` pinned to `1.28.0` in `scripts/requirements-ring-context.txt`
+  -- an optional dependency of the local, gitignored template-extraction
+  tooling, not a runtime dependency of the shipped `renkin` package.
+
+## [0.32.0] - 2026-08-22 "Typed Reports & Verified Planner Matrix"
+
+A typed Python report API, a wider verified AiZynthFinder range, and a
+chemical-integrity fix that drops a rule caught deleting a target atom.
+
+### Added
+- `renkin.audit_route_report(...) -> AuditRouteReport` (Phase 2A):
+  a typed Python counterpart to `renkin.audit_route(...) -> str`, which
+  stays completely unchanged. Pure-Python (`python/renkin/audit_report.py`),
+  no Rust/CLI/WASM changes -- calls the existing string API and parses its
+  JSON into attribute-accessible dataclasses
+  (`report.audit_manifest.policy`, `report.routes[0].findings`,
+  `report.routes[0].steps[0].forward_validation`). See
+  [Typed Reports](https://github.com/kent-tokyo/renkin/blob/master/docs/api/python.md#audit_route_report)
+  for the full field reference and the documented absent-vs-null collapse.
+- AiZynthFinder version matrix (Phase 2B): individually verified
+  against real, artifact-captured `aizynthcli` output from `4.3.2` and
+  `4.4.0`, alongside the existing `4.4.1` verification —
+  `tests/fixtures/aizynthfinder/v4.3.2/` and `.../v4.4.0/`, each with its
+  own `PROVENANCE.md` (SHA-256-pinned public data bundle, real capture
+  commands, real search results). All three versions ran against a
+  byte-identical public model/stock data bundle and the identical target
+  molecules, so the comparison isolates real package-level differences.
+  New `tests/aizynthfinder_version_matrix.rs` asserts all three produce
+  identical audit verdicts for the same real routes. One confirmed,
+  harmless cross-version JSON difference was found: `4.3.2`'s route
+  `scores` object carries an extra `"average template occurrence"` field
+  absent from `4.4.0`/`4.4.1` — outside the tree structure RENKIN's
+  normalizer reads, so it doesn't affect any verdict. See
+  [AiZynthFinder audit demo](https://github.com/kent-tokyo/renkin/blob/master/docs/guides/aizynthfinder-audit-demo.md#compatibility)
+  for the updated compatibility table.
+
+### Fixed
+- Removed `aryl_amine_retro` from `default_rules()` (issue #77): it
+  deleted a ring-fused nitrogen outright instead of returning it as part
+  of a second (amine) precursor fragment, on targets where the nitrogen
+  is shared between the aromatic ring and a fused saturated ring.
+  Confirmed on `uspto50k_test#L2263`. Root cause not yet isolated;
+  disabled per the same atom-loss policy already applied to the 31.11
+  halide-rule removals, pending further investigation. **The
+  hand-crafted rule count drops from 28 to 27** — any route search that
+  previously depended on this rule for a Chan-Lam-type Ar-N
+  disconnection will no longer find that route; this is a correctness
+  fix (the routes it removed could be chemically invalid), not a
+  regression. Issue #77 stays open pending root cause and a possible
+  safe replacement.
+
+## [0.31.0] - 2026-08-22 "Syntheseus 0.8 Compatibility"
+
+Verified against Syntheseus `0.8.0`, not just `0.7.2` — and RENKIN Bridge finally leads the README instead of being buried under it.
+
+### Added
+- Syntheseus `0.8.0` compatibility, independently verified against `0.7.2`
+  via a real dual-version spike
+  ([`docs/design/syntheseus-0.8-compatibility-spike.md`](https://github.com/kent-tokyo/renkin/blob/master/docs/design/syntheseus-0.8-compatibility-spike.md)):
+  artifact-pinned wheel + sdist provenance (SHA-256), a reusable public-API
+  introspection tool (`scripts/syntheseus_compat_introspect.py`), and a
+  byte-level exporter-output diff across both versions.
+- `pip install renkin[syntheseus]` now declares
+  `syntheseus>=0.7.2,<=0.8.0` (previously an exact `==0.7.2` pin).
+  Individually verified against real PyPI artifacts: only `0.7.2` and
+  `0.8.0`. The interval admits any intermediate release too (a
+  hypothetical future `0.7.3`, for instance) — it isn't restricted to
+  exactly the two named versions. The upper bound stays capped at
+  `0.8.0`, not an open-ended `<0.9`: an unverified release above the
+  verified range (`0.8.1`, `0.9.0`, ...) isn't silently accepted just
+  because it would likely still work — verified and supported are not
+  the same claim.
+- CI: a `syntheseus-compat-matrix` job runs the full exporter test suite
+  against each verified version independently (exact pins, separate
+  jobs); a `syntheseus-dependency-resolution` job runs real `pip install`
+  resolver smoke tests in two clean venvs (default resolution resolves to
+  the newest verified version; a pre-installed lower endpoint is
+  preserved, not force-upgraded), plus wheel `METADATA` structural tests
+  (`Provides-Extra`, `Requires-Dist`, no stale exact pin survives).
+- Playground Audit tab: three example-loading buttons (AiZynthFinder /
+  Syntheseus / a deliberately failing route), each loading a real
+  committed fixture with zero outbound network requests, plus shareable
+  `?demo=aizynthfinder|syntheseus|failing` URLs.
+
+### Changed
+- README/PyPI description now leads with RENKIN Bridge ("audit any route
+  from any planner") instead of burying it below the engine's own
+  feature table; new "Audit a Route" section with corrected, real
+  (`dumps_syntheseus_route_v1`-based) example code.
+
+**Compatibility-verified does not mean forward-validation-capable.**
+Forward validation stays `not_evaluable` (`MissingAtomMapping`) for every
+real Syntheseus route on both verified versions — `reaction_smiles`
+carries no atom mapping on either `0.7.2` or `0.8.0`, confirmed
+independently by the same compatibility spike. RENKIN never fabricates a
+mapping to force a pass.
+
+## [0.30.0] - 2026-08-22 "Syntheseus Bridge"
+
+Syntheseus has no route export. RENKIN built one — and audits it exactly like every other adapter.
+
+### Added
+- `renkin.syntheseus_exporter` (optional, `pip install renkin[syntheseus]`):
+  exports a Syntheseus `SynthesisGraph` to the `syntheseus-route-v1` JSON
+  interchange format. Public-API-only, fail-loud on unsupported object
+  shapes, deterministic and byte-stable output.
+- `renkin audit-route --format syntheseus` (also auto-detected): a third
+  route adapter (`bridge::syntheseus::normalize_syntheseus_route`),
+  alongside RENKIN-native and AiZynthFinder. Convergent/non-tree
+  Syntheseus routes are handled by duplicating the shared sub-tree under
+  each parent, the same behavior the RENKIN-native adapter already has.
+  Forward validation reports `not_evaluable` for every real Syntheseus
+  route today — Syntheseus's `reaction_smiles` carries no atom mapping,
+  so RENKIN honestly reports "can't verify" rather than fabricating a
+  pass (see the [Syntheseus audit demo](https://github.com/kent-tokyo/renkin/blob/master/docs/guides/syntheseus-audit-demo.md#step-3-why-forward-validation-stays-not_evaluable)).
+- Playground Audit tab gained Syntheseus as a third format option —
+  audits entirely client-side via the existing `audit_route_v2` WASM
+  export, no new export needed.
+- [Audit a Syntheseus Route](https://github.com/kent-tokyo/renkin/blob/master/docs/guides/syntheseus-audit-demo.md):
+  a 5-minute walkthrough against the real committed fixtures.
+- 3-way (RENKIN-native/AiZynthFinder/Syntheseus) structural and
+  policy-verdict parity tests in `tests/cross_tool_audit.rs`, extending
+  the existing 2-way cross-tool conformance suite.
+
+### Changed
+- Python package moved to maturin's mixed Rust/Python layout
+  (`python/renkin/`) to host the pure-Python exporter alongside the
+  compiled extension. `import renkin` and every existing binding
+  (`find_routes`, `predict_forward`, `validate_forward`, `audit_route`)
+  are unaffected.
+- `bridge::route_graph::build` (the flat-steps-to-tree algorithm) is now
+  shared by both the RENKIN-native and Syntheseus adapters, parameterized
+  by a leaf-classification closure instead of hardcoding RENKIN's own
+  `building_blocks` policy.
+
+## [0.29.0] - 2026-08-22 "Audit Policy Profiles"
+
+Audit the same route under informational, standard, or strict policy — without hiding or changing the underlying findings.
+
+### Added
+- `--policy informational|standard|strict` on `renkin audit-route`,
+  consistent across the CLI, Rust API, Python, and WASM — policy never
+  hides or changes a finding, only how the overall pass/fail/partial
+  verdict is derived from findings already collected.
+- First Python binding for route auditing: `renkin.audit_route()`.
+- WASM `audit_route_v2()` (policy-aware); the existing `audit_route()`
+  remains as a `standard`-policy wrapper, unchanged.
+- Playground Audit tab gained a policy selector.
+
+### Changed
+- `audit_manifest.policy` now records the actual policy used for each
+  audit, instead of a fixed `"standard"`.
+- npm package README corrected: documents actual browser/bundler usage
+  instead of a plain-Node.js example that never worked against the
+  published package.
+
+## [0.28.0] - 2026-08-21 "Audit Playground"
+
+Audit a route in your browser — the same pipeline, the same verdict, zero network calls.
+
+### Added
+- Playground `[ Audit a Route ]` tab: paste or upload a RENKIN or
+  AiZynthFinder route export (and optionally a stock list) and get the
+  same pass/fail/partial verdict `renkin audit-route` produces, entirely
+  client-side via a new `audit_route` WASM export.
+
+### Changed
+- `renkin audit-route`'s report-building pipeline (format detection,
+  parsing, manifest/summary assembly) is now shared between the CLI and
+  the playground's WASM export (`bridge::audit_route`), not maintained as
+  two copies.
+
+## [0.27.0] - 2026-08-20 "Reproducible Route Audit"
+
+Reproduce what was audited, from which input, with which stock and policy.
+
+### Added
+- Audit Manifest with RENKIN version, report schema version, source
+  format/version, input SHA-256, stock SHA-256 and audit policy.
+- Adapter conformance coverage shared by RENKIN-native and AiZynthFinder
+  route inputs.
+- Reproducibility and compatibility contract documentation.
+
+### Changed
+- Playground searches now run in a Web Worker.
+- Playground searches support cancellation and explicit time budgets.
+- Browser search defaults to a bounded beam width of 50.
+- Playground structure rendering keeps molecular SMILES local during
+  normal operation.
+- Search settings can be reproduced through exact exports/copy actions.
+- Playground EN/JA/ZH interface coverage was completed.
+
+## [0.26.0] - 2026-08-19
+
+### Added
+- Audit real AiZynthFinder v4.4.1 single-target route JSON.
+- Audit AiZynthFinder batch JSON and gzip-compressed output.
+- Strict automatic detection of RENKIN and AiZynthFinder route formats.
+- Cross-tool route auditing through the same tool-neutral pipeline.
+- Captured real-output fixtures with reproducible provenance.
+
+### Changed
+- Updated PyO3 to 0.29.2.
+- Updated chematic and chematic-rxn to 0.16.0.
+
+### Fixed
+- Forward replay no longer depends on precursor component ordering.
+
+## [0.25.0] - 2026-08-18
+
+### Added
+- `renkin audit-route` for auditing RENKIN-native route JSON.
+- Tool-neutral route audit model.
+- Per-step declared-reaction forward replay.
+- Machine-readable pass/fail/partial reports.
+- `search_diagnostics` parameter for `renkin.find_routes()` (Python) —
+  identical to the CLI's `--search-diagnostics` flag.
+- `renkin-doctor` now verifies the reranker model/frequency-table and
+  coverage-mode template assets against their release-asset manifests'
+  SHA-256, not just checking for their presence.
+- A type stub (`renkin.pyi` + `py.typed`) ships alongside the compiled
+  Python extension in every wheel — editors/mypy/pyright pick up
+  `find_routes`/`predict_forward`/`validate_forward`'s real signatures
+  automatically, no configuration needed.
+- `docs/api/python.md` documents `search_mode`/`coverage_templates_path`/
+  `top_templates`/`coverage_timeout_seconds` (previously undocumented
+  despite being live since v0.24.0) and `search_diagnostics`, with a new
+  CI-run coverage-mode example (`examples/coverage_mode.py`).
+
+### Changed
+- Completed routes now fail closed on structural integrity defects.
+- Guarded ring-context policies fail closed when metadata is unavailable.
+
+### Fixed
+- Stock `.smi` files containing names are parsed using the SMILES token only.
+- CLI/Python JSON schema parity — `renkin.find_routes()` (Python) was
+  missing `joint_success_probability` entirely, had no way to request
+  `search_diagnostics`, and its empty-route `diagnostics` object had only 1
+  of the CLI's 7 fields. All three now match the `renkin` CLI's own
+  `--format json` output exactly.
+
+## [0.24.0] — 2026-08-17
+
+**Headline: coverage mode, an opt-in Stage-1/Stage-2 escalation that
+trades cost for route-search coverage.** Phase B.2's benchmark result
+(`data/phase_b1_frontier/findings.md`) showed that escalating only
+targets a 500-template search failed to solve, into a second search
+against a larger 2,000-template set, converts real candidate-pool
+coverage gains into route coverage with zero regressions — at an
+opt-in cost tier (p95 5.72x vs. the 500-template baseline), not
+justified as a new default. This release ships that architecture as a
+real CLI/Python feature, backed by a one-shot 500-target formal-TEST
+confirmation (`data/coverage_mode_formal_test/protocol_v2.md`,
+`results_v2/`): coverage +6.0pp, net gain +30, zero regressions, zero
+reranker failures, Stage-2 timeout rate 0.25% — all against
+pre-registered thresholds. One correctness defect the formal-TEST
+gate caught (a single target's Stage-2 route with an unparseable
+precursor SMILES, an N-oxide charge-handling bug in `[#N]` hash-atom
+template expansion) was root-caused and fixed pre-release; see
+`data/coverage_mode_formal_test/corrective_verification_l4703/SUMMARY.md`
+for the full root cause and verification record.
+
+### Added
+- **Coverage mode** — `--search-mode standard|coverage` /
+  `--coverage-templates <path>` / `--coverage-timeout-secs <N>` (CLI);
+  `search_mode` / `coverage_templates_path` / `coverage_timeout_seconds`
+  / `top_templates` (Python) ([#101](https://github.com/kent-tokyo/renkin/issues/101)).
+  Stage 1 runs unchanged (byte-identical to standard mode); only if it
+  finds nothing does Stage 2 run, cooperatively cancellable on
+  `--coverage-timeout-secs`, against a separately loaded, larger
+  template set. Stage 1's route is never overwritten by construction —
+  there is no merge step, Stage 2 only ever runs in the branch where
+  Stage 1 came back empty. Standard-mode output (CLI and Python) is
+  byte-for-byte unchanged: the new observability fields
+  (`search_mode`, `selected_stage`, `stage2_invoked`, `stage1_timeout`,
+  `stage2_timeout`, `stage1_elapsed_ms`, `stage2_elapsed_ms`,
+  `total_elapsed_ms`) are omitted, not `null`, outside coverage mode.
+  `--bond-index`, an ONNX `--scorer`, or an active
+  `--ring-context-policy` all fail loud in coverage mode in this
+  version — by flag presence alone, before any sidecar/model asset
+  loads — since Stage 2 would need its own, separately validated
+  retrieval index / scorer vocabulary / ring-context sidecar that
+  doesn't exist yet.
+- **`SearchControl` / `find_routes_with_control`** (`src/search.rs`) —
+  additive cooperative-cancellation foundation coverage mode's Stage 2
+  is built on: an optional deadline checked at three points in the
+  frontier loop, actually stopping the search on expiry rather than
+  merely eventually returning past it. No detached threads. Zero
+  change to `SearchConfig`, `SearchStats`, or `find_routes`'s existing
+  behavior — verified byte-identical, not just asserted.
+- **`scripts/fetch_coverage_templates.py`** — downloads and SHA-256
+  verifies the frozen Stage-2 template set (`templates_2000.smi`) from
+  a GitHub Release asset, mirroring `scripts/fetch_reranker_model.py`'s
+  established pattern. `templates_2000.smi` is derived from USPTO-50k
+  TRAIN (undocumented upstream license, same disclosed gap as the
+  reranker's `model.txt`), so it's excluded from the
+  crates.io/PyPI/npm packages and distributed as an opt-in asset on
+  the GitHub Release instead.
+
+### Fixed
+- **N-oxide/hash-atom charge loss in Stage-2 route construction** —
+  `[#N]` hash-atom SMIRKS expansion (`hash_atom_candidate_symbols`)
+  only offered neutral element spellings, so applying an expanded
+  template to a spectator atom that was actually charged in the real
+  substrate (e.g. a pyridine N-oxide's `[n+]`) built the output
+  precursor from the template's literal (neutral) spelling instead of
+  the real atom, producing a formally invalid, unkekulizable SMILES —
+  `route_found: true` but an unparseable route tree. Found by the
+  coverage-mode formal-TEST gate on one target out of 500
+  (`corrective_verification_l4703/SUMMARY.md` has the full root cause
+  and a VAL-scale locality check showing no other target's output
+  changed).
+- An independent review round on the coverage-mode CLI/Python PR found
+  8 issues, several of them tests that passed without actually proving
+  the behavior they claimed to protect — not just weak tests, genuinely
+  non-provative ones counted as verified. All 8 fixed in the same PR
+  and mutation-verified, both by the implementer and, in a second
+  focused round, independently by the same review agent from a fresh
+  pull of the branch. See `data/coverage_mode_formal_test/protocol.md`'s
+  companion history and the PR itself for the full list.
+- A follow-up CI gap (a field-parity test silently self-skipping in CI
+  because the release binary wasn't built in that job) was found by
+  that same review round and fixed separately, confirmed via the
+  actual CI log that the test now runs for real.
+
+## [0.23.0] — 2026-08-11
+
+**Headline: makes the reranker actually usable.** v0.22.0 proved the
+reranker works (a real, measured route-search improvement). v0.23.0 is
+the usability/distribution unlock on top of that same, unchanged
+algorithm — not a new accuracy claim. The paired 100-target route-search
+gate (`route_to_configured_stock` 16→20/100, +4/-0) and the formal TEST
+gate figures (top1 +12.72pp, MRR +11.87pp, top10 +9.08pp) are v0.22.0
+results, cited here as already-established evidence for why this
+distribution work is worth shipping, not re-measured in this release.
+
+### Added
+- **Python reranker exposure** ([#101](https://github.com/kent-tokyo/renkin/issues/101)) — `find_routes()` gains `reranker_model_path`/`reranker_freq_table_path`:
+  ```python
+  renkin.find_routes(
+      target, reranker_model_path="model.txt",
+      reranker_freq_table_path="frequency_table.json",
+  )
+  ```
+  Mirrors the `renkin` CLI's `--reranker-model`/`--reranker-freq-table` flags exactly: a missing/mismatched pair or a load failure falls back to legacy ordering with a stderr warning, never a hard error. When a reranker is configured, the JSON output gains a `reranker_failures` integer field (present and accurate for a healthy vs. degraded run, matching the CLI's own observability contract exactly) — absent entirely when no reranker is configured. Closes v0.22.0's disclosed gap where the reranker had no Python surface at all. Verified against a real trained model via a built wheel installed outside the repo, not just unit tests.
+- **`scripts/fetch_reranker_model.py`** ([#101](https://github.com/kent-tokyo/renkin/issues/101)) — downloads the frozen `model.txt`/`frequency_table.json` from a GitHub Release asset and SHA-256 verifies before use. Two manifests, not one: `freeze_manifest.json` (training-time provenance) gives a whole-file hash for `model.txt`, and both a whole-file hash (via the new `release_asset_manifest.json`, download authenticity) *and* an inner-`table`-data hash (via `freeze_manifest.json`, content self-consistency — computed before `phase3e_export_frequency_table.py` wraps the table in `_purpose`/`entries`/`table` keys) for `frequency_table.json`, so both files get an unambiguous double-checked "SHA-256 verified download" guarantee. No new dependency: shells out to `curl`, matching this repo's existing `scripts/fetch_chembl_approved.py` convention. `model.txt` is deliberately not bundled into the crates.io/PyPI/npm packages themselves — its USPTO-50k training data's license is undocumented upstream (see `docs/guides/open-source-retrosynthesis-comparison.md`'s "Known gaps") — so this script is the "batteries-included" path instead: one command, downloaded from a versioned release asset with cryptographic provenance, rather than silently bundling a research-provenance artifact into an MIT-licensed package. (`frequency_table.json` is already committed/bundled — this script re-verifies it too for a single consistent command, not because it was otherwise unavailable.) **Canonical assets stay pinned to the `v0.22.0` release** (the release that actually produced this frozen model) — `release_asset_manifest.json`'s `release_tag` is the source of truth the fetch script's default `--version` resolves from, deliberately *not* the crate's own current version, so this script keeps working unmodified across future version bumps that don't re-issue the model. `model.txt`/`frequency_table.json` are live on that release today, independently confirmed via GitHub's own server-side asset digest; a future correction ships as a new release version rather than overwriting these in place.
+
+### Fixed
+- A 5-agent independent review pass on the above (PR #108) found and fixed 7 issues before merge, most significantly: `fetch_reranker_model.py`'s `--version` had originally defaulted from `Cargo.toml`'s crate version instead of the asset manifest's own `release_tag` — would have silently broken the documented zero-arg invocation on this very release's version bump, caught and fixed before it could ship; and `find_routes_py` initially didn't surface `reranker_failures`, reopening an observability gap PR #106's own review had already closed for the CLI.
+
+## [0.22.0] — 2026-08-11
+
+### Added
+- **`renkin` CLI** — `--search-diagnostics` flag adds a `search_diagnostics` block (beam eviction counts and scores, cross-template duplicate precursor-signature count, rule-application attempts, stock-terminal/non-stock candidate counts, depth-wise branching factor, hypothetical same-/cross-template dedup counts) to JSON output, on both the route-found and no-route-found paths ([#101](https://github.com/kent-tokyo/renkin/issues/101)). Diagnostics-only: the counters are bookkeeping added at points `find_routes`'s search loop already visits — they do not change candidate expansion, scoring, pruning order, or default output (the block is omitted, not `null`, unless the flag is passed). Added to trace the beam-width crowd-out effect measured in the Issue #101 100-target sensitivity gate (Conservative × shared-stock, beam 100/200/300): `route_to_configured_stock` plateaus at beam≥200 while timeouts and p95 latency keep growing, and one target (`L1541`) is solved only at beam=200 — lost again at beam=300 — a non-monotonic result inconsistent with a pure beam-budget explanation, motivating this instrumentation over simply raising the default beam width.
+- **`renkin` CLI** — `--candidate-trace-limit <N>` (implies `--search-diagnostics`): collects up to `N` per-candidate trace records (parent molecule, generating template/provenance, precursor signature, f-score, beam rank at each prune it was subject to, whether it survived, whether it later fed a returned route) into `search_diagnostics.candidate_trace`, in first-generated (deterministic) order — competitive-diagnostics program Phase 1B, offline use only. Collection is gated by a new `SearchConfig::candidate_trace_cap: Option<usize>` field (`None` by default): unlike the always-on aggregate counters above, per-candidate records are real per-search allocation, so the no-trace path (the overwhelming majority of calls) does zero extra work beyond one `Option` check per candidate. Diagnostics-only in the same sense as `--search-diagnostics` — nothing about which candidates are expanded, scored, kept, or in what order changes.
+- **Real-data-trained candidate reranking** ([#101](https://github.com/kent-tokyo/renkin/issues/101) Task 35, [#105](https://github.com/kent-tokyo/renkin/pull/105)/[#106](https://github.com/kent-tokyo/renkin/pull/106)) — the RETROSPECT-inspired candidate-reranking foundation from v0.19.0 (feature schema v1, candidate-pool exporter, offline gate tooling — until now infrastructure only, self-tested against synthetic data) has been trained on real ground-truth labels and, separately, wired into route search as an ordering-only option:
+  - **Offline training/gate infrastructure** (#105): real USPTO-50k ground-truth labels for all 4,903 formal-TEST-quarantined targets, with train/val kept structurally decontaminated from the TEST set; a new `renkin-canonicalize`/`renkin-pool-gen` CLI pair for batch candidate-pool generation, scaled from 100 to full 39,927-group TRAIN / 4,931-group VAL pools; a canonical-identity safety audit confirming a ~0.27% canonicalization drift rate produces no chirality flips (RDKit InChI-confirmed); LightGBM training on the full TRAIN pool.
+  - **Formal offline gate: PASS.** VAL screening gate (top1 +11.68pp, MRR +11.25pp, top10 +9.35pp, all 5 checks passed) matched in magnitude by the formal, held-out 4,903-target TEST gate run exactly once against the model frozen immediately after VAL passed — no sign of VAL-specific overfitting: end-to-end top1_hit_rate **16.40% → 29.13% (+12.72pp)**, mean_reciprocal_rank **28.62% → 40.49% (+11.87pp)**, top10_hit_rate **53.99% → 63.08% (+9.08pp)**, paired-bootstrap top1 delta 95% CI `[0.1142, 0.1401]` (lower bound positive). Error taxonomy across the 4,903 TEST groups: 1,742 groups improved by reranking vs. 416 regressed (net **+1,326**, ~4.2:1 win:loss ratio by count). **1,618 of 4,903 TEST groups (33.0%) have zero positive candidates in their own pool** — a candidate-*generation* coverage gap that reranking, which can only reorder candidates already proposed, cannot close by construction; this is the ceiling on what reranking alone can fix, unchanged by this work. This offline gate evaluates candidate-*ranking* quality only — it is not a 4,903-target route-search benchmark, and makes no route-search claim.
+  - **Runtime integration** (#106): the frozen model wired into `find_routes`'s hot loop as an ordering-only rank bonus on `template_bonus`'s existing `[0.0, 0.2]` scale (replacing it, not adding to it) — candidate set and cardinality are unchanged either way, only which node a given `step_cost` explores first. New `--reranker-model <path>`/`--reranker-freq-table <path>` CLI flags; omitting either (the default) reproduces legacy ordering byte-for-byte (verified: 99/100 targets byte-identical stdout across a 100-target gate, the one exception a wall-clock timeout-boundary flip unrelated to the code path); a missing pair or a model/table load failure warns to stderr and falls back to legacy ordering rather than failing the run; a mid-run inference failure disables the reranker for the remainder of that run and is counted (`reranker_failures`, surfaced in JSON output whenever a reranker is configured). Pure-Rust, from-scratch LightGBM text-model reader (`src/reranker.rs`, no C/C++ dependency, no third-party inference crate), proven bit-exact against Python's `lightgbm.Booster.predict()` on a real 3000-row sample. A fixed 100-target route-search gate (Conservative × shared-stock, beam-width 100, identical corpus/stock/templates/budget, reranker OFF vs. ON) confirms the offline gain converts into a real route-search improvement: `route_to_configured_stock` **16 → 20 of 100 (+4, +25% relative)**, **4 targets newly solved, 0 regressed**, 0 invalid/unparseable routes in either arm, timeout count improved 1→0. One newly-solved target, `L1541`, is notable mechanism evidence: an earlier beam-width sensitivity gate on this same sample found it solved only at `--beam-width 200` (not 100 or 300) — a non-monotonic result that had already ruled out "just raise the beam width" as an explanation. With the reranker on at the *unchanged* default beam width of 100, this target now resolves to a clean, fully-stocked 5-step route with zero validator warnings — consistent with (not proof of) the candidate-ordering/crowd-out hypothesis that beam-width alone could not confirm. This 100-target result is fixed-protocol evidence on one sample, not a re-run of the 4,903-target formal TEST set. No default beam width, timeout, stock, or ring-context policy changed; no PR #104 (open-state dominance) mechanism used; no Yomitoki dependency.
+  - **CLI/Python/WASM surface**: native CLI only in this release — no Python (`find_routes(...)`) or WASM parameter exposes the reranker, and `src/reranker.rs` is excluded from the `wasm32` target entirely. The frozen model itself (`model.txt`, 707 KB) is not distributed via crates.io, PyPI, or npm — only its SHA-256, hyperparameters, and full training provenance are (`freeze_manifest.json`, shipped via crates.io); a `cargo install`/`cargo add renkin` user gets working `--reranker-model`/`--reranker-freq-table` flags and the committed frequency table, but must reproduce the model themselves via the (also-shipped) training pipeline to use them — this is not yet a batteries-included feature.
+
+## [0.21.1] — 2026-08-09
+
+### Fixed
+- **`renkin` lib** — `[#N]`/`[#N:map]` bare atomic-number SMARTS primitives in extracted templates (e.g. `[#7:2]`, "any nitrogen, aromaticity unspecified") no longer silently fail at *apply* time, in retrosynthesis search, `renkin-forward`, or the ring-context safety guard ([#88](https://github.com/kent-tokyo/renkin/issues/88), [#89](https://github.com/kent-tokyo/renkin/pull/89)). Root cause: `chematic::rxn`'s apply-time path (`run_reactants`/`parse_reaction`/`find_reaction_matches`) parses a SMIRKS through the SMILES grammar, which has no spelling for "any element" — while `chem_env::load_rules_from_file`'s load-time validation uses the SMARTS-capable parser, which accepts `[#N]` fine, so load-time success gave no signal about apply-time success. Affected 217/500 templates (~43%) in the frozen benchmark corpus (`data/templates_extracted.smi`), across four independently-broken call sites (`apply_retro`, `renkin-forward`'s product enumeration, the ring-context guard's match-level calls, and `RingContextGuard::load`'s atom-map table construction). Fixed via a shared, cached per-application SMIRKS-variant expansion (`chem_env::application_smirks_variants`): `load_rules_from_file`'s output stays exactly 500 logical rules unchanged, and all `[#N]` handling happens only when a template is applied, with each template's combinatorial space capped at 64 variants (falls closed as `Unsupported { VariantLimitExceeded }` beyond the cap rather than silently truncating) and outcomes deduped by canonical-product signature. Figures from the optional, gitignored, locally generated 5,000-template corpus (`_5000.smi`, loaded only via explicit `--templates`, never a shipped default) are local diagnostics on one unverified local file, not auditable results. On this corpus, PR #89 alone initially left 154 templates over the 64-variant cap (`VariantLimitExceeded`); PR #91's spectator-atom grouping (below) reduces the shipped v0.21.1 result to **0 `VariantLimitExceeded` among the 4,999 loaded templates**. See PR #89 for full root-cause analysis, corpus statistics, and the regression/compatibility test list (candidate-pool exporter, ONNX scorer shape contract, ring-context sidecar resolution).
+- **`renkin` lib** — the hash-atom fix above (PR #89, as merged) had its own bug: independent per-side aromaticity was applied to every shared atom-map, including pure spectators unchanged by the reaction, which could produce an internally inconsistent product (`Atom { aromatic: true }` with no incident aromatic/ring bonds) ([#90](https://github.com/kent-tokyo/renkin/issues/90), [#91](https://github.com/kent-tokyo/renkin/pull/91)). A re-audit of the prior 100-target measurement found this across all 4 arms — 3 outright invalid routes plus 2 silent regressions (a previously-valid route replaced by an invalid one), 5 distinct targets, invisible to a raw `route_found` count alone. Fixed by (1) classifying each shared atom-map as `Spectator`/`ReactionCenter`/`Unknown` and only letting confirmed `ReactionCenter` atoms take independent per-side aromaticity, and (2) a new atom-level aromaticity-integrity check on the raw, just-constructed product (before any canonicalizing round-trip could hide the defect), wired into all three of #88's call sites. A fresh 3-way 100-target re-run (pre-#89 baseline / #89-as-merged / this fix) confirms **0 invalid or unparseable routes across all 4 arms** with this fix applied. **The 16→21 (`Disabled`)/14→16 (`Conservative`) `route_found_rate` figures previously reported for PR #89 are withdrawn as official numbers** — they were measured against the buggy pre-#91 binary; see PR #91 for the corrected per-target breakdown. This fix does not claim general coverage improved. A pre-existing, unrelated beam-width crowd-out limitation remains documented and unfixed: `uspto50k_test#L1541` is not solved at `--beam-width 100` (in either policy) because the now-larger set of real per-node candidates competes for the same fixed beam budget; `--beam-width 300` recovers the identical route found before the hash-atom fix. Issue #88 stays open.
+
+### Changed
+- **`chematic` dependency** — updated `0.10.0` → **`0.11.0`** (root crate, `renkin-forward`, and the optional `chematic-rxn` perf-instrumentation dependency, kept in lockstep). Merged via three separate Dependabot PRs, each green on CI; no RENKIN source changes were required for the bump itself.
 
 ## [0.21.0] — 2026-08-05
 
 ### Added
 - **Ring-context safety guard for extracted templates** ([#72](https://github.com/kent-tokyo/renkin/issues/72)): an opt-in, match-level filter gating `data/templates_extracted_*.smi` application through chematic 0.10.0's match-level API (`find_reaction_matches`/`apply_reaction_match`, [chematic#225](https://github.com/kent-tokyo/chematic/issues/225)). Extracted templates carry no ring-membership information at all (confirmed both by reading `rdchiral`'s own source and by re-running the full 40,008-reaction USPTO-50k extraction — see #72's posted comment), so a bare SMARTS match can't tell whether a given disconnection is breaking a ring open; a template whose training occurrences were overwhelmingly non-ring can still pattern-match a ring bond in an unrelated target and silently produce a structurally wrong precursor (`extracted_9`'s original failure). `scripts/generate_ring_context_metadata.py` re-derives, for each of the 500 checked-in templates' changed (deleted) mapped bonds, a `RingBondIntent` (`Ring`/`NonRing`/`Either`/`Unknown`) from the REAL product molecule of every historical source reaction, keyed by `smirks-sha256:<hex>` (the same stable `RetroRule::template_id` extracted templates already carry — not `extracted_N`, an unstable, re-extraction-order-dependent line position). Each raw SMARTS-pattern match against a real product is cross-checked against that specific historical reaction's actual formed/deleted bond (independently re-derived from the dataset's own atom-mapped reactants/product, `product_bonds - reactant_bonds`) before counting it as an observation — a template's LHS pattern can coincidentally match elsewhere in the same molecule at a site the reaction never touched, and counting every such incidental match (an earlier draft of this generator did) inflates `Either` classifications and silently permits exactly the ring-opening misapplication this guard exists to catch. Re-running the corrected generator over the full corpus dropped `Either` from 62 to 18 changed bonds (all 44 flips moved `Either → NonRing`, none towards `Ring` or `Unknown`) and left `extracted_9` (Issue #72's original template) at 231/231 non-ring observations, exactly its checked-in occurrence count. The dataset revision is pinned by default (`PINNED_DATASET_REVISION`, the exact commit the checked-in sidecar was generated from — `--resolve-latest` opts into dynamic Hub-API HEAD resolution instead, for a deliberate re-baseline); regenerating twice at the pinned revision reproduces byte-identical output. `scripts/requirements-ring-context.txt` pins the generator's own (non-runtime) Python dependencies. New `renkin` CLI flag values: `--ring-context-policy <disabled|audit-only|conservative|ring-only|element-only>` / `--ring-context-sidecar <path>`. `Disabled` (the default) is completely untouched — `SearchConfig::ring_context` defaults to `RingContextConfig::Disabled`, delegating straight to the pre-existing `apply_retro`; non-`Disabled` policies always carry a loaded guard (`RingContextConfig::Guarded { guard, policy }`) — there is no representable "enforce without a guard" state, unlike an earlier draft of this API that paired a policy enum with an `Option<Guard>` and silently fell back to legacy behavior when the guard was absent. `policy` is two independent axes (`ExtractedTemplateSafetyPolicy { ring_context, element_accounting }`, each `AuditOnly` or `Enforce`): `audit-only` sets both to `AuditOnly` (classifies everything, always returns the legacy output verbatim — byte-identical to `Disabled` by construction); `conservative` sets both to `Enforce`; `ring-only`/`element-only` enforce one axis while leaving the other diagnostic-only, isolating each gate's individual contribution for measurement. Diagnostics are exposed via `--verbose`'s existing stderr path (a new `ring_context_diagnostics` JSON line), not the stdout route schema, to avoid any risk to existing JSON consumers. `RingContextGuard::load` hard-fails (never silently degrades) on: a `template_file_sha256` mismatch, incomplete or extra sidecar template coverage against the loaded `.smi` file, a sidecar entry keyed under the wrong `template_id_for_smirks`, a duplicate or self-loop changed bond, a declared `intent` that doesn't match what its own observation counts recompute to, or a changed bond that doesn't independently re-derive as LHS-minus-RHS from its own SMIRKS. The guard's effective coverage is bounded by the same pre-existing `chematic::rxn::parse_reaction` gap `hints` already documents above (500/500 vs. 283/500): 217/500 checked-in templates already fail to parse via the concrete-application path on unmodified `master` (an unrelated, pre-existing limitation, not introduced here) and so never reach match classification either way. 40+ new tests across `src/ring_context.rs` and `scripts/tests/test_generate_ring_context_metadata.py`, anchored by an end-to-end regression using the real `extracted_9` template against a real isoindolinone (the same defect class as #72's original `L984` failure — a lactam ring N–C(=O) bond `extracted_9`'s training data never saw as a ring bond): `Conservative` correctly rejects the match the legacy path still misapplies. See `docs/design/ring-context-guard-100-target-gate.md` for the 100-target six-arm measurement (`Disabled`/`AuditOnly`/`Conservative`/`RingOnly`/`ElementOnly`, plus a same-process `Conservative` determinism repeat) and a shared-stock (393-compound `data/comparison/shared_stock/shared_stock.smi`) confirmatory 3-arm rerun reproducing the identical target-level result.
+- **`renkin-forward` CLI** — `renkin-forward benchmark --corpus <path.jsonl> --output-rows <path.jsonl> [--output-report <path.json>] [--template-source embedded|file|train-extracted] [--templates <path>] [--strict]`: standalone, deterministic forward-prediction benchmark harness measuring proposal coverage and ranking quality *separately* — the frozen protocol and harness (Phase 0 + Phase 1) of [#61](https://github.com/kent-tokyo/renkin/issues/61). Corpus is a user-supplied JSONL file (never bundled, like the existing ORD evidence-import corpus); leakage-safe train/val/test splitting is `SHA-256(group_key) mod 100` at the same 70/85 cutoffs as `scripts/train_reranker.py`'s reranker split, grouped by canonical reactant multiset (or an explicit corpus-supplied `group_key`, resolved across all duplicate occurrences of a reaction, never just the first-encountered one) — never by accepted products, so an ambiguous multi-outcome reaction never splits across train and test. Reaction identity and group-key hashing clear reaction atom-map numbers structurally (via `MoleculeBuilder`, not a text strip) before hashing, so two rows encoding the same reaction with different atom-map spelling dedupe and split identically; a conflicting explicit `group_key` or a `reaction_id` reused for genuinely different chemistry rejects the whole reaction rather than guessing. `--template-source file` uses *only* the given rule file, never merged with embedded defaults; `train-extracted` is a recognized-but-hard-rejected mode until a `--template-manifest` can verify the train-only split boundary (loading it exactly like `file` today would be an unverifiable label, not a guarantee). One output row per reaction with full provenance (including a `rules_content_sha256`/`cargo_lock_sha256`/`config_sha256`/`reproducibility_sha256` reproducibility bundle, populated for every `template_source`), min/max/mixed accepted-product arity, best-correct-rank, top-1/5/10 hit, and both a stereochemistry-aware hit and a tri-state (`hit`/`no_hit`/`unsupported`) stereochemistry-ignored outcome — computed via a structural chirality/bond-direction clear, never a text strip. Four orthogonal per-row status fields (`input_status`/`proposal_status`/`ranking_status`/`stereo_status`) decompose the legacy coarse `failure_reason` into independently-meaningful dimensions (the legacy field is now *derived* from them, so the two can never disagree, and a constructor-level check rejects any row whose statuses contradict each other or `best_correct_rank`). `ndcg_at_10` is genuine multi-positive binary-relevance NDCG (every candidate matching ANY accepted outcome counts, ideal DCG divides by the true accepted-outcome count); aggregate metrics report conditional and end-to-end top-1/5/10/MRR/NDCG@10/mean-best-rank *separately, never conflated*, broken down by reaction class, reactant count, accepted-product arity, stereochemistry presence, template source, candidate-pool-size bucket, failure reason, and all four orthogonal statuses; a top-level `diagnostics` block gives report-wide warning/error/rejection totals transcribed from already-computed sources, never re-derived. `--strict` promotes every counted-and-continued data-quality issue (malformed JSON, wrong schema version, unparseable SMILES, empty reactants/products, conflicting group key/reaction_id, a per-row prediction failure, a candidate-cap-obscured miss, or incomplete reproducibility provenance) to a whole-run hard error, for a formal/reportable run — a legitimate proposal/ranking/stereo miss never triggers it. Deterministic and byte-identical across repeated runs except each row's `elapsed_ms` and the report's `latency_ms` percentiles. Ships with a small hand-authored synthetic fixture corpus exercising every failure-reason category — not a real benchmark corpus and not an accuracy claim; Phase 2 onward (proposal-coverage improvements, a forward-specific reranker, the acceptance gate, any generative-model decision) is explicitly out of scope for this PR. See the [Forward-Prediction Benchmark guide](docs/guides/forward-benchmark.md).
 - **`renkin-forward` CLI** — `renkin-forward enumerate --reactant <SMILES> [--partners <path>] [--templates <path>] [--max-results N] [--max-partners-per-template N] [--max-combinations N]`: bounded, template-guided forward enumeration foundation for a single known reactant, distinct from `predict` (which requires the caller to supply every reactant). Unary templates apply directly; binary (two-reactant) templates try the known reactant in each compatible LHS slot and search an explicit `--partners` SMILES library for the other slot — never an implicit or embedded corpus. Templates requiring two or more missing partners are always counted and reported as unsupported (`templates_unsupported_arity`), never silently skipped. A known-reactant slot whose atom-map numbers share no overlap with any product (a structural spectator) is skipped before ever calling `run_reactants`. Output is a new, separately-versioned `ForwardEnumerationReport` (`FORWARD_ENUMERATION_REPORT_SCHEMA_VERSION`) with full per-candidate provenance (template, slot, partner row/label), deterministic ranking (`proposal_score` is a ranking signal only, never a probability), and structured stats/warnings/truncation reporting; `ForwardPredictionReport`/`predict`/`validate` are unchanged ([#64](https://github.com/kent-tokyo/renkin/issues/64), follow-up to [#57](https://github.com/kent-tokyo/renkin/issues/57)). Phase 1 foundation only: no partner-side pre-filter (every attempted combination calls `run_reactants` directly, bounded by `--max-partners-per-template`/`--max-combinations`), no large-library benchmark. Malformed `--partners` lines are never a hard error by themselves; up to 20 per-line diagnostics (row index, offending token, parser message) are returned in `partner_load_warnings`, with `stats.partner_records_skipped_malformed`/`partner_diagnostics_truncated` always reporting the true total even once that cap is hit. See the [Forward Enumeration guide](docs/guides/forward-enumeration.md).
 - **`renkin-forward` CLI** — `renkin-forward hints --reactants <SMILES>... [--templates <path>] [--max-hints N] [--max-matches-per-slot N] [--max-assignments-per-template N]`: partner-free retrieval hints, Phase 2 of [#64](https://github.com/kent-tokyo/renkin/issues/64) — an information-assisted-retrieval mode for patent/database search, distinct from both `predict` (concrete products, all reactants known) and `enumerate` (concrete products, one missing partner filled from an explicit library). `hints` never invents a partner molecule and never predicts a concrete product: for every compatible template it reports which slot(s) the known reactant(s) statically match (via `chematic::smarts::parse_smarts` + `find_matches_with_config`, never `run_reactants`), the exact SMARTS query for every still-missing partner slot plus a best-effort conservative feature summary (with an explicit `summary_complete` flag for content this walker can't safely flatten — e.g. an `OR` whose branches disagree, like `[c,C]` aromatic-vs-aliphatic, or a missing-partner query spanning more than one atom/bond, since a flat field summary cannot represent that topology), the bond-forming/breaking/order-changing delta derived purely from atom-map comparison (with a `"directional_unspecified"` fail-closed value for an `up`/`down` bond whose orientation can't be trusted after atom-map sorting), and a product *query pattern* (`product_query_smarts`, never a concrete SMILES). Templates converging on the same retrieval signature (slot roles, missing-partner patterns, bond delta, product patterns) merge into one hint with every contributing template retained, unioning `search_terms` across all sources and marking `reaction_family` as `"ambiguous_across_sources"`/`"mixed"` (rather than keeping whichever source was processed first) when merged sources disagree on a rule_name-derived label. `hints` accepts a strict superset of the SMARTS syntax `predict`/`enumerate` can run concretely (verified against the real extracted-template corpus: 500/500 vs. 283/500). Output is a new, separately-versioned `ForwardRetrievalHintReport` (`FORWARD_RETRIEVAL_HINT_REPORT_SCHEMA_VERSION`); `ForwardPredictionReport`/`ForwardEnumerationReport`/`predict`/`enumerate` are unchanged. See the [Forward Retrieval Hints guide](docs/guides/forward-retrieval-hints.md).
 - **Open-source retrosynthesis comparison harness** (foundation, [#66](https://github.com/kent-tokyo/renkin/issues/66)): a reproducible, fair-condition comparison between RENKIN and AiZynthFinder, distinct from the existing (explicitly non-matched) planner comparison table. Adds a versioned `PlannerComparisonRow` JSONL schema with a closed `tool` enum (`renkin`/`aizynthfinder` only — no commercial platform can be constructed here, enforced by three separate tests), a tool-agnostic common route DAG representation with a normalized route hash that is identical across tools for the same proposed disconnection, common post-hoc validation (structural parseability, stock-leaf matching, a directional per-element `target_element_accounting_status` check — NOT exact mass conservation — a closed structural-warning taxonomy) applied identically to both tools' output, a deterministic domain-separated target-sampling algorithm producing nested 100/500/4,903 subsets from `data/uspto50k_test.smi` (4,903 after canonical-SMILES dedup — kept explicitly distinct from the historical 4,907-row RENKIN-only corpus), adapters wrapping the existing unmodified `renkin` CLI and `aizynthcli` (via a new `docker/aizynthfinder.Dockerfile`, linux/arm64, no upstream source modification), a shared-stock construction path (`scripts/compare_shared_stock.py`: RENKIN's building-block list parsed directly with RDKit, InChIKeys written straight to an AiZynthFinder-format HDF5 — bypassing `smiles2stock`'s lossy conversion pipeline entirely, for a guaranteed zero-diff identity between both tools' stocks), and paired-statistics infrastructure (bootstrap CI, exact McNemar test) for future larger-sample rounds. Commercial platforms (SciFinder, Reaxys, etc.) are explicitly out of scope; ASKCOS is assessed feasibility-only this round and classified `reproducible_with_manual_setup` (see [ASKCOS feasibility](docs/comparison/askcos-feasibility-issue-66.md)) — no ASKCOS adapter exists. This round covers foundation + a 100-target feasibility measurement (including a per-target audit of every RENKIN-solved route and a stratified verification of AiZynthFinder's step-extraction — see `data/comparison/results_100/per_target_audit.md`); AiZynthFinder repeat-run variance was subsequently characterized (`data/comparison/results_100_repeatability/repeatability_report.md`) and the formal 500-target comparison has since been run — see the entry below. The 4,903-target full-corpus comparison remains not started. See the [comparison guide](docs/guides/open-source-retrosynthesis-comparison.md).
@@ -708,6 +1791,40 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
 
 ---
 
-[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v0.53.0...HEAD
+[0.54.0]: https://github.com/kent-tokyo/renkin/compare/v0.53.0...v0.54.0
+[0.53.0]: https://github.com/kent-tokyo/renkin/compare/v0.52.0...v0.53.0
+[0.52.0]: https://github.com/kent-tokyo/renkin/compare/v0.51.0...v0.52.0
+[0.51.0]: https://github.com/kent-tokyo/renkin/compare/v0.50.0...v0.51.0
+[0.50.0]: https://github.com/kent-tokyo/renkin/compare/v0.49.0...v0.50.0
+[0.49.0]: https://github.com/kent-tokyo/renkin/compare/v0.48.0...v0.49.0
+[0.48.0]: https://github.com/kent-tokyo/renkin/compare/v0.47.0...v0.48.0
+[0.47.0]: https://github.com/kent-tokyo/renkin/compare/v0.46.0...v0.47.0
+[0.46.0]: https://github.com/kent-tokyo/renkin/compare/v0.45.0...v0.46.0
+[0.45.0]: https://github.com/kent-tokyo/renkin/compare/v0.44.0...v0.45.0
+[0.44.0]: https://github.com/kent-tokyo/renkin/compare/v0.43.0...v0.44.0
+[0.43.0]: https://github.com/kent-tokyo/renkin/compare/v0.42.0...v0.43.0
+[0.42.0]: https://github.com/kent-tokyo/renkin/compare/v0.41.0...v0.42.0
+[0.41.0]: https://github.com/kent-tokyo/renkin/compare/v0.40.0...v0.41.0
+[0.40.0]: https://github.com/kent-tokyo/renkin/compare/v0.39.0...v0.40.0
+[0.39.0]: https://github.com/kent-tokyo/renkin/compare/v0.38.0...v0.39.0
+[0.38.0]: https://github.com/kent-tokyo/renkin/compare/v0.37.0...v0.38.0
+[0.37.0]: https://github.com/kent-tokyo/renkin/compare/v0.36.0...v0.37.0
+[0.36.0]: https://github.com/kent-tokyo/renkin/compare/v0.35.0...v0.36.0
 [0.1.1]: https://github.com/kent-tokyo/renkin/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/kent-tokyo/renkin/releases/tag/v0.1.0
+## [0.59.0] - 2026-08-31 "Coverage Benchmark Observability"
+
+### Added
+- Added aggregate Stage 1/Stage 2 selection, invocation, and timeout counts
+  to `renkin-bench` coverage-mode reports for direct paired comparisons.
+- Added regression coverage for the new benchmark summary fields while
+  preserving standard-mode report output.
+## [0.60.0] - 2026-08-31 "Evidence-Aware Benchmark Contract"
+
+### Added
+- Added optional template-evidence sidecar loading to `renkin-bench`.
+- Added best-route counts for attached evidence, exact-substrate examples,
+  reported yields, and condition candidates without fabricating predictions.
+- Added aggregate evidence coverage totals while preserving standard-mode
+  output when no sidecar is supplied.

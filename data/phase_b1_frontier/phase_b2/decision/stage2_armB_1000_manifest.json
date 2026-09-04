@@ -1,0 +1,100 @@
+{
+  "binary_sha256": "6aafd9ea83fb06563cc1e9075fe4b7924758d59d5257088a6cf2ff1bdc610636",
+  "command_line": [
+    "scripts/compare_run.py",
+    "--tool",
+    "renkin",
+    "--comparison-mode",
+    "shared_stock",
+    "--sample-list",
+    "data/phase_b1_frontier/phase_b2/decision/stage1_unsolved_sample.jsonl",
+    "--sample-size",
+    "167",
+    "--templates",
+    "data/phase_a5_template_scaling/templates/templates_1000.smi",
+    "--renkin-binary",
+    "target/release/renkin",
+    "--beam-width",
+    "100",
+    "--timeout-s",
+    "600",
+    "--grace-s",
+    "20",
+    "--resume",
+    "--output-rows",
+    "data/phase_b1_frontier/phase_b2/decision/stage2_armB_1000_rows.jsonl",
+    "--output-aggregate",
+    "data/phase_b1_frontier/phase_b2/decision/stage2_armB_1000_aggregate.json",
+    "--manifest-path",
+    "data/phase_b1_frontier/phase_b2/decision/stage2_armB_1000_manifest.json"
+  ],
+  "comparison_mode": "shared_stock",
+  "docker_image": null,
+  "docker_image_digest": null,
+  "end_environment": {
+    "battery_raw": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22478947)\t100%; charged; 0:00 remaining present: true",
+    "caffeinate_active": true,
+    "caffeinate_raw": "980 caffeinate -dimsu",
+    "cpu_count": 10,
+    "disk_free_raw": "Filesystem      Size    Used   Avail Capacity iused ifree %iused  Mounted on\n/dev/disk3s5   228Gi   183Gi    20Gi    91%    4.0M  209M    2%   /System/Volumes/Data",
+    "load_average": [
+      11.3837890625,
+      10.259765625,
+      9.80810546875
+    ],
+    "os": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "power_source": "ac",
+    "ram_bytes": 17179869184,
+    "top_cpu_processes_raw": [
+      "PID  %CPU COMM",
+      " 7892  39.7 /System/Library/PrivateFrameworks/StorageManagement.framework/PlugIns/StorageManagementService",
+      " 7951   2.3 /System/Library/PrivateFrameworks/StorageManagement.framework/PlugIns/ApplicationsStorageExtension.appex/Contents/MacOS/ApplicationsStorageExtension",
+      " 7878   0.6 /System/Library/ExtensionKit/Extensions/Storage.appex/Contents/MacOS/Storage",
+      "49300   0.1 claude",
+      "  421   0.1 /System/Library/PrivateFrameworks/CoreAnalytics.framework/Support/analyticsd",
+      "  395   0.1 /usr/sbin/notifyd",
+      "  402   0.1 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+    ]
+  },
+  "end_time_unix": 1786674642.745301,
+  "git_commit": "ae7f7698daa8681d811a230b47d85f494436f059",
+  "input_file_sha256": {
+    "sample_list": "a7584f2271db2de77ed10ca05688cddc6d1d603c1921049672acb4184046fcaf",
+    "stock": "9046b2e234efd32a44c9209f1f80c4162ca35c1629deaf3b69d4dfcc82de38b9",
+    "templates": "8192b59943e5db6f18da85cff591a2a3ffdffa2b3c53c756b8759f41fba97adb"
+  },
+  "input_file_sha256_at_end": {
+    "sample_list": "a7584f2271db2de77ed10ca05688cddc6d1d603c1921049672acb4184046fcaf",
+    "stock": "9046b2e234efd32a44c9209f1f80c4162ca35c1629deaf3b69d4dfcc82de38b9",
+    "templates": "8192b59943e5db6f18da85cff591a2a3ffdffa2b3c53c756b8759f41fba97adb"
+  },
+  "input_files_unchanged_during_run": true,
+  "ring_context_policy": "disabled",
+  "start_environment": {
+    "battery_raw": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22478947)\t100%; charged; 0:00 remaining present: true",
+    "caffeinate_active": true,
+    "caffeinate_raw": "980 caffeinate -dimsu\n16170 caffeinate -i -t 300\n16542 caffeinate -i -t 300",
+    "cpu_count": 10,
+    "disk_free_raw": "Filesystem      Size    Used   Avail Capacity iused ifree %iused  Mounted on\n/dev/disk3s5   228Gi   180Gi    22Gi    90%    4.0M  228M    2%   /System/Volumes/Data",
+    "load_average": [
+      7.97265625,
+      8.822265625,
+      8.63720703125
+    ],
+    "os": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "power_source": "ac",
+    "ram_bytes": 17179869184,
+    "top_cpu_processes_raw": [
+      "PID  %CPU COMM",
+      " 7892  65.7 /System/Library/PrivateFrameworks/StorageManagement.framework/PlugIns/StorageManagementService",
+      "  506  60.8 /usr/libexec/syspolicyd",
+      "16746  28.8 /Library/Frameworks/Python.framework/Versions/3.13/Resources/Python.app/Contents/MacOS/Python",
+      "49300  21.6 claude",
+      "33737  19.1 claude",
+      "  402   4.8 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+      "99778   4.5 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/151.0.7922.109/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)"
+    ]
+  },
+  "start_time_unix": 1786666597.337885,
+  "tool": "renkin"
+}

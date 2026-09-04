@@ -148,10 +148,10 @@ before the tool handler runs — a modern `tools/call` that violates the
 schema never reaches RENKIN's search code; it gets `-32602 Invalid Params`
 immediately.
 
-Legacy schemas are **not** modified to match — they remain exactly what
-2024-11-05 clients have always seen, with no `$schema`, no
-`additionalProperties`, and no numeric bounds, to avoid breaking any
-existing client that relies on the old permissive shape.
+Legacy schemas remain permissive: they have no `$schema` or
+`additionalProperties: false`, and only retain constraints already exposed
+by the pre-refactor server. In particular, both eras advertise RENKIN's
+existing opt-in progressive coverage-search fields on `find_routes`.
 
 ### Structured tool output
 
@@ -197,10 +197,12 @@ responses rather than advertised empty.
 ## Conformance
 
 This implementation's modern wire shapes were checked directly against the
-official draft schema (`schema.ts` / `schema.json`) and example fixtures
-vendored at `tests/fixtures/mcp/2026-07-28-rc/`, not inferred from blog posts
-or SDK behavior — see that directory's `README.md` for exact commit/SHA-256
-provenance.
+official RC schema (`schema.ts` / `schema.json`) and example fixtures
+vendored at `tests/fixtures/mcp/2026-07-28-rc/`, then compared with the
+official `2026-07-28` GA tag. The GA delta only renames and extends
+`subscriptions/listen` types and updates documentation links; it does not
+change the stdio/tool subset implemented here. See the fixture README for
+exact hashes and provenance.
 
 The official `modelcontextprotocol/conformance` suite was checked at commit
 `a865118206d4d8cc8dbc5f5201607839281d0c3b` (2026-07-23). At that commit it is
@@ -217,13 +219,13 @@ stdio-server conformance run has been performed.
 
 ## Schema pinning and the final-spec delta check
 
-At the time this was implemented, `2026-07-28` was a release candidate —
-`schema/draft/` in the official spec repository, with
-`LATEST_PROTOCOL_VERSION = "2026-07-28"` already set, and GA expected
-2026-07-28. See `tests/fixtures/mcp/2026-07-28-rc/README.md` for the exact
-pinned commit and hashes, and the PR that introduced this guide for whether
-a post-GA delta check against `schema/2026-07-28/` (once published) found
-any wire-shape changes.
+The implementation was originally pinned to RC commit
+`7634684382c3d14cf7e9f14073fe40a2d8ace3fa`. The final-spec delta check was
+completed against the official `2026-07-28` GA tag on 2026-09-05. The JSON
+and TypeScript schemas differ only in `subscriptions/listen` additions and
+documentation-link paths, outside RENKIN's declared scope; no implemented
+wire shape or error code changed. See `tests/fixtures/mcp/README.md` for the
+recorded hashes.
 
 ## Troubleshooting
 

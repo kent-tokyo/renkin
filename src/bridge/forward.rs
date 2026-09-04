@@ -1,0 +1,666 @@
+//! RENKIN Bridge PR4: declared-reaction-replay forward validation.
+//!
+//! Deliberately narrow, per the P0 scope decision: only ever replays the ONE
+//! reaction a route step already claims to have used (via `template_id` for
+//! a RENKIN-native step, or whatever reaction representation a competitor's
+//! route metadata carries) -- never a brute-force scan over the whole rule
+//! set, never a forward-candidate search, never network/DOI/condition/yield
+//! prediction. Missing or ambiguous reaction evidence reports
+//! `not_evaluable`, not a guessed pass/fail -- this is *expected*, not a
+//! shortfall, for e.g. an AiZynthFinder route whose `ReactionTree.to_dict()`
+//! export is documented lossy, and whose reaction-node metadata schema this
+//! codebase has no adapter for yet (see `bridge::route_graph::ReactionEvidence`).
+//!
+//! Reuses `validation::forward::matches_target` (canonical-string equality +
+//! stereo-gated VF2 structural fallback) rather than duplicating it. The
+//! replay loop itself (SMIRKS-reversal + `run_reactants`) is intentionally
+//! NOT shared with `validation::forward::rule_reverses_to`: that function is
+//! live in `renkin-bench` with its own regression tests guarding its exact
+//! bool-collapsing behavior, and this module needs a richer, reason-coded
+//! outcome plus a two-orientation retry for AiZynthFinder evidence (see
+//! [`validate_step_forward`]) that `rule_reverses_to` doesn't need. Reshaping
+//! a live, tested function for a new caller is worse than a small,
+//! well-documented duplication.
+
+use std::collections::HashMap;
+
+use chematic::rxn::{TransformError, run_reactants};
+use chematic::smarts::{QueryMolecule, parse_smarts};
+use chematic::smiles::canonical_smiles;
+use serde::Serialize;
+
+use crate::bridge::audit::CheckStatus;
+use crate::bridge::route_graph::ReactionEvidence;
+use crate::chem_env::{Molecule, RetroRule, mol_from_smiles};
+use crate::validation::forward::matches_target;
+
+/// Reason a step's forward validation couldn't reach a pass/fail verdict.
+/// Minimum set required by the P0 spec -- distinguishes "no reaction
+/// representation at all" from "had one but couldn't apply it" so a caller
+/// can tell an AiZynthFinder metadata gap apart from a genuine replay error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ForwardNotEvaluableReason {
+    MissingReactionRepresentation,
+    MissingAtomMapping,
+    UnsupportedReactionFormat,
+    UnsupportedTemplateSyntax,
+    ReactionApplicationError,
+    AmbiguousExpectedProduct,
+}
+
+/// Which evidentiary channel [`declared_smirks`] actually resolved a SMIRKS
+/// through, independent of `status`/`reason` -- `method` is always
+/// `"declared_reaction_replay"` regardless of which of these applies, so
+/// this is the only field that distinguishes "an independently-declared
+/// rule template was replayed" from "a forward SMIRKS was derived from this
+/// same step's own claimed outcome and then round-tripped" from "an
+/// external planner's own reaction record was replayed". A `pass` under
+/// `DerivedGraphRuleRoundtrip` is real but weaker evidence than a `pass`
+/// under `DeclaredRuleTemplate` or `SourceToolReaction`: the SMIRKS didn't
+/// exist independently of this step's declared precursors, so the replay
+/// is closer to a round-trip consistency check on `chematic`'s own engine
+/// than an independent confirmation -- see
+/// `chem_env::declared_forward_smirks`'s own doc comment and
+/// `docs/design/retro-rule-precision-gaps-v0.md` #5 for the full story.
+/// This is a from-classification (which channel *was consulted*), not a
+/// strength ranking -- don't read the variant order as a quality scale.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EvidenceBasis {
+    /// A `RetroRule`'s own independently-authored `smirks` string, resolved
+    /// via `rules_by_template_id` -- always the case for a SMIRKS-based
+    /// rule (`RenkinTemplate.declared_smirks` is `None`, and the corpus
+    /// lookup finds a real, non-empty `RetroRule::smirks`). A graph-based
+    /// rule step can also reach `declared_smirks()`'s corpus-lookup branch
+    /// this way (e.g. `declared_forward_smirks` couldn't derive evidence
+    /// for the claimed precursors, so `RenkinTemplate.declared_smirks` is
+    /// `None` too) -- but for that branch, `rule.smirks.is_empty()` is
+    /// always true by construction (every real caller -- CLI, WASM,
+    /// Python -- audits against `chem_env::default_rules()`, where every
+    /// graph-based rule's `smirks` is `""`), so resolution fails there
+    /// before a basis is ever assigned; see `ForwardValidationResult::
+    /// evidence_basis`'s own doc comment for why that case reports `None`,
+    /// not this variant.
+    DeclaredRuleTemplate,
+    /// `ReactionEvidence::RenkinTemplate`'s inline `declared_smirks` field:
+    /// a forward SMIRKS `chem_env::declared_forward_smirks` derived by
+    /// re-running a graph-based rule's own cleavage function against this
+    /// exact step's target and matching the outcome to its declared
+    /// precursors (PR #173) -- never present for a SMIRKS-based rule.
+    DerivedGraphRuleRoundtrip,
+    /// AiZynthFinder / Syntheseus / SynPlanner's own reaction record.
+    SourceToolReaction,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ForwardValidationResult {
+    pub status: CheckStatus,
+    pub method: &'static str,
+    /// `None` whenever no SMIRKS was ever resolved to replay -- no
+    /// `ReactionEvidence` at all, or resolution itself failed (e.g. an
+    /// unresolvable `template_id`, an empty declared SMIRKS). `Some` from
+    /// the moment a real SMIRKS was found onward, including a subsequent
+    /// `not_evaluable` (e.g. `MissingAtomMapping`) -- there the channel is
+    /// known, it just didn't reach a pass/fail verdict. Never guess a basis
+    /// for a step that never had a SMIRKS to point to.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub evidence_basis: Option<EvidenceBasis>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<ForwardNotEvaluableReason>,
+}
+
+const METHOD: &str = "declared_reaction_replay";
+
+fn not_evaluable(
+    reason: ForwardNotEvaluableReason,
+    evidence_basis: Option<EvidenceBasis>,
+) -> ForwardValidationResult {
+    ForwardValidationResult {
+        status: CheckStatus::NotEvaluable,
+        method: METHOD,
+        evidence_basis,
+        reason: Some(reason),
+    }
+}
+
+fn pass(evidence_basis: EvidenceBasis) -> ForwardValidationResult {
+    ForwardValidationResult {
+        status: CheckStatus::Pass,
+        method: METHOD,
+        evidence_basis: Some(evidence_basis),
+        reason: None,
+    }
+}
+
+fn fail(evidence_basis: EvidenceBasis) -> ForwardValidationResult {
+    ForwardValidationResult {
+        status: CheckStatus::Fail,
+        method: METHOD,
+        evidence_basis: Some(evidence_basis),
+        reason: None,
+    }
+}
+
+/// Weak/permissive check: at least one atom-map marker (`:` + digit) is
+/// present anywhere. Doesn't require every atom mapped -- RENKIN's own
+/// hand-crafted rules only map the atoms they need to track (e.g.
+/// `"[C:1][O:2]>>[C:1].[O:2]"`) -- only flags total absence, matching this
+/// reason code's name.
+fn has_atom_mapping(smirks: &str) -> bool {
+    let bytes = smirks.as_bytes();
+    bytes
+        .windows(2)
+        .any(|w| w[0] == b':' && w[1].is_ascii_digit())
+}
+
+/// Resolve the declared SMIRKS for `evidence`, and whether the caller should
+/// also try it in as-declared orientation (not just RENKIN's own
+/// `target>>precursors` retro convention) -- see [`validate_step_forward`].
+fn declared_smirks<'a>(
+    evidence: &'a ReactionEvidence,
+    rules_by_template_id: Option<&'a HashMap<String, &'a RetroRule>>,
+) -> Result<(&'a str, bool, EvidenceBasis), ForwardNotEvaluableReason> {
+    use ForwardNotEvaluableReason::MissingReactionRepresentation;
+    match evidence {
+        ReactionEvidence::RenkinTemplate {
+            template_id,
+            declared_smirks,
+        } => {
+            if let Some(s) = declared_smirks {
+                if s.is_empty() {
+                    return Err(MissingReactionRepresentation);
+                }
+                return Ok((s.as_str(), false, EvidenceBasis::DerivedGraphRuleRoundtrip));
+            }
+            let rule = rules_by_template_id
+                .and_then(|m| m.get(template_id.as_str()))
+                .ok_or(MissingReactionRepresentation)?;
+            if rule.smirks.is_empty() {
+                return Err(MissingReactionRepresentation);
+            }
+            Ok((
+                rule.smirks.as_str(),
+                false,
+                EvidenceBasis::DeclaredRuleTemplate,
+            ))
+        }
+        ReactionEvidence::AiZynthFinderTemplate { smirks, .. } => {
+            if smirks.is_empty() {
+                return Err(MissingReactionRepresentation);
+            }
+            Ok((smirks.as_str(), true, EvidenceBasis::SourceToolReaction))
+        }
+        // Syntheseus's `reaction_smiles` is a plain `reactants>>product`
+        // string (a computed property, never atom-mapped) -- same
+        // as-declared orientation as AiZynthFinder's own metadata, so this
+        // reuses the identical two-orientation retry. The downstream
+        // `has_atom_mapping` gate then correctly reports `NotEvaluable
+        // (MissingAtomMapping)` for every real Syntheseus route today: not a
+        // gap, an honest reflection of what the source data actually
+        // carries (no adapter here invents atom-mapping that isn't there).
+        ReactionEvidence::SyntheseusReaction { reaction_smiles } => {
+            if reaction_smiles.is_empty() {
+                return Err(MissingReactionRepresentation);
+            }
+            Ok((
+                reaction_smiles.as_str(),
+                true,
+                EvidenceBasis::SourceToolReaction,
+            ))
+        }
+        // SynPlanner's reaction `smiles` is a `reactants>>product` SMIRKS
+        // string, same as-declared orientation as AiZynthFinder/Syntheseus.
+        // Confirmed against real MCTS-searched output (Phase 1 PR1.5): these
+        // strings carry real, forward-replayable atom maps for the case
+        // tested, so this is the one adapter today where the downstream
+        // `has_atom_mapping` gate is expected to actually pass, not just
+        // honestly report `MissingAtomMapping`.
+        ReactionEvidence::SynPlannerReaction { smiles, .. } => {
+            if smiles.is_empty() {
+                return Err(MissingReactionRepresentation);
+            }
+            Ok((smiles.as_str(), true, EvidenceBasis::SourceToolReaction))
+        }
+    }
+}
+
+/// Try each candidate forward-oriented SMIRKS in turn against
+/// `precursor_mols`, looking for a product matching the target. Any match ->
+/// `Pass`, regardless of other non-matching candidates also produced (the
+/// recorded reaction IS reproducible via a legitimate application). No match
+/// and exactly one distinct non-matching product across every orientation
+/// that ran -> a clean `Fail`. No match and more than one distinct product
+/// -> `AmbiguousExpectedProduct`: there's no way to tell whether the
+/// recorded reaction failed or the wrong multi-valued interpretation was
+/// compared.
+///
+/// `orientations` is 1 element for a RENKIN step (the one direction its
+/// retro-convention SMIRKS reverses to) or 2 for AiZynthFinder evidence,
+/// whose storage direction this codebase has no confirmed schema for --
+/// trying both is still replaying the single declared reaction, not a
+/// search over alternatives.
+/// `run_reactants` matches each `.`-separated SMIRKS reactant-side
+/// component against the input reactant list *positionally*, not as an
+/// unordered set -- confirmed empirically against a real AiZynthFinder
+/// route (`tests/fixtures/aizynthfinder/v4.4.1/PROVENANCE.md`'s benzocaine
+/// fixture): the exact same molecules, same SMIRKS, produced zero results
+/// in one precursor order and the correct target in the other. A route's
+/// own precursor list order is not semantically meaningful (it's a set),
+/// so every orientation is tried against every precursor permutation, not
+/// just the order the route happened to list them in -- this is still
+/// replaying the one declared reaction, not searching alternatives: the
+/// SMIRKS and the reactant set are both fixed, only their pairing varies.
+/// Capped at `MAX_PERMUTE_LEN` reactants (6! = 720) to keep cost bounded;
+/// a real per-step reactant count beyond that would be exceptional, and
+/// only the as-given order is tried past the cap.
+const MAX_PERMUTE_LEN: usize = 6;
+
+fn index_permutations(n: usize) -> Vec<Vec<usize>> {
+    if n > MAX_PERMUTE_LEN {
+        return vec![(0..n).collect()];
+    }
+    fn permute(prefix: &mut Vec<usize>, remaining: &mut Vec<usize>, out: &mut Vec<Vec<usize>>) {
+        if remaining.is_empty() {
+            out.push(prefix.clone());
+            return;
+        }
+        for i in 0..remaining.len() {
+            let item = remaining.remove(i);
+            prefix.push(item);
+            permute(prefix, remaining, out);
+            prefix.pop();
+            remaining.insert(i, item);
+        }
+    }
+    let mut out = Vec::new();
+    permute(&mut Vec::new(), &mut (0..n).collect(), &mut out);
+    out
+}
+
+fn replay_orientations(
+    orientations: &[String],
+    target_canon: &str,
+    target_query: Option<&QueryMolecule>,
+    target_atom_count: usize,
+    precursor_mols: &[&Molecule],
+) -> Result<bool, ForwardNotEvaluableReason> {
+    let mut ran_successfully = false;
+    let mut last_error = ForwardNotEvaluableReason::ReactionApplicationError;
+    let mut distinct_products: Vec<String> = Vec::new();
+    let permutations = index_permutations(precursor_mols.len());
+
+    for fwd in orientations {
+        for perm in &permutations {
+            let ordered: Vec<&Molecule> = perm.iter().map(|&i| precursor_mols[i]).collect();
+            match run_reactants(fwd, &ordered) {
+                Err(TransformError::SmirksParse(_)) => {
+                    last_error = ForwardNotEvaluableReason::UnsupportedTemplateSyntax;
+                }
+                Err(TransformError::ReactantCountMismatch { .. }) => {
+                    last_error = ForwardNotEvaluableReason::ReactionApplicationError;
+                }
+                Ok(results) => {
+                    ran_successfully = true;
+                    for m in results.into_iter().flatten() {
+                        if matches_target(&m, target_canon, target_query, target_atom_count) {
+                            return Ok(true);
+                        }
+                        let canon = canonical_smiles(&m);
+                        if !distinct_products.contains(&canon) {
+                            distinct_products.push(canon);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if !ran_successfully {
+        return Err(last_error);
+    }
+    match distinct_products.len() {
+        0 | 1 => Ok(false),
+        _ => Err(ForwardNotEvaluableReason::AmbiguousExpectedProduct),
+    }
+}
+
+/// Validate one step's declared reaction by replaying it forward and
+/// checking whether the result reproduces `target_canonical`. `evidence` is
+/// `None` when the route carries no reaction-identity information for this
+/// step at all -- reported `not_evaluable`, never guessed.
+///
+/// `rules_by_template_id`: RENKIN's own rule corpus, indexed once by the
+/// caller (`candidate::index_rules_by_template_id`) and shared across every
+/// step's call so the audit's total cost stays proportional to step count,
+/// not `steps * rules`. Only consulted for [`ReactionEvidence::RenkinTemplate`]
+/// evidence -- `None` here means "no corpus was supplied", which resolves to
+/// `not_evaluable` exactly like an unresolvable `template_id` would.
+pub fn validate_step_forward(
+    target_canonical: &str,
+    precursor_canonical: &[String],
+    evidence: Option<&ReactionEvidence>,
+    rules_by_template_id: Option<&HashMap<String, &RetroRule>>,
+) -> ForwardValidationResult {
+    let Some(evidence) = evidence else {
+        return not_evaluable(
+            ForwardNotEvaluableReason::MissingReactionRepresentation,
+            None,
+        );
+    };
+    // No basis exists until a SMIRKS is actually resolved -- a resolution
+    // failure (`Err` here) reports `evidence_basis: None`, matching
+    // `ForwardValidationResult::evidence_basis`'s own doc comment. From
+    // this point on, `basis` is known and carried into every remaining
+    // return path regardless of outcome.
+    let (smirks, try_both_orientations, basis) =
+        match declared_smirks(evidence, rules_by_template_id) {
+            Ok(v) => v,
+            Err(reason) => return not_evaluable(reason, None),
+        };
+
+    if !has_atom_mapping(smirks) {
+        return not_evaluable(ForwardNotEvaluableReason::MissingAtomMapping, Some(basis));
+    }
+    let Some((lhs, rhs)) = smirks.split_once(">>") else {
+        return not_evaluable(
+            ForwardNotEvaluableReason::UnsupportedReactionFormat,
+            Some(basis),
+        );
+    };
+
+    let mut orientations = vec![format!("{rhs}>>{lhs}")];
+    if try_both_orientations {
+        orientations.push(smirks.to_string());
+    }
+
+    let Ok(target_mol) = mol_from_smiles(target_canonical) else {
+        return not_evaluable(
+            ForwardNotEvaluableReason::ReactionApplicationError,
+            Some(basis),
+        );
+    };
+    let Ok(precursor_mols): Result<Vec<_>, _> = precursor_canonical
+        .iter()
+        .map(|s| mol_from_smiles(s))
+        .collect()
+    else {
+        return not_evaluable(
+            ForwardNotEvaluableReason::ReactionApplicationError,
+            Some(basis),
+        );
+    };
+    let mol_refs: Vec<&Molecule> = precursor_mols.iter().collect();
+    let target_canon = canonical_smiles(&target_mol);
+    let target_query = parse_smarts(target_canonical).ok();
+    let target_atom_count = target_mol.atom_count();
+
+    match replay_orientations(
+        &orientations,
+        &target_canon,
+        target_query.as_ref(),
+        target_atom_count,
+        &mol_refs,
+    ) {
+        Err(reason) => not_evaluable(reason, Some(basis)),
+        Ok(true) => pass(basis),
+        Ok(false) => fail(basis),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::candidate::index_rules_by_template_id;
+
+    fn co_aliphatic_cleavage() -> RetroRule {
+        RetroRule {
+            name: "co_aliphatic_cleavage".to_string(),
+            template_id: "t1".to_string(),
+            smirks: "[C:1][O:2]>>[C:1].[O:2]".to_string(),
+            ..Default::default()
+        }
+    }
+
+    // Methane + water, each with exactly one atom the rule's pattern can
+    // match (one C, one O) -- deterministic, single-product replay, so the
+    // fail case below can't collide with the ambiguous-product path (see
+    // `replay_orientations`'s doc comment for why a multi-carbon precursor
+    // would produce more than one distinct candidate here).
+    const METHANE: &str = "C";
+    const WATER: &str = "O";
+    const METHANOL: &str = "CO";
+
+    /// Regression for a real bug found while building the AiZynthFinder
+    /// adapter (RENKIN Bridge PR6): `run_reactants` matches SMIRKS reactant
+    /// components positionally, not as a set. This exact target/precursor
+    /// pair (order: ethanol, then the amino-acid) comes verbatim from a
+    /// real `aizynthcli 4.4.1` route
+    /// (`tests/fixtures/aizynthfinder/v4.4.1/single_trees.json`, route
+    /// index 1's outer step) and, before the permutation fix, failed to
+    /// reproduce the target purely because of precursor list order -- a
+    /// spurious FAIL on a route AiZynthFinder itself confirms is valid.
+    /// Swapping the precursor order below must not change the verdict:
+    /// this affects RENKIN-native routes too, not just AiZynthFinder ones,
+    /// since `replay_orientations` is shared by both.
+    #[test]
+    fn precursor_order_does_not_affect_the_verdict() {
+        let evidence = ReactionEvidence::AiZynthFinderTemplate {
+            smirks: "[CH3:1][CH2:2][O:3][C:4](=[O:5])[c:6]1[cH:7][cH:8][c:9]([NH2:10])[cH:11][cH:12]1>>[C:4](=[O:5])([c:6]1[cH:7][cH:8][c:9]([NH2:10])[cH:11][cH:12]1)[OH:13].[CH3:1][CH2:2][OH:3]".to_string(),
+            template_hash: None,
+            classification: None,
+        };
+        let target = "CCOC(=O)c1ccc(N)cc1";
+        let ethanol = "CCO".to_string();
+        let amino_acid = "Nc1ccc(C(=O)O)cc1".to_string();
+
+        let as_listed_by_aizynthfinder = vec![ethanol.clone(), amino_acid.clone()];
+        let reversed = vec![amino_acid, ethanol];
+
+        for precursors in [as_listed_by_aizynthfinder, reversed] {
+            let result = validate_step_forward(target, &precursors, Some(&evidence), None);
+            assert_eq!(
+                result.status,
+                CheckStatus::Pass,
+                "precursor order must not change the verdict: {result:?} for {precursors:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn renkin_native_step_that_replays_correctly_passes() {
+        let rule = co_aliphatic_cleavage();
+        let rules = vec![rule];
+        let by_id = index_rules_by_template_id(&rules).unwrap();
+        let evidence = ReactionEvidence::RenkinTemplate {
+            template_id: "t1".to_string(),
+            declared_smirks: None,
+        };
+        let precursors = vec![METHANE.to_string(), WATER.to_string()];
+        let result = validate_step_forward(METHANOL, &precursors, Some(&evidence), Some(&by_id));
+        assert_eq!(result.status, CheckStatus::Pass, "{result:?}");
+        assert_eq!(result.method, "declared_reaction_replay");
+        assert_eq!(
+            result.evidence_basis,
+            Some(EvidenceBasis::DeclaredRuleTemplate),
+            "{result:?}"
+        );
+        assert!(result.reason.is_none());
+    }
+
+    #[test]
+    fn renkin_graph_based_rule_step_reports_derived_graph_rule_roundtrip_basis() {
+        // A `RenkinTemplate` with a real, non-empty `declared_smirks` field
+        // -- the shape `chem_env::declared_forward_smirks` produces for a
+        // graph-based rule (PR #173) -- must be classified as
+        // `DerivedGraphRuleRoundtrip`, never `DeclaredRuleTemplate`, even
+        // though no rule corpus is supplied here at all (`None` for
+        // `rules_by_template_id`): the inline field is consulted first and
+        // the corpus lookup is never reached. Uses the real function, not a
+        // hand-typed SMIRKS string, matching this codebase's "no hand-typed
+        // fixture claims verification" convention.
+        let target = "CC(=O)Oc1ccccc1C(=O)O";
+        let precursors = vec!["CC(O)=O".to_string(), "Oc1ccccc1C(=O)O".to_string()];
+        let smirks =
+            crate::chem_env::declared_forward_smirks("ester_cleavage", target, &precursors)
+                .expect("must derive a real forward smirks for this ester_cleavage outcome");
+        let evidence = ReactionEvidence::RenkinTemplate {
+            template_id: "rule:ester_cleavage".to_string(),
+            declared_smirks: Some(smirks),
+        };
+        let result = validate_step_forward(target, &precursors, Some(&evidence), None);
+        assert_eq!(result.status, CheckStatus::Pass, "{result:?}");
+        assert_eq!(
+            result.evidence_basis,
+            Some(EvidenceBasis::DerivedGraphRuleRoundtrip),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn renkin_native_step_producing_a_different_parent_fails() {
+        let rule = co_aliphatic_cleavage();
+        let rules = vec![rule];
+        let by_id = index_rules_by_template_id(&rules).unwrap();
+        let evidence = ReactionEvidence::RenkinTemplate {
+            template_id: "t1".to_string(),
+            declared_smirks: None,
+        };
+        // A route that (wrongly) claims methane + water give ethane --
+        // co_aliphatic_cleavage's reversal deterministically produces
+        // methanol from these precursors, never ethane.
+        let wrong_target = "CC";
+        let precursors = vec![METHANE.to_string(), WATER.to_string()];
+        let result =
+            validate_step_forward(wrong_target, &precursors, Some(&evidence), Some(&by_id));
+        assert_eq!(result.status, CheckStatus::Fail, "{result:?}");
+        assert!(result.reason.is_none());
+    }
+
+    /// A multi-carbon precursor gives the rule's reversal more than one
+    /// place to attach the oxygen, so it can't reach a single deterministic
+    /// product to compare against a non-matching target -- discovered
+    /// empirically while building the fixtures above (this exact
+    /// precursor/target pair originally stood in for the plain Fail case
+    /// until it turned out to be ambiguous instead).
+    #[test]
+    fn multiple_distinct_non_matching_products_is_ambiguous_not_fail() {
+        let rule = co_aliphatic_cleavage();
+        let rules = vec![rule];
+        let by_id = index_rules_by_template_id(&rules).unwrap();
+        let evidence = ReactionEvidence::RenkinTemplate {
+            template_id: "t1".to_string(),
+            declared_smirks: None,
+        };
+        let precursors = vec![
+            "[CH3][NH]C(CO[CH2][CH3])=O".to_string(),
+            "O[CH2][CH3]".to_string(),
+        ];
+        let result = validate_step_forward("CCC", &precursors, Some(&evidence), Some(&by_id));
+        assert_eq!(result.status, CheckStatus::NotEvaluable, "{result:?}");
+        assert_eq!(
+            result.reason,
+            Some(ForwardNotEvaluableReason::AmbiguousExpectedProduct)
+        );
+    }
+
+    #[test]
+    fn aizynthfinder_step_with_no_evidence_is_not_evaluable() {
+        let result = validate_step_forward("CCOC", &["CCO".to_string()], None, None);
+        assert_eq!(result.status, CheckStatus::NotEvaluable);
+        assert_eq!(
+            result.reason,
+            Some(ForwardNotEvaluableReason::MissingReactionRepresentation)
+        );
+        assert_eq!(
+            result.evidence_basis, None,
+            "no ReactionEvidence at all -> no basis to report: {result:?}"
+        );
+    }
+
+    #[test]
+    fn aizynthfinder_step_with_sufficient_metadata_passes() {
+        // Declared in AiZynthFinder's as-exported orientation
+        // (precursors>>target) rather than RENKIN's retro convention -- the
+        // two-orientation retry must still find it.
+        let evidence = ReactionEvidence::AiZynthFinderTemplate {
+            smirks: "[C:1][O:2].[C:3]>>[C:1][O:2][C:3]".to_string(),
+            template_hash: None,
+            classification: None,
+        };
+        let target = "CCOC";
+        let precursors = vec!["CCO".to_string(), "C".to_string()];
+        let result = validate_step_forward(target, &precursors, Some(&evidence), None);
+        assert_eq!(result.status, CheckStatus::Pass, "{result:?}");
+        assert_eq!(
+            result.evidence_basis,
+            Some(EvidenceBasis::SourceToolReaction),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn missing_atom_mapping_is_distinguished_from_missing_representation() {
+        let evidence = ReactionEvidence::AiZynthFinderTemplate {
+            smirks: "CCO.C>>CCOC".to_string(),
+            template_hash: None,
+            classification: None,
+        };
+        let result = validate_step_forward(
+            "CCOC",
+            &["CCO".to_string(), "C".to_string()],
+            Some(&evidence),
+            None,
+        );
+        assert_eq!(result.status, CheckStatus::NotEvaluable);
+        assert_eq!(
+            result.reason,
+            Some(ForwardNotEvaluableReason::MissingAtomMapping)
+        );
+        // A SMIRKS WAS resolved (a real AiZynthFinderTemplate) -- it just
+        // didn't carry atom mapping. The basis is known even though the
+        // verdict is not_evaluable; only a *resolution* failure reports
+        // `None` (see `aizynthfinder_step_with_no_evidence_is_not_evaluable`
+        // and `renkin_graph_based_rule_step_with_unresolvable_template_id_
+        // reports_no_basis` above/below for the two `None` cases).
+        assert_eq!(
+            result.evidence_basis,
+            Some(EvidenceBasis::SourceToolReaction),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn renkin_graph_based_rule_step_with_unresolvable_template_id_reports_no_basis() {
+        // The wrong-precursor-set case from PR #173's own regression test
+        // (bridge::audit_route's renkin_step_with_graph_based_rule_but_
+        // wrong_precursors_is_not_evaluable_not_fail), exercised directly at
+        // this layer: `declared_forward_smirks` returns `None` for a
+        // precursor set that doesn't match any real outcome, so
+        // `RenkinTemplate.declared_smirks` is `None` too, and resolution
+        // falls through to `rules_by_template_id` -- which, for a
+        // graph-based rule's `template_id`, either finds nothing (as here,
+        // no corpus supplied) or finds an entry whose `smirks` is `""` by
+        // construction (`chem_env::default_rules()`, every real caller's
+        // corpus). Either way resolution fails before a basis is ever
+        // assigned -- `declared_rule_template` would assert something
+        // untrue here (no rule template was ever actually declared for this
+        // step), so `None` is correct, not a fallback default.
+        let evidence = ReactionEvidence::RenkinTemplate {
+            template_id: "rule:ester_cleavage".to_string(),
+            declared_smirks: None,
+        };
+        let result = validate_step_forward(
+            "CC(=O)Oc1ccccc1C(=O)O",
+            &["C".to_string(), "O".to_string()],
+            Some(&evidence),
+            None,
+        );
+        assert_eq!(result.status, CheckStatus::NotEvaluable, "{result:?}");
+        assert_eq!(
+            result.reason,
+            Some(ForwardNotEvaluableReason::MissingReactionRepresentation)
+        );
+        assert_eq!(result.evidence_basis, None, "{result:?}");
+    }
+}

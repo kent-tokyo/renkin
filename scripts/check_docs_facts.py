@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Cross-checks docs/README against live facts derived from the current code
-and data, so a stale count (like the 509->402, 31->28 regression this script
-exists to prevent) fails CI instead of silently shipping.
+and data, so a stale count (like the 509->402, 31->28, 28->27 regression
+this script exists to prevent) fails CI instead of silently shipping.
 
 Usage: check_docs_facts.py <rule_count> <bb_file_count> <bb_fallback_count>
 (all three come from `cargo run --example doc_facts`, computed live from
@@ -26,6 +26,10 @@ from pathlib import Path
 
 STALE_FIGURES = [
     (re.compile(r"\b31\s*(hand[- ]?crafted|handcrafted|built-in)\s*rules?", re.IGNORECASE), "31 hand-crafted rules"),
+    (re.compile(r"\b28\s*(hand[- ]?crafted|handcrafted|built-in)\s*rules?", re.IGNORECASE), "28 hand-crafted rules"),
+    (re.compile(r"\b27\s*(hand[- ]?crafted|handcrafted|built-in)\s*rules?", re.IGNORECASE), "27 hand-crafted rules"),
+    (re.compile(r"\b26\s*(hand[- ]?crafted|handcrafted|built-in)\s*rules?", re.IGNORECASE), "26 hand-crafted rules"),
+    (re.compile(r"\b24\s*(hand[- ]?crafted|handcrafted|built-in)\s*rules?", re.IGNORECASE), "24 hand-crafted rules"),
     (re.compile(r"\b509\s*(building block|BB)", re.IGNORECASE), "509 building blocks"),
     (re.compile(r"78\.0%"), "78.0%"),
     (re.compile(r"95\.9%"), "95.9%"),

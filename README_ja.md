@@ -21,9 +21,17 @@
 
 ---
 
+**Keep your planner. Audit every route.** AiZynthFinder・Syntheseus・RENKIN——どのツールで生成したrouteでも、ローカルで・再現可能な形で・分子構造を一切外部送信せずに監査できます。
+
+[**ブラウザでrouteを監査 →**](https://kent-tokyo.github.io/renkin/playground/) · [**Pythonクイックスタート ↓**](#routeを監査する) · [**route計画エンジン ↓**](#クイックスタート)
+
+---
+
 ## RENKINとは
 
-RENKINは、目標分子（ゴール）から逆算して市販の安価な原料へと至る最適な化学反応経路を自動発見する**逆合成（Retrosynthesis）エンジン**です。**創薬・医薬化学・ケモインフォマティクス**において中心的な問題を解きます。
+RENKIN Bridgeは、ツール非依存の**route監査ツール**です。**AiZynthFinder**・**Syntheseus**・RENKIN自身のplanner——どのツールが生成したrouteでも、構造整合性・stock充足・宣言済み反応のforward-replay検証を、全く同じ`pass`/`fail`/`partial`パイプラインで判定します。完全にローカルで完結し、監査ごとに検証可能な[`audit_manifest`](https://kent-tokyo.github.io/renkin/guides/audit-reproducibility-contract/)を記録——明示的に指定しない限り、分子構造がお使いのマシンの外へ出ることはありません。
+
+RENKINはそれ自体、目標分子（ゴール）から逆算して市販の安価な原料へと至る化学反応経路を自動発見する、独立した**逆合成（Retrosynthesis）エンジン**でもあります。**創薬・医薬化学・ケモインフォマティクス**において中心的な問題を解きます。
 
 Rust言語と [`chematic`](https://docs.rs/chematic/) クレートで実装された純粋なRust製エンジン——C/C++依存ゼロ、全クレートに `#![forbid(unsafe_code)]` を適用。単一のコードベースがネイティブCLI・Rustライブラリ・Pythonホイール（PyO3）・ブラウザ上で完全にクライアントサイド動作するWebAssemblyモジュールへとコンパイルされます。
 
@@ -34,8 +42,12 @@ Rust言語と [`chematic`](https://docs.rs/chematic/) クレートで実装さ�
 ```bash
 pip install renkin          # Python
 cargo add renkin            # Rust
-npm install renkin          # JavaScript / Node.js
+npm install renkin          # JavaScript (browser / bundler -- see docs/api/wasm.md)
 ```
+
+Syntheseus routeの監査には、もう一つ任意パッケージが必要です：
+`pip install renkin[syntheseus]`（Syntheseus `0.7.2`・`0.8.0`で検証済み——詳細は
+互換性はSyntheseus `0.7.2`・`0.8.0`で確認済み）。
 
 ---
 
@@ -45,7 +57,43 @@ npm install renkin          # JavaScript / Node.js
 
 ---
 
+## Routeを監査する
+
+すでに手元にあるrouteを、どのツールで計画したものでも持ち込めます——以下のどの経路も全く同じ監査パイプラインを通るため、どのツールが生成したrouteでも、CLI・Python・ブラウザタブのどれで実行しても、同じ`pass`/`fail`/`partial`判定が返ります。
+
+**AiZynthFinder**
+
+```python
+import json
+import renkin
+
+report = json.loads(
+    renkin.audit_route(open("trees.json").read(), format="aizynthfinder")
+)
+print(report["summary"])
+```
+
+**Syntheseus**（`pip install renkin[syntheseus]`）
+
+```python
+import json
+import renkin
+from renkin.syntheseus_exporter import dumps_syntheseus_route_v1
+
+route_json = dumps_syntheseus_route_v1(my_synthesis_graph)
+report = json.loads(renkin.audit_route(route_json, format="syntheseus"))
+print(report["summary"])
+```
+
+**ブラウザで** — インストール不要、アップロード不要、サーバー不要：[**Playgroundを試す →**](https://kent-tokyo.github.io/renkin/playground/)
+
+実物出力による完全なウォークスルー：[AiZynthFinder](https://kent-tokyo.github.io/renkin/guides/aizynthfinder-audit-demo/)（英語）・[Syntheseus](https://kent-tokyo.github.io/renkin/guides/syntheseus-audit-demo/)（英語）。
+
+---
+
 ## クイックスタート
+
+*ゼロからrouteを計画する場合はこちら。すでに手元にあるrouteを監査したい場合は上記「[Routeを監査する](#routeを監査する)」を参照。*
 
 ```python
 import json
@@ -94,7 +142,7 @@ OC(=O)c1ccccc1OC(=O)C
 
 ## 現在の制約
 
-⚠️ ベンチマーク数値はvalidator精度修正後、再計測が進行中です——このリポジトリの他箇所にある78.0%/95.9%/81.8%(ChEMBL)はこの修正より前の値であり、無効化されています。RENKINは収率・実験的に較正された成功確率・副反応を予測せず、文献の自動検索も行いません（`success_probability`はtemplate頻度由来の探索スコアであり、較正された予測値ではありません）。現行の修正済み数値・詳細な手法・既知の制約は[ベンチマーク](https://kent-tokyo.github.io/renkin/benchmark/)を参照してください。
+⚠️ ベンチマーク数値はvalidator精度修正後、再計測が進行中です——このリポジトリの他箇所にある78.0%/95.9%/81.8%(ChEMBL)はこの修正より前の値であり、無効化されています。RENKINは収率・実験的に較正された成功確率・副反応を予測せず、文献の自動検索も行いません（`success_probability`はtemplate頻度由来の探索スコアであり、較正された予測値ではありません）。修正済みの過去計測値・詳細な手法・既知の制約は[ベンチマーク](https://kent-tokyo.github.io/renkin/benchmark/)を参照してください（このページは単一commit時点で凍結された過去の計測であり、リアルタイムの数値ではありません）。
 
 ---
 
@@ -310,37 +358,27 @@ CC-BY-SA-4.0であり、RENKIN本体コードのMITとは別ライセンスで�
 | 特徴 | 詳細 |
 |---|---|
 | **Pure Safe Rust** | 全クレートに `#![forbid(unsafe_code)]` — コンパイラ保証、C/C++依存ゼロ |
-| **A\* / AND-OR木探索** | プラガブルフック付きRetro\*相当アルゴリズム（`MoleculeValueEstimator`, `ReactionPrior`） |
-| **最大50k逆合成テンプレート** | USPTO-50k/MIT からrdchiralで自動抽出；頻度重み付け優先；`--templates` でカスタムセット対応 |
-| **ルートスコアリング** | `confidence`, `step_confidence`, `success_probability`（Retro-prob方式）, `convergency`, `atom_economy` — 下の注記も参照 |
-| **ステップメタデータの出所表示** | 各ステップに `metadata_source`/`metadata_scope`（例: `handcrafted_default`/`reaction_family`）を付与し、`conditions`/`reaction_family` がルール作者による既定値なのか、それ以上の根拠があるのかを機械可読に区別。extracted templateには何も付与しない（捏造しない）。 |
-| **安定 template_id + evidence サイドカー** | すべてのテンプレートに安定した `template_id` を付与——hand-crafted ruleは `rule:<name>`、extracted templateは `smirks-sha256:<hex>`（ファイル内の並び順・位置・count値に依存しない）。`--template-metadata sidecar.json`（`template_id` をキーとするJSON）でDOI・特許・報告済み条件・報告済み収率・既知の副反応警告を紐づけ可能。一致したステップにのみ `evidence` フィールドが付与され、それ以外は変化しない——詳細は下記「[テンプレート evidence メタデータ](#テンプレート-evidence-メタデータ)」参照。`schema_version: 2` サイドカーではさらに `examples`（対象・原料の組み合わせ1件ごとの記録）を紐づけ可能——canonical SMILESで照合され、`--format explain` ではexact substrate matchが先に表示される。`renkin template ids <file.smi>` で安定IDの一覧を出力し、サイドカー作成に使用できる。収率・成功率の自動予測や文献自動検索は引き続きスコープ外（[#41](https://github.com/kent-tokyo/renkin/issues/41)で追跡）。 |
-| **ルートコストスコアリング** | `route_cost = Σ(BB価格) + ステップ数×0.5`；`--bb-prices CSV` または `--stock stock.csv` で実価格対応 |
-| **Pareto多目的探索** | `--format pareto` で `route_cost`・`success_probability`・`steps` 等のパレートフロントを返す；`--objectives` で目的関数をカスタム設定 |
-| **制約 DSL** | `--constraints constraints.json` — JSON駆動の合成計画：元素フィルタ・ステップ数制限・信頼度閾値・優先反応族；LLM → RENKIN パイプラインに対応 |
-| **出力フォーマット** | `--format json` · `tree` · `mermaid` · `explain`（ルートごとの人間可読解説）· `compare`（並列比較表）· `compare-json` · `pareto` |
-| **失敗時診断** | ルートが見つからない場合、JSON に `diagnostics` ブロック（`likely_causes` + `suggestions`）を付加 |
-| **単体順反応予測** | `renkin-forward predict --reactants <SMILES>...` — ルート検索とは独立に、反転したSMIRKSテンプレートから順反応生成物候補を列挙・ランキング — [Forward Prediction guide](docs/guides/forward-prediction.md)（英語）参照 |
-| **単一既知反応物からの順反応列挙** | `renkin-forward enumerate --reactant <SMILES> --partners <path>` — 既知反応物1つと明示的なpartnerライブラリ（RENKIN自身のretro stockは使わない）から具体的な生成物を発見 — [Forward Enumeration guide](docs/guides/forward-enumeration.md)（英語）参照 |
-| **partner不要の検索用ヒント** | `renkin-forward hints --reactants <SMILES>...` — partner入力は一切なし：マッチしたテンプレートslot、不足partnerのSMARTS、結合デルタを特許・データベース検索向けに報告（具体的な生成物は出さない）— [Forward Retrieval Hints guide](docs/guides/forward-retrieval-hints.md)（英語）参照。`predict` / `enumerate` / `hints` の比較表: [table](docs/guides/forward-retrieval-hints.md#predict--enumerate--hints-at-a-glance) |
-| **順方向検証** | `renkin-forward validate` で各ステップを順方向適用して検証；stdin パイプ対応 |
+| **探索エンジン** | A\*/AND-OR木探索（Retro\*相当、プラガブルな`MoleculeValueEstimator`/`ReactionPrior`）、メモリ制約付き探索の`--beam-width N`、非WASM環境での`rayon`並列ルール適用（wasm32はシーケンシャルフォールバック） |
+| **最大50k逆合成テンプレート** | USPTO-50k/MIT からrdchiralで自動抽出；頻度重み付け優先（オプションのpure-Rust `tract-onnx` NNスコアラーを`--scorer`で利用可）；`--templates` でカスタムセット対応 |
+| **テンプレート品質ツール** | `renkin template stats\|validate\|dedup\|explain\|coverage\|ids` — 頻度分布・有効性・重複・検索・カバレッジ・安定IDを検査 |
+| **安定 template_id + evidence サイドカー** | すべてのテンプレートに安定した `template_id` を付与——hand-crafted ruleは `rule:<name>`、extracted templateは `smirks-sha256:<hex>`（ファイル内の並び順に依存しない）。`--template-metadata sidecar.json` でDOI・特許・報告済み条件・報告済み収率・既知の副反応警告を紐づけ可能。一致したステップにのみ `evidence` フィールドが付与される——詳細は下記「[テンプレート evidence メタデータ](#テンプレート-evidence-メタデータ)」参照。`schema_version: 2` サイドカーではさらに `examples`（exact substrate match、`--format explain` で優先表示）を紐づけ可能。収率・成功率の自動予測や文献自動検索は引き続きスコープ外（[#41](https://github.com/kent-tokyo/renkin/issues/41)） |
 | **Ring-context安全ガード** | `--ring-context-policy conservative --ring-context-sidecar <path>` — extracted templateの環開閉切断が、訓練データで一度も環結合として観測されていない場合に拒否するopt-inのmatch-levelフィルタ。デフォルトは `disabled`（既存挙動のまま） — [Issue #72](https://github.com/kent-tokyo/renkin/issues/72)参照 |
-| **妥当性レポート** | `renkin-bench --plausibility` — ベストルートを順方向検証し、複合妥当性スコアを算出 |
-| **PaRoutesベンチマーク** | `renkin-bench --input-format paroutes` でmulti-step ground-truth評価（`depth_delta`, `route_diversity`） |
-| **原子収支チェック** | `renkin-bench` で `target_MW > Σ precursor_MW` のステップを検出（CompleteRXN参照） |
-| **stock CSV 管理** | `renkin stock stats\|validate\|coverage` — SMILES・名称・ベンダー・価格・ハザード情報を持つ stock CSV を検査 |
-| **テンプレート品質ツール** | `renkin template stats\|validate\|dedup\|explain\|coverage\|ids` — テンプレートセットの頻度分布・有効性・重複・検索・カバレッジ・安定IDを検査 |
-| **MCPサーバー** | `renkin-mcp` が stdio 経由で 7 ツールを提供（`find_routes`, `validate_route`, `explain_route`, `find_pareto_routes`, `plan_with_constraints`, `estimate_diversity`, `diagnose_failure`）。レガシー `2024-11-05` とモダン `2026-07-28` の両プロトコル改訂に対応 |
-| **`renkin-doctor`** | 環境診断バイナリ — テンプレート・市販品データ・Python インポート・ツールバージョンを検査 |
+| **LightGBM candidate reranker** | `--reranker-model`/`--reranker-freq-table`（CLI）または `reranker_model_path`/`reranker_freq_table_path`（Python）— opt-inかつordering-onlyな再順位付け。生成される候補そのものは一切変更されず探索順序のみが変わり、オフ時はレガシー順序とbyte単位で完全一致。Paired 100-target route-searchゲート: `route_to_configured_stock` 16→20（+4/-0）。`python3 scripts/fetch_reranker_model.py` で凍結モデルを取得（SHA-256検証つき、パッケージには同梱しない — [ロードマップ](#ロードマップ)参照） |
+| **Coverage mode（opt-in）** | `--search-mode coverage --coverage-templates <path>`（CLI）または `search_mode="coverage"`, `coverage_templates_path=...`（Python）— デフォルトのテンプレートセットでルートが見つからない場合のみ、自動的により大きな別テンプレートセットへエスカレーションする。`--coverage-timeout-secs` で協調的にキャンセル可能。未使用時の標準モード出力はbyte単位で完全不変。`python3 scripts/fetch_coverage_templates.py` で凍結済み2,000テンプレートのStage-2セットを取得（SHA-256検証つき、パッケージには同梱しない、rerankerモデルと同じ理由 — [ロードマップ](#ロードマップ)参照） |
+| **RENKIN Bridge / `audit-route`** | `renkin audit-route route.json [--format auto\|renkin\|aizynthfinder\|syntheseus] [--stock stock.smi] [--output human\|json]` — ツール非依存のroute audit: 構造整合性・stock・宣言済み反応のforward replay検証を、それぞれ独立に `pass`/`fail`/`not_evaluable` で報告し、route全体は `pass`/`fail`/`partial` で判定。RENKIN-native route JSON（v0.25.0）、実物AiZynthFinder route JSON（単一ターゲット・gzip圧縮batch出力、AiZynthFinder 4.3.2／4.4.0／4.4.1で検証済み——全バージョン対応を主張するものではない、v0.26.0、v0.32.0でversion matrixを拡大）、そしてSyntheseus route（Syntheseus自体にはネイティブのroute export機能がないため、任意インストールの`renkin.syntheseus_exporter`が生成する`syntheseus-route-v1`交換schema経由、v0.30.0）に対応。`--format auto` は入力の形状から判定し、曖昧な場合は推測せずエラーにする。[AiZynthFinderデモ →](https://kent-tokyo.github.io/renkin/guides/aizynthfinder-audit-demo/)（英語）・[Syntheseusデモ →](https://kent-tokyo.github.io/renkin/guides/syntheseus-audit-demo/)（英語） |
+| **ルートスコアリング** | `confidence`, `step_confidence`, `success_probability`（Retro-prob方式）, `convergency`, `atom_economy`, `route_cost`（`Σ(BB価格) + ステップ数×0.5`、または`--bb-prices`/`--stock`で実価格）— 下の注記も参照 |
+| **ステップメタデータの出所表示** | 各ステップに `metadata_source`/`metadata_scope` を付与し、`conditions`/`reaction_family` がルール作者による既定値かそれ以上の根拠があるかを機械可読に区別。extracted templateには付与しない（捏造しない） |
+| **Pareto多目的探索** | `--format pareto` で `route_cost`・`success_probability`・`steps` 等のパレートフロントを返す；`--objectives` で目的関数をカスタム設定 |
+| **制約 DSL** | `--constraints constraints.json` — 元素フィルタ・ステップ数制限・信頼度閾値・優先反応族；LLM → RENKIN パイプラインに対応 |
+| **出力フォーマット & 診断** | `--format json\|tree\|mermaid\|explain\|compare\|compare-json\|pareto`；ルートが見つからない場合はJSONに `diagnostics`（`likely_causes`/`suggestions`）を付加 |
+| **`renkin-forward` ツール群** | `predict`（順反応生成物のランキング）、`enumerate`（1反応物+partnerライブラリからの境界付き列挙）、`hints`（partner不要の検索用ヒント、具体的生成物は出さない）、`validate`（各retroステップの順方向検証）— [Forward guides](docs/guides/forward-retrieval-hints.md#predict--enumerate--hints-at-a-glance)（英語）参照 |
+| **`renkin-bench`** | USPTO-50k/PaRoutes評価、`--plausibility`（順方向検証済み複合スコア）、`--failure-taxonomy`、原子収支チェック（`target_MW > Σ precursor_MW`）、未解決ターゲットを対象にした多段階`cascade`再実行 — [ベンチマーク](#ベンチマーク)参照 |
+| **stock CSV 管理** | `renkin stock stats\|validate\|coverage` — SMILES・名称・ベンダー・価格・ハザード情報 |
+| **MCPサーバー** | `renkin-mcp` が stdio 経由で7ツール（`find_routes`, `validate_route`, `explain_route`, `find_pareto_routes`, `plan_with_constraints`, `estimate_diversity`, `diagnose_failure`）を提供し、レガシー `2024-11-05` とモダン `2026-07-28` の両プロトコル改訂に対応。詳細は[MCPガイド](docs/guides/mcp.md)参照 |
+| **`renkin-doctor`** | 環境診断バイナリ — テンプレート・市販品データ・Python インポート・ツールバージョン・データ整合性を検査 |
 | **`renkin-kg`** | 反応知識グラフ構築ツール — ルートから分子↔反応の二部グラフを生成；GraphML / Cypher 形式でエクスポート |
-| **ビームサーチ** | `--beam-width N` でメモリ制約付き探索；`SmallVec<[FEntry; 6]>` スタック割り当て |
-| **並列ルール適用** | 非WASM環境で `rayon`；wasm32 はシーケンシャルフォールバック |
-| **tract-onnx NNスコアラー** | Pure Rust ONNXインファレンス（C++依存なし） — Phase B テンプレート関連性スコアリングの `--scorer` フラグ |
-| **手順ヒント** | 19件の手工芸ルールに `procedure_hint` — QFANG方式手順生成の受け口 |
-| **四面体ステレオ @/@@** | chematic 0.4.16 による完全な立体化学サポート |
-| **Python** | `pip install renkin` — Linux/macOS/Windows プリビルドwheels |
-| **WASM** | ~500 KB バンドル — ブラウザでネイティブに近い速度で動作 |
-| **402件の市販原料** | アリールハライド、ボロン酸、ヘテロ環、医薬品アミン、アミノ酸（`data/building_blocks.smi`、実際にロードされたユニーク化合物数——ベンチマークセクション参照） |
+| **マルチターゲット** | `pip install renkin`（Linux/macOS/Windows プリビルドwheels）· `npm install renkin`（~500 KB WASM、ブラウザでネイティブに近い速度） |
+| **市販原料 + 立体化学** | `data/building_blocks.smi` から実際にロードされたユニーク化合物402件（アリールハライド、ボロン酸、ヘテロ環、アミン、酸、アミノ酸——[ベンチマーク](#ベンチマーク)参照）；完全な四面体@/@@およびE/Z立体化学サポート；各ルートJSONに`building_blocks`フィールド（末端原料のSMILES、手動パース不要） |
 
 > **`step_confidence`/`success_probability` は収率でも実測の成功率でもない。**
 > テンプレート出現頻度から導かれる探索順位付けスコア（`rule_weight / max_rule_weight` をステップ間で乗算）であり、
@@ -362,7 +400,7 @@ USPTO-50kテストセット（全4,907分子評価）:
 | Atom-balance-filtered rate | `atom_balanced_solved_rate` | **15.41%**（756/4,907）— search-to-stockの部分集合 |
 | Current-validator-confirmed rate | `provenance_validated_solved_rate` | **0.88%**（43/4,907）— atom-balance-filteredの部分集合 |
 
-402件（`data/building_blocks.smi`から実際にロードされたユニーク化合物数）の市販ビルディングブロック、5,000件の抽出テンプレート、28件のハンドクラフトルール、depth=5・beam=100。3つの数値は同一4,907件に対する入れ子系列であり、独立した数値として比較しないこと。いずれも実験的に検証された合成成功率や人間の化学者によるルート正確性評価ではない。`provenance_validated_solved_rate`は実測の化学的正確性の値でも、証明された正確性の下限でもない——現行validatorが確認できたルートのみを数えており、「invalid」判定のうち未知の割合がvalidator偽陰性である可能性がある一方、実際のrule・route誤りも含まれ得る（比率未計測）。詳細な手法・rule別内訳・再現コマンドは [`tasks/phase31_final_remeasurement_run.md`](https://github.com/kent-tokyo/renkin/blob/master/tasks/phase31_final_remeasurement_run.md) · [ベンチマーク詳細 →](https://kent-tokyo.github.io/renkin/benchmark/)
+402件（`data/building_blocks.smi`から実際にロードされたユニーク化合物数）の市販ビルディングブロック、5,000件の抽出テンプレート、28件のハンドクラフトルール、depth=5・beam=100。3つの数値は同一4,907件に対する入れ子系列であり、独立した数値として比較しないこと。いずれも実験的に検証された合成成功率や人間の化学者によるルート正確性評価ではない。`provenance_validated_solved_rate`は実測の化学的正確性の値でも、証明された正確性の下限でもない——現行validatorが確認できたルートのみを数えており、「invalid」判定のうち未知の割合がvalidator偽陰性である可能性がある一方、実際のrule・route誤りも含まれ得る（比率未計測）。詳細な手法・rule別内訳・再現コマンドは [`tasks/phase31_final_remeasurement_run.md`](https://github.com/kent-tokyo/renkin/blob/master/tasks/phase31_final_remeasurement_run.md) · [ベンチマーク詳細 →](https://kent-tokyo.github.io/renkin/benchmark/) を参照してください。
 
 ### 過去の推移（修正前・無効化済み — 冒頭の注記参照）
 
@@ -414,9 +452,9 @@ USPTO-50kテストセット（全4,907分子評価）:
 
 ## MCP サーバー
 
-`renkin-mcp` は逆合成を MCP ツールとして公開し、AI エージェント（Claude 等）から直接呼び出せます。トランスポートは stdio のみ。レガシー `2024-11-05` ハンドシェイクとモダン `2026-07-28` の `server/discover`／リクエスト単位 `_meta` の両方に、同一バイナリで対応しています。プロトコル対応表・エラー分類・トラブルシューティングの詳細は [`docs/guides/mcp.md`](docs/guides/mcp.md)（英語）を参照してください。
+`renkin-mcp` は逆合成を MCP ツールとして公開し、AI エージェント（Claude 等）から直接呼び出せます。
 
-**設定** — `claude_desktop_config.json` に追加（どちらのプロトコル世代でも動作し、クライアント側の最初のリクエスト形状で自動判定されます）：
+**設定** — `claude_desktop_config.json` に追加：
 
 ```json
 {
@@ -426,7 +464,7 @@ USPTO-50kテストセット（全4,907分子評価）:
 }
 ```
 
-**ツール一覧** (7):
+**ツール一覧** (6):
 
 | ツール | 説明 |
 |---|---|
@@ -436,7 +474,11 @@ USPTO-50kテストセット（全4,907分子評価）:
 | `find_pareto_routes` | 多目的パレートフロント探索 |
 | `plan_with_constraints` | 制約 DSL による合成計画（元素フィルタ・ステップ数・信頼度閾値） |
 | `estimate_diversity` | ルート多様性・カバレッジ指標 |
-| `diagnose_failure` | ルートが見つからない原因の分析と探索パラメータの提案 |
+
+`find_routes` は、必須の `coverage_templates` パスと
+`search_mode: "coverage"` を指定すると、coverage modeにも対応します。
+Stage 1で見つからない場合だけStage 2へ進み、選択Stage・timeout状態・各Stageの
+経過時間を応答に含めます。
 
 ```bash
 cargo build --release
@@ -518,8 +560,8 @@ renkin/                          ← Cargo workspace ルート
 │   ├── bin/benchmark.rs         # renkin-bench バイナリ（--plausibility フラグ対応）
 │   ├── bin/doctor.rs            # renkin-doctor 環境診断バイナリ
 │   ├── bin/fp.rs                # renkin-fp ECFP4 フィンガープリント（nn-scoring フィーチャー）
-│   ├── bin/mcp.rs               # renkin-mcp 起動処理（2024-11-05 + 2026-07-28 両対応）
-│   ├── mcp/                     # MCPプロトコル（jsonrpc/protocol/stdio）+ 7ツールハンドラ
+│   ├── bin/mcp.rs               # renkin-mcp stdio launcher
+│   ├── mcp/                     # dual-era protocol + 7 tool handlers
 │   ├── chem_env.rs              # 逆合成ルール・市販品判定・テンプレートローダー
 │   ├── score.rs                 # SA Score ヒューリスティック
 │   ├── search.rs                # A* / AND-OR 木探索エンジン
@@ -539,7 +581,7 @@ renkin/                          ← Cargo workspace ルート
 ├── scripts/
 │   ├── extract_templates.py         # rdchiral テンプレート抽出パイプライン
 │   ├── run_benchmark_chunks.sh      # 再開可能チャンクベンチマーク
-│   ├── train_reranker.py            # 候補リランカー訓練/評価（開発ツール、オフライン専用 — docs/guides/reranker-candidate-pools.md 参照）
+│   ├── train_reranker.py            # 候補リランカー訓練/評価（開発ツール、オフライン専用）
 │   └── tests/                       # train_reranker.py の unittest スイート
 ├── docs/                # MkDocs ソース → kent-tokyo.github.io/renkin/
 └── mkdocs.yml
@@ -549,60 +591,72 @@ renkin/                          ← Cargo workspace ルート
 
 ## ロードマップ
 
-- [x] **Phase 1** — SMIRKS 逆反応ルール + フラグメント正規化
-- [x] **Phase 2** — A\* / AND-OR 木探索・クローズドリスト・縮退ルートフィルタ
-- [x] **Phase 3** — SA Score ヒューリスティック + ビームサーチ
-- [x] **Phase 4** — 並列ルール適用（rayon; WASM では逐次フォールバック）
-- [x] **Phase 5** — Python バインディング（PyO3 + maturin）· `pip install renkin`
-- [x] **Phase 6** — WASM ビルド · `npm install renkin`
-- [x] **Phase 7** — ベンチマーク CLI（`renkin-bench`）+ USPTO-50k 初期評価
-- [x] **Phase 8** — ユニットテスト · ルール → 31件 · 市販原料 → 463件
-- [x] **Phase 9** — WASM ブラウザプレイグラウンド + i18n（EN/JA/ZH）
-- [x] **Phase 10** — グラフベースビアリール切断 · O(1) canonical-SMILES BB インデックス
-- [x] **Phase 11** — crates.io / PyPI / npm 公開 · GitHub Actions CI/CD
-- [x] **Phase 12** — MkDocs ドキュメントサイト · GitHub Pages プレイグラウンド
-- [x] **Phase 13** — 正式 USPTO-50k ベンチマーク: **7.5%**（depth=3、31ルール）
-- [x] **Phase 14** — 自動テンプレート抽出（rdchiral）: **27.8%**（depth=3、222ルール）
-- [x] **Phase 15** — 四面体ステレオ @/@@ サポート（chematic 0.4.16）✅
-- [x] **Phase 15a** — E/Z 二重結合ステレオフィルタ有効化（chematic-rxn 0.4.15 / issue #21）
-- [x] **Phase 17** — chematic 0.4.12: Bug #13（BFSリーク）+ Bug #14（canonical SMILES）修正確認
-- [x] **Phase 18** — テンプレート頻度重み付け（Phase A）: **72.1%** USPTO-50k（3,540/4,907 — 全件確認 ✅）
-- [x] **Phase 19** — Rust エンジン内部最適化（split_fragments・is_bb・元素プリスクリーニング）
-- [x] **Phase 20** — FxHashMap/FxHashSet（rustc-hash）で標準コレクション全体を置き換え
-- [x] **Phase 21** — SmallVec<[FEntry; 6]> ビームフロンティア（スタック割り当て）
-- [x] **Phase 22** — SA Score メモ化キャッシュ（探索ごと）
-- [x] **Phase 23** — Arc<PathNode> 永続連結リストによるパス共有（子ノードあたり O(1)）
-- [x] **Phase 24** — apply_retro メモ化キャッシュ（重複中間体の SMARTS VF2 スキップ）
-- [x] **Phase 25** — 5,000テンプレート + 480 BB: **78.0%** USPTO-50k（3,826/4,907 ✅、2,775 ms/mol）
-- [x] **Phase 26** — diaryl sulfone retro ルール + 509 BB: **78.1%** USPTO-50k（3,831/4,907 ✅）
-- [x] **Phase B** — NNテンプレートスコアラー `--scorer` フラグ（tract-onnx、Pure Rust ONNX、C++依存なし）✅
-- [x] **制約付き探索** — `--avoid-elements` / `--require-elements` / `--verbose`
-- [x] **`#![forbid(unsafe_code)]`** — 全クレートでコンパイラ保証の Pure Safe Rust
-- [x] ルートコストスコアリング — `route_cost` フィールド + `--bb-prices CSV` / `--stock stock.csv`
-- [x] Cargo workspace 整備 — `crates/renkin-forward/` + `crates/renkin-kg/`
-- [x] `renkin-forward predict` — テンプレートベース順反応予測 ✅
-- [x] `renkin-forward validate` — 逆合成ルートの順反応検証；stdin パイプ対応 ✅
+全リリース履歴（時系列）: [`CHANGELOG.md`](CHANGELOG.md)（英語）。
+このセクションでは現在の主要項目と次の予定のみを扱う——それ以前の出荷済み機能は下記「過去のマイルストーン」参照。
+
+### 最近出荷
+
+- [x] **Syntheseus Bridge**（`--format syntheseus`、v0.30.0で出荷）— *Syntheseusにはroute exportがない。だからRENKINが自前で作った——そして他のどのadapterとも全く同じ方法で監査する。* RENKIN-native・AiZynthFinderに次ぐ3つ目のroute adapter: 任意インストールの`renkin.syntheseus_exporter`（`pip install renkin[syntheseus]`）が、実物のSyntheseus `SynthesisGraph`を`syntheseus-route-v1`交換schemaへ変換し、`renkin audit-route --format syntheseus`（自動判定にも対応）がそれを、他のどのadapterとも全く同じ監査パイプラインで消費する。forward validationは、実物のSyntheseus routeでは今のところ常に`not_evaluable`と正直に報告する——`reaction_smiles`にatom mappingが一切含まれないため、pass判定を偽装することはない。[ブラウザPlayground](https://kent-tokyo.github.io/renkin/playground/)のAudit タブにも、Syntheseusが3つ目のformatオプションとして追加された。[実物出力による5分デモ →](https://kent-tokyo.github.io/renkin/guides/syntheseus-audit-demo/)（英語）
+- [x] **Audit Policy Profiles**（`--policy informational|standard|strict`、v0.29.0で出荷）— *findingは1組のまま、判定の導き方だけを3通りに。* 同じrouteを`informational`／`standard`／`strict`のいずれかのpolicyで監査でき、基となるfindingを隠したり変えたりすることは一切ない——policyが変えるのは、既に収集されたfindingから全体のpass/fail/partial判定をどう導出するかだけであり、`audit_manifest.policy`に実際に使われたpolicyが記録される。CLI（`renkin audit-route --policy`）・Rust API・Python初のroute audit binding（`renkin.audit_route()`）・新しいWASM `audit_route_v2()`（既存の`audit_route()`は`standard`policyのwrapperとして維持）のすべてで一貫した挙動。[ブラウザPlayground](https://kent-tokyo.github.io/renkin/playground/)のAudit タブにもpolicy selectorが追加された。
+- [x] **Audit Playground**（`[ Audit a Route ]`タブ、v0.28.0で出荷）— *ブラウザ内でrouteを監査——同じパイプライン、同じ判定、通信は一切なし。* [ブラウザPlayground](https://kent-tokyo.github.io/renkin/playground/)が、RENKINまたはAiZynthFinderのroute export（単一route・Pandas batch双方）と任意のstockリストを、ブラウザ内で完結して監査できるようになった。新しい`audit_route` WASM exportは`renkin audit-route`と全く同じレポート生成パイプラインを呼び出すため、どちらで監査してもpass/fail/partial判定は同一——別々に保守される複製ではない。貼り付けまたはアップロードし、メインスレッドをブロックせず実行し、JSONレポートをダウンロードできる。
+- [x] **Reproducible Route Audit**（`renkin audit-route --output json`の`audit_manifest`、v0.27.0で出荷）— *何を、どの入力から、どのstock・policyで監査したかを再現できるように。* 監査レポートに、RENKINバージョン・report schema version・source format/version・入力とstockのSHA-256ハッシュ・audit policyを記録するようになった——同一入力を2回監査してbyte-identicalになることをテストで確認済み、単なる主張ではない。RENKIN-nativeとAiZynthFinderの両route入力に共通のadapter conformance suiteを追加し、[再現性・互換性契約のドキュメント](https://kent-tokyo.github.io/renkin/guides/audit-reproducibility-contract/)（verified対supportedバージョンの区別、未知フィールドの許容、report schemaルール、adapter fixture追加手順）も整備した。今回のリリースでは[ブラウザPlayground](https://kent-tokyo.github.io/renkin/playground/)にも安全性・UX面の改善が入っている: 探索処理はメインスレッドをブロックせずキャンセル・タイムバジェットに対応、構造式描画は既定でブラウザ内完結（第三者へのSMILES送信なし）、検索条件はCopy CLI/Pythonで正確に再現できる。
+- [x] **RENKIN Bridge — Cross-Tool Route Audit**（`renkin audit-route`、RENKIN-nativeアダプタはv0.25.0で出荷、AiZynthFinderアダプタはv0.26.0で出荷）— *Keep AiZynthFinder. Audit its routes with RENKIN.* ツール非依存のroute audit model: 構造整合性・stock・宣言済み反応のforward replay検証を、それぞれ独立に `pass`/`fail`/`not_evaluable` で報告し、route全体は `pass`/`fail`/`partial` で判定——boolean へ暗黙に握り潰さない。v0.26.0では実物AiZynthFinderアダプタを追加（単一ターゲット・gzip batch JSON、実際にキャプチャしたv4.4.1出力で検証済み——詳細は[`PROVENANCE.md`](tests/fixtures/aizynthfinder/v4.4.1/PROVENANCE.md)参照）、加えて`--format auto`検出により、両ツールのrouteが全く同じ監査パイプラインを通る。実物fixtureでの監査により、前駆体の並び順だけで検証結果が変わってしまう共有のforward-replayバグも発見・修正した。`renkin audit-route route.json --stock stock.smi --output json` で、どちらのツールが生成したrouteでも、ファイル内の全routeを監査しmachine-readableな1つのreportへ集約する
+- [x] リランカーを実際に使える形にする: Python面（`find_routes()`の`reranker_model_path`/`reranker_freq_table_path`）とbatteries-includedなモデル配布（`scripts/fetch_reranker_model.py`、v0.22.0 GitHub Releaseの正規assetからSHA-256検証つきで取得）（[#101](https://github.com/kent-tokyo/renkin/issues/101)、v0.23.0で出荷）— v0.22.0でリランカーが効くことを実証済み、v0.23.0はusability/配布面の解禁であり新たな精度向上の主張ではない
+- [x] LightGBM候補リランカーをオフライン学習・ゲート通過させ、route searchへ統合（[#101](https://github.com/kent-tokyo/renkin/issues/101) Task 35、CLIはv0.22.0で出荷）— 実USPTO-50kラベルでLambdaMARTモデルを学習、VAL screening gate通過（top1 +11.7pp・MRR +11.3pp・top10 +9.3pp、bootstrap CI確認済み）、frozen modelに対しformal 4,903-target TEST評価を一度だけ実施しPASS（top1 +12.7pp・MRR +11.9pp・top10 +9.1pp — VALと同程度の改善幅でoverfitting兆候なし）、その後`find_routes`へordering-onlyのrank bonusとして統合し、paired 100-target route-searchゲートで確認: `route_to_configured_stock` 16→20/100（+4/-0）。詳細は上記の特徴表参照
+- [x] 500-target規模のRENKIN vs AiZynthFinder正式比較（[#66](https://github.com/kent-tokyo/renkin/issues/66)）— 固定500-targetサンプル・共有393化合物ストック・各ツールの設定下で、RENKIN Conservativeの`route_to_shared_stock`はAiZynthFinderより9.8ポイント高く（73/500 対 24/500、95% CI [7.0, 12.8]、exact McNemar p≈1.9e-11）。これはこのプロトコルに限定されたペア比較であり、一般的な探索能力の優位性を主張するものではありません。native構成はストックが揃わないため直接比較しません。
+- [x] extracted template向けRing-context安全ガード（[#72](https://github.com/kent-tokyo/renkin/issues/72)/[#242](https://github.com/kent-tokyo/renkin/pull/242)）— opt-inの `--ring-context-policy`/`--ring-context-sidecar`。訓練データで環結合として一度も観測されていない環開閉切断のテンプレート誤適用を検出。デフォルトは引き続き `disabled`（既存挙動のまま）
+- [x] `atom_economy` の100%への暗黙クランプを廃止（[#79](https://github.com/kent-tokyo/renkin/issues/79)）— ルートの精製物集合が対象の全質量を説明できない場合、新設の `atom_economy_status` フィールド（`normal`/`above_expected_range`/`not_evaluable`）で明示的に報告
+- [x] Coverage mode（`--search-mode coverage`、[#101](https://github.com/kent-tokyo/renkin/issues/101)、v0.24.0で出荷）— opt-inのStage-1/Stage-2テンプレート数エスカレーション、下記candidate-generation coverage gapへの対応。500-target規模の一度限りのformal-TESTで確認済み（`data/coverage_mode_formal_test/protocol_v2.md`）：coverage +6.0pp、net gain +30、regression 0、reranker failure 0、Stage-2 timeout率0.25%——いずれも事前登録済み閾値に対して。出荷済み範囲は上記の特徴表参照
+
+### 進行中
+
+- [ ] Candidate-generation coverage gap — formal TESTコーパスの33.0%（1,618/4,903）がpositive candidateゼロで、これはrerankingでは原理的に解決できない天井。template-diversity-scalingは強いメカニズムであることを確認済み（Phase A.5/B.2、上記coverage mode参照）、higher-level-templateの研究方向はまだ未着手
+- [ ] 5万テンプレートセット向けのtemplate retrieval index（element bitmask + bond-center prefilter）
+- [ ] キャリブレーション済みroute confidence（`success_probability`を経験的solve rateへマッピング）
+
+### 次
+
+- [x] グラフルール拡張 — sulfonamide / carbamate cleavage（構造・原子収支ゲート付き、carbamateはv0.61.0で出荷）
+- [ ] urea cleavage — 原子収支を満たす切断生成物を定義・検証してからdefault ruleへ追加
+- [ ] Stock-aware planning（価格・ハザード・入手性による再順位付け）
+
+<details>
+<summary>過去のマイルストーン</summary>
+
+以下のパーセント数値はその時点でのマイルストーンであり現在の性能ではない——一部は[現在の制約](#現在の制約)に記載のvalidator精度修正より前の数値で無効化済み。修正済みの過去計測値は[ベンチマーク](#ベンチマーク)参照。
+
+- [x] 安定 `template_id`（`rule:<name>` / `smirks-sha256:<hex>`）+ `--template-metadata` evidence サイドカー + `renkin template ids`（[#41](https://github.com/kent-tokyo/renkin/issues/41) phase 1）
+- [x] 基質固有の `examples`（`schema_version: 2`）— ステップごとに「exact substrate match」か「同一テンプレート・別基質」かを解決し、`--format explain` に表示、JSONでは `match_kind` フィールドとして提供（[#41](https://github.com/kent-tokyo/renkin/issues/41) phase 2）
+- [x] 決定的なORD（Open Reaction Database）evidenceインポート — オフラインの `renkin evidence match`（exact-setバッチtemplate matcher）+ `scripts/ord_evidence_audit.py`（audit/converter）により `schema_version: 2` サイドカーへ変換（[#41](https://github.com/kent-tokyo/renkin/issues/41) phase 3A）
+- [x] RETROSPECT 着想のオフライン候補リランキング基盤 — candidate proposal/selection の分離、feature schema v1、manifest v2、leakage-safe な train/val/test スプリット、baseline arm + 学習済み ranker arm、paired bootstrap + オフラインゲートツール（[#59](https://github.com/kent-tokyo/renkin/pull/59)）
+- [x] `renkin-forward enumerate` — 既知反応物1つと明示的なpartnerライブラリからの、境界付きtemplate誘導型順反応列挙（[#64](https://github.com/kent-tokyo/renkin/issues/64)）
+- [x] `renkin-forward hints` — partner不要の検索用ヒント（マッチしたテンプレートslot・不足partnerのSMARTS・結合デルタ）。具体的な生成物は予測しない（[#64](https://github.com/kent-tokyo/renkin/issues/64) phase 2）
+- [x] `renkin-forward` CLI 強化 — バージョン管理された `ForwardPredictionReport`、決定的な候補ID/マージ/由来情報、reactant 順序に依存しないマッチング、厳格な CLI/route-JSON 検証
+- [x] `apply_retro`/`run_reactants` 性能回帰の解消 — `chematic`を公開済み`0.8.0`（上流のautomorphism-orbit-pruned canonicalization、[chematic#193](https://github.com/kent-tokyo/chematic/pull/193)）へ移行。correctnessへの影響ゼロ
+- [x] `renkin-bench --plausibility` — 順方向検証による妥当性レポート
+- [x] `renkin-forward predict` — テンプレートベース順反応予測
+- [x] `renkin-forward validate` — 逆合成ルートの順反応検証；stdin パイプ対応
 - [x] `renkin-doctor` — 環境診断バイナリ（テンプレート・BB・Python・ツールバージョン）
 - [x] 失敗時診断 — ルートゼロ時に `likely_causes` + `suggestions` の JSON ブロックを出力
 - [x] `--format explain|compare|compare-json` — 人間可読・表形式ルート出力
 - [x] `renkin stock stats|validate|coverage` — stock CSV 管理サブコマンド
 - [x] Pareto 多目的探索 — `--format pareto`・`--objectives`・`find_pareto_routes` MCP ツール
 - [x] 制約 DSL — `--constraints JSON`・`plan_with_constraints` MCP ツール
-- [x] `renkin-bench --plausibility` — 順方向検証による妥当性レポート
 - [x] `renkin template stats|validate|dedup|explain|coverage` — テンプレート品質ツール
 - [x] `renkin-kg` — 反応知識グラフ（分子↔反応 二部グラフ、GraphML/Cypher エクスポート）
-- [x] MCP サーバー拡張 — 6 ツール体制（`explain_route`・`find_pareto_routes`・`plan_with_constraints` 追加）
-- [x] 安定 `template_id`（`rule:<name>` / `smirks-sha256:<hex>`）+ `--template-metadata` evidence サイドカー + `renkin template ids`（[#41](https://github.com/kent-tokyo/renkin/issues/41) phase 1）
-- [x] 基質固有の `examples`（`schema_version: 2`）— ステップごとに「exact substrate match」か「同一テンプレート・別基質」かを解決し、`--format explain` に表示、JSONでは `match_kind` フィールドとして提供（[#41](https://github.com/kent-tokyo/renkin/issues/41) phase 2）
-- [x] 決定的なORD（Open Reaction Database）evidenceインポート — オフラインの `renkin evidence match`（exact-setバッチtemplate matcher）+ `scripts/ord_evidence_audit.py`（audit/converter）により `schema_version: 2` サイドカーへ変換。ネットワークアクセスなし、fuzzy matchingなし、ambiguous/provenance不明なrecordは推測せずaudit reportへ除外理由付きで記録（[#41](https://github.com/kent-tokyo/renkin/issues/41) phase 3A）
-- [x] `renkin-forward` CLI 強化 — バージョン管理された `ForwardPredictionReport`、決定的な候補ID/マージ/由来情報、reactant 順序に依存しないマッチング（最大3試薬）、厳格な CLI/route-JSON 検証
-- [x] RETROSPECT 着想のオフライン候補リランキング基盤 — candidate proposal/selection の分離、feature schema v1、manifest v2、leakage-safe な train/val/test スプリット、7つの決定的 baseline arm + 学習済み ranker arm、paired bootstrap + オフラインゲートツール（[#59](https://github.com/kent-tokyo/renkin/pull/59)；**基盤のみ — 学習済みモデルや精度結果はまだ無く、route search には未統合**）
-- [x] `apply_retro`/`run_reactants` 性能回帰の解消 — `chematic`をnarrowなgit pinから公開済み`0.8.0`（上流のautomorphism-orbit-pruned canonicalization、[chematic#193](https://github.com/kent-tokyo/chematic/pull/193)）へ移行。固定30-targetゲートで現行masterに対し同一セッション計測: total elapsed **34.7%**高速化、p95 **33.8%**高速化、最悪ケースターゲットは**42.2%**高速化（単発ではなく複数回の孤立計測で確認済み）。correctnessへの影響ゼロ（`apply_retro`呼び出し回数はバージョン間で完全一致）
-- [x] `renkin-forward enumerate` — 既知反応物1つと明示的なpartnerライブラリからの、境界付きtemplate誘導型順反応列挙（[#64](https://github.com/kent-tokyo/renkin/issues/64)）
-- [x] `renkin-forward hints` — partner不要の検索用ヒント（マッチしたテンプレートslot・不足partnerのSMARTS・結合デルタ）。具体的な生成物は予測しない（[#64](https://github.com/kent-tokyo/renkin/issues/64) phase 2）
-- [x] `atom_economy` の100%への暗黙クランプを廃止（[#79](https://github.com/kent-tokyo/renkin/issues/79)）— ルートの精製物集合が対象の全質量を説明できない場合、新設の `atom_economy_status` フィールド（`normal`/`above_expected_range`/`not_evaluable`）で明示的に報告
-- [x] extracted template向けRing-context安全ガード（[#72](https://github.com/kent-tokyo/renkin/issues/72)/[#242](https://github.com/kent-tokyo/renkin/pull/242)）— opt-inの `--ring-context-policy`/`--ring-context-sidecar`。訓練データで環結合として一度も観測されていない環開閉切断のテンプレート誤適用を検出。デフォルトは引き続き `disabled`（既存挙動のまま）
-- [x] 500-target規模のRENKIN vs AiZynthFinder正式比較（[#66](https://github.com/kent-tokyo/renkin/issues/66)）— 固定500-targetサンプル・共有393化合物ストック・各ツールの設定下で、RENKIN Conservativeの`route_to_shared_stock`はAiZynthFinderより9.8ポイント高く（73/500 対 24/500、95% CI [7.0, 12.8]、exact McNemar p≈1.9e-11）、このプロトコル下で統計的に有意なペア差だった——一般的な探索能力の優位性を主張するものではない。各ツール本来のnative構成では逆方向に乖離し、ストックサイズ差を含む未統制条件が支配的。詳細は[比較ガイド](docs/guides/open-source-retrosynthesis-comparison.md)（英語）の限定的な解釈を参照
+- [x] MCP サーバー — 7ツール、レガシー `2024-11-05` / モダン `2026-07-28` stdioプロトコル対応
+- [x] ルートコストスコアリング — `route_cost` フィールド + `--bb-prices CSV` / `--stock stock.csv`
+- [x] Cargo workspace 整備 — `crates/renkin-forward/` + `crates/renkin-kg/`
+- [x] コア探索エンジンの基盤 — SMIRKS逆反応ルール+フラグメント正規化、A\*/AND-OR木探索（クローズドリスト・縮退ルートフィルタ付き）、SA Scoreヒューリスティック+ビームサーチ、`rayon`並列ルール適用（wasm32は逐次フォールバック）、FxHashMap/SmallVecビームフロンティア/SA Scoreメモ化/`Arc<PathNode>`パス共有等の性能最適化
+- [x] マルチターゲット配布 — Pythonバインディング（PyO3+maturin、`pip install renkin`）、WASMビルド（`npm install renkin`）、crates.io/PyPI/npm公開+GitHub Actions CI/CD、WASMブラウザプレイグラウンド+i18n（EN/JA/ZH）
+- [x] ベンチマークCLI（`renkin-bench`）+ USPTO-50k初期評価、MkDocsドキュメントサイト + GitHub Pagesプレイグラウンド
+- [x] グラフベースビアリール切断 · O(1) canonical-SMILES BB インデックス
+- [x] 四面体ステレオ @/@@ + E/Z 二重結合ステレオサポート
+- [x] NNテンプレートスコアラー `--scorer` フラグ（tract-onnx、Pure Rust ONNX、C++依存なし）
+- [x] 制約付き探索（`--avoid-elements` / `--require-elements`）+ `--verbose` 探索統計
+- [x] **`#![forbid(unsafe_code)]`** — 全クレートで最初からコンパイラ保証の Pure Safe Rust
+
+</details>
 
 ---
 

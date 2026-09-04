@@ -69,11 +69,20 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - uses: PyO3/maturin-action@v1
         with:
           command: build
           args: --release --features python --out dist
       - run: pip install dist/*.whl --force-reinstall
+      - name: Build CLI binary (for the CLI/Python coverage-mode field-parity test below)
+        # maturin's build above only produces the cdylib wheel, not the
+        # renkin bin target -- without this,
+        # test_cli_python_coverage_field_parity silently self-skips in CI
+        # ('requires a built renkin binary at .../target/release/renkin'),
+        # even though it passes locally.
+        run: cargo build --release --bin renkin
       - name: Smoke test from a non-repo directory
         # Deliberately NOT run from the repo root: find_routes with no
         # building_blocks argument looks for data/building_blocks.smi
@@ -91,12 +100,96 @@ jobs:
           assert callable(renkin.find_routes), 'find_routes missing'
           assert callable(renkin.predict_forward), 'predict_forward missing'
           assert callable(renkin.validate_forward), 'validate_forward missing'
+          assert callable(renkin.audit_route), 'audit_route missing'
           result = renkin.find_routes('c1ccccc1', 3, 1, 0)
           assert result, 'find_routes returned empty'
           result = renkin.find_routes('c1ccccc1', depth=3, max_routes=1, beam_width=0, template_metadata_path=None)
           assert result, 'find_routes with template_metadata_path=None returned empty'
+          import json
+          result = renkin.find_routes('c1ccccc1', depth=3, max_routes=1, beam_width=0, reranker_model_path=None, reranker_freq_table_path=None)
+          assert result, 'find_routes with reranker paths=None returned empty'
+          assert 'reranker_failures' not in json.loads(result), 'reranker_failures must be absent when no reranker is configured'
+          result = renkin.find_routes('c1ccccc1', depth=3, max_routes=1, beam_width=0, reranker_model_path='/nonexistent/model.txt', reranker_freq_table_path='/nonexistent/freq.json')
+          assert result, 'find_routes must fall back to legacy ordering on a bad reranker path, not raise'
+          assert 'reranker_failures' not in json.loads(result), 'reranker_failures must be absent when the reranker failed to load'
+          result = renkin.find_routes('c1ccccc1', depth=3, max_routes=1, beam_width=0, reranker_model_path='/nonexistent/model.txt')
+          assert result, 'find_routes must fall back to legacy ordering when only one reranker path is given, not raise'
+          assert 'reranker_failures' not in json.loads(result), 'reranker_failures must be absent for a mismatched (one-None) reranker path pair too'
           print('ok:', renkin.__version__)
           "
+      - name: Coverage-mode Python tests (from repo checkout)
+        # Unlike the smoke test above, this one runs from the repo root
+        # deliberately: it needs tests/fixtures/coverage_mode_templates.smi
+        # to resolve via a repo-relative path. Same discover convention as
+        # the reranker-tests job above, scoped to just this file.
+        run: python3 -m unittest discover -s scripts/tests -p "test_python_coverage_mode.py" -v
+      - name: Audit-route Python tests (from repo checkout, v0.29.0 PR2)
+        # Same reasoning as the coverage-mode step above: needs the repo
+        # root as cwd (its own CLI/Python parity check spawns
+        # target/release/renkin, built above) and a dedicated discover so
+        # it actually runs rather than silently self-skipping under the
+        # broader `test_*.py` discovery (that job has no renkin installed).
+        run: python3 -m unittest discover -s scripts/tests -p "test_python_audit_route.py" -v
+      - name: Typed audit report Python tests (from repo checkout, v0.32.0 Phase 2A)
+        # Same reasoning as the audit-route step above: this needs both
+        # the wheel installed (AiZynthFinder/Syntheseus fixture cases) and
+        # target/release/renkin built (RENKIN-native cases), so it gets
+        # its own dedicated discover in this job rather than relying on
+        # the reranker-tests job's broader `test_*.py` discovery, which
+        # has no renkin wheel installed and would silently self-skip.
+        run: python3 -m unittest discover -s scripts/tests -p "test_python_audit_report.py" -v
+
+  # v0.31.0 Syntheseus 0.8 compatibility spike: runs the exact same
+  # test_python_syntheseus_exporter.py against BOTH real, artifact-pinned
+  # syntheseus versions in separate jobs (not a single job installing one
+  # then the other -- that would leave stale site-packages from the first
+  # install around). FIXTURE_DIR in that test file resolves from
+  # importlib.metadata.version("syntheseus"), so the identical test body
+  # verifies both tests/fixtures/syntheseus/0.7.2/ and .../0.8.0/ without
+  # duplicating test code.
+  syntheseus-compat-matrix:
+    name: Syntheseus compat · ${{ matrix.syntheseus-version }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        syntheseus-version: ["0.7.2", "0.8.0"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --features python --out dist
+      - run: pip install dist/*.whl --force-reinstall
+      # Pinned to an exact matrix value, not a range -- this job's whole
+      # point is verifying each real version individually, not whatever
+      # `pip` happens to resolve within pyproject.toml's declared extra.
+      - run: pip install "syntheseus==${{ matrix.syntheseus-version }}"
+      - run: python3 -m unittest discover -s scripts/tests -p "test_python_syntheseus_exporter.py" -v
+
+  # v0.31.0 Phase 1 PR2: does pip's own resolver actually honor the
+  # declared syntheseus>=0.7.2,<=0.8.0 interval the way pyproject.toml
+  # claims, on a real wheel -- not inferred from reading the spec file.
+  # Also covers the wheel METADATA structural checks (Provides-Extra,
+  # Requires-Dist, no stale exact pin, base install ungated).
+  syntheseus-dependency-resolution:
+    name: Syntheseus dependency resolution
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: pip install maturin
+      - name: Wheel METADATA structural checks
+        run: python3 -m unittest discover -s scripts/tests -p "test_python_package_metadata.py" -v
+      - name: "Resolver smoke (Case A: default resolution, Case B: 0.7.2 preserved)"
+        run: python3 scripts/check_syntheseus_dependency_resolution.py
 
   # Prevents documentation from silently drifting from reality (regression:
   # docs once claimed 31 rules / 509 building blocks / a non-existent
@@ -142,6 +235,8 @@ jobs:
         run: |
           pip install dist/*.whl --force-reinstall
           python3 examples/quickstart.py
+      - name: Run the Python coverage-mode example
+        run: python3 examples/coverage_mode.py
 
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
@@ -160,14 +255,14 @@ jobs:
 
       - name: Check sitemap.xml includes key pages
         run: |
-          for page in api/python api/rust api/wasm benchmark benchmark_ja getting_started/installation getting_started/quickstart examples/aspirin examples/druglike guides/python-retrosynthesis guides/rust-retrosynthesis guides/reaction-evidence guides/forward-prediction guides/forward-enumeration guides/forward-retrieval-hints guides/open-source-retrosynthesis-comparison comparison/open-source-retrosynthesis-tools comparison/askcos-feasibility-issue-66; do
+          for page in api/python api/rust api/wasm benchmark benchmark_ja getting_started/installation getting_started/quickstart examples/aspirin examples/druglike guides/python-retrosynthesis guides/rust-retrosynthesis guides/reaction-evidence guides/forward-prediction guides/forward-enumeration guides/forward-retrieval-hints guides/chemical-review-rubric; do
             grep -q "$page/" /tmp/site/sitemap.xml || { echo "ERROR: $page missing from sitemap.xml"; exit 1; }
           done
           echo "OK: sitemap.xml includes all key pages"
 
       - name: Check social card images were generated for key pages
         run: |
-          for page in index api/python api/rust api/wasm benchmark benchmark_ja getting_started/installation getting_started/quickstart examples/aspirin examples/druglike guides/python-retrosynthesis guides/rust-retrosynthesis guides/reaction-evidence guides/forward-prediction guides/forward-enumeration guides/forward-retrieval-hints guides/open-source-retrosynthesis-comparison comparison/open-source-retrosynthesis-tools comparison/askcos-feasibility-issue-66; do
+          for page in index api/python api/rust api/wasm benchmark benchmark_ja getting_started/installation getting_started/quickstart examples/aspirin examples/druglike guides/python-retrosynthesis guides/rust-retrosynthesis guides/reaction-evidence guides/forward-prediction guides/forward-enumeration guides/forward-retrieval-hints guides/chemical-review-rubric; do
             test -s "/tmp/site/assets/images/social/$page.png" || { echo "ERROR: social card missing for $page"; exit 1; }
           done
           echo "OK: social card images generated for all key pages"

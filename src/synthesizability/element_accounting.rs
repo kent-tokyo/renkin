@@ -37,7 +37,7 @@ pub(crate) struct ElementAccountingResult {
 /// `validation::graph_rules::element_counts`, this deliberately does NOT
 /// add back implicit hydrogens -- this check is heavy-atom-only by design,
 /// not H-inclusive. `None` if the SMILES fails to parse under chematic.
-fn heavy_atom_counts(smiles: &str) -> Option<HashMap<Element, usize>> {
+pub(crate) fn heavy_atom_counts(smiles: &str) -> Option<HashMap<Element, usize>> {
     let mol = mol_from_smiles(smiles).ok()?;
     let mut counts: HashMap<Element, usize> = HashMap::new();
     for (_, atom) in mol.atoms() {
@@ -46,6 +46,36 @@ fn heavy_atom_counts(smiles: &str) -> Option<HashMap<Element, usize>> {
         }
     }
     Some(counts)
+}
+
+/// Per-step body of the directional, one-way per-element heavy-atom
+/// accounting check (design doc §4.5) -- **NOT mass conservation**.
+/// Extracted from `compute_element_accounting`'s loop body
+/// (`docs/design/candidate-time-element-accounting-gate-v0.md`'s rollout
+/// stage 1) so a future per-candidate caller and this route-level function
+/// share one implementation and can never silently disagree.
+///
+/// `Some(true)` = every element the target needs is covered by the
+/// precursors' combined heavy-atom counts. `Some(false)` = the target
+/// needs more of at least one element than the precursors supply.
+/// `None` = not evaluable -- the target or any one precursor failed to
+/// parse under `heavy_atom_counts`.
+pub(crate) fn step_element_accounting(target: &str, precursors: &[String]) -> Option<bool> {
+    let target_counts = heavy_atom_counts(target)?;
+
+    let mut precursor_counts: HashMap<Element, usize> = HashMap::new();
+    for precursor in precursors {
+        let counts = heavy_atom_counts(precursor)?;
+        for (element, n) in counts {
+            *precursor_counts.entry(element).or_insert(0) += n;
+        }
+    }
+
+    Some(
+        !target_counts
+            .iter()
+            .any(|(element, n)| *n > precursor_counts.get(element).copied().unwrap_or(0)),
+    )
 }
 
 /// Directional, one-way per-element heavy-atom accounting (design doc
@@ -78,35 +108,14 @@ pub(crate) fn compute_element_accounting(route: &crate::search::Route) -> Elemen
     let mut failing_step_indices = Vec::new();
 
     for (idx, step) in route.steps.iter().enumerate() {
-        let Some(target_counts) = heavy_atom_counts(&step.target) else {
-            continue;
-        };
-
-        let mut precursor_counts: HashMap<Element, usize> = HashMap::new();
-        let mut all_precursors_parsed = true;
-        for precursor in &step.precursors {
-            match heavy_atom_counts(precursor) {
-                Some(counts) => {
-                    for (element, n) in counts {
-                        *precursor_counts.entry(element).or_insert(0) += n;
-                    }
-                }
-                None => {
-                    all_precursors_parsed = false;
-                    break;
+        match step_element_accounting(&step.target, &step.precursors) {
+            Some(accounted) => {
+                any_evaluated = true;
+                if !accounted {
+                    failing_step_indices.push(idx);
                 }
             }
-        }
-        if !all_precursors_parsed {
-            continue;
-        }
-
-        any_evaluated = true;
-        let step_fails = target_counts
-            .iter()
-            .any(|(element, n)| *n > precursor_counts.get(element).copied().unwrap_or(0));
-        if step_fails {
-            failing_step_indices.push(idx);
+            None => continue,
         }
     }
 
@@ -165,6 +174,48 @@ mod tests {
             success_probability: 1.0,
             route_cost: 1.0,
         }
+    }
+
+    // ── step_element_accounting: direct coverage of the extracted per-step
+    // function (rollout stage 1, docs/design/candidate-time-element-
+    // accounting-gate-v0.md). Mirrors the route-level fixtures below 1:1 --
+    // same inputs, same verdicts, proving the extraction is byte-identical
+    // in behavior, not just in the route-level tests that call through it.
+
+    #[test]
+    fn step_element_accounting_clean_case_is_accounted() {
+        let precursors = vec!["CC(=O)O".to_string(), "Oc1ccccc1".to_string()];
+        assert_eq!(
+            step_element_accounting("CC(=O)Oc1ccccc1", &precursors),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn step_element_accounting_clear_violation_is_unaccounted() {
+        let precursors = vec!["c1ccccc1".to_string()];
+        assert_eq!(
+            step_element_accounting("Brc1ccccc1", &precursors),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn step_element_accounting_precursor_excess_is_not_a_failure() {
+        let precursors = vec!["CC(=O)O".to_string(), "CCN".to_string()];
+        assert_eq!(step_element_accounting("CC(N)=O", &precursors), Some(true));
+    }
+
+    #[test]
+    fn step_element_accounting_unparseable_target_is_not_evaluable() {
+        let precursors = vec!["CCO".to_string()];
+        assert_eq!(step_element_accounting("[C(", &precursors), None);
+    }
+
+    #[test]
+    fn step_element_accounting_unparseable_precursor_is_not_evaluable() {
+        let precursors = vec!["[N(".to_string()];
+        assert_eq!(step_element_accounting("CCO", &precursors), None);
     }
 
     #[test]

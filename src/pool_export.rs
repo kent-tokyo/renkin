@@ -23,8 +23,8 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::candidate::{
-    CandidatePool, FEATURE_NAMES_V1, FEATURE_SCHEMA_VERSION, ProposalMode, UpstreamScoreStatus,
-    extract_features, feature_schema_hash,
+    CandidatePool, CandidatePoolStats, FEATURE_NAMES_V1, FEATURE_SCHEMA_VERSION, ProposalMode,
+    UpstreamScoreStatus, extract_features, feature_schema_hash,
 };
 use crate::chem_env::{ChemEnv, Molecule, RetroRule};
 
@@ -169,6 +169,15 @@ pub fn candidate_rows_for_pool(
 pub enum ProposalStatus {
     Ok,
     TargetParseFailed,
+    /// `propose_one_step` re-derives `target_id` internally via its own
+    /// canonicalization call, and for a rare molecule that can disagree with
+    /// the caller-supplied `target_id` (observed for one case where an
+    /// upstream label file's canonical form no longer matched a fresh
+    /// re-canonicalization -- both forms individually stable, but distinct).
+    /// A driver that silently accepted `pool.target_id` here would corrupt
+    /// the identity space labels/split-manifest rely on, so this group's
+    /// candidates are dropped rather than exported under either SMILES.
+    TargetIdMismatch,
 }
 
 /// One record per (group_id, target) proposal attempt, exported alongside
@@ -185,6 +194,10 @@ pub struct TargetPoolRecord {
     pub target_smiles: String,
     pub candidate_count: usize,
     pub proposal_status: ProposalStatus,
+    /// Proposal accounting captured at generation time. This is present only
+    /// for records backed by a successful `CandidatePool`; failure records do
+    /// not fabricate zero-valued proposal statistics.
+    pub candidate_pool_stats: Option<CandidatePoolStats>,
 }
 
 /// Build the record for a group whose proposal succeeded (`pool` may still
@@ -197,6 +210,7 @@ pub fn target_pool_record_for_pool(pool: &CandidatePool) -> TargetPoolRecord {
         target_smiles: pool.target_smiles.clone(),
         candidate_count: pool.candidates.len(),
         proposal_status: ProposalStatus::Ok,
+        candidate_pool_stats: Some(pool.stats),
     }
 }
 
@@ -217,6 +231,29 @@ pub fn target_pool_record_for_failure(
         target_smiles: requested_target_smiles.to_string(),
         candidate_count: 0,
         proposal_status: ProposalStatus::TargetParseFailed,
+        candidate_pool_stats: None,
+    }
+}
+
+/// Build the record for a group where `propose_one_step` succeeded but
+/// re-derived a `target_id` that disagrees with the caller's own
+/// `requested_target_id` (see [`ProposalStatus::TargetIdMismatch`]). The
+/// candidates that were computed are discarded -- they're keyed to whichever
+/// canonical form `propose_one_step` derived, which is not an identity any
+/// consumer of this record actually asked for -- and `target_id` here is
+/// kept as the caller's original requested value so the group index stays in
+/// the same identity space as the input group list.
+pub fn target_pool_record_for_target_id_mismatch(
+    group_id: &str,
+    requested_target_id: &str,
+) -> TargetPoolRecord {
+    TargetPoolRecord {
+        group_id: group_id.to_string(),
+        target_id: requested_target_id.to_string(),
+        target_smiles: requested_target_id.to_string(),
+        candidate_count: 0,
+        proposal_status: ProposalStatus::TargetIdMismatch,
+        candidate_pool_stats: None,
     }
 }
 
@@ -230,6 +267,75 @@ fn validate_group_index(records: &[TargetPoolRecord]) -> anyhow::Result<()> {
                 "duplicate group_id {:?} in the target/group index",
                 record.group_id
             );
+        }
+        if let Some(stats) = record.candidate_pool_stats {
+            if record.proposal_status != ProposalStatus::Ok {
+                anyhow::bail!(
+                    "group_id {:?}: candidate pool stats require proposal_status=ok",
+                    record.group_id
+                );
+            }
+            if stats.rules_considered.checked_add(stats.rules_filtered_out)
+                != Some(stats.rules_available)
+            {
+                anyhow::bail!(
+                    "group_id {:?}: rules_available={} does not equal considered={} + filtered_out={}",
+                    record.group_id,
+                    stats.rules_available,
+                    stats.rules_considered,
+                    stats.rules_filtered_out
+                );
+            }
+            if stats
+                .rules_element_filtered_out
+                .checked_add(stats.rules_attempted)
+                != Some(stats.rules_considered)
+            {
+                anyhow::bail!(
+                    "group_id {:?}: rules_considered={} does not equal element_filtered_out={} + attempted={}",
+                    record.group_id,
+                    stats.rules_considered,
+                    stats.rules_element_filtered_out,
+                    stats.rules_attempted
+                );
+            }
+            if stats
+                .rules_producing_candidates
+                .checked_add(stats.rules_without_candidates)
+                != Some(stats.rules_attempted)
+            {
+                anyhow::bail!(
+                    "group_id {:?}: rules_attempted={} does not equal producing_candidates={} + without_candidates={}",
+                    record.group_id,
+                    stats.rules_attempted,
+                    stats.rules_producing_candidates,
+                    stats.rules_without_candidates
+                );
+            }
+            if stats
+                .unique_candidates
+                .checked_add(stats.duplicate_candidates)
+                != Some(stats.raw_candidates_generated)
+            {
+                anyhow::bail!(
+                    "group_id {:?}: raw_candidates_generated={} does not equal unique_candidates={} + duplicate_candidates={}",
+                    record.group_id,
+                    stats.raw_candidates_generated,
+                    stats.unique_candidates,
+                    stats.duplicate_candidates
+                );
+            }
+            if stats.unique_candidates != record.candidate_count {
+                anyhow::bail!(
+                    "group_id {:?}: candidate_count={} does not match unique_candidates={}",
+                    record.group_id,
+                    record.candidate_count,
+                    stats.unique_candidates
+                );
+            }
+        } else if record.proposal_status == ProposalStatus::Ok {
+            // Allow hand-assembled legacy records to remain readable; records
+            // produced by `target_pool_record_for_pool` always carry stats.
         }
     }
     Ok(())
@@ -670,6 +776,7 @@ mod tests {
         assert_eq!(record.target_id, pool.target_id);
         assert_eq!(record.candidate_count, pool.candidates.len());
         assert_eq!(record.proposal_status, ProposalStatus::Ok);
+        assert_eq!(record.candidate_pool_stats, Some(pool.stats));
     }
 
     #[test]
@@ -691,6 +798,7 @@ mod tests {
         let record = target_pool_record_for_pool(&pool);
         assert_eq!(record.candidate_count, 0);
         assert_eq!(record.proposal_status, ProposalStatus::Ok);
+        assert_eq!(record.candidate_pool_stats, Some(pool.stats));
     }
 
     #[test]
@@ -699,10 +807,27 @@ mod tests {
         assert_eq!(record.group_id, "rxn-example-3");
         assert_eq!(record.candidate_count, 0);
         assert_eq!(record.proposal_status, ProposalStatus::TargetParseFailed);
+        assert_eq!(record.candidate_pool_stats, None);
         assert_ne!(
             record.proposal_status,
             ProposalStatus::Ok,
             "a parse failure must never be reported as a real zero-candidate outcome"
+        );
+    }
+
+    #[test]
+    fn target_pool_record_for_target_id_mismatch_keeps_the_requested_id_and_zero_candidates() {
+        let record = target_pool_record_for_target_id_mismatch("rxn-example-4", "requested-id");
+        assert_eq!(record.group_id, "rxn-example-4");
+        assert_eq!(record.target_id, "requested-id");
+        assert_eq!(record.target_smiles, "requested-id");
+        assert_eq!(record.candidate_count, 0);
+        assert_eq!(record.proposal_status, ProposalStatus::TargetIdMismatch);
+        assert_eq!(record.candidate_pool_stats, None);
+        assert_ne!(
+            record.proposal_status,
+            ProposalStatus::Ok,
+            "a target_id mismatch must never be reported as a real zero-candidate outcome"
         );
     }
 
@@ -715,6 +840,7 @@ mod tests {
                 target_smiles: "t1".to_string(),
                 candidate_count: 3,
                 proposal_status: ProposalStatus::Ok,
+                candidate_pool_stats: None,
             },
             target_pool_record_for_failure("g2", "bad-smiles"),
         ];
@@ -730,6 +856,31 @@ mod tests {
         }
         let second: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
         assert_eq!(second["proposal_status"], "target_parse_failed");
+        assert!(second["candidate_pool_stats"].is_null());
+    }
+
+    #[test]
+    fn write_target_pool_jsonl_rejects_inconsistent_candidate_pool_stats() {
+        let rules = default_rules();
+        let pool = propose_one_step(
+            "rxn-example-stats",
+            "CC(=O)c1ccccc1",
+            &rules,
+            &ProposalConfig::default(),
+        )
+        .unwrap();
+        let mut record = target_pool_record_for_pool(&pool);
+        record
+            .candidate_pool_stats
+            .as_mut()
+            .unwrap()
+            .duplicate_candidates += 1;
+
+        let result = write_target_pool_jsonl(&[record], Vec::new());
+        assert!(
+            result.is_err(),
+            "inconsistent raw/unique/duplicate accounting must not be exported"
+        );
     }
 
     #[test]
@@ -1103,6 +1254,7 @@ mod tests {
                 target_smiles: "t1".to_string(),
                 candidate_count: 0,
                 proposal_status: ProposalStatus::Ok,
+                candidate_pool_stats: None,
             },
             TargetPoolRecord {
                 group_id: "g1".to_string(),
@@ -1110,6 +1262,7 @@ mod tests {
                 target_smiles: "t2".to_string(),
                 candidate_count: 0,
                 proposal_status: ProposalStatus::Ok,
+                candidate_pool_stats: None,
             },
         ];
         let result = build_manifest(

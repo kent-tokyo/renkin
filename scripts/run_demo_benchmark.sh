@@ -2,7 +2,7 @@
 # Run the RENKIN benchmark and print a human-readable summary.
 #
 # Usage:
-#   ./scripts/run_benchmark.sh [--input <file>] [--depth N] [--beam-width N]
+#   ./scripts/run_demo_benchmark.sh [--input <file>] [--depth N] [--beam-width N]
 #
 # Defaults:
 #   --input data/benchmark_targets.smi

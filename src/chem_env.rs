@@ -157,7 +157,164 @@ pub fn to_canonical(mol: &Molecule) -> String {
     canonical_smiles(mol)
 }
 
-static STANDARDIZE_OPTS: StandardizeOptions = StandardizeOptions {
+/// Structurally clear every atom's `atom_map`, leaving every other property
+/// (element, charge, isotope, aromaticity, chirality, hydrogen count,
+/// wildcard, stereo groups, stereo neighbor order, bond directions, bond
+/// orders, ring topology) untouched.
+///
+/// Ground-truth label pipelines that need map-free canonical SMILES from
+/// mapped reaction data (e.g. `scripts/generate_real_labels.py`) must clear
+/// atom maps this way, not via string manipulation on the SMILES text --
+/// `:` is also SMILES bond syntax (explicit aromatic/double bonds), so a
+/// text-level `:\d+` strip can corrupt a ring-closure digit that follows an
+/// explicit bond symbol instead of an atom map (see the regression tests
+/// below for a concrete case). Rebuilds via [`MoleculeBuilder`] rather than
+/// mutating in place because [`Molecule`] exposes no atom mutator for
+/// `atom_map` (only `set_charge`/`set_isotope`/`set_element`/etc. -- by
+/// design, atom maps are meant to be set once during parsing/reaction
+/// construction, not edited post hoc).
+///
+/// Atoms and bonds are re-added in exactly the same order as `mol` yields
+/// them, so atom/bond indices are unchanged and `stereo_groups`/
+/// `stereo_neighbor_order`/`bond_directions` (all keyed by index) can be
+/// copied over verbatim -- see `MoleculeBuilder::from_molecule`'s own doc
+/// comment for why that invariant is what makes the verbatim copy valid.
+pub fn clear_atom_maps(mol: &Molecule) -> Molecule {
+    let mut builder = MoleculeBuilder::new();
+    for (_, atom) in mol.atoms() {
+        let mut a = atom.clone();
+        a.atom_map = None;
+        builder.add_atom(a);
+    }
+    for (_, bond) in mol.bonds() {
+        let _ = builder.add_bond(bond.atom1, bond.atom2, bond.order);
+    }
+    builder.copy_stereo_groups_from(mol);
+    builder.copy_stereo_from(mol);
+    builder.copy_bond_directions_from(mol);
+    builder.build()
+}
+
+#[cfg(test)]
+mod clear_atom_maps_tests {
+    use super::*;
+
+    fn canon_after_clear(smiles: &str) -> String {
+        let mol = mol_from_smiles(smiles).unwrap_or_else(|e| panic!("{smiles}: {e}"));
+        to_canonical(&clear_atom_maps(&mol))
+    }
+
+    #[test]
+    fn normal_mapped_atom_matches_unmapped_canonical() {
+        assert_eq!(
+            canon_after_clear("[CH3:1]O"),
+            to_canonical(&mol_from_smiles("CO").unwrap())
+        );
+    }
+
+    #[test]
+    fn multi_digit_atom_map_matches_unmapped_canonical() {
+        assert_eq!(
+            canon_after_clear("[CH3:123]O"),
+            to_canonical(&mol_from_smiles("CO").unwrap())
+        );
+    }
+
+    #[test]
+    fn isotope_survives_map_clearing() {
+        assert_eq!(
+            canon_after_clear("[13CH4:1]"),
+            to_canonical(&mol_from_smiles("[13CH4]").unwrap())
+        );
+    }
+
+    #[test]
+    fn formal_charge_survives_map_clearing() {
+        assert_eq!(
+            canon_after_clear("[NH4+:1]"),
+            to_canonical(&mol_from_smiles("[NH4+]").unwrap())
+        );
+    }
+
+    #[test]
+    fn tetrahedral_stereo_survives_map_clearing() {
+        assert_eq!(
+            canon_after_clear("[C@H:1](F)(Cl)Br"),
+            to_canonical(&mol_from_smiles("[C@H](F)(Cl)Br").unwrap())
+        );
+        // Also confirm it's not just "some canonical form" but the correct
+        // one -- the mirror-image @@ stereocenter must differ.
+        assert_ne!(
+            canon_after_clear("[C@H:1](F)(Cl)Br"),
+            canon_after_clear("[C@@H:1](F)(Cl)Br")
+        );
+    }
+
+    #[test]
+    fn aromatic_atoms_survive_map_clearing() {
+        assert_eq!(
+            canon_after_clear("[cH:1]1ccccc1"),
+            to_canonical(&mol_from_smiles("c1ccccc1").unwrap())
+        );
+    }
+
+    #[test]
+    fn disconnected_fragments_survive_map_clearing() {
+        assert_eq!(
+            canon_after_clear("[CH3:1]O.[Na+:2]"),
+            to_canonical(&mol_from_smiles("CO.[Na+]").unwrap())
+        );
+    }
+
+    #[test]
+    fn already_unmapped_smiles_is_a_no_op() {
+        assert_eq!(
+            canon_after_clear("CC(=O)O"),
+            to_canonical(&mol_from_smiles("CC(=O)O").unwrap())
+        );
+    }
+
+    /// Pins the exact failure mode a text-level `re.sub(r":\d+", "", smiles)`
+    /// atom-map strip has: `:` is also explicit SMILES bond syntax, so a
+    /// mapped aromatic ring written with explicit `:` bonds and a `:`-led
+    /// ring-closure digit gets its ring closure silently deleted along with
+    /// the atom map, corrupting the ring into an open chain.
+    #[test]
+    fn explicit_colon_bond_with_ring_closure_digit_is_not_corrupted() {
+        // Benzene, atom-mapped, every ring bond written with an explicit
+        // aromatic `:` bond symbol (including the closing ring bond, whose
+        // digit immediately follows a `:`).
+        let mapped = "[cH:1]:1:c:c:c:c:c:1";
+        let benzene = to_canonical(&mol_from_smiles("c1ccccc1").unwrap());
+        assert_eq!(
+            canon_after_clear(mapped),
+            benzene,
+            "structural atom-map clearing must keep the ring closed"
+        );
+
+        // The old regex's actual output on this exact input, replayed
+        // structurally: `:\d+` strips both the atom-map `:1` and the
+        // ring-closure `:1`, leaving `[cH]:c:c:c:c:c` -- an open chain, a
+        // different molecule entirely. If this ever equals `benzene`, the
+        // fixture stopped being a real regression pin and must be replaced.
+        let regex_corrupted = to_canonical(&mol_from_smiles("[cH]:c:c:c:c:c").unwrap());
+        assert_ne!(
+            regex_corrupted, benzene,
+            "fixture no longer demonstrates the regex-corruption failure mode"
+        );
+    }
+
+    #[test]
+    fn heavy_atom_count_is_unchanged_by_map_clearing() {
+        let mol = mol_from_smiles("[CH3:1][CH2:2][OH:3]").unwrap();
+        let cleared = clear_atom_maps(&mol);
+        assert_eq!(mol.atoms().count(), cleared.atoms().count());
+        assert_eq!(mol.bonds().count(), cleared.bonds().count());
+        assert!(cleared.atoms().all(|(_, a)| a.atom_map.is_none()));
+    }
+}
+
+pub(crate) static STANDARDIZE_OPTS: StandardizeOptions = StandardizeOptions {
     canonical_tautomer: false,
     neutralize_charges: false,
     remove_explicit_h: true,
@@ -311,6 +468,40 @@ fn build_sub_molecule_with_cl(
     Some(builder.build())
 }
 
+/// Build a sub-molecule and append a boronic acid (-B(OH)2) bonded to
+/// `cut_atom` -- the boron gets one bond to `cut_atom` plus two bonds to
+/// O atoms, each O picking up an implicit H from valence (same
+/// implicit-H-from-valence mechanism `build_sub_molecule_with_br`/
+/// `with_cl` already rely on for their own appended atom).
+fn build_sub_molecule_with_boronic_acid(
+    mol: &Molecule,
+    atoms: &FxHashSet<AtomIdx>,
+    cut_atom: AtomIdx,
+) -> Option<Molecule> {
+    let mut builder = MoleculeBuilder::new();
+    let mut idx_map: FxHashMap<AtomIdx, AtomIdx> = FxHashMap::default();
+
+    for &old_idx in atoms {
+        let new_idx = builder.add_atom(mol.atom(old_idx).clone());
+        idx_map.insert(old_idx, new_idx);
+    }
+    for (_, bond) in mol.bonds() {
+        let (a, b) = (bond.atom1, bond.atom2);
+        if atoms.contains(&a) && atoms.contains(&b) {
+            let (&new_a, &new_b) = (idx_map.get(&a)?, idx_map.get(&b)?);
+            builder.add_bond(new_a, new_b, bond.order).ok()?;
+        }
+    }
+    let b_idx = builder.add_atom(Atom::new(Element::B));
+    let &cut_new = idx_map.get(&cut_atom)?;
+    builder.add_bond(cut_new, b_idx, BondOrder::Single).ok()?;
+    for _ in 0..2 {
+        let o_idx = builder.add_atom(Atom::new(Element::O));
+        builder.add_bond(b_idx, o_idx, BondOrder::Single).ok()?;
+    }
+    Some(builder.build())
+}
+
 /// Graph-based retro for Ar-SO2-Ar diaryl sulfones:
 /// cleave each Ar-S bridge bond to give [Ar-SO2-Cl, Ar'-H].
 fn diaryl_sulfone_cleavage(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
@@ -413,12 +604,18 @@ fn biaryl_cleavage(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
         let comp_a = get_component(mol, a, a, b);
         let comp_b = get_component(mol, b, a, b);
 
-        // Generate both orientations: which ring gets Br
-        for (comp_br, cut, comp_plain) in [(&comp_a, a, &comp_b), (&comp_b, b, &comp_a)] {
-            let Some(frag_br) = build_sub_molecule_with_br(mol, comp_br, cut) else {
+        // Generate both orientations: which ring gets Br vs. the boronic
+        // acid -- a real retro-Suzuki needs one aryl-halide partner *and*
+        // one boron-containing partner, not "aryl halide + plain arene".
+        for (comp_br, cut_br, comp_b_acid, cut_b_acid) in
+            [(&comp_a, a, &comp_b, b), (&comp_b, b, &comp_a, a)]
+        {
+            let Some(frag_br) = build_sub_molecule_with_br(mol, comp_br, cut_br) else {
                 continue;
             };
-            let Some(frag_plain) = build_sub_molecule(mol, comp_plain) else {
+            let Some(frag_plain) =
+                build_sub_molecule_with_boronic_acid(mol, comp_b_acid, cut_b_acid)
+            else {
                 continue;
             };
 
@@ -609,6 +806,95 @@ fn ester_cleavage_graph(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
     results
 }
 
+/// Graph-based aryl ether cleavage: Ar-O-R → Ar-OH + R-OH (retro-Ullmann
+/// ether synthesis, simplified "leaving fragment" semantics matching the
+/// retired SMIRKS-string version of this rule).
+///
+/// Excludes an ester oxygen (Ar-O-C(=O)-R): mirrors ester_cleavage_graph's
+/// own carbonyl-neighbor check, applied to the *other* carbon the O is
+/// bonded to (not the aromatic one being cut). Without this exclusion, an
+/// aryl ester's ester bond gets mislabeled as a retro-Ullmann ether
+/// disconnection (wrong reaction_family/conditions/procedure_hint) --
+/// see docs/design/retro-rule-precision-gaps-v0.md #1.
+fn aryl_ether_cleavage(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
+    let mut results: Vec<Vec<PrecursorMol>> = Vec::new();
+    let mut seen: FxHashSet<String> = FxHashSet::default();
+
+    for (_, bond) in mol.bonds() {
+        let (a, b) = (bond.atom1, bond.atom2);
+        if bond.order != BondOrder::Single {
+            continue;
+        }
+
+        // Identify which end is the aromatic C and which is O.
+        let (ar_idx, o_idx) = {
+            let aa = mol.atom(a);
+            let ab = mol.atom(b);
+            if aa.aromatic && aa.element == Element::C && ab.element == Element::O {
+                (a, b)
+            } else if ab.aromatic && ab.element == Element::C && aa.element == Element::O {
+                (b, a)
+            } else {
+                continue;
+            }
+        };
+
+        // Exclude an ester oxygen: O also bonded to a carbonyl carbon (a
+        // carbon with an adjacent C=O, other than the O being cut here).
+        let is_ester_oxygen = mol.neighbors(o_idx).any(|(nb, _)| {
+            nb != ar_idx
+                && mol.atom(nb).element == Element::C
+                && mol.neighbors(nb).any(|(nb2, bond_idx2)| {
+                    nb2 != o_idx
+                        && mol.atom(nb2).element == Element::O
+                        && mol.bond(bond_idx2).order == BondOrder::Double
+                })
+        });
+        if is_ester_oxygen {
+            continue;
+        }
+
+        // Only bridge bonds produce two clean fragments.
+        if !is_bridge_bond(mol, ar_idx, o_idx) {
+            continue;
+        }
+
+        let comp_ar = get_component(mol, ar_idx, ar_idx, o_idx);
+        let comp_o = get_component(mol, o_idx, ar_idx, o_idx);
+
+        // Aromatic side: add OH → phenol fragment.
+        let Some(frag_phenol) = build_sub_molecule_with_oh(mol, &comp_ar, ar_idx) else {
+            continue;
+        };
+        // O side: keeps its existing bond(s); implicit H fills valence → R-OH.
+        let Some(frag_alcohol) = build_sub_molecule(mol, &comp_o) else {
+            continue;
+        };
+
+        let precs_phenol = split_fragments(&frag_phenol);
+        let precs_alcohol = split_fragments(&frag_alcohol);
+        if precs_phenol.is_empty() || precs_alcohol.is_empty() {
+            continue;
+        }
+
+        let mut key_parts: Vec<&str> = precs_phenol
+            .iter()
+            .chain(precs_alcohol.iter())
+            .map(|p| p.smiles.as_str())
+            .collect();
+        key_parts.sort_unstable();
+        let key = key_parts.join("|");
+        if !seen.insert(key) {
+            continue;
+        }
+
+        let mut prec_set = precs_phenol;
+        prec_set.extend(precs_alcohol);
+        results.push(prec_set);
+    }
+    results
+}
+
 /// Graph-based sulfonamide cleavage: Ar-SO2-NHR → Ar-SO2Cl + H2NR.
 ///
 /// Cuts the S-N bond of a sulfonamide where S is a sulfonyl (S(=O)(=O)).
@@ -687,6 +973,74 @@ fn sulfonamide_cleavage_graph(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
     results
 }
 
+/// Graph-based carbamate cleavage: R-O-C(=O)-NHR' → R-O-C(=O)Cl + H2NR'.
+///
+/// Cuts the N–carbonyl-C bond only when the carbonyl is also bonded to an
+/// O-linked organic substituent. This keeps the generic rule distinct from
+/// amide cleavage and from the narrower Boc/Cbz deprotection handlers.
+fn carbamate_cleavage_graph(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
+    let mut results = Vec::new();
+    let mut seen: FxHashSet<String> = FxHashSet::default();
+
+    for (_, bond) in mol.bonds() {
+        if bond.order != BondOrder::Single {
+            continue;
+        }
+        let (a, b) = (bond.atom1, bond.atom2);
+        let (n_idx, c_idx) = {
+            let aa = mol.atom(a);
+            let ab = mol.atom(b);
+            if aa.element == Element::N && ab.element == Element::C {
+                (a, b)
+            } else if aa.element == Element::C && ab.element == Element::N {
+                (b, a)
+            } else {
+                continue;
+            }
+        };
+
+        let has_carbonyl_oxygen = mol.neighbors(c_idx).any(|(nb, bond_idx)| {
+            mol.atom(nb).element == Element::O && mol.bond(bond_idx).order == BondOrder::Double
+        });
+        let has_organic_oxygen = mol.neighbors(c_idx).any(|(nb, bond_idx)| {
+            if mol.atom(nb).element != Element::O || mol.bond(bond_idx).order != BondOrder::Single {
+                return false;
+            }
+            mol.neighbors(nb).any(|(other, other_bond)| {
+                other != c_idx
+                    && mol.bond(other_bond).order == BondOrder::Single
+                    && mol.atom(other).element != Element::H
+            })
+        });
+        if !has_carbonyl_oxygen || !has_organic_oxygen || !is_bridge_bond(mol, n_idx, c_idx) {
+            continue;
+        }
+
+        let comp_n = get_component(mol, n_idx, n_idx, c_idx);
+        let comp_c = get_component(mol, c_idx, n_idx, c_idx);
+        let Some(frag_amine) = build_sub_molecule(mol, &comp_n) else {
+            continue;
+        };
+        let Some(frag_chloroformate) = build_sub_molecule_with_cl(mol, &comp_c, c_idx) else {
+            continue;
+        };
+        let precs_amine = split_fragments(&frag_amine);
+        let precs_chloroformate = split_fragments(&frag_chloroformate);
+        if precs_amine.is_empty() || precs_chloroformate.is_empty() {
+            continue;
+        }
+
+        let mut prec_set = precs_chloroformate;
+        prec_set.extend(precs_amine);
+        let mut key: Vec<&str> = prec_set.iter().map(|p| p.smiles.as_str()).collect();
+        key.sort_unstable();
+        if seen.insert(key.join("|")) {
+            results.push(prec_set);
+        }
+    }
+    results
+}
+
 /// Build a sub-molecule and append an OH group bonded to `cut_atom`.
 fn build_sub_molecule_with_oh(
     mol: &Molecule,
@@ -740,6 +1094,53 @@ pub fn reset_apply_retro_call_count() {
 #[cfg(not(feature = "perf-instrumentation"))]
 pub fn reset_apply_retro_call_count() {}
 
+/// Repair a specific charge-loss defect in `[#N]` hash-atom template
+/// application (see `hash_atom_candidate_symbols`): expanding a spectator
+/// `[#7:m]`/`[#15:m]` into the literal, always-neutral candidate `N`/`n`/
+/// `P`/`p` discards the real matched atom's formal charge, because
+/// `run_reactants` builds the output atom from the template's literal
+/// spelling, not from the real substrate atom it stood in for (confirmed:
+/// `run_reactants`'s output atoms never carry `atom_map`, so there is no
+/// way to recover the real atom's own charge from the public API -- see
+/// the L4703 root-cause investigation, Issue #106).
+///
+/// The one narrow, ring-size-independent invariant this restores: an
+/// aromatic N/P bonded, via a non-aromatic bond, to an exocyclic O/S atom
+/// carrying a negative charge, must itself carry a positive charge -- the
+/// standard N-oxide/phosphine-oxide-anion charge-separation pair (e.g.
+/// pyridine N-oxide's `[n+]...[O-]`). Without the matching `+`, the ring is
+/// unkekulizable and round-trips as invalid SMILES in any strict external
+/// parser (RDKit), even though chematic's own looser kekulization heuristic
+/// (which treats a neutral substituted aromatic N as a lone-pair donor,
+/// same as N-alkylpyrrole) accepts it silently.
+///
+/// Deliberately does NOT key on substituent degree or ring size -- only on
+/// the O/S⁻ neighbor -- so it cannot fire on N-alkyl/N-aryl-substituted
+/// azoles (pyrrole, indole, caffeine's N-methyl, ...), whose exocyclic
+/// substituent is carbon, not an anionic heteroatom.
+fn repair_spectator_oxide_charge(mol: &mut Molecule) {
+    let mut to_charge: Vec<AtomIdx> = Vec::new();
+    for (idx, atom) in mol.atoms() {
+        if !atom.aromatic || atom.charge != 0 {
+            continue;
+        }
+        if !matches!(atom.element.atomic_number(), 7 | 15) {
+            continue;
+        }
+        let has_negative_oxide_neighbor = mol.neighbors(idx).any(|(nidx, bidx)| {
+            mol.bond(bidx).order != BondOrder::Aromatic
+                && matches!(mol.atom(nidx).element.atomic_number(), 8 | 16)
+                && mol.atom(nidx).charge < 0
+        });
+        if has_negative_oxide_neighbor {
+            to_charge.push(idx);
+        }
+    }
+    for idx in to_charge {
+        mol.set_charge(idx, 1);
+    }
+}
+
 /// Apply a single retro-rule to a molecule.
 /// Returns all possible precursor sets as (canonical_smiles, Molecule) pairs.
 ///
@@ -755,7 +1156,9 @@ pub fn apply_retro(mol: &Molecule, rule: &RetroRule) -> Vec<Vec<PrecursorMol>> {
             "diaryl_sulfone_retro" => diaryl_sulfone_cleavage(mol),
             "amide_cleavage" => amide_cleavage(mol),
             "ester_cleavage" => ester_cleavage_graph(mol),
+            "aryl_ether_retro" => aryl_ether_cleavage(mol),
             "sulfonamide_retro" => sulfonamide_cleavage_graph(mol),
+            "carbamate_cleavage" => carbamate_cleavage_graph(mol),
             "boc_deprotection_retro" => boc_deprotection(mol),
             "cbz_deprotection_retro" => cbz_deprotection(mol),
             _ => vec![],
@@ -785,7 +1188,10 @@ pub fn apply_retro(mol: &Molecule, rule: &RetroRule) -> Vec<Vec<PrecursorMol>> {
     let mut outcomes: Vec<Vec<PrecursorMol>> = Vec::new();
     let mut seen_signatures: FxHashSet<Vec<String>> = FxHashSet::default();
     for variant in variants.iter() {
-        for products in run_reactants(variant, &[mol]).unwrap_or_default() {
+        for mut products in run_reactants(variant, &[mol]).unwrap_or_default() {
+            for product_mol in products.iter_mut() {
+                repair_spectator_oxide_charge(product_mol);
+            }
             // Fail-closed: reject the whole outcome if any raw product
             // molecule (before split_fragments' own text round-trip, which
             // can silently repair or reject the same defect -- see
@@ -812,6 +1218,118 @@ pub fn apply_retro(mol: &Molecule, rule: &RetroRule) -> Vec<Vec<PrecursorMol>> {
     outcomes
 }
 
+/// Returns a clone of `mol` with every atom given a fresh, sequential
+/// `atom_map` (1-based, in `mol.atoms()` iteration order) -- atoms that
+/// already carry a map are overwritten. Confirmed empirically that
+/// `MoleculeBuilder::add_atom` preserves insertion order as `AtomIdx`
+/// (mirrors `clear_atom_maps`'s own rebuild pattern above, which relies on
+/// the same property for its unmapped bond indices to stay valid), and that
+/// `atom_map` survives the `canonical_smiles`/`split_fragments` round-trip
+/// unchanged -- so pre-mapping the input here and calling an existing,
+/// *unmodified* graph-based cleavage function through the normal
+/// [`apply_retro`] dispatch is sufficient to recover real atom-level
+/// correspondence between target and precursors, with zero changes needed
+/// to any of the graph-based rule functions themselves.
+fn with_sequential_atom_maps(mol: &Molecule) -> Molecule {
+    let mut builder = MoleculeBuilder::new();
+    for (idx, atom) in mol.atoms() {
+        let mut a = atom.clone();
+        a.atom_map = Some(idx.0 as u16 + 1);
+        builder.add_atom(a);
+    }
+    for (_, bond) in mol.bonds() {
+        let _ = builder.add_bond(bond.atom1, bond.atom2, bond.order);
+    }
+    builder.copy_stereo_groups_from(mol);
+    builder.copy_stereo_from(mol);
+    builder.copy_bond_directions_from(mol);
+    builder.build()
+}
+
+/// Derives a real, atom-mapped forward SMIRKS for one specific
+/// `(rule_name, target, precursors)` outcome of a **graph-based** default
+/// rule (a Rust function dispatched by name in [`apply_retro`], not a
+/// SMIRKS string -- `ester_cleavage`, `amide_cleavage`, `aryl_ether_retro`,
+/// `suzuki_retro`, `sulfonamide_retro`, `diaryl_sulfone_retro`,
+/// `boc_deprotection_retro`, `cbz_deprotection_retro` as of this writing).
+///
+/// Exists because these rules have no `RetroRule::smirks` string for
+/// `bridge::forward`'s `declared_smirks` to reverse-apply, so any route
+/// step using one of them can never reach `forward_validation: pass` via
+/// self-audit today -- confirmed as a real, ~30%-of-default-rules gap, see
+/// `docs/design/retro-rule-precision-gaps-v0.md` #5. This closes that gap
+/// for the `bridge::route_graph::normalize_renkin_route` audit path
+/// specifically, called lazily at audit time (not stored on `ReactionStep`
+/// or emitted in `find_routes`'s own JSON output -- keeps this a pure
+/// audit-layer concern, no search-output schema change).
+///
+/// Mechanism: re-runs the *same, unmodified* graph-based cleavage function
+/// `apply_retro` would have used, on a fresh clone of `target` with every
+/// atom given a sequential map number first (see
+/// [`with_sequential_atom_maps`]) -- the map numbers propagate through the
+/// existing fragment-extraction code for free, since `MoleculeBuilder`
+/// clones each `Atom` (including `atom_map`) verbatim. A rule can have
+/// multiple valid disconnections for one target (e.g. two ester bonds), so
+/// every re-derived outcome's precursor set is compared (as an unmapped,
+/// canonical multiset) against the real, already-known `precursors` this
+/// step actually used -- only a genuine match is trusted, never assumed to
+/// be "probably the first one." Newly-introduced leaving-group atoms (the
+/// appended -OH/-Br/-Cl/-B(OH)2 etc.) are never mapped, matching how a
+/// hand-crafted SMIRKS rule like `heck_retro`
+/// (`"[c:1][CH:2]=[CH:3]>>[c:1][Br].[CH2:2]=[CH:3]"`) leaves its own
+/// literal `Br` unmapped too.
+///
+/// Returns `None` when `rule_name` isn't a known graph-based default rule
+/// (including: it's a real SMIRKS-based rule, which needs no help from
+/// this function at all), when `target`/`precursors` fail to parse, or
+/// when re-running the rule genuinely can't reproduce a matching outcome
+/// (should not happen for a route this engine itself already found, but
+/// never assumed -- always re-derived and verified, never guessed).
+pub fn declared_forward_smirks(
+    rule_name: &str,
+    target_smiles: &str,
+    precursor_smiles: &[String],
+) -> Option<String> {
+    let is_graph_based = default_rules()
+        .iter()
+        .any(|r| r.name == rule_name && r.smirks.is_empty());
+    if !is_graph_based {
+        return None;
+    }
+
+    let target_mol = mol_from_smiles(target_smiles).ok()?;
+    let mapped_target = with_sequential_atom_maps(&target_mol);
+    let rule = rr(rule_name, "");
+    let outcomes = apply_retro(&mapped_target, &rule);
+
+    // Canonicalize the caller's precursor SMILES before comparing -- callers
+    // (e.g. a hand-authored route, or one parsed back in from external JSON)
+    // aren't guaranteed to already hand us the exact canonical form, and an
+    // exact-string mismatch here must never be mistaken for "not this rule's
+    // outcome".
+    let given: std::collections::BTreeSet<String> = precursor_smiles
+        .iter()
+        .map(|s| mol_from_smiles(s).map(|m| to_canonical(&m)))
+        .collect::<Result<_, _>>()
+        .ok()?;
+    for outcome in &outcomes {
+        let outcome_unmapped: std::collections::BTreeSet<String> = outcome
+            .iter()
+            .map(|p| to_canonical(&clear_atom_maps(&p.mol)))
+            .collect();
+        if outcome_unmapped == given {
+            let target_side = to_canonical(&mapped_target);
+            let precursor_side = outcome
+                .iter()
+                .map(|p| to_canonical(&p.mol))
+                .collect::<Vec<_>>()
+                .join(".");
+            return Some(format!("{target_side}>>{precursor_side}"));
+        }
+    }
+    None
+}
+
 /// A standardized precursor molecule with its canonical SMILES.
 pub struct PrecursorMol {
     pub smiles: String,
@@ -827,6 +1345,14 @@ pub(crate) fn split_fragments(mol: &Molecule) -> Vec<PrecursorMol> {
         .filter_map(|frag| {
             let m = parse(frag).ok()?;
             let std_mol = standardize(&m, &STANDARDIZE_OPTS);
+            // A reaction template can leave an explicitly bracketed cut atom
+            // one H short after the bond is removed.  chematic can still
+            // round-trip that graph, but downstream sanitizers correctly see
+            // a radical precursor.  Reject both this under-valent form and
+            // ordinary over-valence before the candidate reaches search.
+            if fragment_has_valence_violation(&std_mol) {
+                return None;
+            }
             // Reject fragments that have aromatic atoms but no ring closure —
             // these are open-chain aromatic chains produced by BFS leakage (L4).
             //
@@ -848,6 +1374,24 @@ pub(crate) fn split_fragments(mol: &Molecule) -> Vec<PrecursorMol> {
             })
         })
         .collect()
+}
+
+/// Return whether a generated precursor is outside the closed-shell valence
+/// contract used by RENKIN.  `validate_valence` catches over-valent atoms;
+/// the explicit-H check catches the complementary template defect where a
+/// bracket atom retains its pre-cut H count after losing a bond.  Unbracketed
+/// organic atoms are intentionally left to chematic's implicit-H model.
+fn fragment_has_valence_violation(mol: &Molecule) -> bool {
+    if !chematic::core::valence::validate_valence(mol).is_empty() {
+        return true;
+    }
+
+    mol.atoms().any(|(idx, atom)| {
+        atom.hydrogen_count.is_some()
+            && atom.element.is_organic_subset()
+            && atom.hydrogen_count.unwrap_or(0)
+                < chematic::core::valence::valence_inferred_hcount(mol, idx)
+    })
 }
 
 /// Why a just-constructed product molecule failed the aromaticity-integrity
@@ -1599,12 +2143,42 @@ pub fn default_rules() -> Vec<RetroRule> {
             "aryl_carboxylation_retro",
             "[c:1][C:2](=O)[OH]>>[c:1].[C:2](=O)O",
         ),
-        // Ar-N → Ar-H + amine (retro-SNAr / retro-Chan-Lam)
-        rr("aryl_amine_retro", "[c:1][N:2]>>[c:1].[N:2]"),
-        // Ar-N → Ar-Br + amine (retro-Buchwald-Hartwig; gives halide BB)
-        rr("buchwald_hartwig_retro", "[c:1][N:2]>>[c:1]Br.[N:2]"),
-        // Ar-O → Ar-OH + leaving fragment (retro-Ullmann ether synthesis)
-        rr("aryl_ether_retro", "[c:1][O:2]>>[c:1]O.[O:2]"),
+        // `aryl_amine_retro` ("[c:1][N:2]>>[c:1].[N:2]") was removed: on a
+        // ring-fused nitrogen (N shared between the aromatic ring and a
+        // fused saturated ring, e.g. an indoline-like bicyclic target), it
+        // deletes the nitrogen outright instead of returning it as part of
+        // a second precursor fragment — a genuine atom-loss defect, not an
+        // intentional reagent omission (see `reagent_omission_template_allowlist`
+        // in `synthesizability/schema.rs`, which already excluded this rule).
+        // Confirmed on `uspto50k_test#L2263` (issue #77). Root cause not yet
+        // isolated (SMIRKS-pattern vs. `split_fragments`/BFS-leakage pipeline
+        // artifact); disabled per project policy pending that investigation,
+        // the same policy applied to the halide rules above (31.11). See
+        // `aryl_amine_retro_removed_from_default_rules` below.
+        //
+        // `buchwald_hartwig_retro` ("[c:1][N:2]>>[c:1]Br.[N:2]") was removed
+        // for the same reason and mechanism as `aryl_amine_retro` above --
+        // same root cause (both product templates' bare single-atom RHS
+        // fragments let substituent-carry-through BFS sweep unchecked
+        // across a ring-fusion boundary), confirmed on the same
+        // `c12c(NCCC2)ccc(c1)Br`-shaped repro. Worse in practice: not only
+        // does the amine fragment vanish the same way, the *surviving*
+        // aryl fragment comes back corrupted too (carry-through loops the
+        // other way around the same ring through the same fusion carbon,
+        // producing a spurious extra `Br` plus a dangling alkyl chain that
+        // don't belong on the real precursor) -- a chemically-wrong
+        // "solved" route, not just a missing one. See
+        // `buchwald_hartwig_retro_removed_from_default_rules` below.
+        // Ar-O → Ar-OH + leaving fragment (retro-Ullmann ether synthesis).
+        // Graph-based (empty smirks, dispatched in apply_retro below), not a
+        // SMIRKS string: chematic-rxn's own reactant-template parser is
+        // plain-SMILES-only (no SMARTS `;`/`!`/`$(...)` operators -- confirmed
+        // empirically, see docs/design/retro-rule-precision-gaps-v0.md #1),
+        // so excluding an ester oxygen (Ar-O-C(=O)-R, which the old bare-O
+        // SMIRKS also matched, mislabeling an ester cleavage as an Ullmann
+        // ether disconnection) needs a graph-based carbonyl-neighbor check,
+        // mirroring ester_cleavage_graph's own pattern below.
+        rr("aryl_ether_retro", ""),
         // ── Aryl C-halide disconnections ────────────────────────────────
         // `aryl_chloride_retro` ("[c:1][Cl]>>[c:1]"), `aryl_iodide_retro`
         // ("[c:1][I]>>[c:1]"), and `aryl_fluoride_snAr_retro`
@@ -1633,15 +2207,69 @@ pub fn default_rules() -> Vec<RetroRule> {
         // ── Aryl C-C disconnections ──────────────────────────────────────
         // Graph-based: find Ar-Ar bridge bonds and split into Ar-Br + Ar.
         rr("suzuki_retro", ""),
-        // Ar-CH=CH-R → Ar-Br + CH2=CH-R (retro-Heck, internal alkene)
-        rr("heck_retro", "[c:1][CH:2]=[CH:3]>>[c:1][Br].[CH2:2]=[CH:3]"),
+        // `heck_retro` ("[c:1][CH:2]=[CH:3]>>[c:1][Br].[CH2:2]=[CH:3]") was
+        // removed (found 2026-08-29 during reaction-family-mislabel-
+        // regression-v0.md's hand-inspection of §3's candidate list, not
+        // the rule-safety census's own static screen -- this rule's 2-atom
+        // RHS fragment doesn't match the census's "bare single-atom RHS"
+        // shape, so it was never flagged by that tool): on an internal
+        // alkene that's endocyclic and fused to the same aromatic ring the
+        // leaving-group Br attaches to (e.g. indene -- the cyclopentene
+        // ring shares its fusion bond with the benzo ring), the declared
+        // 2-fragment product ([c:1][Br] + [CH2:2]=[CH:3]) collapses into a
+        // single connected product, since [CH:3]'s real "far side"
+        // (continuing around the fused ring) reconnects to the very
+        // aromatic ring the other fragment already claims -- topologically
+        // impossible to cleanly separate the way the acyclic SMIRKS
+        // assumes. Confirmed by direct `apply_retro` reproduction on
+        // indene (`C1=Cc2ccccc2C1`, 9 heavy atoms): the single outcome
+        // produced is one 8-atom bromotoluene-shaped fragment (the mapped
+        // [CH:2] atom survives only as an isolated methyl substituent,
+        // its double-bond partner [CH:3] and the ring-closing carbon
+        // beyond it vanish entirely) -- a chemically-wrong "solved" route,
+        // same broader ring-fusion/naive-fragment-splitting defect family
+        // as `aryl_amine_retro`/`buchwald_hartwig_retro`/
+        // `n_benzylation_retro`/`michael_retro`/`negishi_retro` above, but
+        // its own distinct signature (connectivity collapse + atom loss,
+        // not the bare-fragment atom-duplication those five share) since
+        // this SMIRKS's RHS fragment is 2 atoms, not 1. See
+        // `heck_retro_removed_from_default_rules` below.
+        //
+        // `heck_retro_terminal` ("[c:1][CH:2]=[CH2:3]>>[c:1][Br].
+        // [CH2:2]=[CH2:3]") does NOT share this defect and is kept: its
+        // terminal [CH2:3] endpoint is fully saturated (2 H, no room for a
+        // ring-closure bond) and its [CH:2] atom's valence (aromatic bond +
+        // double bond + 1 H = 4) leaves no room for a second ring bond
+        // either -- structurally, this SMIRKS's own matched atoms can
+        // never be embedded in a ring at all, proven by valence counting,
+        // not just untested.
         // Ar-CH=CH2 → Ar-Br + CH2=CH2 (retro-Heck, terminal alkene / styrene)
         rr(
             "heck_retro_terminal",
             "[c:1][CH:2]=[CH2:3]>>[c:1][Br].[CH2:2]=[CH2:3]",
         ),
-        // Ar-alkyl → Ar-Br + alkyl (retro-Negishi; Pd-catalyzed C-C)
-        rr("negishi_retro", "[c:1][CH2:2]>>[c:1][Br].[CH3:2]"),
+        // `negishi_retro` ("[c:1][CH2:2]>>[c:1][Br].[CH3:2]") was removed:
+        // v0.36.0's rule-safety census flagged it as the top candidate
+        // (structurally near-identical LHS/RHS shape to the already-removed
+        // `buchwald_hartwig_retro`), and direct `apply_retro` reproduction
+        // confirmed a real defect on a real ring-fused target (deliberately
+        // constructed, not corpus-derived -- this rule had zero findings in
+        // the 15-target smoke sample) -- on an Ar-CH2 bond that's part of a
+        // saturated ring fused to the aromatic ring (e.g. an
+        // indane/tetralin-type substructure), a 25-atom target produced a
+        // single outcome summing to 49 heavy atoms across its precursors,
+        // against a chemically correct 26 (target + one new Br). Same
+        // defect class as `n_benzylation_retro`/`michael_retro` above
+        // (under-constrained LHS + bare RHS fragment + a cut bond that's
+        // part of a ring) and the same excess-over-correct atom-count
+        // shape, but the exact BFS carry-through path was not traced, so
+        // "same mechanism" is inferred from the shared structural
+        // precondition and signature, not directly observed -- the
+        // magnitude here (49 vs. 26, ~88% excess) is well beyond round 1's
+        // (~22-25% excess), which may reflect a different-sized
+        // carry-through region rather than an identical failure path. See
+        // `negishi_retro_removed_from_default_rules` below.
+        //
         // ── Aliphatic C-C disconnections ─────────────────────────────────
         // Generic aliphatic C-C bond cleavage
         rr("cc_single_cleavage", "[C:1][C:2]>>[C:1].[C:2]"),
@@ -1665,21 +2293,61 @@ pub fn default_rules() -> Vec<RetroRule> {
         rr("sulfonamide_retro", ""),
         // Ar-SO2-Ar' → Ar-SO2Cl + Ar'H (graph-based; Friedel-Crafts sulfonylation retro)
         rr("diaryl_sulfone_retro", ""),
+        // R-O-C(=O)-NHR' → R-O-C(=O)Cl + H2NR' (graph-based carbamate formation)
+        rr("carbamate_cleavage", ""),
         // ── N-protection / deprotection ──────────────────────────────────────
         // N-Boc → N-H (deprotect: TFA removes Boc). Graph-based to avoid leakage.
         rr("boc_deprotection_retro", ""),
         // ── N-alkylation (more specific than cn_aliphatic_cleavage) ──────────
-        // N-CH2Ar → N-H + BrCH2Ar (N-benzyl retro)
-        rr(
-            "n_benzylation_retro",
-            "[N:1][CH2:2][c:3]>>[N:1].[Br][CH2:2][c:3]",
-        ),
+        // `n_benzylation_retro` ("[N:1][CH2:2][c:3]>>[N:1].[Br][CH2:2][c:3]")
+        // was removed: v0.36.0's rule-safety census (issue #77-class screen,
+        // docs/validation/rule-safety-census-2026-08-24.md) flagged it for
+        // the same bare-single-atom-RHS shape as `aryl_amine_retro`/
+        // `buchwald_hartwig_retro`, and direct `apply_retro` reproduction on
+        // a real target confirmed it: on an N-CH2-Ar bond that's part of a
+        // ring, substituent-carry-through BFS for the "bare" [N:1] fragment
+        // loops the other way around the ring, producing a fragment that's
+        // nearly the entire rest of the molecule, while the declared
+        // Br-CH2-Ar leaving-group fragment comes back holding a piece of
+        // the ring backbone that was never really a substituent -- a
+        // chemically-wrong "solved" route, not a missing one, same failure
+        // shape as the two already-removed rules. See
+        // `n_benzylation_retro_removed_from_default_rules` below.
+        //
         // ── Grignard / organolithium retro ───────────────────────────────────
-        // Tertiary alcohol → ketone + R-MgBr (retro-Grignard)
-        rr(
-            "grignard_addition_retro",
-            "[C:1]([OH:2])([C:3])[C:4]>>[C:1](=O)[C:3].[C:4]",
-        ),
+        // `grignard_addition_retro`
+        // ("[C:1]([OH:2])([C:3])[C:4]>>[C:1](=O)[C:3].[C:4]") was removed:
+        // flagged by the v0.36.0 census and already carrying real
+        // `SpectatorBondLoss` findings, confirmed by direct `apply_retro`
+        // reproduction on a real ring-fused tertiary alcohol -- when the
+        // atom-matcher binds the "bare" [C:4] leaving-group slot to a
+        // ring-continuation bond rather than a genuine exocyclic
+        // substituent (both are structurally valid matches for this
+        // under-constrained LHS), cutting it doesn't actually separate
+        // the molecule, and the carry-through duplicates ring atoms into
+        // both declared fragments: an 11-atom target produced a single
+        // outcome summing to 18 heavy atoms, against a chemically correct
+        // 11 (this SMIRKS's RHS is atom-conserving) -- same defect class
+        // (under-constrained LHS + bare RHS fragment + ring-membership at
+        // the cut site) as `negishi_retro`/`n_benzylation_retro`/
+        // `michael_retro` above, and the same excess-over-correct
+        // signature, but the two output fragments here each contain a
+        // *whole* extra benzene ring the 11-atom target only has one of --
+        // wholesale ring duplication, not the more modest ~22-25% excess
+        // round 1's two rules showed. Whether that's the identical BFS
+        // failure path or a related-but-distinct one wasn't traced; treat
+        // "same mechanism" claims across these four as inferred from the
+        // shared precondition and signature shape, not directly observed.
+        // Not every match is wrong (a genuine exocyclic substituent, e.g.
+        // a real methyl-Grignard product, still disconnects correctly --
+        // see the still-passing acyclic case this rule's removed
+        // `SubstituentPreservationCase` used to cover), but an
+        // under-constrained LHS with no ring/degree check can't tell the
+        // two apart, so the rule is disabled entirely rather than kept
+        // for the subset of inputs it handles correctly, matching this
+        // codebase's established policy for this whole defect class. See
+        // `grignard_addition_retro_removed_from_default_rules` below.
+        //
         // ── Claisen / Dieckmann condensation ────────────────────────────────
         // β-ketoester → ester + ester (retro-Claisen condensation)
         rr(
@@ -1687,11 +2355,17 @@ pub fn default_rules() -> Vec<RetroRule> {
             "[C:1](=O)[CH2:2][C:3](=O)[O:4]>>[C:1](=O)O.[C:2]=[C:3][O:4]",
         ),
         // ── Michael addition retro ───────────────────────────────────────────
-        // R-CH2-C(=O)R' ← CH2=C(=O)R' + H (retro-1,4-addition at α)
-        rr(
-            "michael_retro",
-            "[C:1][CH2:2][C:3]=[O:4]>>[C:1].[CH2:2]=[C:3][OH:4]",
-        ),
+        // `michael_retro`
+        // ("[C:1][CH2:2][C:3]=[O:4]>>[C:1].[CH2:2]=[C:3][OH:4]") was removed:
+        // same v0.36.0 rule-safety census flag and same confirmed mechanism
+        // as `n_benzylation_retro` above -- on a C-CH2-C=O bond that's part
+        // of a ring (e.g. a glutarimide), the "bare" [C:1] fragment's
+        // carry-through loops around the ring the other way, producing
+        // nearly the whole molecule as one fragment while the declared
+        // enol fragment comes back as an unreal, garbled piece. Confirmed
+        // by direct `apply_retro` reproduction on a real target. See
+        // `michael_retro_removed_from_default_rules` below.
+        //
         // ── Acyl chloride as electrophile source ─────────────────────────────
         // Acid chloride → carboxylic acid (SOCl2 activation retro)
         rr("acyl_chloride_from_acid", "[C:1](=[O:2])Cl>>[C:1](=[O:2])O"),
@@ -1765,6 +2439,19 @@ pub fn bond_pairs_from_smirks(smirks: &str) -> Vec<(u8, u8)> {
             }
             b'(' => stack.push(prev),
             b')' => prev = stack.pop().flatten(),
+            b'.' => {
+                // Top-level component separator (never appears inside a
+                // bracket atom -- those bytes are already skipped above).
+                // Without this reset, the last atom of one disconnected
+                // fragment and the first atom of the next would be
+                // recorded as a bonded pair, which they are not --
+                // `TemplateBondIndex`'s AND/subset retrieval treats every
+                // returned pair as a hard requirement, so a spurious
+                // cross-fragment pair here would wrongly exclude targets
+                // that lack that nonexistent bond (a false negative).
+                prev = None;
+                stack.clear();
+            }
             _ => {}
         }
         i += 1;
@@ -1779,12 +2466,36 @@ pub fn bond_pairs_from_smirks(smirks: &str) -> Vec<(u8, u8)> {
 /// Indexes templates by the element-pair bonds their SMIRKS patterns can break.
 /// At search time, only templates relevant to bonds present in the target molecule
 /// are retrieved, avoiding unnecessary SMARTS matching for incompatible templates.
+///
+/// OR/union retrieval: a rule is retrieved if the target shares *any one*
+/// element-pair bond with it. Phase B.1 (2026-08-12) tried an AND/subset
+/// variant (require *every* pair present, not just one) to get more
+/// exclusion power at 5,000+ templates -- it worked (94.8-99.3% ->
+/// ~81% average retained) but not nearly enough to clear that program's
+/// speed gate (1.14x -> 1.18x, needed >=1.5x), and wasn't independently
+/// validated against this OR baseline at this feature's actual shipped
+/// usage point (500-template default, route search via `--bond-index`).
+/// Reverted rather than shipped as an unvalidated behavior change to an
+/// already-production flag -- see `data/phase_b1_frontier/findings.md`
+/// for the full negative-result writeup and cost attribution.
 pub struct TemplateBondIndex {
     index: FxHashMap<(u8, u8), Vec<usize>>,
     /// Graph-based rules (empty SMIRKS) — always included.
     graph_indices: Vec<usize>,
     /// Rules with unparseable / empty bond pairs — included as fallback.
     fallback_indices: Vec<usize>,
+}
+
+/// Result of a bond-index lookup, including the candidate counts needed to
+/// measure the element-presence filter's exclusion power.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TemplateBondRetrieval {
+    /// Unique indexed rules collected before required-element filtering.
+    pub candidates_before_element_filter: usize,
+    /// Unique indexed rules remaining after required-element filtering.
+    pub candidates_after_element_filter: usize,
+    /// Rule indices returned after optional top-k trimming.
+    pub indices: Vec<usize>,
 }
 
 impl TemplateBondIndex {
@@ -1817,6 +2528,31 @@ impl TemplateBondIndex {
     /// Includes graph-based rules and fallback rules unconditionally.
     /// If `top_k > 0`, the SMIRKS-matched candidates are trimmed to the top-K by weight.
     pub fn retrieve(&self, mol: &Molecule, top_k: usize, rules: &[RetroRule]) -> Vec<usize> {
+        self.retrieve_with_diagnostics(mol, top_k, rules).indices
+    }
+
+    /// Retrieve rules and expose the pre/post element-filter counts for
+    /// search diagnostics. The returned rule indices and ordering are exactly
+    /// the same as [`Self::retrieve`].
+    pub fn retrieve_with_diagnostics(
+        &self,
+        mol: &Molecule,
+        top_k: usize,
+        rules: &[RetroRule],
+    ) -> TemplateBondRetrieval {
+        let target_elements = mol.atoms().fold(0u64, |mask, (atom_idx, _)| {
+            let atomic_number = mol.atom(atom_idx).element.atomic_number();
+            if atomic_number < 64 {
+                mask | (1u64 << atomic_number)
+            } else {
+                mask
+            }
+        });
+        let is_eligible = |idx: usize| {
+            rules
+                .get(idx)
+                .is_some_and(|rule| rule.required_elements & !target_elements == 0)
+        };
         let mut seen: FxHashSet<usize> = FxHashSet::default();
         let mut candidates: Vec<usize> = Vec::new();
 
@@ -1831,6 +2567,8 @@ impl TemplateBondIndex {
                 candidates.push(idx);
             }
         }
+
+        let fixed_before_filter = candidates.len();
 
         // Retrieve SMIRKS rules matching bonds present in the target.
         for (atom_idx, _) in mol.atoms() {
@@ -1852,9 +2590,17 @@ impl TemplateBondIndex {
             }
         }
 
+        let candidates_before_element_filter = candidates.len();
+        candidates.retain(|&idx| is_eligible(idx));
+        let fixed = candidates
+            .iter()
+            .take(fixed_before_filter)
+            .filter(|&&idx| is_eligible(idx))
+            .count();
+        let candidates_after_element_filter = candidates.len();
+
         if top_k > 0 && candidates.len() > top_k {
             // Sort SMIRKS portion by weight desc, keep top_k total.
-            let fixed = self.graph_indices.len() + self.fallback_indices.len();
             candidates[fixed..].sort_unstable_by(|&a, &b| {
                 rules[b]
                     .weight
@@ -1863,7 +2609,11 @@ impl TemplateBondIndex {
             });
             candidates.truncate(fixed + top_k);
         }
-        candidates
+        TemplateBondRetrieval {
+            candidates_before_element_filter,
+            candidates_after_element_filter,
+            indices: candidates,
+        }
     }
 }
 
@@ -2100,9 +2850,194 @@ mod tests {
     }
 
     #[test]
+    fn bond_pairs_from_smirks_resets_at_component_boundary() {
+        // Two disconnected LHS fragments (`.`-separated) must not produce
+        // a spurious bonded pair between the last atom of one fragment
+        // and the first atom of the next -- see the `.` handling in
+        // `bond_pairs_from_smirks`. Before that fix, `prev` carried across
+        // the `.` unchanged, so this SMIRKS would have wrongly recorded a
+        // Cl-N pair spanning the two disconnected fragments.
+        let pairs = bond_pairs_from_smirks("[C:1][Cl:2].[N:3][O:4]>>[C:1][N:3]");
+        assert!(pairs.contains(&(6, 17)), "C-Cl pair missing: {pairs:?}");
+        assert!(pairs.contains(&(7, 8)), "N-O pair missing: {pairs:?}");
+        assert!(
+            !pairs.contains(&(7, 17)),
+            "spurious Cl-N pair across '.' boundary: {pairs:?}"
+        );
+    }
+
+    #[test]
+    fn bond_index_filters_templates_missing_required_target_elements() {
+        let matching = "[C:1][Cl:2]>>[C:1].[Cl:2]";
+        let missing_oxygen = "[C:1][Cl:2][O:3]>>[C:1].[Cl:2][O:3]";
+        let rules = vec![
+            RetroRule {
+                smirks: matching.to_string(),
+                required_elements: required_elements_from_smirks(matching),
+                ..RetroRule::default()
+            },
+            RetroRule {
+                smirks: missing_oxygen.to_string(),
+                required_elements: required_elements_from_smirks(missing_oxygen),
+                ..RetroRule::default()
+            },
+        ];
+        let index = TemplateBondIndex::build(&rules);
+        let target = parse("CCCl").unwrap();
+
+        let retrieval = index.retrieve_with_diagnostics(&target, 0, &rules);
+        assert_eq!(retrieval.candidates_before_element_filter, 2);
+        assert_eq!(retrieval.candidates_after_element_filter, 1);
+        assert_eq!(retrieval.indices, vec![0]);
+        assert_eq!(index.retrieve(&target, 0, &rules), vec![0]);
+    }
+
+    #[test]
+    fn bond_index_top_k_counts_only_eligible_fixed_rules() {
+        let graph_rule = RetroRule {
+            name: "graph".to_string(),
+            required_elements: 1u64 << 8,
+            ..RetroRule::default()
+        };
+        let bond_rule = RetroRule {
+            smirks: "[C:1][Cl:2]>>[C:1].[Cl:2]".to_string(),
+            required_elements: required_elements_from_smirks("[C:1][Cl:2]>>[C:1].[Cl:2]"),
+            weight: 2.0,
+            ..RetroRule::default()
+        };
+        let rules = vec![graph_rule, bond_rule];
+        let index = TemplateBondIndex::build(&rules);
+        let target = parse("CCCl").unwrap();
+
+        assert_eq!(index.retrieve(&target, 1, &rules), vec![1]);
+    }
+
+    #[test]
     fn parse_aspirin_roundtrip() {
         let mol = mol_from_smiles("CC(=O)Oc1ccccc1C(=O)O").unwrap();
         assert_eq!(mol.atom_count(), 13);
+    }
+
+    // ── Spectator N/P-oxide charge repair (Issue #106 / L4703) ──────────
+    //
+    // Root cause: `hash_atom_candidate_symbols` only offers "N"/"n" for
+    // atomic number 7 -- expanding a spectator `[#7:m]` always produces a
+    // literal, always-neutral output atom, even when the real matched
+    // substrate atom is charged (e.g. pyridine N-oxide's `[n+]`).
+    // `run_reactants` builds the output atom from that literal spelling,
+    // not from the real atom it stood in for, and its output atoms never
+    // carry `atom_map` (confirmed via a direct dump), so there is no way
+    // to recover the real charge from `run_reactants`'s public API. The
+    // repair instead restores the one narrow, ring-size-independent
+    // invariant that was broken: an aromatic N/P bonded (non-aromatically)
+    // to a negatively-charged exocyclic O/S must itself be positive.
+
+    #[test]
+    fn repair_spectator_oxide_charge_fixes_broken_n_oxide_fragment() {
+        // The exact defective precursor fragment `run_reactants` produced
+        // for uspto50k_test#L4703 before this fix: a pyridine-N-oxide ring
+        // written with a neutral `n` despite still carrying its `[O-]`
+        // substituent -- unkekulizable, rejected by RDKit
+        // (`compare_route_graph.py`'s validator) as `unparseable_smiles_in_route`.
+        let mut mol = mol_from_smiles("n1(cc(C(=O)OC)ccc1)[O-]").unwrap();
+        repair_spectator_oxide_charge(&mut mol);
+        let fixed = canonical_smiles(&mol);
+        assert!(
+            mol_from_smiles(&fixed).is_ok(),
+            "repaired fragment must itself round-trip through chematic's own parser: {fixed}"
+        );
+        let n_charge = mol
+            .atoms()
+            .find(|(_, a)| a.element.atomic_number() == 7)
+            .map(|(_, a)| a.charge);
+        assert_eq!(n_charge, Some(1), "ring N must now carry +1: {fixed}");
+    }
+
+    #[test]
+    fn repair_spectator_oxide_charge_is_idempotent_on_already_correct_n_oxide() {
+        let mut mol = mol_from_smiles("COC(=O)c1ccc[n+]([O-])c1-c1ccc(F)cc1").unwrap();
+        let before = canonical_smiles(&mol);
+        repair_spectator_oxide_charge(&mut mol);
+        assert_eq!(
+            canonical_smiles(&mol),
+            before,
+            "an already-correctly-charged N-oxide must be left unchanged"
+        );
+    }
+
+    #[test]
+    fn repair_spectator_oxide_charge_ignores_n_methylpyrrole() {
+        // N-alkyl substitution on a genuine lone-pair-donor ring nitrogen
+        // (5-membered azole) must NOT be touched -- its exocyclic
+        // substituent is carbon, not a negatively-charged O/S, so the
+        // repair's neighbor check never fires.
+        let mut mol = mol_from_smiles("Cn1cccc1").unwrap();
+        let before = canonical_smiles(&mol);
+        repair_spectator_oxide_charge(&mut mol);
+        assert_eq!(
+            canonical_smiles(&mol),
+            before,
+            "N-methylpyrrole must stay neutral"
+        );
+    }
+
+    #[test]
+    fn repair_spectator_oxide_charge_ignores_n_methylindole() {
+        let mut mol = mol_from_smiles("Cn1ccc2ccccc21").unwrap();
+        let before = canonical_smiles(&mol);
+        repair_spectator_oxide_charge(&mut mol);
+        assert_eq!(
+            canonical_smiles(&mol),
+            before,
+            "N-methylindole must stay neutral"
+        );
+    }
+
+    #[test]
+    fn repair_spectator_oxide_charge_ignores_n_arylpyrrole() {
+        let mut mol = mol_from_smiles("c1ccccc1n1cccc1").unwrap();
+        let before = canonical_smiles(&mol);
+        repair_spectator_oxide_charge(&mut mol);
+        assert_eq!(
+            canonical_smiles(&mol),
+            before,
+            "N-phenylpyrrole must stay neutral"
+        );
+    }
+
+    #[test]
+    fn apply_retro_l4703_biaryl_stille_disconnection_produces_parseable_n_oxide_precursor() {
+        // End-to-end regression for uspto50k_test#L4703: the exact SMIRKS
+        // (templates_2000.smi entry `extracted_1312`) applied to the exact
+        // target must now produce a precursor set whose N-oxide fragment
+        // round-trips, instead of the pre-fix `n1(...)[O-]` defect.
+        let smirks = "[#7:5]:[c:4](-[c:1](:[c:2]):[c:3]):[c:6]>>Br-[c:1](:[c:2]):[c:3].C-C-C-[CH2]-[Sn](-[CH2]-C-C-C)(-[CH2]-C-C-C)-[c:4](:[#7:5]):[c:6]";
+        let rule = rr("extracted_1312", smirks);
+        let mol = mol_from_smiles("COC(=O)c1ccc[n+]([O-])c1-c1ccc(F)cc1").unwrap();
+        let outcomes = apply_retro(&mol, &rule);
+        assert!(
+            !outcomes.is_empty(),
+            "the Stille disconnection must still be found"
+        );
+        let n_oxide_precursor = outcomes
+            .iter()
+            .flatten()
+            .find(|p| p.smiles.contains("[n+]") || p.smiles.contains("[Sn]"))
+            .unwrap_or_else(|| {
+                panic!(
+                    "no N-oxide/Sn precursor among outcomes: {outcomes:?}",
+                    outcomes = outcomes
+                        .iter()
+                        .flatten()
+                        .map(|p| &p.smiles)
+                        .collect::<Vec<_>>()
+                )
+            });
+        assert!(
+            mol_from_smiles(&n_oxide_precursor.smiles).is_ok(),
+            "precursor must round-trip: {}",
+            n_oxide_precursor.smiles
+        );
     }
 
     // ── Hash-atom ([#N]) wildcard: application-time compatibility ──────
@@ -2498,6 +3433,31 @@ mod tests {
     }
 
     #[test]
+    fn fragment_valence_guard_rejects_explicit_h_deficit_after_cut() {
+        // `[CH]C` is parseable by chematic but the bracketed carbon is one H
+        // short for its single bond.  This is the shape produced by the
+        // stale-valence retro-fragment bug documented in Phase 32 Track F.
+        let radical_like = mol_from_smiles("[CH]C").unwrap();
+        assert!(fragment_has_valence_violation(&radical_like));
+        assert!(split_fragments(&radical_like).is_empty());
+    }
+
+    #[test]
+    fn fragment_valence_guard_accepts_closed_shell_and_charged_fragments() {
+        for smiles in ["CC", "c1ccccc1", "[NH4+]"] {
+            let mol = mol_from_smiles(smiles).unwrap();
+            assert!(
+                !fragment_has_valence_violation(&mol),
+                "valid fragment must not be rejected: {smiles}"
+            );
+            assert!(
+                !split_fragments(&mol).is_empty(),
+                "valid fragment must survive splitting: {smiles}"
+            );
+        }
+    }
+
+    #[test]
     fn aromaticity_integrity_violation_detects_acyclic_aromatic_atom() {
         // Issue #90's exact known-bad hash-atom variant, applied directly
         // via `run_reactants` -- bypassing `expand_hash_atom_variants`'
@@ -2883,6 +3843,34 @@ mod tests {
     }
 
     #[test]
+    fn carbamate_cleavage_fires_on_open_chain_carbamate() {
+        // Methyl N-methylcarbamate → methyl chloroformate + methylamine.
+        let mol = mol_from_smiles("COC(=O)NC").unwrap();
+        let rule = rr("carbamate_cleavage", "");
+        let results = apply_retro(&mol, &rule);
+        assert!(!results.is_empty(), "carbamate cleavage must fire");
+        let smiles: std::collections::BTreeSet<&str> = results[0]
+            .iter()
+            .map(|precursor| precursor.smiles.as_str())
+            .collect();
+        assert!(
+            smiles.contains("ClC(OC)=O"),
+            "chloroformate missing: {smiles:?}"
+        );
+        assert!(smiles.contains("CN"), "amine missing: {smiles:?}");
+    }
+
+    #[test]
+    fn carbamate_cleavage_skips_plain_amide() {
+        let mol = mol_from_smiles("CC(=O)NC").unwrap();
+        let rule = rr("carbamate_cleavage", "");
+        assert!(
+            apply_retro(&mol, &rule).is_empty(),
+            "a carbonyl without an O-organic substituent is an amide"
+        );
+    }
+
+    #[test]
     fn aromatic_ring_fragment_filter() {
         use chematic::chem::aromatic_ring_count;
         // Open-chain aromatic fragments (BFS leakage, L4) must be discarded.
@@ -3035,6 +4023,69 @@ mod tests {
         );
     }
 
+    // ── aryl_ether_retro: [O;!$(OC=O)] restricts to genuine ethers, excludes esters ──
+    //
+    // Regression coverage for the ester-mislabeling bug: the old pattern
+    // "[c:1][O:2]" (bare O, no exclusion) also matched an ester's
+    // Ar-O-C(=O)-R oxygen, mislabeling an ester cleavage as a retro-Ullmann
+    // ether disconnection (wrong reaction_family/conditions/procedure_hint
+    // on a route ester_cleavage already found correctly) -- e.g. aspirin
+    // produced a spurious duplicate route. See
+    // docs/design/retro-rule-precision-gaps-v0.md #1.
+
+    fn aryl_ether_rule() -> RetroRule {
+        default_rules()
+            .into_iter()
+            .find(|r| r.name == "aryl_ether_retro")
+            .expect("aryl_ether_retro must be in default_rules()")
+    }
+
+    #[test]
+    fn aryl_ether_retro_fires_on_diaryl_ether() {
+        let mol = mol_from_smiles("c1ccc(Oc2ccccc2)cc1").unwrap(); // diphenyl ether
+        let results = apply_retro(&mol, &aryl_ether_rule());
+        assert!(
+            !results.is_empty(),
+            "genuine diaryl ether must still disconnect via aryl_ether_retro"
+        );
+    }
+
+    #[test]
+    fn aryl_ether_retro_fires_on_aryl_alkyl_ether() {
+        let mol = mol_from_smiles("COc1ccccc1").unwrap(); // anisole
+        let results = apply_retro(&mol, &aryl_ether_rule());
+        assert!(
+            !results.is_empty(),
+            "genuine aryl alkyl ether must still disconnect via aryl_ether_retro"
+        );
+    }
+
+    #[test]
+    fn aryl_ether_retro_skips_aryl_ester_oxygen() {
+        let mol = mol_from_smiles("CC(=O)Oc1ccccc1").unwrap(); // phenyl acetate
+        let results = apply_retro(&mol, &aryl_ether_rule());
+        assert!(
+            results.is_empty(),
+            "phenyl acetate's ester oxygen must NOT disconnect via aryl_ether_retro \
+             (that mislabels an ester cleavage as an Ullmann ether disconnection -- \
+             ester_cleavage is the correct rule)"
+        );
+    }
+
+    #[test]
+    fn aryl_ether_retro_skips_aspirin_ester_oxygen() {
+        // The exact repro from docs/design/retro-rule-precision-gaps-v0.md #1:
+        // aspirin's ester bond was being double-counted as both ester_cleavage
+        // (correct) and aryl_ether_retro (wrong reaction_family/conditions).
+        let mol = mol_from_smiles("CC(=O)Oc1ccccc1C(=O)O").unwrap(); // aspirin
+        let results = apply_retro(&mol, &aryl_ether_rule());
+        assert!(
+            results.is_empty(),
+            "aspirin must NOT disconnect via aryl_ether_retro -- its only aromatic \
+             C-O bond is the ester oxygen, which ester_cleavage already handles correctly"
+        );
+    }
+
     #[test]
     fn methyl_benzoate_ester_cleavage_gives_correct_precursors() {
         // Proves this isn't just "candidate removed" but "routed to the correct
@@ -3106,25 +4157,25 @@ mod tests {
             target: "COC(=O)c1ccccc1",                // methyl benzoate
             expected_preserved_fragment: "COC(=O)Cl", // methyl chloroformate
         },
-        SubstituentPreservationCase {
-            // The CH2's real -OH substituent must survive, not be discarded
-            // when the rule re-declares CH2 (2H) -> CH3 (3H).
-            rule_name: "negishi_retro",
-            target: "OCc1ccccc1",              // benzyl alcohol
-            expected_preserved_fragment: "CO", // methanol
-        },
+        // negishi_retro's case was removed here along with the rule itself
+        // (v0.36.0 rule-safety census) -- it passed for this plain
+        // acyclic substrate (benzyl alcohol -> bromobenzene + methanol),
+        // but the rule produces a duplicated split on ring-fused
+        // substrates, so it was disabled entirely rather than kept for
+        // the subset of inputs it handles correctly. See
+        // `negishi_retro_removed_from_default_rules` below.
         SubstituentPreservationCase {
             // C:1's extra branch (isopropyl) must survive into the acid fragment.
             rule_name: "claisen_retro",
             target: "CC(C)C(=O)CC(=O)OCC", // ethyl 4-methyl-3-oxopentanoate
             expected_preserved_fragment: "CC(C)C(=O)O", // isobutyric acid
         },
-        SubstituentPreservationCase {
-            // C:1's aryl substituent must survive into the enol fragment.
-            rule_name: "michael_retro",
-            target: "c1ccccc1CC(=O)CC", // 1-phenylpentan-2-one-ish chain
-            expected_preserved_fragment: "C=C(O)Cc1ccccc1",
-        },
+        // michael_retro's case was removed here along with the rule itself
+        // (v0.36.0 rule-safety census) -- it passed for this plain acyclic
+        // substrate, but the rule produces a corrupted split on ring-fused
+        // targets, so it was disabled entirely rather than kept for the
+        // subset of inputs it handles correctly. See
+        // `michael_retro_removed_from_default_rules` below.
         SubstituentPreservationCase {
             // C:1's bulky tert-butyl substituent must survive, not vanish
             // when C:1 becomes a carbonyl.
@@ -3139,19 +4190,19 @@ mod tests {
             target: "CC(C)=CC",                     // 2-methyl-2-butene
             expected_preserved_fragment: "CC(C)=O", // acetone
         },
-        SubstituentPreservationCase {
-            // The ethyl ketone fragment (not just a bare carbonyl) must survive.
-            rule_name: "grignard_addition_retro",
-            target: "CCC(O)(C)CC",                   // 3-methylpentan-3-ol
-            expected_preserved_fragment: "CCC(C)=O", // butan-2-one
-        },
-        SubstituentPreservationCase {
-            // The ethylamine substituent must survive as a standalone amine,
-            // not be discarded when the aryl ring is cut away.
-            rule_name: "aryl_amine_retro",
-            target: "c1ccccc1NCC",              // N-phenylethylamine
-            expected_preserved_fragment: "CCN", // ethylamine
-        },
+        // grignard_addition_retro's case was removed here along with the
+        // rule itself (v0.36.0 rule-safety census) -- it passed for this
+        // plain acyclic substrate (3-methylpentan-3-ol -> butan-2-one +
+        // ethyl), but the rule produces a duplicated split on ring-fused
+        // tertiary alcohols, so it was disabled entirely rather than kept
+        // for the subset of inputs it handles correctly. See
+        // `grignard_addition_retro_removed_from_default_rules` below.
+        // aryl_amine_retro's case was removed here along with the rule
+        // itself (issue #77) — it passed for this plain acyclic substrate,
+        // but the rule loses the nitrogen outright on ring-fused targets,
+        // so it was disabled entirely rather than kept for the subset of
+        // inputs it handles correctly. See
+        // `aryl_amine_retro_removed_from_default_rules` below.
     ];
 
     /// Molecular formula fingerprint (element -> count, including implicit H).
@@ -3212,7 +4263,7 @@ mod tests {
     }
 
     #[test]
-    fn suzuki_retro_biphenyl_gives_bromobenzene_and_benzene() {
+    fn suzuki_retro_biphenyl_gives_bromobenzene_and_phenylboronic_acid() {
         let mol = mol_from_smiles("c1ccc(-c2ccccc2)cc1").unwrap();
         let rule = rr("suzuki_retro", "");
         let results = apply_retro(&mol, &rule);
@@ -3226,29 +4277,36 @@ mod tests {
             .flat_map(|set| set.iter().map(|p| p.smiles.clone()))
             .collect();
 
-        // Expect exactly bromobenzene and benzene. Compare against canonical
-        // forms computed at test time (not a hardcoded string) — the exact
-        // canonical SMILES chematic emits for a given molecule is an
-        // implementation detail that can change between chematic versions
-        // (e.g. 0.4.25 wrote "Brc1ccccc1", 0.4.30 writes "c1ccc(cc1)Br" for
-        // the same molecule); what must hold is chemical identity, not a
-        // specific string layout.
+        // Expect exactly bromobenzene and phenylboronic acid -- a real
+        // retro-Suzuki disconnection needs one aryl-halide partner and one
+        // boron-containing partner, not "aryl halide + plain arene" (the
+        // previous, buggy behavior this test used to pin; see
+        // docs/design/retro-rule-precision-gaps-v0.md #2). Compare against
+        // canonical forms computed at test time (not a hardcoded string) —
+        // the exact canonical SMILES chematic emits for a given molecule is
+        // an implementation detail that can change between chematic
+        // versions (e.g. 0.4.25 wrote "Brc1ccccc1", 0.4.30 writes
+        // "c1ccc(cc1)Br" for the same molecule); what must hold is chemical
+        // identity, not a specific string layout.
         let bromobenzene_canon = canonical_smiles(&mol_from_smiles("Brc1ccccc1").unwrap());
-        let benzene_canon = canonical_smiles(&mol_from_smiles("c1ccccc1").unwrap());
+        let boronic_acid_canon = canonical_smiles(&mol_from_smiles("OB(O)c1ccccc1").unwrap());
         let has_bromobenzene = all_smiles.contains(&bromobenzene_canon);
-        let has_benzene = all_smiles.contains(&benzene_canon);
+        let has_boronic_acid = all_smiles.contains(&boronic_acid_canon);
         assert!(
             has_bromobenzene,
             "expected bromobenzene fragment ({bromobenzene_canon:?}); got {all_smiles:?}"
         );
-        assert!(has_benzene, "expected benzene fragment; got {all_smiles:?}");
+        assert!(
+            has_boronic_acid,
+            "expected phenylboronic acid fragment ({boronic_acid_canon:?}); got {all_smiles:?}"
+        );
     }
 
     #[test]
     fn suzuki_retro_biphenyl_solvable_with_bb() {
-        // End-to-end: the engine must resolve biphenyl given bromobenzene + benzene as BBs.
+        // End-to-end: the engine must resolve biphenyl given bromobenzene + phenylboronic acid as BBs.
         use crate::search::{SearchConfig, find_routes};
-        let env = ChemEnv::in_memory(&["Brc1ccccc1", "c1ccccc1"]);
+        let env = ChemEnv::in_memory(&["Brc1ccccc1", "OB(O)c1ccccc1"]);
         let rules = default_rules();
         let cfg = SearchConfig {
             max_depth: 2,
@@ -3535,40 +4593,200 @@ mod tests {
     }
 
     #[test]
-    fn heck_retro_internal_on_stilbene() {
-        // (E)-stilbene: c1ccccc1/C=C/c1ccccc1
-        let mol = mol_from_smiles("C(=Cc1ccccc1)c1ccccc1").unwrap();
-        let rule = rr("heck_retro", "[c:1][CH:2]=[CH:3]>>[c:1][Br].[CH2:2]=[CH:3]");
-        let results = apply_retro(&mol, &rule);
-        assert!(!results.is_empty(), "heck_retro must fire on stilbene");
-        let flat: Vec<_> = results
-            .iter()
-            .flat_map(|s| s.iter().map(|p| p.smiles.as_str()))
-            .collect();
+    fn heck_retro_removed_from_default_rules() {
+        // Old version of this test ("heck_retro_internal_on_stilbene")
+        // asserted the rule's behavior on stilbene by building it directly
+        // via `rr(...)` rather than routing through `default_rules()` --
+        // exactly the mistake `aryl_chloride_retro_removed_from_default_rules`'s
+        // own comment warns about: it would have kept passing even after
+        // this removal. Replaced with the same removal-assertion +
+        // frozen-fixture pattern every other ring-fusion defect removal
+        // uses.
+        let rules = default_rules();
         assert!(
-            flat.iter().any(|s| s.contains("Br")),
-            "products must include aryl bromide; got {flat:?}"
+            rules.iter().all(|r| r.name != "heck_retro"),
+            "heck_retro must not be present in default_rules(): ring-fusion \
+             connectivity-collapse defect on internal alkenes fused to the \
+             same aromatic ring the leaving-group Br attaches to (indene-type)"
+        );
+        assert!(
+            rules.iter().any(|r| r.name == "heck_retro_terminal"),
+            "heck_retro_terminal must stay active -- its terminal CH2 endpoint \
+             is structurally immune to this defect (proven by valence \
+             counting, see the removal comment in default_rules())"
         );
     }
 
     #[test]
-    fn negishi_retro_on_ethylbenzene() {
-        // negishi_retro SMIRKS [c:1][CH2:2] matches the benzylic CH2 in ethylbenzene,
-        // not the methyl (CH3) in toluene (toluene has 3H on that carbon, not 2H).
-        let mol = mol_from_smiles("CCc1ccccc1").unwrap();
-        let rule = rr("negishi_retro", "[c:1][CH2:2]>>[c:1][Br].[CH3:2]");
-        let results = apply_retro(&mol, &rule);
-        assert!(
-            !results.is_empty(),
-            "negishi_retro must fire on ethylbenzene (benzylic CH2)"
-        );
-        let flat: Vec<_> = results
+    fn heck_retro_would_corrupt_a_ring_fused_target_if_re_enabled() {
+        // Indene: cyclopentene fused to benzene, its endocyclic C=C
+        // directly attached to the aromatic ring -- the exact shape the
+        // removal comment in default_rules() describes.
+        let target_smiles = "C1=Cc2ccccc2C1";
+        let target = mol_from_smiles(target_smiles).unwrap();
+        let rule = rr("heck_retro", "[c:1][CH:2]=[CH:3]>>[c:1][Br].[CH2:2]=[CH:3]");
+        let outcomes = apply_retro(&target, &rule);
+        let outcome_smiles: Vec<Vec<&str>> = outcomes
             .iter()
-            .flat_map(|s| s.iter().map(|p| p.smiles.as_str()))
+            .map(|o| o.iter().map(|p| p.smiles.as_str()).collect())
             .collect();
         assert!(
-            flat.iter().any(|s| s.contains("Br")),
-            "products must include aryl bromide; got {flat:?}"
+            !outcomes.is_empty(),
+            "expected at least one outcome on this real ring-fused (indene) target: \
+             {outcome_smiles:?}"
+        );
+        // Correct chemistry: two separate fragments ([Ar-Br], [CH2=CH-...])
+        // whose heavy atoms sum to target_atoms + 1 (the new Br). The
+        // confirmed defect (verified 2026-08-29 against this exact target:
+        // indene has 9 heavy atoms) instead produces a *single* fused
+        // fragment of 8 heavy atoms -- fewer fragments than expected AND
+        // fewer atoms than the target itself, the opposite direction from
+        // negishi_retro/grignard_addition_retro's atom-duplication
+        // signature, but the same root cause: a cut bond that's part of a
+        // ring, where the SMIRKS's naive 2-fragment assumption can't
+        // represent the real cyclic connectivity.
+        let target_atoms = target.atom_count();
+        let corrupted = outcomes.iter().any(|o| {
+            let precursor_atoms: usize = o
+                .iter()
+                .map(|p| mol_from_smiles(&p.smiles).unwrap().atom_count())
+                .sum();
+            o.len() < 2 || precursor_atoms < target_atoms
+        });
+        assert!(
+            corrupted,
+            "expected at least one outcome with fewer than 2 fragments or fewer heavy atoms \
+             than the target itself (connectivity collapse), got only well-formed \
+             2-fragment, atom-conserving outcomes -- rule may have been fixed upstream, \
+             re-check whether it's still correctly disabled: {outcome_smiles:?}"
+        );
+    }
+
+    // v0.36.0 rule-safety census (docs/validation/rule-safety-census-2026-08-24.md):
+    // same bare-single-atom-RHS shape as aryl_amine_retro/
+    // buchwald_hartwig_retro/n_benzylation_retro/michael_retro, confirmed
+    // by direct apply_retro reproduction on a real target with an Ar-CH2
+    // bond inside a saturated ring fused to the aromatic ring
+    // (indane/tetralin-type). negishi_retro used to have a simple-case
+    // test on ethylbenzene (a plain, non-ring-fused benzylic CH2) that
+    // passed cleanly -- removed along with the rule itself, since the
+    // defect only shows up on ring-fused substrates and the rule is
+    // disabled entirely rather than kept for the inputs it handles
+    // correctly, matching this codebase's established policy for this
+    // defect class.
+    #[test]
+    fn negishi_retro_removed_from_default_rules() {
+        let rules = default_rules();
+        assert!(
+            rules.iter().all(|r| r.name != "negishi_retro"),
+            "negishi_retro must not be present in default_rules(): same ring-fused \
+             atom-duplication defect as aryl_amine_retro/buchwald_hartwig_retro/\
+             n_benzylation_retro/michael_retro"
+        );
+    }
+
+    #[test]
+    fn negishi_retro_would_corrupt_a_ring_fused_target_if_re_enabled() {
+        let target_smiles = "c1ccc2c(c1)CCC2C(=O)N3CCN(CC3)C(=O)c4ccccc4";
+        let target = mol_from_smiles(target_smiles).unwrap();
+        let rule = rr("negishi_retro", "[c:1][CH2:2]>>[c:1][Br].[CH3:2]");
+        let outcomes = apply_retro(&target, &rule);
+        let outcome_smiles: Vec<Vec<&str>> = outcomes
+            .iter()
+            .map(|o| o.iter().map(|p| p.smiles.as_str()).collect())
+            .collect();
+        assert!(
+            !outcomes.is_empty(),
+            "expected at least one outcome on this real ring-fused (indane-type) target: \
+             {outcome_smiles:?}"
+        );
+        // Correct chemistry for this SMIRKS is atom-conserving except for
+        // one new heavy atom (the appended leaving-group Br). The
+        // confirmed defect's specific signature (verified 2026-08-24
+        // against this exact target: target has 25 heavy atoms, the
+        // broken outcome's precursors sum to 49 -- 23 atoms more than
+        // the chemically correct 26, an ~88% excess well beyond round 1's
+        // ~22-25%) is duplication, same direction and defect class as
+        // n_benzylation_retro/michael_retro (under-constrained LHS + bare
+        // RHS fragment + ring-membership at the cut site) -- consistent
+        // with, but not directly traced to, the same BFS carry-through
+        // path.
+        let target_atoms = target.atom_count();
+        let corrupted = outcomes.iter().any(|o| {
+            let precursor_atoms: usize = o
+                .iter()
+                .map(|p| mol_from_smiles(&p.smiles).unwrap().atom_count())
+                .sum();
+            precursor_atoms > target_atoms + 1
+        });
+        assert!(
+            corrupted,
+            "expected at least one outcome with atom-duplicating ring carry-through (more \
+             heavy atoms across precursors than the target's own count plus one new Br), got \
+             only atom-conserving outcomes -- rule may have been fixed upstream, re-check \
+             whether it's still correctly disabled: {outcome_smiles:?}"
+        );
+    }
+
+    // Same v0.36.0 census flag and defect class as negishi_retro above,
+    // confirmed by direct apply_retro reproduction on a real target with a
+    // tertiary alcohol carbon that's part of a saturated ring fused to an
+    // aromatic ring (a 2-substituted indanol). This SMIRKS's RHS declares
+    // no new atoms (pure cleavage, no leaving-group atom appended), so a
+    // correct outcome's precursors must sum to exactly the target's own
+    // heavy-atom count; the atom-conservation violation here is even
+    // larger in relative terms (~64% excess) than negishi_retro's, and
+    // whether it's the identical BFS path or a related-but-distinct one
+    // wasn't traced -- see the removed-rule comment above for detail.
+    #[test]
+    fn grignard_addition_retro_removed_from_default_rules() {
+        let rules = default_rules();
+        assert!(
+            rules.iter().all(|r| r.name != "grignard_addition_retro"),
+            "grignard_addition_retro must not be present in default_rules(): same ring-fused \
+             atom-duplication defect as negishi_retro/n_benzylation_retro/michael_retro"
+        );
+    }
+
+    #[test]
+    fn grignard_addition_retro_would_corrupt_a_ring_fused_target_if_re_enabled() {
+        let target_smiles = "c1ccc2c(c1)C(C)(O)CC2";
+        let target = mol_from_smiles(target_smiles).unwrap();
+        let rule = rr(
+            "grignard_addition_retro",
+            "[C:1]([OH:2])([C:3])[C:4]>>[C:1](=O)[C:3].[C:4]",
+        );
+        let outcomes = apply_retro(&target, &rule);
+        let outcome_smiles: Vec<Vec<&str>> = outcomes
+            .iter()
+            .map(|o| o.iter().map(|p| p.smiles.as_str()).collect())
+            .collect();
+        assert!(
+            !outcomes.is_empty(),
+            "expected at least one outcome on this real ring-fused (2-substituted indanol) \
+             target: {outcome_smiles:?}"
+        );
+        // Confirmed defect's specific signature (verified 2026-08-24
+        // against this exact target: target has 11 heavy atoms, the
+        // broken outcome's precursors sum to 18 -- 7 atoms more than the
+        // chemically correct 11) is duplication: the atom-matcher bound
+        // the "bare" [C:4] leaving-group slot to a ring-continuation bond
+        // instead of a genuine exocyclic substituent, and cutting it
+        // doesn't actually separate the molecule.
+        let target_atoms = target.atom_count();
+        let corrupted = outcomes.iter().any(|o| {
+            let precursor_atoms: usize = o
+                .iter()
+                .map(|p| mol_from_smiles(&p.smiles).unwrap().atom_count())
+                .sum();
+            precursor_atoms > target_atoms
+        });
+        assert!(
+            corrupted,
+            "expected at least one outcome with atom-duplicating ring carry-through (more \
+             heavy atoms across precursors than the target's own count), got only \
+             atom-conserving outcomes -- rule may have been fixed upstream, re-check whether \
+             it's still correctly disabled: {outcome_smiles:?}"
         );
     }
 
@@ -3613,6 +4831,215 @@ mod tests {
                 "{removed} must not be present in default_rules() (31.11: atom-loss, no tracked reagent)"
             );
         }
+    }
+
+    // Issue #77: aryl_amine_retro deletes a ring-fused nitrogen outright
+    // instead of returning it as part of a second (amine) precursor
+    // fragment — a genuine target-atom-loss defect, not the accepted
+    // reagent-omission class covered by `reagent_omission_template_allowlist`
+    // (synthesizability/schema.rs). Disabled pending root-cause, same policy
+    // as the 31.11 halide-rule removals above.
+    #[test]
+    fn aryl_amine_retro_removed_from_default_rules() {
+        let rules = default_rules();
+        assert!(
+            rules.iter().all(|r| r.name != "aryl_amine_retro"),
+            "aryl_amine_retro must not be present in default_rules() (issue #77: \
+             deletes ring-fused nitrogen with no tracked second precursor)"
+        );
+    }
+
+    // Same root cause and mechanism as aryl_amine_retro above, confirmed by
+    // direct reproduction, not just by analogy: both rules' bare
+    // single-atom RHS fragments let substituent-carry-through BFS sweep
+    // unchecked across a ring-fusion boundary. Worse in practice --
+    // buchwald_hartwig_retro's surviving "aryl" fragment comes back
+    // corrupted (a spurious extra Br plus a dangling alkyl chain), not
+    // just missing the amine fragment.
+    #[test]
+    fn buchwald_hartwig_retro_removed_from_default_rules() {
+        let rules = default_rules();
+        assert!(
+            rules.iter().all(|r| r.name != "buchwald_hartwig_retro"),
+            "buchwald_hartwig_retro must not be present in default_rules(): same \
+             ring-fused-nitrogen atom-loss defect as aryl_amine_retro (issue #77), \
+             plus a corrupted surviving aryl fragment"
+        );
+    }
+
+    // Direct reproduction of the removed rule's failure on a real,
+    // deliberately re-added instance -- documents *why* it's gone, not
+    // just *that* it's gone. Same target shape as the issue #77 repro
+    // (uspto50k_test#L2263): a fused aromatic/saturated-ring nitrogen.
+    #[test]
+    fn buchwald_hartwig_retro_would_corrupt_a_ring_fused_target_if_re_enabled() {
+        let target = mol_from_smiles("c12c(NCCC2)ccc(c1)Br").unwrap();
+        let rule = rr("buchwald_hartwig_retro", "[c:1][N:2]>>[c:1]Br.[N:2]");
+        let outcomes = apply_retro(&target, &rule);
+        let outcome_smiles: Vec<Vec<&str>> = outcomes
+            .iter()
+            .map(|o| o.iter().map(|p| p.smiles.as_str()).collect())
+            .collect();
+        assert_eq!(
+            outcomes.len(),
+            1,
+            "expected exactly one (broken) outcome: {outcome_smiles:?}",
+        );
+        let precursor_smiles: Vec<&str> = outcomes[0].iter().map(|p| p.smiles.as_str()).collect();
+        assert_eq!(
+            precursor_smiles.len(),
+            1,
+            "the amine fragment must be silently dropped (split_fragments' aromaticity \
+             filter rejects the leaked-ring-remainder fragment): {precursor_smiles:?}"
+        );
+        // The lone surviving fragment is the corrupted one: it must retain
+        // the alkyl chain that leaked in from the far side of the fused
+        // ring (real precursor loss) and carry two bromines (the target's
+        // own plus the rule's own appended leaving-group Br) rather than
+        // one -- proof this is not just a dropped fragment but a wrong one.
+        let precursor_mol = mol_from_smiles(precursor_smiles[0]).unwrap();
+        let br_count = precursor_mol
+            .atoms()
+            .filter(|(_, a)| a.element == Element::BR)
+            .count();
+        assert_eq!(
+            br_count, 2,
+            "corrupted fragment must carry two bromines, not the real product's one: {}",
+            precursor_smiles[0]
+        );
+    }
+
+    // v0.36.0 rule-safety census (docs/validation/rule-safety-census-2026-08-24.md):
+    // same bare-single-atom-RHS shape as aryl_amine_retro/
+    // buchwald_hartwig_retro, confirmed by direct apply_retro reproduction
+    // on a real target with a ring N-CH2-Ar bond. Unlike buchwald_hartwig_retro
+    // (which drops a fragment), the broken output here is atom-accounting
+    // wrong: the "bare" [N:1] fragment carries through nearly the whole
+    // molecule via the ring's other path, and the declared Br-CH2-Ar leaving
+    // group ends up holding an extra piece of the ring backbone that was
+    // never a real substituent of it -- total heavy atoms across both
+    // precursors comes out wrong for a bond-cleavage-plus-one-new-Br.
+    #[test]
+    fn n_benzylation_retro_removed_from_default_rules() {
+        let rules = default_rules();
+        assert!(
+            rules.iter().all(|r| r.name != "n_benzylation_retro"),
+            "n_benzylation_retro must not be present in default_rules(): same ring-fused \
+             atom-accounting defect as aryl_amine_retro/buchwald_hartwig_retro"
+        );
+    }
+
+    #[test]
+    fn n_benzylation_retro_would_corrupt_a_ring_fused_target_if_re_enabled() {
+        let target_smiles =
+            "C(CC(NC(=O)C(NC(=O)C(N)Cc4ccccc4)C)Cc3c(F)cc(c(F)c3Cl)F)(=O)N1Cc2n(c(C(F)(F)F)nn2)CC1";
+        let target = mol_from_smiles(target_smiles).unwrap();
+        let rule = rr(
+            "n_benzylation_retro",
+            "[N:1][CH2:2][c:3]>>[N:1].[Br][CH2:2][c:3]",
+        );
+        let outcomes = apply_retro(&target, &rule);
+        let outcome_smiles: Vec<Vec<&str>> = outcomes
+            .iter()
+            .map(|o| o.iter().map(|p| p.smiles.as_str()).collect())
+            .collect();
+        assert!(
+            !outcomes.is_empty(),
+            "expected at least one outcome on this real ring-fused target: {outcome_smiles:?}"
+        );
+        // Correct chemistry for this SMIRKS is atom-conserving except for
+        // one new heavy atom (the appended leaving-group Br): total heavy
+        // atoms across the outcome's precursors should equal the target's
+        // own heavy-atom count plus exactly one. The confirmed defect's
+        // specific signature (verified 2026-08-24 against this exact
+        // target: target has 45 heavy atoms, the broken outcome's two
+        // precursors sum to 56 -- 10 atoms *more* than the chemically
+        // correct 46) is duplication, not loss: the "bare" [N:1]
+        // fragment's carry-through sweeps around the ring the *other*
+        // way and re-collects atoms the declared Br-CH2-Ar fragment
+        // already legitimately claims. A dropped-fragment defect (the
+        // buchwald_hartwig_retro shape) would show as too *few* atoms
+        // instead; asserting a strict excess pins this to the specific
+        // duplication mechanism rather than any atom-count mismatch.
+        let target_atoms = target.atom_count();
+        let corrupted = outcomes.iter().any(|o| {
+            let precursor_atoms: usize = o
+                .iter()
+                .map(|p| mol_from_smiles(&p.smiles).unwrap().atom_count())
+                .sum();
+            precursor_atoms > target_atoms + 1
+        });
+        assert!(
+            corrupted,
+            "expected at least one outcome with atom-duplicating ring carry-through (more \
+             heavy atoms across precursors than the target's own count plus one new Br), got \
+             only atom-conserving outcomes -- rule may have been fixed upstream, re-check \
+             whether it's still correctly disabled: {outcome_smiles:?}"
+        );
+    }
+
+    // Same v0.36.0 census flag and mechanism as n_benzylation_retro above,
+    // confirmed by direct apply_retro reproduction on a real target with a
+    // ring C-CH2-C=O bond (a glutarimide). This SMIRKS's RHS declares no
+    // new atoms (pure cleavage + tautomerization), so a correct outcome's
+    // precursors must have exactly the target's own heavy-atom count; the
+    // ring carry-through defect breaks that conservation.
+    #[test]
+    fn michael_retro_removed_from_default_rules() {
+        let rules = default_rules();
+        assert!(
+            rules.iter().all(|r| r.name != "michael_retro"),
+            "michael_retro must not be present in default_rules(): same ring-fused \
+             atom-accounting defect as aryl_amine_retro/buchwald_hartwig_retro"
+        );
+    }
+
+    #[test]
+    fn michael_retro_would_corrupt_a_ring_fused_target_if_re_enabled() {
+        let target_smiles = "C(=O)N1C(=O)CC(N2C(C)c3c(c(C#N)cc(F)c3)C2=O)CC1=O";
+        let target = mol_from_smiles(target_smiles).unwrap();
+        let rule = rr(
+            "michael_retro",
+            "[C:1][CH2:2][C:3]=[O:4]>>[C:1].[CH2:2]=[C:3][OH:4]",
+        );
+        let outcomes = apply_retro(&target, &rule);
+        let outcome_smiles: Vec<Vec<&str>> = outcomes
+            .iter()
+            .map(|o| o.iter().map(|p| p.smiles.as_str()).collect())
+            .collect();
+        assert!(
+            !outcomes.is_empty(),
+            "expected at least one outcome on this real ring-fused (glutarimide) target: \
+             {outcome_smiles:?}"
+        );
+        // This SMIRKS's RHS declares no new atoms (pure cleavage +
+        // tautomerization), so a correct outcome's precursors must sum to
+        // exactly the target's own heavy-atom count. The confirmed
+        // defect's specific signature (verified 2026-08-24 against this
+        // exact target: target has 24 heavy atoms, both broken outcomes'
+        // precursors sum to 30 -- 6 atoms *more* than the correct 24) is
+        // duplication, same direction and same defect class as
+        // n_benzylation_retro above (similar magnitude too: both ~25%
+        // excess): the "bare" [C:1] fragment's carry-through sweeps
+        // around the ring the other way and re-collects atoms the
+        // declared enol fragment already claims. Asserting a strict
+        // excess (not just any mismatch) pins this to that duplication
+        // direction, though the exact BFS path wasn't traced atom-by-atom.
+        let target_atoms = target.atom_count();
+        let corrupted = outcomes.iter().any(|o| {
+            let precursor_atoms: usize = o
+                .iter()
+                .map(|p| mol_from_smiles(&p.smiles).unwrap().atom_count())
+                .sum();
+            precursor_atoms > target_atoms
+        });
+        assert!(
+            corrupted,
+            "expected at least one outcome with atom-duplicating ring carry-through (more \
+             heavy atoms across precursors than the target's own count), got only \
+             atom-conserving outcomes -- rule may have been fixed upstream, re-check whether \
+             it's still correctly disabled: {outcome_smiles:?}"
+        );
     }
 
     // Guards the invariant `search::is_extracted_template` depends on: it
@@ -3906,6 +5333,125 @@ mod bug13_regression {
 mod chematic_regression {
     use super::*;
 
+    /// Frozen fixture, `extracted_4255` on `C2c1cc(c(F)cc1C(O2)=O)F` (a
+    /// difluoro-substituted isobenzofuran-1(3H)-one / phthalide, benzo-fused
+    /// gamma-butyrolactone) <- `O=C.C(=O)O.c1(F)ccccc1F` (formaldehyde +
+    /// formic acid + 1,2-difluorobenzene, three independent fragments): a
+    /// third individually-investigated step from Finding #4's pilot
+    /// (`docs/validation/finding4-validator-pilot-2026-08-23.md`), per that
+    /// doc's own protocol -- not by re-running search.
+    ///
+    /// Classified as **`genuine_template_error`**, the same failure class as
+    /// `extracted_112_indanone_is_genuine_template_error` above: a
+    /// two-or-more-fragment SMIRKS retro-template that models what is
+    /// actually an intramolecular ring bond as an intermolecular one.
+    ///
+    /// `extracted_4255`'s SMIRKS
+    /// (`[C:2]-[O:3]-[CH2:1]-[c:5](:[c:4]):[c:6]>>O=[CH2:1].[C:2]-[OH:3].[c:4]:[cH:5]:[c:6]`)
+    /// breaks the phthalide's two ring-closing bonds (benzylic CH2-O and
+    /// benzylic CH2-aromatic) *and additionally* severs the carbonyl
+    /// carbon's own bond to its aromatic ring neighbor -- a bond the LHS
+    /// pattern never even examines (that aromatic atom isn't matched at
+    /// all), so the template has no way to know it's discarding a real,
+    /// present bond rather than a genuinely absent one. The result is 3
+    /// mutually independent fragments instead of the 2 that a correct retro
+    /// of this bicyclic lactone would produce (an open aryl fragment still
+    /// bearing both substituents, plus formaldehyde) -- let alone
+    /// recognizing this disconnection is intramolecular to begin with.
+    ///
+    /// Both directions confirm this empirically:
+    /// - `apply_retro` on the real target reproduces the exact same
+    ///   3-fragment disconnection fresh -- `["O=C", "C(=O)O",
+    ///   "c1(F)ccccc1F"]`, the fixture's own precursors, matching the
+    ///   pilot harness's raw output exactly.
+    /// - Forward-replaying those 3 precursors through the reversed SMIRKS
+    ///   can only ever form ONE new bond (benzylic CH2 to one aromatic
+    ///   ring), leaving the carbonyl fragment dangling as an open ester
+    ///   chain (`Ar-CH2-O-C(=O)H`) rather than closing the second bond
+    ///   back onto the SAME ring to re-form the fused 5-membered lactone --
+    ///   structurally impossible from 3 independent molecules via this
+    ///   rule. Neither of the 2 resulting open-chain regiochemical products
+    ///   is or can be the bicyclic target.
+    ///
+    /// Same likely-general-failure-class note as `extracted_112`: any
+    /// multi-fragment SMIRKS whose RHS declares a mapped atom's spectator
+    /// bond (one never examined by the LHS pattern) as absent will make
+    /// this same mistake whenever the target happens to have that
+    /// substituent tethered elsewhere. Not investigated further here.
+    #[test]
+    fn extracted_4255_difluorophthalide_is_genuine_template_error() {
+        let target = "C2c1cc(c(F)cc1C(O2)=O)F";
+        let precursors = [
+            "O=C".to_string(),
+            "C(=O)O".to_string(),
+            "c1(F)ccccc1F".to_string(),
+        ];
+        let smirks =
+            "[C:2]-[O:3]-[CH2:1]-[c:5](:[c:4]):[c:6]>>O=[CH2:1].[C:2]-[OH:3].[c:4]:[cH:5]:[c:6]";
+        let rule = rr("extracted_4255", smirks);
+        let target_mol = mol_from_smiles(target).unwrap();
+        let target_canon = to_canonical(&target_mol);
+
+        // apply_retro reproduces the exact 3-fragment disconnection fresh,
+        // from the real target -- confirms this isn't a harness-only
+        // artifact.
+        let retro_outcomes = apply_retro(&target_mol, &rule);
+        let retro_smiles: Vec<Vec<String>> = retro_outcomes
+            .iter()
+            .map(|outcome| outcome.iter().map(|p| to_canonical(&p.mol)).collect())
+            .collect();
+        let expected_precursors: Vec<String> = precursors
+            .iter()
+            .map(|s| to_canonical(&mol_from_smiles(s).unwrap()))
+            .collect();
+        assert!(
+            retro_smiles.iter().any(|outcome| outcome
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                == expected_precursors.iter().collect()),
+            "apply_retro must still reproduce this exact 3-fragment disconnection: {retro_smiles:?}"
+        );
+
+        // Exhaustive forward replay of the declared precursors: every
+        // possible product is a plain open-chain formate-ester regioisomer,
+        // never the fused bicyclic target.
+        let reactant_mols: Vec<Molecule> = precursors
+            .iter()
+            .map(|s| mol_from_smiles(s).unwrap())
+            .collect();
+        let reactant_refs: Vec<&Molecule> = reactant_mols.iter().collect();
+        let (lhs, rhs) = smirks.split_once(">>").unwrap();
+        let fwd = format!("{rhs}>>{lhs}");
+        let products: std::collections::BTreeSet<String> = run_reactants(&fwd, &reactant_refs)
+            .unwrap()
+            .into_iter()
+            .flatten()
+            .map(|m| to_canonical(&m))
+            .collect();
+        // Product count (currently 2 open-chain formate-ester regioisomers)
+        // is supplementary evidence, not the classification's essential
+        // claim -- a future chematic regiochemistry-enumeration/dedup
+        // change could shift the count without changing the underlying
+        // chemical conclusion. The essential claims are: at least one
+        // product exists, and none of them is the target. Canonical-SMILES
+        // inequality is a sufficient stand-in for "never reconstructs the
+        // fused ring" here since this target has no stereocenters -- a
+        // constitutional match would necessarily canonicalize identically.
+        assert!(
+            !products.is_empty(),
+            "forward replay of the declared precursors must produce at least one candidate \
+             product: {products:?}"
+        );
+        assert!(
+            !products.contains(&target_canon),
+            "formaldehyde + formic acid + 1,2-difluorobenzene as three separate molecules must \
+             never be able to forward-produce the fused bicyclic target -- if this starts \
+             passing, the underlying chematic/apply_retro fragment-tether-tracking behavior \
+             changed and this classification needs re-checking, not just the assertion updated: \
+             {products:?}"
+        );
+    }
+
     /// Regression test for chematic issue #19 (fixed in 0.4.14):
     /// parse_smarts must accept atom-map notation (:N).
     #[test]
@@ -4103,6 +5649,533 @@ mod chematic_regression {
             z_results.is_empty(),
             "E-selective SMIRKS must NOT fire on (Z)-stilbene; got {} result set(s)",
             z_results.len()
+        );
+    }
+
+    /// Frozen fixture, `extracted_109` on `C1CCCC[C@H](N1)C` <-
+    /// `C(C)(CCCC)=O.C(CCN)C` (a methyl-butyl ketone + n-butylamine): a
+    /// third individually-investigated step from Finding #4's pilot
+    /// (`docs/validation/finding4-validator-pilot-2026-08-23.md`), per
+    /// that doc's own protocol -- not by re-running search.
+    ///
+    /// Note: the pilot's preliminary visual note called the target
+    /// "2-methylpiperidine". That was wrong -- `target_mol.atom_count()`
+    /// is 8 (6 ring carbons + 1 ring nitrogen + 1 exocyclic methyl),
+    /// confirming a 7-membered ring: this is **2-methylazepane**
+    /// (hexahydro-2-methyl-1H-azepine), not the 6-membered piperidine.
+    /// Doesn't change the classification below, but corrects the record.
+    ///
+    /// Classified as **`genuine_template_error`**, and a second concrete
+    /// instance of the same failure class documented on `extracted_112`
+    /// (`extracted_112_indanone_is_genuine_template_error` above): a
+    /// two-fragment retro-SMIRKS (RHS = `ketone . amine`, `.`-separated)
+    /// applied to a target where the two "fragments" are not actually
+    /// separate molecules -- they're tethered to each other via the rest
+    /// of a ring the LHS pattern never examines.
+    ///
+    /// `extracted_109`'s SMIRKS
+    /// (`[C:2]-[CH:1](-[NH:5]-[C:4])-[C:3]>>O=[C:1](-[C:2])-[C:3].[C:4]-[NH2:5]`)
+    /// is a standard retro-reductive-amination template, correct in
+    /// general for genuinely intermolecular cases (ketone + amine ->
+    /// secondary amine). In the target, `[CH:1]` and `[NH:5]` are two
+    /// adjacent atoms of the SAME 7-membered ring; `[C:4]` (`NH:5`'s other
+    /// neighbor) is reachable from `[CH:1]`'s own other ring substituent
+    /// via the rest of that same ring. Cutting only the matched
+    /// `[CH:1]`-`[NH:5]` bond therefore cannot split the molecule in two
+    /// -- topologically it can only open the ring into a single
+    /// amino-ketone chain. The real retro-relationship here is an
+    /// intramolecular ring-closing reductive amination (one precursor
+    /// molecule, not two separate building blocks).
+    ///
+    /// Confirmed empirically, both directions:
+    /// - `apply_retro` on the real target reproduces the exact same wrong
+    ///   two-fragment split fresh (not a harness-only artifact) -- and the
+    ///   two fragments' combined heavy-atom count (12: 7 + 5) *exceeds*
+    ///   the target's own heavy-atom count (8), which is impossible for a
+    ///   real bond-breaking disconnection (retro of this reaction class
+    ///   should conserve every target atom and add exactly one new
+    ///   oxygen). That numeric inflation is itself direct evidence the
+    ///   declared fragmentation isn't a real graph cut of this target.
+    /// - Forward-replaying the declared precursors through the reversed
+    ///   SMIRKS produces exactly one product, a plain open-chain secondary
+    ///   amine -- not a ring, and not the target under any of canonical /
+    ///   connectivity-only (stereo-stripped) comparison.
+    ///
+    /// The validator's `Invalid` verdict is correct, for the right reason.
+    /// Atom-balance still reports `true` in the pilot's own harness output
+    /// because `atom_conservation` checks gross formula/MW, not graph
+    /// connectivity -- expected, not a separate bug, same as
+    /// `extracted_112`.
+    #[test]
+    fn extracted_109_azepane_is_genuine_template_error() {
+        let target = "C1CCCC[C@H](N1)C";
+        let precursors = ["C(C)(CCCC)=O".to_string(), "C(CCN)C".to_string()];
+        let smirks = "[C:2]-[CH:1](-[NH:5]-[C:4])-[C:3]>>O=[C:1](-[C:2])-[C:3].[C:4]-[NH2:5]";
+        let rule = rr("extracted_109", smirks);
+        let target_mol = mol_from_smiles(target).unwrap();
+        let target_canon = to_canonical(&target_mol);
+
+        assert_eq!(
+            target_mol.atom_count(),
+            8,
+            "target must be the 7-membered-ring 2-methylazepane (8 heavy atoms), \
+             not the 6-membered piperidine the pilot's preliminary note assumed"
+        );
+
+        // apply_retro reproduces the exact wrong disconnection fresh, from
+        // the real target -- confirms this isn't a harness-only artifact.
+        let retro_outcomes = apply_retro(&target_mol, &rule);
+        let retro_smiles: Vec<Vec<String>> = retro_outcomes
+            .iter()
+            .map(|outcome| outcome.iter().map(|p| to_canonical(&p.mol)).collect())
+            .collect();
+        let expected_precursors: Vec<String> = precursors
+            .iter()
+            .map(|s| to_canonical(&mol_from_smiles(s).unwrap()))
+            .collect();
+        assert!(
+            retro_smiles.iter().any(|outcome| outcome
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                == expected_precursors.iter().collect()),
+            "apply_retro must still reproduce this exact wrong disconnection: {retro_smiles:?}"
+        );
+
+        // The declared precursors' combined atom count must exceed the
+        // target's own -- direct evidence this "split" is not a real cut
+        // of this target's graph (impossible for a genuine disconnection).
+        let precursor_atom_total: usize = precursors
+            .iter()
+            .map(|s| mol_from_smiles(s).unwrap().atom_count())
+            .sum();
+        assert!(
+            precursor_atom_total > target_mol.atom_count(),
+            "declared precursors ({precursor_atom_total} atoms) were expected to exceed the \
+             target's own atom count ({}) -- if this stops holding, the underlying apply_retro \
+             ring-splitting behavior changed and this classification needs re-checking",
+            target_mol.atom_count()
+        );
+
+        // Forward replay of the declared precursors: only one product
+        // forms, a plain open-chain secondary amine -- not the target,
+        // under canonical or connectivity-only (stereo-stripped) identity.
+        let reactant_mols: Vec<Molecule> = precursors
+            .iter()
+            .map(|s| mol_from_smiles(s).unwrap())
+            .collect();
+        let reactant_refs: Vec<&Molecule> = reactant_mols.iter().collect();
+        let (lhs, rhs) = smirks.split_once(">>").unwrap();
+        let fwd = format!("{rhs}>>{lhs}");
+        let products: std::collections::BTreeSet<String> = run_reactants(&fwd, &reactant_refs)
+            .unwrap()
+            .into_iter()
+            .flatten()
+            .map(|m| to_canonical(&m))
+            .collect();
+        // Product count (currently 1) is supplementary evidence, not the
+        // classification's essential claim -- demoted from a hard
+        // assertion so a future chematic enumeration change can't
+        // spuriously break this fixture without changing the chemical
+        // conclusion. The essential claims are: at least one product
+        // exists, and none of them is the target (checked below, plus the
+        // stereo-stripped connectivity check).
+        assert!(
+            !products.is_empty(),
+            "forward replay of the declared precursors must produce at least one candidate \
+             product: {products:?}"
+        );
+        assert!(
+            !products.contains(&target_canon),
+            "two separate molecules must never forward-produce the ring target: {products:?}"
+        );
+        let strip_stereo = |s: &str| s.replace('@', "");
+        let target_no_stereo = strip_stereo(&target_canon);
+        assert!(
+            !products.iter().any(|p| strip_stereo(p) == target_no_stereo),
+            "products must not even match the target's connectivity ignoring stereo -- this is \
+             a connectivity error, not a stereo-only gap like co_aliphatic_cleavage: {products:?}"
+        );
+    }
+
+    // ── declared_forward_smirks: forward-replay evidence for graph-based rules ──
+    //
+    // Closes the gap in docs/design/retro-rule-precision-gaps-v0.md #5:
+    // graph-based rules (empty RetroRule::smirks) have no string for
+    // bridge::forward to reverse-apply, so routes using them could never
+    // reach forward_validation: pass via self-audit. See that function's
+    // own doc comment for the full mechanism.
+
+    /// Frozen fixture, `extracted_112` on `c2ccc1CCC(c1c2)=O` (1-indanone)
+    /// <- `C(C(=O)Cl)C.c1ccc(C)cc1` (propionyl chloride + toluene): a
+    /// second individually-investigated step from Finding #4's pilot
+    /// (`docs/validation/finding4-validator-pilot-2026-08-23.md`), per
+    /// that doc's own protocol -- not by re-running search.
+    ///
+    /// Classified as **`genuine_template_error`**, more serious than the
+    /// `co_aliphatic_cleavage` case
+    /// (`co_aliphatic_cleavage_piperidinyl_carbamate_is_source_step_underspecified`
+    /// in `validation::forward`'s tests): there the *connectivity* was
+    /// right and only stereochemistry was unverifiable. Here the
+    /// connectivity itself is wrong.
+    ///
+    /// `extracted_112`'s own SMIRKS
+    /// (`[C:2]-[C:1](=[O:3])-[c:5](:[c:4]):[c:6]>>Cl-[C:1](-[C:2])=[O:3].[c:4]:[cH:5]:[c:6]`)
+    /// is a completely standard, real retro-Friedel-Crafts-acylation
+    /// template (Ar-C(=O)R -> ArH + Cl-C(=O)R), correct as a general
+    /// *intermolecular* transform. 1-indanone's ketone carbon and its
+    /// aromatic ring are not just "nearby" -- the ring is the SAME ring
+    /// the ketone's own alkyl tail (via the fused 5-membered ring) loops
+    /// back onto, making the real disconnection intramolecular (the real
+    /// synthesis: 3-arylpropionic acid/chloride cyclizes onto its own
+    /// tethered phenyl ring). The template's LHS only examines the
+    /// immediate reaction-center neighborhood (the acyl carbon, its two
+    /// substituents, and the three explicitly-matched ring atoms) and has
+    /// no way to notice that the "two separate RHS fragments" it declares
+    /// are, in THIS specific target, still connected to each other via
+    /// the tether atoms outside that match.
+    ///
+    /// Both directions confirm this empirically, not just structurally:
+    /// - `apply_retro` on the real target reproduces the exact same wrong
+    ///   disconnection fresh (not a one-off harness artifact) --
+    ///   `["C(C(=O)Cl)C", "c1ccc(C)cc1"]`, the fixture's own precursors.
+    /// - Forward-replaying those precursors through the reversed SMIRKS
+    ///   is exhaustive (chematic tries the acylation at every one of
+    ///   toluene's aromatic C-H positions) and produces exactly 3 distinct
+    ///   products -- the ortho/meta/para propiophenone regioisomers --
+    ///   **none of which is or can be 1-indanone**: toluene and propionyl
+    ///   chloride as two genuinely separate, untethered molecules can only
+    ///   ever combine into an open-chain aryl ketone, never a fused
+    ///   bicyclic ring system, regardless of which ring position reacts.
+    ///
+    /// The validator's `Invalid` verdict is correct, and correct for the
+    /// right reason: this declared step does not describe a real
+    /// reaction. Atom-balance still reports `true` for this step (already
+    /// confirmed by the pilot's own harness output) because
+    /// `atom_conservation`'s check is gross-formula/MW-based, not
+    /// connectivity-aware -- expected, not a separate bug; exactly why the
+    /// SMIRKS-reversal forward validator exists as a distinct check.
+    ///
+    /// Likely a general failure-class, not unique to this one template:
+    /// any two-fragment SMIRKS retro-template whose RHS declares two
+    /// independent products can silently produce this same
+    /// intramolecular-modeled-as-intermolecular error whenever the target
+    /// happens to have those two "fragments" tethered together elsewhere
+    /// (any other ring-forming disconnection matched by a template learned
+    /// from intermolecular training examples). Not investigated further
+    /// here -- filing as a general issue is a separate, explicitly
+    /// authorized step, not implied by this fixture.
+    #[test]
+    fn extracted_112_indanone_is_genuine_template_error() {
+        let target = "c2ccc1CCC(c1c2)=O";
+        let precursors = ["C(C(=O)Cl)C".to_string(), "c1ccc(C)cc1".to_string()];
+        let smirks =
+            "[C:2]-[C:1](=[O:3])-[c:5](:[c:4]):[c:6]>>Cl-[C:1](-[C:2])=[O:3].[c:4]:[cH:5]:[c:6]";
+        let rule = rr("extracted_112", smirks);
+        let target_mol = mol_from_smiles(target).unwrap();
+        let target_canon = to_canonical(&target_mol);
+
+        // apply_retro reproduces the exact wrong disconnection fresh, from
+        // the real target -- confirms this isn't a harness-only artifact.
+        let retro_outcomes = apply_retro(&target_mol, &rule);
+        let retro_smiles: Vec<Vec<String>> = retro_outcomes
+            .iter()
+            .map(|outcome| outcome.iter().map(|p| to_canonical(&p.mol)).collect())
+            .collect();
+        let expected_precursors: Vec<String> = precursors
+            .iter()
+            .map(|s| to_canonical(&mol_from_smiles(s).unwrap()))
+            .collect();
+        assert!(
+            retro_smiles.iter().any(|outcome| outcome
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                == expected_precursors.iter().collect()),
+            "apply_retro must still reproduce this exact wrong disconnection: {retro_smiles:?}"
+        );
+
+        // Exhaustive forward replay of the declared precursors: every
+        // possible product is a plain open-chain propiophenone
+        // regioisomer, none of which is (or topologically can be) the
+        // fused-ring target.
+        let reactant_mols: Vec<Molecule> = precursors
+            .iter()
+            .map(|s| mol_from_smiles(s).unwrap())
+            .collect();
+        let reactant_refs: Vec<&Molecule> = reactant_mols.iter().collect();
+        let (lhs, rhs) = smirks.split_once(">>").unwrap();
+        let fwd = format!("{rhs}>>{lhs}");
+        let products: std::collections::BTreeSet<String> = run_reactants(&fwd, &reactant_refs)
+            .unwrap()
+            .into_iter()
+            .flatten()
+            .map(|m| to_canonical(&m))
+            .collect();
+        assert_eq!(
+            products.len(),
+            3,
+            "expected exactly the 3 open-chain ortho/meta/para regioisomers: {products:?}"
+        );
+        assert!(
+            !products.contains(&target_canon),
+            "toluene + propionyl chloride as two separate molecules must never be able to \
+             forward-produce the fused-ring target -- if this starts passing, the underlying \
+             chematic/apply_retro fragment-tether-tracking behavior changed and this \
+             classification needs re-checking, not just the assertion updated: {products:?}"
+        );
+    }
+
+    #[test]
+    fn declared_forward_smirks_none_for_smirks_based_rule() {
+        // co_aliphatic_cleavage already has a real smirks -- this function
+        // must not do anything for it (forward.rs's existing
+        // rules_by_template_id path already handles it).
+        assert_eq!(
+            declared_forward_smirks(
+                "co_aliphatic_cleavage",
+                "CO",
+                &["C".to_string(), "O".to_string()]
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn declared_forward_smirks_none_for_unknown_rule() {
+        assert_eq!(
+            declared_forward_smirks("not_a_real_rule", "CO", &["C".to_string(), "O".to_string()]),
+            None
+        );
+    }
+
+    #[test]
+    fn declared_forward_smirks_ester_cleavage_real_repro() {
+        // The exact repro from docs/design/retro-rule-precision-gaps-v0.md
+        // #5: aspirin's ester_cleavage-based route.
+        let target = "CC(=O)Oc1ccccc1C(=O)O";
+        let precursors = vec![
+            to_canonical(&mol_from_smiles("CC(=O)O").unwrap()),
+            to_canonical(&mol_from_smiles("Oc1ccccc1C(=O)O").unwrap()),
+        ];
+        let smirks = declared_forward_smirks("ester_cleavage", target, &precursors)
+            .expect("must derive a forward smirks for this real ester_cleavage outcome");
+
+        // Real, atom-mapped, and -- most importantly -- actually replays
+        // forward via chematic's own reaction engine, exactly the check
+        // bridge::forward::validate_step_forward performs.
+        assert!(
+            smirks.contains(':'),
+            "expected atom-mapped smirks: {smirks}"
+        );
+        let (lhs, rhs) = smirks.split_once(">>").unwrap();
+        let forward_smirks = format!("{rhs}>>{lhs}");
+        let reactant_mols: Vec<Molecule> = rhs
+            .split('.')
+            .map(|s| mol_from_smiles(s).unwrap())
+            .collect();
+        let reactant_refs: Vec<&Molecule> = reactant_mols.iter().collect();
+        let products = run_reactants(&forward_smirks, &reactant_refs)
+            .expect("forward-reversed smirks must at least parse and run");
+        let target_canon = to_canonical(&mol_from_smiles(target).unwrap());
+        let reproduced = products.iter().any(|pset| {
+            pset.iter()
+                .any(|p| to_canonical(&clear_atom_maps(p)) == target_canon)
+        });
+        assert!(
+            reproduced,
+            "forward-reversed smirks must reproduce the real target: {smirks}"
+        );
+    }
+
+    #[test]
+    fn declared_forward_smirks_suzuki_retro_real_repro() {
+        let target = "c1ccc(-c2ccccc2)cc1"; // biphenyl
+        let precursors = vec![
+            to_canonical(&mol_from_smiles("Brc1ccccc1").unwrap()),
+            to_canonical(&mol_from_smiles("OB(O)c1ccccc1").unwrap()),
+        ];
+        let smirks = declared_forward_smirks("suzuki_retro", target, &precursors)
+            .expect("must derive a forward smirks for this real suzuki_retro outcome");
+        assert!(
+            smirks.contains(':'),
+            "expected atom-mapped smirks: {smirks}"
+        );
+    }
+
+    #[test]
+    fn declared_forward_smirks_preserves_tetrahedral_stereocenter() {
+        // methyl (S)-2-acetoxypropanoate: acetate ester of methyl (S)-lactate.
+        // `atom.chirality` is an Atom-level field copied by `Atom::clone`, so
+        // with_sequential_atom_maps's rebuild carries it through even before
+        // the copy_stereo_*/copy_bond_directions_from calls below -- verified
+        // directly, not just asserted; those calls stay for parity with
+        // clear_atom_maps and defense against stereo forms this specific
+        // case doesn't exercise (e.g. enhanced/relative stereo groups).
+        let target = "CC(=O)O[C@@H](C)C(=O)OC";
+        let target_canon = to_canonical(&mol_from_smiles(target).unwrap());
+        let rule = rr("ester_cleavage", "");
+        let outcomes = apply_retro(&mol_from_smiles(target).unwrap(), &rule);
+        assert!(!outcomes.is_empty());
+        for outcome in &outcomes {
+            let precursors: Vec<String> = outcome
+                .iter()
+                .map(|p| to_canonical(&clear_atom_maps(&p.mol)))
+                .collect();
+            let smirks = declared_forward_smirks("ester_cleavage", target, &precursors)
+                .unwrap_or_else(|| panic!("must derive a forward smirks for {precursors:?}"));
+            assert!(
+                smirks.contains('@'),
+                "expected the stereocenter to survive into the smirks: {smirks}"
+            );
+            let (lhs, rhs) = smirks.split_once(">>").unwrap();
+            let forward_smirks = format!("{rhs}>>{lhs}");
+            let reactant_mols: Vec<Molecule> = rhs
+                .split('.')
+                .map(|s| mol_from_smiles(s).unwrap())
+                .collect();
+            let reactant_refs: Vec<&Molecule> = reactant_mols.iter().collect();
+            let products = run_reactants(&forward_smirks, &reactant_refs)
+                .expect("forward-reversed smirks must at least parse and run");
+            let reproduced_exact = products.iter().any(|pset| {
+                pset.iter()
+                    .any(|p| to_canonical(&clear_atom_maps(p)) == target_canon)
+            });
+            assert!(
+                reproduced_exact,
+                "forward replay must reproduce the exact stereo-tagged target: {smirks}"
+            );
+        }
+    }
+
+    #[test]
+    fn declared_forward_smirks_preserves_spectator_e_z_double_bond() {
+        // The E-alkene is a spectator far from the ester bond being cut --
+        // molecule-level bond-direction data (copy_bond_directions_from),
+        // not the atom-level chirality field the tetrahedral case above
+        // exercises.
+        let target = "CC(=O)Oc1ccc(/C=C/C)cc1";
+        let target_canon = to_canonical(&mol_from_smiles(target).unwrap());
+        let rule = rr("ester_cleavage", "");
+        let outcomes = apply_retro(&mol_from_smiles(target).unwrap(), &rule);
+        assert!(!outcomes.is_empty());
+        for outcome in &outcomes {
+            let precursors: Vec<String> = outcome
+                .iter()
+                .map(|p| to_canonical(&clear_atom_maps(&p.mol)))
+                .collect();
+            let smirks = declared_forward_smirks("ester_cleavage", target, &precursors)
+                .unwrap_or_else(|| panic!("must derive a forward smirks for {precursors:?}"));
+            assert!(
+                smirks.contains('/'),
+                "expected the E double bond to survive into the smirks: {smirks}"
+            );
+            let (lhs, rhs) = smirks.split_once(">>").unwrap();
+            let forward_smirks = format!("{rhs}>>{lhs}");
+            let reactant_mols: Vec<Molecule> = rhs
+                .split('.')
+                .map(|s| mol_from_smiles(s).unwrap())
+                .collect();
+            let reactant_refs: Vec<&Molecule> = reactant_mols.iter().collect();
+            let products = run_reactants(&forward_smirks, &reactant_refs)
+                .expect("forward-reversed smirks must at least parse and run");
+            let reproduced_exact = products.iter().any(|pset| {
+                pset.iter()
+                    .any(|p| to_canonical(&clear_atom_maps(p)) == target_canon)
+            });
+            assert!(
+                reproduced_exact,
+                "forward replay must reproduce the exact E-configured target: {smirks}"
+            );
+        }
+    }
+
+    #[test]
+    fn declared_forward_smirks_returns_none_for_a_precursor_set_that_was_never_produced() {
+        // A fabricated, chemically-unrelated precursor pair for this target
+        // -- must not fabricate a "close enough" match.
+        let target = "CC(=O)Oc1ccccc1C(=O)O";
+        let bogus_precursors = vec!["C".to_string(), "O".to_string()];
+        assert_eq!(
+            declared_forward_smirks("ester_cleavage", target, &bogus_precursors),
+            None
+        );
+    }
+
+    #[test]
+    fn extracted_824_oxazolidinone_is_genuine_template_error() {
+        // Finding #4 pilot (2026-08-23), Invalid+balanced step, target
+        // O=C2NCC(O2)Cc1ccccc1 (5-benzyl-1,3-oxazolidin-2-one). SMIRKS'
+        // reactant pattern is a plain acyclic carbamate: C5-O6-C3(=O4)-N2H-C1,
+        // with no ring-membership or connectivity constraint tying [C:1] and
+        // [C:5] together. When it matches this target, [C:1] and [C:5] are
+        // mapped to the ring's C4/C5 atoms -- which the target *also* bonds
+        // directly to each other (the ring's C4-C5 bond) outside the matched
+        // substructure entirely. The RHS's two-fragment split
+        // ([C:1]-N=C=O . [C:5]-OH) has no way to express "these two atoms
+        // stay tethered" -- it silently drops the C4-C5 bond that made this
+        // a ring in the first place, same ring-tether-blindness failure
+        // class already confirmed for extracted_112 (genuine_template_error,
+        // PR #180). Root cause of the resulting Invalid step: the retro
+        // step claims methyl isocyanate + 2-phenylethanol as separate,
+        // untethered precursors, but a real synthesis of this oxazolidinone
+        // needs an amino-alcohol (e.g. phenylalaninol-like) reacting with an
+        // *unsubstituted* one-carbon carbonyl-transfer reagent (phosgene,
+        // CDI, HNCO) -- not a fully alkylated isocyanate paired with an
+        // unrelated free alcohol.
+        let target = "O=C2NCC(O2)Cc1ccccc1";
+        let precursors = ["C(=NC)=O".to_string(), "OCCc1ccccc1".to_string()];
+        let smirks = "[C:5]-[O:6]-[C:3](=[O:4])-[NH:2]-[C:1]>>[C:1]-[N:2]=[C:3]=[O:4].[C:5]-[OH:6]";
+        let rule = rr("extracted_824", smirks);
+        let target_mol = mol_from_smiles(target).unwrap();
+        let target_canon = to_canonical(&target_mol);
+
+        // apply_retro reproduces the exact wrong disconnection fresh, from
+        // the real target -- confirms this isn't a harness-only artifact.
+        let retro_outcomes = apply_retro(&target_mol, &rule);
+        let retro_smiles: Vec<Vec<String>> = retro_outcomes
+            .iter()
+            .map(|outcome| outcome.iter().map(|p| to_canonical(&p.mol)).collect())
+            .collect();
+        let expected_precursors: Vec<String> = precursors
+            .iter()
+            .map(|s| to_canonical(&mol_from_smiles(s).unwrap()))
+            .collect();
+        assert!(
+            retro_smiles.iter().any(|outcome| outcome
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                == expected_precursors.iter().collect()),
+            "apply_retro must still reproduce this exact wrong disconnection: {retro_smiles:?}"
+        );
+
+        // Forward replay of the declared precursors: the only possible
+        // product is the plain open-chain N-methyl carbamate ester -- never
+        // the fused-ring target, which would require the alcohol and amine
+        // to already be tethered in one molecule before ring closure.
+        let reactant_mols: Vec<Molecule> = precursors
+            .iter()
+            .map(|s| mol_from_smiles(s).unwrap())
+            .collect();
+        let reactant_refs: Vec<&Molecule> = reactant_mols.iter().collect();
+        let (lhs, rhs) = smirks.split_once(">>").unwrap();
+        let fwd = format!("{rhs}>>{lhs}");
+        let products: std::collections::BTreeSet<String> = run_reactants(&fwd, &reactant_refs)
+            .unwrap()
+            .into_iter()
+            .flatten()
+            .map(|m| to_canonical(&m))
+            .collect();
+        let expected_open_chain = to_canonical(&mol_from_smiles("O=C(OCCc1ccccc1)NC").unwrap());
+        assert_eq!(
+            products,
+            std::collections::BTreeSet::from([expected_open_chain]),
+            "expected exactly the single open-chain N-methyl carbamate ester: {products:?}"
+        );
+        assert!(
+            !products.contains(&target_canon),
+            "methyl isocyanate + 2-phenylethanol as two separate, untethered molecules must \
+             never be able to forward-produce the fused-ring target -- if this starts passing, \
+             the underlying chematic/apply_retro fragment-tether-tracking behavior changed and \
+             this classification needs re-checking, not just the assertion updated: {products:?}"
         );
     }
 }

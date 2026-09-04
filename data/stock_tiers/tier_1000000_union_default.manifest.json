@@ -1,0 +1,465 @@
+{
+  "schema_version": 1,
+  "source": {
+    "label": "union(RENKIN default 402-compound stock, eMolecules 1M tier) for v0.36.0 Phase D",
+    "revision": "2024-01-01+default",
+    "license": null
+  },
+  "importer_version": "0.35.0",
+  "input_sha256": "sha256:b2131c90e100688493e12e6686f419943e4c892cbe6b614e1b7f770a7bb9f586",
+  "output_sha256": "sha256:f76dda5d1126c3db1b4e0b0777b469788dc8ad8e1d264032847cb8fd6db68b76",
+  "input_rows": 1000449,
+  "accepted_rows": 1000446,
+  "rejected_rows": 3,
+  "unique_structures": 1000362,
+  "duplicate_rows": 84,
+  "rejection_reasons": {
+    "unparseable_smiles": 3
+  },
+  "rejected": [
+    {
+      "line_no": 277,
+      "smiles": "Brc1ccc(N+](=O)[O-])cc1",
+      "reason": "unparseable_smiles"
+    },
+    {
+      "line_no": 307,
+      "smiles": "Clc1ccc(N+](=O)[O-])cc1",
+      "reason": "unparseable_smiles"
+    },
+    {
+      "line_no": 316,
+      "smiles": "OB(O)c1ccc(N+](=O)[O-])cc1",
+      "reason": "unparseable_smiles"
+    }
+  ],
+  "duplicates": [
+    {
+      "line_no": 111,
+      "canonical_smiles": "c1(ccc(O)cc1)C(=O)O",
+      "duplicate_of_line_no": 81
+    },
+    {
+      "line_no": 112,
+      "canonical_smiles": "C(C)O",
+      "duplicate_of_line_no": 20
+    },
+    {
+      "line_no": 137,
+      "canonical_smiles": "C(O)(=O)c1ccc(cc1)N",
+      "duplicate_of_line_no": 80
+    },
+    {
+      "line_no": 142,
+      "canonical_smiles": "C(O)(=O)c1ccc(cc1)N",
+      "duplicate_of_line_no": 80
+    },
+    {
+      "line_no": 143,
+      "canonical_smiles": "C(C)N",
+      "duplicate_of_line_no": 122
+    },
+    {
+      "line_no": 158,
+      "canonical_smiles": "C1CCNCC1",
+      "duplicate_of_line_no": 153
+    },
+    {
+      "line_no": 174,
+      "canonical_smiles": "c1(N)ccc(cc1)Br",
+      "duplicate_of_line_no": 134
+    },
+    {
+      "line_no": 175,
+      "canonical_smiles": "Oc1ccc(cc1)Br",
+      "duplicate_of_line_no": 107
+    },
+    {
+      "line_no": 181,
+      "canonical_smiles": "c1cc(C(=O)O)ccc1Br",
+      "duplicate_of_line_no": 86
+    },
+    {
+      "line_no": 182,
+      "canonical_smiles": "O=Cc1ccc(cc1)Br",
+      "duplicate_of_line_no": 64
+    },
+    {
+      "line_no": 185,
+      "canonical_smiles": "Clc1ccc(cc1)N",
+      "duplicate_of_line_no": 133
+    },
+    {
+      "line_no": 187,
+      "canonical_smiles": "c1cc(ccc1C(O)=O)Cl",
+      "duplicate_of_line_no": 82
+    },
+    {
+      "line_no": 189,
+      "canonical_smiles": "Nc1ccc(F)cc1",
+      "duplicate_of_line_no": 132
+    },
+    {
+      "line_no": 225,
+      "canonical_smiles": "c1nc(N)ccc1",
+      "duplicate_of_line_no": 140
+    },
+    {
+      "line_no": 226,
+      "canonical_smiles": "n1cccc(N)c1",
+      "duplicate_of_line_no": 139
+    },
+    {
+      "line_no": 233,
+      "canonical_smiles": "c12cccnc1cccc2",
+      "duplicate_of_line_no": 232
+    },
+    {
+      "line_no": 234,
+      "canonical_smiles": "c12cccnc1cccc2",
+      "duplicate_of_line_no": 232
+    },
+    {
+      "line_no": 235,
+      "canonical_smiles": "C1CCOC1",
+      "duplicate_of_line_no": 154
+    },
+    {
+      "line_no": 237,
+      "canonical_smiles": "Clc1ncccc1",
+      "duplicate_of_line_no": 199
+    },
+    {
+      "line_no": 238,
+      "canonical_smiles": "n1cccc(Cl)c1",
+      "duplicate_of_line_no": 198
+    },
+    {
+      "line_no": 239,
+      "canonical_smiles": "Nc1ccccc1",
+      "duplicate_of_line_no": 129
+    },
+    {
+      "line_no": 293,
+      "canonical_smiles": "O=C(C)c1ccc(cc1)Br",
+      "duplicate_of_line_no": 183
+    },
+    {
+      "line_no": 333,
+      "canonical_smiles": "c12cccnc1cccc2",
+      "duplicate_of_line_no": 232
+    },
+    {
+      "line_no": 342,
+      "canonical_smiles": "Nc1ncccn1",
+      "duplicate_of_line_no": 339
+    },
+    {
+      "line_no": 346,
+      "canonical_smiles": "Nc1ncccn1",
+      "duplicate_of_line_no": 339
+    },
+    {
+      "line_no": 350,
+      "canonical_smiles": "c1c[nH]nc1",
+      "duplicate_of_line_no": 165
+    },
+    {
+      "line_no": 355,
+      "canonical_smiles": "c1c[nH]nc1",
+      "duplicate_of_line_no": 165
+    },
+    {
+      "line_no": 356,
+      "canonical_smiles": "c1ncc[nH]1",
+      "duplicate_of_line_no": 164
+    },
+    {
+      "line_no": 372,
+      "canonical_smiles": "c1occc1",
+      "duplicate_of_line_no": 220
+    },
+    {
+      "line_no": 373,
+      "canonical_smiles": "c1sccc1",
+      "duplicate_of_line_no": 221
+    },
+    {
+      "line_no": 379,
+      "canonical_smiles": "o1ccc2ccccc12",
+      "duplicate_of_line_no": 231
+    },
+    {
+      "line_no": 380,
+      "canonical_smiles": "c1ccc2sccc2c1",
+      "duplicate_of_line_no": 230
+    },
+    {
+      "line_no": 386,
+      "canonical_smiles": "C1COCCN1",
+      "duplicate_of_line_no": 156
+    },
+    {
+      "line_no": 394,
+      "canonical_smiles": "C(N)(C)C",
+      "duplicate_of_line_no": 125
+    },
+    {
+      "line_no": 396,
+      "canonical_smiles": "C(CN)C",
+      "duplicate_of_line_no": 123
+    },
+    {
+      "line_no": 399,
+      "canonical_smiles": "C1CNCCN1",
+      "duplicate_of_line_no": 155
+    },
+    {
+      "line_no": 400,
+      "canonical_smiles": "C1CCCC1N",
+      "duplicate_of_line_no": 149
+    },
+    {
+      "line_no": 401,
+      "canonical_smiles": "c1ccc(cc1)CN",
+      "duplicate_of_line_no": 128
+    },
+    {
+      "line_no": 403,
+      "canonical_smiles": "Nc1ccccc1",
+      "duplicate_of_line_no": 129
+    },
+    {
+      "line_no": 414,
+      "canonical_smiles": "c1ccccc1C(C)=O",
+      "duplicate_of_line_no": 65
+    },
+    {
+      "line_no": 437,
+      "canonical_smiles": "c1(Cl)ccc(C#N)cc1",
+      "duplicate_of_line_no": 301
+    },
+    {
+      "line_no": 479,
+      "canonical_smiles": "c1ccc(cc1C(F)(F)F)B(O)O",
+      "duplicate_of_line_no": 478
+    },
+    {
+      "line_no": 485,
+      "canonical_smiles": "c1(Br)ccc(cc1)C#N",
+      "duplicate_of_line_no": 274
+    },
+    {
+      "line_no": 491,
+      "canonical_smiles": "O=S(c1ccccc1)(Cl)=O",
+      "duplicate_of_line_no": 255
+    },
+    {
+      "line_no": 8091,
+      "canonical_smiles": "C",
+      "duplicate_of_line_no": 8
+    },
+    {
+      "line_no": 23647,
+      "canonical_smiles": "C(=O)(O)C(C)C",
+      "duplicate_of_line_no": 17
+    },
+    {
+      "line_no": 30347,
+      "canonical_smiles": "C(Br)C",
+      "duplicate_of_line_no": 30
+    },
+    {
+      "line_no": 30536,
+      "canonical_smiles": "C(Br)CC",
+      "duplicate_of_line_no": 31
+    },
+    {
+      "line_no": 39686,
+      "canonical_smiles": "C(C(O)=O)CC(O)=O",
+      "duplicate_of_line_no": 76
+    },
+    {
+      "line_no": 42301,
+      "canonical_smiles": "C(C)(C)(C)OC(=O)N1CCNCC1",
+      "duplicate_of_line_no": 389
+    },
+    {
+      "line_no": 82824,
+      "canonical_smiles": "C(F)(F)(F)c1ccc(cc1)Cl",
+      "duplicate_of_line_no": 475
+    },
+    {
+      "line_no": 86468,
+      "canonical_smiles": "C(F)(Oc1ccc(cc1)N)(F)F",
+      "duplicate_of_line_no": 464
+    },
+    {
+      "line_no": 144643,
+      "canonical_smiles": "C1(C=O)CCCCC1",
+      "duplicate_of_line_no": 413
+    },
+    {
+      "line_no": 146044,
+      "canonical_smiles": "C1(CN)CCCCC1",
+      "duplicate_of_line_no": 398
+    },
+    {
+      "line_no": 147988,
+      "canonical_smiles": "C1(N)CCC1",
+      "duplicate_of_line_no": 167
+    },
+    {
+      "line_no": 324669,
+      "canonical_smiles": "Clc1ncccc1",
+      "duplicate_of_line_no": 199
+    },
+    {
+      "line_no": 395791,
+      "canonical_smiles": "N1(C)CCNCC1",
+      "duplicate_of_line_no": 161
+    },
+    {
+      "line_no": 425569,
+      "canonical_smiles": "O(C)c1c(Br)ccnc1",
+      "duplicate_of_line_no": 281
+    },
+    {
+      "line_no": 439581,
+      "canonical_smiles": "O(c1ccncc1)C(F)(F)F",
+      "duplicate_of_line_no": 470
+    },
+    {
+      "line_no": 445037,
+      "canonical_smiles": "O1CCN(C(=O)OC(C)(C)C)CC1",
+      "duplicate_of_line_no": 388
+    },
+    {
+      "line_no": 525702,
+      "canonical_smiles": "S(=O)(Cl)(=O)c1ccncc1",
+      "duplicate_of_line_no": 499
+    },
+    {
+      "line_no": 588760,
+      "canonical_smiles": "c1(C=O)ccc(N)cc1",
+      "duplicate_of_line_no": 58
+    },
+    {
+      "line_no": 588815,
+      "canonical_smiles": "c1(C=O)ccco1",
+      "duplicate_of_line_no": 410
+    },
+    {
+      "line_no": 604200,
+      "canonical_smiles": "c1(Cl)nc(ccn1)Cl",
+      "duplicate_of_line_no": 347
+    },
+    {
+      "line_no": 647168,
+      "canonical_smiles": "c1(cc(F)ccc1)S(=O)(=O)Cl",
+      "duplicate_of_line_no": 493
+    },
+    {
+      "line_no": 657853,
+      "canonical_smiles": "c1(ncccn1)Cl",
+      "duplicate_of_line_no": 345
+    },
+    {
+      "line_no": 663281,
+      "canonical_smiles": "c12c(cc(o2)Br)cccc1",
+      "duplicate_of_line_no": 381
+    },
+    {
+      "line_no": 682331,
+      "canonical_smiles": "c1c(C(=O)CC#N)cccc1",
+      "duplicate_of_line_no": 441
+    },
+    {
+      "line_no": 697965,
+      "canonical_smiles": "c1c(F)ccc(c1)C(O)=O",
+      "duplicate_of_line_no": 83
+    },
+    {
+      "line_no": 703219,
+      "canonical_smiles": "c1c(OC(F)(F)F)ccc(c1)Cl",
+      "duplicate_of_line_no": 463
+    },
+    {
+      "line_no": 714528,
+      "canonical_smiles": "c1c(cc(C(F)(F)F)cc1C(F)(F)F)S(=O)(=O)Cl",
+      "duplicate_of_line_no": 504
+    },
+    {
+      "line_no": 717426,
+      "canonical_smiles": "c1c(ccc(C)c1)Br",
+      "duplicate_of_line_no": 177
+    },
+    {
+      "line_no": 725380,
+      "canonical_smiles": "c1c[nH]nc1",
+      "duplicate_of_line_no": 165
+    },
+    {
+      "line_no": 728849,
+      "canonical_smiles": "c1cc(Br)ccc1",
+      "duplicate_of_line_no": 173
+    },
+    {
+      "line_no": 741047,
+      "canonical_smiles": "c1cc(N)ccc1N",
+      "duplicate_of_line_no": 130
+    },
+    {
+      "line_no": 753472,
+      "canonical_smiles": "c1cc(ccc1Br)Cl",
+      "duplicate_of_line_no": 179
+    },
+    {
+      "line_no": 766969,
+      "canonical_smiles": "c1ccc(cc1C(F)(F)F)B(O)O",
+      "duplicate_of_line_no": 478
+    },
+    {
+      "line_no": 780004,
+      "canonical_smiles": "c1ccncc1C(F)(F)F",
+      "duplicate_of_line_no": 454
+    },
+    {
+      "line_no": 785848,
+      "canonical_smiles": "c1nc(N)ccc1",
+      "duplicate_of_line_no": 140
+    },
+    {
+      "line_no": 789876,
+      "canonical_smiles": "c1sccc1",
+      "duplicate_of_line_no": 221
+    },
+    {
+      "line_no": 961717,
+      "canonical_smiles": "n1cc(CBr)ccc1",
+      "duplicate_of_line_no": 514
+    },
+    {
+      "line_no": 964184,
+      "canonical_smiles": "n1cccc(N)c1",
+      "duplicate_of_line_no": 139
+    },
+    {
+      "line_no": 964622,
+      "canonical_smiles": "n1ccccc1Br",
+      "duplicate_of_line_no": 196
+    },
+    {
+      "line_no": 992334,
+      "canonical_smiles": "o1c(ccc1)Br",
+      "duplicate_of_line_no": 376
+    }
+  ],
+  "normalization": {
+    "canonical_tautomer": false,
+    "neutralize_charges": false,
+    "remove_explicit_h": true,
+    "largest_fragment_only": false,
+    "zwitterion_handling": "Keep"
+  }
+}

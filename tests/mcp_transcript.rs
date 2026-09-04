@@ -90,19 +90,27 @@ fn legacy_transcript_stdout_matches_golden_fixture_structurally() {
             );
             continue;
         }
-        // The one deliberate, spec-mandated deviation: the stale "509
-        // curated building blocks" claim was removed from find_routes'
-        // description (tools/list, response #2). Every other legacy
-        // response must be structurally identical to the pre-refactor binary.
+        // Documented post-capture changes to find_routes (tools/list,
+        // response #2): the stale fixed stock count was removed and the
+        // already-shipped coverage-mode fields were added on master. The
+        // coverage fields have dedicated parity tests in mcp::tools; remove
+        // them here so this older fixture remains an oracle for every other
+        // legacy field.
         if i == 1 {
             let mut g2 = g.clone();
             let mut w2 = w.clone();
             g2["result"]["tools"][0]["description"] = Value::Null;
             w2["result"]["tools"][0]["description"] = Value::Null;
+            let properties = g2["result"]["tools"][0]["inputSchema"]["properties"]
+                .as_object_mut()
+                .expect("find_routes properties must be an object");
+            for key in ["search_mode", "coverage_templates", "coverage_timeout_secs"] {
+                assert!(properties.remove(key).is_some(), "missing {key}");
+            }
             assert_eq!(
                 g2,
                 w2,
-                "response #{} (minus the description field) diverged from the legacy golden transcript",
+                "response #{} (minus documented find_routes additions) diverged from the legacy golden transcript",
                 i + 1
             );
             continue;

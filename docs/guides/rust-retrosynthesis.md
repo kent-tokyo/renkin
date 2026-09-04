@@ -15,7 +15,7 @@ dependencies.
 
 ```toml
 [dependencies]
-renkin = "0.21"
+renkin = "0.53"
 ```
 
 or
@@ -52,8 +52,8 @@ struct fields, not methods. Full signature and types:
 
 RENKIN searches with A\* / beam search over a set of retrosynthetic rules:
 
-- 28 hand-crafted, graph-based or SMIRKS-based rules covering common
-  pharmaceutical disconnections (esters, amides, Suzuki, Buchwald-Hartwig,
+- 22 hand-crafted, graph-based or SMIRKS-based rules covering common
+  pharmaceutical disconnections (esters, amides, Suzuki, Heck,
   Wittig, sulfonamides, and more).
 - Up to 50k additional SMIRKS templates auto-extracted from USPTO-50k/MIT via
   rdchiral, loaded from a `.smi` file and weighted by training-set frequency
@@ -94,4 +94,4 @@ workflow instead, see the [Python retrosynthesis guide](python-retrosynthesis.md
 
 - [Rust API reference](../api/rust.md) — `ChemEnv`, `SearchConfig`, `RetroRule`, feature flags
 - [Reaction Evidence Metadata](reaction-evidence.md) — attaching conditions/yields/references to templates
-- [WASM API](../api/wasm.md) — the browser/Node.js entry point
+- [WASM API](../api/wasm.md) — the browser/bundler entry point

@@ -1,0 +1,58 @@
+{
+  "manifest_schema_version": 2,
+  "feature_schema_version": 1,
+  "feature_names": [
+    "num_precursors",
+    "target_heavy_atom_count",
+    "precursor_heavy_atom_count_sum",
+    "precursor_heavy_atom_count_max",
+    "heavy_atom_retention_ratio",
+    "net_charge_balanced",
+    "no_heavy_atom_gain",
+    "source_template_count",
+    "reaction_center_atom_count_min",
+    "reaction_center_atom_count_max",
+    "reaction_center_atom_count_mean",
+    "reaction_center_extractable_fraction",
+    "min_base_step_cost",
+    "best_upstream_score",
+    "fraction_precursors_in_stock",
+    "all_precursors_in_stock",
+    "max_template_log_frequency",
+    "mean_template_log_frequency"
+  ],
+  "feature_schema_hash": "sha256:756404c59bbee9a65e194f92df3530e1b801028f333e01c67214917977061df1",
+  "proposal_mode": {
+    "mode": "bond_indexed",
+    "top_k": 0,
+    "rules_offset": null,
+    "scorer_identity": null,
+    "scorer_model_sha256": null,
+    "scorer_status": null
+  },
+  "rules_content_hash": "sha256:0bbc3acdb0f1ec01e712d96d11aac3c74b238aeb6395302fa6d6126a75dd5dca",
+  "rules_count": 500,
+  "stock_identity": null,
+  "stock_compound_count": null,
+  "stock_content_sha256": null,
+  "target_count": 499,
+  "group_count": 500,
+  "candidate_count": 13643,
+  "candidate_jsonl_sha256": "sha256:87d90d56fc04b17b18844d2e29b292eb22279be17c6785e4b0890f7688476522",
+  "target_group_index_sha256": "sha256:b70dc58b11cf525ff02ae3875ddfe6abad8a7df82005279a393b52100ff291bb",
+  "provenance": {
+    "renkin_git_commit": "dbf3a1570f1618a03dfe22c99141aa138c3533ba",
+    "cargo_lock_sha256": "sha256:96ef805f4c37656e3c9e1f52193a93f531f019bbceffa704b7bfd82144a808b3",
+    "chematic_version": "0.11.0",
+    "target_input_sha256": "sha256:b70dc58b11cf525ff02ae3875ddfe6abad8a7df82005279a393b52100ff291bb",
+    "stock_source": null,
+    "embedded_fallback_used": false,
+    "export_config": {
+      "bond_index_top_k": 0,
+      "groups_path": "data/phase_a5_template_scaling/stage_500/500_groups.jsonl",
+      "limit": null,
+      "proposal_mode": "bond_indexed",
+      "templates_path": "data/phase_a5_template_scaling/templates/templates_500.smi"
+    }
+  }
+}

@@ -17,12 +17,43 @@ Output format (one template per line, tab-separated):
 
 import argparse
 import re
+import sys
 from collections import Counter
 
-from datasets import load_dataset
-from rdchiral.template_extractor import extract_from_reaction
-from rdkit import Chem
-from rdkit.Chem import AllChem
+try:
+    from datasets import load_dataset
+    from huggingface_hub import HfApi
+    from rdchiral.template_extractor import extract_from_reaction
+    from rdkit import Chem
+
+    HAVE_DEPS = True
+except ImportError:  # pragma: no cover -- exercised by scripts/tests without the deps installed
+    HAVE_DEPS = False
+
+# Issue #100: prior runs of this script never pinned a dataset revision, so
+# a corpus generated today from --dataset bisectgroup/USPTO_50K --split train
+# is not reproducible even with the exact same command -- "whatever HEAD
+# happens to be right now" drifts. Mirrors the exact pattern
+# scripts/generate_ring_context_metadata.py already uses for the same
+# dataset. This is the revision that dataset resolved to as of this fix
+# (2026-08-22) -- NOT verified to be the revision any specific already-generated
+# corpus (e.g. the local, gitignored data/templates_extracted_5000.smi) was
+# actually built from; that file predates this pinning and its exact
+# revision could not be reconstructed (see
+# data/templates_extracted_5000.smi.PROVENANCE.md). Use --resolve-latest to
+# deliberately re-baseline against upstream drift instead.
+PINNED_DATASET_REVISION = "08a575f0546b2be57242997fd45f684d6814d5a9"
+
+
+def resolve_dataset_revision(dataset_id: str, requested: str | None, resolve_latest: bool) -> tuple:
+    """Returns (revision, resolution_method). Mirrors
+    generate_ring_context_metadata.py's function of the same name exactly."""
+    if requested:
+        return requested, "user-provided"
+    if resolve_latest:
+        info = HfApi().dataset_info(dataset_id)
+        return info.sha, "resolved-via-HfApi.dataset_info-at-generation-time (--resolve-latest)"
+    return PINNED_DATASET_REVISION, "pinned-default"
 
 
 def simplify_atom(atom_smarts: str) -> str:
@@ -83,16 +114,50 @@ def simplify_smirks(smirks: str) -> str:
     return re.sub(r'\[[^\]]+\]', replace_bracket, smirks)
 
 
+def _has_top_level_dot(smarts: str) -> bool:
+    """True if `smarts` contains a `.` (disconnected-fragment separator)
+    outside any [...]/(...) nesting. Issue #98: chematic-smarts 0.16.0's
+    `parse_smarts` (verified by reading its actual source,
+    chematic-smarts-0.16.0/src/parser.rs::Parser::parse) calls
+    `parse_chain` exactly once and then treats ANY leftover non-whitespace
+    character as `SmartsError::UnexpectedChar` -- there is no code path
+    that consumes a second, disconnected fragment. A reactant-side `.`
+    therefore always fails to load, unconditionally, not just for the one
+    template this issue originally reported. This is reactant-only by
+    design: a retro-template's reactant side matches a single target
+    molecule (one connected structure, by the nature of retrosynthesis),
+    while its product side routinely and correctly has multiple
+    `.`-separated precursor fragments -- that's the whole point of a
+    disconnection template, and chematic parses that side differently
+    (see chem_env.rs's own SMIRKS split), so this check must never be
+    applied there.
+    """
+    depth = 0
+    for ch in smarts:
+        if ch in "[(":
+            depth += 1
+        elif ch in "])":
+            depth -= 1
+        elif ch == "." and depth == 0:
+            return True
+    return False
+
+
 def is_valid_for_chematic(smirks: str) -> bool:
     """
     Quick heuristic check: does the simplified SMIRKS look parseable?
-    We try RDKit as a proxy (chematic subset overlaps with basic RDKit SMARTS).
+    We try RDKit as a proxy (chematic subset overlaps with basic RDKit SMARTS) --
+    but RDKit's SMARTS parser accepts a disconnected-fragment reactant that
+    chematic's never does (issue #98), so that specific case is checked
+    directly rather than trusted to the RDKit proxy.
     """
     try:
         parts = smirks.split('>>')
         if len(parts) != 2:
             return False
         reactant = parts[0]
+        if _has_top_level_dot(reactant):
+            return False
         # Try parsing reactant side with RDKit
         mol = Chem.MolFromSmarts(reactant)
         return mol is not None
@@ -124,16 +189,22 @@ def load_reactions_from_file(path: str) -> list:
 def extract_templates(top_n: int, output_path: str,
                       reactions_path: str | None = None,
                       dataset_id: str = "bisectgroup/USPTO_50K",
-                      split: str = "train") -> None:
+                      split: str = "train",
+                      dataset_revision: str | None = None,
+                      resolve_latest: bool = False) -> None:
     if reactions_path:
         print(f"Loading reactions from {reactions_path}...", flush=True)
         rows = load_reactions_from_file(reactions_path)
         source_desc = reactions_path
     else:
+        revision, revision_resolution = resolve_dataset_revision(
+            dataset_id, dataset_revision, resolve_latest
+        )
+        print(f"Pinned dataset revision: {revision} ({revision_resolution})", flush=True)
         print(f"Loading {dataset_id} ({split} split)...", flush=True)
-        ds = load_dataset(dataset_id, split=split)
+        ds = load_dataset(dataset_id, split=split, revision=revision)
         rows = ds
-        source_desc = f"{dataset_id} ({split} split, {len(ds)} reactions)"
+        source_desc = f"{dataset_id}@{revision} ({split} split, {len(ds)} reactions)"
     print(f"  {len(rows)} reactions loaded", flush=True)
 
     counts: Counter = Counter()
@@ -185,6 +256,14 @@ def extract_templates(top_n: int, output_path: str,
 
 
 def main() -> None:
+    if not HAVE_DEPS:
+        print(
+            "Missing dependencies: datasets, rdchiral, rdkit "
+            "(see scripts/requirements-ring-context.txt).",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--top", type=int, default=300,
                         help="Number of most frequent templates to keep (default: 300)")
@@ -197,12 +276,22 @@ def main() -> None:
                         help="HuggingFace dataset ID (default: bisectgroup/USPTO_50K)")
     parser.add_argument("--split", default="train",
                         help="HuggingFace dataset split (default: train)")
+    parser.add_argument("--dataset-revision", default=None,
+                        help=f"Exact HF dataset commit SHA to pin. If omitted, defaults to "
+                             f"PINNED_DATASET_REVISION ({PINNED_DATASET_REVISION}) unless "
+                             f"--resolve-latest is given. Ignored when --reactions is used.")
+    parser.add_argument("--resolve-latest", action="store_true",
+                        help="Resolve and pin the CURRENT HEAD revision via the Hub API "
+                             "instead of PINNED_DATASET_REVISION. Only for a deliberate "
+                             "re-baseline against upstream drift.")
     args = parser.parse_args()
 
     extract_templates(args.top, args.output,
                       reactions_path=args.reactions,
                       dataset_id=args.dataset,
-                      split=args.split)
+                      split=args.split,
+                      dataset_revision=args.dataset_revision,
+                      resolve_latest=args.resolve_latest)
 
 
 if __name__ == "__main__":

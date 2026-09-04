@@ -1,0 +1,274 @@
+{
+  "split": "val",
+  "n_groups_total": 4916,
+  "n_unlabeled_groups": 0,
+  "coverage_before": {
+    "n_with_positive": 3253,
+    "n_zero_positive": 1663,
+    "rate": 0.6617168429617575
+  },
+  "coverage_after_normalized_diagnostic": {
+    "n_with_positive": 3269,
+    "n_zero_positive": 1647,
+    "rate": 0.6649715215622457
+  },
+  "n_groups_flipped_zero_to_positive": 16,
+  "flipped_groups_sample": [
+    {
+      "group_id": "uspto50k_val#L1866",
+      "candidate_id": "sha256:2dad114621afa0680030431569156dd8eeb449f96a2f3600dc6e33f48035b299",
+      "best_upstream_rank": 96,
+      "raw_precursor_smiles": [
+        "c2(cn(CC(C)(O)C)nc2)B1OC(C)(C)C(C)(C)O1",
+        "c3cc(Br)cc4OCCc2c(c34)nc(s2)-c1nc(nn1C(C)C)N"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "c2(cn(CC(C)(O)C)nc2)B1OC(C)(C)C(C)(C)O1",
+          "n1(C(C)C)nc(N)nc1-c2nc4c(CCOc3cc(ccc34)Br)s2"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_val#L1885",
+      "candidate_id": "sha256:27df9264f42446a4c1efc6bb5f637bb339c618a51217a492f6fbd02f7021defc",
+      "best_upstream_rank": 12,
+      "raw_precursor_smiles": [
+        "C(C)(O)(C)CC(O)=O",
+        "c1c4OCCc4c(C2CCN(CC[C@H]3CC[C@@H](CC3)N)CC2)cc1"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "C(C)(O)(C)CC(O)=O",
+          "c1c4OCCc4c(C2CCN(CC[C@@H]3CC[C@H](CC3)N)CC2)cc1"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_val#L2174",
+      "candidate_id": "sha256:a577771c7197b86056a3a8f678807f80d97bb592cd1549fa2308a1811340200b",
+      "best_upstream_rank": 41,
+      "raw_precursor_smiles": [
+        "CC(C#C)(C)O",
+        "Fc4cc3C5CC(C5)n2c(c(C(N)=O)nc2c3cc4Br)C1CC1"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "C1(c5c(nc4n5C2CC(c3c4cc(Br)c(F)c3)C2)C(=O)N)CC1",
+          "CC(C#C)(C)O"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_val#L2469",
+      "candidate_id": "sha256:aa7530fc76a39f9efa317bf286a4dd1a9a61b8e934d1d2f509e4c670d086b82c",
+      "best_upstream_rank": 132,
+      "raw_precursor_smiles": [
+        "N",
+        "c4n3c(nc4)c(=O)[nH]c2c3Cc1c2ccc(c1)CC(=O)O"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "N",
+          "c4n3c(nc4)c(=O)[nH]c1c3Cc2cc(CC(=O)O)ccc12"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_val#L2532",
+      "candidate_id": "sha256:f92d635d41a1d66dd8c28575eb4033e7dc129696cfb0847ddc0b168ff06ce312",
+      "best_upstream_rank": 226,
+      "raw_precursor_smiles": [
+        "C1C(O)CCNC1",
+        "n3(nc4c2nc(ccc2[nH]cc4c3=O)F)-c1ccccc1"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "C1C(O)CCNC1",
+          "n1n(-c4ccccc4)c(=O)c2c[nH]c3ccc(nc3c12)F"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_val#L2707",
+      "candidate_id": "sha256:cb7300554cb4592607c225ada3d1b9503eb6326fb374d7d884c68a1a0aba86dc",
+      "best_upstream_rank": 4,
+      "raw_precursor_smiles": [
+        "N[C@H]1CC[C@@H](CC1)N(CCCC)CC(=O)OC(C)(C)C",
+        "c2c(ccc3oc(cc23)C(O)=O)C(NC(OCc1ccccc1)=O)=N"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "N[C@@H]1CC[C@H](CC1)N(CCCC)CC(=O)OC(C)(C)C",
+          "c2c(ccc3oc(cc23)C(O)=O)C(NC(OCc1ccccc1)=O)=N"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_val#L2760",
+      "candidate_id": "sha256:a5f815ea47ae11a7538861635716b80cb9460a162c93be131c992c47ea61aaba",
+      "best_upstream_rank": 145,
+      "raw_precursor_smiles": [
+        "C(C(C)(C)C)C(Cl)=O",
+        "c1(S(=O)(=O)N4c2ccccc2c3ccc(cc3C4CC)F)ccc(cc1)O"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "C(C(C)(C)C)C(Cl)=O",
+          "c1cc3c(N(C(CC)c4cc(ccc34)F)S(c2ccc(cc2)O)(=O)=O)cc1"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_val#L3119",
+      "candidate_id": "sha256:fb66e5d156f923172ba2513fdd12f0b8adac01977e2931d04b6e31f6cf4d8834",
+      "best_upstream_rank": 20,
+      "raw_precursor_smiles": [
+        "C(C(=O)Cl)C",
+        "c3(N)c2c1ccccc1C(c2ccc3)=O"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "C(C(=O)Cl)C",
+          "c1ccc3c(C(=O)c2cccc(c23)N)c1"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_val#L3673",
+      "candidate_id": "sha256:8c621541a6b2351ef55120b383b71f1ff135254b975e8b6e10e1e68a52461a3d",
+      "best_upstream_rank": 6,
+      "raw_precursor_smiles": [
+        "[C@H]1(CC[C@@H](CNC(c3c4ccccc4nc(c3)-c2ccncc2)=O)CC1)CNC(OC(C)(C)C)=O"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "[C@@H]1(CC[C@H](CNC(c3c4ccccc4nc(c3)-c2ccncc2)=O)CC1)CNC(OC(C)(C)C)=O"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_val#L3678",
+      "candidate_id": "sha256:ad48e57dd4791645f23a211bc162961c3b51d57201b160d4b76a14c74d699b1c",
+      "best_upstream_rank": 12,
+      "raw_precursor_smiles": [
+        "C(CCc2[nH]c(c1c(n2)cccc1)=O)C(=O)O",
+        "c1cc(C#N)cc(O[C@H]2CC[C@@H](CC2)N)c1"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "C(CCc2[nH]c(c1c(n2)cccc1)=O)C(=O)O",
+          "c1cc(C#N)cc(O[C@@H]2CC[C@H](CC2)N)c1"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_val#L3964",
+      "candidate_id": "sha256:1be31977f8a4177c8ee56be803c15449902df899866a1b7f77d305bfcb5f7a92",
+      "best_upstream_rank": 48,
+      "raw_precursor_smiles": [
+        "C(Cl)C(Nc1ccc(Cc3nc4n([nH]c(c4c(n3)=O)C(C)C)-c2c(Cl)cc(Cl)cc2Cl)cc1)=O",
+        "C1CNCCN1"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "C1CNCCN1",
+          "Clc4cc(Cl)c(c(Cl)c4)-n1c2nc(Cc3ccc(cc3)NC(CCl)=O)nc(c2c(C(C)C)[nH]1)=O"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_val#L4219",
+      "candidate_id": "sha256:2bb90ce0f5f77645f54e333be6b840ea49472be604f5cde45e08a05ca867c1d8",
+      "best_upstream_rank": 23,
+      "raw_precursor_smiles": [
+        "C1CNCCN1c2ccccc2",
+        "n2c(Cl)cc3CCc1c(c3n2)cccc1"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "C1CNCCN1c2ccccc2",
+          "c12nnc(cc1CCc3ccccc23)Cl"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_val#L4564",
+      "candidate_id": "sha256:56a2a1c9fd07410be10dd0e57366d3c996ecddad352286c4a55edf37168d3d35",
+      "best_upstream_rank": 94,
+      "raw_precursor_smiles": [
+        "N1CCC[C@H]1C(=O)O",
+        "c3c2c(cc(C)c3C)n(CC=O)c1c(n2)c(=O)[nH]c(n1)=O"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "N1CCC[C@H]1C(=O)O",
+          "c12n(c3nc(=O)[nH]c(c3nc1cc(c(C)c2)C)=O)CC=O"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_val#L67",
+      "candidate_id": "sha256:41034f19e2009e99b3662d6484accd7f8f3c489a83ebc8560762cd017b9e9df9",
+      "best_upstream_rank": 35,
+      "raw_precursor_smiles": [
+        "CC(C#C)(C)O",
+        "n3c2c1cc(I)c(F)cc1C4CC(C4)c2n(C(F)F)c3C(N)=O"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "CC(C#C)(C)O",
+          "c4(F)c(cc3c(c4)C1CC(c2c3nc(n2C(F)F)C(=O)N)C1)I"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_val#L739",
+      "candidate_id": "sha256:5e80de6e17080e193cbb3e3fcfe628f7820610126ef39f6e8ad88519efe29ab6",
+      "best_upstream_rank": 10,
+      "raw_precursor_smiles": [
+        "O=C(OC(C)(C)C)N[C@H]1CC[C@@H](CC1)CO",
+        "S(C)(=O)(=O)Cl"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "O=C(OC(C)(C)C)N[C@@H]1CC[C@H](CC1)CO",
+          "S(C)(=O)(=O)Cl"
+        ]
+      ]
+    },
+    {
+      "group_id": "uspto50k_val#L774",
+      "candidate_id": "sha256:9ece933f84d893743b1b27b7861e7e7c5847f6070fe0178c8e6bef5f52690dc0",
+      "best_upstream_rank": 16,
+      "raw_precursor_smiles": [
+        "C1COCCC1n2ncc(c2)N",
+        "c3(Cl)nc(c4nc(sc4n3)CC)N[C@H]2CC[C@@H](CC2)N1CCOCC1"
+      ],
+      "raw_correct_precursor_sets": [
+        [
+          "C1COCCC1n2ncc(c2)N",
+          "c3(Cl)nc(c4nc(sc4n3)CC)N[C@@H]2CC[C@H](CC2)N1CCOCC1"
+        ]
+      ]
+    }
+  ],
+  "flipped_best_upstream_rank_distribution": [
+    4,
+    6,
+    10,
+    12,
+    12,
+    16,
+    20,
+    23,
+    35,
+    41,
+    48,
+    94,
+    96,
+    132,
+    145,
+    226
+  ]
+}

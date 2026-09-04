@@ -26,7 +26,7 @@ Add to `Cargo.toml`:
 
 ```toml
 [dependencies]
-renkin = "0.21"
+renkin = "0.53"
 ```
 
 Or use cargo add:
@@ -35,7 +35,7 @@ Or use cargo add:
 cargo add renkin
 ```
 
-## JavaScript / Node.js
+## JavaScript (npm)
 
 ```bash
 npm install renkin
@@ -47,6 +47,23 @@ Or with yarn/pnpm:
 yarn add renkin
 pnpm add renkin
 ```
+
+The npm package is currently built with `wasm-pack build --target web`.
+
+**Supported:**
+
+- Native browser ES modules
+- Vite
+- Webpack
+- Rollup and compatible bundlers
+
+**Not currently supported:**
+
+- Plain Node.js `require()`
+- Direct Node.js execution without a bundler
+
+See the [WASM API reference](../api/wasm.md) for usage examples, and a
+from-source build path for plain Node.js use.
 
 ## WebAssembly (browser)
 

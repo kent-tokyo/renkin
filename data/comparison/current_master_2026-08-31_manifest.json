@@ -1,0 +1,105 @@
+{
+  "binary_sha256": "8e63f922b536fee76f13ae95c3e74da2387fd3c32953c07f9fa11f4c68630f9b",
+  "command_line": [
+    "scripts/compare_run.py",
+    "--tool",
+    "renkin",
+    "--comparison-mode",
+    "shared_stock",
+    "--sample-list",
+    "data/comparison/sample_full_sorted.jsonl",
+    "--sample-size",
+    "100",
+    "--depth",
+    "5",
+    "--beam-width",
+    "100",
+    "--timeout-s",
+    "150",
+    "--grace-s",
+    "30",
+    "--ring-context-policy",
+    "conservative",
+    "--ring-context-sidecar",
+    "data/ring_context_metadata_500.json",
+    "--output-rows",
+    "data/comparison/current_master_2026-08-31_rows.jsonl",
+    "--output-aggregate",
+    "data/comparison/current_master_2026-08-31_aggregate.json",
+    "--manifest-path",
+    "data/comparison/current_master_2026-08-31_manifest.json",
+    "--resume"
+  ],
+  "comparison_mode": "shared_stock",
+  "docker_image": null,
+  "docker_image_digest": null,
+  "end_environment": {
+    "battery_raw": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22085731)\t100%; charged; 0:00 remaining present: true",
+    "caffeinate_active": true,
+    "caffeinate_raw": "25617 caffeinate -dimsu",
+    "cpu_count": 10,
+    "disk_free_raw": "Filesystem      Size    Used   Avail Capacity iused ifree %iused  Mounted on\n/dev/disk2s5   228Gi   190Gi   871Mi   100%    2.3M  8.9M   21%   /System/Volumes/Data",
+    "load_average": [
+      4.41845703125,
+      4.8935546875,
+      4.373046875
+    ],
+    "os": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "power_source": "ac",
+    "ram_bytes": 17179869184,
+    "top_cpu_processes_raw": [
+      "PID  %CPU COMM",
+      "44214  46.3 /System/Library/PrivateFrameworks/StorageManagement.framework/PlugIns/ApplicationsStorageExtension.appex/Contents/MacOS/ApplicationsStorageExtension",
+      "44188  45.5 /System/Library/PrivateFrameworks/StorageManagement.framework/PlugIns/StorageManagementService",
+      "44187   2.4 /System/Library/ExtensionKit/Extensions/Storage.appex/Contents/MacOS/Storage",
+      "  396   1.2 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+      "16109   0.5 /Applications/ChatGPT.app/Contents/Resources/codex",
+      "  962   0.1 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/151.0.7922.174/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper",
+      "58189   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl"
+    ]
+  },
+  "end_time_unix": 1788137043.511324,
+  "git_commit": "65e158a10cd95ba2b1cf0a083ba55e128e5ccf2b",
+  "input_file_sha256": {
+    "ring_context_sidecar": "ae2d96b6e5e6ea4b1102b47a597a75551677cef81a64893b12a4463dc0d7f504",
+    "sample_list": "572f7796f3aec07c85f9487c99803cff491623a59b1258e1e77a774a8c838ce8",
+    "stock": "9046b2e234efd32a44c9209f1f80c4162ca35c1629deaf3b69d4dfcc82de38b9",
+    "templates": "01cc64b636f4b4690b00dbb0b606c40b64bc94c511b86f336a30d795aba4bb82"
+  },
+  "input_file_sha256_at_end": {
+    "ring_context_sidecar": "ae2d96b6e5e6ea4b1102b47a597a75551677cef81a64893b12a4463dc0d7f504",
+    "sample_list": "572f7796f3aec07c85f9487c99803cff491623a59b1258e1e77a774a8c838ce8",
+    "stock": "9046b2e234efd32a44c9209f1f80c4162ca35c1629deaf3b69d4dfcc82de38b9",
+    "templates": "01cc64b636f4b4690b00dbb0b606c40b64bc94c511b86f336a30d795aba4bb82"
+  },
+  "input_files_unchanged_during_run": true,
+  "ring_context_policy": "conservative",
+  "spectator_bond_policy": "off",
+  "start_environment": {
+    "battery_raw": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22085731)\t100%; charged; 0:00 remaining present: true",
+    "caffeinate_active": true,
+    "caffeinate_raw": "25617 caffeinate -dimsu",
+    "cpu_count": 10,
+    "disk_free_raw": "Filesystem      Size    Used   Avail Capacity iused ifree %iused  Mounted on\n/dev/disk2s5   228Gi   190Gi   893Mi   100%    2.3M  9.1M   20%   /System/Volumes/Data",
+    "load_average": [
+      2.8515625,
+      2.64111328125,
+      2.73974609375
+    ],
+    "os": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "power_source": "ac",
+    "ram_bytes": 17179869184,
+    "top_cpu_processes_raw": [
+      "PID  %CPU COMM",
+      "44188  63.3 /System/Library/PrivateFrameworks/StorageManagement.framework/PlugIns/StorageManagementService",
+      "59040  30.0 /Library/Frameworks/Python.framework/Versions/3.13/Resources/Python.app/Contents/MacOS/Python",
+      "16109  10.2 /Applications/ChatGPT.app/Contents/Resources/codex",
+      "  396   1.4 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+      "46729   1.1 claude",
+      "  520   1.1 /System/Library/DriverExtensions/com.apple.DriverKit-AppleBCMWLAN.dext/com.apple.DriverKit-AppleBCMWLAN",
+      "  414   0.8 /System/Library/PrivateFrameworks/CoreAnalytics.framework/Support/analyticsd"
+    ]
+  },
+  "start_time_unix": 1788136283.4169002,
+  "tool": "renkin"
+}

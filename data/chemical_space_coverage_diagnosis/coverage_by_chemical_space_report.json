@@ -1,0 +1,65 @@
+{
+  "_purpose": "Chemical Space Coverage Diagnosis Phase A PoC: decompose the 33.0% (1,618/4,903) zero-positive-candidate gap on the formal TEST corpus by nearest-TRAIN ECFP4 Tanimoto similarity, to prioritize between Phase B (template-diversity scaling) and Phase C (higher-level templates). Route-solved-rate intentionally omitted from this v1 -- the only per-target route data available is the 100-target paired gate (~25/bin, a different corpus, not usable here).",
+  "reference_corpus": "USPTO-50k TRAIN split product SMILES (the same split scripts/extract_templates.py extracts templates from by default), 39,736 unique canonical structures",
+  "fingerprint": "ECFP4 (chematic 0.11.0, radius=2, nbits=2048, no chirality)",
+  "provenance": {
+    "_note": "SHA-256 chain from this committed report back to the non-committed raw inputs it was built from (see findings.md's 'Reproducing this' to regenerate them) -- copied from nearest_train_tanimoto.jsonl.manifest.json, verified to still match the actual files on disk at report-generation time (see asserts above).",
+    "source_hf_revision": "08a575f0546b2be57242997fd45f684d6814d5a9",
+    "renkin_commit": "45d35530d6578a1a136ed41d924b8cccb61ca881",
+    "chematic_version": "0.11.0",
+    "fingerprint_config": {
+      "fingerprint": "ecfp4",
+      "radius": 2,
+      "nbits": 2048,
+      "chirality": false
+    },
+    "train_reference_path": "data/chemical_space_coverage_diagnosis/train_reference_products.smi",
+    "train_reference_sha256": "sha256:4319055354db879abcb96a4627e3f47092ab04d05922bc6e5f350254eed9d964",
+    "test_labels_path": "data/chemical_space_coverage_diagnosis/test_target_labels.jsonl",
+    "test_labels_sha256": "sha256:58c640d868b981acf668b565b8cb9dd136e038d4abcfafb63975a814d1cb8c97",
+    "nearest_train_tanimoto_sha256": "sha256:67403e18dd9f0ee3b2c9c7bb3923e00252dc17d1ca5adeb90327e14e7b3cd934"
+  },
+  "overall": {
+    "n": 4903,
+    "zero_positive_count": 1618,
+    "zero_positive_rate": 0.33000203956761165
+  },
+  "bins": [
+    {
+      "bin": "near (>=0.80)",
+      "n": 271,
+      "zero_positive_count": 84,
+      "zero_positive_rate": 0.30996309963099633,
+      "positive_present_count": 187,
+      "baseline_top1_hit_rate_conditional": 0.24064171122994651,
+      "reranker_top1_hit_rate_conditional": 0.40106951871657753
+    },
+    {
+      "bin": "medium (0.60-0.80)",
+      "n": 1362,
+      "zero_positive_count": 411,
+      "zero_positive_rate": 0.30176211453744495,
+      "positive_present_count": 951,
+      "baseline_top1_hit_rate_conditional": 0.22818086225026288,
+      "reranker_top1_hit_rate_conditional": 0.434279705573081
+    },
+    {
+      "bin": "far (0.40-0.60)",
+      "n": 2474,
+      "zero_positive_count": 787,
+      "zero_positive_rate": 0.3181083265966047,
+      "positive_present_count": 1687,
+      "baseline_top1_hit_rate_conditional": 0.25074096028452875,
+      "reranker_top1_hit_rate_conditional": 0.44457617071724953
+    },
+    {
+      "bin": "very-far/OOD-like (<0.40)",
+      "n": 796,
+      "zero_positive_count": 336,
+      "zero_positive_rate": 0.4221105527638191,
+      "positive_present_count": 460,
+      "baseline_top1_hit_rate_conditional": 0.25869565217391305,
+      "reranker_top1_hit_rate_conditional": 0.41304347826086957
+    }
+  ]
+}

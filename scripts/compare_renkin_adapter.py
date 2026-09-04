@@ -60,18 +60,42 @@ class RenkinConfig:
     # RENKIN-vs-AiZynthFinder arm (see Issue #66 500-target protocol).
     ring_context_policy: str | None = None
     ring_context_sidecar: str | None = None
+    # Spectator-bond-loss fail-closed gate (v0.35.0) -- orthogonal to
+    # ring_context_policy above; "off" runs the shipped default (gate off).
+    spectator_bond_policy: str | None = None
+    # Issue #101 Task 35: ordering-only LightGBM candidate reranker. Both
+    # must be set together (renkin's own CLI already falls back to legacy
+    # ordering with a stderr warning if only one is given, or if loading
+    # fails -- this adapter doesn't duplicate that validation).
+    reranker_model: str | None = None
+    reranker_freq_table: str | None = None
+    # v0.24 coverage mode (Issue #101, Phase 41.18B) -- "coverage" requires
+    # coverage_templates_path; coverage_timeout_secs is optional (None means
+    # no cooperative-cancellation deadline on Stage 2). Not part of the
+    # Issue #66 open-source comparison protocol -- used by the coverage-mode
+    # formal-TEST runner (data/coverage_mode_formal_test/protocol.md) only.
+    search_mode: str = "standard"
+    coverage_templates_path: str | None = None
+    coverage_timeout_secs: int | None = None
 
 
 _MAXRSS_RE = re.compile(r"^\s*(\d+)\s+maximum resident set size\s*$", re.MULTILINE)
+_CPU_TIME_RE = re.compile(
+    r"^\s*[\d.]+\s+real\s+([\d.]+)\s+user\s+([\d.]+)\s+sys\s*$", re.MULTILINE
+)
 
 
 def _run_with_time_wrapper(
     argv: list[str], timeout_s: float, grace_s: float
-) -> tuple[int | None, bytes, bytes, float, int | None, bool]:
+) -> tuple[int | None, bytes, bytes, float, int | None, bool, float | None, float | None]:
     """Runs argv under `/usr/bin/time -l`, enforcing an external wall-clock
     deadline authoritative over anything the tool itself does.
 
-    Returns (returncode, stdout, stderr, wall_clock_s, peak_rss_bytes, wrapper_killed).
+    Returns (returncode, stdout, stderr, wall_clock_s, peak_rss_bytes,
+    wrapper_killed, cpu_user_s, cpu_sys_s). CPU times come from the same
+    report already parsed for peak_rss -- captured even when the process
+    was killed for timing out, since CPU time consumed before a kill is
+    still meaningful diagnostic signal (see Phase B.2d, findings.md).
     """
     with tempfile.NamedTemporaryFile(delete=False) as time_out_f:
         time_report_path = time_out_f.name
@@ -98,14 +122,29 @@ def _run_with_time_wrapper(
         wall_clock_s = time.monotonic() - start
 
         peak_rss_bytes = None
+        cpu_user_s = None
+        cpu_sys_s = None
         if os.path.exists(time_report_path):
             with open(time_report_path, "r", encoding="utf-8", errors="replace") as f:
                 report_text = f.read()
             m = _MAXRSS_RE.search(report_text)
             if m:
                 peak_rss_bytes = int(m.group(1))
+            m = _CPU_TIME_RE.search(report_text)
+            if m:
+                cpu_user_s = float(m.group(1))
+                cpu_sys_s = float(m.group(2))
 
-        return proc.returncode, stdout, stderr, wall_clock_s, peak_rss_bytes, wrapper_killed
+        return (
+            proc.returncode,
+            stdout,
+            stderr,
+            wall_clock_s,
+            peak_rss_bytes,
+            wrapper_killed,
+            cpu_user_s,
+            cpu_sys_s,
+        )
     finally:
         if os.path.exists(time_report_path):
             os.unlink(time_report_path)
@@ -141,11 +180,31 @@ def run_one_target(
     if config.ring_context_policy and config.ring_context_policy != "disabled":
         argv += ["--ring-context-policy", config.ring_context_policy]
         argv += ["--ring-context-sidecar", config.ring_context_sidecar]
+    if config.spectator_bond_policy and config.spectator_bond_policy != "off":
+        # --search-diagnostics is required for the CLI to emit
+        # search_diagnostics.spectator_bond_gated_out -- gated_out_* below
+        # would otherwise stay null even under a "gated" policy.
+        argv += ["--spectator-bond-policy", config.spectator_bond_policy, "--search-diagnostics"]
+    if config.reranker_model and config.reranker_freq_table:
+        argv += ["--reranker-model", config.reranker_model]
+        argv += ["--reranker-freq-table", config.reranker_freq_table]
+    if config.search_mode == "coverage":
+        argv += ["--search-mode", "coverage", "--coverage-templates", config.coverage_templates_path]
+        if config.coverage_timeout_secs is not None:
+            argv += ["--coverage-timeout-secs", str(config.coverage_timeout_secs)]
 
-    returncode, stdout, stderr, wall_clock_s, peak_rss_bytes, wrapper_killed = (
-        _run_with_time_wrapper(argv, config.external_timeout_s, config.grace_s)
-    )
+    (
+        returncode,
+        stdout,
+        stderr,
+        wall_clock_s,
+        peak_rss_bytes,
+        wrapper_killed,
+        cpu_user_s,
+        cpu_sys_s,
+    ) = _run_with_time_wrapper(argv, config.external_timeout_s, config.grace_s)
     total_elapsed_ms = wall_clock_s * 1000.0
+    cpu_time_tool_specific = {"cpu_user_s": cpu_user_s, "cpu_sys_s": cpu_sys_s}
 
     base = dict(
         target_id=target_id,
@@ -164,6 +223,7 @@ def run_one_target(
             run_status="timeout",
             total_elapsed_ms=total_elapsed_ms,
             peak_rss_bytes=peak_rss_bytes,
+            tool_specific={"renkin": cpu_time_tool_specific},
         )
 
     if returncode != 0:
@@ -190,6 +250,31 @@ def run_one_target(
     routes_found = parsed.get("routes_found", 0)
     route_found = routes_found > 0
 
+    # Absent entirely on a standard-mode response (coverage_mode.rs never
+    # emits these keys outside coverage mode) -- parsed.get(...) is None
+    # for every field here in that case, exactly matching config.search_mode
+    # == "standard" and giving every row a consistent tool_specific shape
+    # regardless of which mode produced it.
+    coverage_mode_fields = {
+        "search_mode": parsed.get("search_mode"),
+        "selected_stage": parsed.get("selected_stage"),
+        "stage2_invoked": parsed.get("stage2_invoked"),
+        "stage1_timeout": parsed.get("stage1_timeout"),
+        "stage2_timeout": parsed.get("stage2_timeout"),
+        "stage1_elapsed_ms": parsed.get("stage1_elapsed_ms"),
+        "stage2_elapsed_ms": parsed.get("stage2_elapsed_ms"),
+    }
+
+    gated_out_candidate_count = None
+    gated_out_reasons = None
+    if config.spectator_bond_policy == "gated":
+        gated_records = parsed.get("search_diagnostics", {}).get("spectator_bond_gated_out", [])
+        gated_out_candidate_count = len(gated_records)
+        gated_out_reasons = {}
+        for rec in gated_records:
+            rule_name = rec.get("rule_name", "unknown")
+            gated_out_reasons[rule_name] = gated_out_reasons.get(rule_name, 0) + 1
+
     row_kwargs = dict(
         **base,
         run_status="completed",
@@ -198,6 +283,8 @@ def run_one_target(
         total_elapsed_ms=total_elapsed_ms,
         peak_rss_bytes=peak_rss_bytes,
         raw_output_sha256=raw_output_sha256,
+        gated_out_candidate_count=gated_out_candidate_count,
+        gated_out_reasons=gated_out_reasons,
     )
 
     if not route_found:
@@ -209,7 +296,10 @@ def run_one_target(
                 "beam_limit_hit": diagnostics.get("beam_limit_hit"),
                 "matched_templates": diagnostics.get("matched_templates"),
                 "stock_hits": diagnostics.get("stock_hits"),
+                "reranker_failures": parsed.get("reranker_failures"),
                 "diagnostics_source": "single_per_target_cli_call",
+                **cpu_time_tool_specific,
+                **coverage_mode_fields,
             }
         }
         return PlannerComparisonRow(**row_kwargs)
@@ -226,7 +316,10 @@ def run_one_target(
             "success_probability": best_route.get("success_probability"),
             "route_cost": best_route.get("route_cost"),
             "joint_success_probability": parsed.get("joint_success_probability"),
+            "reranker_failures": parsed.get("reranker_failures"),
             "diagnostics_source": "single_per_target_cli_call",
+            **cpu_time_tool_specific,
+            **coverage_mode_fields,
         }
     }
 
@@ -234,6 +327,9 @@ def run_one_target(
     row_kwargs["route_tree_parseable"] = outcome.parseable
     if not outcome.parseable:
         row_kwargs["common_validation_warnings"] = outcome.defects
+        # A route was reported but its own tree doesn't parse -- a concrete,
+        # confirmed defect, not merely "couldn't evaluate".
+        row_kwargs["validator_confirmed_route_found"] = False
         return PlannerComparisonRow(**row_kwargs)
 
     graph = outcome.graph
@@ -251,6 +347,13 @@ def run_one_target(
     row_kwargs["target_element_accounting_status"] = accounting_status
 
     row_kwargs["common_validation_warnings"] = list(step_warnings) + list(accounting_warnings)
+
+    if accounting_status == "not_evaluable":
+        row_kwargs["not_evaluable"] = True
+    else:
+        row_kwargs["validator_confirmed_route_found"] = (
+            steps_ok is True and accounting_status == "accounted"
+        )
 
     return PlannerComparisonRow(**row_kwargs)
 

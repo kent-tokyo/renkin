@@ -13,6 +13,8 @@ use renkin::search::Route;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
+pub mod bench;
+
 /// Schema version of [`ForwardPredictionReport`]. Bump whenever a field is
 /// added, removed, or its meaning changes, so downstream JSON consumers can
 /// detect incompatible changes instead of silently misreading a report.
@@ -327,7 +329,7 @@ fn atom_charge_imbalance_diagnostic(
 /// `"C.C.N"` despite being different sequences. Length-prefixing makes the
 /// encoding injective: the original sequence can always be reconstructed
 /// from the byte stream, so two different sequences can never produce it.
-fn hash_string_sequence(hasher: &mut Sha256, values: &[String]) {
+pub(crate) fn hash_string_sequence(hasher: &mut Sha256, values: &[String]) {
     hasher.update((values.len() as u64).to_be_bytes());
     for value in values {
         let bytes = value.as_bytes();
@@ -1744,8 +1746,8 @@ mod tests {
                 Err(_) => rejected += 1,
             }
         }
-        assert_eq!(graph_based, 7, "graph-based default rule count changed");
-        assert_eq!(smirks_based, rules.len() - 7);
+        assert_eq!(graph_based, 9, "graph-based default rule count changed");
+        assert_eq!(smirks_based, rules.len() - 9);
         assert_eq!(
             rejected, 0,
             "every SMIRKS-backed default rule must remain accepted by predict/enumerate's validator"
@@ -2538,19 +2540,28 @@ mod tests {
 
     /// Compatibility regression: pins `validate_route`'s `verified` outcome
     /// for a route step built on a real default rule
-    /// (`aryl_ether_retro`, salicylic acid + ethanol -> 2-ethoxybenzoic
-    /// acid), so this specific, previously-working case can never silently
-    /// flip during future refactors of the candidate/merge pipeline.
+    /// (`sonogashira_retro`, bromobenzene + propyne -> 1-phenylpropyne), so
+    /// this specific, previously-working case can never silently flip
+    /// during future refactors of the candidate/merge pipeline. Was
+    /// `aryl_ether_retro` (salicylic acid + ethanol -> 2-ethoxybenzoic
+    /// acid) until that rule was converted to a graph-based Rust function
+    /// (empty smirks -- see docs/design/retro-rule-precision-gaps-v0.md
+    /// #1), then `buchwald_hartwig_retro` (2-bromobenzoic acid + ethylamine
+    /// -> 2-(ethylamino)benzoic acid) until that rule was itself removed
+    /// from `default_rules()` (issue #77: ring-fused-nitrogen atom loss,
+    /// plus a corrupted surviving fragment) -- each time substituted with a
+    /// structurally analogous SMIRKS-backed rule, re-verified with a
+    /// scratch probe to still hold.
     #[test]
     fn validate_route_golden_fixture_verified_true() {
         use renkin::search::ReactionStep;
 
         let rules = renkin::chem_env::default_rules();
         let step = ReactionStep {
-            rule: "aryl_ether_retro".to_string(),
-            template_id: "rule:aryl_ether_retro".to_string(),
-            target: "CCOc1ccccc1C(=O)O".to_string(),
-            precursors: vec!["Oc1ccccc1C(=O)O".to_string(), "CCO".to_string()],
+            rule: "sonogashira_retro".to_string(),
+            template_id: "rule:sonogashira_retro".to_string(),
+            target: "c1ccccc1C#CC".to_string(),
+            precursors: vec!["Brc1ccccc1".to_string(), "C#CC".to_string()],
             conditions: None,
             atom_economy: None,
             atom_economy_raw_percent: None,
@@ -2566,7 +2577,7 @@ mod tests {
             steps: vec![step],
             depth: 1,
             score: 1.0,
-            building_blocks: vec!["Oc1ccccc1C(=O)O".to_string(), "CCO".to_string()],
+            building_blocks: vec!["Brc1ccccc1".to_string(), "C#CC".to_string()],
             confidence: 1.0,
             convergency: 1.0,
             success_probability: 1.0,
@@ -2577,31 +2588,32 @@ mod tests {
         assert_eq!(validations.len(), 1);
         assert!(
             validations[0].verified,
-            "expected aryl_ether_retro forward application to verify the target, got {:?}",
+            "expected sonogashira_retro forward application to verify the target, got {:?}",
             validations[0]
         );
     }
 
     /// `chematic::rxn::run_reactants` binds precursor slots to SMIRKS
-    /// components positionally: for this exact rule/precursor pair, a
-    /// scratch probe confirmed the precursor order in
-    /// `validate_route_golden_fixture_verified_true` finds a match while the
-    /// reversed order finds none. A route search can emit precursors in
-    /// either order for the same underlying chemistry, so `verified` must
-    /// not depend on it -- this is the same reactant-ordering fix as
+    /// components positionally, so a route search emitting precursors in
+    /// either order for the same underlying chemistry must not flip
+    /// `verified` -- this is the same reactant-ordering fix as
     /// [`reactant_input_order_alone_does_not_change_candidate_ids`], exercised
     /// through `validate_route` instead of `predict_products_detailed`
-    /// directly.
+    /// directly. Re-verified with a scratch probe (both precursor orders
+    /// for this rule/pair genuinely produce `verified: true` here) after
+    /// substituting `sonogashira_retro` for the removed
+    /// `buchwald_hartwig_retro` fixture -- see the sibling
+    /// `validate_route_golden_fixture_verified_true`'s doc comment for why.
     #[test]
     fn validate_route_verified_is_independent_of_precursor_order() {
         use renkin::search::ReactionStep;
 
         let rules = renkin::chem_env::default_rules();
         let step = ReactionStep {
-            rule: "aryl_ether_retro".to_string(),
-            template_id: "rule:aryl_ether_retro".to_string(),
-            target: "CCOc1ccccc1C(=O)O".to_string(),
-            precursors: vec!["CCO".to_string(), "Oc1ccccc1C(=O)O".to_string()],
+            rule: "sonogashira_retro".to_string(),
+            template_id: "rule:sonogashira_retro".to_string(),
+            target: "c1ccccc1C#CC".to_string(),
+            precursors: vec!["C#CC".to_string(), "Brc1ccccc1".to_string()],
             conditions: None,
             atom_economy: None,
             atom_economy_raw_percent: None,
@@ -2617,7 +2629,7 @@ mod tests {
             steps: vec![step],
             depth: 1,
             score: 1.0,
-            building_blocks: vec!["CCO".to_string(), "Oc1ccccc1C(=O)O".to_string()],
+            building_blocks: vec!["C#CC".to_string(), "Brc1ccccc1".to_string()],
             confidence: 1.0,
             convergency: 1.0,
             success_probability: 1.0,

@@ -69,8 +69,13 @@ nav:
     - Forward Retrieval Hints: guides/forward-retrieval-hints.md
     - Reaction Evidence Metadata: guides/reaction-evidence.md
     - MCP Server: guides/mcp.md
-    - Candidate Pools and Reranker Training: guides/reranker-candidate-pools.md
-    - Open-Source Retrosynthesis Comparison: guides/open-source-retrosynthesis-comparison.md
+    - Deterministic Chemical Review: guides/chemical-review-rubric.md
+    - Private Stock Policy: guides/private-stock-policy.md
+    - Evidence-Carrying Interchange: guides/evidence-carrying-interchange.md
+    - Audit a Real AiZynthFinder Route: guides/aizynthfinder-audit-demo.md
+    - Audit a Syntheseus Route: guides/syntheseus-audit-demo.md
+    - Audit a Real SynPlanner Route: guides/synplanner-audit-demo.md
+    - Audit Reproducibility and Compatibility Contract: guides/audit-reproducibility-contract.md
   - API Reference:
     - Rust API: api/rust.md
     - Python API: api/python.md
@@ -78,11 +83,8 @@ nav:
   - Examples:
     - Aspirin Retrosynthesis: examples/aspirin.md
     - Drug-like Molecules: examples/druglike.md
-  - Comparison:
-    - Open-Source Retrosynthesis Tools: comparison/open-source-retrosynthesis-tools.md
-    - "ASKCOS Feasibility (Issue #66)": comparison/askcos-feasibility-issue-66.md
   - Playground: playground/index.html
-  - Benchmark:
+  - Historical Benchmark (Frozen):
     - Results (EN): benchmark.md
     - 結果 (JA): benchmark_ja.md
 

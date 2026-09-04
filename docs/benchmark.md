@@ -1,11 +1,16 @@
 ---
-title: "RENKIN Retrosynthesis Benchmark: USPTO-50k Results and Methodology"
-description: "Corrected USPTO-50k benchmark results for RENKIN, with full methodology, comparison to other retrosynthesis planners, and known limitations."
+title: "RENKIN Historical USPTO-50k Stress Test (v0.15.5, Frozen)"
+description: "A frozen, single-commit USPTO-50k route-to-stock stress test for RENKIN v0.15.5, with full methodology and known limitations. For current, matched-condition comparison data against other planners, see the Open-Source Retrosynthesis Comparison guide."
 ---
 
-# Benchmark
+# Historical USPTO-50k Stress Test (Frozen, v0.15.5)
 
-> ⚠️ **Notice (2026-07-22): historical 78.0% (single-pass) / 95.9% (cascade) / 81.8% (ChEMBL OOD) figures on this page are invalidated and have NOT been re-measured.** They were measured before fixing four retrosynthesis-rule/validator bugs that inflated solved counts with chemically-invalid or falsely-corroborated routes (full history below). **Only the "Corrected baseline" section below reflects the current rule set** — everywhere else on this page still shows the old, invalidated numbers for historical continuity, each marked accordingly. Do not cite the unmarked historical figures as current RENKIN performance.
+**This entire page is a frozen historical artifact, not a live or current benchmark.** Every number below — including the "Corrected Baseline" section — was measured once, against one specific commit (`e20dc8c`, RENKIN v0.15.5, 2026-07-22), and has not been re-run since. "Corrected" describes the rule set *at that commit*, not RENKIN's present state; treat every figure on this page as a snapshot of what RENKIN did on one day, not as its current performance.
+
+> This page is a frozen historical artifact, not a current cross-tool
+> comparison. Do not use its figures as current performance claims.
+
+> ⚠️ **Notice (2026-07-22): historical 78.0% (single-pass) / 95.9% (cascade) / 81.8% (ChEMBL OOD) figures on this page are invalidated and have NOT been re-measured.** They were measured before fixing four retrosynthesis-rule/validator bugs that inflated solved counts with chemically-invalid or falsely-corroborated routes (full history below). **Only the "Corrected baseline" section below reflects the rule set as it stood at the frozen commit** — everywhere else on this page still shows the old, invalidated numbers for historical continuity, each marked accordingly. Do not cite any figure on this page, marked or unmarked, as current RENKIN performance.
 >
 > **Corrected baseline — USPTO-50k Stage 1 (single-pass), commit `e20dc8c`, 2026-07-22.** Search-to-stock rate (`raw_solved_rate`) **20.09%** (986/4,907) → atom-balance-filtered rate (`atom_balanced_solved_rate`) **15.41%** (756/4,907) → current-validator-confirmed rate (`provenance_validated_solved_rate`) **0.88%** (43/4,907). These three are a *nested* series over the same 4,907 targets (each a stricter subset of the previous), not independent measurements, and none is an experimentally-verified synthesis success rate or a human-chemist-reviewed route-accuracy figure.
 >
@@ -15,7 +20,11 @@ description: "Corrected USPTO-50k benchmark results for RENKIN, with full method
 
 ## USPTO-50k Test Set
 
-RENKIN is evaluated on the full [USPTO-50k](https://huggingface.co/datasets/bisectgroup/USPTO_50K) test set (4,907 molecules) — the standard benchmark for multi-step retrosynthesis planning.
+USPTO-50k is primarily used as a **single-step** retrosynthesis benchmark (see "Comparison: Single-Step Top-1 Models" below for that use). This page repurposes a frozen, 4,907-row target corpus derived from [USPTO-50k](https://huggingface.co/datasets/bisectgroup/USPTO_50K) as a **route-to-stock stress test** for RENKIN's multi-step search — it is not a canonical multi-step benchmark like [PaRoutes](https://github.com/AstraZeneca/PaRoutes) (which RENKIN also supports directly, via `renkin-bench --input-format paroutes` — see the [README](https://github.com/kent-tokyo/renkin#paroutes-compatibility)).
+
+There is also a known provenance gap in this corpus: `data/uspto50k_test.smi`
+claims "5007 reactions" in its header but contains 4,907 data rows, and the
+exact upstream Hugging Face revision is not recorded here.
 
 **What "solved" means:** A target is *solved* if at least one complete retrosynthetic route is found where every leaf precursor is in the building block set (402 unique compounds loaded from `data/building_blocks.smi` for the corrected-baseline run below — see that section for how this differs from the file's raw line count). This is **not** a check against ground-truth reactants from the USPTO dataset.
 
@@ -53,43 +62,36 @@ Building blocks: **402** unique compounds actually loaded by `ChemEnv::load("dat
 | + beam=100 | 2,688 / 4,907 | 54.8% | beam search |
 | + Phase A frequency weighting | 3,540 / 4,907 | 72.1% | step_cost bonus for high-freq templates |
 | **+ ~5,000 templates (v0.15.5)** | **3,826 / 4,907** | **78.0%** | pre-fix measurement, invalidated |
-| **Cascade: Stage 2 (depth=7, beam=300, unsolved only)** | **4,705 / 4,907** | **95.9%** | 2026-06-29 ✅ |
+| **Cascade: Stage 2 (depth=7, beam=300, unsolved only)** | **4,705 / 4,907** | **95.9%** | 2026-06-29 ✅ (pre-fix, invalidated) |
 
 *Status: invalidated historical measurement — see notice above.*
 
-### Comparison: Multi-Step Planners (Table B)
+### Comparison: Single-Step Top-1 Models (different metric)
 
-> **⚠️ Not a matched-condition comparison.** Building block counts, template counts, and evaluation setups differ significantly across systems. These numbers cannot be used to rank tools definitively. A matched-condition experiment (same BB set, same templates) has not been conducted.
-
-| System | Multi-Step Rate | Stock | Templates | Source |
-|--------|----------------|-------|-----------|--------|
-| **RENKIN v0.15.5 (corrected, `raw_solved_rate`)** | **20.09%** | 402 BBs | ~5,000 | this work, 2026-07-22 |
-| AiZynthFinder | 45–53% | ~6M (eMolecules) | ~50,000 | Genheden et al., J. Cheminform. 2020 |
-| Retro\* | 44.3% | ~20,000 | ~17,000 | Chen et al., NeurIPS 2020 |
-| ASKCOS | ~41% | ~20,000 | ~195,000 | Coley et al., Science 2019 |
-
-RENKIN's row uses `raw_solved_rate` (found ≥1 route to stock) — the closest available RENKIN metric to the published route-finding success rates of the other planners. The figures are not directly comparable: stock size, template library, target set, search budget, and route-quality checks all differ across systems, and this table does not establish RENKIN as better or worse than the alternatives. RENKIN additionally reports two stricter, nested figures (`atom_balanced_solved_rate` 15.41%, `provenance_validated_solved_rate` 0.88% — see the corrected-baseline notice above) that the other systems' papers don't provide a directly comparable number for.
-
-### Comparison: Single-Step Top-1 Models (Table C — different metric)
-
-> **⚠️ Different metric.** These measure single-step top-1 prediction accuracy (does the model's top-1 prediction match the known reaction?), **not** multi-step planning success rate. Direct comparison with Table B is not valid.
+> **⚠️ Different metric.** These measure single-step top-1 prediction accuracy (does the model's top-1 prediction match the known reaction?), **not** multi-step planning success rate. Direct comparison with RENKIN's multi-step figures above is not valid.
 
 | System | Single-Step Top-1 | Source |
 |--------|------------------|--------|
 | LocalRetro | 53.4% | Chen et al., ACS Cent. Sci. 2021 |
-| GLG | 58.0% | Yu et al., NeurIPS 2022 |
 
-!!! note "Condition differences"
-    RENKIN's 20.09% uses only **402 building blocks** and **~5,000 templates**, while systems like AiZynthFinder use 6M-compound databases and 50k templates. RENKIN's strength is **portability**: Pure Rust, zero C/C++ dependencies, WASM + Python + CLI from one binary.
+!!! note "RENKIN's configuration"
+    RENKIN's 20.09% search-to-stock rate above uses only **402 building blocks** and **~5,000 templates**. RENKIN's strength is **portability**: Pure Rust, zero C/C++ dependencies, WASM + Python + CLI from one binary.
 
 ### What RENKIN solves well
 
-RENKIN achieves high accuracy on standard bond disconnections:
+> ⚠️ **Not a measured accuracy claim.** The list below describes which
+> transformation families RENKIN has an explicit hand-crafted or
+> graph-based rule for — it is a statement about rule *coverage*, not a
+> re-measured per-class accuracy figure (no such figure exists against
+> the corrected rule set; the historical 78.0%/95.9% figures this section
+> previously implied are invalidated, see the notice at the top of this
+> page).
+
+RENKIN contains explicit rules for these transformation families:
 
 - Esters → carboxylic acid + alcohol
 - Amides → acid + amine (graph-based cleavage)
 - Biaryls → aryl halide + boronic acid (Suzuki, graph-based)
-- Aryl amines → aryl halide + amine (Buchwald-Hartwig)
 - Boc / Cbz protecting group removal (graph-based)
 - Diaryl sulfones → arylsulfonyl chloride + arene (graph-based)
 - Sulfonamides → sulfonyl chloride + amine
@@ -124,7 +126,9 @@ The +3.8 pp difference on approved drugs is consistent with the hypothesis that 
 
 ### Improving the success rate
 
-1. **Cascade search** — re-run unsolved targets with higher beam/depth (`--depth 7 --beam-width 300`). Failure taxonomy shows this is the primary lever.
+> ⚠️ **Point 1 below cites the invalidated failure taxonomy above (pre-31.11/31.12, not re-measured against the corrected rule set).** The general levers still apply, but "primary lever" is not re-confirmed evidence.
+
+1. **Cascade search** — re-run unsolved targets with higher beam/depth (`--depth 7 --beam-width 300`). The (invalidated, pre-fix) failure taxonomy above indicated this was the primary lever.
 2. **Expand the building block database** — supply eMolecules, ZINC, or your internal stock via `--building-blocks`
 3. **Add more templates** — extract additional templates from the full USPTO training set (`--templates data/templates_extracted_5000.smi`)
 

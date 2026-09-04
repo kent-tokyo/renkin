@@ -1,0 +1,125 @@
+{
+  "train": {
+    "n_total": 39668,
+    "n_parse_err": 0,
+    "n_input_already_fixed_point": 39559,
+    "n_drift_then_stable_A_to_B_to_B": 109,
+    "n_still_drifting_after_2_passes": 0,
+    "total_mismatched_from_input": 109,
+    "mismatch_rate_pct": 0.2748,
+    "examples": [
+      {
+        "input": "C(=O)(NC)c5ccc2c(c5)OCCc1cc(-c3nc(N)nn3-c4ccc(cc4F)F)sc12",
+        "canon1": "C(=O)(NC)c5cc1c(cc5)c2sc(-c3nc(N)nn3-c4ccc(cc4F)F)cc2CCO1",
+        "canon2": "C(=O)(NC)c5cc1c(cc5)c2sc(-c3nc(N)nn3-c4ccc(cc4F)F)cc2CCO1",
+        "class": "A->B->B"
+      },
+      {
+        "input": "C(C(F)(F)F)n1c(-c2nc5n(CCOc4c5cc(cc4)C(=O)N3CCOCC3)c2)ncn1",
+        "canon1": "n1(ncnc1-c5cn4CCOc3ccc(cc3c4n5)C(N2CCOCC2)=O)CC(F)(F)F",
+        "canon2": "n1(ncnc1-c5cn4CCOc3ccc(cc3c4n5)C(N2CCOCC2)=O)CC(F)(F)F",
+        "class": "A->B->B"
+      },
+      {
+        "input": "C(C)(n5ncnc5-c1nn2c(CCOc3ccc(C(=O)N4CCC(O)CC4)cc23)c1)C",
+        "canon1": "C(C)(C)n5c(ncn5)-c4cc2n(n4)c3cc(ccc3OCC2)C(N1CCC(O)CC1)=O",
+        "canon2": "C(C)(C)n5c(ncn5)-c4cc2n(n4)c3cc(ccc3OCC2)C(N1CCC(O)CC1)=O",
+        "class": "A->B->B"
+      },
+      {
+        "input": "C(CCCC(=O)OCC)CCn1c4c(cc(C)c(c4)N[C@H]3CN(CC3)C(=O)OC(C)(C)C)nc2c(=O)[nH]c(=O)nc12",
+        "canon1": "N1(C(OC(C)(C)C)=O)C[C@H](Nc2c(C)cc3nc4c(nc([nH]c4=O)=O)n(c3c2)CCCCCCC(OCC)=O)CC1",
+        "canon2": "N1(C(OC(C)(C)C)=O)C[C@H](Nc2c(C)cc3nc4c(nc([nH]c4=O)=O)n(c3c2)CCCCCCC(OCC)=O)CC1",
+        "class": "A->B->B"
+      },
+      {
+        "input": "C(CNc4c(cc2c(c4)n(CCN3CCC(C(=O)O)CC3)c1nc([nH]c(=O)c1n2)=O)C)C(=O)OC(C)(C)C",
+        "canon1": "C1CC(CCN1CCn3c2nc([nH]c(=O)c2nc4c3cc(NCCC(OC(C)(C)C)=O)c(c4)C)=O)C(O)=O",
+        "canon2": "C1CC(CCN1CCn3c2nc([nH]c(=O)c2nc4c3cc(NCCC(OC(C)(C)C)=O)c(c4)C)=O)C(O)=O",
+        "class": "A->B->B"
+      }
+    ]
+  },
+  "val": {
+    "n_total": 4924,
+    "n_parse_err": 0,
+    "n_input_already_fixed_point": 4910,
+    "n_drift_then_stable_A_to_B_to_B": 14,
+    "n_still_drifting_after_2_passes": 0,
+    "total_mismatched_from_input": 14,
+    "mismatch_rate_pct": 0.2843,
+    "examples": [
+      {
+        "input": "Brc4cc2c(cc4)OCCc1cc(C(Nc3ccccc3Cl)=O)sc12",
+        "canon1": "c3c(cc2c1sc(C(Nc4ccccc4Cl)=O)cc1CCOc2c3)Br",
+        "canon2": "c3c(cc2c1sc(C(Nc4ccccc4Cl)=O)cc1CCOc2c3)Br",
+        "class": "A->B->B"
+      },
+      {
+        "input": "C(Oc3c(cc1c(c3)CC(CC)n2c1cc(c(C(OCC)=O)c2)=O)OC)CCOC",
+        "canon1": "C(Oc2c(OC)cc1c3cc(c(C(OCC)=O)cn3C(CC)Cc1c2)=O)CCOC",
+        "canon2": "C(Oc2c(OC)cc1c3cc(c(C(OCC)=O)cn3C(CC)Cc1c2)=O)CCOC",
+        "class": "A->B->B"
+      },
+      {
+        "input": "C1CC(=O)CCN1C(c5c2n(c(=O)c(c5)-c4ccccc4)CCc3ccsc23)=O",
+        "canon1": "c1(-c5cc(c4n(c5=O)CCc3ccsc34)C(=O)N2CCC(=O)CC2)ccccc1",
+        "canon2": "c1(-c5cc(c4n(c5=O)CCc3ccsc34)C(=O)N2CCC(=O)CC2)ccccc1",
+        "class": "A->B->B"
+      },
+      {
+        "input": "N(C(c6nc(ccc6Cl)NC)=O)c1cc3c(CCc2c(C(N)=O)nn(-c5ccc4c(c5)OCO4)c23)cc1",
+        "canon1": "n6c(c(ccc6NC)Cl)C(Nc5cc4c3n(nc(C(N)=O)c3CCc4cc5)-c2ccc1c(c2)OCO1)=O",
+        "canon2": "n6c(c(ccc6NC)Cl)C(Nc5cc4c3n(nc(C(N)=O)c3CCc4cc5)-c2ccc1c(c2)OCO1)=O",
+        "class": "A->B->B"
+      },
+      {
+        "input": "S(N[C@@H]4CC[C@H](CC4)CCN3C(CCCC3)c2coc1cccc1c2)(C)(=O)=O",
+        "canon1": "N3(CC[C@@H]4CC[C@H](CC4)NS(=O)(C)=O)C(CCCC3)c2cc1c(oc2)ccc1",
+        "canon2": "N3(CC[C@@H]4CC[C@H](CC4)NS(=O)(C)=O)C(CCCC3)c2cc1c(oc2)ccc1",
+        "class": "A->B->B"
+      }
+    ]
+  },
+  "test": {
+    "n_total": 4903,
+    "n_parse_err": 0,
+    "n_input_already_fixed_point": 4890,
+    "n_drift_then_stable_A_to_B_to_B": 13,
+    "n_still_drifting_after_2_passes": 0,
+    "total_mismatched_from_input": 13,
+    "mismatch_rate_pct": 0.2651,
+    "examples": [
+      {
+        "input": "C(C(N6CC(CCC6)n5c(ccn5)-c4ccc1c(c4)OCCn3c1nc(c3)-c2nc(C)nn2C(C)C)(C)C)(=O)OCC",
+        "canon1": "c1(-c6cc5c(cc6)c4nc(cn4CCO5)-c3nc(nn3C(C)C)C)n(C2CN(C(C)(C)C(OCC)=O)CCC2)ncc1",
+        "canon2": "c1(-c6cc5c(cc6)c4nc(cn4CCO5)-c3nc(nn3C(C)C)C)n(C2CN(C(C)(C)C(OCC)=O)CCC2)ncc1",
+        "class": "A->B->B"
+      },
+      {
+        "input": "C1(n2[nH]c(c3c(=O)nc(nc23)COS(=O)(=O)C)CC)CCCC1",
+        "canon1": "C1(n3c2c(c([nH]3)CC)c(=O)nc(COS(=O)(C)=O)n2)CCCC1",
+        "canon2": "C1(n3c2c(c([nH]3)CC)c(=O)nc(COS(=O)(C)=O)n2)CCCC1",
+        "class": "A->B->B"
+      },
+      {
+        "input": "COC(=O)CCc1c3n(CCc4c3cccc4)c(=O)c2cc(ccc12)OC",
+        "canon1": "O=c2n4CCc1ccccc1c4c(c3ccc(OC)cc23)CCC(=O)OC",
+        "canon2": "O=c2n4CCc1ccccc1c4c(c3ccc(OC)cc23)CCC(=O)OC",
+        "class": "A->B->B"
+      },
+      {
+        "input": "O=C(N9CCC[C@H]9c1[nH]c(-c8ccc7c(c8)C(F)(F)c6c7ccc(c6)-c5cc4c(cc5)nc([nH]4)[C@@H]3[C@@H]2C[C@H](N3C(=O)[C@H](C(C)C)NC(=O)OC)CC2)cn1)OC(C)(C)C",
+        "canon1": "C6(c1c(c7ccc(-c9[nH]c(nc9)[C@H]8N(CCC8)C(=O)OC(C)(C)C)cc67)ccc(-c2ccc5c([nH]c(n5)[C@H]3N(C([C@H](C(C)C)NC(=O)OC)=O)[C@@H]4CC[C@H]3C4)c2)c1)(F)F",
+        "canon2": "C6(c1c(c7ccc(-c9[nH]c(nc9)[C@H]8N(CCC8)C(=O)OC(C)(C)C)cc67)ccc(-c2ccc5c([nH]c(n5)[C@H]3N(C([C@H](C(C)C)NC(=O)OC)=O)[C@@H]4CC[C@H]3C4)c2)c1)(F)F",
+        "class": "A->B->B"
+      },
+      {
+        "input": "O=c4c6nn(c3c(c6nn4-c5c(cccc5)C)cccc3)Cc2ccc(nc2)-c1ncsc1",
+        "canon1": "c2c(Cn4nc6c(n(nc6c5c4cccc5)-c3c(cccc3)C)=O)cnc(c2)-c1ncsc1",
+        "canon2": "c2c(Cn4nc6c(n(nc6c5c4cccc5)-c3c(cccc3)C)=O)cnc(c2)-c1ncsc1",
+        "class": "A->B->B"
+      }
+    ]
+  }
+}

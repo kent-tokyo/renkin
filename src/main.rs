@@ -64,6 +64,36 @@ struct Output {
     stage2_elapsed_ms: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     total_elapsed_ms: Option<f64>,
+    /// Present only for the opt-in integrity-triggered element-accounting
+    /// retry. The normal output shape stays unchanged for every existing
+    /// policy.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    element_accounting_retry: Option<ElementAccountingRetryMeta>,
+    /// Present only for the opt-in score-first, diversity-on-beam-exhaustion
+    /// retry. Existing policies keep the previous output shape.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    beam_diversity_retry: Option<BeamDiversityRetryMeta>,
+    /// Issue #239: present only for `--search-mode recovery`. Contains every
+    /// attempted stage and the exact configuration/rule fingerprint it used.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    recovery: Option<renkin::recovery_mode::RecoveryAudit>,
+}
+
+#[derive(Clone, Serialize)]
+struct ElementAccountingRetryMeta {
+    invoked: bool,
+    recovered_route: bool,
+    initial_nodes_expanded: u64,
+    initial_routes_rejected: u64,
+    initial_unaccounted_target_element: u64,
+}
+
+#[derive(Clone, Serialize)]
+struct BeamDiversityRetryMeta {
+    invoked: bool,
+    recovered_route: bool,
+    initial_nodes_expanded: u64,
+    initial_beam_limit_hit: bool,
 }
 
 fn required_flag_value<'a>(args: &'a [String], index: &mut usize, flag: &str) -> Result<&'a str> {
@@ -181,8 +211,10 @@ fn main() -> Result<()> {
     let mut reranker_freq_table_path: Option<String> = None;
     let mut search_mode_arg: Option<String> = None;
     let mut coverage_templates_path: Option<String> = None;
+    let mut recovery_coverage_tier_paths: Vec<String> = Vec::new();
     let mut coverage_timeout_secs_arg: Option<String> = None;
     let mut coverage_beam_width_arg: Option<String> = None;
+    let mut recovery_depth_arg: Option<String> = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -293,7 +325,8 @@ fn main() -> Result<()> {
                 i += 1;
                 let Some(v) = args.get(i) else {
                     bail!(
-                        "--element-accounting-policy requires a value (off|diagnostics-only|gated)"
+                        "--element-accounting-policy requires a value \
+                         (off|diagnostics-only|gated|retry-on-integrity-failure)"
                     );
                 };
                 element_accounting_policy_arg = Some(v.clone());
@@ -329,7 +362,7 @@ fn main() -> Result<()> {
             "--search-mode" => {
                 i += 1;
                 let Some(v) = args.get(i) else {
-                    bail!("--search-mode requires a <standard|coverage> value");
+                    bail!("--search-mode requires a <standard|coverage|recovery> value");
                 };
                 search_mode_arg = Some(v.clone());
             }
@@ -339,6 +372,13 @@ fn main() -> Result<()> {
                     bail!("--coverage-templates requires a <path> value");
                 };
                 coverage_templates_path = Some(v.clone());
+            }
+            "--recovery-coverage-tier" => {
+                i += 1;
+                let Some(v) = args.get(i) else {
+                    bail!("--recovery-coverage-tier requires a <path> value");
+                };
+                recovery_coverage_tier_paths.push(v.clone());
             }
             "--coverage-timeout-secs" => {
                 i += 1;
@@ -353,6 +393,13 @@ fn main() -> Result<()> {
                     bail!("--coverage-beam-width requires an <N> value");
                 };
                 coverage_beam_width_arg = Some(v.clone());
+            }
+            "--recovery-depth" => {
+                i += 1;
+                let Some(v) = args.get(i) else {
+                    bail!("--recovery-depth requires an <N> value");
+                };
+                recovery_depth_arg = Some(v.clone());
             }
             "--bb-prices" => {
                 bb_prices_path =
@@ -412,19 +459,25 @@ fn main() -> Result<()> {
              only; gated additionally excludes the specific candidate a confident finding \
              applies to (v1: rules with no '#' in their SMIRKS only -- others stay \
              diagnostics-only regardless of this flag)\n  \
-             --element-accounting-policy <policy>  off (default) | diagnostics-only | gated -- \
+             --element-accounting-policy <policy>  off (default) | diagnostics-only | gated | \
+             retry-on-integrity-failure -- \
              detects a candidate whose target needs more of some heavy element than its \
              precursors collectively supply (docs/design/candidate-time-element-accounting-\
              gate-v0.md). diagnostics-only records the verdict in --search-diagnostics output \
-             only; gated additionally excludes the specific candidate\n  \
-             --beam-diversity-policy <policy>  off (default) | diagnostics-only | active -- \
+             only; gated excludes the specific candidate; retry-on-integrity-failure keeps the \
+             fast off-policy first pass and retries with gated only if completed routes were \
+             rejected for an unaccounted target element\n  \
+             --beam-diversity-policy <policy>  off (default) | diagnostics-only | active | \
+             retry-on-beam-exhaustion -- \
              reserves --beam-diversity-slots beam slots for template-family diversity instead \
              of pure score, so a lower-scoring candidate from an underrepresented rule isn't \
              fully crowded out by many higher-scoring same-rule siblings \
              (docs/design/diversity-reserved-beam-v0.md). diagnostics-only records what active \
              would additionally keep without changing selection; active actually reserves the \
-             slots\n  \
-             --beam-diversity-slots <N>  Beam slots reserved under diagnostics-only/active \
+             slots; retry-on-beam-exhaustion keeps the score-only first pass and retries \
+             with active only after an unsuccessful run actually hits the beam limit\n  \
+             --beam-diversity-slots <N>  Beam slots reserved under diagnostics-only/active/\
+             retry-on-beam-exhaustion \
              (default 0, i.e. no reservation even if the policy is opted into); ignored under \
              off\n  \
              --reranker-model <path>       Frozen LightGBM model.txt for candidate reranking \
@@ -433,17 +486,23 @@ fn main() -> Result<()> {
              reranker\n  \
              (either flag missing, or the model fails to load, falls back to legacy ordering \
              with a stderr warning -- never a hard error)\n  \
-             --search-mode standard|coverage  standard (default): unchanged behavior. \
+             --search-mode standard|coverage|recovery  standard (default): unchanged behavior. \
              coverage: Stage 1 (--templates) runs first; only if it finds nothing does Stage 2 \
-             run against --coverage-templates (Phase 41.18B, docs/design/coverage-mode-v0.md)\n  \
-             --coverage-templates <path>   Stage 2's template set; required with \
-             --search-mode coverage, validated before Stage 1 runs\n  \
+             run against --coverage-templates (Phase 41.18B, docs/design/coverage-mode-v0.md). \
+             recovery: baseline success is preserved; completed failures conditionally try \
+             element-accounting, diversity, one deeper search, then optional coverage (#239)\n  \
+             --recovery-depth <N>          Recovery mode's deeper-search limit (default: \
+             --depth + 1; must be greater than baseline depth)\n  \
+             --coverage-templates <path>   Stage 2's template set; required with coverage, \
+             optional final stage with recovery; validated before any search runs\n  \
+             --recovery-coverage-tier <path>  Recovery-only intermediate coverage tier; may be \
+             repeated and runs in argument order before --coverage-templates\n  \
              --coverage-timeout-secs <N>   Optional positive-integer wall-clock budget for \
              Stage 2 only (cooperative cancellation, not a hard bound); default: unlimited\n  \
              --coverage-beam-width <N>    Optional Stage-2-only beam width override; 0 means \
              unlimited. Stage 1 keeps --beam-width unchanged; default: same as Stage 1\n  \
-             coverage mode does not support --bond-index, --scorer, or an active \
-             --ring-context-policy in v0 (fails loud before Stage 1 runs)"
+             coverage/recovery-with-coverage do not support --bond-index, --scorer, or an active \
+             --ring-context-policy (fails loud before Stage 1 runs)"
         );
     };
 
@@ -464,30 +523,59 @@ fn main() -> Result<()> {
     // --ring-context-policy) is rejected by flag presence alone, before
     // this process attempts to load a real ONNX model or ring-context
     // sidecar file for a combination that's going to be rejected anyway.
+    #[derive(Clone, Copy, PartialEq, Eq)]
     enum SearchMode {
         Standard,
         Coverage,
+        Recovery,
     }
     let search_mode = match search_mode_arg.as_deref() {
         None | Some("standard") => SearchMode::Standard,
         Some("coverage") => SearchMode::Coverage,
-        Some(other) => bail!("invalid --search-mode '{other}' (expected standard|coverage)"),
+        Some("recovery") => SearchMode::Recovery,
+        Some(other) => {
+            bail!("invalid --search-mode '{other}' (expected standard|coverage|recovery)")
+        }
     };
     match search_mode {
         SearchMode::Standard => {
             if coverage_templates_path.is_some() {
-                bail!("--coverage-templates requires --search-mode coverage");
+                bail!("--coverage-templates requires --search-mode coverage or recovery");
             }
             if coverage_timeout_secs_arg.is_some() {
-                bail!("--coverage-timeout-secs requires --search-mode coverage");
+                bail!("--coverage-timeout-secs requires --search-mode coverage or recovery");
             }
             if coverage_beam_width_arg.is_some() {
-                bail!("--coverage-beam-width requires --search-mode coverage");
+                bail!("--coverage-beam-width requires --search-mode coverage or recovery");
+            }
+            if recovery_depth_arg.is_some() {
+                bail!("--recovery-depth requires --search-mode recovery");
+            }
+            if !recovery_coverage_tier_paths.is_empty() {
+                bail!("--recovery-coverage-tier requires --search-mode recovery");
             }
         }
         SearchMode::Coverage => {
+            if recovery_depth_arg.is_some() {
+                bail!("--recovery-depth requires --search-mode recovery");
+            }
             if coverage_templates_path.is_none() {
                 bail!("--search-mode coverage requires --coverage-templates <path>");
+            }
+            if !recovery_coverage_tier_paths.is_empty() {
+                bail!("--recovery-coverage-tier requires --search-mode recovery");
+            }
+            if element_accounting_policy_arg.as_deref() == Some("retry-on-integrity-failure") {
+                bail!(
+                    "--element-accounting-policy retry-on-integrity-failure is currently \
+                     supported only with --search-mode standard"
+                );
+            }
+            if beam_diversity_policy_arg.as_deref() == Some("retry-on-beam-exhaustion") {
+                bail!(
+                    "--beam-diversity-policy retry-on-beam-exhaustion is currently \
+                     supported only with --search-mode standard"
+                );
             }
             let ring_context_policy_active = ring_context_policy_arg
                 .as_deref()
@@ -501,6 +589,49 @@ fn main() -> Result<()> {
                 ring_context_policy_active,
                 onnx_scorer_active,
             )?;
+        }
+        SearchMode::Recovery => {
+            if element_accounting_policy_arg
+                .as_deref()
+                .is_some_and(|p| p != "off")
+            {
+                bail!(
+                    "--search-mode recovery orchestrates element accounting internally; \
+                     do not combine it with --element-accounting-policy"
+                );
+            }
+            if beam_diversity_policy_arg
+                .as_deref()
+                .is_some_and(|p| p != "off")
+            {
+                bail!(
+                    "--search-mode recovery orchestrates beam diversity internally; \
+                     use --beam-diversity-slots without --beam-diversity-policy"
+                );
+            }
+            if coverage_templates_path.is_none()
+                && recovery_coverage_tier_paths.is_empty()
+                && (coverage_timeout_secs_arg.is_some() || coverage_beam_width_arg.is_some())
+            {
+                bail!(
+                    "--coverage-timeout-secs/--coverage-beam-width require \
+                     a coverage tier in recovery mode"
+                );
+            }
+            if coverage_templates_path.is_some() || !recovery_coverage_tier_paths.is_empty() {
+                let ring_context_policy_active = ring_context_policy_arg
+                    .as_deref()
+                    .is_some_and(|p| p != "disabled");
+                #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
+                let onnx_scorer_active = scorer_path.is_some();
+                #[cfg(not(all(not(target_arch = "wasm32"), feature = "nn-scoring")))]
+                let onnx_scorer_active = false;
+                renkin::coverage_mode::validate_coverage_mode_flags(
+                    bond_index,
+                    ring_context_policy_active,
+                    onnx_scorer_active,
+                )?;
+            }
         }
     }
     let coverage_timeout: Option<std::time::Duration> = match coverage_timeout_secs_arg {
@@ -668,14 +799,19 @@ fn main() -> Result<()> {
         }
     };
 
+    let element_accounting_retry =
+        element_accounting_policy_arg.as_deref() == Some("retry-on-integrity-failure");
+    let beam_diversity_retry =
+        beam_diversity_policy_arg.as_deref() == Some("retry-on-beam-exhaustion");
     let element_accounting_policy = match element_accounting_policy_arg.as_deref() {
         None | Some("off") => search::ElementAccountingGatePolicy::Off,
         Some("diagnostics-only") => search::ElementAccountingGatePolicy::DiagnosticsOnly,
         Some("gated") => search::ElementAccountingGatePolicy::Gated,
+        Some("retry-on-integrity-failure") => search::ElementAccountingGatePolicy::Off,
         Some(other) => {
             eprintln!(
                 "error: invalid --element-accounting-policy '{other}' \
-                 (expected off|diagnostics-only|gated)"
+                 (expected off|diagnostics-only|gated|retry-on-integrity-failure)"
             );
             std::process::exit(1);
         }
@@ -685,10 +821,11 @@ fn main() -> Result<()> {
         None | Some("off") => search::BeamDiversityPolicy::Off,
         Some("diagnostics-only") => search::BeamDiversityPolicy::DiagnosticsOnly,
         Some("active") => search::BeamDiversityPolicy::Active,
+        Some("retry-on-beam-exhaustion") => search::BeamDiversityPolicy::Off,
         Some(other) => {
             eprintln!(
                 "error: invalid --beam-diversity-policy '{other}' \
-                 (expected off|diagnostics-only|active)"
+                 (expected off|diagnostics-only|active|retry-on-beam-exhaustion)"
             );
             std::process::exit(1);
         }
@@ -705,6 +842,18 @@ fn main() -> Result<()> {
             }
         },
     };
+    if element_accounting_retry && beam_diversity_retry {
+        bail!(
+            "--element-accounting-policy retry-on-integrity-failure cannot be combined with \
+             --beam-diversity-policy retry-on-beam-exhaustion; select one auditable retry arm"
+        );
+    }
+    if beam_diversity_retry && (beam_width == 0 || beam_diversity_slots == 0) {
+        bail!(
+            "--beam-diversity-policy retry-on-beam-exhaustion requires --beam-width > 0 and \
+             --beam-diversity-slots > 0"
+        );
+    }
 
     let constraints: ConstraintSpec = match constraints_path.as_deref() {
         Some(path) => {
@@ -724,6 +873,25 @@ fn main() -> Result<()> {
 
     // constraints override CLI flags when present
     let eff_depth = constraints.max_depth.unwrap_or(max_depth);
+    let recovery_depth = if search_mode == SearchMode::Recovery {
+        let depth = match recovery_depth_arg.as_deref() {
+            Some(raw) => raw.parse::<u32>().map_err(|_| {
+                anyhow::anyhow!("--recovery-depth must be a non-negative integer, got {raw:?}")
+            })?,
+            None => eff_depth.checked_add(1).ok_or_else(|| {
+                anyhow::anyhow!("cannot derive recovery depth: baseline depth is already u32::MAX")
+            })?,
+        };
+        if depth <= eff_depth {
+            bail!(
+                "--recovery-depth ({depth}) must be greater than effective baseline depth \
+                 ({eff_depth})"
+            );
+        }
+        Some(depth)
+    } else {
+        None
+    };
     let avoid_mask = chem_env::elem_symbols_to_mask(&avoid_elements)
         | chem_env::elem_symbols_to_mask(
             &constraints
@@ -777,14 +945,82 @@ fn main() -> Result<()> {
         reranker_failures_summed: u64,
     }
 
-    let (mut routes, stats, coverage_meta): (
+    type SearchDispatchResult = (
         Vec<search::Route>,
         search::SearchStats,
         Option<CoverageModeMeta>,
-    ) = match search_mode {
+        Option<ElementAccountingRetryMeta>,
+        Option<BeamDiversityRetryMeta>,
+        Option<renkin::recovery_mode::RecoveryAudit>,
+    );
+
+    let (
+        mut routes,
+        stats,
+        coverage_meta,
+        element_accounting_retry_meta,
+        beam_diversity_retry_meta,
+        recovery_meta,
+    ): SearchDispatchResult = match search_mode {
         SearchMode::Standard => {
-            let (routes, stats) = search::find_routes(&target_smiles, &env, &rules, &config)?;
-            (routes, stats, None)
+            if element_accounting_retry {
+                let result = search::find_routes_with_element_accounting_retry(
+                    &target_smiles,
+                    &env,
+                    &rules,
+                    &config,
+                    &search::SearchControl::unlimited(),
+                )?;
+                let invoked = result.initial.is_some();
+                let source = result.initial.as_ref().unwrap_or(&result.selected);
+                let meta = ElementAccountingRetryMeta {
+                    invoked,
+                    recovered_route: invoked && !result.selected.routes.is_empty(),
+                    initial_nodes_expanded: source.stats.nodes_expanded,
+                    initial_routes_rejected: source.stats.route_integrity.routes_rejected,
+                    initial_unaccounted_target_element: source
+                        .stats
+                        .route_integrity
+                        .unaccounted_target_element,
+                };
+                let selected = result.selected;
+                (
+                    selected.routes,
+                    selected.stats,
+                    None,
+                    Some(meta),
+                    None,
+                    None,
+                )
+            } else if beam_diversity_retry {
+                let result = search::find_routes_with_beam_diversity_retry(
+                    &target_smiles,
+                    &env,
+                    &rules,
+                    &config,
+                    &search::SearchControl::unlimited(),
+                )?;
+                let invoked = result.initial.is_some();
+                let source = result.initial.as_ref().unwrap_or(&result.selected);
+                let meta = BeamDiversityRetryMeta {
+                    invoked,
+                    recovered_route: invoked && !result.selected.routes.is_empty(),
+                    initial_nodes_expanded: source.stats.nodes_expanded,
+                    initial_beam_limit_hit: source.stats.beam_limit_hit,
+                };
+                let selected = result.selected;
+                (
+                    selected.routes,
+                    selected.stats,
+                    None,
+                    None,
+                    Some(meta),
+                    None,
+                )
+            } else {
+                let (routes, stats) = search::find_routes(&target_smiles, &env, &rules, &config)?;
+                (routes, stats, None, None, None, None)
+            }
         }
         SearchMode::Coverage => {
             // Unsupported-combination and --coverage-templates-presence
@@ -817,7 +1053,42 @@ fn main() -> Result<()> {
                 total_elapsed_ms: result.total_elapsed_ms,
                 reranker_failures_summed: result.reranker_failures,
             };
-            (result.routes, result.stats, Some(meta))
+            (result.routes, result.stats, Some(meta), None, None, None)
+        }
+        SearchMode::Recovery => {
+            let mut coverage_rule_tiers = Vec::with_capacity(
+                recovery_coverage_tier_paths.len() + usize::from(coverage_templates_path.is_some()),
+            );
+            for path in &recovery_coverage_tier_paths {
+                coverage_rule_tiers.push(renkin::coverage_mode::load_coverage_rules(path)?);
+            }
+            if let Some(path) = coverage_templates_path.as_deref() {
+                coverage_rule_tiers.push(renkin::coverage_mode::load_coverage_rules(path)?);
+            }
+            let result = renkin::recovery_mode::run_recovery_mode(
+                &target_smiles,
+                &env,
+                &rules,
+                &config,
+                &renkin::recovery_mode::RecoveryOptions {
+                    recovery_depth: recovery_depth
+                        .expect("validated above: recovery mode has a recovery depth"),
+                    beam_diversity_slots,
+                    coverage_rule_tiers,
+                    coverage_timeout,
+                    coverage_beam_width,
+                },
+            )?;
+            let audit = result.audit;
+            let selected = result.selected;
+            (
+                selected.routes,
+                selected.stats,
+                None,
+                None,
+                None,
+                Some(audit),
+            )
         }
     };
     apply_constraints(&mut routes, &constraints);
@@ -967,6 +1238,16 @@ fn main() -> Result<()> {
                     out["stage2_elapsed_ms"] = serde_json::to_value(m.stage2_elapsed_ms)?;
                     out["total_elapsed_ms"] = serde_json::Value::from(m.total_elapsed_ms);
                 }
+                if let Some(ref meta) = element_accounting_retry_meta {
+                    out["element_accounting_retry"] = serde_json::to_value(meta)?;
+                }
+                if let Some(ref meta) = beam_diversity_retry_meta {
+                    out["beam_diversity_retry"] = serde_json::to_value(meta)?;
+                }
+                if let Some(ref meta) = recovery_meta {
+                    out["search_mode"] = serde_json::Value::from("recovery");
+                    out["recovery"] = serde_json::to_value(meta)?;
+                }
                 println!("{}", serde_json::to_string_pretty(&out)?);
             } else {
                 let joint_success_probability = 1.0
@@ -983,7 +1264,10 @@ fn main() -> Result<()> {
                         .reranker
                         .is_some()
                         .then_some(reranker_failures_for_output),
-                    search_mode: coverage_meta.as_ref().map(|_| "coverage"),
+                    search_mode: coverage_meta
+                        .as_ref()
+                        .map(|_| "coverage")
+                        .or_else(|| recovery_meta.as_ref().map(|_| "recovery")),
                     selected_stage: coverage_meta.as_ref().map(|m| m.selected_stage),
                     stage2_invoked: coverage_meta.as_ref().map(|m| m.stage2_invoked),
                     stage1_timeout: coverage_meta.as_ref().map(|m| m.stage1_timeout),
@@ -991,6 +1275,9 @@ fn main() -> Result<()> {
                     stage1_elapsed_ms: coverage_meta.as_ref().map(|m| m.stage1_elapsed_ms),
                     stage2_elapsed_ms: coverage_meta.as_ref().and_then(|m| m.stage2_elapsed_ms),
                     total_elapsed_ms: coverage_meta.as_ref().map(|m| m.total_elapsed_ms),
+                    element_accounting_retry: element_accounting_retry_meta,
+                    beam_diversity_retry: beam_diversity_retry_meta,
+                    recovery: recovery_meta,
                     routes,
                 };
                 println!("{}", serde_json::to_string_pretty(&output)?);

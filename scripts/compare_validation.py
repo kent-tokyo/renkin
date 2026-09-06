@@ -228,3 +228,61 @@ def check_target_element_accounting(graph: RouteGraph) -> tuple[str, list[str]]:
     if not any_evaluated:
         return "not_evaluable", warnings
     return ("unaccounted_target_element" if unaccounted else "accounted"), warnings
+
+
+def target_element_excess_counts(graph: RouteGraph) -> dict[str, int]:
+    """Return directional target-element deficits, aggregated by element.
+
+    The value is diagnostic only: for each evaluated edge, it counts how many
+    atoms of an element occur in the target but not in the summed precursors.
+    It never changes the accounting verdict or treats precursor excess as a
+    defect. An empty mapping means no deficit was observed (or no edge was
+    evaluable).
+    """
+    deficits: Counter = Counter()
+
+    def walk(node: RouteNode) -> None:
+        if node.children:
+            target_counts = _heavy_atom_counts(node.canonical_smiles)
+            precursor_counts: Counter = Counter()
+            if target_counts is not None:
+                for child in node.children:
+                    counts = _heavy_atom_counts(child.canonical_smiles)
+                    if counts is None:
+                        break
+                    precursor_counts.update(counts)
+                else:
+                    for element, count in target_counts.items():
+                        missing = count - precursor_counts.get(element, 0)
+                        if missing > 0:
+                            deficits[element] += missing
+        for child in node.children:
+            walk(child)
+
+    walk(graph.root)
+    return dict(sorted(deficits.items()))
+
+
+def route_edge_snapshot(graph: RouteGraph) -> list[dict[str, object]]:
+    """Return a compact deterministic route projection for later diagnostics.
+
+    Only normalized target/precursor SMILES are retained. Tool-native output,
+    scores, and untrusted metadata are intentionally excluded. The projection
+    is sufficient to rerun post-hoc structural and directional accounting
+    checks without rerunning the planner.
+    """
+    edges: list[dict[str, object]] = []
+
+    def walk(node: RouteNode) -> None:
+        if node.children:
+            edges.append(
+                {
+                    "target": node.canonical_smiles,
+                    "precursors": [child.canonical_smiles for child in node.children],
+                }
+            )
+        for child in node.children:
+            walk(child)
+
+    walk(graph.root)
+    return edges

@@ -1618,21 +1618,14 @@ pub(crate) fn split_fragments(mol: &Molecule) -> Vec<PrecursorMol> {
             if fragment_has_valence_violation(&std_mol) {
                 return None;
             }
-            // Reject fragments that have aromatic atoms but no ring closure —
-            // these are open-chain aromatic chains produced by BFS leakage (L4).
-            //
-            // We detect rings by the presence of SMILES ring-closure digits rather
-            // than aromatic_ring_count(), because chematic's aromatic_ring_count does
-            // not count heteroaromatic rings (e.g. pyridine → 0), which incorrectly
-            // filtered valid fragments like 4-bromopyridine in biaryl cleavage.
-            let smi = canonical_smiles(&std_mol);
-            let has_aromatic = smi
-                .chars()
-                .any(|c| matches!(c, 'c' | 'n' | 'o' | 's' | 'p'));
-            let has_ring = smi.chars().any(|c| c.is_ascii_digit());
-            if has_aromatic && !has_ring {
+            // Reject every fragment whose aromatic flags are unsupported by
+            // graph topology/bond orders. A fragment-wide ring-digit check
+            // misses mixed molecules that contain one valid ring plus a
+            // separate open aromatic chain (#237).
+            if aromaticity_integrity_violation(&std_mol).is_some() {
                 return None;
             }
+            let smi = canonical_smiles(&std_mol);
             Some(PrecursorMol {
                 smiles: smi,
                 mol: std_mol,
@@ -2432,10 +2425,14 @@ pub fn default_rules() -> Vec<RetroRule> {
         // a second precursor fragment — a genuine atom-loss defect, not an
         // intentional reagent omission (see `reagent_omission_template_allowlist`
         // in `synthesizability/schema.rs`, which already excluded this rule).
-        // Confirmed on `uspto50k_test#L2263` (issue #77). Root cause not yet
-        // isolated (SMIRKS-pattern vs. `split_fragments`/BFS-leakage pipeline
-        // artifact); disabled per project policy pending that investigation,
-        // the same policy applied to the halide rules above (31.11). See
+        // Confirmed on `uspto50k_test#L2263` (issue #77). The isolated cause
+        // is chematic-rxn's product-template BFS carrying substituents from
+        // each bare mapped-atom RHS through the still-connected fused-ring
+        // target. The two reconstructed products overlap instead of forming
+        // a valid graph partition; fragment sanitization then drops the
+        // malformed N-bearing product, leaving an atom-deleting precursor.
+        // Disabled permanently unless a graph-based, atom-balanced
+        // disconnection with an unambiguous partition is designed. See
         // `aryl_amine_retro_removed_from_default_rules` below.
         //
         // `buchwald_hartwig_retro` ("[c:1][N:2]>>[c:1]Br.[N:2]") was removed
@@ -3947,6 +3944,25 @@ mod tests {
     }
 
     #[test]
+    fn split_fragments_rejects_mixed_ring_and_open_aromatic_chain() {
+        // Issue #237 / formal comparison target L4444.  Both strings contain
+        // a valid phenyl ring, so the former fragment-wide "has any ring
+        // digit" heuristic let the separate acyclic aromatic chain through.
+        for smiles in ["ccc(ccCC(O)=O)-c1ccccc1", "c(cC)c(cc)-c1ccccc1"] {
+            let mol = mol_from_smiles(smiles).expect("chematic reproducer must parse");
+            assert_eq!(
+                aromaticity_integrity_violation(&mol),
+                Some(AromaticityIntegrityViolation::AromaticAtomNotInRing),
+                "mixed valid-ring/open-chain fragment must fail atom-level integrity: {smiles}"
+            );
+            assert!(
+                split_fragments(&mol).is_empty(),
+                "invalid mixed aromatic fragment must not enter search: {smiles}"
+            );
+        }
+    }
+
+    #[test]
     fn fragment_valence_guard_rejects_explicit_h_deficit_after_cut() {
         // `[CH]C` is parseable by chematic but the bracketed carbon is one H
         // short for its single bond.  This is the shape produced by the
@@ -5274,13 +5290,13 @@ mod tests {
                 .iter()
                 .map(|p| mol_from_smiles(&p.smiles).unwrap().atom_count())
                 .sum();
-            precursor_atoms > target_atoms + 1
+            o.len() != 2 || precursor_atoms > target_atoms + 1
         });
         assert!(
             corrupted,
-            "expected at least one outcome with atom-duplicating ring carry-through (more \
-             heavy atoms across precursors than the target's own count plus one new Br), got \
-             only atom-conserving outcomes -- rule may have been fixed upstream, re-check \
+            "expected at least one outcome with either a dropped declared fragment or \
+             atom-duplicating ring carry-through, got only complete two-fragment, \
+             atom-conserving outcomes -- rule may have been fixed upstream, re-check \
              whether it's still correctly disabled: {outcome_smiles:?}"
         );
     }
@@ -5406,6 +5422,82 @@ mod tests {
         );
     }
 
+    // Issue #77 root-cause fixture. The defect originates before
+    // `split_fragments`: applying two bare mapped-atom product templates to
+    // a fused-ring target asks chematic-rxn to carry target substituents into
+    // both products. Those carry-through traversals overlap around the still-
+    // connected ring, so this SMIRKS cannot define a valid two-precursor graph
+    // partition. `apply_retro` subsequently sanitizes the malformed raw
+    // products and leaves a single precursor with the target nitrogen gone.
+    #[test]
+    fn aryl_amine_retro_bare_rhs_cannot_partition_a_fused_ring_target() {
+        let target = mol_from_smiles("c12c(NCCC2)ccc(c1)Br").unwrap();
+        let smirks = "[c:1][N:2]>>[c:1].[N:2]";
+
+        let raw = run_reactants(smirks, &[&target]).unwrap();
+        let raw_smiles: Vec<Vec<String>> = raw
+            .iter()
+            .map(|outcome| outcome.iter().map(to_canonical).collect())
+            .collect();
+        assert_eq!(
+            raw.len(),
+            1,
+            "expected one raw matched outcome: {raw_smiles:?}"
+        );
+        assert_eq!(
+            raw[0].len(),
+            2,
+            "the SMIRKS declares two products: {raw_smiles:?}"
+        );
+        let malformed_n_products = raw[0]
+            .iter()
+            .filter(|product| {
+                product.atoms().any(|(_, atom)| atom.element == Element::N)
+                    && aromaticity_integrity_violation(product).is_some()
+            })
+            .count();
+        let valid_n_free_products = raw[0]
+            .iter()
+            .filter(|product| {
+                product.atoms().all(|(_, atom)| atom.element != Element::N)
+                    && aromaticity_integrity_violation(product).is_none()
+            })
+            .count();
+        assert_eq!(
+            malformed_n_products, 1,
+            "the N-bearing carry-through product must already be malformed before splitting: \
+             {raw_smiles:?}"
+        );
+        assert_eq!(
+            valid_n_free_products, 1,
+            "the other raw product is the only fragment sanitization can retain: {raw_smiles:?}"
+        );
+
+        let rule = rr("aryl_amine_retro", smirks);
+        let outcomes = apply_retro(&target, &rule);
+        let outcome_smiles: Vec<Vec<&str>> = outcomes
+            .iter()
+            .map(|outcome| outcome.iter().map(|p| p.smiles.as_str()).collect())
+            .collect();
+        assert_eq!(
+            outcomes.len(),
+            1,
+            "expected exactly one sanitized broken outcome: {outcome_smiles:?}"
+        );
+        assert_eq!(
+            outcomes[0].len(),
+            1,
+            "the malformed N-bearing raw product must be dropped: {outcome_smiles:?}"
+        );
+        assert!(
+            outcomes[0][0]
+                .mol
+                .atoms()
+                .all(|(_, atom)| atom.element != Element::N),
+            "the surviving broken precursor demonstrates target-N deletion: {outcome_smiles:?}"
+        );
+    }
+
     // Same root cause and mechanism as aryl_amine_retro above, confirmed by
     // direct reproduction, not just by analogy: both rules' bare
     // single-atom RHS fragments let substituent-carry-through BFS sweep
@@ -5524,13 +5616,13 @@ mod tests {
                 .iter()
                 .map(|p| mol_from_smiles(&p.smiles).unwrap().atom_count())
                 .sum();
-            precursor_atoms > target_atoms + 1
+            o.len() != 2 || precursor_atoms > target_atoms + 1
         });
         assert!(
             corrupted,
-            "expected at least one outcome with atom-duplicating ring carry-through (more \
-             heavy atoms across precursors than the target's own count plus one new Br), got \
-             only atom-conserving outcomes -- rule may have been fixed upstream, re-check \
+            "expected at least one outcome with either a dropped declared fragment or \
+             atom-duplicating ring carry-through, got only complete two-fragment, \
+             atom-conserving outcomes -- rule may have been fixed upstream, re-check \
              whether it's still correctly disabled: {outcome_smiles:?}"
         );
     }

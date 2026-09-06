@@ -41,9 +41,21 @@ use renkin::pool_export::{
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter};
 use std::time::Instant;
+
+const USAGE: &str = "Usage: renkin-pool-gen [OPTIONS]\n\
+\n\
+Options:\n\
+  --groups <PATH>           Group input JSONL\n\
+  --templates <PATH>        Extracted template file\n\
+  --pool-output <PATH>      Candidate output JSONL\n\
+  --groups-output <PATH>    Group-index output JSONL\n\
+  --manifest-output <PATH>  Manifest output JSON\n\
+  --limit <N>               Process only the first N groups\n\
+  -h, --help                Print help";
 
 #[derive(Debug, Deserialize)]
 struct GroupInput {
@@ -51,8 +63,7 @@ struct GroupInput {
     target_id: String,
 }
 
-fn arg_value(flag: &str, default: &str) -> String {
-    let args: Vec<String> = std::env::args().collect();
+fn arg_value(args: &[String], flag: &str, default: &str) -> String {
     args.iter()
         .position(|a| a == flag)
         .and_then(|i| args.get(i + 1))
@@ -60,12 +71,44 @@ fn arg_value(flag: &str, default: &str) -> String {
         .unwrap_or_else(|| default.to_string())
 }
 
-fn arg_opt(flag: &str) -> Option<String> {
-    let args: Vec<String> = std::env::args().collect();
+fn arg_opt(args: &[String], flag: &str) -> Option<String> {
     args.iter()
         .position(|a| a == flag)
         .and_then(|i| args.get(i + 1))
         .cloned()
+}
+
+fn validate_cli_args(args: &[String]) -> Result<bool, String> {
+    const VALUE_FLAGS: [&str; 6] = [
+        "--groups",
+        "--templates",
+        "--pool-output",
+        "--groups-output",
+        "--manifest-output",
+        "--limit",
+    ];
+    let mut seen = HashSet::new();
+    let mut index = 1;
+    while index < args.len() {
+        let flag = args[index].as_str();
+        if matches!(flag, "-h" | "--help") {
+            return Ok(true);
+        }
+        if !VALUE_FLAGS.contains(&flag) {
+            return Err(format!("unknown argument {flag:?}"));
+        }
+        if !seen.insert(flag) {
+            return Err(format!("duplicate argument {flag:?}"));
+        }
+        let value = args
+            .get(index + 1)
+            .ok_or_else(|| format!("{flag} requires a value"))?;
+        if value.starts_with("--") || matches!(value.as_str(), "-h") {
+            return Err(format!("{flag} requires a value"));
+        }
+        index += 2;
+    }
+    Ok(false)
 }
 
 fn sha256_of_file(path: &str) -> String {
@@ -129,13 +172,30 @@ fn percentile_f64(sorted: &[f64], pct: f64) -> f64 {
 fn main() {
     let start = Instant::now();
 
-    let groups_path = arg_value("--groups", "data/reranker_groups_uspto50k_test.jsonl");
-    let templates_path = arg_value("--templates", "data/templates_extracted_500.smi");
-    let pool_output = arg_value("--pool-output", "data/pool_gen_output.jsonl");
-    let groups_output = arg_value("--groups-output", "data/pool_gen_groups.jsonl");
-    let manifest_output = arg_value("--manifest-output", "data/pool_gen_manifest.json");
+    let args: Vec<String> = std::env::args().collect();
+    match validate_cli_args(&args) {
+        Ok(true) => {
+            println!("{USAGE}");
+            return;
+        }
+        Ok(false) => {}
+        Err(error) => {
+            eprintln!("error: {error}\n\n{USAGE}");
+            std::process::exit(2);
+        }
+    }
+
+    let groups_path = arg_value(
+        &args,
+        "--groups",
+        "data/reranker_groups_uspto50k_test.jsonl",
+    );
+    let templates_path = arg_value(&args, "--templates", "data/templates_extracted_500.smi");
+    let pool_output = arg_value(&args, "--pool-output", "data/pool_gen_output.jsonl");
+    let groups_output = arg_value(&args, "--groups-output", "data/pool_gen_groups.jsonl");
+    let manifest_output = arg_value(&args, "--manifest-output", "data/pool_gen_manifest.json");
     let limit: Option<usize> =
-        arg_opt("--limit").map(|s| s.parse().expect("--limit must be an integer"));
+        arg_opt(&args, "--limit").map(|s| s.parse().expect("--limit must be an integer"));
 
     let group_inputs: Vec<GroupInput> = {
         let file = File::open(&groups_path).unwrap_or_else(|e| panic!("open {groups_path}: {e}"));
@@ -329,4 +389,60 @@ fn main() {
         "{}",
         serde_json::to_string_pretty(&feasibility_summary).unwrap()
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(values: &[&str]) -> Vec<String> {
+        std::iter::once("renkin-pool-gen".to_string())
+            .chain(values.iter().map(|value| (*value).to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn help_is_recognized_without_starting_a_run() {
+        assert_eq!(validate_cli_args(&args(&["--help"])), Ok(true));
+        assert_eq!(validate_cli_args(&args(&["-h"])), Ok(true));
+    }
+
+    #[test]
+    fn unknown_argument_is_rejected() {
+        assert_eq!(
+            validate_cli_args(&args(&["--hep"])),
+            Err("unknown argument \"--hep\"".to_string())
+        );
+    }
+
+    #[test]
+    fn missing_value_is_rejected() {
+        assert_eq!(
+            validate_cli_args(&args(&["--groups", "--limit", "1"])),
+            Err("--groups requires a value".to_string())
+        );
+    }
+
+    #[test]
+    fn duplicate_argument_is_rejected() {
+        assert_eq!(
+            validate_cli_args(&args(&["--limit", "1", "--limit", "2"])),
+            Err("duplicate argument \"--limit\"".to_string())
+        );
+    }
+
+    #[test]
+    fn valid_value_arguments_are_accepted() {
+        assert_eq!(
+            validate_cli_args(&args(&[
+                "--groups",
+                "groups.jsonl",
+                "--templates",
+                "templates.smi",
+                "--limit",
+                "10",
+            ])),
+            Ok(false)
+        );
+    }
 }

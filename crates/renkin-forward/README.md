@@ -7,7 +7,7 @@ Independent subcommands:
 ```bash
 renkin-forward predict --reactants <SMILES>... [--templates <path>] [--max-results N] [--report]
 renkin-forward validate --route-json <JSON> [--templates <path>] [--max-results N]
-renkin-forward benchmark --corpus <path.jsonl> --output-rows <path.jsonl> [--output-report <path.json>]
+renkin-forward benchmark --corpus <path.jsonl> --output-rows <path.jsonl> [--output-report <path.json>] [--template-source embedded|file|train-extracted] [--templates <path>] [--template-manifest <path>]
 ```
 
 `predict` is a **standalone** capability: given reactant SMILES, it reverses
@@ -20,6 +20,9 @@ forward-applied. `benchmark` is a standalone, deterministic harness that
 measures `predict`'s proposal coverage and ranking quality — separately —
 against a user-supplied reaction corpus (see
 [issue #61](https://github.com/kent-tokyo/renkin/issues/61)).
+`train-extracted` is fail-closed: it requires a JSON manifest whose template
+and source-corpus SHA-256 values, split-protocol version, and train-only split
+attestation all match the current run.
 
 Full documentation, including limitations, error/warning codes, and the
 Rust API: [Forward Reaction Prediction guide](../../docs/guides/forward-prediction.md),

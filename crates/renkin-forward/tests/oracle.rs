@@ -29,7 +29,7 @@
 //! The amine fixtures use concrete H counts rather than a
 //! `[N;H1,H2:2]`-style multi-condition OR. The forward product has one less
 //! N-H bond than the free amine partner (`NH2 -> NH`, or `NH3+ -> NH2+`):
-//! schematic 1.0.2 correctly rejects the former fixtures that retained the
+//! chematic 1.0.2 correctly rejects the former fixtures that retained the
 //! partner H count after adding the aryl-N bond. OR-flattening remains covered
 //! directly by `hints.rs`'s feature-extraction fixtures.
 

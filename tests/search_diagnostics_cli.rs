@@ -438,6 +438,29 @@ fn write_debromination_templates_file() -> std::path::PathBuf {
     path
 }
 
+fn write_element_accounting_retry_fixtures() -> (std::path::PathBuf, std::path::PathBuf) {
+    let test_name = std::thread::current()
+        .name()
+        .unwrap_or("unknown")
+        .replace("::", "_");
+    let stem = format!(
+        "renkin_element_accounting_retry_cli_test_{}_{test_name}",
+        std::process::id()
+    );
+    let templates = std::env::temp_dir().join(format!("{stem}.smi"));
+    let stock = std::env::temp_dir().join(format!("{stem}_stock.smi"));
+    // The first, higher-weight rule silently drops O. With beam=1 it
+    // crowds out the atom-accounted C-O cleavage below unless the strict
+    // retry gate removes it.
+    std::fs::write(
+        &templates,
+        "[C:1]-[O]>>[C:1]\t100\n[C:1]-[O:2]>>[C:1].[O:2]\t1\n",
+    )
+    .unwrap();
+    std::fs::write(&stock, "CC\nO\n").unwrap();
+    (templates, stock)
+}
+
 const BROMOBENZENE_TARGET: &str = "Brc1ccccc1";
 
 #[test]
@@ -524,6 +547,55 @@ fn element_accounting_policy_gated_excludes_the_known_defect() {
 }
 
 #[test]
+fn element_accounting_retry_runs_only_after_integrity_rejection_and_recovers() {
+    let (templates, stock) = write_element_accounting_retry_fixtures();
+    let v = run(&[
+        "--target",
+        "CCO",
+        "--depth",
+        "1",
+        "--beam-width",
+        "1",
+        "--max-routes",
+        "1",
+        "--building-blocks",
+        stock.to_str().unwrap(),
+        "--templates",
+        templates.to_str().unwrap(),
+        "--element-accounting-policy",
+        "retry-on-integrity-failure",
+    ]);
+    std::fs::remove_file(&templates).ok();
+    std::fs::remove_file(&stock).ok();
+
+    assert_eq!(v["routes_found"], 1, "strict retry should recover: {v}");
+    let retry = &v["element_accounting_retry"];
+    assert_eq!(retry["invoked"], true, "retry metadata: {retry}");
+    assert_eq!(retry["recovered_route"], true, "retry metadata: {retry}");
+    assert!(
+        retry["initial_unaccounted_target_element"]
+            .as_u64()
+            .is_some_and(|n| n > 0),
+        "the retry must be justified by a concrete initial integrity rejection: {retry}"
+    );
+}
+
+#[test]
+fn element_accounting_retry_preserves_fast_path_when_no_retry_is_needed() {
+    let v = run(&[
+        "--target",
+        BUILDING_BLOCK,
+        "--max-routes",
+        "1",
+        "--element-accounting-policy",
+        "retry-on-integrity-failure",
+    ]);
+    assert_eq!(v["routes_found"], 1);
+    assert_eq!(v["element_accounting_retry"]["invoked"], false);
+    assert_eq!(v["element_accounting_retry"]["initial_routes_rejected"], 0);
+}
+
+#[test]
 fn element_accounting_policy_invalid_value_is_hard_error() {
     let out = std::process::Command::new(bin())
         .args(["--target", "CCO", "--element-accounting-policy", "bogus"])
@@ -549,4 +621,103 @@ fn element_accounting_policy_missing_value_is_hard_error() {
         "stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
+}
+
+#[test]
+fn beam_diversity_retry_recovers_formal_crowd_out_target() {
+    // Formal v1.0.1 discordant target L87: score-only beam 100 finds no
+    // route, while reserving 20 slots for underrepresented template families
+    // reaches a route accepted by RENKIN's structural boundary.
+    let v = run(&[
+        "--target",
+        "CN(C)C=C(C(=O)c1ccccc1Cl)c1ccc(Cl)cc1",
+        "--depth",
+        "5",
+        "--beam-width",
+        "100",
+        "--max-routes",
+        "1",
+        "--building-blocks",
+        "data/comparison/shared_stock/shared_stock.smi",
+        "--templates",
+        "data/templates_extracted_500.smi",
+        "--beam-diversity-policy",
+        "retry-on-beam-exhaustion",
+        "--beam-diversity-slots",
+        "20",
+    ]);
+    assert_eq!(
+        v["routes_found"], 1,
+        "diversity retry should recover L87: {v}"
+    );
+    let retry = &v["beam_diversity_retry"];
+    assert_eq!(retry["invoked"], true, "retry metadata: {retry}");
+    assert_eq!(retry["recovered_route"], true, "retry metadata: {retry}");
+    assert_eq!(
+        retry["initial_beam_limit_hit"], true,
+        "retry metadata: {retry}"
+    );
+}
+
+#[test]
+fn beam_diversity_retry_preserves_successful_score_only_fast_path() {
+    let v = run(&[
+        "--target",
+        BUILDING_BLOCK,
+        "--beam-width",
+        "100",
+        "--max-routes",
+        "1",
+        "--beam-diversity-policy",
+        "retry-on-beam-exhaustion",
+        "--beam-diversity-slots",
+        "20",
+    ]);
+    assert_eq!(v["routes_found"], 1);
+    assert_eq!(v["beam_diversity_retry"]["invoked"], false);
+    assert_eq!(v["beam_diversity_retry"]["recovered_route"], false);
+}
+
+#[test]
+fn beam_diversity_retry_requires_a_bounded_nonzero_beam() {
+    for args in [
+        vec![
+            "--target",
+            "CCO",
+            "--beam-diversity-policy",
+            "retry-on-beam-exhaustion",
+            "--beam-diversity-slots",
+            "20",
+        ],
+        vec![
+            "--target",
+            "CCO",
+            "--beam-width",
+            "100",
+            "--beam-diversity-policy",
+            "retry-on-beam-exhaustion",
+            "--beam-diversity-slots",
+            "0",
+        ],
+    ] {
+        let stderr = run_failure(&args);
+        assert!(stderr.contains("requires --beam-width > 0"), "{stderr}");
+    }
+}
+
+#[test]
+fn independent_retry_orchestrations_cannot_be_combined() {
+    let stderr = run_failure(&[
+        "--target",
+        "CCO",
+        "--beam-width",
+        "100",
+        "--element-accounting-policy",
+        "retry-on-integrity-failure",
+        "--beam-diversity-policy",
+        "retry-on-beam-exhaustion",
+        "--beam-diversity-slots",
+        "20",
+    ]);
+    assert!(stderr.contains("cannot be combined"), "{stderr}");
 }

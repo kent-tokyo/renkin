@@ -52,12 +52,17 @@ def renkin_config_and_id(args):
         ring_context_policy=args.ring_context_policy,
         ring_context_sidecar=args.ring_context_sidecar,
         spectator_bond_policy=args.spectator_bond_policy,
+        element_accounting_policy=args.element_accounting_policy,
+        beam_diversity_policy=args.beam_diversity_policy,
+        beam_diversity_slots=args.beam_diversity_slots,
         reranker_model=args.reranker_model,
         reranker_freq_table=args.reranker_freq_table,
         search_mode=args.search_mode,
         coverage_templates_path=args.coverage_templates,
+        recovery_coverage_tier_paths=tuple(args.recovery_coverage_tier),
         coverage_timeout_secs=args.coverage_timeout_secs,
         coverage_beam_width=args.coverage_beam_width,
+        recovery_depth=args.recovery_depth,
     )
     policy_suffix = (
         f"-{args.ring_context_policy}"
@@ -67,10 +72,22 @@ def renkin_config_and_id(args):
     reranker_suffix = (
         "-reranker_on" if args.reranker_model and args.reranker_freq_table else ""
     )
-    coverage_suffix = "-coverage" if args.search_mode == "coverage" else ""
+    coverage_suffix = f"-{args.search_mode}" if args.search_mode != "standard" else ""
     coverage_beam_suffix = (
         f"-cb{args.coverage_beam_width}"
-        if args.search_mode == "coverage" and args.coverage_beam_width is not None
+        if args.search_mode in {"coverage", "recovery"}
+        and args.coverage_beam_width is not None
+        else ""
+    )
+    recovery_depth_suffix = (
+        f"-rd{args.recovery_depth}" if args.search_mode == "recovery" else ""
+    )
+    recovery_slots_suffix = (
+        f"-rds{args.beam_diversity_slots}" if args.search_mode == "recovery" else ""
+    )
+    recovery_tiers_suffix = (
+        f"-rct{len(args.recovery_coverage_tier)}"
+        if args.search_mode == "recovery" and args.recovery_coverage_tier
         else ""
     )
     # Orthogonal to policy_suffix (ring-context) -- kept as its own suffix
@@ -81,10 +98,21 @@ def renkin_config_and_id(args):
         if args.spectator_bond_policy != "off"
         else ""
     )
+    element_accounting_suffix = (
+        f"-ea_{args.element_accounting_policy.replace('-', '_')}"
+        if args.element_accounting_policy != "off"
+        else ""
+    )
+    beam_diversity_suffix = (
+        f"-bd_{args.beam_diversity_policy.replace('-', '_')}_{args.beam_diversity_slots}"
+        if args.beam_diversity_policy != "off"
+        else ""
+    )
     configuration_id = (
         f"renkin-{args.comparison_mode}-d{args.depth}-b{args.beam_width}"
         f"{policy_suffix}{reranker_suffix}{coverage_suffix}{coverage_beam_suffix}"
-        f"{spectator_bond_suffix}"
+        f"{recovery_depth_suffix}{recovery_slots_suffix}{recovery_tiers_suffix}"
+        f"{spectator_bond_suffix}{element_accounting_suffix}{beam_diversity_suffix}"
     )
     return config, building_blocks_path, configuration_id
 
@@ -214,6 +242,29 @@ def main(argv: list[str] | None = None) -> int:
         "gated_out_candidate_count/gated_out_reasons can be populated.",
     )
     parser.add_argument(
+        "--element-accounting-policy",
+        choices=["off", "diagnostics-only", "gated", "retry-on-integrity-failure"],
+        default="off",
+        help="RENKIN-only candidate-time directional element-accounting policy. "
+        "retry-on-integrity-failure preserves the normal first pass and reruns with "
+        "the strict gate only after an unaccounted completed route is rejected. "
+        "Ignored for --tool aizynthfinder.",
+    )
+    parser.add_argument(
+        "--beam-diversity-policy",
+        choices=["off", "diagnostics-only", "active", "retry-on-beam-exhaustion"],
+        default="off",
+        help="RENKIN-only diversity-reserved beam policy; ignored for "
+        "--tool aizynthfinder.",
+    )
+    parser.add_argument(
+        "--beam-diversity-slots",
+        type=int,
+        default=0,
+        help="RENKIN-only number of beam slots reserved when diversity policy is active, "
+        "or in --search-mode recovery's conditional diversity stage.",
+    )
+    parser.add_argument(
         "--reranker-model",
         default=None,
         help="RENKIN-only: frozen LightGBM model.txt for the ordering-only candidate reranker "
@@ -227,17 +278,23 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--search-mode",
-        choices=["standard", "coverage"],
+        choices=["standard", "coverage", "recovery"],
         default="standard",
-        help="RENKIN-only: v0.24 coverage mode (Issue #101, Phase 41.18B) -- invokes the "
-        "native --search-mode coverage CLI (Stage 1 = --templates, Stage 2 = "
-        "--coverage-templates, only if Stage 1 found nothing) instead of standard mode. "
-        "Requires --coverage-templates. Ignored for --tool aizynthfinder.",
+        help="RENKIN-only: coverage mode or Issue #239 staged recovery mode. "
+        "Coverage requires --coverage-templates; recovery may use it as an optional "
+        "final stage. Ignored for --tool aizynthfinder.",
     )
     parser.add_argument(
         "--coverage-templates",
         default=None,
         help="RENKIN-only: Stage-2 template set for --search-mode coverage.",
+    )
+    parser.add_argument(
+        "--recovery-coverage-tier",
+        action="append",
+        default=[],
+        help="RENKIN-only: recovery intermediate coverage template set; repeat in "
+        "narrow-to-broad order before --coverage-templates.",
     )
     parser.add_argument(
         "--coverage-timeout-secs",
@@ -251,6 +308,13 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         default=None,
         help="RENKIN-only: Stage-2-only beam width for coverage mode; 0 means unlimited.",
+    )
+    parser.add_argument(
+        "--recovery-depth",
+        type=int,
+        default=None,
+        help="RENKIN-only: deeper-search limit for --search-mode recovery. "
+        "None lets the CLI use baseline depth + 1.",
     )
     parser.add_argument(
         "--resume",
@@ -276,6 +340,43 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.search_mode == "coverage" and not args.coverage_templates:
         parser.error("--search-mode coverage requires --coverage-templates")
+    if args.search_mode != "recovery" and args.recovery_depth is not None:
+        parser.error("--recovery-depth requires --search-mode recovery")
+    if args.search_mode != "recovery" and args.recovery_coverage_tier:
+        parser.error("--recovery-coverage-tier requires --search-mode recovery")
+    if args.search_mode == "recovery" and args.recovery_depth is not None:
+        if args.recovery_depth <= args.depth:
+            parser.error("--recovery-depth must be greater than --depth")
+    if args.search_mode == "recovery" and (
+        args.element_accounting_policy != "off" or args.beam_diversity_policy != "off"
+    ):
+        parser.error(
+            "--search-mode recovery orchestrates element accounting and beam diversity; "
+            "leave both explicit policies off"
+        )
+    if (
+        args.search_mode == "coverage"
+        and args.element_accounting_policy == "retry-on-integrity-failure"
+    ):
+        parser.error(
+            "--element-accounting-policy retry-on-integrity-failure requires "
+            "--search-mode standard"
+        )
+    if args.beam_diversity_slots < 0:
+        parser.error("--beam-diversity-slots must be non-negative")
+    if (
+        args.beam_diversity_policy in {"active", "retry-on-beam-exhaustion"}
+        and args.beam_diversity_slots == 0
+    ):
+        parser.error(
+            f"--beam-diversity-policy {args.beam_diversity_policy} requires "
+            "--beam-diversity-slots > 0"
+        )
+    if (
+        args.element_accounting_policy == "retry-on-integrity-failure"
+        and args.beam_diversity_policy == "retry-on-beam-exhaustion"
+    ):
+        parser.error("element-accounting and beam-diversity retry arms cannot be combined")
 
     sample = sampling.load_sample(args.sample_list, args.sample_size)
     sample_ids = [row["target_id"] for row in sample]
@@ -302,6 +403,8 @@ def main(argv: list[str] | None = None) -> int:
             "sample_list": args.sample_list,
             "stock": building_blocks_path,
             "templates": args.templates,
+            "cargo_manifest": os.path.join(args.repo_root, "Cargo.toml"),
+            "cargo_lock": os.path.join(args.repo_root, "Cargo.lock"),
         }
         if args.ring_context_sidecar:
             input_files["ring_context_sidecar"] = args.ring_context_sidecar
@@ -309,8 +412,10 @@ def main(argv: list[str] | None = None) -> int:
             input_files["reranker_model"] = args.reranker_model
         if args.reranker_freq_table:
             input_files["reranker_freq_table"] = args.reranker_freq_table
-        if args.search_mode == "coverage":
+        if args.search_mode in {"coverage", "recovery"} and args.coverage_templates:
             input_files["coverage_templates"] = args.coverage_templates
+        for index, path in enumerate(args.recovery_coverage_tier, start=1):
+            input_files[f"recovery_coverage_tier_{index}"] = path
         if not os.path.exists(args.manifest_path):
             run_manifest = manifest_mod.capture_start_manifest(
                 tool=args.tool,
@@ -329,6 +434,7 @@ def main(argv: list[str] | None = None) -> int:
                     "grace_s": args.grace_s,
                     "max_routes": 1,
                     "search_mode": args.search_mode,
+                    "recovery_coverage_tier_count": len(args.recovery_coverage_tier),
                 },
             )
             manifest_mod.write_manifest_atomic(args.manifest_path, run_manifest)
@@ -336,7 +442,8 @@ def main(argv: list[str] | None = None) -> int:
             # Refuse to spend benchmark time on a corrupted or schema-drifted
             # manifest. The same guard is applied again at finalization.
             try:
-                manifest_mod.load_and_validate_manifest(args.manifest_path)
+                existing_manifest = manifest_mod.load_and_validate_manifest(args.manifest_path)
+                manifest_mod.validate_input_hashes(existing_manifest, input_files)
             except ValueError as exc:
                 parser.error(str(exc))
 
@@ -384,6 +491,8 @@ def main(argv: list[str] | None = None) -> int:
             "sample_list": args.sample_list,
             "stock": building_blocks_path,
             "templates": args.templates,
+            "cargo_manifest": os.path.join(args.repo_root, "Cargo.toml"),
+            "cargo_lock": os.path.join(args.repo_root, "Cargo.lock"),
         }
         if args.ring_context_sidecar:
             input_files["ring_context_sidecar"] = args.ring_context_sidecar
@@ -391,8 +500,10 @@ def main(argv: list[str] | None = None) -> int:
             input_files["reranker_model"] = args.reranker_model
         if args.reranker_freq_table:
             input_files["reranker_freq_table"] = args.reranker_freq_table
-        if args.search_mode == "coverage":
+        if args.search_mode in {"coverage", "recovery"} and args.coverage_templates:
             input_files["coverage_templates"] = args.coverage_templates
+        for index, path in enumerate(args.recovery_coverage_tier, start=1):
+            input_files[f"recovery_coverage_tier_{index}"] = path
         run_manifest = manifest_mod.finalize_manifest(run_manifest, input_files)
         manifest_mod.write_manifest_atomic(args.manifest_path, run_manifest)
 

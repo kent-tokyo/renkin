@@ -91,6 +91,59 @@ class TestRenkinAdapterSmoke(unittest.TestCase):
         self.assertIsNotNone(row.gated_out_reasons)
         self.assertGreaterEqual(row.gated_out_candidate_count, 0)
 
+    def test_element_accounting_retry_fast_path_is_reported(self):
+        config = adapter.RenkinConfig(
+            binary_path=str(RENKIN_BIN),
+            building_blocks_path=str(BUILDING_BLOCKS),
+            templates_path=str(TEMPLATES),
+            depth=2,
+            beam_width=100,
+            max_routes=1,
+            external_timeout_s=30,
+            element_accounting_policy="retry-on-integrity-failure",
+        )
+        row = self._run(ACETIC_ACID, config=config)
+        retry = row.tool_specific["renkin"]["element_accounting_retry"]
+        self.assertIsNotNone(retry)
+        self.assertFalse(retry["invoked"])
+        self.assertFalse(retry["recovered_route"])
+
+    def test_diversity_beam_options_are_forwarded(self):
+        config = adapter.RenkinConfig(
+            binary_path=str(RENKIN_BIN),
+            building_blocks_path=str(BUILDING_BLOCKS),
+            templates_path=str(TEMPLATES),
+            depth=2,
+            beam_width=100,
+            max_routes=1,
+            external_timeout_s=30,
+            beam_diversity_policy="active",
+            beam_diversity_slots=20,
+        )
+        row = self._run(ACETIC_ACID, config=config)
+        self.assertEqual(row.run_status, "completed")
+        self.assertTrue(row.route_found)
+
+    def test_recovery_mode_audit_is_captured(self):
+        config = adapter.RenkinConfig(
+            binary_path=str(RENKIN_BIN),
+            building_blocks_path=str(BUILDING_BLOCKS),
+            templates_path=str(TEMPLATES),
+            depth=2,
+            beam_width=100,
+            max_routes=1,
+            external_timeout_s=30,
+            search_mode="recovery",
+            recovery_depth=3,
+            beam_diversity_slots=20,
+            recovery_coverage_tier_paths=(str(COVERAGE_FIXTURE_TEMPLATES),),
+        )
+        row = self._run(ACETIC_ACID, config=config)
+        recovery = row.tool_specific["renkin"]["recovery"]
+        self.assertIsNotNone(recovery)
+        self.assertEqual(recovery["selected_stage"], "baseline")
+        self.assertEqual(len(recovery["attempts"]), 1)
+
     def test_reranker_failures_is_captured_in_tool_specific(self):
         model = REPO_ROOT / "data" / "phase3e_reranker_training" / "model.txt"
         freq_table = REPO_ROOT / "data" / "phase3e_reranker_training" / "frequency_table.json"

@@ -2,7 +2,8 @@
 //!
 //! This module is "PR A" (Phase 0 + Phase 1) of
 //! [issue #61](https://github.com/kent-tokyo/renkin/issues/61): a frozen
-//! benchmark protocol plus the harness that measures it. It intentionally
+//! benchmark protocol plus the harness that measures it, including a
+//! fail-closed train-extracted template provenance contract. It intentionally
 //! does NOT attempt Phase 2 (proposal-coverage improvements), Phase 3 (a
 //! forward-specific reranker), or Phase 5 (a generative-model decision) --
 //! see `docs/guides/forward-benchmark.md` for the full frozen protocol,
@@ -35,6 +36,7 @@ use std::io::Read;
 use anyhow::{Result, bail};
 use chematic::smiles::canonical_smiles;
 use renkin::chem_env::{RetroRule, default_rules, mol_from_smiles};
+use renkin::io_limits::read_bounded_text_file;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -55,6 +57,9 @@ pub const FORWARD_BENCH_REPORT_SCHEMA_VERSION: u32 = 2;
 /// Schema version of the compact benchmark contract manifest emitted beside
 /// a report. This is intentionally separate from the larger report schema.
 pub const FORWARD_BENCH_MANIFEST_SCHEMA_VERSION: u32 = 1;
+/// Schema version of [`TrainExtractedTemplateManifest`]. This manifest is a
+/// fail-closed input contract, separate from the benchmark output manifest.
+pub const TRAIN_EXTRACTED_TEMPLATE_MANIFEST_SCHEMA_VERSION: u32 = 1;
 
 /// Deterministic split-bucket cutoffs: buckets `[0, TRAIN_MAX_BUCKET)` ->
 /// train, `[TRAIN_MAX_BUCKET, VAL_MAX_BUCKET)` -> val, the rest -> test.
@@ -67,9 +72,9 @@ pub const VAL_MAX_BUCKET: u32 = 85;
 
 /// Version of the split ALGORITHM itself (bucket cutoffs + hash scheme
 /// above), not of the schema. Bump only if `split_bucket`/`split_for_group`
-/// or the cutoffs change -- a `--template-manifest` (once it exists, see
-/// `TemplateSource::TrainExtracted`) can then assert it was built against a
-/// compatible split protocol.
+/// or the cutoffs change -- `--template-manifest` asserts that a
+/// `TemplateSource::TrainExtracted` bundle was built against a compatible
+/// split protocol.
 pub const SPLIT_PROTOCOL_VERSION: u32 = 1;
 
 /// Cap on detailed [`CorpusLoadWarning`] entries retained, so a badly
@@ -609,13 +614,79 @@ pub fn load_corpus(path: &str) -> CorpusLoadResult {
 // ---------------------------------------------------------------------
 
 /// Which rule set a benchmark run used. Phase 0 requires four modes to be
-/// named by the protocol; only the first three are implemented in this PR
+/// named by the protocol; the first three are implemented
 /// (`ScorerConditioned` has no scorer to condition on until Phase 3/4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TemplateSource {
     Embedded,
     File,
     TrainExtracted,
+}
+
+/// Attestation required before a `train-extracted` template file may be
+/// benchmarked. Every field is independently checked against the actual
+/// benchmark inputs; the source label alone is never trusted.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TrainExtractedTemplateManifest {
+    pub schema_version: u32,
+    pub templates_sha256: String,
+    pub source_corpus_sha256: String,
+    pub split_protocol_version: u32,
+    pub included_split: String,
+}
+
+impl TrainExtractedTemplateManifest {
+    fn validate(&self, actual_templates_sha256: &str, actual_corpus_sha256: &str) -> Result<()> {
+        if self.schema_version != TRAIN_EXTRACTED_TEMPLATE_MANIFEST_SCHEMA_VERSION {
+            bail!(
+                "unsupported --template-manifest schema_version {}; expected {}",
+                self.schema_version,
+                TRAIN_EXTRACTED_TEMPLATE_MANIFEST_SCHEMA_VERSION
+            );
+        }
+        validate_sha256_field("templates_sha256", &self.templates_sha256)?;
+        validate_sha256_field("source_corpus_sha256", &self.source_corpus_sha256)?;
+        if self.templates_sha256 != actual_templates_sha256 {
+            bail!(
+                "--template-manifest templates_sha256 mismatch: manifest={}, actual={}",
+                self.templates_sha256,
+                actual_templates_sha256
+            );
+        }
+        if self.source_corpus_sha256 != actual_corpus_sha256 {
+            bail!(
+                "--template-manifest source_corpus_sha256 mismatch: manifest={}, actual={}",
+                self.source_corpus_sha256,
+                actual_corpus_sha256
+            );
+        }
+        if self.split_protocol_version != SPLIT_PROTOCOL_VERSION {
+            bail!(
+                "--template-manifest split_protocol_version mismatch: manifest={}, expected={}",
+                self.split_protocol_version,
+                SPLIT_PROTOCOL_VERSION
+            );
+        }
+        if self.included_split != "train" {
+            bail!(
+                "--template-manifest included_split must be exactly \"train\", got {:?}",
+                self.included_split
+            );
+        }
+        Ok(())
+    }
+}
+
+fn validate_sha256_field(field: &str, value: &str) -> Result<()> {
+    if value.len() != 64
+        || !value
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        bail!("--template-manifest {field} must be exactly 64 lowercase hexadecimal characters");
+    }
+    Ok(())
 }
 
 impl TemplateSource {
@@ -654,9 +725,24 @@ impl TemplateSource {
 /// embedded fallback corpus for an intended external template set", which
 /// cuts both ways: an explicit file must not be silently diluted by the
 /// embedded set either.
+/// Backward-compatible loader for `embedded` and `file` callers. The
+/// `train-extracted` mode deliberately remains unavailable through this
+/// legacy signature because it cannot carry the required manifest and corpus
+/// identity; use [`load_rules_for_source_with_manifest`] for that mode.
 pub fn load_rules_for_source(
     source: TemplateSource,
     templates_path: Option<&str>,
+) -> Result<(Vec<RetroRule>, Option<String>)> {
+    load_rules_for_source_with_manifest(source, templates_path, None, "")
+}
+
+/// Loads one benchmark rule source, validating the train-only attestation
+/// when `source` is [`TemplateSource::TrainExtracted`].
+pub fn load_rules_for_source_with_manifest(
+    source: TemplateSource,
+    templates_path: Option<&str>,
+    template_manifest_path: Option<&str>,
+    corpus_sha256: &str,
 ) -> Result<(Vec<RetroRule>, Option<String>)> {
     match source {
         TemplateSource::Embedded => {
@@ -666,9 +752,21 @@ pub fn load_rules_for_source(
                      pass --template-source file or --template-source train-extracted to use it"
                 );
             }
+            if template_manifest_path.is_some() {
+                bail!(
+                    "--template-manifest was given but --template-source is 'embedded'; it is \
+                     valid only with --template-source train-extracted"
+                );
+            }
             Ok((default_rules(), None))
         }
         TemplateSource::File => {
+            if template_manifest_path.is_some() {
+                bail!(
+                    "--template-manifest is valid only with --template-source train-extracted, \
+                     not 'file'"
+                );
+            }
             let path = templates_path.ok_or_else(|| {
                 anyhow::anyhow!(
                     "--template-source {:?} requires --templates <path>",
@@ -679,24 +777,29 @@ pub fn load_rules_for_source(
             let sha = sha256_hex_of_file(path)?;
             Ok((rules, Some(sha)))
         }
-        // ponytail: a manifest (templates_sha256 + source_corpus_sha256 +
-        // split_protocol_version + included_split == "train", hard-
-        // validated here) is the real unblock condition -- add
-        // --template-manifest <path> and validate it before loading, then
-        // this arm can load the file same as File mode above.
         TemplateSource::TrainExtracted => {
-            bail!(
-                "--template-source train-extracted is not usable yet: this harness has no way \
-                 to verify that a --templates file was actually extracted from the train split \
-                 only -- it would load the file exactly like --template-source file and merely \
-                 stamp a different provenance label, which is a label, not a verified guarantee. \
-                 Use --template-source file if you accept responsibility for that split \
-                 boundary yourself (and inspect the per-split metric breakdown for suspiciously \
-                 strong val/test results, which would be the only signal of a mislabeled file). \
-                 A future version will accept --template-manifest <path> attesting \
-                 {{templates_sha256, source_corpus_sha256, split_protocol_version, \
-                 included_split: \"train\"}} and hard-validate it before loading."
-            );
+            let templates_path = templates_path.ok_or_else(|| {
+                anyhow::anyhow!("--template-source train-extracted requires --templates <path>")
+            })?;
+            let manifest_path = template_manifest_path.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "--template-source train-extracted requires --template-manifest <path>"
+                )
+            })?;
+
+            // Validate raw input identities before parsing/loading any rule.
+            // This turns `train-extracted` into a verified input contract,
+            // rather than `file` mode carrying a more reassuring label.
+            let templates_sha256 = sha256_hex_of_file(templates_path)?;
+            let manifest_json = read_bounded_text_file(manifest_path, "--template-manifest")?;
+            let manifest: TrainExtractedTemplateManifest = serde_json::from_str(&manifest_json)
+                .map_err(|e| {
+                    anyhow::anyhow!("failed to parse --template-manifest {manifest_path:?}: {e}")
+                })?;
+            manifest.validate(&templates_sha256, corpus_sha256)?;
+
+            let rules = load_templates_strict(templates_path)?;
+            Ok((rules, Some(templates_sha256)))
         }
     }
 }
@@ -2097,22 +2200,42 @@ fn reproducibility_hash(rows: &[BenchRow]) -> String {
 /// failure, `proposal_status = capped_unknown`, or a missing
 /// `binary_sha256` (incomplete reproducibility provenance). Template load/
 /// manifest/provenance failure is already an unconditional hard error (see
-/// [`load_rules_for_source`]) -- `strict` doesn't change that. Deliberately
+/// [`load_rules_for_source_with_manifest`]) -- `strict` doesn't change that. Deliberately
 /// does NOT fail on a legitimate proposal miss, ranking miss, stereo
 /// mismatch, or a genuinely empty candidate pool -- those are real
 /// benchmark outcomes, not data-quality problems. In non-strict mode (the
 /// default), every one of these still lands in `corpus_stats`/
 /// `corpus_warnings`/`diagnostics`/per-row fields -- nothing is ever
 /// silently dropped regardless of `strict`.
+/// Backward-compatible benchmark entry point. This supports `embedded` and
+/// `file`; callers selecting `train-extracted` must use
+/// [`run_benchmark_with_template_manifest`] so the required attestation can
+/// be supplied.
 pub fn run_benchmark(
     corpus_path: &str,
     template_source: TemplateSource,
     templates_path: Option<&str>,
     strict: bool,
 ) -> Result<BenchOutcome> {
+    run_benchmark_with_template_manifest(corpus_path, template_source, templates_path, None, strict)
+}
+
+/// Runs the benchmark with an optional train-extracted template manifest.
+pub fn run_benchmark_with_template_manifest(
+    corpus_path: &str,
+    template_source: TemplateSource,
+    templates_path: Option<&str>,
+    template_manifest_path: Option<&str>,
+    strict: bool,
+) -> Result<BenchOutcome> {
     let (reactions, invalid_attempts, corpus_stats, corpus_warnings) = load_corpus(corpus_path)?;
     let corpus_sha256 = sha256_hex_of_file(corpus_path)?;
-    let (rules, rules_file_sha256) = load_rules_for_source(template_source, templates_path)?;
+    let (rules, rules_file_sha256) = load_rules_for_source_with_manifest(
+        template_source,
+        templates_path,
+        template_manifest_path,
+        &corpus_sha256,
+    )?;
 
     let row_provenance = RowProvenance {
         renkin_forward_version: env!("CARGO_PKG_VERSION").to_string(),
@@ -2519,11 +2642,8 @@ mod tests {
         assert!(err.to_string().contains("--templates"));
     }
 
-    /// `train-extracted` is a recognized mode name (the frozen Phase 0
-    /// protocol names it), but until a manifest can verify the train-only
-    /// boundary, loading it exactly like `file` would silently accept an
-    /// unverified split-safety claim. Must hard error, not fall through to
-    /// `File`'s loading behavior with a different label stamped on top.
+    /// `train-extracted` is a recognized mode name, but a template path by
+    /// itself is not proof of the train-only boundary.
     #[test]
     fn load_rules_for_source_train_extracted_is_a_hard_error_without_a_manifest() {
         let err = load_rules_for_source(TemplateSource::TrainExtracted, Some("some/path.smi"))
@@ -2531,6 +2651,28 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("train-extracted"));
         assert!(msg.contains("manifest"));
+    }
+
+    #[test]
+    fn train_extracted_manifest_rejects_malformed_digest_and_wrong_schema() {
+        let actual = "0".repeat(64);
+        let mut manifest = TrainExtractedTemplateManifest {
+            schema_version: TRAIN_EXTRACTED_TEMPLATE_MANIFEST_SCHEMA_VERSION,
+            templates_sha256: actual.clone(),
+            source_corpus_sha256: actual.clone(),
+            split_protocol_version: SPLIT_PROTOCOL_VERSION,
+            included_split: "train".to_string(),
+        };
+        assert!(manifest.validate(&actual, &actual).is_ok());
+
+        manifest.templates_sha256 = "A".repeat(64);
+        let err = manifest.validate(&actual, &actual).unwrap_err();
+        assert!(err.to_string().contains("lowercase hexadecimal"));
+
+        manifest.templates_sha256 = actual.clone();
+        manifest.schema_version += 1;
+        let err = manifest.validate(&actual, &actual).unwrap_err();
+        assert!(err.to_string().contains("schema_version"));
     }
 
     #[test]

@@ -359,15 +359,23 @@ fn route_integrity_defects(route: &Route, target_canonical: &str) -> Vec<RouteIn
 
     let mut any_unparseable = false;
     for step in &route.steps {
-        if mol_from_smiles(&step.target).is_err() {
-            any_unparseable = true;
+        match mol_from_smiles(&step.target) {
+            Ok(m) if crate::chem_env::aromaticity_integrity_violation(&m).is_some() => {
+                any_unparseable = true
+            }
+            Err(_) => any_unparseable = true,
+            Ok(_) => {}
         }
         if step.precursors.is_empty() {
             defects.push(RouteIntegrityDefect::EmptyPrecursorList);
         }
         for p in &step.precursors {
-            if mol_from_smiles(p).is_err() {
-                any_unparseable = true;
+            match mol_from_smiles(p) {
+                Ok(m) if crate::chem_env::aromaticity_integrity_violation(&m).is_some() => {
+                    any_unparseable = true
+                }
+                Err(_) => any_unparseable = true,
+                Ok(_) => {}
             }
         }
     }
@@ -1790,8 +1798,9 @@ pub struct SearchConfig {
     /// [`CrowdOutDiagnostics::element_accounting_gated_out`]. Evaluated
     /// after `spectator_bond_policy`'s own gating, so that mechanism's
     /// candidate set and diagnostics are unaffected by this one existing.
-    /// Not yet exposed on any CLI/Python/WASM surface (design doc stage 4)
-    /// -- reachable only by constructing a `SearchConfig` directly.
+    /// Exposed by the native CLI, Python, and WASM base-policy surfaces. The
+    /// native CLI additionally offers integrity-triggered two-pass
+    /// orchestration without changing this enum.
     pub element_accounting_policy: ElementAccountingGatePolicy,
     /// Diversity-reserved beam (ROADMAP Item 4, issue #101,
     /// `docs/design/diversity-reserved-beam-v0.md`) -- an independent
@@ -1805,8 +1814,9 @@ pub struct SearchConfig {
     /// which nodes survive pruning. `Active` reserves
     /// `beam_diversity_slots` beam slots for family diversity instead of
     /// pure score. Not yet exposed on any CLI/Python/WASM surface
-    /// (design doc stage 4) -- reachable only by constructing a
-    /// `SearchConfig` directly.
+    /// and exposed by the native CLI, Python, and WASM base-policy surfaces.
+    /// The native CLI additionally offers score-first, beam-exhaustion retry
+    /// orchestration without changing this enum.
     pub beam_diversity_policy: BeamDiversityPolicy,
     /// Beam slots reserved for family diversity under `DiagnosticsOnly`/
     /// `Active` (design doc §6); ignored under `Off`. Clamped to
@@ -1978,6 +1988,36 @@ pub struct SearchRunResult {
     pub termination: SearchTermination,
 }
 
+/// Result of the opt-in, two-pass integrity recovery search.
+///
+/// The first pass uses the normal zero-overhead element-accounting policy.
+/// A second, strict-gated pass is run only when the first pass finds no valid
+/// route after rejecting at least one completed route for an unaccounted
+/// target element. Keeping the initial run makes the retry auditable without
+/// changing [`SearchStats`] or the behavior of the established search APIs.
+#[derive(Debug)]
+pub struct ElementAccountingRetryRunResult {
+    /// The run selected for the caller: the retry when invoked, otherwise the
+    /// original search.
+    pub selected: SearchRunResult,
+    /// The original zero-overhead run when a retry was invoked.
+    pub initial: Option<SearchRunResult>,
+}
+
+/// Result of the opt-in, two-pass beam-diversity recovery search.
+///
+/// Score-only search always runs first. The diversity-active result can only
+/// replace an unsuccessful run that actually reached a beam cutoff, so an
+/// existing score-only success is never displaced by this orchestration.
+#[derive(Debug)]
+pub struct BeamDiversityRetryRunResult {
+    /// The run selected for the caller: the retry when invoked, otherwise the
+    /// original score-only search.
+    pub selected: SearchRunResult,
+    /// The original score-only run when a retry was invoked.
+    pub initial: Option<SearchRunResult>,
+}
+
 /// Reusable, immutable search assets for repeated queries against one stock
 /// and rule set.
 ///
@@ -2065,6 +2105,119 @@ pub fn find_routes_with_control(
         &prepared_rules,
         None,
     )
+}
+
+/// Run the normal search first and retry with strict candidate-time element
+/// accounting only after a concrete integrity rejection proves it useful.
+///
+/// This preserves the normal fast path for successful and genuinely-unsolved
+/// targets. The caller's `element_accounting_policy` is intentionally ignored:
+/// pass 1 is always [`ElementAccountingGatePolicy::Off`] and the conditional
+/// pass 2 is always [`ElementAccountingGatePolicy::Gated`]. Every other search
+/// setting is preserved. A retry is never started after cooperative deadline
+/// termination.
+pub fn find_routes_with_element_accounting_retry(
+    target_smiles: &str,
+    env: &ChemEnv,
+    rules: &[RetroRule],
+    config: &SearchConfig,
+    control: &SearchControl,
+) -> Result<ElementAccountingRetryRunResult> {
+    let prepared_rules = crate::chem_env::PreparedRuleSet::new(rules);
+    let mut initial_config = config.clone();
+    initial_config.element_accounting_policy = ElementAccountingGatePolicy::Off;
+    let initial = find_routes_with_control_prepared(
+        target_smiles,
+        env,
+        rules,
+        &initial_config,
+        control,
+        &prepared_rules,
+        None,
+    )?;
+
+    let should_retry = initial.routes.is_empty()
+        && initial.termination == SearchTermination::Completed
+        && initial.stats.route_integrity.unaccounted_target_element > 0;
+    if !should_retry {
+        return Ok(ElementAccountingRetryRunResult {
+            selected: initial,
+            initial: None,
+        });
+    }
+
+    let mut retry_config = config.clone();
+    retry_config.element_accounting_policy = ElementAccountingGatePolicy::Gated;
+    let retry = find_routes_with_control_prepared(
+        target_smiles,
+        env,
+        rules,
+        &retry_config,
+        control,
+        &prepared_rules,
+        None,
+    )?;
+    Ok(ElementAccountingRetryRunResult {
+        selected: retry,
+        initial: Some(initial),
+    })
+}
+
+/// Run score-only search first and retry with a diversity-reserved beam only
+/// after a completed, unsuccessful run demonstrably hit the beam limit.
+///
+/// The caller's `beam_diversity_policy` is intentionally ignored: pass 1 is
+/// always [`BeamDiversityPolicy::Off`] and the conditional pass 2 is always
+/// [`BeamDiversityPolicy::Active`]. `beam_diversity_slots` and every other
+/// search setting are preserved. A zero-width (unlimited) beam, zero reserved
+/// slots, or cooperative deadline termination cannot trigger a retry.
+pub fn find_routes_with_beam_diversity_retry(
+    target_smiles: &str,
+    env: &ChemEnv,
+    rules: &[RetroRule],
+    config: &SearchConfig,
+    control: &SearchControl,
+) -> Result<BeamDiversityRetryRunResult> {
+    let prepared_rules = crate::chem_env::PreparedRuleSet::new(rules);
+    let mut initial_config = config.clone();
+    initial_config.beam_diversity_policy = BeamDiversityPolicy::Off;
+    let initial = find_routes_with_control_prepared(
+        target_smiles,
+        env,
+        rules,
+        &initial_config,
+        control,
+        &prepared_rules,
+        None,
+    )?;
+
+    let should_retry = initial.routes.is_empty()
+        && initial.termination == SearchTermination::Completed
+        && initial.stats.beam_limit_hit
+        && config.beam_width > 0
+        && config.beam_diversity_slots > 0;
+    if !should_retry {
+        return Ok(BeamDiversityRetryRunResult {
+            selected: initial,
+            initial: None,
+        });
+    }
+
+    let mut retry_config = config.clone();
+    retry_config.beam_diversity_policy = BeamDiversityPolicy::Active;
+    let retry = find_routes_with_control_prepared(
+        target_smiles,
+        env,
+        rules,
+        &retry_config,
+        control,
+        &prepared_rules,
+        None,
+    )?;
+    Ok(BeamDiversityRetryRunResult {
+        selected: retry,
+        initial: Some(initial),
+    })
 }
 
 pub(crate) fn find_routes_with_control_prepared(
@@ -5222,6 +5375,18 @@ mod route_integrity_tests {
     fn flags_unparseable_precursor_smiles() {
         let root = canon("CC(=O)O");
         let r = route(vec![step(&root, &["[C(", "O"])]);
+        let defects = route_integrity_defects(&r, &root);
+        assert!(defects.contains(&RouteIntegrityDefect::UnparseableSmiles));
+    }
+
+    #[test]
+    fn flags_parseable_precursor_with_open_aromatic_chain() {
+        // Issue #237 / L4444: chematic parses this, but the aromatic carbons
+        // before the valid phenyl ring do not lie on any graph cycle.  The
+        // acceptance boundary must fail closed even if a future generation
+        // path bypasses split_fragments' identical guard.
+        let root = canon("O=C1Cc2cc(-c3ccccc3)ccc2N1");
+        let r = route(vec![step(&root, &["ccc(ccCC(O)=O)-c1ccccc1"])]);
         let defects = route_integrity_defects(&r, &root);
         assert!(defects.contains(&RouteIntegrityDefect::UnparseableSmiles));
     }

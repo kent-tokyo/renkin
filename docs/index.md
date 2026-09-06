@@ -5,6 +5,8 @@ description: "Plan multi-step synthesis routes from SMILES with RENKIN, a pure-R
 
 # RENKIN
 
+Current release: **v1.0.2**.
+
 > **Computer-Aided Synthesis Planning (CASP) · Pure Rust · WebAssembly · Python**  
 > Named after 錬金 (*renkin*) — Japanese for alchemy: just as alchemists transformed base metals into gold, RENKIN transforms target molecules back into cheap starting materials.
 
@@ -55,6 +57,8 @@ RENKIN is a **retrosynthesis engine** that automatically plans multi-step chemic
 | **Forward validation** | `renkin-forward validate` verifies each retrosynthetic step by forward prediction; pipe-friendly (stdin support) |
 | **Failure diagnostics** | `renkin-bench --failure-taxonomy` classifies unsolved targets by cause (beam limit, depth limit, template gap, stock near-miss) |
 | **Cascade search** | Two-stage search: fast defaults → hard cases re-run at higher beam/depth |
+| **Staged recovery (opt-in)** | Native `--search-mode recovery` preserves baseline successes, then conditionally escalates element gating, diversity, depth, and caller-supplied coverage tiers with a per-attempt audit trail; see [Staged recovery mode](guides/staged-recovery.md) |
+| **Radius-zero abstraction (research)** | A provenance-bounded, disjoint-VAL-gated method for building an optional final recovery tier from the same TRAIN corpus; see [Staged recovery mode](guides/staged-recovery.md#radius-zero-template-abstraction-follow-up) |
 | **Stability testing** | `--quietset-out` exports observations for [quietset](https://crates.io/crates/quietset-cli) cross-config stability analysis |
 | **MCP server** | `renkin-mcp` exposes seven route, validation, Pareto, constraint, diversity, and diagnostic tools over legacy `2024-11-05` and modern `2026-07-28` stdio MCP; `find_routes` also supports opt-in coverage search |
 
@@ -118,13 +122,12 @@ See [Benchmark](benchmark.md) for current USPTO-50k results and methodology — 
 
 ## Formal v1.0 comparison status
 
-The completed 4,903-target shared-stock comparison recorded 577 primary
-successes for RENKIN v1.0.0 (11.77%) and 200 for AiZynthFinder 4.4.1 (4.08%).
-The paired difference was +7.689 percentage points with 95% CI [+6.812,
-+8.566], so the statistical gate passed. The formal publication gate remains
-**HOLD** because two frozen RENKIN rows failed route-tree integrity. Both
-failure modes pass a targeted v1.0.1-candidate rerun, but changing the frozen
-verdict requires a fresh full run. See the
+The corrected 4,903-target shared-stock comparison recorded 591 primary
+successes for RENKIN v1.0.1 (12.05%) and 200 for AiZynthFinder 4.4.1 (4.08%).
+The paired difference was +7.975 percentage points with 95% CI [+7.098,
++8.852]. The statistical and formal publication gates both **PASS**: the full
+v1.0.1 arm passed integrity verification, and all 591 reported routes had
+parseable normalized trees terminating in the configured shared stock. See the
 [formal protocol and status](benchmark/formal-v1.0-competitor-comparison.md).
 
 ## Installation
@@ -139,7 +142,7 @@ verdict requires a fresh full run. See the
 
     ```toml
     [dependencies]
-renkin = "1.0.1"
+renkin = "1.0.2"
     ```
 
 === "npm"

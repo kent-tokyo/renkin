@@ -169,8 +169,8 @@ parameter keeps working exactly as before.
 function version(): string
 ```
 
-Returns the RENKIN version string (for example, `"1.0.1"` for the current
-release candidate).
+Returns the RENKIN version string (for example, `"1.0.2"` for the current
+release).
 
 ## Minimal Node.js Example (CI-verified)
 

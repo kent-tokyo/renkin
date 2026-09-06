@@ -263,6 +263,12 @@ dataclass; highlights:
   and AiZynthFinder's `trees` output normalize into — the same proposed
   disconnection hashes identically regardless of which tool produced it
   (verified directly: `test_same_disconnection_hashes_identically_across_tools`).
+- For rows with a parseable route, `tool_specific.<tool>.route_edge_snapshot`
+  stores only the normalized target/precursor SMILES needed to reproduce
+  post-hoc structural and directional element-accounting diagnostics. It does
+  not retain native tool output, scores, or hidden search state; rows generated
+  before this field was introduced cannot be backfilled without rerunning the
+  planner.
 
 ## Common post-hoc validation
 

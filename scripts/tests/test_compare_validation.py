@@ -85,6 +85,30 @@ class TestTargetElementAccounting(unittest.TestCase):
         status, warnings = v.check_target_element_accounting(outcome.graph)
         self.assertEqual(status, "unaccounted_target_element")
         self.assertIn(v.UNACCOUNTED_TARGET_ELEMENT, warnings)
+        self.assertEqual(v.target_element_excess_counts(outcome.graph), {"Cl": 1})
+        self.assertEqual(
+            v.route_edge_snapshot(outcome.graph),
+            [{"target": "Clc1ccccc1", "precursors": ["Brc1ccccc1"]}],
+        )
+
+    def test_precursor_excess_is_not_reported_as_a_deficit(self):
+        route = {
+            "steps": [{"target": "Clc1ccccc1", "precursors": ["Brc1ccccc1", "Cl"]}],
+            "building_blocks": ["Brc1ccccc1", "Cl"],
+        }
+        outcome = rg.normalize_renkin_route(route, "Clc1ccccc1")
+        self.assertEqual(v.target_element_excess_counts(outcome.graph), {})
+
+    def test_repeated_flat_records_do_not_double_count_the_same_edge(self):
+        route = {
+            "steps": [
+                {"target": "Clc1ccccc1", "precursors": ["Brc1ccccc1"]},
+                {"target": "Clc1ccccc1", "precursors": ["Brc1ccccc1"]},
+            ],
+            "building_blocks": ["Brc1ccccc1"],
+        }
+        outcome = rg.normalize_renkin_route(route, "Clc1ccccc1")
+        self.assertEqual(v.target_element_excess_counts(outcome.graph), {"Cl": 1})
 
     def test_leaf_only_route_is_not_evaluable(self):
         route = {"steps": [], "building_blocks": []}

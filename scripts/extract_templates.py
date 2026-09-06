@@ -11,20 +11,32 @@ Usage:
     python3 scripts/extract_templates.py --reactions reactions.smiles --top 50000 \
         --output data/templates_extracted_50000.smi
 
+    # Research-only reaction-centre abstraction with reproducibility manifest
+    python3 scripts/extract_templates.py --reactions reactions.smiles --top 50000 \
+        --reactant-radius 0 --output /tmp/templates_radius0.smi \
+        --manifest /tmp/templates_radius0.manifest.json
+
 Output format (one template per line, tab-separated):
     <simplified_SMIRKS>  <count>
 """
 
 import argparse
+import hashlib
+import json
+import random
 import re
 import sys
 from collections import Counter
+from pathlib import Path
 
 try:
     from datasets import load_dataset
     from huggingface_hub import HfApi
-    from rdchiral.template_extractor import extract_from_reaction
+    from numpy import random as numpy_random
+    import rdchiral.template_extractor as rdchiral_template_extractor
     from rdkit import Chem
+
+    extract_from_reaction = rdchiral_template_extractor.extract_from_reaction
 
     HAVE_DEPS = True
 except ImportError:  # pragma: no cover -- exercised by scripts/tests without the deps installed
@@ -186,16 +198,86 @@ def load_reactions_from_file(path: str) -> list:
     return rows
 
 
-def extract_templates(top_n: int, output_path: str,
-                      reactions_path: str | None = None,
-                      dataset_id: str = "bisectgroup/USPTO_50K",
-                      split: str = "train",
-                      dataset_revision: str | None = None,
-                      resolve_latest: bool = False) -> None:
+def extract_from_reaction_with_radius(reaction: dict, reactant_radius: int):
+    """Run rdchiral extraction with an explicit reactant-side radius.
+
+    rdchiral 1.1.0 hard-codes radius=1 inside extract_from_reaction while its
+    public fragment helper already accepts a radius.  The sequential offline
+    extractor temporarily wraps that helper, delegates every other behavior
+    to rdchiral unchanged, and restores the module immediately afterward.
+    """
+    if reactant_radius not in (0, 1):
+        raise ValueError("reactant_radius must be 0 or 1")
+
+    # rdchiral 1.1.0 imports `shuffle` from `numpy.random` and uses it on
+    # tetrahedral map numbers while resolving a stereochemical fragment.
+    # Seeding Python's `random` alone does not affect that shuffle (the first
+    # version of this guard made exactly that mistake). Seed BOTH global RNGs
+    # deterministically per reaction and restore both caller states afterward.
+    # Without this boundary, rare stereochemical templates alternate between
+    # @ and @@ across otherwise-identical extraction processes.
+    rng_state = random.getstate()
+    numpy_rng_state = numpy_random.get_state()
+    seed_material = json.dumps(reaction, sort_keys=True, separators=(",", ":"))
+    seed_digest = hashlib.sha256(seed_material.encode()).digest()
+    random.seed(seed_digest)
+    numpy_random.seed(int.from_bytes(seed_digest[:4], "big"))
+
+    if reactant_radius == 1:
+        try:
+            return extract_from_reaction(reaction)
+        finally:
+            random.setstate(rng_state)
+            numpy_random.set_state(numpy_rng_state)
+
+    original = rdchiral_template_extractor.get_fragments_for_changed_atoms
+
+    def radius_override(
+        mols,
+        changed_atom_tags,
+        radius=0,
+        category="reactants",
+        expansion=None,
+    ):
+        if category == "reactants":
+            radius = reactant_radius
+        return original(
+            mols,
+            changed_atom_tags,
+            radius=radius,
+            category=category,
+            expansion=[] if expansion is None else expansion,
+        )
+
+    rdchiral_template_extractor.get_fragments_for_changed_atoms = radius_override
+    try:
+        return extract_from_reaction(reaction)
+    finally:
+        rdchiral_template_extractor.get_fragments_for_changed_atoms = original
+        random.setstate(rng_state)
+        numpy_random.set_state(numpy_rng_state)
+
+
+def extract_templates(
+    top_n: int,
+    output_path: str,
+    reactions_path: str | None = None,
+    dataset_id: str = "bisectgroup/USPTO_50K",
+    split: str = "train",
+    dataset_revision: str | None = None,
+    resolve_latest: bool = False,
+    reactant_radius: int = 1,
+    manifest_path: str | None = None,
+) -> dict:
     if reactions_path:
         print(f"Loading reactions from {reactions_path}...", flush=True)
         rows = load_reactions_from_file(reactions_path)
         source_desc = reactions_path
+        source_identity = {
+            "kind": "local_reactions_file",
+            "path": reactions_path,
+            "sha256": hashlib.sha256(Path(reactions_path).read_bytes()).hexdigest(),
+        }
     else:
         revision, revision_resolution = resolve_dataset_revision(
             dataset_id, dataset_revision, resolve_latest
@@ -205,6 +287,13 @@ def extract_templates(top_n: int, output_path: str,
         ds = load_dataset(dataset_id, split=split, revision=revision)
         rows = ds
         source_desc = f"{dataset_id}@{revision} ({split} split, {len(ds)} reactions)"
+        source_identity = {
+            "kind": "huggingface_dataset",
+            "dataset_id": dataset_id,
+            "split": split,
+            "revision": revision,
+            "revision_resolution": revision_resolution,
+        }
     print(f"  {len(rows)} reactions loaded", flush=True)
 
     counts: Counter = Counter()
@@ -219,7 +308,7 @@ def extract_templates(top_n: int, output_path: str,
                 "products": row["products"] if "products" in row else row.get("product", ""),
                 "_id": row["_id"] if "_id" in row else row.get("id", str(i)),
             }
-            result = extract_from_reaction(reaction)
+            result = extract_from_reaction_with_radius(reaction, reactant_radius)
             template = result.get("reaction_smarts")
             if template:
                 counts[template] += 1
@@ -241,18 +330,40 @@ def extract_templates(top_n: int, output_path: str,
     top = simplified.most_common(top_n)
     print(f"Writing top {len(top)} templates to {output_path}", flush=True)
 
-    with open(output_path, "w") as f:
-        f.write("# RENKIN extracted SMIRKS templates\n")
-        f.write(f"# Source: {source_desc}\n")
-        f.write("# Tool: rdchiral + simplification for chematic compatibility\n")
-        f.write("# Format: SMIRKS<TAB>count\n")
-        for smirks, count in top:
-            f.write(f"{smirks}\t{count}\n")
+    output_text = "\n".join(
+        [
+            "# RENKIN extracted SMIRKS templates",
+            f"# Source: {source_desc}",
+            f"# Tool: rdchiral reactant_radius={reactant_radius} + simplification for chematic compatibility",
+            "# Format: SMIRKS<TAB>count",
+            *(f"{smirks}\t{count}" for smirks, count in top),
+            "",
+        ]
+    )
+    Path(output_path).write_text(output_text)
+
+    manifest = {
+        "schema_version": 1,
+        "source": source_identity,
+        "reactant_radius": reactant_radius,
+        "reaction_count": len(rows),
+        "raw_unique_template_count": len(counts),
+        "extraction_error_count": errors,
+        "simplified_unique_template_count": len(simplified),
+        "output_template_count": len(top),
+        "top_n_requested": top_n,
+        "output_path": output_path,
+        "output_sha256": hashlib.sha256(output_text.encode()).hexdigest(),
+        "extractor_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+    }
+    if manifest_path:
+        Path(manifest_path).write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
 
     print(f"Done. Top template count: {top[0][1] if top else 0}", flush=True)
     print("\nTop 10 simplified templates:", flush=True)
     for smirks, count in top[:10]:
         print(f"  {count:5d}x  {smirks[:100]}", flush=True)
+    return manifest
 
 
 def main() -> None:
@@ -284,14 +395,27 @@ def main() -> None:
                         help="Resolve and pin the CURRENT HEAD revision via the Hub API "
                              "instead of PINNED_DATASET_REVISION. Only for a deliberate "
                              "re-baseline against upstream drift.")
+    parser.add_argument(
+        "--reactant-radius",
+        type=int,
+        choices=(0, 1),
+        default=1,
+        help="rdchiral reactant-side extraction radius (default: 1)",
+    )
+    parser.add_argument("--manifest", default=None, help="optional extraction manifest JSON path")
     args = parser.parse_args()
 
-    extract_templates(args.top, args.output,
-                      reactions_path=args.reactions,
-                      dataset_id=args.dataset,
-                      split=args.split,
-                      dataset_revision=args.dataset_revision,
-                      resolve_latest=args.resolve_latest)
+    extract_templates(
+        args.top,
+        args.output,
+        reactions_path=args.reactions,
+        dataset_id=args.dataset,
+        split=args.split,
+        dataset_revision=args.dataset_revision,
+        resolve_latest=args.resolve_latest,
+        reactant_radius=args.reactant_radius,
+        manifest_path=args.manifest,
+    )
 
 
 if __name__ == "__main__":

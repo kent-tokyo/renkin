@@ -49,6 +49,8 @@ from compare_validation import (
     build_stock_set,
     check_reaction_steps_parseable,
     check_target_element_accounting,
+    target_element_excess_counts,
+    route_edge_snapshot,
     validate_stock_leaves,
 )
 
@@ -371,6 +373,10 @@ def run_one_target(
 
     accounting_status, accounting_warnings = check_target_element_accounting(graph)
     row_kwargs["target_element_accounting_status"] = accounting_status
+    row_kwargs["tool_specific"]["aizynthfinder"]["target_element_excess_counts"] = (
+        target_element_excess_counts(graph)
+    )
+    row_kwargs["tool_specific"]["aizynthfinder"]["route_edge_snapshot"] = route_edge_snapshot(graph)
 
     row_kwargs["common_validation_warnings"] = list(step_warnings) + list(accounting_warnings)
 

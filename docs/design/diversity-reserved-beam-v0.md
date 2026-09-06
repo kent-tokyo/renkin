@@ -1,12 +1,15 @@
 # Diversity-Reserved Beam — Design Doc (ROADMAP Item 4)
 
-Status: **Implemented and opt-in; default remains `Off`.** Rollout stages 1-4
-are complete. The original fixed 100-target VAL sweep found modest positive
-evidence at 10 and 20 reserved slots, but it predates the 2026-09-05 unused-slot
-backfill correction and is therefore historical evidence, not a gate result
-for the corrected implementation. Before that correction, 10 slots added one
-clean solve; 20 slots added two clean solves and one timeout on an
-otherwise-unsolved target. This document scopes the
+Status: **Implemented, remeasured, and opt-in; default remains `Off`.** The
+corrected 20-slot implementation recovered five independently validated routes
+on the fixed 58-target AiZynthFinder-only cohort, but always-on `Active` lost 10
+of the old 591-success formal set. A causal `Off` replay recovered nine of
+those ten under the same current code, so the confirmed Active-specific loss
+alone remains above the <=1% gate. It therefore must not become the default.
+The native CLI now offers the bounded
+`retry-on-beam-exhaustion` orchestration: score-only search runs first and
+diversity can only replace a completed unsuccessful run that actually reached
+a beam cutoff. This document scopes the
 "diversity-reserved beam" mechanism from `internal_docs/ROADMAP.md`'s
 beam-crowd-out item
 (P1, issue #101) — a *different* mechanism from PR #104
@@ -212,10 +215,12 @@ own frontier-sweep discipline for template count).
 
 ## 8. Rust/CLI/Python/WASM parity
 
-Same shape as the other two docs' §8: CLI flag (`--beam-diversity-policy
-off|diagnostics-only|active`, plus a `--beam-diversity-slots <N>` or
-`--beam-diversity-fraction <0.0-1.0>` parameter), Python `SearchConfig`
-field, WASM config struct field, same `snake_case` serde convention.
+The base `off|diagnostics-only|active` policies and
+`beam_diversity_slots` have Rust/CLI/Python/WASM parity. The native CLI and
+formal-comparison adapter additionally expose
+`retry-on-beam-exhaustion`; its reusable two-pass function is public Rust API.
+The orchestration is deliberately not folded into `BeamDiversityPolicy`, which
+continues to describe one search pass only.
 
 ## 9. Rollout stages
 
@@ -231,15 +236,27 @@ field, WASM config struct field, same `snake_case` serde convention.
 3. **Done.** Wire into `beam_prune`/`SearchConfig`/`search_diagnostics` (§4-6).
    `Active` still off by default (`Off`).
 4. **Done.** CLI/Python/WASM parity (§8).
-5. **Historical measurement complete; corrected implementation not yet
-   remeasured.** The pre-backfill fixed 100-target VAL sweep found one
-   additional clean solve with 10 slots and two with 20 slots, with no
-   solved-target regressions. The 20-slot arm added one timeout on an
-   otherwise-unsolved target. The 2026-09-05 backfill correction preserves
-   full beam width when reservations cannot be filled, so these historical
-   numbers cannot be transferred directly to current `Active`. Rerun this
-   gate before any default change; `Off` is unaffected.
-6. **Pending stronger evidence.** Only after an `Active`-policy PASS: revisit
+5. **Corrected implementation measured; always-on default rejected.** On the
+   fixed 58-target AiZynthFinder-only cohort, same-session `Off` found zero
+   valid routes while `Active`/20 found five (`L3738`, `L87`, `L2531`,
+   `L4863`, `L348`), with zero invalid routes and zero timeouts. Total wall
+   time was 45.89s vs. 49.35s and median per-target time 570ms vs. 590ms.
+   Against the old formal set of 591 RENKIN successes, however, always-on
+   `Active`/20 retained only 581 and changed 103 selected route hashes. A
+   same-code `Off` replay of those ten losses recovered nine; the remaining
+   `L4699` loss came from the concurrently added #237 fragment-integrity
+   correction changing frontier evolution and is recoverable at beam 200.
+   The nine confirmed Active-specific losses alone exceed the <=1% gate, so
+   `Active` remains opt-in.
+6. **Done (Issue #238).** Add `retry-on-beam-exhaustion`: pass 1 forces `Off`;
+   pass 2 uses `Active` only after no route, normal completion, and a recorded
+   beam cutoff. Both passes reuse one prepared template set. Existing successes
+   return directly from pass 1. On the same 58-target cohort it invoked 58
+   retries, recovered the same five valid routes, produced no invalid route or
+   timeout, and took 94.05s total. This is diagnostic recovery evidence, not a
+   new full-corpus formal score.
+7. **Pending stronger evidence.** Before reconsidering any one-pass default,
+   revisit
    whether `template_id` alone was sufficient, or whether the sweep's own
    diversity-yield numbers make the case for a finer key
    (precursor-structural-cluster, reaction-center, changed-bond-signature) as
@@ -251,7 +268,7 @@ field, WASM config struct field, same `snake_case` serde convention.
   keys remain deferred until measured diversity yield justifies them.
 - PR #104's fixed VAL cohort and formal criteria were reused for direct
   comparability (§7).
-- The historical 10/20-slot sweep is complete, but predates the unused-slot
-  backfill correction. Neither arm justified enabling `Active` by default;
-  the corrected implementation requires a fresh fixed-cohort gate before any
-  future default-change proposal.
+- Corrected `Active`/20 failed the solved-target regression gate and must not be
+  enabled by default. `retry-on-beam-exhaustion` is the bounded recovery path;
+  it preserves score-only successes by construction, but its second-pass cost
+  still requires explicit opt-in.

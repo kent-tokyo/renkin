@@ -51,6 +51,48 @@ class TestRedactHomeDir(unittest.TestCase):
         text = "some/normal/path.json"
         self.assertEqual(cm.redact_home_dir(text), text)
 
+    def test_project_identity_records_package_and_chematic_versions(self):
+        with tempfile.TemporaryDirectory() as root:
+            with open(os.path.join(root, "Cargo.toml"), "w", encoding="utf-8") as handle:
+                handle.write(
+                    '[package]\nversion = "1.0.1"\n'
+                    '[dependencies]\nchematic = { version = "1.0.7", features = ["smiles"] }\n'
+                )
+            self.assertEqual(
+                cm.project_identity(root),
+                {"package_version": "1.0.1", "chematic_version": "1.0.7"},
+            )
+
+    def test_project_identity_is_fail_safe_when_manifest_is_missing(self):
+        with tempfile.TemporaryDirectory() as root:
+            self.assertEqual(
+                cm.project_identity(root),
+                {"package_version": None, "chematic_version": None},
+            )
+
+    @patch("compare_manifest.sha256_file")
+    def test_validate_input_hashes_accepts_unchanged_inputs(self, hash_file):
+        hash_file.side_effect = lambda path: {"a": "ha", "b": "hb"}[path]
+        cm.validate_input_hashes(
+            {"input_file_sha256": {"first": "ha", "second": "hb"}},
+            {"first": "a", "second": "b"},
+        )
+
+    @patch("compare_manifest.sha256_file", return_value="current")
+    def test_validate_input_hashes_rejects_changed_inputs(self, _hash_file):
+        with self.assertRaisesRegex(ValueError, "changed inputs: first"):
+            cm.validate_input_hashes(
+                {"input_file_sha256": {"first": "expected"}},
+                {"first": "a"},
+            )
+
+    def test_validate_input_hashes_rejects_input_set_drift(self):
+        with self.assertRaisesRegex(ValueError, "input set differs"):
+            cm.validate_input_hashes(
+                {"input_file_sha256": {"first": "expected"}},
+                {"first": "a", "new": "b"},
+            )
+
     @patch("os.path.expanduser", return_value="/Users/exampleuser")
     def test_command_line_args_are_redacted_in_start_manifest(self, _mock):
         manifest = cm.capture_start_manifest(

@@ -89,6 +89,17 @@ class TestSampleInputBounds(unittest.TestCase):
             handle.flush()
             self.assertEqual([row["target_id"] for row in cs.load_sample(handle.name)], ["a", "b"])
 
+    def test_val_target_id_recovers_missing_source_line(self):
+        self.assertEqual(
+            cs.infer_source_line_number("uspto50k_val#L2001", None), 2001
+        )
+
+    def test_source_line_inference_is_strict_and_fail_closed(self):
+        for target_id in ("uspto50k_test#L2001", "uspto50k_val#L0", "uspto50k_val#Lx"):
+            with self.subTest(target_id=target_id):
+                self.assertIsNone(cs.infer_source_line_number(target_id, None))
+        self.assertEqual(cs.infer_source_line_number("uspto50k_val#L2001", 7), 7)
+
     def test_sample_loader_rejects_invalid_row_schema(self):
         cases = [
             "[]\n",

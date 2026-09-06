@@ -142,7 +142,9 @@ OC(=O)c1ccccc1OC(=O)C
 
 ## 現在の制約
 
-⚠️ v1.0.0の4,903-target shared-stock比較は完了し、統計的優越性gateはPASSしました。ただし凍結RENKIN出力2件のroute-tree整合性失敗により、正式公開gateはHOLDです。v1.0.1 candidateでの対象限定再実行は2件ともparseable・stock-terminatedになりましたが、正式判定の更新には修正版での全4,903件再実行が必要です。このリポジトリの他箇所にある78.0%/95.9%/81.8%(ChEMBL)はvalidator修正前の値であり無効化されています。RENKINは収率・実験的に較正された成功確率・副反応を予測せず、文献の自動検索も行いません（`success_probability`はtemplate頻度由来の探索スコアであり、較正された予測値ではありません）。
+現行リリースは **v1.0.2** です。
+
+⚠️ 修正版v1.0.1の4,903-target shared-stock比較は完了しました。RENKINは591/4,903（12.05%）、AiZynthFinder 4.4.1は200/4,903（4.08%）で、paired差は+7.975 percentage points、95% CIは[+7.098,+8.852]です。v1.0.1全件armはintegrity verificationを通過し、統計的優越性gate・正式公開gateともにPASSです。これは宣言済みshared-stock endpointでの結果であり、一般的なCASP優越性の主張ではありません。このリポジトリの他箇所にある78.0%/95.9%/81.8%(ChEMBL)はvalidator修正前の値であり無効化されています。RENKINは収率・実験的に較正された成功確率・副反応を予測せず、文献の自動検索も行いません（`success_probability`はtemplate頻度由来の探索スコアであり、較正された予測値ではありません）。
 
 ---
 
@@ -365,6 +367,7 @@ CC-BY-SA-4.0であり、RENKIN本体コードのMITとは別ライセンスで�
 | **Ring-context安全ガード** | `--ring-context-policy conservative --ring-context-sidecar <path>` — extracted templateの環開閉切断が、訓練データで一度も環結合として観測されていない場合に拒否するopt-inのmatch-levelフィルタ。デフォルトは `disabled`（既存挙動のまま） — [Issue #72](https://github.com/kent-tokyo/renkin/issues/72)参照 |
 | **LightGBM candidate reranker** | `--reranker-model`/`--reranker-freq-table`（CLI）または `reranker_model_path`/`reranker_freq_table_path`（Python）— opt-inかつordering-onlyな再順位付け。生成される候補そのものは一切変更されず探索順序のみが変わり、オフ時はレガシー順序とbyte単位で完全一致。Paired 100-target route-searchゲート: `route_to_configured_stock` 16→20（+4/-0）。`python3 scripts/fetch_reranker_model.py` で凍結モデルを取得（SHA-256検証つき、パッケージには同梱しない — [ロードマップ](#ロードマップ)参照） |
 | **Coverage mode（opt-in）** | `--search-mode coverage --coverage-templates <path>`（CLI）または `search_mode="coverage"`, `coverage_templates_path=...`（Python）— デフォルトのテンプレートセットでルートが見つからない場合のみ、自動的により大きな別テンプレートセットへエスカレーションする。`--coverage-timeout-secs` で協調的にキャンセル可能。未使用時の標準モード出力はbyte単位で完全不変。`python3 scripts/fetch_coverage_templates.py` で凍結済み2,000テンプレートのStage-2セットを取得（SHA-256検証つき、パッケージには同梱しない、rerankerモデルと同じ理由 — [ロードマップ](#ロードマップ)参照） |
+| **段階的recovery（opt-in、native）** | `--search-mode recovery --beam-diversity-slots N` はbaseline成功を保持し、失敗時だけelement gate・diversity・depth・caller-suppliedな小→大coverage tierへ進む。全attemptを監査可能に記録し、standard modeの既定動作は変えない。詳細は[staged recovery mode](docs/guides/staged-recovery.md) |
 | **RENKIN Bridge / `audit-route`** | `renkin audit-route route.json [--format auto\|renkin\|aizynthfinder\|syntheseus] [--stock stock.smi] [--output human\|json]` — ツール非依存のroute audit: 構造整合性・stock・宣言済み反応のforward replay検証を、それぞれ独立に `pass`/`fail`/`not_evaluable` で報告し、route全体は `pass`/`fail`/`partial` で判定。RENKIN-native route JSON（v0.25.0）、実物AiZynthFinder route JSON（単一ターゲット・gzip圧縮batch出力、AiZynthFinder 4.3.2／4.4.0／4.4.1で検証済み——全バージョン対応を主張するものではない、v0.26.0、v0.32.0でversion matrixを拡大）、そしてSyntheseus route（Syntheseus自体にはネイティブのroute export機能がないため、任意インストールの`renkin.syntheseus_exporter`が生成する`syntheseus-route-v1`交換schema経由、v0.30.0）に対応。`--format auto` は入力の形状から判定し、曖昧な場合は推測せずエラーにする。[AiZynthFinderデモ →](https://kent-tokyo.github.io/renkin/guides/aizynthfinder-audit-demo/)（英語）・[Syntheseusデモ →](https://kent-tokyo.github.io/renkin/guides/syntheseus-audit-demo/)（英語） |
 | **ルートスコアリング・診断** | `confidence`・`success_probability`・cost・feasibility finding・building-block diversity・template proxyのchemical-idea diversityを分離して報告。実験成功確率を集約スコアとして捏造しない — [feasibility](docs/guides/route-feasibility-diagnostics.md)・[diversity](docs/guides/route-set-diversity.md) |
 | **ステップメタデータの出所表示** | 各ステップに `metadata_source`/`metadata_scope` を付与し、`conditions`/`reaction_family` がルール作者による既定値かそれ以上の根拠があるかを機械可読に区別。extracted templateには付与しない（捏造しない） |
@@ -392,21 +395,21 @@ USPTO-50kテストセット（全4,907分子評価）:
 
 > **評価定義**: `find_routes` がbuilding block集合に含まれる末端precursorのみで構成される経路を depth=5・beam=100 以内で1件以上見つけられれば solved。USPTO-50k の正解試薬とは照合しない。
 
-### v1.0.0正式shared-stock比較（4,903件のpaired target）
+### v1.0.1正式shared-stock比較（4,903件のpaired target）
 
 | Arm | Primary route-to-shared-stock成功 | Rate |
 |---|---:|---:|
-| RENKIN v1.0.0 | 577 / 4,903 | 11.77% |
+| RENKIN v1.0.1 | 591 / 4,903 | 12.05% |
 | AiZynthFinder 4.4.1 | 200 / 4,903 | 4.08% |
 
-paired差はRENKIN側 **+7.689 percentage points**、paired-bootstrap 95% CIは
-**[+6.812, +8.566]**で、事前登録した統計gateはPASSしました。一方、凍結した
-RENKIN出力2件にparseableなnormalized route treeがなく、正式公開gateは
-**HOLD**です。v1.0.1 candidateの修正後は対象限定再実行2件ともparseable・
-stock-terminatedですが、凍結判定を更新するには全4,903件の再実行が必要です。
-これはshared-stock route endpointの結果であり、実験収率や一般的なCASP優越性の
+paired差はRENKIN側 **+7.975 percentage points**、paired-bootstrap 95% CIは
+**[+7.098, +8.852]**です。v1.0.1全件armはtarget set・manifest・schema・route hashの
+integrity verificationを通過し、591件すべてのroute treeがparseableかつshared stockで
+終端したため、統計gate・正式公開gateともに**PASS**です。凍結v1.0.0のHOLD artifactは
+履歴証拠として別途保持しています。これはshared-stock route endpointの結果であり、
+実験収率や一般的なCASP優越性の
 主張ではありません。[protocolと状態](docs/benchmark/formal-v1.0-competitor-comparison.md)・
-[凍結report](data/comparison/formal_v1.0/formal_report.md)
+[修正版report](data/comparison/formal_v1.0.1/formal_report.md)
 
 ### Corrected baseline（コミット `e20dc8c`、2026-07-22）
 
@@ -626,7 +629,7 @@ renkin/                          ← Cargo workspace ルート
 
 ### 進行中
 
-- [ ] Candidate-generation coverage gap — formal TESTコーパスの33.0%（1,618/4,903）がpositive candidateゼロで、これはrerankingでは原理的に解決できない天井。template-diversity-scalingは強いメカニズムであることを確認済み（Phase A.5/B.2、上記coverage mode参照）、higher-level-templateの研究方向はまだ未着手
+- [ ] Candidate-generation coverage gap — formal TESTコーパスの33.0%（1,618/4,903）がpositive candidateゼロで、これはrerankingでは原理的に解決できない天井。template-diversity-scalingは引き続き有力で、最初のprovenance-boundedなradius-zero abstractionを実装し独立VAL gateまで通過済み（[#240](https://github.com/kent-tokyo/renkin/issues/240)）。ただし4/22の残存cohort回収は全件再測定でも出荷時既定値でもない
 - [ ] 5万テンプレートセット向けのtemplate retrieval index（element bitmask + bond-center prefilter）
 - [ ] キャリブレーション済みroute confidence（`success_probability`を経験的solve rateへマッピング）
 

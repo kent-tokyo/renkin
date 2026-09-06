@@ -17,7 +17,9 @@
 use anyhow::{Result, bail};
 use renkin::chem_env::default_rules;
 use renkin::io_limits::{read_bounded_reader, read_bounded_text_file};
-use renkin_forward::bench::{BenchOutcome, BenchmarkManifest, TemplateSource, run_benchmark};
+use renkin_forward::bench::{
+    BenchOutcome, BenchmarkManifest, TemplateSource, run_benchmark_with_template_manifest,
+};
 use renkin_forward::hints::{HintGenerationConfig, generate_retrieval_hints};
 use renkin_forward::{
     ForwardEnumerationConfig, ForwardPredictConfig, ForwardPrediction, enumerate_products_detailed,
@@ -33,7 +35,7 @@ renkin-forward validate --route-json <JSON> [--templates <path>] [--max-results 
 renkin-forward enumerate --reactant <SMILES> [--partners <path>] [--templates <path>] [--max-results N]\n  \
 renkin-forward hints --reactants <SMILES>... [--templates <path>] [--max-hints N]\n  \
 renkin-forward benchmark --corpus <path> --output-rows <path> [--output-report <path>]\n                          \
-[--template-source embedded|file|train-extracted] [--templates <path>]\n  \
+[--template-source embedded|file|train-extracted] [--templates <path>] [--template-manifest <path>]\n  \
 renkin-forward --help\n  \
 renkin-forward --version\n\
 \n\
@@ -125,7 +127,7 @@ const BENCHMARK_HELP: &str = "renkin-forward benchmark — deterministic forward
 \n\
 Usage:\n  \
 renkin-forward benchmark --corpus <path> --output-rows <path> [--output-report <path>]\n                            \
-                            [--template-source embedded|file|train-extracted] [--templates <path>] [--output-manifest <path>] [--verify-manifest <path>] [--strict]\n\
+                            [--template-source embedded|file|train-extracted] [--templates <path>] [--template-manifest <path>] [--output-manifest <path>] [--verify-manifest <path>] [--strict]\n\
 \n\
 Options:\n  \
 --corpus <path>            JSONL benchmark corpus, one reaction per line (required; see\n                               \
@@ -139,14 +141,16 @@ the report is printed to stdout instead (this subcommand's only stdout output)\n
 --verify-manifest <path>    Verify an existing manifest against this benchmark run\n  \
 --template-source <mode>   'embedded' (default): embedded default rules only.\n                               \
 'file': ONLY the rules in --templates (never merged with embedded defaults).\n                               \
-'train-extracted': same mechanics as 'file'; labels the run as having used\n                               \
-templates the caller extracted from the train split only -- this harness\n                               \
-cannot verify that claim, see the guide.\n                               \
+'train-extracted': ONLY the rules in --templates, after the required\n                               \
+--template-manifest verifies template/corpus hashes, split protocol, and\n                               \
+included_split='train'.\n                               \
 'scorer-conditioned' is named by the frozen protocol (Phase 0 mode 4) but is\n                               \
 not implemented until a reranker exists (issue #61 Phase 3/4) -- rejected\n                               \
 here, not silently downgraded to another mode.\n  \
 --templates <path>         Required when --template-source is 'file' or 'train-extracted';\n                               \
 hard error if given under 'embedded' (see docs)\n  \
+--template-manifest <path> Required only for --template-source 'train-extracted'; JSON\n                               \
+attestation of template/corpus SHA-256, split protocol, and train-only inclusion\n  \
 --strict                   Hard-error the whole run on any data-quality issue: malformed\n                               \
 corpus JSON, wrong schema version, unparseable SMILES, empty reactants/accepted\n                               \
 products, a conflicting group_key/reaction_id, a per-row prediction failure,\n                               \
@@ -201,6 +205,7 @@ struct ParsedArgs {
     output_report_path: Option<String>,
     output_manifest_path: Option<String>,
     verify_manifest_path: Option<String>,
+    template_manifest_path: Option<String>,
     template_source: String,
     strict: bool,
 }
@@ -231,6 +236,7 @@ fn parse_args(subcommand: &str, args: &[String]) -> Result<ParsedArgs> {
     let mut output_report_path: Option<String> = None;
     let mut output_manifest_path: Option<String> = None;
     let mut verify_manifest_path: Option<String> = None;
+    let mut template_manifest_path: Option<String> = None;
     let mut template_source = "embedded".to_string();
     let mut strict = false;
 
@@ -358,6 +364,13 @@ fn parse_args(subcommand: &str, args: &[String]) -> Result<ParsedArgs> {
                     .ok_or_else(|| anyhow::anyhow!("--verify-manifest requires a value"))?;
                 verify_manifest_path = Some(v.clone());
             }
+            "--template-manifest" if subcommand == "benchmark" => {
+                i += 1;
+                let v = args
+                    .get(i)
+                    .ok_or_else(|| anyhow::anyhow!("--template-manifest requires a value"))?;
+                template_manifest_path = Some(v.clone());
+            }
             "--template-source" if subcommand == "benchmark" => {
                 i += 1;
                 let v = args
@@ -405,6 +418,7 @@ fn parse_args(subcommand: &str, args: &[String]) -> Result<ParsedArgs> {
         output_report_path,
         output_manifest_path,
         verify_manifest_path,
+        template_manifest_path,
         template_source,
         strict,
     })
@@ -480,10 +494,11 @@ fn run_benchmark_subcommand(parsed: &ParsedArgs) -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("benchmark requires --output-rows <path>"))?;
     let template_source = TemplateSource::parse(&parsed.template_source)?;
 
-    let BenchOutcome { rows, report } = run_benchmark(
+    let BenchOutcome { rows, report } = run_benchmark_with_template_manifest(
         corpus_path,
         template_source,
         parsed.templates_path.as_deref(),
+        parsed.template_manifest_path.as_deref(),
         parsed.strict,
     )?;
 

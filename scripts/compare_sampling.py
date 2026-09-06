@@ -23,6 +23,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import sys
 import stat
 import tempfile
@@ -39,6 +40,22 @@ except ImportError:  # pragma: no cover -- exercised by scripts/tests without th
 PROTOCOL_VERSION = "renkin-issue66-sample-v1"
 MAX_SAMPLE_BYTES = 64 * 1024 * 1024
 MAX_SAMPLE_LINE_BYTES = 64 * 1024
+_VAL_TARGET_ID_RE = re.compile(r"^uspto50k_val#L([1-9][0-9]*)$")
+
+
+def infer_source_line_number(target_id: object, source_line: object) -> object:
+    """Recover provenance for frozen VAL rows that encode it in target_id.
+
+    VAL cohort artifacts predate the TEST sampler and intentionally leave
+    ``source_line_number`` null.  Their ``uspto50k_val#L<N>`` IDs still carry
+    the exact one-based source line, so accepting only that strict shape keeps
+    the loader fail-closed for arbitrary or malformed rows.
+    """
+    if source_line is None and isinstance(target_id, str):
+        match = _VAL_TARGET_ID_RE.fullmatch(target_id)
+        if match is not None:
+            return int(match.group(1))
+    return source_line
 
 
 def _validated_sample_file(path: str) -> os.stat_result:
@@ -228,7 +245,9 @@ def load_sample(list_path: str, n: int | None = None) -> list[dict]:
                 rank = row.get("sample_rank")
                 target_id = row.get("target_id")
                 canonical = row.get("canonical_smiles")
-                source_line = row.get("source_line_number")
+                source_line = infer_source_line_number(
+                    target_id, row.get("source_line_number")
+                )
                 sample_key_value = row.get("sample_key")
                 if isinstance(rank, bool) or not isinstance(rank, int) or rank < 0:
                     raise ValueError("sample list row has an invalid sample_rank")

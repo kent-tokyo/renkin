@@ -40,6 +40,8 @@ from compare_validation import (
     build_stock_set,
     check_reaction_steps_parseable,
     check_target_element_accounting,
+    target_element_excess_counts,
+    route_edge_snapshot,
     validate_stock_leaves,
 )
 
@@ -63,6 +65,14 @@ class RenkinConfig:
     # Spectator-bond-loss fail-closed gate (v0.35.0) -- orthogonal to
     # ring_context_policy above; "off" runs the shipped default (gate off).
     spectator_bond_policy: str | None = None
+    # Candidate-time directional element-accounting policy. The integrity-
+    # triggered retry keeps the off-policy fast path and conditionally reruns
+    # with the strict gate; all modes are RENKIN-only comparison arms.
+    element_accounting_policy: str = "off"
+    # Diversity-reserved beam arm. Kept explicit in the comparison config so
+    # measurements cannot accidentally share the default arm's identity.
+    beam_diversity_policy: str = "off"
+    beam_diversity_slots: int = 0
     # Issue #101 Task 35: ordering-only LightGBM candidate reranker. Both
     # must be set together (renkin's own CLI already falls back to legacy
     # ordering with a stderr warning if only one is given, or if loading
@@ -71,13 +81,15 @@ class RenkinConfig:
     reranker_freq_table: str | None = None
     # v0.24 coverage mode (Issue #101, Phase 41.18B) -- "coverage" requires
     # coverage_templates_path; coverage_timeout_secs is optional (None means
-    # no cooperative-cancellation deadline on Stage 2). Not part of the
-    # Issue #66 open-source comparison protocol -- used by the coverage-mode
-    # formal-TEST runner (data/coverage_mode_formal_test/protocol.md) only.
+    # no cooperative-cancellation deadline on Stage 2). Issue #239 adds
+    # opt-in "recovery", where the same coverage asset is an optional final
+    # stage after integrity/diversity/depth recovery.
     search_mode: str = "standard"
     coverage_templates_path: str | None = None
+    recovery_coverage_tier_paths: tuple[str, ...] = ()
     coverage_timeout_secs: int | None = None
     coverage_beam_width: int | None = None
+    recovery_depth: int | None = None
 
 
 _MAXRSS_RE = re.compile(r"^\s*(\d+)\s+maximum resident set size\s*$", re.MULTILINE)
@@ -186,15 +198,27 @@ def run_one_target(
         # search_diagnostics.spectator_bond_gated_out -- gated_out_* below
         # would otherwise stay null even under a "gated" policy.
         argv += ["--spectator-bond-policy", config.spectator_bond_policy, "--search-diagnostics"]
+    if config.element_accounting_policy != "off":
+        argv += ["--element-accounting-policy", config.element_accounting_policy]
+    if config.beam_diversity_policy != "off":
+        argv += ["--beam-diversity-policy", config.beam_diversity_policy]
+    if config.beam_diversity_policy != "off" or config.search_mode == "recovery":
+        argv += ["--beam-diversity-slots", str(config.beam_diversity_slots)]
     if config.reranker_model and config.reranker_freq_table:
         argv += ["--reranker-model", config.reranker_model]
         argv += ["--reranker-freq-table", config.reranker_freq_table]
-    if config.search_mode == "coverage":
-        argv += ["--search-mode", "coverage", "--coverage-templates", config.coverage_templates_path]
+    if config.search_mode != "standard":
+        argv += ["--search-mode", config.search_mode]
+        for path in config.recovery_coverage_tier_paths:
+            argv += ["--recovery-coverage-tier", path]
+        if config.coverage_templates_path is not None:
+            argv += ["--coverage-templates", config.coverage_templates_path]
         if config.coverage_timeout_secs is not None:
             argv += ["--coverage-timeout-secs", str(config.coverage_timeout_secs)]
         if config.coverage_beam_width is not None:
             argv += ["--coverage-beam-width", str(config.coverage_beam_width)]
+        if config.recovery_depth is not None:
+            argv += ["--recovery-depth", str(config.recovery_depth)]
 
     (
         returncode,
@@ -266,6 +290,9 @@ def run_one_target(
         "stage2_timeout": parsed.get("stage2_timeout"),
         "stage1_elapsed_ms": parsed.get("stage1_elapsed_ms"),
         "stage2_elapsed_ms": parsed.get("stage2_elapsed_ms"),
+        "element_accounting_retry": parsed.get("element_accounting_retry"),
+        "beam_diversity_retry": parsed.get("beam_diversity_retry"),
+        "recovery": parsed.get("recovery"),
     }
 
     gated_out_candidate_count = None
@@ -348,6 +375,10 @@ def run_one_target(
 
     accounting_status, accounting_warnings = check_target_element_accounting(graph)
     row_kwargs["target_element_accounting_status"] = accounting_status
+    row_kwargs["tool_specific"]["renkin"]["target_element_excess_counts"] = (
+        target_element_excess_counts(graph)
+    )
+    row_kwargs["tool_specific"]["renkin"]["route_edge_snapshot"] = route_edge_snapshot(graph)
 
     row_kwargs["common_validation_warnings"] = list(step_warnings) + list(accounting_warnings)
 

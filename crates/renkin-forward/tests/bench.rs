@@ -10,6 +10,11 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::process::Command;
 
+use renkin_forward::bench::{
+    SPLIT_PROTOCOL_VERSION, TRAIN_EXTRACTED_TEMPLATE_MANIFEST_SCHEMA_VERSION,
+};
+use renkin_forward::sha256_hex_of_file;
+
 fn bin() -> &'static str {
     env!("CARGO_BIN_EXE_renkin-forward")
 }
@@ -44,6 +49,21 @@ fn read_rows(path: &str) -> Vec<serde_json::Value> {
         .collect()
 }
 
+fn write_train_template_manifest(path: &str, templates_path: &str, corpus_path: &str) {
+    let manifest = serde_json::json!({
+        "schema_version": TRAIN_EXTRACTED_TEMPLATE_MANIFEST_SCHEMA_VERSION,
+        "templates_sha256": sha256_hex_of_file(templates_path).unwrap(),
+        "source_corpus_sha256": sha256_hex_of_file(corpus_path).unwrap(),
+        "split_protocol_version": SPLIT_PROTOCOL_VERSION,
+        "included_split": "train",
+    });
+    std::fs::write(
+        path,
+        format!("{}\n", serde_json::to_string_pretty(&manifest).unwrap()),
+    )
+    .unwrap();
+}
+
 /// Recursively zeroes every `elapsed_ms`/`latency_ms` value in place -- the
 /// harness's only documented non-deterministic fields (see
 /// `docs/guides/forward-benchmark.md`'s determinism section).
@@ -76,6 +96,7 @@ fn benchmark_help_succeeds() {
     assert!(stdout.contains("--output-rows"));
     assert!(stdout.contains("--output-manifest"));
     assert!(stdout.contains("--verify-manifest"));
+    assert!(stdout.contains("--template-manifest"));
     assert!(stdout.contains("--template-source"));
 }
 
@@ -278,6 +299,135 @@ fn benchmark_file_source_uses_only_the_given_file_not_embedded_defaults() {
     assert_eq!(report["provenance"]["rules_loaded"], 2);
     assert_eq!(report["provenance"]["template_source"], "file");
     assert!(report["provenance"]["rules_file_sha256"].is_string());
+}
+
+#[test]
+fn benchmark_train_extracted_requires_and_verifies_manifest() {
+    let corpus_path = fixture_corpus_path();
+    let templates_path = temp_path("train_extracted_rules.smi");
+    std::fs::write(
+        &templates_path,
+        "[O:3]=[C:2]-[OH:1]>>C-[O:1]-[C:2]=[O:3]\t1293\n",
+    )
+    .unwrap();
+    let manifest_path = temp_path("train_extracted_manifest.json");
+    write_train_template_manifest(&manifest_path, &templates_path, &corpus_path);
+    let rows_path = temp_path("rows-train-extracted.jsonl");
+    let report_path = temp_path("report-train-extracted.json");
+
+    let missing_manifest = run(&[
+        "benchmark",
+        "--corpus",
+        &corpus_path,
+        "--output-rows",
+        &rows_path,
+        "--template-source",
+        "train-extracted",
+        "--templates",
+        &templates_path,
+    ]);
+    assert!(!missing_manifest.status.success());
+    assert!(String::from_utf8_lossy(&missing_manifest.stderr).contains("--template-manifest"));
+
+    let verified = run(&[
+        "benchmark",
+        "--corpus",
+        &corpus_path,
+        "--output-rows",
+        &rows_path,
+        "--output-report",
+        &report_path,
+        "--template-source",
+        "train-extracted",
+        "--templates",
+        &templates_path,
+        "--template-manifest",
+        &manifest_path,
+    ]);
+    assert!(
+        verified.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&verified.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(report_path).unwrap()).unwrap();
+    assert_eq!(report["provenance"]["template_source"], "train_extracted");
+    assert_eq!(report["provenance"]["rules_loaded"], 1);
+    assert_eq!(
+        report["provenance"]["rules_file_sha256"],
+        sha256_hex_of_file(&templates_path).unwrap()
+    );
+}
+
+#[test]
+fn benchmark_train_extracted_manifest_mismatches_fail_closed() {
+    let corpus_path = fixture_corpus_path();
+    let templates_path = temp_path("train_extracted_mismatch_rules.smi");
+    std::fs::write(
+        &templates_path,
+        "[O:3]=[C:2]-[OH:1]>>C-[O:1]-[C:2]=[O:3]\t1293\n",
+    )
+    .unwrap();
+    let manifest_path = temp_path("train_extracted_mismatch_manifest.json");
+    let rows_path = temp_path("rows-train-extracted-mismatch.jsonl");
+
+    let cases = [
+        ("templates_sha256", serde_json::json!("0".repeat(64))),
+        ("source_corpus_sha256", serde_json::json!("1".repeat(64))),
+        ("split_protocol_version", serde_json::json!(999)),
+        ("included_split", serde_json::json!("test")),
+    ];
+    for (field, replacement) in cases {
+        write_train_template_manifest(&manifest_path, &templates_path, &corpus_path);
+        let mut manifest: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&manifest_path).unwrap()).unwrap();
+        manifest[field] = replacement;
+        std::fs::write(
+            &manifest_path,
+            format!("{}\n", serde_json::to_string_pretty(&manifest).unwrap()),
+        )
+        .unwrap();
+
+        let out = run(&[
+            "benchmark",
+            "--corpus",
+            &corpus_path,
+            "--output-rows",
+            &rows_path,
+            "--template-source",
+            "train-extracted",
+            "--templates",
+            &templates_path,
+            "--template-manifest",
+            &manifest_path,
+        ]);
+        assert!(
+            !out.status.success(),
+            "mismatch in {field} must fail closed"
+        );
+        assert!(
+            String::from_utf8_lossy(&out.stderr).contains(field),
+            "stderr for {field}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+}
+
+#[test]
+fn benchmark_rejects_template_manifest_outside_train_extracted_mode() {
+    let out = run(&[
+        "benchmark",
+        "--corpus",
+        &fixture_corpus_path(),
+        "--output-rows",
+        &temp_path("rows-stray-template-manifest.jsonl"),
+        "--template-manifest",
+        &temp_path("unused-template-manifest.json"),
+    ]);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("--template-manifest"), "stderr: {stderr}");
+    assert!(stderr.contains("embedded"), "stderr: {stderr}");
 }
 
 #[test]

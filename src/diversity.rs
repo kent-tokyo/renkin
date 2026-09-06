@@ -12,6 +12,9 @@
 
 use std::collections::{BTreeSet, HashSet};
 
+use chematic::smarts::parse_smarts;
+
+use crate::bridge::route_graph::{ReactionEvidence, RouteDocument};
 use crate::search::Route;
 
 /// A route's chemical-idea signature: the set of distinct template IDs it
@@ -81,6 +84,94 @@ pub fn template_disconnection_cds(routes: &[Route]) -> f64 {
         }
     }
     1.0 + (2.0 * total_distance / core.len() as f64)
+}
+
+/// Exact formed-bond CDS for atom-mapped Bridge route documents.
+///
+/// This deliberately accepts [`RouteDocument`] rather than [`Route`]: native
+/// search routes do not retain atom mapping. Every step must carry a mapped
+/// reaction evidence record; if one step is unmapped or malformed, the result
+/// is `None` rather than a proxy or a partial score. Bond order is intentionally
+/// excluded from the identity, matching the formed-bond endpoint definition;
+/// order changes are not new formed bonds.
+pub fn atom_mapped_formed_bond_cds(routes: &[RouteDocument]) -> Option<f64> {
+    let mut signatures = Vec::with_capacity(routes.len());
+    for route in routes {
+        let mut signature = BTreeSet::new();
+        for step in route.steps() {
+            let smirks = match step.reaction_evidence.as_ref()? {
+                ReactionEvidence::RenkinTemplate {
+                    declared_smirks: Some(smirks),
+                    ..
+                }
+                | ReactionEvidence::AiZynthFinderTemplate { smirks, .. }
+                | ReactionEvidence::SyntheseusReaction {
+                    reaction_smiles: smirks,
+                }
+                | ReactionEvidence::SynPlannerReaction { smiles: smirks, .. } => smirks,
+                ReactionEvidence::RenkinTemplate {
+                    declared_smirks: None,
+                    ..
+                } => return None,
+            };
+            let (lhs, rhs) = smirks.split_once(">>")?;
+            let lhs = mapped_bonds(lhs)?;
+            let rhs = mapped_bonds(rhs)?;
+            for bond in rhs.difference(&lhs) {
+                signature.insert(*bond);
+            }
+        }
+        if signature.is_empty() {
+            return None;
+        }
+        signatures.push(signature);
+    }
+    Some(cds_from_signatures(signatures))
+}
+
+fn mapped_bonds(side: &str) -> Option<BTreeSet<(u16, u16)>> {
+    let mut bonds = BTreeSet::new();
+    for fragment in side.split('.') {
+        let query = parse_smarts(fragment).ok()?;
+        for bond in &query.bonds {
+            let Some(a) = query.atoms.get(bond.atom1)?.atom_map else {
+                continue;
+            };
+            let Some(b) = query.atoms.get(bond.atom2)?.atom_map else {
+                continue;
+            };
+            bonds.insert(if a < b { (a, b) } else { (b, a) });
+        }
+    }
+    Some(bonds)
+}
+
+fn cds_from_signatures(mut signatures: Vec<BTreeSet<(u16, u16)>>) -> f64 {
+    if signatures.is_empty() {
+        return 1.0;
+    }
+    signatures.sort();
+    signatures.dedup();
+    let core: Vec<_> = signatures
+        .iter()
+        .filter(|signature| {
+            !signatures
+                .iter()
+                .any(|other| other.len() < signature.len() && other.is_subset(signature))
+        })
+        .collect();
+    if core.len() < 2 {
+        return 1.0;
+    }
+    let mut distance = 0.0;
+    for i in 0..core.len() {
+        for j in (i + 1)..core.len() {
+            let union = core[i].union(core[j]).count();
+            let intersection = core[i].intersection(core[j]).count();
+            distance += 1.0 - intersection as f64 / union as f64;
+        }
+    }
+    1.0 + 2.0 * distance / core.len() as f64
 }
 
 #[cfg(test)]
@@ -177,5 +268,20 @@ mod tests {
             route(&["a", "b"]),
         ]);
         assert_eq!(forward.to_bits(), reverse.to_bits());
+    }
+
+    #[test]
+    fn mapped_bond_delta_ignores_unmapped_reagent_bonds() {
+        let lhs = mapped_bonds("[C:1]-[O:2].O").unwrap();
+        let rhs = mapped_bonds("[C:1]-[O:2]-[CH3:3].O").unwrap();
+        assert_eq!(lhs, BTreeSet::from([(1, 2)]));
+        assert_eq!(rhs, BTreeSet::from([(1, 2), (2, 3)]));
+    }
+
+    #[test]
+    fn exact_cds_uses_formed_bond_endpoint_sets() {
+        let a = BTreeSet::from([(1, 2)]);
+        let b = BTreeSet::from([(3, 4)]);
+        assert_eq!(cds_from_signatures(vec![a, b]), 2.0);
     }
 }

@@ -20,6 +20,15 @@ families under RENKIN's current route representation. Two templates can encode
 the same formed bond, and one template can apply at different target bonds, so
 the value must not be labelled or benchmarked as exact atom-mapped CDS.
 
+## Exact atom-mapped CDS boundary
+
+`diversity::atom_mapped_formed_bond_cds()` is available for atom-mapped Bridge
+`RouteDocument` values, such as SynPlanner exports. It derives formed-bond
+endpoint sets from mapped reaction evidence and returns `None` if any step is
+unmapped or malformed. It never falls back to the template-ID proxy and does
+not change the native `Route` JSON schema. Bond-order changes are not treated
+as newly formed bonds.
+
 ## Provenance and licence boundary
 
 - Research motivation and the formed-bond CDS definition: F. Mrugalla et al.,

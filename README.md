@@ -171,11 +171,15 @@ Use `--format mermaid` for GitHub/Notion-compatible flowcharts.
 
 ## Current Limitations
 
-⚠️ The 4,903-target v1.0.0 shared-stock comparison is complete: its statistical
-superiority gate passed, but its formal publication gate remains on hold because
-two frozen RENKIN rows failed route-tree integrity. Both failure modes pass a
-targeted v1.0.1-candidate rerun; a full corrected rerun is still required before
-changing the formal verdict. Historical 78.0%/95.9%/81.8%(ChEMBL) figures
+Current release: **v1.0.2**.
+
+⚠️ The corrected 4,903-target v1.0.1 shared-stock comparison is complete. RENKIN
+recorded 591/4,903 primary successes (12.05%) versus AiZynthFinder 4.4.1's
+200/4,903 (4.08%); the paired difference was +7.975 percentage points with 95%
+CI [+7.098, +8.852]. The full v1.0.1 arm passed integrity verification, so both
+the statistical and formal publication gates pass. This is a result for the
+declared shared-stock endpoint, not universal CASP superiority. Historical
+78.0%/95.9%/81.8%(ChEMBL) figures
 elsewhere in this repo predate validator fixes and are invalidated. RENKIN does not predict yields, calibrated
 experimental success probabilities, or side reactions, and does not search
 the literature automatically (`success_probability` is a template-frequency
@@ -413,6 +417,7 @@ for the full acceptance criteria and licensing split.
 | **Ring-context safety guard** | `--ring-context-policy conservative --ring-context-sidecar <path>` — opt-in match-level filter that rejects an extracted template's ring-opening/closing disconnection when its historical training data never observed that bond as ring-forming/-breaking; default `disabled` (unchanged legacy behavior) — see [Issue #72](https://github.com/kent-tokyo/renkin/issues/72) |
 | **LightGBM candidate reranker** | `--reranker-model`/`--reranker-freq-table` (CLI) or `reranker_model_path`/`reranker_freq_table_path` (Python) — opt-in, ordering-only re-ranking via a frozen LightGBM model; never changes which candidates are generated, only their order, and reproduces legacy ordering byte-for-byte when off. Paired 100-target route-search gate: `route_to_configured_stock` 16→20 (+4/-0). `python3 scripts/fetch_reranker_model.py` fetches the frozen model (SHA-256-verified, not bundled in any package — see [Roadmap](#roadmap)) |
 | **Coverage mode** (opt-in) | `--search-mode coverage --coverage-templates <path>` (CLI) or `search_mode="coverage"`, `coverage_templates_path=...` (Python) — if the default template set finds no route, automatically escalates to a larger, separately loaded template set, cooperatively cancellable via `--coverage-timeout-secs`. Standard-mode output is byte-for-byte unchanged when not used. `python3 scripts/fetch_coverage_templates.py` fetches the frozen 2,000-template Stage-2 set (SHA-256-verified, not bundled in any package, same reasoning as the reranker model — see [Roadmap](#roadmap)) |
+| **Staged recovery** (opt-in, native) | `--search-mode recovery --beam-diversity-slots N` preserves a successful baseline and conditionally escalates element gating, diversity, depth, and caller-supplied narrow-to-broad coverage tiers. Every attempt is audit-visible; standard mode and its defaults are unchanged. See [staged recovery mode](docs/guides/staged-recovery.md) |
 | **RENKIN Bridge / `audit-route`** | `renkin audit-route route.json [--format auto\|renkin\|aizynthfinder\|syntheseus\|synplanner] [--stock stock.smi] [--output human\|json]` — tool-neutral route audit: structural integrity, stock, and declared-reaction forward-replay validation, each reported independently as `pass`/`fail`/`not_evaluable`, rolled up into a route-level `pass`/`fail`/`partial` verdict. Reads RENKIN-native route JSON (v0.25.0), real AiZynthFinder route JSON — single-target and gzip-compressed batch output, verified against AiZynthFinder 4.3.2, 4.4.0, and 4.4.1 specifically, not claimed for every version (v0.26.0, version matrix widened v0.32.0) — Syntheseus routes via the optional `renkin.syntheseus_exporter`'s `syntheseus-route-v1` interchange schema, since Syntheseus itself has no native route export (v0.30.0) — and real SynPlanner 1.6.0 `write_routes_json` exports directly, no exporter package needed (v0.34.0); `--format auto` detects the input shape and hard-errors rather than guessing on anything ambiguous. [AiZynthFinder walkthrough →](https://kent-tokyo.github.io/renkin/guides/aizynthfinder-audit-demo/) · [Syntheseus walkthrough →](https://kent-tokyo.github.io/renkin/guides/syntheseus-audit-demo/) · [SynPlanner walkthrough →](https://kent-tokyo.github.io/renkin/guides/synplanner-audit-demo/) |
 | **Route scoring & diagnostics** | Separate `confidence`, `success_probability`, cost, feasibility findings, building-block diversity, and template-proxy chemical-idea diversity; no aggregate laboratory-feasibility score is fabricated — see the caveat below and the [diagnostics](docs/guides/route-feasibility-diagnostics.md) / [diversity](docs/guides/route-set-diversity.md) guides |
 | **Step metadata provenance** | Each step reports `metadata_source`/`metadata_scope` so it's machine-readable whether `conditions`/`reaction_family` came from a rule-author default vs. something more grounded; absent (not fabricated) for extracted templates |
@@ -472,22 +477,22 @@ USPTO-50k test set (4,907 molecules, full evaluation):
 
 > **Evaluation definition**: A molecule is *solved* if `find_routes` returns at least one route whose leaf precursors are all in the building block set, within depth=5 and beam=100. Ground-truth reactants from USPTO-50k are **not** checked — any commercially accessible route counts.
 
-### Formal v1.0.0 shared-stock comparison (4,903 paired targets)
+### Formal v1.0.1 shared-stock comparison (4,903 paired targets)
 
 | Arm | Primary route-to-shared-stock successes | Rate |
 |---|---:|---:|
-| RENKIN v1.0.0 | 577 / 4,903 | 11.77% |
+| RENKIN v1.0.1 | 591 / 4,903 | 12.05% |
 | AiZynthFinder 4.4.1 | 200 / 4,903 | 4.08% |
 
-The paired RENKIN-minus-AiZynthFinder difference is **+7.689 percentage
-points**, with paired-bootstrap 95% CI **[+6.812, +8.566]**. This passes the
-pre-registered statistical gate. The formal publication gate is nevertheless
-**HOLD**: two frozen RENKIN rows had no parseable normalized route tree. The
-v1.0.1-candidate fixes make both targeted reruns parseable and stock-terminated,
-but only a fresh full 4,903-target run can change the frozen verdict. This is a
-shared-stock route endpoint, not experimental yield or universal CASP
+The paired RENKIN-minus-AiZynthFinder difference is **+7.975 percentage
+points**, with paired-bootstrap 95% CI **[+7.098, +8.852]**. The statistical
+and formal publication gates both **PASS**. The complete v1.0.1 arm passed
+target-set, manifest, schema, and route-hash integrity verification; all 591
+reported routes had parseable normalized trees terminating in the configured
+shared stock. The frozen v1.0.0 HOLD artifact remains preserved separately.
+This is a shared-stock route endpoint, not experimental yield or universal CASP
 superiority. [Protocol and status](docs/benchmark/formal-v1.0-competitor-comparison.md)
-· [frozen report](data/comparison/formal_v1.0/formal_report.md)
+· [corrected report](data/comparison/formal_v1.0.1/formal_report.md)
 
 ### Corrected baseline (commit `e20dc8c`, 2026-07-22)
 
@@ -732,7 +737,7 @@ see "Earlier milestones" below for older shipped work.
 
 ### In progress
 
-- [ ] Candidate-generation coverage gap — 33.0% (1,618/4,903) of the formal TEST corpus has zero positive candidates in-pool, a ceiling reranking cannot fix by construction; template-diversity-scaling confirmed as a strong mechanism (Phase A.5/B.2, see coverage mode above), higher-level-template research direction not yet started
+- [ ] Candidate-generation coverage gap — 33.0% (1,618/4,903) of the formal TEST corpus has zero positive candidates in-pool, a ceiling reranking cannot fix by construction. Template-diversity scaling remains a strong mechanism; a first provenance-bounded radius-zero abstraction track is now implemented and disjoint-VAL gated ([#240](https://github.com/kent-tokyo/renkin/issues/240)), but its 4/22 targeted residual recovery is not a full-corpus remeasurement or a shipped default
 - [ ] Template retrieval index (element bitmask + bond-center prefilter) for the 50k template set
 - [ ] Calibrated route confidence (map `success_probability` to empirical solve rate)
 

@@ -6,7 +6,114 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [Unreleased]
+## [1.0.2] - 2026-09-06 "Formal VAL Re-measurement"
+
+### Added
+- Added a compact normalized `route_edge_snapshot` to comparison rows so
+  structural and element-accounting diagnostics can be reproduced from an
+  artifact without rerunning the planner or retaining tool-native output.
+- Updated `chematic` and `chematic-rxn` to 1.0.7 across the workspace.
+- Added a diagnostic `target_element_excess_counts` projection to the comparison
+  validators. It identifies which target elements are directionally unaccounted
+  for in a route without changing acceptance, search, or benchmark denominators.
+- Added an exact atom-mapped formed-bond CDS API for Bridge `RouteDocument` route sets. It fails closed on unmapped or malformed reaction evidence, while preserving the native route JSON contract and existing proxy metric.
+- Added comparison-run reproducibility preflight for the next release
+  candidate (#44.8). Manifests now record the crate/chematic versions and
+  hash `Cargo.toml`/`Cargo.lock`; resuming a run fails closed if any recorded
+  input set or SHA-256 differs, including stock, templates, sidecars,
+  reranker assets, and coverage tiers. This prevents dependency or input
+  mixing but does not change search or benchmark results.
+- Completed the fixed disjoint VAL-200 remeasurement for #44.8 with RENKIN
+  1.0.1 and chematic 1.0.7. The dedicated artifact records 21/200
+  route-to-stock results (10.5%), zero timeout/crash/invalid/setup errors,
+  and passing row/manifest integrity verification.
+- Enabled the previously blocked `renkin-forward benchmark
+  --template-source train-extracted` mode (#61). It now requires a bounded,
+  strict `--template-manifest` that attests the exact template and source-
+  corpus SHA-256 values, split-protocol version, and `included_split: "train"`;
+  missing, malformed, stale, or mode-inapplicable manifests fail closed before
+  template loading. This verifies input consistency but is not independent
+  proof of the producer's extraction procedure.
+- Added opt-in research tooling for radius-zero reactant template extraction
+  and deterministic frequency-filtered template unions (#240). Both tools can
+  emit SHA-256 manifests; radius one remains the extraction default, generated
+  corpora are not packaged, and search/validation defaults are unchanged. A
+  preregistered disjoint-VAL gate selected the TRAIN `count >= 25` tier (all
+  167 baseline positives preserved, one added, candidate growth 1.438x). Used
+  only as the final staged-recovery tier, it recovered 4/22 residual
+  AiZynthFinder-only targets with 4/4 parseable, stock-terminal, and
+  element-accounted routes. The cumulative targeted follow-up is 40/58; this
+  does not update the frozen 4,903-target formal result.
+- Fixed radius-zero extraction reproducibility (#240): rdchiral's
+  stereochemistry path uses `numpy.random.shuffle`, while the first wrapper
+  seeded only Python's unrelated standard RNG. Both RNG states are now seeded
+  deterministically per reaction and restored afterward. Two complete
+  40,008-reaction extractions are byte-identical across all 1,359 emitted
+  templates; the selected `count >= 25` tier and its measured union hash are
+  unchanged, so prior VAL/holdout measurements remain applicable.
+- Added and evaluated a deterministic sparse radius-zero selector (#240). It
+  selected four TRAIN-derived rules using only disjoint VAL labels, improving
+  positive-present groups 165→170 with 1.0026x candidate growth. The frozen
+  tier recovered 0/18 residual holdout targets, so it is explicitly rejected
+  and must not be retuned on the consumed holdout; integrity checks remain
+  unchanged.
+- Added opt-in native `--search-mode recovery` (#239). A successful baseline
+  remains authoritative; completed failures can conditionally retry with
+  candidate-time element gating, diversity-reserved beam selection, one extra
+  depth, and caller-supplied narrow-to-broad coverage tiers. Every attempt
+  records its trigger, exact rule-set hash/count, depth/beam policy,
+  termination, integrity rejections, and elapsed time. Coverage tiers can be
+  supplied repeatedly with `--recovery-coverage-tier`, before the final
+  `--coverage-templates` tier; none of these research assets is packaged or
+  enabled by default. On the fixed 58-target AiZynthFinder-only follow-up
+  cohort, the measured ladder recovered 36 valid stock-terminal routes with
+  36/36 parseable/accounted and no timeout, crash, or invalid output. This is
+  a targeted discordant-cohort diagnostic, not a new full formal result.
+- Added native CLI and formal-comparison support for
+  `--element-accounting-policy retry-on-integrity-failure`. It preserves the
+  existing zero-overhead first pass and retries with strict candidate-time
+  directional element accounting only after a completed route was concretely
+  rejected for an unaccounted target element. The JSON audit record reports
+  whether the retry ran and whether it recovered a route; the default remains
+  `off`.
+- Added opt-in `--beam-diversity-policy retry-on-beam-exhaustion`. It runs the
+  existing score-only beam first and retries with diversity reservation only
+  after a completed, unsuccessful run actually hit the beam limit. The two
+  passes share compiled templates, emit an auditable retry record, and cannot
+  displace an existing score-only success. On the fixed 58-target
+  AiZynthFinder-only cohort, 20 reserved slots recovered five independently
+  validated routes with no invalid route or timeout; this is not a replacement
+  for a complete 4,903-target formal rerun, and `off` remains the default.
+
+### Fixed
+- Made `renkin-pool-gen` fail closed on unknown, duplicate, and value-less CLI
+  arguments and added real `-h`/`--help` handling. Previously `--help` was
+  silently ignored and started the default 4,903-group run, risking accidental
+  overwrite of the default output paths.
+- Isolated and regression-tested issue #77's removed `aryl_amine_retro`
+  failure. The bare mapped-atom RHS products make chematic-rxn carry target
+  substituents into two overlapping fused-ring traversals; the N-bearing raw
+  product is therefore already an invalid open aromatic chain before fragment
+  splitting, and sanitization leaves only an N-free precursor. The rule stays
+  removed: a safe replacement requires an explicit graph partition, not a
+  parser relaxation or re-enabling the defective SMIRKS.
+- Regenerated the optional local 5,000-template diagnostic corpus from the
+  pinned `bisectgroup/USPTO_50K` training revision and added a machine-readable
+  extraction manifest (#98, #100). All 5,000 lines now load and are concretely
+  applicable (previously 4,999/5,000); the superseded bytes are retained only
+  as a gitignored, hash-addressed local backup. This does not change packaged
+  assets, default search behavior, or the frozen formal comparison.
+- Replaced the fragment-wide aromatic ring-digit heuristic with the existing
+  atom-level graph-cycle and aromatic-bond integrity check. Mixed fragments
+  containing both a valid aromatic ring and a separate open aromatic chain are
+  now rejected in every precursor path and again at completed-route acceptance
+  (#237). This prevents the malformed L4444 intermediates found during the
+  formal discordant-cohort analysis from being reported as routes.
+  A targeted replay also found one old formal success (`L4699`) whose valid
+  beam-100 path is displaced by the changed frontier after invalid candidates
+  are removed; beam 200 recovers a different valid route. The released v1.0.1
+  formal result therefore remains frozen historical evidence until the current
+  code receives a complete 4,903-target rerun.
 
 ## [1.0.1] - 2026-09-05 "Auditable Search Runtime"
 
@@ -45,12 +152,15 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   target list, stock, and template bundle by row schema, count, and SHA-256
   before an expensive comparison arm starts.
 - Added regression tests for formal target-count, duplicate-ID, and input-hash
-  rejection. The completed paired run found 577/4,903 RENKIN primary
-  successes versus 200/4,903 for AiZynthFinder 4.4.1, a +7.689 percentage-
-  point difference with paired-bootstrap 95% CI [+6.812, +8.566]. The frozen
-  v1.0.0 publication gate remains HOLD because two RENKIN rows failed route-
-  tree integrity; both are retained in the artifacts, and this is not a claim
-  of universal CASP superiority.
+  rejection. The original frozen v1.0.0 arm remains retained with its two
+  route-tree integrity failures and historical HOLD verdict. A complete
+  corrected v1.0.1 rerun subsequently found 591/4,903 RENKIN primary successes
+  versus 200/4,903 for AiZynthFinder 4.4.1, a +7.975 percentage-point paired
+  difference with bootstrap 95% CI [+7.098, +8.852]. The v1.0.1 arm passed
+  exact target-set, manifest, schema, and route-hash verification; all 591
+  routes were parseable and stock-terminated, so the formal publication gate
+  is PASS for v1.0.1. This is superiority only on the declared matched shared-
+  stock endpoint, not a claim of universal CASP superiority.
 
 ### Changed
 - **`renkin-mcp`** — protocol parsing and tool business logic now live in
@@ -87,8 +197,9 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   solved routes while preserving valid aromatic `[nH]` fragments.
 - Fixed both route-tree integrity failures discovered by the formal v1.0.0
   comparison. A targeted same-input rerun made both rows parseable and
-  stock-terminated; a new full 4,903-target run is still required before the
-  frozen formal publication gate can be changed from HOLD.
+  stock-terminated. The subsequent full 4,903-target v1.0.1 rerun passed arm
+  verification and the formal publication gate; the original v1.0.0 artifact
+  and HOLD verdict remain frozen as historical evidence.
 - Hardened `renkin-mcp` with a 1 MiB request-line cap, bounded JSON-structure
   validation, scalar request-ID enforcement, generic non-reflecting parse
   errors, and fail-closed unknown-tool/unknown-argument handling in both
@@ -384,7 +495,7 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   including the 21 built-in rules, exact canonical-SMILES stock identity, and
   current package-version examples.
 
-## [0.53.0] - 2026-08-31 "Schematic 0.26 Compatibility"
+## [0.53.0] - 2026-08-31 "chematic 0.26 Compatibility"
 
 ### Changed
 - Updated `chematic` and `chematic-rxn` from 0.20.1 to 0.26.0 across the
@@ -2070,7 +2181,8 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
 
 ---
 
-[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/kent-tokyo/renkin/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/kent-tokyo/renkin/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/kent-tokyo/renkin/compare/v0.66.0...v1.0.0
 [0.66.0]: https://github.com/kent-tokyo/renkin/compare/v0.65.0...v0.66.0

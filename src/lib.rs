@@ -15,6 +15,8 @@ pub mod io_limits;
 pub mod mcp;
 pub mod pool_export;
 #[cfg(not(target_arch = "wasm32"))]
+pub mod recovery_mode;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod reranker;
 pub mod ring_context;
 pub mod score;

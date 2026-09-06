@@ -1,36 +1,45 @@
-# v1.0.0 Formal Route-to-Stock Competitor Benchmark
+# v1.0.1 Formal Route-to-Stock Competitor Benchmark
 
 Status: **comparison complete; statistical superiority PASS; formal publication
-gate HOLD on the frozen v1.0.0 output**.
+gate PASS for the corrected v1.0.1 arm**.
 
-The completed run found 577/4,903 primary successes for RENKIN v1.0.0 and
-200/4,903 for AiZynthFinder 4.4.1. The paired difference was +7.689 percentage
-points with a fixed 10,000-resample paired-bootstrap 95% CI of [+6.812,
-+8.566] percentage points. The statistical gate therefore passed. The formal
-publication gate remains on hold because two RENKIN rows reported a route but
-did not produce a parseable normalized route tree. The existing 50-target
-current-master snapshot and historical 100/500-target artifacts remain
-feasibility or diagnostic evidence only.
+The corrected full run found 591/4,903 primary successes for RENKIN v1.0.1 and
+200/4,903 for AiZynthFinder 4.4.1. The paired difference was +7.975 percentage
+points with a fixed 10,000-resample paired-bootstrap 95% CI of [+7.098,
++8.852] percentage points (exact McNemar p = 6.10e-76). The complete v1.0.1
+arm passed target-set, schema, manifest, and route-hash integrity verification;
+all 591 reported routes had parseable normalized trees and terminated in the
+configured shared stock. The existing 50-target current-master snapshot and
+historical 100/500-target artifacts remain feasibility or diagnostic evidence
+only.
 
-The complete report and per-target artifacts are under
-`data/comparison/formal_v1.0/`. This result is specific to the declared shared-
-stock endpoint; it is not a claim of universal CASP superiority, experimental
-yield, or planner replacement.
+The corrected report and RENKIN per-target artifacts are under
+`data/comparison/formal_v1.0.1/`; the unchanged, verified AiZynthFinder arm is
+under `data/comparison/formal_v1.0/`. The original frozen v1.0.0 RENKIN arm and
+its HOLD report remain there as historical evidence and were not rewritten.
+This result is specific to the declared shared-stock endpoint; it is not a
+claim of universal CASP superiority, experimental yield, or planner
+replacement.
 
-### v1.0.1 remediation status
+### Post-formal staged-recovery follow-up
 
-The two held targets were rerun with the route-normalization and explicit-H /
-surviving-valence fixes included in the v1.0.1 candidate. Both returned
-parseable, stock-terminated route trees with no crash or timeout. These
-targeted results demonstrate that the observed failure modes are fixed, but
-they do not rewrite the frozen v1.0.0 arm or promote the formal publication
-gate to PASS. That requires a fresh, complete 4,903-target arm and verification
-under the same protocol.
+An opt-in staged-recovery implementation was measured separately on the 58
+targets solved by the frozen AiZynthFinder arm but not by the frozen RENKIN
+v1.0.1 arm. It found independently validated routes for 36/58 targets; all 36
+routes were parseable, terminated in the configured stock, and passed
+directional element accounting. This is a targeted diagnostic on a selected
+discordant cohort, not a replacement for the 4,903-target formal arm and not a
+new headline comparison. The formal 591/4,903 result above remains unchanged
+until the current implementation receives a complete preregistered rerun.
+
+See the [recovery follow-up report](../../data/comparison/formal_v1.0.1/recovery_followup.md)
+for the stage attribution, resource measurements, remaining 22-target failure
+analysis, provenance boundary, and reproduction artifacts.
 
 ## Primary claim and endpoint
 
 The primary comparison is a paired, same-target, shared-stock comparison of
-RENKIN v1.0.0 against AiZynthFinder 4.4.1. A target is a primary success only
+RENKIN v1.0.1 against AiZynthFinder 4.4.1. A target is a primary success only
 when the rank-1 route is found, its route tree is parseable, and every leaf is
 in the exact configured shared stock after the independent RDKit-based
 post-hoc check (`route_to_shared_stock`). A native tool-reported success that

@@ -138,6 +138,26 @@ def _run(argv: list[str]) -> str:
         return f"<error: {e}>"
 
 
+def project_identity(repo_root: str) -> dict[str, str | None]:
+    """Capture the Rust package and chematic dependency versions offline."""
+    cargo_toml = os.path.join(repo_root, "Cargo.toml")
+    try:
+        with open(cargo_toml, encoding="utf-8") as cargo_file:
+            text = cargo_file.read()
+    except OSError:
+        return {"package_version": None, "chematic_version": None}
+    package = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
+    chematic = re.search(
+        r'^chematic\s*=\s*\{[^\n]*?version\s*=\s*"([^"]+)"',
+        text,
+        re.MULTILINE,
+    )
+    return {
+        "package_version": package.group(1) if package else None,
+        "chematic_version": chematic.group(1) if chematic else None,
+    }
+
+
 def redact_home_dir(text: str) -> str:
     """Replace the current user's home directory -- wherever it appears,
     including the hyphen-flattened form Claude Code's scratchpad temp
@@ -260,6 +280,23 @@ def load_and_validate_manifest(path: str) -> dict:
     return manifest
 
 
+def validate_input_hashes(manifest: dict, input_files: dict[str, str]) -> None:
+    """Reject resume/finalization when any recorded input changed or is absent."""
+    expected = manifest.get("input_file_sha256")
+    if not isinstance(expected, dict) or set(expected) != set(input_files):
+        raise ValueError(
+            "comparison manifest input set differs from the requested run; "
+            "refusing to mix benchmark artifacts"
+        )
+    actual = {label: sha256_file(path) for label, path in input_files.items()}
+    if actual != expected:
+        changed = sorted(label for label in expected if actual.get(label) != expected[label])
+        raise ValueError(
+            "comparison manifest input hash mismatch; changed inputs: "
+            + ", ".join(changed)
+        )
+
+
 def write_manifest_atomic(path: str, manifest: dict) -> None:
     """Persist a manifest without exposing a partially written JSON file."""
     directory = os.path.dirname(os.path.abspath(path))
@@ -308,6 +345,7 @@ def capture_start_manifest(
         "spectator_bond_policy": spectator_bond_policy,
         "command_line": [redact_home_dir(arg) for arg in command_line],
         "git_commit": git_commit,
+        "project_identity": project_identity(repo_root),
         "binary_sha256": sha256_file(binary_path) if binary_path else None,
         "docker_image": docker_image,
         "docker_image_digest": docker_image_digest(docker_image) if docker_image else None,

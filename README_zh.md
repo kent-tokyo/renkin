@@ -153,7 +153,9 @@ OC(=O)c1ccccc1OC(=O)C
 
 ## 当前局限
 
-⚠️ v1.0.0 的 4,903-target shared-stock 比较已经完成，统计优越性门槛通过；但冻结的 RENKIN 输出中有两行未通过 route-tree 完整性检查，因此正式发布门槛仍为 HOLD。v1.0.1 candidate 对这两个目标的定向复跑均已得到可解析、到达库存的路线，但更新正式结论仍需用修正版完整复跑 4,903 个目标。本仓库其他位置出现的 78.0%/95.9%/81.8%（ChEMBL）均为 validator 修复前的无效历史数值。RENKIN 不预测收率、经过实验校准的成功概率或副反应，也不会自动检索文献（`success_probability` 是基于模板频率的搜索排序分数，并非经过校准的预测值）。
+当前版本：**v1.0.2**。
+
+⚠️ 修正版 v1.0.1 的 4,903-target shared-stock 比较已经完成。RENKIN 为 591/4,903（12.05%），AiZynthFinder 4.4.1 为 200/4,903（4.08%）；配对差值为 +7.975 个百分点，95% CI 为 [+7.098,+8.852]。完整 v1.0.1 arm 已通过完整性验证，因此统计优越性门槛与正式发布门槛均为 PASS。这仅是在已声明 shared-stock endpoint 下的结果，并非普遍 CASP 优越性声明。本仓库其他位置出现的 78.0%/95.9%/81.8%（ChEMBL）均为 validator 修复前的无效历史数值。RENKIN 不预测收率、经过实验校准的成功概率或副反应，也不会自动检索文献（`success_probability` 是基于模板频率的搜索排序分数，并非经过校准的预测值）。
 
 ---
 
@@ -230,6 +232,7 @@ c1ccccc1-c2ccccc2
 | **Ring-context安全护栏** | `--ring-context-policy conservative --ring-context-sidecar <path>` — opt-in的match-level过滤器，当extracted template的训练数据从未观察到某环开闭断裂时予以拒绝。默认为`disabled`（既有行为不变）——详见[Issue #72](https://github.com/kent-tokyo/renkin/issues/72) |
 | **LightGBM candidate reranker** | `--reranker-model`/`--reranker-freq-table`（CLI）或 `reranker_model_path`/`reranker_freq_table_path`（Python）— opt-in且仅影响排序：绝不改变生成哪些候选，只改变搜索顺序，关闭时与legacy排序逐字节完全一致。Paired 100-target route-search门控结果：`route_to_configured_stock` 16→20（+4/-0）。用`python3 scripts/fetch_reranker_model.py`获取冻结模型（SHA-256验证，不随任何包分发——详见[路线图](#路线图)） |
 | **Coverage mode（opt-in）** | `--search-mode coverage --coverage-templates <path>`（CLI）或 `search_mode="coverage"`、`coverage_templates_path=...`（Python）—— 仅当默认模板集找不到路线时，才自动升级到另一个更大的模板集；可通过 `--coverage-timeout-secs` 协作式取消。未启用时标准模式输出逐字节不变。用 `python3 scripts/fetch_coverage_templates.py` 获取冻结的 2,000 条模板 Stage-2 模板集（SHA-256 验证，不随任何包分发，理由同 reranker 模型——详见[路线图](#路线图)） |
+| **分阶段恢复（opt-in，仅 native）** | `--search-mode recovery --beam-diversity-slots N` 保留成功的基线结果，仅在失败后依次尝试元素门控、多样性、深度和调用方提供的由小到大 coverage tier。每次尝试都有审计记录，standard mode 默认行为不变。详见 [staged recovery mode](docs/guides/staged-recovery.md) |
 | **路线评分与诊断** | 分别报告 `confidence`、`success_probability`、cost、feasibility findings、building-block diversity 与 template-proxy chemical-idea diversity；不捏造实验可行性总分——参见 [feasibility](docs/guides/route-feasibility-diagnostics.md) 与 [diversity](docs/guides/route-set-diversity.md) |
 | **帕累托多目标搜索** | `--format pareto` 返回 `route_cost`、`success_probability`、`steps` 等指标上的帕累托前沿；可通过 `--objectives cost:min,success_probability:max,steps:min` 自定义目标函数 |
 | **约束 DSL** | `--constraints constraints.json` —— 元素过滤、步数限制、置信度阈值、优先反应族；支持 LLM → RENKIN 的调用流程 |
@@ -272,20 +275,20 @@ USPTO-50k 测试集（4,907 个分子，全量评估）：
 
 > **评估定义**：若 `find_routes` 在 depth=5、beam=100 的限制下，能返回至少一条叶子前体全部属于起始原料集合的路线，则该分子被视为*已解决（solved）*。**不会**与 USPTO-50k 给出的真实试剂（ground-truth reactants）进行比对——任何可商购原料可达的路线均计入。
 
-### v1.0.0 正式 shared-stock 比较（4,903 个配对目标）
+### v1.0.1 正式 shared-stock 比较（4,903 个配对目标）
 
 | Arm | Primary route-to-shared-stock 成功数 | Rate |
 |---|---:|---:|
-| RENKIN v1.0.0 | 577 / 4,903 | 11.77% |
+| RENKIN v1.0.1 | 591 / 4,903 | 12.05% |
 | AiZynthFinder 4.4.1 | 200 / 4,903 | 4.08% |
 
-RENKIN 相对 AiZynthFinder 的配对差值为 **+7.689 个百分点**，paired-bootstrap
-95% CI 为 **[+6.812, +8.566]**，通过预注册统计门槛。但冻结的 RENKIN 输出中有
-两行缺少可解析的 normalized route tree，因此正式发布门槛仍为 **HOLD**。
-v1.0.1 candidate 的修复使这两个目标的定向复跑均可解析并到达库存；只有完整重跑
-4,903 个目标后才能更新冻结结论。这是 shared-stock 路线端点结果，并非实验收率或
+RENKIN 相对 AiZynthFinder 的配对差值为 **+7.975 个百分点**，paired-bootstrap
+95% CI 为 **[+7.098, +8.852]**。完整 v1.0.1 arm 已通过 target set、manifest、
+schema 与 route hash 完整性验证，591 条报告路线均可解析并终止于 shared stock，
+因此统计门槛与正式发布门槛均为 **PASS**。冻结的 v1.0.0 HOLD artifact 仍作为历史
+证据单独保留。这是 shared-stock 路线端点结果，并非实验收率或
 普遍 CASP 优越性声明。[协议与状态](docs/benchmark/formal-v1.0-competitor-comparison.md) ·
-[冻结报告](data/comparison/formal_v1.0/formal_report.md)
+[修正版报告](data/comparison/formal_v1.0.1/formal_report.md)
 
 ### 修正后基线（commit `e20dc8c`，2026-07-22）
 
@@ -520,7 +523,7 @@ renkin/                          ← Cargo workspace 根目录
 
 ### 进行中
 
-- [ ] Candidate-generation coverage gap —— formal TEST 语料库中 33.0%（1,618/4,903）的目标 in-pool 候选数为零，这是重排序在原理上无法解决的天花板；template-diversity-scaling 已确认是有效机制（Phase A.5/B.2，见上方 coverage mode），higher-level-template 研究方向尚未启动
+- [ ] Candidate-generation coverage gap —— formal TEST 语料库中 33.0%（1,618/4,903）的目标 in-pool 候选数为零，这是重排序在原理上无法解决的天花板。Template-diversity scaling 仍是有效机制；首个 provenance-bounded radius-zero abstraction 已实现并通过独立 VAL gate（[#240](https://github.com/kent-tokyo/renkin/issues/240)），但其对残余 cohort 的 4/22 恢复既不是全量重测，也不是发布默认值
 - [ ] 面向 5 万条模板集合的模板检索索引（元素位掩码 + 键中心预筛选）
 - [ ] 校准过的路线置信度（将 `success_probability` 映射到经验已解决率）
 

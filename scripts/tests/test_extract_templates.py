@@ -1,4 +1,5 @@
 import os
+import random
 import sys
 import unittest
 from unittest.mock import patch
@@ -87,6 +88,74 @@ class TestResolveDatasetRevision(unittest.TestCase):
         revision, method = et.resolve_dataset_revision("x", None, True)
         self.assertEqual(revision, "latest-sha-456")
         self.assertIn("resolve", method.lower())
+
+
+@unittest.skipUnless(
+    et.HAVE_DEPS,
+    "requires rdkit/rdchiral/datasets (see scripts/requirements-ring-context.txt)",
+)
+class TestReactantRadiusOverride(unittest.TestCase):
+    def test_radius_one_uses_the_unchanged_extractor(self):
+        with patch("extract_templates.extract_from_reaction", return_value={"ok": 1}) as extract:
+            self.assertEqual(et.extract_from_reaction_with_radius({}, 1), {"ok": 1})
+        extract.assert_called_once_with({})
+
+    def test_radius_zero_overrides_only_reactant_fragment_calls_and_restores(self):
+        original = et.rdchiral_template_extractor.get_fragments_for_changed_atoms
+        calls = []
+
+        def fragment_helper(mols, tags, radius=0, category="reactants", expansion=None):
+            calls.append((radius, category))
+            return "ok"
+
+        def fake_extract(_reaction):
+            helper = et.rdchiral_template_extractor.get_fragments_for_changed_atoms
+            helper([], [], radius=1, category="reactants")
+            helper([], [], radius=0, category="products")
+            return {"ok": 1}
+
+        with patch.object(
+            et.rdchiral_template_extractor,
+            "get_fragments_for_changed_atoms",
+            fragment_helper,
+        ), patch("extract_templates.extract_from_reaction", side_effect=fake_extract):
+            self.assertEqual(et.extract_from_reaction_with_radius({}, 0), {"ok": 1})
+            self.assertEqual(calls, [(0, "reactants"), (0, "products")])
+
+        self.assertIs(et.rdchiral_template_extractor.get_fragments_for_changed_atoms, original)
+
+    def test_rejects_unknown_radius(self):
+        with self.assertRaisesRegex(ValueError, "must be 0 or 1"):
+            et.extract_from_reaction_with_radius({}, 2)
+
+    def test_rdchiral_numpy_rng_is_deterministic_per_reaction_and_restored(self):
+        reaction = {"reactants": "A", "products": "B", "_id": "fixed"}
+
+        def fake_extract(_reaction):
+            tetra_map_nums = list(range(12))
+            # Exercise the exact function imported and called by rdchiral's
+            # template_extractor, not a stand-in based on Python `random`.
+            et.rdchiral_template_extractor.shuffle(tetra_map_nums)
+            return {"python_draw": random.random(), "tetra_order": tetra_map_nums}
+
+        random.seed(991)
+        caller_state = random.getstate()
+        et.numpy_random.seed(992)
+        caller_numpy_state = et.numpy_random.get_state()
+        with patch("extract_templates.extract_from_reaction", side_effect=fake_extract):
+            first = et.extract_from_reaction_with_radius(reaction, 1)
+            self.assertEqual(random.getstate(), caller_state)
+            self.assert_numpy_state_equal(et.numpy_random.get_state(), caller_numpy_state)
+            second = et.extract_from_reaction_with_radius(reaction, 1)
+            self.assertEqual(random.getstate(), caller_state)
+            self.assert_numpy_state_equal(et.numpy_random.get_state(), caller_numpy_state)
+
+        self.assertEqual(first, second)
+
+    def assert_numpy_state_equal(self, actual, expected):
+        self.assertEqual(actual[0], expected[0])
+        self.assertTrue((actual[1] == expected[1]).all())
+        self.assertEqual(actual[2:], expected[2:])
 
 
 if __name__ == "__main__":

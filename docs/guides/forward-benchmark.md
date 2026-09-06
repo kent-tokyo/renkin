@@ -154,17 +154,29 @@ until Phase 3/4):
    explicit file must not be silently diluted by the embedded set either. A
    stray `--templates` under the default `embedded` source is a hard error,
    not a silently-ignored flag.
-3. **`train-extracted`** — recognized by the frozen protocol, but **rejected
-   as a hard error in this PR**. Loading it exactly like `file` and merely
-   stamping a different provenance label would be a claim, not a verified
-   guarantee: this harness has no way to check that the given `--templates`
-   file was actually extracted from the train split only. Use
-   `--template-source file` if you accept responsibility for that split
-   boundary yourself. A future version will require `--template-manifest
-   <path>` attesting `{templates_sha256, source_corpus_sha256,
-   split_protocol_version, included_split: "train"}`, hard-validated before
-   the file loads — until then, `train-extracted` stays blocked rather than
-   silently trusting an unverifiable label.
+3. **`train-extracted`** — *only* the rules in `--templates <path>`, accepted
+   only with a matching `--template-manifest <path>`. The manifest is parsed
+   with unknown-field rejection and must contain:
+
+   ```json
+   {
+     "schema_version": 1,
+     "templates_sha256": "<64 lowercase hex characters>",
+     "source_corpus_sha256": "<64 lowercase hex characters>",
+     "split_protocol_version": 1,
+     "included_split": "train"
+   }
+   ```
+
+   The two hashes are checked against the raw template and benchmark-corpus
+   bytes, the split protocol must equal the harness's current protocol, and
+   `included_split` must be exactly `train`; any missing manifest, malformed
+   field, stale hash, wrong protocol, or non-train split is a hard error
+   before rule loading. A manifest supplied under `embedded` or `file` is
+   also rejected rather than silently ignored. This is a machine-checkable
+   consistency attestation, not an independent proof that the producer's
+   extraction code was honest; formal runs must retain the extraction command
+   and source-dataset provenance alongside it.
 4. **`scorer-conditioned`** — named by the frozen protocol so the mode
    space is documented in full, but rejected with a clear error naming
    Phase 3/4 if requested. Not silently downgraded to another mode.

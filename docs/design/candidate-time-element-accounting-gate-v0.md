@@ -1,6 +1,6 @@
 # Candidate-Time Element-Accounting Gate — Design Doc (v1 slice of ROADMAP Item 1)
 
-Status: **Design only, not yet implemented.** Scopes the smallest real
+Status: **Implemented and measured; default remains `Off`.** Scopes the smallest real
 first slice of `internal_docs/ROADMAP.md`'s "Universal chemical-structure
 safety gate" (P0) item, per a 2026-08-28 research pass that mapped
 existing validation machinery before proposing anything new. Full item's
@@ -21,7 +21,7 @@ per-element heavy-atom check — but only once a **complete route** reaches
 `search.rs:1690-1713`), via `search.rs:365`. A single defective step deep
 in an otherwise-fine route silently drops that whole route (search
 continues elsewhere) rather than being caught at the moment it's
-generated. This doc proposes lifting the exact same per-element check
+generated. The implementation lifts the exact same per-element check
 one level earlier — to a single newly-generated candidate, at
 `heap.push(Node {...})` time (`search.rs:1639`/`2032`) — as an opt-in,
 default-off diagnostic first, matching how every other search-behavior-
@@ -178,36 +178,65 @@ the identical extracted function.
 
 ## 8. Rust/CLI/Python/WASM parity
 
-Same shape as `SpectatorBondPolicy`'s own §8 (untouched by any work so
-far, needed before release): CLI flag mirroring `--spectator-bond-policy`
-exactly (`--element-accounting-policy off|diagnostics-only|gated`),
-Python `SearchConfig` field, WASM config struct field with the same
-`#[serde(rename_all = "snake_case")]` convention.
+The base policies have Rust/CLI/Python/WASM parity: CLI
+`--element-accounting-policy off|diagnostics-only|gated`, Python's
+`element_accounting_policy` keyword, and the WASM configuration surface.
+The later `retry-on-integrity-failure` orchestration is currently exposed by
+the native CLI and the formal-comparison adapter. Its core two-pass function is
+public Rust API; Python/WASM orchestration remains a later additive parity task.
 
 ## 9. Rollout stages
 
-1. Extract `step_element_accounting` from `compute_element_accounting`'s
+1. **Complete.** Extract `step_element_accounting` from `compute_element_accounting`'s
    existing loop body (§1) — pure refactor, route-level behavior must be
    byte-identical before/after (regression-test this explicitly: same
    inputs, same `ElementAccountingStatus`/`failing_step_indices` output).
-2. New `ElementAccountingGateVerdict`/`ElementAccountingGatePolicy` types
+2. **Complete.** New `ElementAccountingGateVerdict`/`ElementAccountingGatePolicy` types
    + the consistency-check test (§7) — unit-tested in isolation before
    touching `raw_propose` at all, same discipline as the SpectatorBondLoss
    rollout.
-3. Wire into `raw_propose`/`RawCandidate`/`CrowdOutDiagnostics` (§6).
+3. **Complete.** Wire into `raw_propose`/`RawCandidate`/`CrowdOutDiagnostics` (§6).
    `Gated` still off by default.
-4. CLI/Python/WASM parity (§8).
-5. A lightweight smoke measurement (same shape as
+4. **Complete for the base policies.** CLI/Python/WASM parity (§8).
+5. **Complete.** A lightweight smoke measurement (same shape as
    `examples/spectator_bond_smoke.rs`/its 15-target run) under `Gated`,
    recording excluded-candidate counts and route-count deltas, before any
    default change or release — per this codebase's own standing rule that
    a new fail-closed gate never ships assumed-safe.
-6. Only after 1-5: revisit whether `invalid_ring_topology`
+6. **Complete.** Only after 1-5: revisit whether `invalid_ring_topology`
    (already substantially covered by `SpectatorBondLoss`, see §1) and
    `invalid_valence` (genuinely new work, no existing logic to lift) are
    worth pursuing as separate, later phases of the same ROADMAP item, or
    whether v1's element-accounting slice alone already covers the
-   highest-value share of real defects. Not decided here.
+   highest-value share of real defects. Ring topology remains separately
+   covered; the next measured need was recovery after a concrete integrity
+   rejection, not a broader omission allowlist.
+
+## 10. Formal v1.0.1 evidence and conditional retry
+
+The matched 4,903-target comparison contained 58 AiZynthFinder-only primary
+successes. Under strict `Gated`, three of those targets (`L3738`, `L348`, and
+`L4863`) produced independently parseable, stock-terminal, directionally
+accounted RENKIN routes. Re-running all 591 existing RENKIN primary successes
+under the same strict policy preserved every success: 590 remained accounted,
+and `L1394` remained the valid zero-step direct-purchase route for which no
+reaction-step accounting is evaluable.
+
+Always-on `Gated` materially increases work on unsolved targets. Two attempts
+to remove its candidate-time reparsing overhead preserved all 58 statuses and
+all three recovered route hashes, but did not produce a repeatable runtime
+improvement; both prototypes were therefore removed.
+
+The native CLI now provides
+`--element-accounting-policy retry-on-integrity-failure`. Pass 1 is the
+unchanged `Off` fast path. Pass 2 uses strict `Gated` only when pass 1 returns
+no valid route, terminates normally, and records at least one
+`unaccounted_target_element` rejection at the completed-route boundary. JSON
+output includes `element_accounting_retry` with whether it ran, whether it
+recovered a route, and the initial rejection evidence. On the 58 discordant
+targets it retried exactly the 11 integrity-rejection cases and recovered the
+accounted routes for `L3738` and `L348`; `L4863` deliberately remains outside
+this fallback because its initial run had no concrete integrity rejection.
 
 ## Open questions for sign-off before implementation starts
 
@@ -217,12 +246,10 @@ Python `SearchConfig` field, WASM config struct field with the same
   more `SearchConfig` field, but avoids ever conflating two detection
   mechanisms (topological vs. arithmetic) under one label, matching this
   codebase's existing ring-context/spectator-bond precedent.
-- **Partially answered 2026-08-29, still open in full**: `Off` stays the
-  default through all of v0.37.0's rollout regardless — so "is a
-  lightweight smoke measurement sufficient before ever defaulting to
-  non-`Off`" doesn't block v0.37.0 itself, but remains genuinely
-  undecided for whenever a future default-change proposal comes up.
-  Don't treat v0.37.0's rollout as having answered this.
+- **Answered 2026-09-05**: `Off` remains the default. Strict gating recovered
+  three formal discordant targets without regressing the existing success set,
+  but its unsolved-target cost did not justify making it universal. The
+  integrity-triggered retry is the opt-in low-scope recovery path.
 - **Answered 2026-08-29**: this slice (`invalid_atom_loss`) plus the
   already-shipped `SpectatorBondLoss` (ring topology) are considered
   sufficient coverage of ROADMAP Item 1 for now. `invalid_ring_topology`

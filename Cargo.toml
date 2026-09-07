@@ -49,6 +49,7 @@ exclude       = [
     "data/corpora/**",
     "data/spectator_bond_smoke_*/**",
     "data/pool_gen*",
+    "data/templates_extracted*.smi.manifest.json",
     ".synplanner-data-v1.6.0/**",
     "benchmarks/**",
 ]

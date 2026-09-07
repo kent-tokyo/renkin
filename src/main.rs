@@ -184,6 +184,12 @@ fn main() -> Result<()> {
     let mut max_depth: u32 = 5;
     let mut bb_path: Option<String> = None;
     let mut templates_path: Option<String> = None;
+    let mut template_policy_manifest_path: Option<String> = None;
+    let mut template_policy_artifact_path: Option<String> = None;
+    let mut value_model_manifest_path: Option<String> = None;
+    let mut value_model_artifact_path: Option<String> = None;
+    let mut retro_generator_manifest_path: Option<String> = None;
+    let mut retro_generator_artifact_path: Option<String> = None;
     let mut template_metadata_path: Option<String> = None;
     let mut top_templates: Option<usize> = None;
     let mut max_routes: usize = 5;
@@ -201,12 +207,18 @@ fn main() -> Result<()> {
     let mut constraints_path: Option<String> = None;
     #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
     let mut scorer_path: Option<String> = None;
+    #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
+    let mut scorer_ordering_only = false;
+    #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
+    let mut scorer_ordering_blend = 1.0_f64;
     let mut ring_context_policy_arg: Option<String> = None;
     let mut ring_context_sidecar_path: Option<String> = None;
     let mut spectator_bond_policy_arg: Option<String> = None;
     let mut element_accounting_policy_arg: Option<String> = None;
     let mut beam_diversity_policy_arg: Option<String> = None;
     let mut beam_diversity_slots_arg: Option<String> = None;
+    let mut recovery_beam_width_arg: Option<String> = None;
+    let mut recovery_timeout_secs_arg: Option<String> = None;
     let mut reranker_model_path: Option<String> = None;
     let mut reranker_freq_table_path: Option<String> = None;
     let mut search_mode_arg: Option<String> = None;
@@ -234,6 +246,34 @@ fn main() -> Result<()> {
             "--templates" => {
                 templates_path =
                     Some(required_flag_value(&args, &mut i, "--templates")?.to_owned());
+            }
+            "--template-policy-manifest" => {
+                template_policy_manifest_path = Some(
+                    required_flag_value(&args, &mut i, "--template-policy-manifest")?.to_owned(),
+                );
+            }
+            "--template-policy-artifact" => {
+                template_policy_artifact_path = Some(
+                    required_flag_value(&args, &mut i, "--template-policy-artifact")?.to_owned(),
+                );
+            }
+            "--value-model-manifest" => {
+                value_model_manifest_path =
+                    Some(required_flag_value(&args, &mut i, "--value-model-manifest")?.to_owned());
+            }
+            "--value-model-artifact" => {
+                value_model_artifact_path =
+                    Some(required_flag_value(&args, &mut i, "--value-model-artifact")?.to_owned());
+            }
+            "--retro-generator-manifest" => {
+                retro_generator_manifest_path = Some(
+                    required_flag_value(&args, &mut i, "--retro-generator-manifest")?.to_owned(),
+                );
+            }
+            "--retro-generator-artifact" => {
+                retro_generator_artifact_path = Some(
+                    required_flag_value(&args, &mut i, "--retro-generator-artifact")?.to_owned(),
+                );
             }
             "--template-metadata" => {
                 template_metadata_path =
@@ -297,6 +337,12 @@ fn main() -> Result<()> {
             "--bond-index" => {
                 bond_index = true;
             }
+            "--speed-profile" => {
+                // Explicit speed arm: keep the legacy default unchanged,
+                // while enabling the applicability index for users who
+                // accept its measured target-dependent trade-off.
+                bond_index = true;
+            }
             "--ring-context-policy" => {
                 i += 1;
                 let Some(v) = args.get(i) else {
@@ -334,7 +380,9 @@ fn main() -> Result<()> {
             "--beam-diversity-policy" => {
                 i += 1;
                 let Some(v) = args.get(i) else {
-                    bail!("--beam-diversity-policy requires a value (off|diagnostics-only|active)");
+                    bail!(
+                        "--beam-diversity-policy requires a value (off|diagnostics-only|active|adaptive)"
+                    );
                 };
                 beam_diversity_policy_arg = Some(v.clone());
             }
@@ -401,6 +449,20 @@ fn main() -> Result<()> {
                 };
                 recovery_depth_arg = Some(v.clone());
             }
+            "--recovery-beam-width" => {
+                i += 1;
+                let Some(v) = args.get(i) else {
+                    bail!("--recovery-beam-width requires an <N> value");
+                };
+                recovery_beam_width_arg = Some(v.clone());
+            }
+            "--recovery-timeout-secs" => {
+                i += 1;
+                let Some(v) = args.get(i) else {
+                    bail!("--recovery-timeout-secs requires an <N> value");
+                };
+                recovery_timeout_secs_arg = Some(v.clone());
+            }
             "--bb-prices" => {
                 bb_prices_path =
                     Some(required_flag_value(&args, &mut i, "--bb-prices")?.to_owned());
@@ -418,6 +480,22 @@ fn main() -> Result<()> {
             #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
             "--scorer" => {
                 scorer_path = Some(required_flag_value(&args, &mut i, "--scorer")?.to_owned());
+            }
+            #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
+            "--scorer-ordering-only" => {
+                scorer_ordering_only = true;
+            }
+            #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
+            "--scorer-ordering-blend" => {
+                let value = required_flag_value(&args, &mut i, "--scorer-ordering-blend")?;
+                scorer_ordering_blend = value.parse::<f64>().map_err(|_| {
+                    anyhow::anyhow!("--scorer-ordering-blend must be a number in [0,1]")
+                })?;
+                if !scorer_ordering_blend.is_finite()
+                    || !(0.0..=1.0).contains(&scorer_ordering_blend)
+                {
+                    bail!("--scorer-ordering-blend must be a number in [0,1]");
+                }
             }
             other => bail!("unknown option {other:?}"),
         }
@@ -438,6 +516,10 @@ fn main() -> Result<()> {
              --building-blocks  Path to .smi file of commercial starting materials\n  \
              --templates        Path to extracted SMIRKS templates file (tab-separated)\n  \
              --template-metadata <path>  JSON sidecar of curated evidence keyed by template_id\n  \
+             --template-policy-manifest <path>  Hash-pinned ordering-only policy manifest\n  \
+             --template-policy-artifact <path>  Static policy score-table artifact\n  \
+             --value-model-manifest <path>  Hash-pinned value-model manifest\n  \
+             --value-model-artifact <path>  Static value-model artifact\n  \
              --format / -f      Output format: json (default), tree, mermaid\n  \
              --avoid-elements / -e  Comma-separated elements to ban from BBs (e.g. \"Br,I\")\n  \
              --require-elements / -r  Comma-separated elements each route must supply (e.g. \"B\")\n  \
@@ -447,6 +529,7 @@ fn main() -> Result<()> {
              --candidate-trace-limit <N>  Also collect up to N per-candidate trace records \
              (implies --search-diagnostics; offline diagnostic use, competitive program Phase 1B)\n  \
              --bond-index           Bond-center template index: ~24%% faster, no accuracy loss\n  \
+             --speed-profile        Explicit speed arm; currently enables --bond-index\n  \
              --bb-prices <path>     CSV (SMILES,price_per_gram) for route cost scoring\n  \
              --ring-context-policy <policy>  disabled (default) | audit-only | conservative | \
              ring-only | element-only\n  \
@@ -467,12 +550,13 @@ fn main() -> Result<()> {
              only; gated excludes the specific candidate; retry-on-integrity-failure keeps the \
              fast off-policy first pass and retries with gated only if completed routes were \
              rejected for an unaccounted target element\n  \
-             --beam-diversity-policy <policy>  off (default) | diagnostics-only | active | \
+             --beam-diversity-policy <policy>  off (default) | diagnostics-only | active | adaptive | \
              retry-on-beam-exhaustion -- \
              reserves --beam-diversity-slots beam slots for template-family diversity instead \
              of pure score, so a lower-scoring candidate from an underrepresented rule isn't \
              fully crowded out by many higher-scoring same-rule siblings \
-             (docs/design/diversity-reserved-beam-v0.md). diagnostics-only records what active \
+             (docs/design/diversity-reserved-beam-v0.md). adaptive derives a conservative \
+             reservation from current family pressure; diagnostics-only records what active \
              would additionally keep without changing selection; active actually reserves the \
              slots; retry-on-beam-exhaustion keeps the score-only first pass and retries \
              with active only after an unsuccessful run actually hits the beam limit\n  \
@@ -493,6 +577,10 @@ fn main() -> Result<()> {
              element-accounting, diversity, one deeper search, then optional coverage (#239)\n  \
              --recovery-depth <N>          Recovery mode's deeper-search limit (default: \
              --depth + 1; must be greater than baseline depth)\n  \
+             --recovery-beam-width <N>    Recovery mode's bounded wider-beam retry after \
+             baseline beam exhaustion; must be greater than --beam-width\n  \
+             --recovery-timeout-secs <N> Whole recovery cascade cooperative budget; later \
+             stages share the remaining time\n  \
              --coverage-templates <path>   Stage 2's template set; required with coverage, \
              optional final stage with recovery; validated before any search runs\n  \
              --recovery-coverage-tier <path>  Recovery-only intermediate coverage tier; may be \
@@ -551,6 +639,12 @@ fn main() -> Result<()> {
             if recovery_depth_arg.is_some() {
                 bail!("--recovery-depth requires --search-mode recovery");
             }
+            if recovery_beam_width_arg.is_some() {
+                bail!("--recovery-beam-width requires --search-mode recovery");
+            }
+            if recovery_timeout_secs_arg.is_some() {
+                bail!("--recovery-timeout-secs requires --search-mode recovery");
+            }
             if !recovery_coverage_tier_paths.is_empty() {
                 bail!("--recovery-coverage-tier requires --search-mode recovery");
             }
@@ -558,6 +652,12 @@ fn main() -> Result<()> {
         SearchMode::Coverage => {
             if recovery_depth_arg.is_some() {
                 bail!("--recovery-depth requires --search-mode recovery");
+            }
+            if recovery_beam_width_arg.is_some() {
+                bail!("--recovery-beam-width requires --search-mode recovery");
+            }
+            if recovery_timeout_secs_arg.is_some() {
+                bail!("--recovery-timeout-secs requires --search-mode recovery");
             }
             if coverage_templates_path.is_none() {
                 bail!("--search-mode coverage requires --coverage-templates <path>");
@@ -709,6 +809,12 @@ fn main() -> Result<()> {
                     std::process::exit(1)
                 })
         });
+    #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
+    let nn_scorer_for_search = if scorer_ordering_only {
+        None
+    } else {
+        nn_scorer.clone()
+    };
 
     // Issue #101 Task 35: ordering-only candidate reranker. Unlike --scorer
     // above, a problem here never aborts the run -- both flags are opt-in,
@@ -740,6 +846,103 @@ fn main() -> Result<()> {
             None
         }
     };
+
+    #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
+    let reaction_prior: Option<std::sync::Arc<dyn search::ReactionPrior>> = match (
+        template_policy_manifest_path.as_deref(),
+        template_policy_artifact_path.as_deref(),
+    ) {
+        (Some(_), _) | (_, Some(_)) if scorer_ordering_only => {
+            bail!("--scorer-ordering-only cannot be combined with --template-policy-*")
+        }
+        (Some(manifest_path), Some(artifact_path)) => {
+            let (_, policy) = renkin::template_policy::StaticTemplatePolicy::from_files(
+                manifest_path,
+                artifact_path,
+            )?;
+            eprintln!("Loaded ordering-only template policy from {artifact_path}");
+            Some(std::sync::Arc::new(search::TemplatePolicyPrior::new(
+                policy, &rules,
+            )))
+        }
+        (None, None) if scorer_ordering_only => {
+            let scorer = nn_scorer
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("--scorer-ordering-only requires --scorer"))?;
+            let policy = renkin::scorer::nn::OnnxTemplatePolicy::new(scorer.clone());
+            eprintln!("Loaded ordering-only ONNX template policy from --scorer");
+            Some(std::sync::Arc::new(
+                search::TemplatePolicyPrior::with_model_weight(
+                    std::sync::Arc::new(policy),
+                    &rules,
+                    scorer_ordering_blend,
+                ),
+            ))
+        }
+        (None, None) => None,
+        _ => bail!(
+            "--template-policy-manifest and --template-policy-artifact must be given together"
+        ),
+    };
+
+    #[cfg(not(all(not(target_arch = "wasm32"), feature = "nn-scoring")))]
+    let reaction_prior: Option<std::sync::Arc<dyn search::ReactionPrior>> = match (
+        template_policy_manifest_path.as_deref(),
+        template_policy_artifact_path.as_deref(),
+    ) {
+        (Some(manifest_path), Some(artifact_path)) => {
+            let (_, policy) = renkin::template_policy::StaticTemplatePolicy::from_files(
+                manifest_path,
+                artifact_path,
+            )?;
+            eprintln!("Loaded ordering-only template policy from {artifact_path}");
+            Some(std::sync::Arc::new(search::TemplatePolicyPrior::new(
+                policy, &rules,
+            )))
+        }
+        (None, None) => None,
+        _ => bail!(
+            "--template-policy-manifest and --template-policy-artifact must be given together"
+        ),
+    };
+
+    let value_estimator: Option<std::sync::Arc<dyn search::MoleculeValueEstimator>> = match (
+        value_model_manifest_path.as_deref(),
+        value_model_artifact_path.as_deref(),
+    ) {
+        (Some(manifest_path), Some(artifact_path)) => {
+            let (_, model) = renkin::static_value_model::StaticValueModel::from_files(
+                manifest_path,
+                artifact_path,
+            )?;
+            eprintln!("Loaded hash-pinned value model from {artifact_path}");
+            Some(std::sync::Arc::new(
+                search::ValueModelEstimatorAdapter::new(model),
+            ))
+        }
+        (None, None) => None,
+        _ => bail!("--value-model-manifest and --value-model-artifact must be given together"),
+    };
+
+    let retro_generator: Option<std::sync::Arc<dyn renkin::retro_generator::RetroGenerator>> =
+        match (
+            retro_generator_manifest_path.as_deref(),
+            retro_generator_artifact_path.as_deref(),
+        ) {
+            (Some(manifest_path), Some(artifact_path)) => {
+                let (_, generator) =
+                    renkin::static_retro_generator::StaticRetroGenerator::from_files(
+                        manifest_path,
+                        artifact_path,
+                    )?;
+                eprintln!("Loaded hash-pinned retro generator from {artifact_path}");
+                Some(generator)
+            }
+            (None, None) => None,
+            _ => bail!(
+                "--retro-generator-manifest and --retro-generator-artifact must be given together"
+            ),
+        };
 
     let ring_context_safety_policy = match ring_context_policy_arg.as_deref() {
         None | Some("disabled") => None,
@@ -821,11 +1024,12 @@ fn main() -> Result<()> {
         None | Some("off") => search::BeamDiversityPolicy::Off,
         Some("diagnostics-only") => search::BeamDiversityPolicy::DiagnosticsOnly,
         Some("active") => search::BeamDiversityPolicy::Active,
+        Some("adaptive") => search::BeamDiversityPolicy::Adaptive,
         Some("retry-on-beam-exhaustion") => search::BeamDiversityPolicy::Off,
         Some(other) => {
             eprintln!(
                 "error: invalid --beam-diversity-policy '{other}' \
-                 (expected off|diagnostics-only|active|retry-on-beam-exhaustion)"
+                 (expected off|diagnostics-only|active|adaptive|retry-on-beam-exhaustion)"
             );
             std::process::exit(1);
         }
@@ -892,6 +1096,36 @@ fn main() -> Result<()> {
     } else {
         None
     };
+    let recovery_beam_width = recovery_beam_width_arg
+        .as_deref()
+        .map(|raw| {
+            raw.parse::<usize>().map_err(|_| {
+                anyhow::anyhow!("--recovery-beam-width must be a non-negative integer, got {raw:?}")
+            })
+        })
+        .transpose()?;
+    if let Some(width) = recovery_beam_width
+        && search_mode == SearchMode::Recovery
+        && (width == 0 || width <= beam_width)
+    {
+        bail!(
+            "--recovery-beam-width ({width}) must be greater than baseline --beam-width ({beam_width})"
+        );
+    }
+    let recovery_timeout = recovery_timeout_secs_arg
+        .as_deref()
+        .map(|raw| {
+            let seconds = raw.parse::<u64>().map_err(|_| {
+                anyhow::anyhow!("--recovery-timeout-secs must be a positive integer, got {raw:?}")
+            })?;
+            if seconds == 0 {
+                return Err(anyhow::anyhow!(
+                    "--recovery-timeout-secs must be a positive integer (got 0)"
+                ));
+            }
+            Ok(std::time::Duration::from_secs(seconds))
+        })
+        .transpose()?;
     let avoid_mask = chem_env::elem_symbols_to_mask(&avoid_elements)
         | chem_env::elem_symbols_to_mask(
             &constraints
@@ -922,11 +1156,14 @@ fn main() -> Result<()> {
         bond_index,
         bb_price_map,
         template_metadata: template_metadata.map(|tm| tm.templates),
+        value_estimator,
         #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
-        nn_scorer,
+        nn_scorer: nn_scorer_for_search,
         ring_context: ring_context_config,
         candidate_trace_cap: candidate_trace_limit,
         reranker,
+        reaction_prior,
+        retro_generator,
         spectator_bond_policy,
         element_accounting_policy,
         beam_diversity_policy,
@@ -1074,6 +1311,8 @@ fn main() -> Result<()> {
                     recovery_depth: recovery_depth
                         .expect("validated above: recovery mode has a recovery depth"),
                     beam_diversity_slots,
+                    recovery_beam_width,
+                    recovery_timeout,
                     coverage_rule_tiers,
                     coverage_timeout,
                     coverage_beam_width,

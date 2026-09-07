@@ -13,18 +13,23 @@ pub mod evidence;
 pub mod evidence_match;
 pub mod io_limits;
 pub mod mcp;
+pub mod model_manifest;
 pub mod pool_export;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod recovery_mode;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod reranker;
+pub mod retro_generator;
 pub mod ring_context;
 pub mod score;
 pub mod scorer;
 pub mod search;
 pub mod spectator_bond;
+pub mod static_retro_generator;
+pub mod static_value_model;
 pub mod stock_import;
 pub mod synthesizability;
+pub mod template_policy;
 pub mod validation;
 pub mod vendor_stock;
 

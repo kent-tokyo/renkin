@@ -22,6 +22,7 @@ fn run_json(args: &[&str]) -> serde_json::Value {
 const STOCK: &str = "data/building_blocks.smi";
 const COVERAGE: &str = "tests/fixtures/coverage_mode_templates.smi";
 const COVERAGE_ONLY_TARGET: &str = "O=C1CCC(=O)N1c1ccccc1";
+const BEAM_WIDTH_TARGET: &str = "c4cc(ccc4Br)-c3c1CN(CCc1n(n3)CC2OC2)C(=O)C";
 
 #[test]
 fn baseline_success_short_circuits_and_is_audited() {
@@ -94,6 +95,42 @@ fn depth_recovery_short_circuits_before_coverage() {
                 .as_str()
                 .is_some_and(|value| value.starts_with("sha256:"))
     }));
+}
+
+#[test]
+fn wider_beam_recovery_short_circuits_before_depth() {
+    let value = run_json(&[
+        "--target",
+        BEAM_WIDTH_TARGET,
+        "--building-blocks",
+        "data/comparison/shared_stock/shared_stock.smi",
+        "--templates",
+        "data/templates_extracted_500.smi",
+        "--depth",
+        "5",
+        "--recovery-depth",
+        "6",
+        "--beam-width",
+        "100",
+        "--recovery-beam-width",
+        "200",
+        "--max-routes",
+        "1",
+        "--search-mode",
+        "recovery",
+    ]);
+    assert_eq!(
+        value["routes_found"], 0,
+        "fixture remains unresolved: {value}"
+    );
+    assert_eq!(value["recovery"]["selected_stage"], "depth");
+    assert_eq!(value["recovery"]["recovered_route"], false);
+    let attempts = value["recovery"]["attempts"].as_array().unwrap();
+    assert_eq!(attempts.len(), 3);
+    assert_eq!(attempts[0]["beam_width"], 100);
+    assert_eq!(attempts[1]["beam_width"], 200);
+    assert_eq!(attempts[1]["trigger"], "baseline_beam_exhaustion");
+    assert_eq!(attempts[2]["stage"], "depth");
 }
 
 #[test]

@@ -1128,7 +1128,10 @@ pub(crate) fn raw_propose(
     use crate::search::ElementAccountingGatePolicy;
     use crate::spectator_bond::SpectatorBondPolicy;
 
-    let target_elem_mask: u64 = crate::search::elem_mask_from_smiles(target_smi);
+    let (target_elem_mask, target_element_counts, target_bond_counts) =
+        crate::search::element_inventory_from_molecule(target_mol);
+    let target_atom_count = target_mol.atom_count();
+    let target_bond_count = target_mol.bonds().count();
     // Ring perception is target-specific but rule-independent. chematic's
     // default SMARTS entry point computes SSSR per query; prepared proposal
     // computes it once here and shares it across every active rule.
@@ -1162,13 +1165,24 @@ pub(crate) fn raw_propose(
                 || (target_elem_mask & r.rule.required_elements == r.rule.required_elements)
         };
         let expand = |r: &ScoredRuleRef<'_>| {
+            let prepared = prepared_rules.and_then(|rules| rules.get(r.rule));
+            if prepared.is_some_and(|rule| {
+                !rule.matches_inventory(
+                    &target_element_counts,
+                    &target_bond_counts,
+                    target_atom_count,
+                    target_bond_count,
+                )
+            }) {
+                return Vec::new();
+            }
             let mut diag = crate::ring_context::RingContextDiagnostics::default();
             crate::ring_context::apply_retro_with_policy_prepared(
                 target_mol,
                 r.rule,
                 &ring.config,
                 &mut diag,
-                prepared_rules.and_then(|rules| rules.get(r.rule)),
+                prepared,
                 target_rings.as_ref(),
             )
             .into_iter()
@@ -1185,6 +1199,25 @@ pub(crate) fn raw_propose(
             })
             .collect::<Vec<_>>()
         };
+        // Rayon setup/synchronization costs dominate when bond-index
+        // retrieval leaves only a handful of applicable rules. Keep the
+        // large-pool path parallel, but use the same ordered iterator logic
+        // sequentially for small pools; candidate ordering and contents are
+        // unchanged.
+        if active_rules.len() < 32 {
+            let raw = active_rules
+                .iter()
+                .filter(eligible)
+                .flat_map(expand)
+                .collect();
+            return (
+                raw,
+                crate::ring_context::RingContextDiagnostics::default(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+            );
+        }
         #[cfg(not(target_arch = "wasm32"))]
         let raw = iter.filter(eligible).flat_map_iter(expand).collect();
         #[cfg(target_arch = "wasm32")]
@@ -1205,12 +1238,23 @@ pub(crate) fn raw_propose(
         })
         .map(|r| {
             let mut diag = crate::ring_context::RingContextDiagnostics::default();
+            let prepared = prepared_rules.and_then(|rules| rules.get(r.rule));
+            if prepared.is_some_and(|rule| {
+                !rule.matches_inventory(
+                    &target_element_counts,
+                    &target_bond_counts,
+                    target_atom_count,
+                    target_bond_count,
+                )
+            }) {
+                return PerRuleProposal::default();
+            }
             let mut candidates = crate::ring_context::apply_retro_with_policy_prepared(
                 target_mol,
                 r.rule,
                 &ring.config,
                 &mut diag,
-                prepared_rules.and_then(|rules| rules.get(r.rule)),
+                prepared,
                 target_rings.as_ref(),
             )
             .into_iter()

@@ -171,7 +171,7 @@ Use `--format mermaid` for GitHub/Notion-compatible flowcharts.
 
 ## Current Limitations
 
-Current release: **v1.0.2**.
+Current release: **v1.0.3**.
 
 ⚠️ The corrected 4,903-target v1.0.1 shared-stock comparison is complete. RENKIN
 recorded 591/4,903 primary successes (12.05%) versus AiZynthFinder 4.4.1's
@@ -411,7 +411,7 @@ for the full acceptance criteria and licensing split.
 |---|---|
 | **Pure Safe Rust** | `#![forbid(unsafe_code)]` on all crates — compiler-enforced, zero C/C++ dependencies |
 | **Search engine** | A\*/AND-OR tree search (Retro\*-equivalent, pluggable `MoleculeValueEstimator`/`ReactionPrior`) with `--beam-width N` for memory-bounded exploration and `rayon` parallel rule application (sequential fallback on wasm32) |
-| **Up to 50k reaction templates** | Auto-extracted from USPTO-50k/MIT via rdchiral; frequency-weighted priority (optional pure-Rust `tract-onnx` NN scorer via `--scorer`); `--templates` for custom sets |
+| **Up to 50k reaction templates** | Auto-extracted from USPTO-50k/MIT via rdchiral; frequency-weighted priority (optional pure-Rust `tract-onnx` NN scorer via `--scorer`, with ordering-only frequency blending via `--scorer-ordering-blend`); `--templates` for custom sets |
 | **Template quality tools** | `renkin template stats\|validate\|dedup\|explain\|coverage\|ids` — frequency distribution, validity, duplicates, per-template lookup, coverage rate, stable IDs |
 | **Stable template IDs + evidence sidecar** | Every template gets a stable `template_id` (`rule:<name>` / `smirks-sha256:<hex>`, independent of file order). Attach curated DOIs/patents, conditions, yields, and side-reaction warnings via a `--template-metadata sidecar.json`; matching steps get an `evidence` field — see [Template evidence metadata](#template-evidence-metadata) below. `schema_version: 2` sidecars can also attach `examples` (curated exact-substrate records, surfaced first in `--format explain`). Automatic yield/success prediction and literature search remain out of scope ([#41](https://github.com/kent-tokyo/renkin/issues/41)) |
 | **Ring-context safety guard** | `--ring-context-policy conservative --ring-context-sidecar <path>` — opt-in match-level filter that rejects an extracted template's ring-opening/closing disconnection when its historical training data never observed that bond as ring-forming/-breaking; default `disabled` (unchanged legacy behavior) — see [Issue #72](https://github.com/kent-tokyo/renkin/issues/72) |

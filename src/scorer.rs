@@ -18,6 +18,9 @@ pub mod nn {
     use tract_onnx::prelude::*;
 
     use crate::chem_env::{Molecule, RetroRule, mol_from_smiles};
+    use crate::search::{
+        TemplateInfo, TemplatePolicy, TemplatePolicyDecision, TemplatePolicyScore,
+    };
 
     /// ECFP4 fingerprint: radius=2, 2048 bits (standard for template relevance).
     const ECFP_CONFIG: EcfpConfig = EcfpConfig {
@@ -167,6 +170,70 @@ pub mod nn {
         pub rules_offset: usize,
     }
 
+    /// Ordering-only view of the existing ONNX scorer.
+    ///
+    /// `TemplateScorer::top_k_indices` is intentionally left unchanged: it
+    /// is the legacy candidate-filtering path. This adapter exposes the same
+    /// logits through [`TemplatePolicy`] without removing any template, so it
+    /// can be used for a clean policy A/B measurement and retain RENKIN's
+    /// validation/stock boundary.
+    pub struct OnnxTemplatePolicy {
+        scorer: Arc<TemplateScorer>,
+    }
+
+    impl OnnxTemplatePolicy {
+        pub fn new(scorer: Arc<TemplateScorer>) -> Self {
+            Self { scorer }
+        }
+
+        fn decision_from_output(
+            output: TemplateScoreOutput,
+            templates: &[TemplateInfo],
+        ) -> TemplatePolicyDecision {
+            if output.status != TemplateScoreStatus::Available {
+                return TemplatePolicyDecision {
+                    scores: Vec::new(),
+                    abstained: true,
+                };
+            }
+            let scores = output
+                .scores
+                .into_iter()
+                .filter_map(|score| {
+                    templates
+                        .get(score.rule_index)
+                        .map(|template| TemplatePolicyScore {
+                            template_id: template.template_id.clone(),
+                            score: f64::from(score.raw_logit),
+                        })
+                })
+                .collect();
+            TemplatePolicyDecision {
+                scores,
+                abstained: false,
+            }
+        }
+    }
+
+    impl TemplatePolicy for OnnxTemplatePolicy {
+        fn rank_templates(
+            &self,
+            target: &str,
+            templates: &[TemplateInfo],
+        ) -> TemplatePolicyDecision {
+            if self.scorer.rules_offset > templates.len() {
+                return TemplatePolicyDecision {
+                    scores: Vec::new(),
+                    abstained: true,
+                };
+            }
+            Self::decision_from_output(
+                self.scorer.score_templates(target, templates.len()),
+                templates,
+            )
+        }
+    }
+
     impl TemplateScorer {
         /// Load a scorer from an ONNX model file.
         ///
@@ -298,6 +365,13 @@ pub mod nn {
     mod tests {
         use super::*;
 
+        fn template(id: &str) -> TemplateInfo {
+            TemplateInfo {
+                template_id: id.to_owned(),
+                template_name: id.to_owned(),
+            }
+        }
+
         fn score_at(output: &TemplateScoreOutput, rule_index: usize) -> TemplateScore {
             output
                 .scores
@@ -305,6 +379,33 @@ pub mod nn {
                 .find(|s| s.rule_index == rule_index)
                 .copied()
                 .unwrap_or_else(|| panic!("no TemplateScore for rule_index {rule_index}"))
+        }
+
+        #[test]
+        fn ordering_adapter_preserves_template_set_and_stable_ids() {
+            let output = validate_and_rank_logits(&[0.2, 1.5], 1, 3);
+            let decision = OnnxTemplatePolicy::decision_from_output(
+                output,
+                &[template("hand"), template("file-a"), template("file-b")],
+            );
+            assert!(!decision.abstained);
+            assert_eq!(decision.scores.len(), 2);
+            assert_eq!(
+                decision
+                    .scores
+                    .iter()
+                    .map(|score| score.template_id.as_str())
+                    .collect::<Vec<_>>(),
+                vec!["file-a", "file-b"]
+            );
+        }
+
+        #[test]
+        fn ordering_adapter_abstains_on_invalid_scorer_output() {
+            let output = validate_and_rank_logits(&[f32::NAN], 0, 1);
+            let decision = OnnxTemplatePolicy::decision_from_output(output, &[template("file")]);
+            assert!(decision.abstained);
+            assert!(decision.scores.is_empty());
         }
 
         #[test]

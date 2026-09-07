@@ -18,6 +18,7 @@ import json
 import os
 import sys
 import time
+from pathlib import Path
 
 import compare_aggregate as aggregate
 import compare_manifest as manifest_mod
@@ -28,15 +29,24 @@ import compare_schema as schema
 
 def load_stock(path: str) -> list[str]:
     stock = []
-    with open(path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith("#"):
-                stock.append(line.split()[0])
+    raw = Path(path).read_bytes()
+    if raw.startswith(b"RENKIN-COMPILED-STOCK-V1\n"):
+        # `.rstock` is a text-framed binary-safe snapshot: the first line is
+        # the magic and the second is the JSON header. Only the canonical
+        # payload belongs in the configured-stock list used by the report.
+        lines = raw.decode("utf-8").splitlines()[2:]
+    else:
+        lines = raw.decode("utf-8").splitlines()
+    for line in lines:
+        line = line.strip()
+        if line and not line.startswith("#"):
+            stock.append(line.split()[0])
     return stock
 
 
 def renkin_config_and_id(args):
+    if args.scorer and (args.template_policy_manifest or args.template_policy_artifact):
+        raise ValueError("--scorer cannot be combined with --template-policy-*")
     building_blocks_path = (
         args.shared_stock_smi if args.comparison_mode == "shared_stock" else args.building_blocks
     )
@@ -46,7 +56,8 @@ def renkin_config_and_id(args):
         templates_path=args.templates,
         depth=args.depth,
         beam_width=args.beam_width,
-        max_routes=1,
+        max_routes=args.max_routes,
+        route_selection=args.route_selection,
         external_timeout_s=args.timeout_s,
         grace_s=args.grace_s,
         ring_context_policy=args.ring_context_policy,
@@ -55,6 +66,13 @@ def renkin_config_and_id(args):
         element_accounting_policy=args.element_accounting_policy,
         beam_diversity_policy=args.beam_diversity_policy,
         beam_diversity_slots=args.beam_diversity_slots,
+        template_policy_manifest=args.template_policy_manifest,
+        template_policy_artifact=args.template_policy_artifact,
+        retro_generator_manifest=args.retro_generator_manifest,
+        retro_generator_artifact=args.retro_generator_artifact,
+        scorer=args.scorer,
+        scorer_ordering_blend=args.scorer_ordering_blend,
+        speed_profile=args.speed_profile,
         reranker_model=args.reranker_model,
         reranker_freq_table=args.reranker_freq_table,
         search_mode=args.search_mode,
@@ -63,6 +81,8 @@ def renkin_config_and_id(args):
         coverage_timeout_secs=args.coverage_timeout_secs,
         coverage_beam_width=args.coverage_beam_width,
         recovery_depth=args.recovery_depth,
+        recovery_beam_width=args.recovery_beam_width,
+        recovery_timeout_secs=args.recovery_timeout_secs,
     )
     policy_suffix = (
         f"-{args.ring_context_policy}"
@@ -108,11 +128,23 @@ def renkin_config_and_id(args):
         if args.beam_diversity_policy != "off"
         else ""
     )
+    template_policy_suffix = (
+        "-tp"
+        if args.template_policy_manifest and args.template_policy_artifact
+        else ""
+    )
+    generator_suffix = "-retro_generator" if args.retro_generator_manifest else ""
+    scorer_suffix = (
+        f"-onnx_ordering-w{args.scorer_ordering_blend:g}" if args.scorer else ""
+    )
+    speed_suffix = "-speed" if args.speed_profile else ""
     configuration_id = (
         f"renkin-{args.comparison_mode}-d{args.depth}-b{args.beam_width}"
+        f"-mr{args.max_routes}-{args.route_selection}"
         f"{policy_suffix}{reranker_suffix}{coverage_suffix}{coverage_beam_suffix}"
         f"{recovery_depth_suffix}{recovery_slots_suffix}{recovery_tiers_suffix}"
         f"{spectator_bond_suffix}{element_accounting_suffix}{beam_diversity_suffix}"
+        f"{template_policy_suffix}{scorer_suffix}{generator_suffix}{speed_suffix}"
     )
     return config, building_blocks_path, configuration_id
 
@@ -213,6 +245,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--templates", default="data/templates_extracted_500.smi")
     parser.add_argument("--depth", type=int, default=5)
     parser.add_argument("--beam-width", type=int, default=100)
+    parser.add_argument(
+        "--max-routes",
+        type=int,
+        default=1,
+        help="RENKIN-only number of ranked routes returned by the CLI.",
+    )
+    parser.add_argument(
+        "--route-selection",
+        choices=["rank1", "strict_validated", "strict_on_rank1_failure"],
+        default="rank1",
+        help="RENKIN-only route selection; strict_validated always scans candidates, while "
+        "strict_on_rank1_failure scans only after rank-1 fails validation.",
+    )
     parser.add_argument("--timeout-s", type=float, default=150.0)
     parser.add_argument("--grace-s", type=float, default=10.0)
     parser.add_argument("--aizynthfinder-image", default="renkin-compare-66/aizynthfinder:4.4.1")
@@ -252,9 +297,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--beam-diversity-policy",
-        choices=["off", "diagnostics-only", "active", "retry-on-beam-exhaustion"],
+        choices=["off", "diagnostics-only", "active", "adaptive", "retry-on-beam-exhaustion"],
         default="off",
-        help="RENKIN-only diversity-reserved beam policy; ignored for "
+        help="RENKIN-only diversity-reserved beam policy (adaptive uses slots as an upper bound); ignored for "
         "--tool aizynthfinder.",
     )
     parser.add_argument(
@@ -263,6 +308,43 @@ def main(argv: list[str] | None = None) -> int:
         default=0,
         help="RENKIN-only number of beam slots reserved when diversity policy is active, "
         "or in --search-mode recovery's conditional diversity stage.",
+    )
+    parser.add_argument(
+        "--template-policy-manifest",
+        default=None,
+        help="RENKIN-only hash-pinned ordering-only TemplatePolicy manifest.",
+    )
+    parser.add_argument(
+        "--template-policy-artifact",
+        default=None,
+        help="RENKIN-only static TemplatePolicy score-table artifact.",
+    )
+    parser.add_argument(
+        "--retro-generator-manifest",
+        default=None,
+        help="RENKIN-only hash-pinned direct-generator manifest.",
+    )
+    parser.add_argument(
+        "--retro-generator-artifact",
+        default=None,
+        help="RENKIN-only direct-generator proposal artifact.",
+    )
+    parser.add_argument(
+        "--scorer",
+        default=None,
+        help="RENKIN-only ONNX template scorer used through ordering-only policy mode; "
+        "requires a binary built with nn-scoring.",
+    )
+    parser.add_argument(
+        "--scorer-ordering-blend",
+        type=float,
+        default=1.0,
+        help="RENKIN-only ONNX ordering blend: 1.0=model-only, 0.0=legacy frequency prior.",
+    )
+    parser.add_argument(
+        "--speed-profile",
+        action="store_true",
+        help="RENKIN-only explicit speed arm; enables the bond-center template index.",
     )
     parser.add_argument(
         "--reranker-model",
@@ -317,6 +399,19 @@ def main(argv: list[str] | None = None) -> int:
         "None lets the CLI use baseline depth + 1.",
     )
     parser.add_argument(
+        "--recovery-beam-width",
+        type=int,
+        default=None,
+        help="RENKIN-only: bounded wider-beam retry for --search-mode recovery. "
+        "Must be greater than --beam-width.",
+    )
+    parser.add_argument(
+        "--recovery-timeout-secs",
+        type=int,
+        default=None,
+        help="RENKIN-only: whole recovery cascade cooperative budget in seconds.",
+    )
+    parser.add_argument(
         "--resume",
         action="store_true",
         help="Append to --output-rows if it exists, skipping target_ids already present, "
@@ -330,6 +425,10 @@ def main(argv: list[str] | None = None) -> int:
         "host environment) alongside this arm's output.",
     )
     args = parser.parse_args(argv)
+    if args.max_routes <= 0:
+        parser.error("--max-routes must be positive")
+    if args.route_selection == "strict_validated" and args.max_routes < 2:
+        parser.error("--route-selection strict_validated requires --max-routes >= 2")
     if args.ring_context_policy != "disabled" and not args.ring_context_sidecar:
         parser.error("--ring-context-policy != disabled requires --ring-context-sidecar")
     if bool(args.reranker_model) != bool(args.reranker_freq_table):
@@ -338,15 +437,41 @@ def main(argv: list[str] | None = None) -> int:
             "-- renkin's own CLI would silently fall back to legacy ordering on a mismatched "
             "pair, which this paired-comparison harness must not do unnoticed"
         )
+    if bool(args.template_policy_manifest) != bool(args.template_policy_artifact):
+        parser.error(
+            "--template-policy-manifest and --template-policy-artifact must both be given "
+            "or both omitted"
+        )
+    if bool(args.retro_generator_manifest) != bool(args.retro_generator_artifact):
+        parser.error(
+            "--retro-generator-manifest and --retro-generator-artifact must both be given "
+            "or both omitted"
+        )
+    if not 0.0 <= args.scorer_ordering_blend <= 1.0:
+        parser.error("--scorer-ordering-blend must be within [0,1]")
+    if args.scorer_ordering_blend != 1.0 and not args.scorer:
+        parser.error("--scorer-ordering-blend != 1.0 requires --scorer")
+    if args.speed_profile and args.search_mode != "standard":
+        parser.error("--speed-profile requires --search-mode standard")
     if args.search_mode == "coverage" and not args.coverage_templates:
         parser.error("--search-mode coverage requires --coverage-templates")
     if args.search_mode != "recovery" and args.recovery_depth is not None:
         parser.error("--recovery-depth requires --search-mode recovery")
+    if args.search_mode != "recovery" and args.recovery_beam_width is not None:
+        parser.error("--recovery-beam-width requires --search-mode recovery")
+    if args.search_mode != "recovery" and args.recovery_timeout_secs is not None:
+        parser.error("--recovery-timeout-secs requires --search-mode recovery")
     if args.search_mode != "recovery" and args.recovery_coverage_tier:
         parser.error("--recovery-coverage-tier requires --search-mode recovery")
     if args.search_mode == "recovery" and args.recovery_depth is not None:
         if args.recovery_depth <= args.depth:
             parser.error("--recovery-depth must be greater than --depth")
+    if args.search_mode == "recovery" and args.recovery_beam_width is not None:
+        if args.beam_width <= 0 or args.recovery_beam_width <= args.beam_width:
+            parser.error("--recovery-beam-width must be greater than --beam-width")
+    if args.search_mode == "recovery" and args.recovery_timeout_secs is not None:
+        if args.recovery_timeout_secs <= 0:
+            parser.error("--recovery-timeout-secs must be positive")
     if args.search_mode == "recovery" and (
         args.element_accounting_policy != "off" or args.beam_diversity_policy != "off"
     ):
@@ -365,7 +490,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.beam_diversity_slots < 0:
         parser.error("--beam-diversity-slots must be non-negative")
     if (
-        args.beam_diversity_policy in {"active", "retry-on-beam-exhaustion"}
+        args.beam_diversity_policy in {"active", "adaptive", "retry-on-beam-exhaustion"}
         and args.beam_diversity_slots == 0
     ):
         parser.error(
@@ -432,7 +557,8 @@ def main(argv: list[str] | None = None) -> int:
                     "beam_width": args.beam_width,
                     "timeout_s": args.timeout_s,
                     "grace_s": args.grace_s,
-                    "max_routes": 1,
+                    "max_routes": args.max_routes,
+                    "route_selection": args.route_selection,
                     "search_mode": args.search_mode,
                     "recovery_coverage_tier_count": len(args.recovery_coverage_tier),
                 },

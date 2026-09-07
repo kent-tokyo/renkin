@@ -53,11 +53,45 @@ pub(crate) struct PreparedRuleSet {
 pub(crate) struct PreparedRetroRule {
     source_smirks: String,
     variants: Vec<PreparedReaction>,
+    /// Conservative lower bounds for explicit element occurrences on the
+    /// target (left-hand) side of the SMIRKS. Ambiguous atom expressions are
+    /// omitted, so this signature may fail open but must never reject a valid
+    /// match.
+    required_element_counts: Vec<(u8, u16)>,
+    /// Conservative lower bounds for directly connected explicit element
+    /// pairs on the target side. Ring-closure and ambiguous-atom bonds are
+    /// omitted, so this also fails open.
+    required_bond_counts: Vec<(u16, u16)>,
+    /// Conservative lower bounds for the target-side query graph size.
+    required_atom_count: u16,
+    required_bond_count: u16,
 }
 
 impl PreparedRetroRule {
     pub(crate) fn variants(&self) -> &[PreparedReaction] {
         &self.variants
+    }
+
+    pub(crate) fn matches_inventory(
+        &self,
+        target_element_counts: &[u16; 64],
+        target_bond_counts: &[(u16, u16)],
+        target_atom_count: usize,
+        target_bond_count: usize,
+    ) -> bool {
+        target_atom_count >= self.required_atom_count as usize
+            && target_bond_count >= self.required_bond_count as usize
+            && self
+                .required_element_counts
+                .iter()
+                .all(|&(atomic_number, count)| {
+                    target_element_counts[atomic_number as usize] >= count
+                })
+            && self.required_bond_counts.iter().all(|&(key, count)| {
+                target_bond_counts
+                    .binary_search_by_key(&key, |&(target_key, _)| target_key)
+                    .is_ok_and(|index| target_bond_counts[index].1 >= count)
+            })
     }
 }
 
@@ -91,11 +125,17 @@ impl PreparedRuleSet {
                 .iter()
                 .filter_map(|smirks| PreparedReaction::new(smirks).ok())
                 .collect();
+            let (required_atom_count, required_bond_count) =
+                required_topology_size_from_smirks(&rule.smirks);
             by_template_id.insert(
                 rule.template_id.clone(),
                 PreparedRetroRule {
                     source_smirks: rule.smirks.clone(),
                     variants: prepared,
+                    required_element_counts: required_element_counts_from_smirks(&rule.smirks),
+                    required_bond_counts: required_bond_counts_from_smirks(&rule.smirks),
+                    required_atom_count,
+                    required_bond_count,
                 },
             );
         }
@@ -1802,6 +1842,270 @@ fn required_elements_from_smirks(smirks: &str) -> u64 {
     mask
 }
 
+/// Conservative per-element atom-count lower bounds for a SMIRKS target side.
+///
+/// Only unambiguous bracket atoms are counted. Atom alternatives (`,`),
+/// negation, recursive SMARTS, wildcards, unknown elements, and hydrogen are
+/// skipped deliberately. Skipping weakens the prefilter but preserves the
+/// essential no-false-negative contract.
+fn required_element_counts_from_smirks(smirks: &str) -> Vec<(u8, u16)> {
+    fn atomic_number(symbol: &[u8]) -> Option<u8> {
+        match symbol {
+            b"B" | b"b" => Some(5),
+            b"C" | b"c" => Some(6),
+            b"N" | b"n" => Some(7),
+            b"O" | b"o" => Some(8),
+            b"F" => Some(9),
+            b"Si" => Some(14),
+            b"P" | b"p" => Some(15),
+            b"S" | b"s" => Some(16),
+            b"Cl" => Some(17),
+            b"Fe" => Some(26),
+            b"Cu" => Some(29),
+            b"Zn" => Some(30),
+            b"Se" | b"se" => Some(34),
+            b"Br" => Some(35),
+            b"Pd" => Some(46),
+            b"Sn" => Some(50),
+            b"Te" | b"te" => Some(52),
+            b"I" => Some(53),
+            _ => None,
+        }
+    }
+
+    let lhs = match smirks.split_once(">>") {
+        Some((lhs, _)) if !lhs.is_empty() => lhs.as_bytes(),
+        _ => return Vec::new(),
+    };
+    let mut counts = [0u16; 64];
+    let mut i = 0;
+    while i < lhs.len() {
+        if lhs[i] != b'[' {
+            i += 1;
+            continue;
+        }
+        let start = i + 1;
+        let Some(relative_end) = lhs[start..].iter().position(|&byte| byte == b']') else {
+            break;
+        };
+        let end = start + relative_end;
+        let atom = &lhs[start..end];
+        i = end + 1;
+
+        if atom.is_empty()
+            || atom.contains(&b',')
+            || atom.contains(&b'$')
+            || atom.first().is_some_and(|byte| matches!(byte, b'!' | b'*'))
+        {
+            continue;
+        }
+
+        let mut cursor = 0;
+        while cursor < atom.len() && atom[cursor].is_ascii_digit() {
+            cursor += 1;
+        }
+        let atomic_number = if atom.get(cursor) == Some(&b'#') {
+            cursor += 1;
+            let number_start = cursor;
+            while cursor < atom.len() && atom[cursor].is_ascii_digit() {
+                cursor += 1;
+            }
+            std::str::from_utf8(&atom[number_start..cursor])
+                .ok()
+                .and_then(|number| number.parse::<u8>().ok())
+        } else {
+            let Some(&first) = atom.get(cursor) else {
+                continue;
+            };
+            let two_byte_symbol = atom.get(cursor..cursor + 2).is_some_and(|symbol| {
+                (first.is_ascii_uppercase() && symbol[1].is_ascii_lowercase())
+                    || matches!(symbol, b"se" | b"as")
+            });
+            let symbol_len = if two_byte_symbol { 2 } else { 1 };
+            atom.get(cursor..cursor + symbol_len)
+                .and_then(atomic_number)
+        };
+
+        if let Some(atomic_number @ 2..=63) = atomic_number {
+            counts[atomic_number as usize] = counts[atomic_number as usize].saturating_add(1);
+        }
+    }
+
+    counts
+        .into_iter()
+        .enumerate()
+        .filter_map(|(atomic_number, count)| (count > 0).then_some((atomic_number as u8, count)))
+        .collect()
+}
+
+fn bond_prefilter_atomic_number(atom: &[u8]) -> Option<u8> {
+    fn atomic_number(symbol: &[u8]) -> Option<u8> {
+        match symbol {
+            b"B" | b"b" => Some(5),
+            b"C" | b"c" => Some(6),
+            b"N" | b"n" => Some(7),
+            b"O" | b"o" => Some(8),
+            b"F" => Some(9),
+            b"Si" => Some(14),
+            b"P" | b"p" => Some(15),
+            b"S" | b"s" => Some(16),
+            b"Cl" => Some(17),
+            b"Fe" => Some(26),
+            b"Cu" => Some(29),
+            b"Zn" => Some(30),
+            b"Se" | b"se" => Some(34),
+            b"Br" => Some(35),
+            b"Pd" => Some(46),
+            b"Sn" => Some(50),
+            b"Te" | b"te" => Some(52),
+            b"I" => Some(53),
+            _ => None,
+        }
+    }
+
+    if atom.is_empty()
+        || atom.contains(&b',')
+        || atom.contains(&b'$')
+        || atom.first().is_some_and(|byte| matches!(byte, b'!' | b'*'))
+    {
+        return None;
+    }
+    let mut cursor = 0;
+    while cursor < atom.len() && atom[cursor].is_ascii_digit() {
+        cursor += 1;
+    }
+    let atomic_number = if atom.get(cursor) == Some(&b'#') {
+        cursor += 1;
+        let number_start = cursor;
+        while cursor < atom.len() && atom[cursor].is_ascii_digit() {
+            cursor += 1;
+        }
+        std::str::from_utf8(&atom[number_start..cursor])
+            .ok()
+            .and_then(|number| number.parse::<u8>().ok())
+    } else {
+        let &first = atom.get(cursor)?;
+        let two_byte_symbol = atom.get(cursor..cursor + 2).is_some_and(|symbol| {
+            (first.is_ascii_uppercase() && symbol[1].is_ascii_lowercase())
+                || matches!(symbol, b"se" | b"as")
+        });
+        atom.get(cursor..cursor + if two_byte_symbol { 2 } else { 1 })
+            .and_then(atomic_number)
+    };
+    atomic_number.filter(|atomic_number| (2..=63).contains(atomic_number))
+}
+
+fn bond_count_key(a: u8, b: u8) -> u16 {
+    let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+    ((lo as u16) << 6) | hi as u16
+}
+
+/// Conservative connected-element-pair lower bounds for the SMIRKS target
+/// side. Only bonds between consecutive unambiguous bracket atoms are counted.
+/// Ring closures and bonds touching syntax this parser does not understand are
+/// omitted rather than guessed.
+fn required_bond_counts_from_smirks(smirks: &str) -> Vec<(u16, u16)> {
+    let lhs = match smirks.split_once(">>") {
+        Some((lhs, _)) if !lhs.is_empty() => lhs.as_bytes(),
+        _ => return Vec::new(),
+    };
+    let mut counts: FxHashMap<u16, u16> = FxHashMap::default();
+    let mut branch_stack: Vec<Option<u8>> = Vec::new();
+    let mut previous_atom: Option<u8> = None;
+    let mut i = 0;
+    while i < lhs.len() {
+        match lhs[i] {
+            b'[' => {
+                let start = i + 1;
+                let Some(relative_end) = lhs[start..].iter().position(|&byte| byte == b']') else {
+                    break;
+                };
+                let end = start + relative_end;
+                let atom = bond_prefilter_atomic_number(&lhs[start..end]);
+                if let (Some(previous), Some(current)) = (previous_atom, atom) {
+                    let count = counts.entry(bond_count_key(previous, current)).or_default();
+                    *count = count.saturating_add(1);
+                }
+                previous_atom = atom;
+                i = end + 1;
+                continue;
+            }
+            b'(' => branch_stack.push(previous_atom),
+            b')' => previous_atom = branch_stack.pop().flatten(),
+            b'.' => {
+                previous_atom = None;
+                branch_stack.clear();
+            }
+            // Bare atoms are deliberately not interpreted. Clearing the
+            // context prevents inventing a bond across an unparsed atom.
+            byte if byte.is_ascii_alphabetic() => previous_atom = None,
+            _ => {}
+        }
+        i += 1;
+    }
+
+    let mut counts: Vec<_> = counts.into_iter().collect();
+    counts.sort_unstable_by_key(|&(key, _)| key);
+    counts
+}
+
+/// Conservative size of the top-level target-side query graph. Every
+/// well-formed bracket atom and organic-subset bare atom contributes one atom;
+/// every sequential/branch connection contributes one bond. Ring-closure
+/// bonds are omitted because a partial parser must not guess their pairing.
+fn required_topology_size_from_smirks(smirks: &str) -> (u16, u16) {
+    let lhs = match smirks.split_once(">>") {
+        Some((lhs, _)) if !lhs.is_empty() => lhs.as_bytes(),
+        _ => return (0, 0),
+    };
+    let mut atom_count = 0u16;
+    let mut bond_count = 0u16;
+    let mut branch_stack = Vec::new();
+    let mut has_previous_atom = false;
+    let mut i = 0;
+    while i < lhs.len() {
+        let atom_end = match lhs[i] {
+            b'[' => {
+                let start = i + 1;
+                let Some(relative_end) = lhs[start..].iter().position(|&byte| byte == b']') else {
+                    break;
+                };
+                Some(start + relative_end + 1)
+            }
+            b'*' | b'B' | b'C' | b'N' | b'O' | b'P' | b'S' | b'F' | b'I' | b'b' | b'c' | b'n'
+            | b'o' | b'p' | b's' => {
+                let two_byte = matches!(lhs[i], b'B' | b'C')
+                    && lhs
+                        .get(i + 1)
+                        .is_some_and(|next| matches!(next, b'r' | b'l'));
+                Some(i + if two_byte { 2 } else { 1 })
+            }
+            _ => None,
+        };
+        if let Some(end) = atom_end {
+            atom_count = atom_count.saturating_add(1);
+            if has_previous_atom {
+                bond_count = bond_count.saturating_add(1);
+            }
+            has_previous_atom = true;
+            i = end;
+            continue;
+        }
+
+        match lhs[i] {
+            b'(' => branch_stack.push(has_previous_atom),
+            b')' => has_previous_atom = branch_stack.pop().unwrap_or(false),
+            b'.' => {
+                has_previous_atom = false;
+                branch_stack.clear();
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    (atom_count, bond_count)
+}
+
 // ── Hash-atom ([#N]) wildcard: application-time compatibility compiler ──
 //
 // `chematic::rxn::run_reactants`/`parse_reaction` parse a SMIRKS through
@@ -3285,6 +3589,96 @@ mod tests {
             !pairs.contains(&(7, 17)),
             "spurious Cl-N pair across '.' boundary: {pairs:?}"
         );
+    }
+
+    #[test]
+    fn element_count_prefilter_counts_only_unambiguous_target_atoms() {
+        let counts = required_element_counts_from_smirks(
+            "[C:1](=[O:2])[NH:3][c:4]1[cH:5][n:6]ccc1>>[C:1](=[O:2])O.[NH2:3]",
+        );
+        assert_eq!(counts, vec![(6, 3), (7, 2), (8, 1)]);
+    }
+
+    #[test]
+    fn element_count_prefilter_fails_open_for_ambiguous_atoms() {
+        let counts = required_element_counts_from_smirks(
+            "[C,N:1][!#6:2][$([O,N]):3][*:4][#17:5][H:6]>>[C:1]",
+        );
+        assert_eq!(counts, vec![(17, 1)]);
+    }
+
+    #[test]
+    fn bond_count_prefilter_tracks_chain_branch_and_components() {
+        let counts = required_bond_counts_from_smirks("[C:1]([O:2])[N:3][C:4].[Cl:5]>>[C:1][Cl:5]");
+        assert_eq!(
+            counts,
+            vec![(bond_count_key(6, 7), 2), (bond_count_key(6, 8), 1),]
+        );
+    }
+
+    #[test]
+    fn bond_count_prefilter_does_not_bridge_ambiguous_or_bare_atoms() {
+        let counts = required_bond_counts_from_smirks("[C:1][C,N:2][O:3].[C:4]c[N:5]>>[C:1][O:3]");
+        assert!(
+            counts.is_empty(),
+            "ambiguous bonds must fail open: {counts:?}"
+        );
+    }
+
+    #[test]
+    fn topology_size_prefilter_counts_bracket_and_bare_query_graphs() {
+        assert_eq!(
+            required_topology_size_from_smirks("[C:1]([O:2])[N:3].[Cl:4]>>[C:1]"),
+            (4, 2)
+        );
+        assert_eq!(required_topology_size_from_smirks("CC(=O)O>>CCO"), (4, 3));
+    }
+
+    #[test]
+    fn topology_size_prefilter_omits_ring_closure_bond() {
+        assert_eq!(
+            required_topology_size_from_smirks("[C:1]1[C:2][C:3]1>>[C:1][C:2][C:3]"),
+            (3, 2)
+        );
+    }
+
+    #[test]
+    fn prepared_rule_element_count_prefilter_rejects_only_missing_counts() {
+        let smirks = "[C:1][C:2][O:3]>>[C:1].[C:2][O:3]";
+        let rule = RetroRule {
+            name: "counted".to_string(),
+            template_id: template_id_for_smirks(smirks),
+            smirks: smirks.to_string(),
+            required_elements: required_elements_from_smirks(smirks),
+            ..RetroRule::default()
+        };
+        let prepared = PreparedRuleSet::new(std::slice::from_ref(&rule));
+        let prepared = prepared.get(&rule).expect("prepared rule");
+        let (_, ethanol_counts, ethanol_bonds) = crate::search::element_inventory_from_molecule(
+            &mol_from_smiles("CCO").expect("ethanol"),
+        );
+        let (_, methanol_counts, methanol_bonds) = crate::search::element_inventory_from_molecule(
+            &mol_from_smiles("CO").expect("methanol"),
+        );
+        assert!(prepared.matches_inventory(&ethanol_counts, &ethanol_bonds, 3, 2));
+        assert!(!prepared.matches_inventory(&methanol_counts, &methanol_bonds, 2, 1));
+
+        let smirks = "[C:1][O:2][C:3]>>[C:1][O:2].[C:3]";
+        let rule = RetroRule {
+            name: "bond-counted".to_string(),
+            template_id: template_id_for_smirks(smirks),
+            smirks: smirks.to_string(),
+            required_elements: required_elements_from_smirks(smirks),
+            ..RetroRule::default()
+        };
+        let prepared = PreparedRuleSet::new(std::slice::from_ref(&rule));
+        let prepared = prepared.get(&rule).expect("prepared bond rule");
+        let (_, dimethyl_ether_counts, dimethyl_ether_bonds) =
+            crate::search::element_inventory_from_molecule(
+                &mol_from_smiles("COC").expect("dimethyl ether"),
+            );
+        assert!(prepared.matches_inventory(&dimethyl_ether_counts, &dimethyl_ether_bonds, 3, 2));
+        assert!(!prepared.matches_inventory(&ethanol_counts, &ethanol_bonds, 3, 2));
     }
 
     #[test]

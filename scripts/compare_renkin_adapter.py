@@ -54,6 +54,7 @@ class RenkinConfig:
     depth: int = 5
     beam_width: int = 100
     max_routes: int = 1
+    route_selection: str = "rank1"
     external_timeout_s: float = 150.0
     grace_s: float = 10.0
     # Ring-context safety guard (Issue #72/#242) -- None/"disabled" runs the
@@ -73,6 +74,19 @@ class RenkinConfig:
     # measurements cannot accidentally share the default arm's identity.
     beam_diversity_policy: str = "off"
     beam_diversity_slots: int = 0
+    template_policy_manifest: str | None = None
+    template_policy_artifact: str | None = None
+    retro_generator_manifest: str | None = None
+    retro_generator_artifact: str | None = None
+    # ONNX template policy in ordering-only mode. The binary must be built
+    # with the nn-scoring feature; unlike the legacy scorer path this never
+    # removes candidates.
+    scorer: str | None = None
+    # Blend weight for the ONNX ordering-only policy: 1.0 is model-only,
+    # 0.0 is the legacy frequency prior. Kept in the arm config so paired
+    # runs cannot accidentally reuse an ambiguous configuration id.
+    scorer_ordering_blend: float = 1.0
+    speed_profile: bool = False
     # Issue #101 Task 35: ordering-only LightGBM candidate reranker. Both
     # must be set together (renkin's own CLI already falls back to legacy
     # ordering with a stderr warning if only one is given, or if loading
@@ -90,6 +104,8 @@ class RenkinConfig:
     coverage_timeout_secs: int | None = None
     coverage_beam_width: int | None = None
     recovery_depth: int | None = None
+    recovery_beam_width: int | None = None
+    recovery_timeout_secs: int | None = None
 
 
 _MAXRSS_RE = re.compile(r"^\s*(\d+)\s+maximum resident set size\s*$", re.MULTILINE)
@@ -190,6 +206,12 @@ def run_one_target(
     ]
     if config.templates_path:
         argv += ["--templates", config.templates_path]
+    if config.scorer:
+        argv += ["--scorer", config.scorer, "--scorer-ordering-only"]
+        if config.scorer_ordering_blend != 1.0:
+            argv += ["--scorer-ordering-blend", str(config.scorer_ordering_blend)]
+    if config.speed_profile:
+        argv += ["--speed-profile"]
     if config.ring_context_policy and config.ring_context_policy != "disabled":
         argv += ["--ring-context-policy", config.ring_context_policy]
         argv += ["--ring-context-sidecar", config.ring_context_sidecar]
@@ -207,6 +229,12 @@ def run_one_target(
     if config.reranker_model and config.reranker_freq_table:
         argv += ["--reranker-model", config.reranker_model]
         argv += ["--reranker-freq-table", config.reranker_freq_table]
+    if config.template_policy_manifest and config.template_policy_artifact:
+        argv += ["--template-policy-manifest", config.template_policy_manifest]
+        argv += ["--template-policy-artifact", config.template_policy_artifact]
+    if config.retro_generator_manifest and config.retro_generator_artifact:
+        argv += ["--retro-generator-manifest", config.retro_generator_manifest]
+        argv += ["--retro-generator-artifact", config.retro_generator_artifact]
     if config.search_mode != "standard":
         argv += ["--search-mode", config.search_mode]
         for path in config.recovery_coverage_tier_paths:
@@ -219,6 +247,10 @@ def run_one_target(
             argv += ["--coverage-beam-width", str(config.coverage_beam_width)]
         if config.recovery_depth is not None:
             argv += ["--recovery-depth", str(config.recovery_depth)]
+        if config.recovery_beam_width is not None:
+            argv += ["--recovery-beam-width", str(config.recovery_beam_width)]
+        if config.recovery_timeout_secs is not None:
+            argv += ["--recovery-timeout-secs", str(config.recovery_timeout_secs)]
 
     (
         returncode,
@@ -334,9 +366,33 @@ def run_one_target(
         }
         return PlannerComparisonRow(**row_kwargs)
 
-    # Rank-1 route only, per the fixed route-selection rule (see
-    # docs/guides/open-source-retrosynthesis-comparison.md, "Route selection").
-    best_route = parsed["routes"][0]
+    stock_set = build_stock_set(configured_stock_smiles)
+    candidates = parsed["routes"]
+    selected_index = 0
+    if config.route_selection in {"strict_validated", "strict_on_rank1_failure"}:
+        rank1_outcome = normalize_renkin_route(candidates[0], target_smiles)
+        rank1_is_strict = False
+        if rank1_outcome.parseable and rank1_outcome.graph is not None:
+            rank1_steps_ok, _ = check_reaction_steps_parseable(rank1_outcome.graph)
+            rank1_accounting, _ = check_target_element_accounting(rank1_outcome.graph)
+            rank1_is_strict = rank1_steps_ok is True and rank1_accounting == "accounted"
+        if config.route_selection == "strict_on_rank1_failure" and rank1_is_strict:
+            candidates = candidates[:1]
+        for index, candidate in enumerate(candidates):
+            candidate_outcome = normalize_renkin_route(candidate, target_smiles)
+            if not candidate_outcome.parseable or candidate_outcome.graph is None:
+                continue
+            candidate_graph = candidate_outcome.graph
+            candidate_steps_ok, _ = check_reaction_steps_parseable(candidate_graph)
+            candidate_accounting, _ = check_target_element_accounting(candidate_graph)
+            if candidate_steps_ok is True and candidate_accounting == "accounted":
+                selected_index = index
+                break
+
+    # Rank-1 remains the default and the historical comparison contract.
+    # strict_validated is an explicit, separate arm that selects the first
+    # candidate passing the same structural validators used below.
+    best_route = candidates[selected_index]
     row_kwargs["best_route_depth"] = best_route.get("depth")
     row_kwargs["best_route_step_count"] = len(best_route.get("steps", []))
     row_kwargs["tool_specific"] = {
@@ -345,6 +401,8 @@ def run_one_target(
             "convergency": best_route.get("convergency"),
             "success_probability": best_route.get("success_probability"),
             "route_cost": best_route.get("route_cost"),
+            "route_selection": config.route_selection,
+            "selected_route_index": selected_index,
             "joint_success_probability": parsed.get("joint_success_probability"),
             "reranker_failures": parsed.get("reranker_failures"),
             "diagnostics_source": "single_per_target_cli_call",
@@ -369,7 +427,6 @@ def run_one_target(
     steps_ok, step_warnings = check_reaction_steps_parseable(graph)
     row_kwargs["reaction_steps_parseable"] = steps_ok
 
-    stock_set = build_stock_set(configured_stock_smiles)
     stock_result = validate_stock_leaves(graph, stock_set)
     row_kwargs["all_leaves_in_configured_stock"] = stock_result.all_leaves_in_configured_stock
 

@@ -6,6 +6,114 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+## [1.0.3] - 2026-09-07 "Template Expansion Performance"
+
+### Added
+- Added conservative topology-size, element-count, and connected-element-pair
+  prefilters inside prepared template expansion. Query atom/bond lower bounds
+  plus unambiguous atoms and bonds on each SMIRKS target side are compiled
+  once; templates whose minimum inventory exceeds the target are skipped
+  before reaction matching.
+  Ambiguous/negated/recursive/wildcard atoms, ring-closure bonds, and unknown
+  syntax fail open. On the fixed 3-target depth-5 smoke, two post-build runs
+  reduced template-expansion time from a 3.240 s two-run baseline mean to
+  1.252 s (61.4%) and total search time from 6.310 s to 4.198 s (33.5%), with
+  identical solved outcomes. The existing 10-target depth-2 smoke remained
+  10/10 solved with identical 787 raw and 547 deduplicated candidates; its
+  expansion time fell from 37.8 ms to 17.0 ms.
+- Added the direct-generator audit bridge: `audit_proposal` routes
+  template-free precursor proposals through the existing normalized route
+  audit, while `audit_proposal_checked` requires transport, SMILES, and atom
+  mapping validation before auditing.
+- Added fail-closed ValueModel regression coverage for negative/non-finite
+  values, invalid confidence, and abstention.
+- Added a hash-pinned `StaticValueModel` fixture adapter for deterministic
+  cost-model A/B and calibration plumbing. It rejects non-cost manifests,
+  invalid estimates, and abstaining fixture rows at load time.
+- Added opt-in CLI wiring via `--value-model-manifest` and
+  `--value-model-artifact`; without both flags, the legacy SA heuristic remains
+  unchanged.
+- Added `--scorer` support to the comparison harness for the existing ONNX
+  template policy in explicit ordering-only mode. A 3-target smoke run loaded
+  `data/template_scorer_500.onnx` and passed route/strict/resource checks; this
+  is plumbing evidence, not a performance claim.
+- Added the opt-in `--scorer-ordering-blend <0..1>` control for ONNX
+  ordering-only runs. `1.0` preserves model-only ordering, `0.0` restores the
+  legacy frequency prior, and intermediate values provide a hybrid ranking
+  without changing candidate generation or validation.
+- Extended the paired comparison harness with the same blend parameter and a
+  configuration-id suffix, so model-only and hybrid arms cannot be mixed or
+  resumed under an ambiguous identity.
+- Added opt-in adaptive beam diversity. It reserves only the requested upper
+  bound of slots, and only when the score-only beam is family-concentrated
+  while lower-scoring alternative families are present; the default beam path
+  is unchanged.
+- Added a 3-target adaptive-diversity smoke artifact. It passed route,
+  strict-audit, and timeout/crash checks, but did not improve coverage on the
+  tiny sample; no performance claim is made.
+- Added the first search integration seam for `RetroGenerator`: checked
+  direct-precursor proposals can now augment the native expansion frontier
+  without replacing it. Unconfigured searches remain byte-compatible, and
+  all proposals still pass existing deduplication, stock, heuristic, and
+  route-integrity boundaries.
+- Added CLI loading for hash-pinned `StaticRetroGenerator` artifacts via
+  `--retro-generator-manifest` and `--retro-generator-artifact`; incomplete
+  pairs and hash mismatches fail before search starts.
+- Added a CLI E2E fixture proving that a checked direct-generator proposal can
+  coexist with native candidates and produce a validated `direct_generator`
+  route without bypassing the normal search boundaries.
+- Canonicalized `StaticRetroGenerator` target indexing with the shared
+  standardization policy, preventing equivalent SMILES spellings from missing
+  a direct-generator proposal; canonical-key collisions fail closed at load.
+- Added the dependency-free `scripts/prepare_static_retro_generator.py`
+  converter for turning model-output JSONL into a hash-pinned static generator
+  artifact and manifest, with early validation of IDs, precursor lists, and
+  confidence values.
+- Confirmed the existing compiled-stock path locally: the same debug CLI smoke
+  used 0.34--0.46 seconds with `.smi` loading versus 0.02 seconds with an
+  equivalent `.rstock` snapshot across five runs. This is startup/load evidence,
+  not a claim of end-to-end superiority over AiZynthFinder.
+- Fixed the comparison harness's configured-stock reader to consume only the
+  payload of `.rstock` snapshots, excluding the magic and JSON header from
+  stock-audit accounting.
+- Kept bond-index search opt-in after a release/depth-3 three-target smoke
+  showed target-dependent timing rather than a consistent speedup; persistent
+  multi-target asset reuse is the next speed-focused work item.
+- Added `renkin-bench --limit N` for bounded batch timing without creating a
+  temporary target file. In a 10-target depth-2 smoke using the shared
+  `SearchEngine`, equivalent `.rstock` loading reduced wall time from 0.80 to
+  0.23 seconds versus `.smi`; this is load/startup evidence, not an
+  end-to-end AiZynthFinder comparison.
+- Reduced hot-loop allocation by borrowing canonical frontier SMILES during
+  retro-cache lookup and cloning only where cache or route ownership requires
+  it. Search semantics are unchanged.
+- Avoided reparsing or rescanning target SMILES for required-element filtering;
+  the search now derives the mask from the already parsed molecule.
+- Avoided Rayon setup overhead for bond-index expansions with fewer than 32
+  active rules by using an equivalent sequential fast path; larger pools remain
+  parallel and candidate ordering is unchanged.
+- Added an explicit `--speed-profile` to the CLI, `renkin-bench`, and comparison
+  harness. It enables bond-index retrieval only for a separately identified
+  speed arm; the default arm remains unchanged.
+- Repeated the release 10-target speed-arm smoke with compiled stock: baseline
+  and speed profile were both about 0.30 seconds across three runs, so the
+  profile is retained as an explicit arm rather than promoted as a default.
+- Added timing evidence from the same batch: template expansion accounted for
+  68.6ms of 147.4ms total search time, while the speed arm measured 79.5ms of
+  expansion time and was slower on this sample. Bond-index defaults remain
+  unchanged pending a larger paired sample.
+- Tuned the release profile for latency-sensitive binaries with ThinLTO and a
+  single codegen unit; debug and test profiles remain unchanged.
+
+### Changed
+- Canonicalized TemplatePolicy cache keys so equivalent SMILES notation does
+  not trigger duplicate policy inference. This changes cache reuse only; the
+  policy ordering and legacy no-model behavior remain unchanged.
+
+---
+
 ## [1.0.2] - 2026-09-06 "Formal VAL Re-measurement"
 
 ### Added
@@ -2181,7 +2289,8 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
 
 ---
 
-[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v1.0.3...HEAD
+[1.0.3]: https://github.com/kent-tokyo/renkin/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/kent-tokyo/renkin/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/kent-tokyo/renkin/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/kent-tokyo/renkin/compare/v0.66.0...v1.0.0

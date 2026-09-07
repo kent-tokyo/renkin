@@ -5,6 +5,7 @@
 /// Usage:
 ///   renkin-bench --input <smiles_file|paroutes.json> [--input-format smi|paroutes]
 ///                [--depth <N>] [--beam-width <N>]
+///                [--include-routes]
 ///
 ///   renkin-bench compare <baseline.json> <current.json>
 ///       Compare two renkin-bench JSON outputs and show solved-rate delta,
@@ -123,6 +124,13 @@ struct BenchResult {
     best_success_prob: Option<f64>,
     best_convergency: Option<f64>,
     best_route_cost: Option<f64>,
+    /// Optional full route payload for downstream validation. Disabled by
+    /// default to keep the historical benchmark output compact.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    best_route: Option<Route>,
+    /// Recovery-stage audit when --search-mode recovery is active.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    recovery_audit: Option<renkin::recovery_mode::RecoveryAudit>,
     /// Route diversity ∈ [0, 1] across returned routes (None when routes_found < 2).
     #[serde(skip_serializing_if = "Option::is_none")]
     route_diversity: Option<f64>,
@@ -166,6 +174,12 @@ struct BenchResult {
     /// see `nn_rank` in search.rs), hits == reuses that needed no inference.
     retro_cache_hits: u64,
     retro_cache_misses: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    retro_expansion_wall_time_us: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    candidates_generated_before_dedup: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    candidates_after_cross_template_dedup: Option<u64>,
     /// Evidence coverage for the best route; omitted unless a metadata
     /// sidecar was supplied.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -755,6 +769,7 @@ fn main() -> Result<()> {
 
     let mut input_path: Option<String> = None;
     let mut input_format = "smi".to_string();
+    let mut limit: Option<usize> = None;
     let mut bb_path: Option<String> = None;
     let mut templates_path: Option<String> = None;
     let mut template_metadata_path: Option<String> = None;
@@ -764,10 +779,18 @@ fn main() -> Result<()> {
     let mut search_mode = "standard".to_string();
     let mut coverage_templates_path: Option<String> = None;
     let mut coverage_timeout_secs: Option<u64> = None;
+    let mut recovery_depth: Option<u32> = None;
+    let mut recovery_beam_width: Option<usize> = None;
+    let mut recovery_timeout_secs: Option<u64> = None;
     let mut max_routes: usize = 1;
     let mut bond_index = false;
+    let mut cross_template_dedup = false;
+    let mut beam_diversity_policy = "off".to_string();
+    let mut beam_diversity_slots: usize = 0;
     let mut plausibility = false;
     let mut failure_taxonomy = false;
+    let mut include_routes = false;
+    let mut timing_diagnostics = false;
     let mut practical_max_steps: Option<u32> = None;
     let mut quietset_out: Option<String> = None;
     let mut evaluator_id: Option<String> = None;
@@ -790,6 +813,10 @@ fn main() -> Result<()> {
                 if i < args.len() {
                     input_format = args[i].clone();
                 }
+            }
+            "--limit" => {
+                i += 1;
+                limit = args.get(i).and_then(|value| value.parse().ok());
             }
             "--depth" | "-d" => {
                 i += 1;
@@ -816,6 +843,18 @@ fn main() -> Result<()> {
             "--coverage-timeout-secs" => {
                 i += 1;
                 coverage_timeout_secs = args.get(i).and_then(|s| s.parse().ok());
+            }
+            "--recovery-depth" => {
+                i += 1;
+                recovery_depth = args.get(i).and_then(|s| s.parse().ok());
+            }
+            "--recovery-beam-width" => {
+                i += 1;
+                recovery_beam_width = args.get(i).and_then(|s| s.parse().ok());
+            }
+            "--recovery-timeout-secs" => {
+                i += 1;
+                recovery_timeout_secs = args.get(i).and_then(|s| s.parse().ok());
             }
             "--template-metadata" => {
                 i += 1;
@@ -846,11 +885,33 @@ fn main() -> Result<()> {
             "--bond-index" => {
                 bond_index = true;
             }
+            "--speed-profile" => {
+                bond_index = true;
+            }
+            "--cross-template-dedup" => {
+                cross_template_dedup = true;
+            }
+            "--beam-diversity-policy" => {
+                i += 1;
+                if i < args.len() {
+                    beam_diversity_policy = args[i].clone();
+                }
+            }
+            "--beam-diversity-slots" => {
+                i += 1;
+                beam_diversity_slots = args.get(i).and_then(|s| s.parse().ok()).unwrap_or(0);
+            }
             "--plausibility" => {
                 plausibility = true;
             }
             "--failure-taxonomy" => {
                 failure_taxonomy = true;
+            }
+            "--include-routes" => {
+                include_routes = true;
+            }
+            "--timing-diagnostics" => {
+                timing_diagnostics = true;
             }
             "--practical-max-steps" => {
                 i += 1;
@@ -887,15 +948,16 @@ fn main() -> Result<()> {
         bail!(
             "Usage: renkin-bench --input <smiles_file|paroutes.json> \
              [--input-format smi|paroutes] [--depth <N>] \
-             [--beam-width <N>] [--search-mode standard|coverage] \
+             [--beam-width <N>] [--search-mode standard|coverage] [--include-routes] [--limit <N>] \
+             [--speed-profile] \
              [--coverage-templates <path>] [--coverage-timeout-secs <N>] \
              [--building-blocks <path>] [--templates <path>] [--template-metadata <path>] \
              [--scorer <onnx_path>]"
         );
     };
 
-    if !matches!(search_mode.as_str(), "standard" | "coverage") {
-        bail!("invalid --search-mode '{search_mode}' (expected standard|coverage)");
+    if !matches!(search_mode.as_str(), "standard" | "coverage" | "recovery") {
+        bail!("invalid --search-mode '{search_mode}' (expected standard|coverage|recovery)");
     }
     if search_mode == "coverage" && coverage_templates_path.is_none() {
         bail!("--search-mode coverage requires --coverage-templates <path>");
@@ -906,13 +968,47 @@ fn main() -> Result<()> {
     if search_mode == "standard" && coverage_timeout_secs.is_some() {
         bail!("--coverage-timeout-secs requires --search-mode coverage");
     }
+    if search_mode != "recovery"
+        && (recovery_depth.is_some()
+            || recovery_beam_width.is_some()
+            || recovery_timeout_secs.is_some())
+    {
+        bail!("recovery options require --search-mode recovery");
+    }
+    if search_mode == "recovery" {
+        if recovery_depth.is_some_and(|depth| depth <= max_depth) {
+            bail!("--recovery-depth must be greater than --depth");
+        }
+        if recovery_beam_width
+            .is_some_and(|width| width == 0 || (beam_width > 0 && width <= beam_width))
+        {
+            bail!("--recovery-beam-width must be greater than --beam-width");
+        }
+        if recovery_timeout_secs == Some(0) {
+            bail!("--recovery-timeout-secs must be positive");
+        }
+    }
     if coverage_timeout_secs == Some(0) {
         bail!("--coverage-timeout-secs must be a positive integer");
+    }
+    let beam_diversity_policy = match beam_diversity_policy.as_str() {
+        "off" => renkin::search::BeamDiversityPolicy::Off,
+        "diagnostics-only" => renkin::search::BeamDiversityPolicy::DiagnosticsOnly,
+        "active" => renkin::search::BeamDiversityPolicy::Active,
+        "adaptive" => renkin::search::BeamDiversityPolicy::Adaptive,
+        other => bail!(
+            "invalid --beam-diversity-policy '{other}' (expected off|diagnostics-only|active|adaptive)"
+        ),
+    };
+    if beam_diversity_policy != renkin::search::BeamDiversityPolicy::Off
+        && (beam_width == 0 || beam_diversity_slots == 0)
+    {
+        bail!("--beam-diversity-policy requires --beam-width and --beam-diversity-slots");
     }
     let coverage_timeout = coverage_timeout_secs.map(Duration::from_secs);
 
     // Parse targets depending on format
-    let targets: Vec<(String, String, Option<u32>)> = if input_format == "paroutes" {
+    let mut targets: Vec<(String, String, Option<u32>)> = if input_format == "paroutes" {
         parse_paroutes(&input)?
     } else {
         read_bounded_text_file(&input, "benchmark targets")?
@@ -927,6 +1023,13 @@ fn main() -> Result<()> {
             })
             .collect()
     };
+
+    if let Some(limit) = limit {
+        if limit == 0 {
+            bail!("--limit must be positive");
+        }
+        targets.truncate(limit);
+    }
 
     if targets.is_empty() {
         bail!("No targets found in {input}");
@@ -980,11 +1083,18 @@ fn main() -> Result<()> {
         beam_width,
         template_metadata: template_metadata.map(|metadata| metadata.templates),
         bond_index,
+        cross_template_dedup,
+        beam_diversity_policy,
+        beam_diversity_slots,
+        timing_diagnostics,
         #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
         nn_scorer,
         ..Default::default()
     };
     let engine = SearchEngine::new(env, rules);
+    let recovery_context = (search_mode == "recovery").then(|| {
+        renkin::recovery_mode::RecoveryContext::new(engine.rules(), &[], config.bond_index)
+    });
     let coverage_context = coverage_rules.as_deref().map(|stage2_rules| {
         renkin::coverage_mode::CoverageSearchContext::new(
             engine.env(),
@@ -1015,7 +1125,30 @@ fn main() -> Result<()> {
 
     for (smiles, name, gt_depth) in &targets {
         let t0 = Instant::now();
-        let (routes, stats, coverage_meta) = if let Some(ref context) = coverage_context {
+        let (routes, stats, coverage_meta, recovery_audit) = if search_mode == "recovery" {
+            let recovery = renkin::recovery_mode::run_recovery_mode_with_context(
+                smiles,
+                engine.env(),
+                engine.rules(),
+                &config,
+                &renkin::recovery_mode::RecoveryOptions {
+                    recovery_depth: recovery_depth.unwrap_or(max_depth + 1),
+                    beam_diversity_slots: 0,
+                    recovery_beam_width,
+                    recovery_timeout: recovery_timeout_secs.map(Duration::from_secs),
+                    coverage_rule_tiers: Vec::new(),
+                    coverage_timeout: None,
+                    coverage_beam_width: None,
+                },
+                recovery_context.as_ref().expect("recovery context"),
+            )?;
+            (
+                recovery.selected.routes,
+                recovery.selected.stats,
+                None,
+                Some(recovery.audit),
+            )
+        } else if let Some(ref context) = coverage_context {
             let result = context.run(smiles, &config, coverage_timeout)?;
             let meta = (
                 Some(match result.selected_stage {
@@ -1027,10 +1160,10 @@ fn main() -> Result<()> {
                 Some(result.stage2_timeout),
                 result.stage2_elapsed_ms,
             );
-            (result.routes, result.stats, Some(meta))
+            (result.routes, result.stats, Some(meta), None)
         } else {
             let (routes, stats) = engine.find_routes(smiles, &config).unwrap_or_default();
-            (routes, stats, None)
+            (routes, stats, None, None)
         };
         let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
@@ -1154,6 +1287,12 @@ fn main() -> Result<()> {
             best_success_prob,
             best_convergency,
             best_route_cost,
+            best_route: if include_routes {
+                routes.first().cloned()
+            } else {
+                None
+            },
+            recovery_audit,
             route_diversity: diversity,
             gt_depth: *gt_depth,
             depth_delta,
@@ -1167,6 +1306,12 @@ fn main() -> Result<()> {
             stock_hits: stats.stock_hits,
             retro_cache_hits: stats.retro_cache_hits,
             retro_cache_misses: stats.retro_cache_misses,
+            retro_expansion_wall_time_us: timing_diagnostics
+                .then_some(stats.crowd_out.retro_expansion_wall_time_us),
+            candidates_generated_before_dedup: timing_diagnostics
+                .then_some(stats.crowd_out.candidates_generated_before_dedup),
+            candidates_after_cross_template_dedup: timing_diagnostics
+                .then_some(stats.crowd_out.candidates_after_cross_template_dedup),
             coverage_selected_stage,
             coverage_stage2_invoked,
             coverage_stage1_timeout,

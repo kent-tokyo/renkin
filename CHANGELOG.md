@@ -19,6 +19,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   published-doc links to local, untracked benchmark artifacts.
 - Condensed the public English and Japanese benchmark pages into short result summaries; detailed
   methodology and historical artifacts remain in the formal comparison guide.
+- Added `scripts/compare_search_profiles.py`, a non-destructive orchestrator for running named
+  profiles on one cohort and writing a portfolio manifest with per-arm artifact hashes.
 
 ## [1.0.4] - 2026-09-08 "Native Search and Documentation Refresh"
 

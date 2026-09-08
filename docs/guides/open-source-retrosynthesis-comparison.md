@@ -677,7 +677,22 @@ cp data/comparison/shared_stock/shared_stock.hdf5 \
     --aizynthfinder-rows data/comparison/results_500/aizynthfinder_native/rows.jsonl \
     --output-stats data/comparison/results_500/paired_stats_native.json \
     --output-table data/comparison/results_500/paired_table_native.json
+
+# 10. Optional: compare RENKIN search profiles on one fixed cohort.
+#     This runs fast, balanced, and deep sequentially, writes separate
+#     rows/aggregate/manifest artifacts, and creates one portfolio manifest
+#     containing the input and per-arm artifact hashes.
+python3 scripts/compare_search_profiles.py \
+    --sample-list data/comparison/sample_full_sorted.jsonl \
+    --sample-size 200 \
+    --comparison-mode native \
+    --output-dir data/comparison/search_profiles_<date>
 ```
+
+The profile orchestrator refuses to overwrite an existing output directory.
+Use `--dry-run` first to inspect the three commands without starting a
+measurement. The resulting portfolio is a measurement plan and reproducibility
+record; it does not by itself establish a release or superiority claim.
 
 ## Interpretation rules (summary)
 

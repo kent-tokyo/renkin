@@ -134,8 +134,9 @@ targeted result is now 40/58, with 18 unresolved. The generated corpus is not
 packaged or enabled by default, and this targeted result does not update the
 frozen formal comparison.
 
-Detailed metrics and hashes are in
-[`template_abstraction_followup.md`](../../data/comparison/formal_v1.0.1/template_abstraction_followup.md).
+Detailed metrics and hashes remain in the local benchmark artifacts; they are
+not part of the tracked documentation bundle and are not used as a published
+claim.
 
 Three narrower explicit-H abstraction prototypes generated zero rules and were
 removed rather than retained as dead production tooling. Their negative results

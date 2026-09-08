@@ -127,8 +127,8 @@ The latest frozen VAL-200 shared-stock rerun (2026-09-08) found native routes
 for 134/200 targets (67.0%) for both RENKIN and AiZynthFinder 4.4.1. Under
 strict common validation, RENKIN was 134/200 (67.0%) and AiZynthFinder was
 123/200 (61.5%), a +5.5pp point estimate on this cohort. See the
-[formal benchmark report](../data/comparison/formal_v1.0.3_candidate_20260908/formal_200_native_rstock_combined_v2_20260908/FORMAL_BENCHMARK_REPORT.md)
-for hashes, paired statistics, and claim boundaries.
+[formal comparison guide](guides/open-source-retrosynthesis-comparison.md)
+for the recorded metrics, hashes, and claim boundaries.
 
 The following v1.0.1 result is retained as historical evidence.
 

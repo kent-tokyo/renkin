@@ -15,6 +15,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   their effective metadata in per-target rows; profile measurements remain a separate gate.
 - Added fail-closed profile metadata validation plus profile identity and schema version to
   comparison aggregates and run manifests.
+- Fixed the v1.0.4 CI documentation gates: synchronized `CITATION.cff` to 1.0.4 and removed
+  published-doc links to local, untracked benchmark artifacts.
 
 ## [1.0.4] - 2026-09-08 "Native Search and Documentation Refresh"
 

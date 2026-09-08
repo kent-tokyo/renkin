@@ -30,12 +30,11 @@ never a chemistry-correctness or route-quality judgment. See
 
 ## Formal 200-target result (2026-09-08)
 
-The completed regression-safe native rerun is published in
-[`FORMAL_BENCHMARK_REPORT.md`](../../data/comparison/formal_v1.0.3_candidate_20260908/formal_200_native_rstock_combined_v2_20260908/FORMAL_BENCHMARK_REPORT.md).
-On the frozen 200-target cohort, RENKIN and AiZynthFinder both found native
+The completed regression-safe native rerun is summarized on this page. On the
+frozen 200-target cohort, RENKIN and AiZynthFinder both found native
 routes for 134/200 targets (67.0%). Under the paired strict shared-stock
 validation, RENKIN was 134/200 (67.0%) and AiZynthFinder was 123/200 (61.5%),
-with the protocol and claim limits stated in the report.
+with the protocol and claim limits stated below.
 
 ## Why the existing comparison table isn't a matched comparison
 

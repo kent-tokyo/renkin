@@ -1,9 +1,8 @@
 # Historical v1.0.1 Formal Route-to-Stock Competitor Benchmark
 
 > This page records the earlier 4,903-target v1.0.1 arm. It is retained as
-> historical evidence. The current formal comparison is the VAL-200 report
-> published at
-> `data/comparison/formal_v1.0.3_candidate_20260908/formal_200_native_rstock_combined_v2_20260908/FORMAL_BENCHMARK_REPORT.md`.
+> historical evidence. The current formal comparison is summarized in the
+> [open-source comparison guide](../guides/open-source-retrosynthesis-comparison.md).
 
 Status: **comparison complete; statistical superiority PASS; formal publication
 gate PASS for the corrected v1.0.1 arm**.
@@ -37,9 +36,9 @@ discordant cohort, not a replacement for the 4,903-target formal arm and not a
 new headline comparison. The formal 591/4,903 result above remains unchanged
 until the current implementation receives a complete preregistered rerun.
 
-See the [recovery follow-up report](../../data/comparison/formal_v1.0.1/recovery_followup.md)
-for the stage attribution, resource measurements, remaining 22-target failure
-analysis, provenance boundary, and reproduction artifacts.
+The recovery follow-up artifact is retained as a local benchmark result and is
+not linked from the published documentation because it is not part of the
+tracked documentation bundle.
 
 ## Primary claim and endpoint
 

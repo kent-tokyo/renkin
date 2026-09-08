@@ -263,6 +263,27 @@ class TestRenkinAdapterSmoke(unittest.TestCase):
         self.assertIsNone(row.tool_specific["renkin"]["search_mode"])
         self.assertIsNone(row.tool_specific["renkin"]["selected_stage"])
         self.assertIsNone(row.tool_specific["renkin"]["stage2_invoked"])
+        self.assertIsNone(row.tool_specific["renkin"]["search_profile"])
+
+    def test_search_profile_is_forwarded_and_recorded(self):
+        config = adapter.RenkinConfig(
+            binary_path=str(RENKIN_BIN),
+            building_blocks_path=str(BUILDING_BLOCKS),
+            templates_path=str(TEMPLATES),
+            depth=2,
+            beam_width=100,
+            max_routes=1,
+            external_timeout_s=30,
+            search_profile="balanced",
+        )
+        row = self._run(ACETIC_ACID, config=config, target_id="smoke#search_profile")
+        self.assertEqual(row.run_status, "completed")
+        self.assertEqual(row.tool_specific["renkin"]["search_profile"]["name"], "balanced")
+        self.assertEqual(
+            row.tool_specific["renkin"]["search_profile"]["effective_search_mode"],
+            "recovery",
+        )
+        self.assertEqual(row.tool_specific["renkin"]["search_profile"]["schema_version"], 1)
 
     def test_coverage_mode_stage1_solved_reports_stage1_selected(self):
         # v0.24 coverage mode (Issue #101, Phase 41.18B) -- additive

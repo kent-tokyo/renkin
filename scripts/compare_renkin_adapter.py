@@ -87,6 +87,9 @@ class RenkinConfig:
     # runs cannot accidentally reuse an ambiguous configuration id.
     scorer_ordering_blend: float = 1.0
     speed_profile: bool = False
+    # O5 named search budget profile. This is forwarded to the existing CLI;
+    # the adapter does not duplicate the profile's budget defaults.
+    search_profile: str | None = None
     # Issue #101 Task 35: ordering-only LightGBM candidate reranker. Both
     # must be set together (renkin's own CLI already falls back to legacy
     # ordering with a stderr warning if only one is given, or if loading
@@ -213,6 +216,8 @@ def run_one_target(
             argv += ["--scorer-ordering-blend", str(config.scorer_ordering_blend)]
     if config.speed_profile:
         argv += ["--speed-profile"]
+    if config.search_profile:
+        argv += ["--search-profile", config.search_profile]
     if config.ring_context_policy and config.ring_context_policy != "disabled":
         argv += ["--ring-context-policy", config.ring_context_policy]
         argv += ["--ring-context-sidecar", config.ring_context_sidecar]
@@ -328,6 +333,7 @@ def run_one_target(
         "element_accounting_retry": parsed.get("element_accounting_retry"),
         "beam_diversity_retry": parsed.get("beam_diversity_retry"),
         "recovery": parsed.get("recovery"),
+        "search_profile": parsed.get("search_profile"),
     }
 
     gated_out_candidate_count = None

@@ -11,6 +11,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Added schema-versioned `search_profile` metadata to named-profile JSON output. It records
   the effective baseline/recovery budget and policy while preserving legacy output when no
   profile is requested.
+- Extended the comparison harness to forward `fast`, `balanced`, and `deep` profiles and retain
+  their effective metadata in per-target rows; profile measurements remain a separate gate.
 
 ## [1.0.4] - 2026-09-08 "Native Search and Documentation Refresh"
 

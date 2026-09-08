@@ -73,6 +73,7 @@ def renkin_config_and_id(args):
         scorer=args.scorer,
         scorer_ordering_blend=args.scorer_ordering_blend,
         speed_profile=args.speed_profile,
+        search_profile=args.search_profile,
         reranker_model=args.reranker_model,
         reranker_freq_table=args.reranker_freq_table,
         search_mode=args.search_mode,
@@ -144,6 +145,7 @@ def renkin_config_and_id(args):
         f"-onnx_ordering-w{args.scorer_ordering_blend:g}" if args.scorer else ""
     )
     speed_suffix = "-speed" if args.speed_profile else ""
+    search_profile_suffix = f"-sp_{args.search_profile}" if args.search_profile else ""
     configuration_id = (
         f"renkin-{args.comparison_mode}-d{args.depth}-b{args.beam_width}"
         f"-mr{args.max_routes}-{args.route_selection}"
@@ -152,6 +154,7 @@ def renkin_config_and_id(args):
         f"{recovery_policy_suffix}"
         f"{spectator_bond_suffix}{element_accounting_suffix}{beam_diversity_suffix}"
         f"{template_policy_suffix}{scorer_suffix}{generator_suffix}{speed_suffix}"
+        f"{search_profile_suffix}"
     )
     return config, building_blocks_path, configuration_id
 
@@ -354,6 +357,12 @@ def main(argv: list[str] | None = None) -> int:
         help="RENKIN-only explicit speed arm; enables the bond-center template index.",
     )
     parser.add_argument(
+        "--search-profile",
+        choices=["fast", "balanced", "deep"],
+        default=None,
+        help="RENKIN-only named search budget profile; records effective settings in each JSON row.",
+    )
+    parser.add_argument(
         "--reranker-model",
         default=None,
         help="RENKIN-only: frozen LightGBM model.txt for the ordering-only candidate reranker "
@@ -466,6 +475,10 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--scorer-ordering-blend != 1.0 requires --scorer")
     if args.speed_profile and args.search_mode != "standard":
         parser.error("--speed-profile requires --search-mode standard")
+    if args.search_profile and args.tool != "renkin":
+        parser.error("--search-profile is only supported for --tool renkin")
+    if args.search_profile and args.search_mode != "standard":
+        parser.error("--search-profile requires --search-mode standard")
     if args.search_mode == "coverage" and not args.coverage_templates:
         parser.error("--search-mode coverage requires --coverage-templates")
     if args.search_mode != "recovery" and args.recovery_depth is not None:

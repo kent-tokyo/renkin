@@ -13,6 +13,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   profile is requested.
 - Extended the comparison harness to forward `fast`, `balanced`, and `deep` profiles and retain
   their effective metadata in per-target rows; profile measurements remain a separate gate.
+- Added fail-closed profile metadata validation plus profile identity and schema version to
+  comparison aggregates and run manifests.
 
 ## [1.0.4] - 2026-09-08 "Native Search and Documentation Refresh"
 

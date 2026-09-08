@@ -44,6 +44,29 @@ def load_stock(path: str) -> list[str]:
     return stock
 
 
+def validate_search_profile_rows(rows, requested_profile: str | None) -> None:
+    """Fail closed if a named-profile run loses its effective metadata."""
+    if requested_profile is None:
+        return
+    for row in rows:
+        if row.tool != "renkin" or row.run_status != "completed":
+            continue
+        metadata = row.tool_specific.get("renkin", {}).get("search_profile")
+        if not isinstance(metadata, dict):
+            raise ValueError(
+                f"completed row {row.target_id!r} is missing search_profile metadata"
+            )
+        if metadata.get("schema_version") != 1:
+            raise ValueError(
+                f"completed row {row.target_id!r} has unsupported search_profile schema"
+            )
+        if metadata.get("name") != requested_profile:
+            raise ValueError(
+                f"completed row {row.target_id!r} reports profile "
+                f"{metadata.get('name')!r}, expected {requested_profile!r}"
+            )
+
+
 def renkin_config_and_id(args):
     if args.scorer and (args.template_policy_manifest or args.template_policy_artifact):
         raise ValueError("--scorer cannot be combined with --template-policy-*")
@@ -588,6 +611,8 @@ def main(argv: list[str] | None = None) -> int:
                     "max_routes": args.max_routes,
                     "route_selection": args.route_selection,
                     "search_mode": args.search_mode,
+                    "search_profile": args.search_profile,
+                    "search_profile_schema_version": 1 if args.search_profile else None,
                     "recovery_coverage_tier_count": len(args.recovery_coverage_tier),
                 },
             )
@@ -627,6 +652,13 @@ def main(argv: list[str] | None = None) -> int:
     agg["total_rows_in_file"] = len(all_rows)
     agg["tool"] = args.tool
     agg["comparison_mode"] = args.comparison_mode
+    agg["configuration_id"] = configuration_id
+    agg["search_profile"] = args.search_profile if args.tool == "renkin" else None
+
+    try:
+        validate_search_profile_rows(all_rows, args.search_profile)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     if args.output_aggregate:
         with open(args.output_aggregate, "w", encoding="utf-8") as f:

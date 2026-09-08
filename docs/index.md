@@ -87,6 +87,8 @@ RENKIN is a **retrosynthesis engine** that automatically plans multi-step chemic
     console.log(`Found ${result.routes_found} routes`);
     ```
 
+> **Latest benchmark:** [VAL-200 formal comparison](guides/open-source-retrosynthesis-comparison.md)
+
 ## How It Works
 
 ```

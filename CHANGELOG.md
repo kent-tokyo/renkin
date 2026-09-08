@@ -21,6 +21,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   methodology and historical artifacts remain in the formal comparison guide.
 - Added `scripts/compare_search_profiles.py`, a non-destructive orchestrator for running named
   profiles on one cohort and writing a portfolio manifest with per-arm artifact hashes.
+- Fixed comparison aggregate generation for named-profile runs by restoring the configuration ID
+  before aggregate finalization; the profile smoke gate now completes all three arms.
 
 ## [1.0.4] - 2026-09-08 "Native Search and Documentation Refresh"
 

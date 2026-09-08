@@ -646,6 +646,10 @@ def main(argv: list[str] | None = None) -> int:
     elapsed = time.monotonic() - start
 
     all_rows = schema.load_rows(args.output_rows)
+    if args.tool == "renkin":
+        _, _, configuration_id = renkin_config_and_id(args)
+    else:
+        _, configuration_id = aizynth_config_and_id(args)
     agg = aggregate.compute_aggregate(all_rows)
     agg["wall_clock_total_sweep_s"] = elapsed
     agg["new_rows_this_invocation"] = new_row_count

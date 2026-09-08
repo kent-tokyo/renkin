@@ -219,6 +219,7 @@ fn main() -> Result<()> {
     let mut beam_diversity_slots_arg: Option<String> = None;
     let mut recovery_beam_width_arg: Option<String> = None;
     let mut recovery_timeout_secs_arg: Option<String> = None;
+    let mut recovery_stage_policy_arg: Option<String> = None;
     let mut reranker_model_path: Option<String> = None;
     let mut reranker_freq_table_path: Option<String> = None;
     let mut search_mode_arg: Option<String> = None;
@@ -227,6 +228,7 @@ fn main() -> Result<()> {
     let mut coverage_timeout_secs_arg: Option<String> = None;
     let mut coverage_beam_width_arg: Option<String> = None;
     let mut recovery_depth_arg: Option<String> = None;
+    let mut search_profile_arg: Option<String> = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -414,6 +416,13 @@ fn main() -> Result<()> {
                 };
                 search_mode_arg = Some(v.clone());
             }
+            "--search-profile" => {
+                i += 1;
+                let Some(v) = args.get(i) else {
+                    bail!("--search-profile requires a <fast|balanced|deep> value");
+                };
+                search_profile_arg = Some(v.clone());
+            }
             "--coverage-templates" => {
                 i += 1;
                 let Some(v) = args.get(i) else {
@@ -462,6 +471,13 @@ fn main() -> Result<()> {
                     bail!("--recovery-timeout-secs requires an <N> value");
                 };
                 recovery_timeout_secs_arg = Some(v.clone());
+            }
+            "--recovery-stage-policy" => {
+                i += 1;
+                let Some(v) = args.get(i) else {
+                    bail!("--recovery-stage-policy requires a <full|native> value");
+                };
+                recovery_stage_policy_arg = Some(v.clone());
             }
             "--bb-prices" => {
                 bb_prices_path =
@@ -575,12 +591,17 @@ fn main() -> Result<()> {
              run against --coverage-templates (Phase 41.18B, docs/design/coverage-mode-v0.md). \
              recovery: baseline success is preserved; completed failures conditionally try \
              element-accounting, diversity, one deeper search, then optional coverage (#239)\n  \
+             --search-profile fast|balanced|deep  Named budget profile: fast keeps the historical \
+             standard search; balanced/deep select bounded recovery with profile-specific depth, \
+             beam, diversity, and timeout defaults (explicit low-level flags remain authoritative)\n  \
              --recovery-depth <N>          Recovery mode's deeper-search limit (default: \
              --depth + 1; must be greater than baseline depth)\n  \
              --recovery-beam-width <N>    Recovery mode's bounded wider-beam retry after \
              baseline beam exhaustion; must be greater than --beam-width\n  \
              --recovery-timeout-secs <N> Whole recovery cascade cooperative budget; later \
              stages share the remaining time\n  \
+             --recovery-stage-policy full|native  full keeps the complete recovery cascade; \
+             native retries only beam width and depth for native route-found optimization\n  \
              --coverage-templates <path>   Stage 2's template set; required with coverage, \
              optional final stage with recovery; validated before any search runs\n  \
              --recovery-coverage-tier <path>  Recovery-only intermediate coverage tier; may be \
@@ -601,6 +622,59 @@ fn main() -> Result<()> {
         bail!(
             "unsupported --format {format:?} (expected json|tree|mermaid|explain|compare|table|compare-json|pareto)"
         );
+    }
+
+    // G5: named search profiles. The absent profile remains byte-for-byte
+    // compatible with the historical CLI. Profiles only fill recovery
+    // defaults; explicit low-level flags remain authoritative.
+    if let Some(profile) = search_profile_arg.as_deref() {
+        if !matches!(profile, "fast" | "balanced" | "deep") {
+            bail!("invalid --search-profile '{profile}' (expected fast|balanced|deep)");
+        }
+        if search_mode_arg.is_some() {
+            bail!("--search-profile cannot be combined with --search-mode");
+        }
+        match profile {
+            "fast" => {}
+            "balanced" | "deep" => {
+                search_mode_arg = Some("recovery".to_owned());
+                if beam_width == 0 {
+                    // Recovery's diversity stage requires a bounded baseline
+                    // beam. Keep the historical unlimited default untouched
+                    // when no named profile was requested.
+                    beam_width = 100;
+                }
+                if recovery_depth_arg.is_none() {
+                    recovery_depth_arg = Some((max_depth + 1).to_string());
+                }
+                if recovery_beam_width_arg.is_none() {
+                    let baseline_beam = if beam_width == 0 { 100 } else { beam_width };
+                    let recovery_beam = if profile == "deep" {
+                        baseline_beam.saturating_mul(2).max(200)
+                    } else {
+                        baseline_beam.max(200)
+                    };
+                    recovery_beam_width_arg = Some(recovery_beam.to_string());
+                }
+                if recovery_timeout_secs_arg.is_none() {
+                    recovery_timeout_secs_arg =
+                        // The balanced native arm caps tail latency at 15 s;
+                        // deep keeps the larger recovery budget for coverage.
+                        Some(if profile == "deep" { 120 } else { 15 }.to_string());
+                }
+                if beam_diversity_slots_arg.is_none() {
+                    beam_diversity_slots_arg =
+                        // Diversity selection is intentionally reserved for
+                        // deep mode: on large template sets it is materially
+                        // more expensive than the bounded beam retry itself.
+                        Some(if profile == "deep" { 10 } else { 0 }.to_string());
+                }
+                if recovery_stage_policy_arg.is_none() {
+                    recovery_stage_policy_arg = Some("native".to_owned());
+                }
+            }
+            _ => unreachable!("profile validated above"),
+        }
     }
 
     // Phase 41.18B: coverage mode. `search_mode_arg` absent or "standard"
@@ -644,6 +718,9 @@ fn main() -> Result<()> {
             }
             if recovery_timeout_secs_arg.is_some() {
                 bail!("--recovery-timeout-secs requires --search-mode recovery");
+            }
+            if recovery_stage_policy_arg.is_some() {
+                bail!("--recovery-stage-policy requires --search-mode recovery");
             }
             if !recovery_coverage_tier_paths.is_empty() {
                 bail!("--recovery-coverage-tier requires --search-mode recovery");
@@ -1126,6 +1203,11 @@ fn main() -> Result<()> {
             Ok(std::time::Duration::from_secs(seconds))
         })
         .transpose()?;
+    let recovery_stage_policy = match recovery_stage_policy_arg.as_deref().unwrap_or("full") {
+        "full" => renkin::recovery_mode::RecoveryStagePolicy::Full,
+        "native" => renkin::recovery_mode::RecoveryStagePolicy::Native,
+        other => bail!("invalid --recovery-stage-policy '{other}' (expected full|native)"),
+    };
     let avoid_mask = chem_env::elem_symbols_to_mask(&avoid_elements)
         | chem_env::elem_symbols_to_mask(
             &constraints
@@ -1308,6 +1390,7 @@ fn main() -> Result<()> {
                 &rules,
                 &config,
                 &renkin::recovery_mode::RecoveryOptions {
+                    stage_policy: recovery_stage_policy,
                     recovery_depth: recovery_depth
                         .expect("validated above: recovery mode has a recovery depth"),
                     beam_diversity_slots,

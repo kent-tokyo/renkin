@@ -106,6 +106,7 @@ class RenkinConfig:
     recovery_depth: int | None = None
     recovery_beam_width: int | None = None
     recovery_timeout_secs: int | None = None
+    recovery_stage_policy: str = "full"
 
 
 _MAXRSS_RE = re.compile(r"^\s*(\d+)\s+maximum resident set size\s*$", re.MULTILINE)
@@ -251,6 +252,8 @@ def run_one_target(
             argv += ["--recovery-beam-width", str(config.recovery_beam_width)]
         if config.recovery_timeout_secs is not None:
             argv += ["--recovery-timeout-secs", str(config.recovery_timeout_secs)]
+        if config.recovery_stage_policy != "full":
+            argv += ["--recovery-stage-policy", config.recovery_stage_policy]
 
     (
         returncode,

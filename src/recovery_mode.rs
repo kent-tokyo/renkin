@@ -24,7 +24,24 @@ pub enum RecoveryStage {
     BeamWidth,
     BeamDiversity,
     Depth,
+    /// Deeper search with the wider beam in one pass. This targets routes
+    /// whose useful branch is both deeper than the baseline and crowded out
+    /// by the baseline beam; neither independent retry can recover it.
+    CombinedDepthBeam,
     Coverage,
+}
+
+/// Controls which retry arms are eligible after the baseline search.
+///
+/// `Full` preserves the original audit cascade. `Native` is for the
+/// route-found objective: it keeps the baseline integrity checks and retries
+/// only the two search-budget dimensions that can add a native route without
+/// changing chemistry policy (beam width and depth).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecoveryStagePolicy {
+    Full,
+    Native,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -67,6 +84,9 @@ pub struct RecoveryModeResult {
 
 #[derive(Debug, Clone)]
 pub struct RecoveryOptions {
+    /// Retry-arm policy. Defaults to `Full` at call sites for backwards
+    /// compatibility; native-focused profiles may select `Native`.
+    pub stage_policy: RecoveryStagePolicy,
     /// Must be greater than the baseline depth. The CLI defaults this to
     /// baseline depth + 1.
     pub recovery_depth: u32,
@@ -343,7 +363,7 @@ pub fn run_recovery_mode_with_context(
     // rules; this only prunes futile retries within the baseline rule set.
     let baseline_has_no_templates = baseline.stats.matched_templates == 0;
 
-    if integrity_triggered {
+    if options.stage_policy == RecoveryStagePolicy::Full && integrity_triggered {
         let mut gated_config = baseline_config.clone();
         gated_config.element_accounting_policy = ElementAccountingGatePolicy::Gated;
         let (gated, elapsed_ms) = run_stage(
@@ -443,6 +463,7 @@ pub fn run_recovery_mode_with_context(
     if !baseline_has_no_templates && depth_triggered {
         let mut depth_config = baseline_config.clone();
         depth_config.max_depth = options.recovery_depth;
+
         let (depth, elapsed_ms) = run_stage(
             target_smiles,
             env,
@@ -462,6 +483,41 @@ pub fn run_recovery_mode_with_context(
             None,
         ));
         if !depth.routes.is_empty() || depth.termination != SearchTermination::Completed {
+            return Ok(finish(depth, RecoveryStage::Depth, attempts, total_start));
+        }
+        if options.stage_policy == RecoveryStagePolicy::Native {
+            // Preserve the historical depth-only retry first: some routes
+            // depend on the narrower frontier and would regress if the
+            // combined retry replaced it. Only then try the combined budget,
+            // which targets branches that are both deeper and crowded out.
+            if let Some(width) = options.recovery_beam_width {
+                let mut combined_config = depth_config.clone();
+                combined_config.beam_width = width;
+                let (combined, elapsed_ms) = run_stage(
+                    target_smiles,
+                    env,
+                    baseline_rules,
+                    &combined_config,
+                    &recovery_control,
+                    &context.prepared_rules,
+                    context.prepared_bond_index.as_ref(),
+                )?;
+                attempts.push(recovery_attempt(
+                    RecoveryStage::CombinedDepthBeam,
+                    "baseline_depth_and_beam_exhaustion",
+                    &combined_config,
+                    baseline_rules,
+                    &combined,
+                    elapsed_ms,
+                    None,
+                ));
+                return Ok(finish(
+                    combined,
+                    RecoveryStage::CombinedDepthBeam,
+                    attempts,
+                    total_start,
+                ));
+            }
             return Ok(finish(depth, RecoveryStage::Depth, attempts, total_start));
         }
         if options.coverage_rule_tiers.is_empty() {
@@ -625,6 +681,7 @@ mod tests {
             &rules,
             &config(2, 100),
             &RecoveryOptions {
+                stage_policy: RecoveryStagePolicy::Full,
                 recovery_depth: 3,
                 beam_diversity_slots: 20,
                 recovery_beam_width: None,
@@ -650,6 +707,7 @@ mod tests {
             &rules,
             &config(5, 100),
             &RecoveryOptions {
+                stage_policy: RecoveryStagePolicy::Full,
                 recovery_depth: 5,
                 beam_diversity_slots: 20,
                 recovery_beam_width: None,
@@ -673,6 +731,7 @@ mod tests {
             &rules,
             &config(1, 100),
             &RecoveryOptions {
+                stage_policy: RecoveryStagePolicy::Full,
                 recovery_depth: 2,
                 beam_diversity_slots: 20,
                 recovery_beam_width: None,

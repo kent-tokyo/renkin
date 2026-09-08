@@ -58,10 +58,18 @@ pub(crate) struct PreparedRetroRule {
     /// omitted, so this signature may fail open but must never reject a valid
     /// match.
     required_element_counts: Vec<(u8, u16)>,
+    /// Explicit aromatic/aliphatic element lower bounds. Generic atomic
+    /// number queries (`[#6]`) and compound atom expressions are omitted.
+    required_aromatic_element_counts: Vec<(u8, u16)>,
+    required_aliphatic_element_counts: Vec<(u8, u16)>,
     /// Conservative lower bounds for directly connected explicit element
     /// pairs on the target side. Ring-closure and ambiguous-atom bonds are
     /// omitted, so this also fails open.
     required_bond_counts: Vec<(u16, u16)>,
+    /// Same lower bounds with an explicit, unambiguous bond order attached.
+    /// Implicit/query/stereo bond expressions are omitted, preserving the
+    /// prefilter's no-false-negative contract.
+    required_typed_bond_counts: Vec<(u16, u16)>,
     /// Conservative lower bounds for the target-side query graph size.
     required_atom_count: u16,
     required_bond_count: u16,
@@ -72,25 +80,38 @@ impl PreparedRetroRule {
         &self.variants
     }
 
-    pub(crate) fn matches_inventory(
-        &self,
-        target_element_counts: &[u16; 64],
-        target_bond_counts: &[(u16, u16)],
-        target_atom_count: usize,
-        target_bond_count: usize,
-    ) -> bool {
-        target_atom_count >= self.required_atom_count as usize
-            && target_bond_count >= self.required_bond_count as usize
+    pub(crate) fn matches_inventory(&self, target: &crate::search::MoleculeInventory) -> bool {
+        target.atom_count >= self.required_atom_count as usize
+            && target.bond_count >= self.required_bond_count as usize
             && self
                 .required_element_counts
                 .iter()
                 .all(|&(atomic_number, count)| {
-                    target_element_counts[atomic_number as usize] >= count
+                    target.element_counts[atomic_number as usize] >= count
+                })
+            && self
+                .required_aromatic_element_counts
+                .iter()
+                .all(|&(atomic_number, count)| {
+                    target.aromatic_element_counts[atomic_number as usize] >= count
+                })
+            && self
+                .required_aliphatic_element_counts
+                .iter()
+                .all(|&(atomic_number, count)| {
+                    target.aliphatic_element_counts[atomic_number as usize] >= count
                 })
             && self.required_bond_counts.iter().all(|&(key, count)| {
-                target_bond_counts
+                target
+                    .bond_counts
                     .binary_search_by_key(&key, |&(target_key, _)| target_key)
-                    .is_ok_and(|index| target_bond_counts[index].1 >= count)
+                    .is_ok_and(|index| target.bond_counts[index].1 >= count)
+            })
+            && self.required_typed_bond_counts.iter().all(|&(key, count)| {
+                target
+                    .typed_bond_counts
+                    .binary_search_by_key(&key, |&(target_key, _)| target_key)
+                    .is_ok_and(|index| target.typed_bond_counts[index].1 >= count)
             })
     }
 }
@@ -127,13 +148,20 @@ impl PreparedRuleSet {
                 .collect();
             let (required_atom_count, required_bond_count) =
                 required_topology_size_from_smirks(&rule.smirks);
+            let (required_aromatic_element_counts, required_aliphatic_element_counts) =
+                required_atom_class_counts_from_smirks(&rule.smirks);
             by_template_id.insert(
                 rule.template_id.clone(),
                 PreparedRetroRule {
                     source_smirks: rule.smirks.clone(),
                     variants: prepared,
                     required_element_counts: required_element_counts_from_smirks(&rule.smirks),
+                    required_aromatic_element_counts,
+                    required_aliphatic_element_counts,
                     required_bond_counts: required_bond_counts_from_smirks(&rule.smirks),
+                    required_typed_bond_counts: required_typed_bond_counts_from_smirks(
+                        &rule.smirks,
+                    ),
                     required_atom_count,
                     required_bond_count,
                 },
@@ -214,8 +242,9 @@ impl ChemEnv {
         let mut bb_count = 0usize;
 
         for smiles in iter {
-            let Ok(mol) = parse(&smiles) else { continue };
-            let canon = canonical_stock_identity(&mol);
+            let Ok(canon) = canonical_stock_identity_from_smiles(&smiles) else {
+                continue;
+            };
             if !canon_set.insert(canon) {
                 continue; // duplicate
             }
@@ -487,7 +516,11 @@ pub(crate) fn canonical_stock_identity(mol: &Molecule) -> String {
 /// than collapsing both to `false`/`None`.
 pub(crate) fn canonical_stock_identity_from_smiles(smiles: &str) -> Result<String> {
     let mol = parse(smiles).with_context(|| format!("Failed to parse SMILES: {smiles}"))?;
-    Ok(canonical_stock_identity(&mol))
+    let canonical = canonical_stock_identity(&mol);
+    if canonical.is_empty() {
+        anyhow::bail!("SMILES has no atoms after stock-identity standardization: {smiles}");
+    }
+    Ok(canonical)
 }
 
 // ── Graph-based Ar-Ar bond cleavage (Suzuki retro) ─────────────────────────
@@ -1938,6 +1971,108 @@ fn required_element_counts_from_smirks(smirks: &str) -> Vec<(u8, u16)> {
         .collect()
 }
 
+/// Conservative aromatic/aliphatic element-count lower bounds for explicit
+/// bracket atoms on the SMIRKS target side. Lowercase element symbols are
+/// aromatic SMARTS atoms; uppercase symbols are aliphatic. Atomic-number,
+/// wildcard, negated, recursive, and alternative queries are omitted because
+/// they do not require one class unambiguously.
+type ElementCountSignature = Vec<(u8, u16)>;
+
+fn required_atom_class_counts_from_smirks(
+    smirks: &str,
+) -> (ElementCountSignature, ElementCountSignature) {
+    fn atomic_number(symbol: &[u8]) -> Option<u8> {
+        match symbol {
+            b"B" | b"b" => Some(5),
+            b"C" | b"c" => Some(6),
+            b"N" | b"n" => Some(7),
+            b"O" | b"o" => Some(8),
+            b"F" => Some(9),
+            b"Si" => Some(14),
+            b"P" | b"p" => Some(15),
+            b"S" | b"s" => Some(16),
+            b"Cl" => Some(17),
+            b"Fe" => Some(26),
+            b"Cu" => Some(29),
+            b"Zn" => Some(30),
+            b"Se" | b"se" => Some(34),
+            b"Br" => Some(35),
+            b"Pd" => Some(46),
+            b"Sn" => Some(50),
+            b"Te" | b"te" => Some(52),
+            b"I" => Some(53),
+            _ => None,
+        }
+    }
+
+    let lhs = match smirks.split_once(">>") {
+        Some((lhs, _)) if !lhs.is_empty() => lhs.as_bytes(),
+        _ => return (Vec::new(), Vec::new()),
+    };
+    let mut aromatic = [0u16; 64];
+    let mut aliphatic = [0u16; 64];
+    let mut i = 0;
+    while i < lhs.len() {
+        if lhs[i] != b'[' {
+            i += 1;
+            continue;
+        }
+        let start = i + 1;
+        let Some(relative_end) = lhs[start..].iter().position(|&byte| byte == b']') else {
+            break;
+        };
+        let end = start + relative_end;
+        let atom = &lhs[start..end];
+        i = end + 1;
+
+        if atom.is_empty()
+            || atom.contains(&b',')
+            || atom.contains(&b'$')
+            || atom.first().is_some_and(|byte| matches!(byte, b'!' | b'*'))
+        {
+            continue;
+        }
+        let mut cursor = 0;
+        while cursor < atom.len() && atom[cursor].is_ascii_digit() {
+            cursor += 1;
+        }
+        let Some(&first) = atom.get(cursor) else {
+            continue;
+        };
+        if first == b'#' {
+            continue;
+        }
+        let two_byte_symbol = atom.get(cursor..cursor + 2).is_some_and(|symbol| {
+            (first.is_ascii_uppercase() && symbol[1].is_ascii_lowercase())
+                || matches!(symbol, b"se" | b"as")
+        });
+        let Some(atomic_number) = atom
+            .get(cursor..cursor + if two_byte_symbol { 2 } else { 1 })
+            .and_then(atomic_number)
+            .filter(|atomic_number| (2..=63).contains(atomic_number))
+        else {
+            continue;
+        };
+        let counts = if first.is_ascii_lowercase() {
+            &mut aromatic
+        } else {
+            &mut aliphatic
+        };
+        counts[atomic_number as usize] = counts[atomic_number as usize].saturating_add(1);
+    }
+
+    let sparse = |counts: [u16; 64]| {
+        counts
+            .into_iter()
+            .enumerate()
+            .filter_map(|(atomic_number, count)| {
+                (count > 0).then_some((atomic_number as u8, count))
+            })
+            .collect()
+    };
+    (sparse(aromatic), sparse(aliphatic))
+}
+
 fn bond_prefilter_atomic_number(atom: &[u8]) -> Option<u8> {
     fn atomic_number(symbol: &[u8]) -> Option<u8> {
         match symbol {
@@ -2000,6 +2135,23 @@ fn bond_count_key(a: u8, b: u8) -> u16 {
     ((lo as u16) << 6) | hi as u16
 }
 
+pub(crate) fn typed_bond_count_key(a: u8, b: u8, order: BondOrder) -> Option<u16> {
+    let order_code = match order {
+        BondOrder::Single | BondOrder::Up | BondOrder::Down => 1,
+        BondOrder::Double => 2,
+        BondOrder::Triple => 3,
+        BondOrder::Quadruple => 4,
+        BondOrder::Aromatic => 5,
+        BondOrder::Zero
+        | BondOrder::Dative
+        | BondOrder::QueryAny
+        | BondOrder::QuerySingleOrDouble
+        | BondOrder::QuerySingleOrAromatic
+        | BondOrder::QueryDoubleOrAromatic => return None,
+    };
+    Some((bond_count_key(a, b) << 3) | order_code)
+}
+
 /// Conservative connected-element-pair lower bounds for the SMIRKS target
 /// side. Only bonds between consecutive unambiguous bracket atoms are counted.
 /// Ring closures and bonds touching syntax this parser does not understand are
@@ -2039,6 +2191,87 @@ fn required_bond_counts_from_smirks(smirks: &str) -> Vec<(u16, u16)> {
             // Bare atoms are deliberately not interpreted. Clearing the
             // context prevents inventing a bond across an unparsed atom.
             byte if byte.is_ascii_alphabetic() => previous_atom = None,
+            _ => {}
+        }
+        i += 1;
+    }
+
+    let mut counts: Vec<_> = counts.into_iter().collect();
+    counts.sort_unstable_by_key(|&(key, _)| key);
+    counts
+}
+
+/// Conservative element-pair + bond-order lower bounds for the SMIRKS target
+/// side. Only a single explicit `-`, `=`, `#`, or `:` bond between two
+/// unambiguous bracket atoms is counted. Implicit bonds, ring closures,
+/// directional bonds, and compound SMARTS bond queries are skipped.
+fn required_typed_bond_counts_from_smirks(smirks: &str) -> Vec<(u16, u16)> {
+    let lhs = match smirks.split_once(">>") {
+        Some((lhs, _)) if !lhs.is_empty() => lhs.as_bytes(),
+        _ => return Vec::new(),
+    };
+    let mut counts: FxHashMap<u16, u16> = FxHashMap::default();
+    let mut branch_stack: Vec<Option<u8>> = Vec::new();
+    let mut previous_atom: Option<u8> = None;
+    let mut pending_order: Option<BondOrder> = None;
+    let mut ambiguous_bond = false;
+    let mut i = 0;
+    while i < lhs.len() {
+        match lhs[i] {
+            b'[' => {
+                let start = i + 1;
+                let Some(relative_end) = lhs[start..].iter().position(|&byte| byte == b']') else {
+                    break;
+                };
+                let end = start + relative_end;
+                let atom = bond_prefilter_atomic_number(&lhs[start..end]);
+                if !ambiguous_bond
+                    && let (Some(previous), Some(current), Some(order)) =
+                        (previous_atom, atom, pending_order)
+                    && let Some(key) = typed_bond_count_key(previous, current, order)
+                {
+                    let count = counts.entry(key).or_default();
+                    *count = count.saturating_add(1);
+                }
+                previous_atom = atom;
+                pending_order = None;
+                ambiguous_bond = false;
+                i = end + 1;
+                continue;
+            }
+            b'-' if !ambiguous_bond => pending_order = Some(BondOrder::Single),
+            b'=' if !ambiguous_bond => pending_order = Some(BondOrder::Double),
+            b'#' if !ambiguous_bond => pending_order = Some(BondOrder::Triple),
+            b':' if !ambiguous_bond => pending_order = Some(BondOrder::Aromatic),
+            b',' | b';' | b'&' | b'!' | b'~' | b'/' | b'\\' => {
+                pending_order = None;
+                ambiguous_bond = true;
+            }
+            b'(' => branch_stack.push(previous_atom),
+            b')' => {
+                previous_atom = branch_stack.pop().flatten();
+                pending_order = None;
+                ambiguous_bond = false;
+            }
+            b'.' => {
+                previous_atom = None;
+                branch_stack.clear();
+                pending_order = None;
+                ambiguous_bond = false;
+            }
+            // Ring-closure syntax is intentionally omitted. Clear a pending
+            // explicit order so it cannot be misattributed to the next atom.
+            b'0'..=b'9' | b'%' => {
+                pending_order = None;
+                ambiguous_bond = true;
+            }
+            // Bare atoms are deliberately not interpreted by this partial
+            // parser; do not infer a bond across one.
+            byte if byte.is_ascii_alphabetic() => {
+                previous_atom = None;
+                pending_order = None;
+                ambiguous_bond = false;
+            }
             _ => {}
         }
         i += 1;
@@ -3608,6 +3841,15 @@ mod tests {
     }
 
     #[test]
+    fn atom_class_prefilter_separates_aromatic_and_aliphatic_atoms() {
+        let (aromatic, aliphatic) = required_atom_class_counts_from_smirks(
+            "[cH:1][n:2][C:3][NH:4][#6:5][C,N:6]>>[cH:1][n:2]",
+        );
+        assert_eq!(aromatic, vec![(6, 1), (7, 1)]);
+        assert_eq!(aliphatic, vec![(6, 1), (7, 1)]);
+    }
+
+    #[test]
     fn bond_count_prefilter_tracks_chain_branch_and_components() {
         let counts = required_bond_counts_from_smirks("[C:1]([O:2])[N:3][C:4].[Cl:5]>>[C:1][Cl:5]");
         assert_eq!(
@@ -3622,6 +3864,31 @@ mod tests {
         assert!(
             counts.is_empty(),
             "ambiguous bonds must fail open: {counts:?}"
+        );
+    }
+
+    #[test]
+    fn typed_bond_prefilter_tracks_only_explicit_unambiguous_orders() {
+        let counts =
+            required_typed_bond_counts_from_smirks("[C:1](=[O:2])-[N:3]#[C:4].[c:5]:[n:6]>>[C:1]");
+        assert_eq!(
+            counts,
+            vec![
+                (typed_bond_count_key(6, 7, BondOrder::Single).unwrap(), 1),
+                (typed_bond_count_key(6, 7, BondOrder::Triple).unwrap(), 1),
+                (typed_bond_count_key(6, 7, BondOrder::Aromatic).unwrap(), 1),
+                (typed_bond_count_key(6, 8, BondOrder::Double).unwrap(), 1),
+            ]
+        );
+    }
+
+    #[test]
+    fn typed_bond_prefilter_fails_open_for_implicit_and_query_bonds() {
+        let counts =
+            required_typed_bond_counts_from_smirks("[C:1][O:2].[C:3]-,=[N:4].[C:5]~[S:6]>>[C:1]");
+        assert!(
+            counts.is_empty(),
+            "ambiguous orders must fail open: {counts:?}"
         );
     }
 
@@ -3654,14 +3921,14 @@ mod tests {
         };
         let prepared = PreparedRuleSet::new(std::slice::from_ref(&rule));
         let prepared = prepared.get(&rule).expect("prepared rule");
-        let (_, ethanol_counts, ethanol_bonds) = crate::search::element_inventory_from_molecule(
+        let ethanol_inventory = crate::search::element_inventory_from_molecule(
             &mol_from_smiles("CCO").expect("ethanol"),
         );
-        let (_, methanol_counts, methanol_bonds) = crate::search::element_inventory_from_molecule(
+        let methanol_inventory = crate::search::element_inventory_from_molecule(
             &mol_from_smiles("CO").expect("methanol"),
         );
-        assert!(prepared.matches_inventory(&ethanol_counts, &ethanol_bonds, 3, 2));
-        assert!(!prepared.matches_inventory(&methanol_counts, &methanol_bonds, 2, 1));
+        assert!(prepared.matches_inventory(&ethanol_inventory));
+        assert!(!prepared.matches_inventory(&methanol_inventory));
 
         let smirks = "[C:1][O:2][C:3]>>[C:1][O:2].[C:3]";
         let rule = RetroRule {
@@ -3673,12 +3940,51 @@ mod tests {
         };
         let prepared = PreparedRuleSet::new(std::slice::from_ref(&rule));
         let prepared = prepared.get(&rule).expect("prepared bond rule");
-        let (_, dimethyl_ether_counts, dimethyl_ether_bonds) =
-            crate::search::element_inventory_from_molecule(
-                &mol_from_smiles("COC").expect("dimethyl ether"),
-            );
-        assert!(prepared.matches_inventory(&dimethyl_ether_counts, &dimethyl_ether_bonds, 3, 2));
-        assert!(!prepared.matches_inventory(&ethanol_counts, &ethanol_bonds, 3, 2));
+        let dimethyl_ether_inventory = crate::search::element_inventory_from_molecule(
+            &mol_from_smiles("COC").expect("dimethyl ether"),
+        );
+        assert!(prepared.matches_inventory(&dimethyl_ether_inventory));
+        assert!(!prepared.matches_inventory(&ethanol_inventory));
+
+        let carbonyl_smirks = "[C:1]=[O:2]>>[C:1].[O:2]";
+        let carbonyl_rule = RetroRule {
+            name: "typed-bond-counted".to_string(),
+            template_id: template_id_for_smirks(carbonyl_smirks),
+            smirks: carbonyl_smirks.to_string(),
+            required_elements: required_elements_from_smirks(carbonyl_smirks),
+            ..RetroRule::default()
+        };
+        let carbonyl_prepared = PreparedRuleSet::new(std::slice::from_ref(&carbonyl_rule));
+        let carbonyl_prepared = carbonyl_prepared
+            .get(&carbonyl_rule)
+            .expect("prepared carbonyl rule");
+        assert!(!carbonyl_prepared.matches_inventory(&ethanol_inventory));
+        let acetaldehyde_inventory = crate::search::element_inventory_from_molecule(
+            &mol_from_smiles("CC=O").expect("acetaldehyde"),
+        );
+        assert!(carbonyl_prepared.matches_inventory(&acetaldehyde_inventory));
+    }
+
+    #[test]
+    fn prepared_rule_atom_class_prefilter_rejects_wrong_aromaticity() {
+        let smirks = "[c:1][n:2]>>[c:1].[n:2]";
+        let rule = RetroRule {
+            name: "aromatic-class".to_string(),
+            template_id: template_id_for_smirks(smirks),
+            smirks: smirks.to_string(),
+            required_elements: required_elements_from_smirks(smirks),
+            ..RetroRule::default()
+        };
+        let prepared = PreparedRuleSet::new(std::slice::from_ref(&rule));
+        let prepared = prepared.get(&rule).expect("prepared aromatic rule");
+        let pyridine = crate::search::element_inventory_from_molecule(
+            &mol_from_smiles("c1ccncc1").expect("pyridine"),
+        );
+        let piperidine = crate::search::element_inventory_from_molecule(
+            &mol_from_smiles("C1CCNCC1").expect("piperidine"),
+        );
+        assert!(prepared.matches_inventory(&pyridine));
+        assert!(!prepared.matches_inventory(&piperidine));
     }
 
     #[test]

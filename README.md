@@ -171,7 +171,7 @@ Use `--format mermaid` for GitHub/Notion-compatible flowcharts.
 
 ## Current Limitations
 
-Current release: **v1.0.3**.
+Current release: **v1.0.4**.
 
 ⚠️ The corrected 4,903-target v1.0.1 shared-stock comparison is complete. RENKIN
 recorded 591/4,903 primary successes (12.05%) versus AiZynthFinder 4.4.1's
@@ -476,6 +476,15 @@ renkin audit-route tests/fixtures/aizynthfinder/v4.4.1/single_trees.json --forma
 USPTO-50k test set (4,907 molecules, full evaluation):
 
 > **Evaluation definition**: A molecule is *solved* if `find_routes` returns at least one route whose leaf precursors are all in the building block set, within depth=5 and beam=100. Ground-truth reactants from USPTO-50k are **not** checked — any commercially accessible route counts.
+
+### Current formal 200-target comparison (2026-09-08)
+
+The frozen VAL-200 shared-stock rerun found native routes for **134/200
+(67.0%)** targets for both RENKIN and AiZynthFinder 4.4.1. Under the paired
+strict validator-plus-stock metric, RENKIN found **134/200 (67.0%)** and
+AiZynthFinder **123/200 (61.5%)**, a +5.5pp point estimate. This is a fixed
+cohort result, not a universal superiority or experimental-yield claim.
+[Full report](data/comparison/formal_v1.0.3_candidate_20260908/formal_200_native_rstock_combined_v2_20260908/FORMAL_BENCHMARK_REPORT.md)
 
 ### Formal v1.0.1 shared-stock comparison (4,903 paired targets)
 

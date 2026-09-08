@@ -14,11 +14,15 @@ import argparse
 import json
 import os
 import subprocess
+import sys
 import tempfile
+import time
 from pathlib import Path
 
+import compare_aggregate as aggregate
+import compare_manifest as manifest_mod
 from compare_route_graph import count_leaves, normalize_renkin_route, normalized_route_sha256
-from compare_schema import PlannerComparisonRow
+from compare_schema import PlannerComparisonRow, load_rows
 from compare_validation import (
     build_stock_set,
     check_reaction_steps_parseable,
@@ -27,6 +31,11 @@ from compare_validation import (
     target_element_excess_counts,
     validate_stock_leaves,
 )
+
+
+def tool_reported_route_count(result: dict) -> int | None:
+    """Keep the common row schema's unsolved nullability contract."""
+    return result["routes_found"] if result["solved"] else None
 
 
 def load_sample(path: str, size: int) -> list[dict]:
@@ -71,6 +80,8 @@ def run(args: argparse.Namespace) -> list[PlannerComparisonRow]:
             command.append("--bond-index")
         if args.search_mode == "recovery":
             command += ["--search-mode", "recovery"]
+            if args.recovery_stage_policy != "full":
+                command += ["--recovery-stage-policy", args.recovery_stage_policy]
             if args.recovery_depth is not None:
                 command += ["--recovery-depth", str(args.recovery_depth)]
             if args.recovery_beam_width is not None:
@@ -103,11 +114,14 @@ def run(args: argparse.Namespace) -> list[PlannerComparisonRow]:
             sample_rank=sample.get("sample_rank", 0),
             tool="renkin",
             tool_version=args.tool_version,
-            configuration_id=f"renkin-batch-{args.search_mode}-d{args.depth}-b{args.beam_width}-n{args.max_routes}",
+            configuration_id=(
+                f"renkin-batch-{args.search_mode}-{args.recovery_stage_policy}"
+                f"-d{args.depth}-b{args.beam_width}-n{args.max_routes}"
+            ),
             comparison_mode="shared_stock",
             run_status="completed",
             route_found=bool(result["solved"]),
-            tool_reported_route_count=result["routes_found"],
+            tool_reported_route_count=tool_reported_route_count(result),
             total_elapsed_ms=result["time_ms"],
             peak_rss_bytes=None,
             rss_measurement_method=None,
@@ -200,19 +214,82 @@ def main() -> int:
     parser.add_argument("--recovery-depth", type=int)
     parser.add_argument("--recovery-beam-width", type=int)
     parser.add_argument("--recovery-timeout-secs", type=int)
+    parser.add_argument("--recovery-stage-policy", choices=["full", "native"], default="full")
     parser.add_argument(
         "--process-timeout-s",
         type=int,
         default=900,
         help="External wall-clock bound for the shared benchmark process.",
     )
-    parser.add_argument("--tool-version", default="1.0.3")
+    parser.add_argument("--tool-version", default="1.0.4")
     parser.add_argument("--output-rows", required=True)
+    parser.add_argument("--output-aggregate")
+    parser.add_argument("--manifest-path")
+    parser.add_argument("--repo-root", default=".")
     args = parser.parse_args()
+
+    script_dir = Path(__file__).resolve().parent
+    input_files = {
+        "sample_list": args.sample_list,
+        "stock": args.stock,
+        "templates": args.templates,
+        "cargo_manifest": str(Path(args.repo_root) / "Cargo.toml"),
+        "cargo_lock": str(Path(args.repo_root) / "Cargo.lock"),
+        "batch_adapter": __file__,
+        "aggregate_module": aggregate.__file__,
+        "manifest_module": manifest_mod.__file__,
+        "comparison_schema": str(script_dir / "compare_schema.py"),
+        "route_graph_module": str(script_dir / "compare_route_graph.py"),
+        "validation_module": str(script_dir / "compare_validation.py"),
+    }
+    run_manifest = None
+    if args.manifest_path:
+        manifest_output = Path(args.manifest_path)
+        manifest_output.parent.mkdir(parents=True, exist_ok=True)
+        run_manifest = manifest_mod.capture_start_manifest(
+            tool="renkin",
+            comparison_mode="shared_stock",
+            ring_context_policy=None,
+            command_line=sys.argv,
+            repo_root=args.repo_root,
+            binary_path=args.renkin_bench,
+            docker_image=None,
+            input_files=input_files,
+            resource_budget={
+                "process_timeout_s": args.process_timeout_s,
+                "sample_size": args.sample_size,
+                "depth": args.depth,
+                "beam_width": args.beam_width,
+                "max_routes": args.max_routes,
+            },
+        )
+        manifest_mod.write_manifest_atomic(str(manifest_output), run_manifest)
+
+    start = time.monotonic()
     rows = run(args)
+    elapsed = time.monotonic() - start
     output = Path(args.output_rows)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text("".join(row.to_json_line() + "\n" for row in rows), encoding="utf-8")
+    persisted_rows = load_rows(str(output))
+    result = aggregate.compute_aggregate(persisted_rows)
+    result.update(
+        wall_clock_total_sweep_s=elapsed,
+        total_rows_in_file=len(persisted_rows),
+        tool="renkin",
+        comparison_mode="shared_stock",
+        batch_process=True,
+        latency_comparability="throughput_only",
+    )
+    if args.output_aggregate:
+        aggregate_output = Path(args.output_aggregate)
+        aggregate_output.parent.mkdir(parents=True, exist_ok=True)
+        aggregate_output.write_text(
+            json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+    if args.manifest_path and run_manifest is not None:
+        run_manifest = manifest_mod.finalize_manifest(run_manifest, input_files)
+        manifest_mod.write_manifest_atomic(args.manifest_path, run_manifest)
     print(json.dumps({"rows": len(rows), "route_found": sum(r.route_found is True for r in rows)}, indent=2))
     return 0
 

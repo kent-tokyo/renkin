@@ -63,7 +63,9 @@ pub enum RejectionReason {
     /// future delimited format (CSV) can have a genuinely empty field
     /// between two separators, and this enum is shared across formats.
     EmptyField,
-    /// RENKIN's own SMILES parser rejected the token outright.
+    /// RENKIN could not produce a non-empty canonical stock identity. This
+    /// includes parser failures and explicit-hydrogen-only inputs, which
+    /// become atomless under the published normalization contract.
     UnparseableSmiles,
 }
 
@@ -452,6 +454,15 @@ mod tests {
             manifest.rejection_reasons.get("unparseable_smiles"),
             Some(&1)
         );
+    }
+
+    #[test]
+    fn explicit_hydrogen_only_rows_are_rejected_instead_of_becoming_empty_identity() {
+        let input = "[H+]\n[H-]\n[H][H]\n[H]\nCCO\n";
+        let (accepted, manifest) = import_stock(input.as_bytes(), &opts()).unwrap();
+        assert_eq!(accepted.len(), 1);
+        assert_eq!(manifest.rejected_rows, 4);
+        assert!(accepted.iter().all(|smiles| !smiles.is_empty()));
     }
 
     #[test]

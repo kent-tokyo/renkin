@@ -28,6 +28,15 @@ measurement or a coarse, disclosed-limitation post-hoc structural check —
 never a chemistry-correctness or route-quality judgment. See
 "Semantic firewall" below.
 
+## Formal 200-target result (2026-09-08)
+
+The completed regression-safe native rerun is published in
+[`FORMAL_BENCHMARK_REPORT.md`](../../data/comparison/formal_v1.0.3_candidate_20260908/formal_200_native_rstock_combined_v2_20260908/FORMAL_BENCHMARK_REPORT.md).
+On the frozen 200-target cohort, RENKIN and AiZynthFinder both found native
+routes for 134/200 targets (67.0%). Under the paired strict shared-stock
+validation, RENKIN was 134/200 (67.0%) and AiZynthFinder was 123/200 (61.5%),
+with the protocol and claim limits stated in the report.
+
 ## Why the existing comparison table isn't a matched comparison
 
 [`docs/comparison/open-source-retrosynthesis-tools.md`](../comparison/open-source-retrosynthesis-tools.md)
@@ -378,6 +387,13 @@ and lives alongside every generated report, not only here.
 Since both tools run on the identical target sample, every comparison is
 **paired**. `scripts/compare_paired_report.py` joins the two tools' rows on
 `target_id` and drives `scripts/compare_stats.py`, which implements:
+
+For newly generated shared-stock reports, the primary metric is
+`strict_validated_route_to_shared_stock`: a multi-step route must pass the
+common structural validator and stock check; a depth-zero route is accepted
+only when the target itself is independently confirmed in the configured
+stock. The archived n=100/n=500 reports below retain their historical
+`route_to_shared_stock` field and are not silently rewritten.
 
 - Paired bootstrap (resampling whole target-pairs, never each tool's
   results independently) for route-found-rate, latency, and memory

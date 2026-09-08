@@ -19,6 +19,8 @@ def _row(
     accounting=None,
     route_tree_parseable=None,
     all_leaves_in_configured_stock=None,
+    validator_confirmed_route_found=None,
+    best_route_step_count=None,
 ):
     return PlannerComparisonRow(
         target_id=target_id,
@@ -34,6 +36,8 @@ def _row(
         target_element_accounting_status=accounting,
         route_tree_parseable=route_tree_parseable,
         all_leaves_in_configured_stock=all_leaves_in_configured_stock,
+        validator_confirmed_route_found=validator_confirmed_route_found,
+        best_route_step_count=best_route_step_count,
     )
 
 
@@ -85,26 +89,58 @@ class TestComputePairedStatsNative(unittest.TestCase):
 
 
 class TestComputePairedStatsSharedStock(unittest.TestCase):
-    def test_primary_metric_uses_route_to_shared_stock_not_route_found(self):
+    def test_primary_metric_requires_common_validation_and_shared_stock(self):
         joined = [
-            # route_found True but stock check fails -> route_to_shared_stock False
+            # Stock-terminal but not validator-confirmed: secondary only.
             ("t1", _row("t1", "renkin", True, route_tree_parseable=True,
-                         all_leaves_in_configured_stock=False),
+                         all_leaves_in_configured_stock=True,
+                         validator_confirmed_route_found=False),
              _row("t1", "aizynthfinder", False)),
             ("t2", _row("t2", "renkin", True, route_tree_parseable=True,
-                         all_leaves_in_configured_stock=True),
+                         all_leaves_in_configured_stock=True,
+                         validator_confirmed_route_found=True),
              _row("t2", "aizynthfinder", True, route_tree_parseable=True,
-                  all_leaves_in_configured_stock=True)),
+                  all_leaves_in_configured_stock=True,
+                  validator_confirmed_route_found=True)),
         ]
         stats = paired_report.compute_paired_stats(joined, "shared_stock")
-        primary = stats["route_to_shared_stock_rate_diff_renkin_minus_aizynthfinder"]
+        primary = stats[
+            "strict_validated_route_to_shared_stock_rate_diff_renkin_minus_aizynthfinder"
+        ]
+        stock_only = stats[
+            "secondary_route_to_shared_stock_rate_diff_renkin_minus_aizynthfinder"
+        ]
         secondary = stats["secondary_tool_native_route_found_rate_diff_renkin_minus_aizynthfinder"]
-        # primary: renkin 1/2 route_to_shared_stock, aizynthfinder 1/2 -> diff 0
+        # Strict primary: both tools pass one target -> diff 0.
         self.assertAlmostEqual(primary["observed"], 0.0)
+        # Stock-only secondary includes t1 for RENKIN -> diff +0.5.
+        self.assertAlmostEqual(stock_only["observed"], 0.5)
         # secondary (tool-native route_found): renkin 2/2, aizynthfinder 1/2 -> diff 0.5
         self.assertAlmostEqual(secondary["observed"], 0.5)
         self.assertNotIn("total_elapsed_ms_diff_renkin_minus_aizynthfinder_both_solved", stats)
         self.assertIn("primary_metric", stats)
+
+    def test_primary_metric_accepts_stock_confirmed_depth_zero_route(self):
+        joined = [
+            (
+                "t1",
+                _row(
+                    "t1",
+                    "renkin",
+                    True,
+                    route_tree_parseable=True,
+                    all_leaves_in_configured_stock=True,
+                    validator_confirmed_route_found=None,
+                    best_route_step_count=0,
+                ),
+                _row("t1", "aizynthfinder", False),
+            )
+        ]
+        stats = paired_report.compute_paired_stats(joined, "shared_stock")
+        primary = stats[
+            "strict_validated_route_to_shared_stock_rate_diff_renkin_minus_aizynthfinder"
+        ]
+        self.assertAlmostEqual(primary["observed"], 1.0)
 
 
 class TestComputePairedTable(unittest.TestCase):
@@ -130,12 +166,15 @@ class TestComputePairedTable(unittest.TestCase):
     def test_shared_stock_table_rows_include_shared_stock_field(self):
         joined = [
             ("t1", _row("t1", "renkin", True, route_tree_parseable=True,
-                         all_leaves_in_configured_stock=True),
+                         all_leaves_in_configured_stock=True,
+                         validator_confirmed_route_found=True),
              _row("t1", "aizynthfinder", False)),
         ]
         table = paired_report.compute_paired_table(joined, "shared_stock")
         self.assertTrue(table[0]["renkin_route_to_shared_stock"])
         self.assertFalse(table[0]["aizynthfinder_route_to_shared_stock"])
+        self.assertTrue(table[0]["renkin_strict_validated_route_to_shared_stock"])
+        self.assertFalse(table[0]["aizynthfinder_strict_validated_route_to_shared_stock"])
 
 
 class TestMainCli(unittest.TestCase):

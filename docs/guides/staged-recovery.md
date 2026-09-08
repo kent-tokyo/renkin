@@ -27,7 +27,10 @@ Given baseline depth `D`, beam `B`, and recovery depth `R > D`:
 3. diversity-reserved beam, only after baseline hits the beam limit and the
    caller supplies non-zero reserved slots;
 4. depth `R`, only after baseline reaches its depth limit;
-5. each caller-supplied coverage tier, in narrow-to-broad order:
+5. native recovery, after a depth-only retry fails, tries `R` with the wider
+   recovery beam in one combined pass. This preserves the depth-only success
+   path while recovering branches that are both deeper and crowded out;
+6. each caller-supplied coverage tier, in narrow-to-broad order:
    - depth `D`, score-only beam;
    - depth `D`, diversity beam, only after that tier hits the beam limit;
    - depth `R`, diversity beam, only after that tier also reaches the depth

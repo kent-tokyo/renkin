@@ -6,16 +6,23 @@
 //! heuristic-looking prediction.
 
 use std::collections::HashMap;
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
 
+#[cfg(not(target_arch = "wasm32"))]
 use anyhow::{Context, Result, bail};
+#[cfg(not(target_arch = "wasm32"))]
 use serde::Deserialize;
+#[cfg(not(target_arch = "wasm32"))]
 use sha2::{Digest, Sha256};
 
+#[cfg(not(target_arch = "wasm32"))]
 use crate::model_manifest::{ModelKind, ModelManifest, OutputSemantics, load_model_manifest};
 use crate::search::{ValueEstimate, ValueModel};
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct StaticValueArtifact {

@@ -7,6 +7,7 @@
 
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 
 /// Adapter boundary that a model implements.
@@ -165,6 +166,7 @@ mod tests {
         assert!(value.validate().is_err());
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn serializes_and_loads_valid_manifest() {
         let value = manifest(ModelKind::TemplatePolicy);

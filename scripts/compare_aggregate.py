@@ -9,6 +9,11 @@ things.
 
 from __future__ import annotations
 
+import argparse
+import json
+from pathlib import Path
+
+from compare_schema import load_rows
 from compare_stats import percentile
 
 
@@ -18,6 +23,22 @@ def _rate(numerator: int, denominator: int) -> dict:
         "n_numerator": numerator,
         "n_denominator": denominator,
     }
+
+
+def _strict_validated_stock_success(row) -> bool:
+    if row.all_leaves_in_configured_stock is not True:
+        return False
+    if row.validator_confirmed_route_found is True:
+        return True
+    # A depth-zero route means the target itself is the configured stock
+    # leaf. There is no reaction step to element-account, so the common
+    # validator correctly reports not_evaluable; stock identity is the full
+    # validation contract for this deliberate direct-purchase outcome.
+    return (
+        row.route_found is True
+        and row.route_tree_parseable is True
+        and row.best_route_step_count == 0
+    )
 
 
 def compute_aggregate(rows: list) -> dict:
@@ -91,6 +112,17 @@ def compute_aggregate(rows: list) -> dict:
         "validator_confirmed_route_found_rate": {
             **_rate(
                 sum(1 for r in all_sampled if r.validator_confirmed_route_found is True), n_all
+            ),
+            "denominator_kind": "all_sampled",
+        },
+        "strict_validated_route_to_configured_stock_rate": {
+            **_rate(
+                sum(
+                    1
+                    for r in all_sampled
+                    if _strict_validated_stock_success(r)
+                ),
+                n_all,
             ),
             "denominator_kind": "all_sampled",
         },
@@ -188,3 +220,30 @@ def compute_aggregate(rows: list) -> dict:
     }
 
     return agg
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Recompute a comparison aggregate from persisted schema rows."
+    )
+    parser.add_argument("--rows", required=True)
+    parser.add_argument("--output", required=True)
+    args = parser.parse_args()
+
+    rows = load_rows(args.rows)
+    result = compute_aggregate(rows)
+    tools = sorted({row.tool for row in rows})
+    modes = sorted({row.comparison_mode for row in rows})
+    if len(tools) > 1 or len(modes) > 1:
+        parser.error("rows must contain exactly one tool and comparison mode")
+    result["total_rows_in_file"] = len(rows)
+    result["tool"] = tools[0] if tools else None
+    result["comparison_mode"] = modes[0] if modes else None
+    output = Path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

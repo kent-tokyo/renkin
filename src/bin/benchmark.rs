@@ -782,6 +782,7 @@ fn main() -> Result<()> {
     let mut recovery_depth: Option<u32> = None;
     let mut recovery_beam_width: Option<usize> = None;
     let mut recovery_timeout_secs: Option<u64> = None;
+    let mut recovery_stage_policy = "full".to_string();
     let mut max_routes: usize = 1;
     let mut bond_index = false;
     let mut cross_template_dedup = false;
@@ -855,6 +856,12 @@ fn main() -> Result<()> {
             "--recovery-timeout-secs" => {
                 i += 1;
                 recovery_timeout_secs = args.get(i).and_then(|s| s.parse().ok());
+            }
+            "--recovery-stage-policy" => {
+                i += 1;
+                if i < args.len() {
+                    recovery_stage_policy = args[i].clone();
+                }
             }
             "--template-metadata" => {
                 i += 1;
@@ -987,7 +994,14 @@ fn main() -> Result<()> {
         if recovery_timeout_secs == Some(0) {
             bail!("--recovery-timeout-secs must be positive");
         }
+    } else if recovery_stage_policy != "full" {
+        bail!("--recovery-stage-policy requires --search-mode recovery");
     }
+    let recovery_stage_policy = match recovery_stage_policy.as_str() {
+        "full" => renkin::recovery_mode::RecoveryStagePolicy::Full,
+        "native" => renkin::recovery_mode::RecoveryStagePolicy::Native,
+        other => bail!("invalid --recovery-stage-policy '{other}' (expected full|native)"),
+    };
     if coverage_timeout_secs == Some(0) {
         bail!("--coverage-timeout-secs must be a positive integer");
     }
@@ -1132,6 +1146,7 @@ fn main() -> Result<()> {
                 engine.rules(),
                 &config,
                 &renkin::recovery_mode::RecoveryOptions {
+                    stage_policy: recovery_stage_policy,
                     recovery_depth: recovery_depth.unwrap_or(max_depth + 1),
                     beam_diversity_slots: 0,
                     recovery_beam_width,

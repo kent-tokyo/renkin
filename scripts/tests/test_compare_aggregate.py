@@ -86,6 +86,41 @@ class TestComputeAggregate(unittest.TestCase):
         self.assertEqual(result["validator_confirmed_route_found_rate"]["n_numerator"], 1)
         self.assertEqual(result["validator_confirmed_route_found_rate"]["n_denominator"], 3)
 
+    def test_strict_validated_stock_rate_requires_both_conditions(self):
+        rows = [
+            make_row(
+                route_found=True,
+                validator_confirmed_route_found=True,
+                all_leaves_in_configured_stock=True,
+                total_elapsed_ms=1.0,
+            ),
+            make_row(
+                route_found=True,
+                validator_confirmed_route_found=True,
+                all_leaves_in_configured_stock=False,
+                total_elapsed_ms=1.0,
+            ),
+            make_row(
+                route_found=True,
+                validator_confirmed_route_found=False,
+                all_leaves_in_configured_stock=True,
+                total_elapsed_ms=1.0,
+            ),
+            make_row(
+                route_found=True,
+                route_tree_parseable=True,
+                best_route_step_count=0,
+                validator_confirmed_route_found=None,
+                all_leaves_in_configured_stock=True,
+                total_elapsed_ms=1.0,
+            ),
+        ]
+        result = agg.compute_aggregate(rows)
+        strict = result["strict_validated_route_to_configured_stock_rate"]
+        self.assertEqual(strict["n_numerator"], 2)
+        self.assertEqual(strict["n_denominator"], 4)
+        self.assertAlmostEqual(strict["value"], 0.5)
+
     def test_not_evaluable_rate(self):
         rows = [
             make_row(route_found=True, not_evaluable=True, total_elapsed_ms=1.0),

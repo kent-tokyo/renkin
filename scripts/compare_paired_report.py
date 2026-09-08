@@ -12,10 +12,10 @@ shape alone.
 
 `--mode native` reports the plain `route_found` rate diff (paired bootstrap +
 McNemar) plus a both-solved-only `total_elapsed_ms` diff. `--mode
-shared_stock` instead leads with the arm's actual primary metric --
-`route_to_shared_stock` (route_found AND route_tree_parseable AND
-all_leaves_in_configured_stock, the independently-verified check) -- with
-tool-native `route_found` reported only as a secondary/informational diff;
+shared_stock` instead leads with the strict primary metric -- a route must
+both pass common structural validation and terminate in the configured stock.
+The less strict stock-terminal and tool-native route-found rates remain
+secondary/informational diffs;
 no elapsed-ms diff is reported for this arm (see the comparison guide's
 disclosed shared-hardware wall-clock-contamination note for why the native
 arm's latency diff isn't repeated here).
@@ -58,6 +58,17 @@ def _route_to_shared_stock(row) -> bool:
         and row.route_tree_parseable is True
         and row.all_leaves_in_configured_stock is True
     )
+
+
+def _strict_validated_route_to_shared_stock(row) -> bool:
+    if not _route_to_shared_stock(row):
+        return False
+    if row.validator_confirmed_route_found is True:
+        return True
+    # A stock-terminal depth-zero route has no reaction to validate. Treat
+    # confirmed target identity as a valid direct-purchase success, while
+    # continuing to reject non-evaluable multi-step routes.
+    return row.best_route_step_count == 0
 
 
 def _route_found_mcnemar(joined: list[tuple]) -> McNemarResult:
@@ -123,6 +134,24 @@ def compute_paired_stats_native(joined: list[tuple]) -> dict:
 
 
 def compute_paired_stats_shared_stock(joined: list[tuple]) -> dict:
+    strict_pairs = [
+        (
+            _strict_validated_route_to_shared_stock(r),
+            _strict_validated_route_to_shared_stock(a),
+        )
+        for _, r, a in joined
+    ]
+    strict_diff = paired_bootstrap_diff(strict_pairs, rate_diff_statistic)
+    strict_mcnemar = mcnemar_exact(
+        [
+            (
+                _strict_validated_route_to_shared_stock(a),
+                _strict_validated_route_to_shared_stock(r),
+            )
+            for _, r, a in joined
+        ]
+    )
+
     shared_stock_pairs = [
         (_route_to_shared_stock(r), _route_to_shared_stock(a)) for _, r, a in joined
     ]
@@ -137,10 +166,13 @@ def compute_paired_stats_shared_stock(joined: list[tuple]) -> dict:
 
     return {
         "primary_metric": (
-            "route_to_shared_stock (route_found AND route_tree_parseable AND "
-            "all_leaves_in_configured_stock)"
+            "strict_validated_route_to_shared_stock (validator_confirmed_route_found AND "
+            "all_leaves_in_configured_stock; stock-confirmed depth-zero routes accepted)"
         ),
-        "route_to_shared_stock_rate_diff_renkin_minus_aizynthfinder": _flat_diff_dict(
+        "strict_validated_route_to_shared_stock_rate_diff_renkin_minus_aizynthfinder": _flat_diff_dict(
+            strict_diff, strict_mcnemar
+        ),
+        "secondary_route_to_shared_stock_rate_diff_renkin_minus_aizynthfinder": _flat_diff_dict(
             shared_stock_diff, shared_stock_mcnemar
         ),
         "secondary_tool_native_route_found_rate_diff_renkin_minus_aizynthfinder": _flat_diff_dict(
@@ -168,6 +200,12 @@ def compute_paired_table(joined: list[tuple], mode: str) -> list[dict]:
         if mode == "shared_stock":
             row["renkin_route_to_shared_stock"] = _route_to_shared_stock(r)
             row["aizynthfinder_route_to_shared_stock"] = _route_to_shared_stock(a)
+            row["renkin_strict_validated_route_to_shared_stock"] = (
+                _strict_validated_route_to_shared_stock(r)
+            )
+            row["aizynthfinder_strict_validated_route_to_shared_stock"] = (
+                _strict_validated_route_to_shared_stock(a)
+            )
         rows.append(row)
     return rows
 

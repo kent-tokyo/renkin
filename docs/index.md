@@ -5,7 +5,7 @@ description: "Plan multi-step synthesis routes from SMILES with RENKIN, a pure-R
 
 # RENKIN
 
-Current release: **v1.0.3**.
+Current release: **v1.0.4**.
 
 > **Computer-Aided Synthesis Planning (CASP) · Pure Rust · WebAssembly · Python**  
 > Named after 錬金 (*renkin*) — Japanese for alchemy: just as alchemists transformed base metals into gold, RENKIN transforms target molecules back into cheap starting materials.
@@ -120,7 +120,18 @@ RENKIN ships **23 hand-crafted rules** (a mix of graph-based dispatch and SMIRKS
 
 See [Benchmark](benchmark.md) for current USPTO-50k results and methodology — historical figures (78.0%/95.9%/81.8%) shown elsewhere on the web are invalidated and not representative of current performance; do not cite them.
 
-## Formal v1.0 comparison status
+## Current formal comparison status
+
+The latest frozen VAL-200 shared-stock rerun (2026-09-08) found native routes
+for 134/200 targets (67.0%) for both RENKIN and AiZynthFinder 4.4.1. Under
+strict common validation, RENKIN was 134/200 (67.0%) and AiZynthFinder was
+123/200 (61.5%), a +5.5pp point estimate on this cohort. See the
+[formal benchmark report](../data/comparison/formal_v1.0.3_candidate_20260908/formal_200_native_rstock_combined_v2_20260908/FORMAL_BENCHMARK_REPORT.md)
+for hashes, paired statistics, and claim boundaries.
+
+The following v1.0.1 result is retained as historical evidence.
+
+## Historical formal v1.0.1 comparison
 
 The corrected 4,903-target shared-stock comparison recorded 591 primary
 successes for RENKIN v1.0.1 (12.05%) and 200 for AiZynthFinder 4.4.1 (4.08%).
@@ -142,7 +153,7 @@ parseable normalized trees terminating in the configured shared stock. See the
 
     ```toml
     [dependencies]
-renkin = "1.0.3"
+renkin = "1.0.4"
     ```
 
 === "npm"

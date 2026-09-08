@@ -24,7 +24,13 @@ pub fn heuristic(unsolved_mols: &[&Molecule]) -> f64 {
 /// g(n) step cost: penalize expansions that produce heavy molecules.
 /// Returns a value in [1.0, 2.0].
 pub fn step_cost(precursors: &[&Molecule]) -> f64 {
-    let total_mw: f64 = precursors.iter().map(|m| molecular_weight(m)).sum();
+    step_cost_iter(precursors.iter().copied())
+}
+
+/// Allocation-free step-cost implementation for hot paths that already have
+/// an iterator over precursor molecules.
+pub(crate) fn step_cost_iter<'a>(precursors: impl Iterator<Item = &'a Molecule>) -> f64 {
+    let total_mw: f64 = precursors.map(molecular_weight).sum();
     1.0 + (total_mw / 2000.0).min(1.0)
 }
 
@@ -124,5 +130,14 @@ mod tests {
         let m = mol("CC(=O)Oc1ccccc1C(=O)O"); // aspirin, MW ~180
         let cost = step_cost(&[&m]);
         assert!(cost > 1.0 && cost <= 2.0, "step_cost={cost}");
+    }
+
+    #[test]
+    fn iterator_step_cost_matches_slice_api() {
+        let a = mol("CC(=O)O");
+        let b = mol("CCO");
+        let slice_cost = step_cost(&[&a, &b]);
+        let iter_cost = step_cost_iter([&a, &b].into_iter());
+        assert_eq!(slice_cost, iter_cost);
     }
 }

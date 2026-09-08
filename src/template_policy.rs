@@ -4,16 +4,23 @@
 //! It lets callers validate the manifest, ordering-only boundary, and paired
 //! benchmark plumbing before introducing an ONNX or external model runtime.
 
+#[cfg(not(target_arch = "wasm32"))]
 use anyhow::{Context, Result, bail};
+#[cfg(not(target_arch = "wasm32"))]
 use serde::Deserialize;
+#[cfg(not(target_arch = "wasm32"))]
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
 
+#[cfg(not(target_arch = "wasm32"))]
 use crate::model_manifest::{ModelKind, ModelManifest, load_model_manifest};
 use crate::search::{TemplateInfo, TemplatePolicy, TemplatePolicyDecision, TemplatePolicyScore};
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct StaticPolicyArtifact {
@@ -86,7 +93,7 @@ impl TemplatePolicy for StaticTemplatePolicy {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
 

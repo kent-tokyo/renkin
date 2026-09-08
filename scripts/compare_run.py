@@ -83,6 +83,7 @@ def renkin_config_and_id(args):
         recovery_depth=args.recovery_depth,
         recovery_beam_width=args.recovery_beam_width,
         recovery_timeout_secs=args.recovery_timeout_secs,
+        recovery_stage_policy=args.recovery_stage_policy,
     )
     policy_suffix = (
         f"-{args.ring_context_policy}"
@@ -108,6 +109,11 @@ def renkin_config_and_id(args):
     recovery_tiers_suffix = (
         f"-rct{len(args.recovery_coverage_tier)}"
         if args.search_mode == "recovery" and args.recovery_coverage_tier
+        else ""
+    )
+    recovery_policy_suffix = (
+        f"-rsp{args.recovery_stage_policy}"
+        if args.search_mode == "recovery"
         else ""
     )
     # Orthogonal to policy_suffix (ring-context) -- kept as its own suffix
@@ -143,6 +149,7 @@ def renkin_config_and_id(args):
         f"-mr{args.max_routes}-{args.route_selection}"
         f"{policy_suffix}{reranker_suffix}{coverage_suffix}{coverage_beam_suffix}"
         f"{recovery_depth_suffix}{recovery_slots_suffix}{recovery_tiers_suffix}"
+        f"{recovery_policy_suffix}"
         f"{spectator_bond_suffix}{element_accounting_suffix}{beam_diversity_suffix}"
         f"{template_policy_suffix}{scorer_suffix}{generator_suffix}{speed_suffix}"
     )
@@ -412,6 +419,12 @@ def main(argv: list[str] | None = None) -> int:
         help="RENKIN-only: whole recovery cascade cooperative budget in seconds.",
     )
     parser.add_argument(
+        "--recovery-stage-policy",
+        choices=["full", "native"],
+        default="full",
+        help="RENKIN-only: recovery retry arms; native keeps only beam/depth retries.",
+    )
+    parser.add_argument(
         "--resume",
         action="store_true",
         help="Append to --output-rows if it exists, skipping target_ids already present, "
@@ -461,6 +474,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--recovery-beam-width requires --search-mode recovery")
     if args.search_mode != "recovery" and args.recovery_timeout_secs is not None:
         parser.error("--recovery-timeout-secs requires --search-mode recovery")
+    if args.search_mode != "recovery" and args.recovery_stage_policy != "full":
+        parser.error("--recovery-stage-policy requires --search-mode recovery")
     if args.search_mode != "recovery" and args.recovery_coverage_tier:
         parser.error("--recovery-coverage-tier requires --search-mode recovery")
     if args.search_mode == "recovery" and args.recovery_depth is not None:

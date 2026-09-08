@@ -15,7 +15,7 @@ def row(target_id, **kwargs):
         target_smiles="CCO",
         sample_rank=0,
         tool="renkin",
-        tool_version="1.0.3",
+        tool_version="1.0.4",
         configuration_id="legacy",
         comparison_mode="native",
         run_status="completed",

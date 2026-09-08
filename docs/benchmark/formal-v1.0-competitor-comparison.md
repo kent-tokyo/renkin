@@ -1,4 +1,9 @@
-# v1.0.1 Formal Route-to-Stock Competitor Benchmark
+# Historical v1.0.1 Formal Route-to-Stock Competitor Benchmark
+
+> This page records the earlier 4,903-target v1.0.1 arm. It is retained as
+> historical evidence. The current formal comparison is the VAL-200 report
+> published at
+> `data/comparison/formal_v1.0.3_candidate_20260908/formal_200_native_rstock_combined_v2_20260908/FORMAL_BENCHMARK_REPORT.md`.
 
 Status: **comparison complete; statistical superiority PASS; formal publication
 gate PASS for the corrected v1.0.1 arm**.

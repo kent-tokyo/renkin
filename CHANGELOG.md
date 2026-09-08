@@ -8,6 +8,90 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+No unreleased changes.
+
+## [1.0.4] - 2026-09-08 "Native Search and Documentation Refresh"
+
+### Documentation
+- Published the formal 2026-09-08 VAL-200 AiZynthFinder comparison: native
+  `route_found` parity at 134/200, and strict shared-stock validation at
+  134/200 for RENKIN versus 123/200 for AiZynthFinder. Historical benchmark
+  pages remain explicitly labeled as historical.
+- Consolidated current benchmark links across the English, Japanese, Chinese,
+  MkDocs index, and staged-recovery guide. Removed two unreferenced stale
+  planning/comparison memos from `tasks/`.
+
+### Changed
+- Added a combined strict stock-terminal comparison metric: multi-step routes
+  must pass the common structural validator and stock check, while a
+  stock-confirmed depth-zero route remains a valid direct-purchase result with
+  no reaction to element-account. The paired report now makes this metric
+  primary and keeps stock-only/tool-native rates visible as secondary axes.
+- Extended the shared-process comparison runner with aggregate and start/end
+  manifest outputs, including binary/input hashes and the bounded search
+  budget. Unsolved rows now emit a schema-correct null tool-reported route
+  count rather than zero. This arm remains throughput evidence and does not
+  claim isolated per-target RSS or cross-tool process latency.
+- Fixed WASM compilation of the static TemplatePolicy, RetroGenerator, and
+  ValueModel modules by excluding only their file-backed native loaders and
+  imports. The model-independent interfaces remain available to WASM.
+- Extended prepared-template prefiltering with conservative explicit bond-order
+  and aromatic/aliphatic atom-class lower bounds. Ambiguous, implicit,
+  directional, compound-query, and ring-closure expressions continue to fail
+  open. Cheap inventory screening now runs before Rayon reaction jobs; target
+  inventories use inline sort/run-length encoding, step-cost calculation no
+  longer allocates a temporary precursor vector, and duplicate diagnostics
+  borrow precursor strings instead of cloning them.
+- Parallelized exact default SA-score precomputation for independent unseen,
+  non-stock precursors on native untimed searches. Timed searches, custom value
+  estimators, forbidden-element searches, and WASM retain the serial on-demand
+  path so cancellation and model-call contracts remain unchanged.
+- On a fixed local 10-target, 5,000-template, depth-2, beam-100 release smoke,
+  the original three-run baseline mean was 725.63 ms/target. Exact parallel SA
+  precomputation measured 349.96 ms/target over the first five runs. A later
+  seven-run rebuild under higher background load measured 393.72 ms/target
+  (median 381.31 ms), still 40.69% below the preceding 663.82 result and 45.74%
+  below the original baseline. Solved count (1/10),
+  mean expanded nodes (29), cache hits/misses (18/272), raw candidates (21,661),
+  and deduplicated candidate signatures (14,700; diagnostics only) were
+  unchanged in every final run. This is a local search smoke, not a matched
+  AiZynthFinder latency result.
+- In a fixed 40-target full-search A/B, parallel SA precomputation reduced the
+  summed target search time from 328.07 s to 105.77 s (67.8%); all 40 targets
+  were faster and route hashes, expanded nodes, and candidate counts matched.
+  A separate shared-process VAL-200 run produced 128/200 strict stock-terminal
+  successes versus 123/200 in the fixed AiZynthFinder 4.4.1 rows (+2.5 pp,
+  95% paired bootstrap CI -4.5 to +9.5 pp, McNemar p=0.576). This is not
+  evidence of statistical or isolated-latency superiority.
+- Reused the unchanged parent-frontier heuristic contribution across sibling
+  children, while preserving the exact left-to-right floating-point fold for
+  newly appended precursors. On the same fixed 40-target arm this reduced
+  summed search time from 105.77 s to 99.86 s (5.6%); route hashes, expanded
+  nodes, and candidate counts were unchanged.
+- Removed redundant parse/standardize/canonicalize work from generated
+  precursor stock misses. The externally supplied root is resolved once from
+  its parsed molecule; descendants already carry the canonical identity
+  produced by the stock standardization pipeline. The fixed 40-target arm fell
+  from 99.86 s to 74.09 s (25.8%), with all 40 targets faster, p50/p95 moving
+  from 1.219/8.564 s to 0.980/5.983 s, and identical success, route hashes,
+  expanded nodes, and candidate counts. Relative to the original serial-SA
+  arm, summed target time is 77.4% lower. These are shared-process throughput
+  measurements, not an isolated cross-tool latency claim.
+- Standardized and interned direct-generator precursors before frontier
+  insertion, removing a latent missing-molecule-cache failure while aligning
+  generated proposals with native stock identity semantics.
+- Rejected two measured allocation experiments: Arc-backed path targets were
+  0.14% slower and dropping the negative stock cache was 3.39% slower on the
+  fixed 40-target arm. Neither experiment remains in the implementation.
+- Rejected two further exact-SA experiments on the same fixed 40-target arm.
+  A conservative beam lower/upper-bound screen increased summed search time
+  from the accepted 74.09 s reference to 87.61 s; on the first target it
+  avoided only 28 of 975 eventual beam evictions. A bounded cross-target SA
+  cache measured 77.68 s. Both preserved all route hashes, expanded-node
+  counts, and candidate counts, but neither remains in the implementation.
+  These non-adjacent local screens guide optimization work; they are not
+  formal latency comparisons.
+
 ## [1.0.3] - 2026-09-07 "Template Expansion Performance"
 
 ### Added
@@ -2289,7 +2373,8 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
 
 ---
 
-[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v1.0.3...HEAD
+[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v1.0.4...HEAD
+[1.0.4]: https://github.com/kent-tokyo/renkin/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/kent-tokyo/renkin/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/kent-tokyo/renkin/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/kent-tokyo/renkin/compare/v1.0.0...v1.0.1

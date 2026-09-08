@@ -2,7 +2,9 @@ use std::collections::BinaryHeap;
 use std::sync::{Arc, OnceLock};
 
 use anyhow::{Result, bail};
-use chematic::chem::{molecular_weight, sa_score};
+use chematic::chem::{molecular_weight, sa_score, standardize};
+#[cfg(not(target_arch = "wasm32"))]
+use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
 use serde::Serialize;
 use smallvec::{SmallVec, smallvec};
@@ -13,7 +15,7 @@ use crate::chem_env::{
 };
 use crate::evidence::{EvidenceScope, MetadataSource, StepEvidence, TemplateMetadataEntry};
 use crate::retro_generator::{RetroGenerationContext, RetroGenerator};
-use crate::score::{step_cost, template_bonus};
+use crate::score::{step_cost_iter, template_bonus};
 use crate::spectator_bond::SpectatorBondPolicy;
 use crate::synthesizability::{ElementAccountingStatus, compute_element_accounting};
 
@@ -904,31 +906,81 @@ pub(crate) fn elem_mask_from_smiles(smiles: &str) -> u64 {
 /// an already parsed molecule. Search expansions retain the molecule alongside
 /// its canonical SMILES, so callers in that hot path should not reparse or
 /// rescan the string to prefilter templates.
-pub(crate) fn element_inventory_from_molecule(mol: &Molecule) -> (u64, [u16; 64], Vec<(u16, u16)>) {
+pub(crate) struct MoleculeInventory {
+    pub(crate) element_mask: u64,
+    pub(crate) element_counts: [u16; 64],
+    pub(crate) aromatic_element_counts: [u16; 64],
+    pub(crate) aliphatic_element_counts: [u16; 64],
+    pub(crate) bond_counts: SmallVec<[(u16, u16); 24]>,
+    pub(crate) typed_bond_counts: SmallVec<[(u16, u16); 24]>,
+    pub(crate) atom_count: usize,
+    pub(crate) bond_count: usize,
+}
+
+pub(crate) fn element_inventory_from_molecule(mol: &Molecule) -> MoleculeInventory {
     let mut counts = [0u16; 64];
+    let mut aromatic_counts = [0u16; 64];
+    let mut aliphatic_counts = [0u16; 64];
     let mask = mol.atoms().fold(0u64, |mask, (atom_idx, _)| {
-        let atomic_number = mol.atom(atom_idx).element.atomic_number() as usize;
+        let atom = mol.atom(atom_idx);
+        let atomic_number = atom.element.atomic_number() as usize;
         if atomic_number < counts.len() {
             counts[atomic_number] = counts[atomic_number].saturating_add(1);
+            let class_counts = if atom.aromatic {
+                &mut aromatic_counts
+            } else {
+                &mut aliphatic_counts
+            };
+            class_counts[atomic_number] = class_counts[atomic_number].saturating_add(1);
             mask | (1u64 << atomic_number)
         } else {
             mask
         }
     });
-    let mut bond_counts: FxHashMap<u16, u16> = FxHashMap::default();
+    // Typical drug-like targets have only a few dozen distinct bond
+    // signatures. Collect keys inline, then sort/run-length encode them;
+    // this avoids constructing and hashing two maps for every expanded
+    // molecule while producing the same sorted lookup representation.
+    let mut bond_keys: SmallVec<[u16; 64]> = SmallVec::new();
+    let mut typed_bond_keys: SmallVec<[u16; 64]> = SmallVec::new();
     for (_, bond) in mol.bonds() {
         let a = mol.atom(bond.atom1).element.atomic_number();
         let b = mol.atom(bond.atom2).element.atomic_number();
         if a < 64 && b < 64 {
             let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
             let key = ((lo as u16) << 6) | hi as u16;
-            let count = bond_counts.entry(key).or_default();
-            *count = count.saturating_add(1);
+            bond_keys.push(key);
+            if let Some(key) = crate::chem_env::typed_bond_count_key(a, b, bond.order) {
+                typed_bond_keys.push(key);
+            }
         }
     }
-    let mut bond_counts: Vec<_> = bond_counts.into_iter().collect();
-    bond_counts.sort_unstable_by_key(|&(key, _)| key);
-    (mask, counts, bond_counts)
+    fn count_sorted(mut keys: SmallVec<[u16; 64]>) -> SmallVec<[(u16, u16); 24]> {
+        keys.sort_unstable();
+        let mut counts: SmallVec<[(u16, u16); 24]> = SmallVec::new();
+        for key in keys {
+            if let Some((last_key, count)) = counts.last_mut()
+                && *last_key == key
+            {
+                *count = count.saturating_add(1);
+            } else {
+                counts.push((key, 1));
+            }
+        }
+        counts
+    }
+    let bond_counts = count_sorted(bond_keys);
+    let typed_bond_counts = count_sorted(typed_bond_keys);
+    MoleculeInventory {
+        element_mask: mask,
+        element_counts: counts,
+        aromatic_element_counts: aromatic_counts,
+        aliphatic_element_counts: aliphatic_counts,
+        bond_counts,
+        typed_bond_counts,
+        atom_count: mol.atom_count(),
+        bond_count: mol.bonds().count(),
+    }
 }
 
 /// Hash the sorted frontier SMILES into a u64 for closed-set deduplication.
@@ -950,11 +1002,11 @@ fn state_hash(frontier: &[FEntry]) -> u64 {
 
 /// Stock-membership lookup memoized for one search run.
 ///
-/// Generated frontier entries are already canonical, but entries that miss
-/// the direct set lookup still need the comparatively expensive shared-policy
-/// parse/standardize fallback. The same intermediate is commonly inspected
-/// by the frontier scan, heuristic, and forbidden-element filter, so memoize
-/// only those fallback results. Direct stock hits remain allocation-free.
+/// Every generated frontier entry is already standardized and canonicalized
+/// with the stock-identity policy. The one externally supplied root entry is
+/// inserted into `cache` from its parsed molecule before search starts. A
+/// direct set miss can therefore be cached as `false` without reparsing and
+/// restandardizing the same canonical SMILES on the hot path.
 fn is_bb_cached(smiles: &str, env: &ChemEnv, cache: &mut FxHashMap<String, bool>) -> bool {
     if env.is_building_block_smiles(smiles) {
         return true;
@@ -962,11 +1014,8 @@ fn is_bb_cached(smiles: &str, env: &ChemEnv, cache: &mut FxHashMap<String, bool>
     if let Some(&cached) = cache.get(smiles) {
         return cached;
     }
-    let result = canonical_stock_identity_from_smiles(smiles)
-        .map(|canon| env.is_building_block_smiles(&canon))
-        .unwrap_or(false);
-    cache.insert(smiles.to_owned(), result);
-    result
+    cache.insert(smiles.to_owned(), false);
+    false
 }
 
 /// Pluggable molecule value estimator for the A* heuristic (Retro*-style).
@@ -1264,6 +1313,39 @@ impl ReactionPrior for FrequencyPrior {
     }
 }
 
+fn accumulate_h<'a>(
+    entries: impl Iterator<Item = (&'a str, &'a Molecule)>,
+    initial: f64,
+    env: &ChemEnv,
+    sa_cache: &mut FxHashMap<String, f64>,
+    bb_cache: &mut FxHashMap<String, bool>,
+    estimator: Option<&std::sync::Arc<dyn MoleculeValueEstimator>>,
+) -> f64 {
+    let mut total = initial;
+    for (smiles, molecule) in entries {
+        if is_bb_cached(smiles, env, bb_cache) {
+            continue;
+        }
+        let value = if let Some(est) = estimator
+            && let Some(value) = est.estimate_cost_checked(smiles)
+        {
+            value
+        } else {
+            // Default: SA Score (cached)
+            let score = if let Some(&score) = sa_cache.get(smiles) {
+                score
+            } else {
+                let score = sa_score(molecule).clamp(1.0, 10.0);
+                sa_cache.insert(smiles.to_owned(), score);
+                score
+            };
+            1.0 + 0.5 * (score - 1.0) / 9.0
+        };
+        total += value;
+    }
+    total
+}
+
 fn compute_h(
     frontier: &[FEntry],
     env: &ChemEnv,
@@ -1271,24 +1353,68 @@ fn compute_h(
     bb_cache: &mut FxHashMap<String, bool>,
     estimator: Option<&std::sync::Arc<dyn MoleculeValueEstimator>>,
 ) -> f64 {
-    frontier
+    accumulate_h(
+        frontier
+            .iter()
+            .map(|entry| (entry.smiles.as_ref(), entry.mol.as_ref())),
+        0.0,
+        env,
+        sa_cache,
+        bb_cache,
+        estimator,
+    )
+}
+
+/// Precompute expensive default SA scores in parallel before the serial child
+/// materialization loop. The loop otherwise discovers new precursor molecules
+/// one at a time and runs ring perception on the main thread, even though each
+/// molecule's score is independent. Stock checks remain serial and use the
+/// same cache as [`compute_h`]; only genuinely unseen, non-stock molecules are
+/// submitted to Rayon.
+///
+/// Small batches stay on the established on-demand path because Rayon setup
+/// costs more than it saves there. Timed searches and custom value estimators
+/// deliberately do not call this helper: eager batch work would weaken their
+/// cancellation/call-count contracts.
+#[cfg(not(target_arch = "wasm32"))]
+fn precompute_default_sa_scores(
+    entries: &[RetroEntry],
+    molecule_cache: &FxHashMap<Arc<str>, Arc<Molecule>>,
+    env: &ChemEnv,
+    sa_cache: &mut FxHashMap<String, f64>,
+    bb_cache: &mut FxHashMap<String, bool>,
+) {
+    const PARALLEL_SA_THRESHOLD: usize = 8;
+
+    let mut seen: FxHashSet<&str> = FxHashSet::default();
+    let mut pending: Vec<(Arc<str>, Arc<Molecule>)> = Vec::new();
+    for smiles in entries
         .iter()
-        .filter(|e| !is_bb_cached(&e.smiles, env, bb_cache))
-        .map(|e| {
-            if let Some(est) = estimator
-                && let Some(value) = est.estimate_cost_checked(&e.smiles)
-            {
-                return value;
-            }
-            // Default: SA Score (cached)
-            if let Some(&v) = sa_cache.get(e.smiles.as_ref()) {
-                return 1.0 + 0.5 * (v - 1.0) / 9.0;
-            }
-            let v = sa_score(&e.mol).clamp(1.0, 10.0);
-            sa_cache.insert(e.smiles.to_string(), v);
-            1.0 + 0.5 * (v - 1.0) / 9.0
-        })
-        .sum()
+        .flat_map(|entry| entry.precursor_smiles.iter())
+    {
+        let smiles_ref = smiles.as_ref();
+        if !seen.insert(smiles_ref)
+            || sa_cache.contains_key(smiles_ref)
+            || is_bb_cached(smiles_ref, env, bb_cache)
+        {
+            continue;
+        }
+        let molecule = molecule_cache
+            .get(smiles)
+            .expect("every generated precursor must be interned before SA precomputation");
+        pending.push((Arc::clone(smiles), Arc::clone(molecule)));
+    }
+    if pending.len() < PARALLEL_SA_THRESHOLD {
+        return;
+    }
+
+    let scores: Vec<(Arc<str>, f64)> = pending
+        .par_iter()
+        .map(|(smiles, molecule)| (Arc::clone(smiles), sa_score(molecule).clamp(1.0, 10.0)))
+        .collect();
+    for (smiles, score) in scores {
+        sa_cache.insert(smiles.to_string(), score);
+    }
 }
 
 /// Classify a rule name into a human-readable reaction family.
@@ -1562,6 +1688,7 @@ fn direct_generator_entries(
     generator: &dyn RetroGenerator,
     target: &str,
     depth: u32,
+    molecule_cache: &mut FxHashMap<Arc<str>, Arc<Molecule>>,
 ) -> Vec<RetroEntry> {
     let context = RetroGenerationContext {
         depth,
@@ -1577,6 +1704,7 @@ fn direct_generator_entries(
             let mut precursors = Vec::with_capacity(proposal.precursors.len());
             for smiles in proposal.precursors {
                 let mol = mol_from_smiles(&smiles).ok()?;
+                let mol = standardize(&mol, &crate::chem_env::STANDARDIZE_OPTS);
                 let canonical = to_canonical(&mol);
                 if canonical == target {
                     return None;
@@ -1586,10 +1714,16 @@ fn direct_generator_entries(
                     mol,
                 });
             }
-            let step_cost = step_cost(&precursors.iter().map(|p| &p.mol).collect::<Vec<_>>());
+            let step_cost = step_cost_iter(precursors.iter().map(|p| &p.mol));
             let precursor_smiles = precursors
                 .into_iter()
-                .map(|precursor| Arc::<str>::from(precursor.smiles))
+                .map(|precursor| {
+                    let smiles = Arc::<str>::from(precursor.smiles);
+                    molecule_cache
+                        .entry(Arc::clone(&smiles))
+                        .or_insert_with(|| Arc::new(precursor.mol));
+                    smiles
+                })
                 .collect();
             Some(RetroEntry {
                 rule_name: "direct_generator".to_owned(),
@@ -1928,14 +2062,14 @@ fn dedup_counts(entries: &[RetroEntry]) -> (u64, u64, u64) {
     let mut cross_template_duplicates = 0u64;
     // Keyed by (template_id, sorted precursor signature): collapses only
     // exact same-template repeats.
-    let mut seen_same_template: FxHashSet<(&str, Vec<String>)> = FxHashSet::default();
+    let mut seen_same_template: FxHashSet<(&str, SmallVec<[&str; 4]>)> = FxHashSet::default();
     // Keyed by sorted precursor signature alone: collapses regardless of template.
-    let mut seen_cross_template: FxHashMap<Vec<String>, &str> = FxHashMap::default();
+    let mut seen_cross_template: FxHashMap<SmallVec<[&str; 4]>, &str> = FxHashMap::default();
     for e in entries {
-        let mut sig: Vec<String> = e
+        let mut sig: SmallVec<[&str; 4]> = e
             .precursor_smiles
             .iter()
-            .map(|precursor| precursor.to_string())
+            .map(|precursor| precursor.as_ref())
             .collect();
         sig.sort_unstable();
         seen_same_template.insert((e.template_id.as_str(), sig.clone()));
@@ -2711,6 +2845,11 @@ pub(crate) fn find_routes_with_control_prepared(
     let mut heap: BinaryHeap<Node> = BinaryHeap::new();
     let mut sa_cache: FxHashMap<String, f64> = FxHashMap::default();
     let mut bb_cache: FxHashMap<String, bool> = FxHashMap::default();
+    // The root comes from external text and may be canonical but not yet
+    // standardized according to the stock identity policy. Resolve it once
+    // from the already-parsed molecule; every generated descendant is
+    // standardized before it enters the frontier.
+    bb_cache.insert(target_canonical.clone(), env.is_building_block(&target_mol));
     let target_smiles_arc: Arc<str> = Arc::from(target_canonical.as_str());
     let target_mol_arc = Arc::new(target_mol);
     let mut molecule_cache: FxHashMap<Arc<str>, Arc<Molecule>> = FxHashMap::default();
@@ -2984,9 +3123,7 @@ pub(crate) fn find_routes_with_control_prepared(
                     } else {
                         template_bonus(p.rule_weight, max_rule_weight)
                     };
-                    let step_c =
-                        step_cost(&p.precursors.iter().map(|pm| &pm.mol).collect::<Vec<_>>())
-                            - bonus;
+                    let step_c = step_cost_iter(p.precursors.iter().map(|pm| &pm.mol)) - bonus;
                     let mut precursor_smiles = Vec::with_capacity(p.precursors.len());
                     for precursor in p.precursors {
                         let smiles: Arc<str> = Arc::from(precursor.smiles);
@@ -3004,11 +3141,37 @@ pub(crate) fn find_routes_with_control_prepared(
                 })
                 .collect();
 
+            // Default unlimited native searches can score the independent
+            // unseen precursor molecules concurrently. This leaves every
+            // score and the later frontier-order summation unchanged; it only
+            // moves the expensive molecule-local SA/ring work off the serial
+            // child loop. Timed searches retain their per-candidate
+            // cancellation cadence, and custom estimators retain their
+            // historical call behavior.
+            #[cfg(not(target_arch = "wasm32"))]
+            if config.value_estimator.is_none()
+                && config.forbidden_elements == 0
+                && control.deadline.is_none()
+            {
+                precompute_default_sa_scores(
+                    &entries,
+                    &molecule_cache,
+                    env,
+                    &mut sa_cache,
+                    &mut bb_cache,
+                );
+            }
+
             // Optional direct-generator arm. It augments, rather than
             // replaces, native rule proposals so an external model cannot
             // silently narrow RENKIN's established candidate space.
             if let Some(generator) = config.retro_generator.as_deref() {
-                entries.extend(direct_generator_entries(generator, target_smi, node.depth));
+                entries.extend(direct_generator_entries(
+                    generator,
+                    target_smi,
+                    node.depth,
+                    &mut molecule_cache,
+                ));
             }
 
             // Account for duplicate outcomes before the child loop. Exact
@@ -3048,6 +3211,28 @@ pub(crate) fn find_routes_with_control_prepared(
             depth_entry.nodes_expanded += 1;
             depth_entry.children_produced += expansions.len() as u64;
         }
+
+        // Every child keeps the same parent-frontier entries except the
+        // molecule being expanded. Their heuristic contribution is therefore
+        // invariant across this whole expansion batch. Compute that prefix
+        // once, then continue the exact same left-to-right floating-point fold
+        // over each child's appended precursors. Custom estimators retain the
+        // historical full-frontier call behavior because they may be stateful.
+        let retained_default_h = if config.value_estimator.is_none() {
+            Some(accumulate_h(
+                node.frontier
+                    .iter()
+                    .filter(|entry| entry.smiles.as_ref() != target_smi)
+                    .map(|entry| (entry.smiles.as_ref(), entry.mol.as_ref())),
+                0.0,
+                env,
+                &mut sa_cache,
+                &mut bb_cache,
+                None,
+            ))
+        } else {
+            None
+        };
 
         let mut seen_same_template: FxHashSet<(&str, SmallVec<[&str; 4]>)> = FxHashSet::default();
         let mut seen_cross_template: FxHashSet<SmallVec<[&str; 4]>> = FxHashSet::default();
@@ -3109,13 +3294,29 @@ pub(crate) fn find_routes_with_control_prepared(
                 }))
                 .collect();
 
-            let new_h = compute_h(
-                &new_frontier,
-                env,
-                &mut sa_cache,
-                &mut bb_cache,
-                config.value_estimator.as_ref(),
-            );
+            let new_h = if let Some(retained_h) = retained_default_h {
+                accumulate_h(
+                    entry.precursor_smiles.iter().map(|smiles| {
+                        let molecule = molecule_cache
+                            .get(smiles)
+                            .expect("every generated precursor must be interned");
+                        (smiles.as_ref(), molecule.as_ref())
+                    }),
+                    retained_h,
+                    env,
+                    &mut sa_cache,
+                    &mut bb_cache,
+                    None,
+                )
+            } else {
+                compute_h(
+                    &new_frontier,
+                    env,
+                    &mut sa_cache,
+                    &mut bb_cache,
+                    config.value_estimator.as_ref(),
+                )
+            };
 
             // Retain only a compact reference to the proposal here. Most
             // children are later evicted by the beam, so materializing their
@@ -3431,6 +3632,89 @@ mod tests {
         assert_eq!(checked, fallback);
         assert!(checked.is_finite());
         assert!(checked >= 0.0);
+    }
+
+    #[test]
+    fn incremental_default_heuristic_is_bit_exact_with_full_frontier_fold() {
+        let env = ChemEnv::in_memory(&["CC"]);
+        let make_entry = |smiles: &str| FEntry {
+            smiles: Arc::from(smiles),
+            mol: Arc::new(mol_from_smiles(smiles).unwrap()),
+        };
+        let retained = [make_entry("CCO"), make_entry("CC"), make_entry("CCC")];
+        let precursors = [make_entry("CCN"), make_entry("c1ccccc1")];
+        let full: Vec<FEntry> = retained.iter().chain(precursors.iter()).cloned().collect();
+
+        let mut full_sa_cache = FxHashMap::default();
+        let mut full_bb_cache = FxHashMap::default();
+        let full_h = compute_h(&full, &env, &mut full_sa_cache, &mut full_bb_cache, None);
+
+        let mut incremental_sa_cache = FxHashMap::default();
+        let mut incremental_bb_cache = FxHashMap::default();
+        let retained_h = accumulate_h(
+            retained
+                .iter()
+                .map(|entry| (entry.smiles.as_ref(), entry.mol.as_ref())),
+            0.0,
+            &env,
+            &mut incremental_sa_cache,
+            &mut incremental_bb_cache,
+            None,
+        );
+        let incremental_h = accumulate_h(
+            precursors
+                .iter()
+                .map(|entry| (entry.smiles.as_ref(), entry.mol.as_ref())),
+            retained_h,
+            &env,
+            &mut incremental_sa_cache,
+            &mut incremental_bb_cache,
+            None,
+        );
+
+        assert_eq!(incremental_h.to_bits(), full_h.to_bits());
+        assert_eq!(incremental_sa_cache, full_sa_cache);
+        assert_eq!(incremental_bb_cache, full_bb_cache);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn parallel_sa_precompute_matches_direct_scores_and_skips_stock() {
+        let env = ChemEnv::in_memory(&["CC"]);
+        let smiles = [
+            "CC", "CCO", "CCN", "CCC", "CCCC", "CCOC", "CCCl", "CC(=O)O", "c1ccccc1",
+        ];
+        let mut molecule_cache = FxHashMap::default();
+        let mut entries = Vec::new();
+        for (index, smiles) in smiles.iter().enumerate() {
+            let key: Arc<str> = Arc::from(*smiles);
+            molecule_cache.insert(Arc::clone(&key), Arc::new(mol_from_smiles(smiles).unwrap()));
+            entries.push(RetroEntry {
+                rule_name: format!("rule-{index}"),
+                template_id: format!("rule:{index}"),
+                step_cost: 1.0,
+                precursor_smiles: vec![key],
+            });
+        }
+
+        let mut sa_cache = FxHashMap::default();
+        let mut bb_cache = FxHashMap::default();
+        precompute_default_sa_scores(
+            &entries,
+            &molecule_cache,
+            &env,
+            &mut sa_cache,
+            &mut bb_cache,
+        );
+
+        assert!(
+            !sa_cache.contains_key("CC"),
+            "stock must not need an SA score"
+        );
+        for smiles in &smiles[1..] {
+            let expected = sa_score(molecule_cache.get(*smiles).unwrap()).clamp(1.0, 10.0);
+            assert_eq!(sa_cache.get(*smiles), Some(&expected));
+        }
     }
 
     #[test]
@@ -4910,11 +5194,25 @@ mod tests {
             }
         }
 
-        let entries = direct_generator_entries(&FixtureGenerator, "CCO", 0);
+        let mut molecule_cache = FxHashMap::default();
+        let entries = direct_generator_entries(&FixtureGenerator, "CCO", 0, &mut molecule_cache);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].rule_name, "direct_generator");
         assert_eq!(entries[0].template_id, "generator:fixture:fixture-1");
         assert_eq!(entries[0].precursor_smiles, vec![Arc::<str>::from("CC")]);
+        assert!(molecule_cache.contains_key("CC"));
+    }
+
+    #[test]
+    fn generated_stock_miss_does_not_restandardize_canonical_smiles() {
+        let env = ChemEnv::in_memory(&["CCO"]);
+        let mut cache = FxHashMap::default();
+        let ethane = canonical_stock_identity_from_smiles("CC").unwrap();
+        let ethanol = canonical_stock_identity_from_smiles("CCO").unwrap();
+
+        assert!(!is_bb_cached(&ethane, &env, &mut cache));
+        assert_eq!(cache.get(&ethane), Some(&false));
+        assert!(is_bb_cached(&ethanol, &env, &mut cache));
     }
 
     #[test]

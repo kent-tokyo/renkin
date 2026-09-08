@@ -142,7 +142,7 @@ OC(=O)c1ccccc1OC(=O)C
 
 ## 現在の制約
 
-現行リリースは **v1.0.2** です。
+現行リリースは **v1.0.4** です。
 
 ⚠️ 修正版v1.0.1の4,903-target shared-stock比較は完了しました。RENKINは591/4,903（12.05%）、AiZynthFinder 4.4.1は200/4,903（4.08%）で、paired差は+7.975 percentage points、95% CIは[+7.098,+8.852]です。v1.0.1全件armはintegrity verificationを通過し、統計的優越性gate・正式公開gateともにPASSです。これは宣言済みshared-stock endpointでの結果であり、一般的なCASP優越性の主張ではありません。このリポジトリの他箇所にある78.0%/95.9%/81.8%(ChEMBL)はvalidator修正前の値であり無効化されています。RENKINは収率・実験的に較正された成功確率・副反応を予測せず、文献の自動検索も行いません（`success_probability`はtemplate頻度由来の探索スコアであり、較正された予測値ではありません）。
 
@@ -394,6 +394,14 @@ CC-BY-SA-4.0であり、RENKIN本体コードのMITとは別ライセンスで�
 USPTO-50kテストセット（全4,907分子評価）:
 
 > **評価定義**: `find_routes` がbuilding block集合に含まれる末端precursorのみで構成される経路を depth=5・beam=100 以内で1件以上見つけられれば solved。USPTO-50k の正解試薬とは照合しない。
+
+### 現行の正式VAL-200比較（2026-09-08）
+
+固定したVAL-200 shared-stock再測定では、native route_foundはRENKINと
+AiZynthFinder 4.4.1がともに**134/200（67.0%）**でした。共通validatorと
+stockを通すstrict指標ではRENKIN **134/200（67.0%）**、AiZynthFinder
+**123/200（61.5%）**で、点推定差は+5.5ppです。固定cohortでの結果であり、
+普遍的な優越性や実験収率を意味しません。[正式レポート](data/comparison/formal_v1.0.3_candidate_20260908/formal_200_native_rstock_combined_v2_20260908/FORMAL_BENCHMARK_REPORT.md)
 
 ### v1.0.1正式shared-stock比較（4,903件のpaired target）
 

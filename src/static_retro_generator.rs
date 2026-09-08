@@ -5,19 +5,27 @@
 //! routes; callers still need the normal RENKIN chemistry and stock gates.
 
 use std::collections::HashMap;
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
 
+#[cfg(not(target_arch = "wasm32"))]
 use anyhow::{Context, Result, bail};
+#[cfg(not(target_arch = "wasm32"))]
 use serde::Deserialize;
+#[cfg(not(target_arch = "wasm32"))]
 use sha2::{Digest, Sha256};
 
+#[cfg(not(target_arch = "wasm32"))]
 use crate::model_manifest::{ModelKind, ModelManifest, load_model_manifest};
 use crate::retro_generator::{
     RetroGenerationContext, RetroGenerator, RetroGeneratorDecision, RetroProposal,
-    validate_chemistry, validate_decision,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use crate::retro_generator::{validate_chemistry, validate_decision};
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct StaticRetroArtifact {

@@ -4,7 +4,7 @@
 //! draft schema vendored at `tests/fixtures/mcp/2026-07-28-rc/` — see that
 //! directory's README for exact provenance (commit, SHA-256, license).
 
-use crate::mcp::{jsonrpc, tools};
+use crate::mcp::{audit_receipt::AuditReceipt, jsonrpc, tools};
 use serde_json::{Value, json};
 
 pub const LEGACY_PROTOCOL_VERSION: &str = "2024-11-05";
@@ -140,13 +140,19 @@ impl McpServer {
 
     fn dispatch_modern_method(&self, id: Value, method: &str, params: &Value) -> Value {
         match method {
-            "server/discover" => jsonrpc::result_response(id, self.wrap_modern(discover_result())),
-            "tools/list" => {
-                jsonrpc::result_response(id, self.wrap_modern(modern_tools_list_result()))
+            "server/discover" => {
+                jsonrpc::result_response(id, self.wrap_modern(discover_result(), None))
             }
-            "tools/call" => match modern_tools_call(params) {
+            "tools/list" => {
+                jsonrpc::result_response(id, self.wrap_modern(modern_tools_list_result(), None))
+            }
+            "tools/call" => match modern_tools_call(id.clone(), params) {
                 Ok(outcome) => {
-                    jsonrpc::result_response(id, self.wrap_modern(outcome.to_modern_value()))
+                    let (outcome, receipt) = outcome;
+                    jsonrpc::result_response(
+                        id,
+                        self.wrap_modern(outcome.to_modern_value(), Some(receipt)),
+                    )
                 }
                 Err((code, message, data)) => jsonrpc::error_response(id, code, &message, data),
             },
@@ -158,7 +164,7 @@ impl McpServer {
     /// a handler-produced result object without disturbing any other key the
     /// handler set. Never applied to error responses — the 2026-07-28 schema
     /// gives `JSONRPCErrorResponse` no `_meta` field at all.
-    fn wrap_modern(&self, mut result: Value) -> Value {
+    fn wrap_modern(&self, mut result: Value, receipt: Option<AuditReceipt>) -> Value {
         let obj = result
             .as_object_mut()
             .expect("modern result builders always return a JSON object");
@@ -169,6 +175,9 @@ impl McpServer {
             *meta = json!({});
         }
         meta["io.modelcontextprotocol/serverInfo"] = self.server_info();
+        if let Some(receipt) = receipt {
+            meta[AuditReceipt::meta_key()] = receipt.to_value();
+        }
         result
     }
 }
@@ -305,7 +314,10 @@ fn validate_modern_meta(params: &Value) -> Result<(), ProtocolError> {
 /// predates checking the schema against blog/SDK guesses. Legacy clients use
 /// the same fail-closed validation but receive a legacy tool-level error
 /// envelope, while modern clients receive protocol-level `Invalid Params`.
-fn modern_tools_call(params: &Value) -> Result<tools::ToolOutcome, ProtocolError> {
+fn modern_tools_call(
+    id: Value,
+    params: &Value,
+) -> Result<(tools::ToolOutcome, AuditReceipt), ProtocolError> {
     let name = params.get("name").and_then(Value::as_str).ok_or_else(|| {
         (
             jsonrpc::INVALID_PARAMS,
@@ -331,7 +343,24 @@ fn modern_tools_call(params: &Value) -> Result<tools::ToolOutcome, ProtocolError
     let smiles = args["smiles"]
         .as_str()
         .expect("validate_modern_args guarantees a required string \"smiles\"");
-    Ok((def.handler)(smiles, &args))
+    let outcome = (def.handler)(smiles, &args);
+    let result = outcome.to_modern_value();
+    let meta = params.get("_meta").unwrap_or(&Value::Null);
+    let task_id = id
+        .as_str()
+        .map(str::to_owned)
+        .unwrap_or_else(|| id.to_string());
+    let receipt = AuditReceipt::new(
+        task_id,
+        crate::mcp::audit_receipt::string_meta(meta, "io.renkin/parentTaskId"),
+        name,
+        VERSION,
+        crate::mcp::audit_receipt::string_meta(meta, "io.renkin/model"),
+        &args,
+        &result,
+        outcome.is_error,
+    );
+    Ok((outcome, receipt))
 }
 
 #[cfg(test)]
@@ -570,6 +599,45 @@ mod tests {
             text.starts_with("search error:"),
             "expected the mol_from_smiles parse failure to surface as a search error, got: {text}"
         );
+        assert_eq!(
+            resp["result"]["_meta"][AuditReceipt::meta_key()]["status"],
+            "failure"
+        );
+        assert_eq!(
+            resp["result"]["_meta"][AuditReceipt::meta_key()]["failureCode"],
+            "tool_error"
+        );
+    }
+
+    #[test]
+    fn modern_tool_call_emits_redacted_parent_linked_audit_receipt() {
+        let mut s = McpServer::new();
+        let mut params = modern_meta();
+        params["_meta"]["io.renkin/parentTaskId"] = json!("parent-1");
+        params["_meta"]["io.renkin/model"] = json!("test-model");
+        params["name"] = json!("find_routes");
+        params["arguments"] = json!({"smiles": "CCO", "depth": 1, "max_routes": 1});
+        let resp = s.handle(&req(7, "tools/call", params)).unwrap();
+        let receipt = &resp["result"]["_meta"][AuditReceipt::meta_key()];
+        assert_eq!(receipt["schemaVersion"], 1);
+        assert_eq!(receipt["taskId"], "7");
+        assert_eq!(receipt["parentTaskId"], "parent-1");
+        assert_eq!(receipt["tool"], "find_routes");
+        assert_eq!(receipt["model"], "test-model");
+        assert_eq!(receipt["status"], "success");
+        assert!(
+            receipt["argumentsSha256"]
+                .as_str()
+                .unwrap()
+                .starts_with("sha256:")
+        );
+        assert!(
+            receipt["resultSha256"]
+                .as_str()
+                .unwrap()
+                .starts_with("sha256:")
+        );
+        assert!(!receipt.to_string().contains("CCO"));
     }
 
     #[test]

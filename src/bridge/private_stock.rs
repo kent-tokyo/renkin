@@ -30,6 +30,10 @@ pub struct PrivateStockPolicy {
     pub max_lead_time_days: Option<u32>,
     #[serde(default)]
     pub blocked_hazards: Vec<String>,
+    #[serde(default)]
+    pub allowed_regions: Vec<String>,
+    #[serde(default)]
+    pub blocked_regions: Vec<String>,
     #[serde(default = "default_require_available")]
     pub require_available: bool,
     #[serde(default)]
@@ -57,6 +61,8 @@ pub enum PrivateStockReason {
     PriceLimitExceeded,
     LeadTimeExceeded,
     HazardBlocked,
+    RegionNotAllowed,
+    RegionBlocked,
     NotAvailable,
     ProhibitedSubstance,
     NoExactVendorRecord,
@@ -78,6 +84,8 @@ pub struct PrivateStockDecisionRecord {
     pub lead_time_days: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hazard: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub region: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -176,6 +184,7 @@ pub fn assess_report(
                 price: None,
                 lead_time_days: None,
                 hazard: None,
+                region: None,
             });
             continue;
         }
@@ -191,6 +200,7 @@ pub fn assess_report(
                     price: None,
                     lead_time_days: None,
                     hazard: None,
+                    region: None,
                 });
                 continue;
             }
@@ -205,6 +215,7 @@ pub fn assess_report(
                 price: None,
                 lead_time_days: None,
                 hazard: None,
+                region: None,
             });
             continue;
         };
@@ -252,6 +263,26 @@ pub fn assess_report(
                 rejected_reason.get_or_insert(PrivateStockReason::HazardBlocked);
                 continue;
             }
+            if !policy.allowed_regions.is_empty()
+                && record.region.as_deref().is_none_or(|region| {
+                    !policy
+                        .allowed_regions
+                        .iter()
+                        .any(|allowed| allowed == region)
+                })
+            {
+                rejected_reason.get_or_insert(PrivateStockReason::RegionNotAllowed);
+                continue;
+            }
+            if record.region.as_deref().is_some_and(|region| {
+                policy
+                    .blocked_regions
+                    .iter()
+                    .any(|blocked| blocked == region)
+            }) {
+                rejected_reason.get_or_insert(PrivateStockReason::RegionBlocked);
+                continue;
+            }
             eligible.push(record_index);
         }
         if let Some(&record_index) = eligible.iter().min_by(|&&left, &&right| {
@@ -269,6 +300,7 @@ pub fn assess_report(
                 price: record.price,
                 lead_time_days: record.lead_time_days,
                 hazard: record.hazard.clone(),
+                region: record.region.clone(),
             });
             rejected_reason = None;
         }
@@ -282,6 +314,7 @@ pub fn assess_report(
                 price: None,
                 lead_time_days: None,
                 hazard: None,
+                region: None,
             });
         }
     }
@@ -384,6 +417,7 @@ mod tests {
             price: Some(12.0),
             lead_time_days: Some(3),
             hazard: None,
+            region: None,
             available: true,
         }])
         .unwrap();
@@ -396,6 +430,8 @@ mod tests {
             max_price: Some(20.0),
             max_lead_time_days: Some(5),
             blocked_hazards: vec![],
+            allowed_regions: vec![],
+            blocked_regions: vec![],
             require_available: true,
             blocked_smiles: vec![],
         };
@@ -428,6 +464,7 @@ mod tests {
                 price: Some(20.0),
                 lead_time_days: Some(2),
                 hazard: None,
+                region: None,
                 available: true,
             },
             VendorStockRecord {
@@ -437,6 +474,7 @@ mod tests {
                 price: Some(12.0),
                 lead_time_days: Some(9),
                 hazard: None,
+                region: None,
                 available: true,
             },
             VendorStockRecord {
@@ -446,6 +484,7 @@ mod tests {
                 price: Some(12.0),
                 lead_time_days: Some(3),
                 hazard: None,
+                region: None,
                 available: true,
             },
         ])
@@ -459,6 +498,8 @@ mod tests {
             max_price: None,
             max_lead_time_days: None,
             blocked_hazards: vec![],
+            allowed_regions: vec![],
+            blocked_regions: vec![],
             require_available: true,
             blocked_smiles: vec![],
         };
@@ -479,6 +520,7 @@ mod tests {
                 price: Some(1.0),
                 lead_time_days: Some(1),
                 hazard: Some("flammable".into()),
+                region: None,
                 available: true,
             },
             VendorStockRecord {
@@ -488,6 +530,7 @@ mod tests {
                 price: Some(2.0),
                 lead_time_days: Some(2),
                 hazard: Some("low".into()),
+                region: None,
                 available: true,
             },
         ])
@@ -501,6 +544,8 @@ mod tests {
             max_price: None,
             max_lead_time_days: None,
             blocked_hazards: vec!["flammable".into()],
+            allowed_regions: vec![],
+            blocked_regions: vec![],
             require_available: true,
             blocked_smiles: vec![],
         };
@@ -512,6 +557,54 @@ mod tests {
     }
 
     #[test]
+    fn policy_enforces_allowed_and_blocked_regions() {
+        let index = VendorStockIndex::from_records(vec![
+            VendorStockRecord {
+                id: Some("blocked-region".into()),
+                smiles: "CCO".into(),
+                vendor: Some("Acme".into()),
+                price: Some(1.0),
+                lead_time_days: Some(1),
+                hazard: None,
+                region: Some("restricted".into()),
+                available: true,
+            },
+            VendorStockRecord {
+                id: Some("allowed-region".into()),
+                smiles: "CCO".into(),
+                vendor: Some("Acme".into()),
+                price: Some(2.0),
+                lead_time_days: Some(2),
+                hazard: None,
+                region: Some("JP".into()),
+                available: true,
+            },
+        ])
+        .unwrap();
+        let policy = PrivateStockPolicy {
+            schema_version: 1,
+            source_label: "private".into(),
+            source_revision: None,
+            allowed_vendors: vec![],
+            blocked_vendors: vec![],
+            max_price: None,
+            max_lead_time_days: None,
+            blocked_hazards: vec![],
+            allowed_regions: vec!["JP".into()],
+            blocked_regions: vec!["restricted".into()],
+            require_available: true,
+            blocked_smiles: vec![],
+        };
+        let decision = assess_report(&report(), &index, &policy)
+            .decisions
+            .into_iter()
+            .find(|decision| decision.smiles == "CCO")
+            .unwrap();
+        assert_eq!(decision.decision, PrivateStockDecision::Matched);
+        assert_eq!(decision.region.as_deref(), Some("JP"));
+    }
+
+    #[test]
     fn route_ranks_prioritize_policy_failures_then_cost() {
         let index = VendorStockIndex::from_records(vec![VendorStockRecord {
             id: Some("e".into()),
@@ -520,6 +613,7 @@ mod tests {
             price: Some(10.0),
             lead_time_days: Some(4),
             hazard: None,
+            region: None,
             available: true,
         }])
         .unwrap();
@@ -532,6 +626,8 @@ mod tests {
             max_price: None,
             max_lead_time_days: None,
             blocked_hazards: vec![],
+            allowed_regions: vec![],
+            blocked_regions: vec![],
             require_available: true,
             blocked_smiles: vec![],
         };

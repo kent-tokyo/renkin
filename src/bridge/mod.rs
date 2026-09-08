@@ -93,8 +93,9 @@ pub use forward::{
     EvidenceBasis, ForwardNotEvaluableReason, ForwardValidationResult, validate_step_forward,
 };
 pub use interchange::{
-    InterchangeStep, ROUTE_INTERCHANGE_SCHEMA_VERSION, ReactionProvenance, RouteInterchange,
-    StockProvenance, from_audit_report,
+    ADAPTER_LOSS_SCHEMA_VERSION, AdapterLossField, AdapterLossReport, InterchangeStep,
+    LossDisposition, ROUTE_INTERCHANGE_SCHEMA_VERSION, ReactionProvenance, RouteInterchange,
+    StockProvenance, from_audit_report, validate_strict_import,
 };
 pub use private_stock::{
     PRIVATE_STOCK_POLICY_SCHEMA_VERSION, PrivateStockDecision, PrivateStockDecisionRecord,

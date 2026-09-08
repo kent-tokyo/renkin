@@ -6,6 +6,7 @@
 //! or original node identifiers.
 
 use serde::Serialize;
+use serde_json::Value;
 
 use crate::bridge::audit::{AuditFinding, AuditReport, AuditStatus, CheckStatus};
 use crate::bridge::forward::EvidenceBasis;
@@ -13,6 +14,161 @@ use crate::bridge::private_stock::PrivateStockReport;
 use crate::bridge::route_graph::ReactionEvidence;
 
 pub const ROUTE_INTERCHANGE_SCHEMA_VERSION: u32 = 1;
+pub const ADAPTER_LOSS_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LossDisposition {
+    Preserved,
+    Normalized,
+    Inferred,
+    Dropped,
+    Unsupported,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct AdapterLossField {
+    pub field: String,
+    pub disposition: LossDisposition,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct AdapterLossReport {
+    pub schema_version: u32,
+    pub fields: Vec<AdapterLossField>,
+}
+
+impl AdapterLossReport {
+    fn for_audit(report: &AuditReport) -> Self {
+        let mut fields = vec![
+            AdapterLossField {
+                field: "target".into(),
+                disposition: LossDisposition::Normalized,
+                reason: "target is emitted in RENKIN canonical form".into(),
+            },
+            AdapterLossField {
+                field: "precursors".into(),
+                disposition: LossDisposition::Normalized,
+                reason: "precursor identities are emitted in RENKIN canonical form".into(),
+            },
+            AdapterLossField {
+                field: "canonical_node_id".into(),
+                disposition: LossDisposition::Inferred,
+                reason: "derived from normalized route hash and step index".into(),
+            },
+            AdapterLossField {
+                field: "conditions".into(),
+                disposition: LossDisposition::Unsupported,
+                reason: "condition records are not part of the current canonical schema".into(),
+            },
+        ];
+        if report
+            .steps
+            .iter()
+            .all(|step| step.reaction_evidence.is_some())
+        {
+            fields.push(AdapterLossField {
+                field: "reaction_provenance".into(),
+                disposition: LossDisposition::Preserved,
+                reason: "source reaction evidence is retained when supplied".into(),
+            });
+        } else {
+            fields.push(AdapterLossField {
+                field: "reaction_provenance".into(),
+                disposition: LossDisposition::Unsupported,
+                reason: "one or more source steps supplied no reaction evidence".into(),
+            });
+        }
+        Self {
+            schema_version: ADAPTER_LOSS_SCHEMA_VERSION,
+            fields,
+        }
+    }
+
+    pub fn validate_for_strict_import(&self) -> anyhow::Result<()> {
+        if self.schema_version != ADAPTER_LOSS_SCHEMA_VERSION {
+            anyhow::bail!(
+                "unsupported adapter loss schema_version {}",
+                self.schema_version
+            );
+        }
+        if self.fields.is_empty() {
+            anyhow::bail!("adapter loss report must contain at least one field record");
+        }
+        if self
+            .fields
+            .iter()
+            .any(|field| field.field.trim().is_empty())
+        {
+            anyhow::bail!("adapter loss report contains an empty field name");
+        }
+        Ok(())
+    }
+}
+
+/// Validate a canonical interchange document before an audit or replay uses
+/// it. This validates the envelope and loss accounting only; chemistry remains
+/// the responsibility of the normal audit pipeline.
+pub fn validate_strict_import(value: &Value) -> anyhow::Result<()> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("canonical interchange must be a JSON object"))?;
+    if object.get("schema_version").and_then(Value::as_u64)
+        != Some(ROUTE_INTERCHANGE_SCHEMA_VERSION as u64)
+    {
+        anyhow::bail!("unsupported canonical interchange schema_version");
+    }
+    if object
+        .get("route_id")
+        .and_then(Value::as_str)
+        .is_none_or(str::is_empty)
+    {
+        anyhow::bail!("canonical interchange route_id is required");
+    }
+    if !object.get("steps").is_some_and(Value::is_array) {
+        anyhow::bail!("canonical interchange steps must be an array");
+    }
+    let loss_report = object
+        .get("loss_report")
+        .ok_or_else(|| anyhow::anyhow!("canonical interchange loss_report is required"))?;
+    let loss_object = loss_report
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("canonical interchange loss_report must be an object"))?;
+    if loss_object.get("schema_version").and_then(Value::as_u64)
+        != Some(ADAPTER_LOSS_SCHEMA_VERSION as u64)
+    {
+        anyhow::bail!("unsupported adapter loss schema_version");
+    }
+    let fields = loss_object
+        .get("fields")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow::anyhow!("adapter loss report fields must be an array"))?;
+    if fields.is_empty() {
+        anyhow::bail!("adapter loss report must contain at least one field record");
+    }
+    for field in fields {
+        let field = field
+            .as_object()
+            .ok_or_else(|| anyhow::anyhow!("adapter loss field must be an object"))?;
+        if field
+            .get("field")
+            .and_then(Value::as_str)
+            .is_none_or(str::is_empty)
+            || field
+                .get("reason")
+                .and_then(Value::as_str)
+                .is_none_or(str::is_empty)
+        {
+            anyhow::bail!("adapter loss field and reason are required");
+        }
+        match field.get("disposition").and_then(Value::as_str) {
+            Some("preserved" | "normalized" | "inferred" | "dropped" | "unsupported") => {}
+            _ => anyhow::bail!("unknown adapter loss disposition"),
+        }
+    }
+    Ok(())
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct RouteInterchange {
@@ -26,6 +182,7 @@ pub struct RouteInterchange {
     pub audit_status: AuditStatus,
     pub steps: Vec<InterchangeStep>,
     pub audit_findings: Vec<AuditFinding>,
+    pub loss_report: AdapterLossReport,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stock_provenance: Option<StockProvenance>,
 }
@@ -100,6 +257,7 @@ pub fn from_audit_report(
         audit_status: report.status,
         steps,
         audit_findings: report.findings.clone(),
+        loss_report: AdapterLossReport::for_audit(report),
         stock_provenance: stock,
     }
 }
@@ -137,6 +295,14 @@ mod tests {
         };
         let interchange = from_audit_report("aizynthfinder", None, None, &[], &report, None);
         assert_eq!(interchange.schema_version, 1);
+        interchange
+            .loss_report
+            .validate_for_strict_import()
+            .unwrap();
+        validate_strict_import(&serde_json::to_value(&interchange).unwrap()).unwrap();
+        assert!(interchange.loss_report.fields.iter().any(|field| {
+            field.field == "reaction_provenance" && field.disposition == LossDisposition::Preserved
+        }));
         assert!(interchange.source_version.is_none());
         assert!(interchange.source_route_id.is_none());
         assert!(interchange.steps[0].original_node_id.is_none());
@@ -149,5 +315,16 @@ mod tests {
             interchange.steps[0].reaction_provenance.reaction_evidence,
             Some(ReactionEvidence::SyntheseusReaction { .. })
         ));
+    }
+
+    #[test]
+    fn strict_import_rejects_missing_loss_report() {
+        let value = serde_json::json!({
+            "schema_version": 1,
+            "route_id": "sha256:test",
+            "steps": []
+        });
+        let error = validate_strict_import(&value).unwrap_err().to_string();
+        assert!(error.contains("loss_report"));
     }
 }

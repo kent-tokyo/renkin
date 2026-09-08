@@ -189,7 +189,7 @@ fn modern_transcript_discover_then_tools_list_then_tools_call() {
         "\n",
         r#"{"jsonrpc":"2.0","id":"t1","method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}"#,
         "\n",
-        r#"{"jsonrpc":"2.0","id":"c1","method":"tools/call","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}},"name":"find_routes","arguments":{"smiles":"CCO","depth":2,"max_routes":1}}}"#,
+        r#"{"jsonrpc":"2.0","id":"c1","method":"tools/call","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{},"io.renkin/parentTaskId":"agent-1","io.renkin/model":"test-model"},"name":"find_routes","arguments":{"smiles":"CCO","depth":2,"max_routes":1}}}"#,
         "\n",
     );
     let (stdout, stderr, ok) = run(input);
@@ -225,6 +225,19 @@ fn modern_transcript_discover_then_tools_list_then_tools_call() {
     assert_eq!(tools_call["id"], "c1");
     assert_eq!(tools_call["result"]["resultType"], "complete");
     assert!(tools_call["result"]["content"].is_array());
+    let receipt = &tools_call["result"]["_meta"]["io.renkin/auditReceipt"];
+    assert_eq!(receipt["schemaVersion"], 1);
+    assert_eq!(receipt["taskId"], "c1");
+    assert_eq!(receipt["parentTaskId"], "agent-1");
+    assert_eq!(receipt["model"], "test-model");
+    assert_eq!(receipt["status"], "success");
+    assert!(
+        receipt["receiptId"]
+            .as_str()
+            .unwrap()
+            .starts_with("sha256:")
+    );
+    assert!(!receipt.to_string().contains("CCO"));
 }
 
 #[test]

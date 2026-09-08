@@ -115,6 +115,22 @@ No `initialize` handshake. Every request carries protocol negotiation in
 `tools/call` directly as its opening request, as long as it carries valid
 `_meta`; the connection still pins modern.
 
+### Audit receipts
+
+Modern `tools/call` results carry an additive `_meta.io.renkin/auditReceipt`
+object. It records the tool name, RENKIN version, optional model and parent
+task link, JSON-RPC task id, SHA-256 hashes of canonicalized arguments and
+result, status, failure code, and an execution timestamp. Raw SMILES,
+arguments, route results, stock rows, and secrets are never copied into the
+receipt. `receiptId`, `argumentsSha256`, and `resultSha256` are deterministic;
+`timestampUnixMs` is informational and may differ between replays.
+
+An agent may pass `io.renkin/parentTaskId` and `io.renkin/model` in the
+request `_meta` to preserve parent/child execution correlation. Invalid tool
+arguments remain protocol errors and therefore do not produce a receipt;
+handler-level failures produce a receipt with `status: "failure"` and
+`failureCode: "tool_error"`. Legacy responses do not carry receipts.
+
 ### Per-request `_meta`
 
 Every modern request must include, under `params._meta`:

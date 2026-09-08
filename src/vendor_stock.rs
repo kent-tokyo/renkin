@@ -57,6 +57,9 @@ pub struct VendorStockRecord {
     pub lead_time_days: Option<u32>,
     /// Optional local hazard class/label supplied by the catalog.
     pub hazard: Option<String>,
+    /// Optional local region/market label supplied by the catalog.
+    #[serde(default)]
+    pub region: Option<String>,
     pub available: bool,
 }
 
@@ -184,7 +187,7 @@ fn identity_keys(smiles: &str) -> Result<IdentityKeys> {
 }
 
 /// Import a CSV or TSV table. Required column: `smiles`. Optional aliases:
-/// `id`, `vendor`, `price`, `lead_time_days`/`lead_time`, and `available`.
+/// `id`, `vendor`, `price`, `lead_time_days`/`lead_time`, `region`, and `available`.
 pub fn import_vendor_table(input: &str, delimiter: Option<u8>) -> Result<Vec<VendorStockRecord>> {
     let delimiter = delimiter.unwrap_or_else(|| detect_delimiter(input));
     let mut rows = input.lines().enumerate().filter(|(_, line)| {
@@ -210,6 +213,7 @@ pub fn import_vendor_table(input: &str, delimiter: Option<u8>) -> Result<Vec<Ven
     let price_col = col(&["price", "price_jpy", "price_usd"]);
     let lead_col = col(&["lead_time_days", "lead_time"]);
     let hazard_col = col(&["hazard", "hazard_class", "hazard_label"]);
+    let region_col = col(&["region", "market", "country"]);
     let available_col = col(&["available", "in_stock"]);
     let mut records = Vec::new();
     for (line_no, line) in rows {
@@ -237,6 +241,7 @@ pub fn import_vendor_table(input: &str, delimiter: Option<u8>) -> Result<Vec<Ven
             })
             .transpose()?;
         let hazard = field(hazard_col).map(str::to_owned);
+        let region = field(region_col).map(str::to_owned);
         let available = field(available_col)
             .map(|s| match s.to_ascii_lowercase().as_str() {
                 "true" | "1" | "yes" | "y" => Ok(true),
@@ -253,6 +258,7 @@ pub fn import_vendor_table(input: &str, delimiter: Option<u8>) -> Result<Vec<Ven
             price,
             lead_time_days,
             hazard,
+            region,
             available,
         });
     }
@@ -328,6 +334,7 @@ mod tests {
             price: None,
             lead_time_days: None,
             hazard: None,
+            region: None,
             available: true,
         }])
         .unwrap();
@@ -355,6 +362,7 @@ mod tests {
             price: None,
             lead_time_days: None,
             hazard: None,
+            region: None,
             available: true,
         }])
         .unwrap();
@@ -384,6 +392,7 @@ mod tests {
                 price: None,
                 lead_time_days: None,
                 hazard: None,
+                region: None,
                 available: true,
             },
             VendorStockRecord {
@@ -393,6 +402,7 @@ mod tests {
                 price: None,
                 lead_time_days: None,
                 hazard: None,
+                region: None,
                 available: true,
             },
         ])

@@ -27,3 +27,14 @@ they are provenance, not an independent quality verdict.
 
 The schema version is currently `1`. Human or LLM review can be added as a
 separate judge record without overwriting deterministic audit findings.
+
+Every export also contains a required `loss_report` with schema version `1`.
+It records each canonical field as `preserved`, `normalized`, `inferred`,
+`dropped`, or `unsupported`, with a reason. Missing or malformed loss reports
+are rejected by strict import validation; an `unsupported` field is reported as
+loss and is never silently promoted to chemical validity or route success.
+
+The Rust bridge exposes `validate_strict_import` for canonical JSON input. It
+rejects an absent or malformed `loss_report` before the document is accepted
+as an audit/replay input; the normal route parser, stock evaluator, and forward
+replay still decide chemical validity afterward.

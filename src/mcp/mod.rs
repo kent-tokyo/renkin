@@ -12,6 +12,7 @@
 //! - [`tools`] — RENKIN tool definitions and business logic, era-agnostic.
 //! - [`stdio`] — the newline-delimited stdio transport loop.
 
+pub mod audit_receipt;
 pub mod jsonrpc;
 pub mod protocol;
 pub mod stdio;

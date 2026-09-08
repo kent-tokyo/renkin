@@ -8,6 +8,22 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Added versioned MCP `AuditReceipt` metadata for modern `tools/call` responses.
+  Receipts retain tool/version/model, parent-task correlation, task ID, canonical
+  argument/result hashes, status, failure code, and timestamp without copying
+  SMILES, route results, stock rows, or secrets; legacy response envelopes are
+  unchanged.
+- Added required field-level `loss_report` metadata to canonical route
+  interchange exports. Normalized, inferred, preserved, and unsupported fields
+  are explicit and validated before strict import.
+- Extended private stock policy evaluation with exact vendor-table region
+  matching and allow/block region constraints; missing or disallowed regions
+  remain rejected rather than being treated as purchasable.
+- Added strict canonical interchange envelope validation that rejects missing
+  or malformed loss reports before audit/replay input is accepted.
+- Added the agent execution replay kernel for ordered retro/condition/forward
+  traces, receipt integrity checks, failure-continuation classification,
+  secret-safe trace serialization, and deterministic final manifest hashes.
 - Added schema-versioned `search_profile` metadata to named-profile JSON output. It records
   the effective baseline/recovery budget and policy while preserving legacy output when no
   profile is requested.

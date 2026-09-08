@@ -58,6 +58,7 @@ RENKIN is a **retrosynthesis engine** that automatically plans multi-step chemic
 | **Failure diagnostics** | `renkin-bench --failure-taxonomy` classifies unsolved targets by cause (beam limit, depth limit, template gap, stock near-miss) |
 | **Cascade search** | Two-stage search: fast defaults → hard cases re-run at higher beam/depth |
 | **Staged recovery (opt-in)** | Native `--search-mode recovery` preserves baseline successes, then conditionally escalates element gating, diversity, depth, and caller-supplied coverage tiers with a per-attempt audit trail; see [Staged recovery mode](guides/staged-recovery.md) |
+| **Search budget profiles (opt-in)** | `--search-profile fast\|balanced\|deep` exposes explicit speed/coverage budgets and records effective settings in named-profile JSON output |
 | **Radius-zero abstraction (research)** | A provenance-bounded, disjoint-VAL-gated method for building an optional final recovery tier from the same TRAIN corpus; see [Staged recovery mode](guides/staged-recovery.md#radius-zero-template-abstraction-follow-up) |
 | **Stability testing** | `--quietset-out` exports observations for [quietset](https://crates.io/crates/quietset-cli) cross-config stability analysis |
 | **MCP server** | `renkin-mcp` exposes seven route, validation, Pareto, constraint, diversity, and diagnostic tools over legacy `2024-11-05` and modern `2026-07-28` stdio MCP; `find_routes` also supports opt-in coverage search |

@@ -8,7 +8,9 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-No unreleased changes.
+- Added schema-versioned `search_profile` metadata to named-profile JSON output. It records
+  the effective baseline/recovery budget and policy while preserving legacy output when no
+  profile is requested.
 
 ## [1.0.4] - 2026-09-08 "Native Search and Documentation Refresh"
 

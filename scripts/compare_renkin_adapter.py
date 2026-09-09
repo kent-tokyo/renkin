@@ -53,6 +53,7 @@ class RenkinConfig:
     templates_path: str | None
     depth: int = 5
     beam_width: int = 100
+    bond_index: bool = False
     max_routes: int = 1
     route_selection: str = "rank1"
     external_timeout_s: float = 150.0
@@ -78,6 +79,7 @@ class RenkinConfig:
     template_policy_artifact: str | None = None
     retro_generator_manifest: str | None = None
     retro_generator_artifact: str | None = None
+    retro_generator_slots: int = 0
     # ONNX template policy in ordering-only mode. The binary must be built
     # with the nn-scoring feature; unlike the legacy scorer path this never
     # removes candidates.
@@ -210,6 +212,8 @@ def run_one_target(
     ]
     if config.templates_path:
         argv += ["--templates", config.templates_path]
+    if config.bond_index:
+        argv += ["--bond-index", "--search-diagnostics"]
     if config.scorer:
         argv += ["--scorer", config.scorer, "--scorer-ordering-only"]
         if config.scorer_ordering_blend != 1.0:
@@ -241,6 +245,8 @@ def run_one_target(
     if config.retro_generator_manifest and config.retro_generator_artifact:
         argv += ["--retro-generator-manifest", config.retro_generator_manifest]
         argv += ["--retro-generator-artifact", config.retro_generator_artifact]
+        if config.retro_generator_slots:
+            argv += ["--retro-generator-slots", str(config.retro_generator_slots)]
     if config.search_mode != "standard":
         argv += ["--search-mode", config.search_mode]
         for path in config.recovery_coverage_tier_paths:
@@ -367,6 +373,18 @@ def run_one_target(
                 "beam_limit_hit": diagnostics.get("beam_limit_hit"),
                 "matched_templates": diagnostics.get("matched_templates"),
                 "stock_hits": diagnostics.get("stock_hits"),
+                "bond_index_candidates_before_element_filter": parsed.get(
+                    "search_diagnostics", {}
+                ).get("bond_index_candidates_before_element_filter"),
+                "bond_index_candidates_after_element_filter": parsed.get(
+                    "search_diagnostics", {}
+                ).get("bond_index_candidates_after_element_filter"),
+                "bond_index_empty_fallbacks": parsed.get("search_diagnostics", {}).get(
+                    "bond_index_empty_fallbacks"
+                ),
+                "bond_index_no_proposal_fallbacks": parsed.get("search_diagnostics", {}).get(
+                    "bond_index_no_proposal_fallbacks"
+                ),
                 "reranker_failures": parsed.get("reranker_failures"),
                 "diagnostics_source": "single_per_target_cli_call",
                 **cpu_time_tool_specific,
@@ -412,6 +430,18 @@ def run_one_target(
             "route_cost": best_route.get("route_cost"),
             "route_selection": config.route_selection,
             "selected_route_index": selected_index,
+            "bond_index_candidates_before_element_filter": parsed.get(
+                "search_diagnostics", {}
+            ).get("bond_index_candidates_before_element_filter"),
+            "bond_index_candidates_after_element_filter": parsed.get(
+                "search_diagnostics", {}
+            ).get("bond_index_candidates_after_element_filter"),
+            "bond_index_empty_fallbacks": parsed.get("search_diagnostics", {}).get(
+                "bond_index_empty_fallbacks"
+            ),
+            "bond_index_no_proposal_fallbacks": parsed.get("search_diagnostics", {}).get(
+                "bond_index_no_proposal_fallbacks"
+            ),
             "joint_success_probability": parsed.get("joint_success_probability"),
             "reranker_failures": parsed.get("reranker_failures"),
             "diagnostics_source": "single_per_target_cli_call",

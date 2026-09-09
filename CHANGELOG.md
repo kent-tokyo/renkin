@@ -8,6 +8,211 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-09-10 "Staged Candidate Recovery"
+
+- VAL-200再測定では、RENKINの`route_found`はAiZynthFinderと同率の
+  134/200（67.0%）だった。これは同一条件での優位性を証明する結果ではなく、
+  AiZynthFinderに対する優位性は未証明である。
+- Added a full-recovery diagnostic for staged direct-candidate injection on the
+  fixed 28-target gap set. The non-displacing policy improved strict validated
+  routes from 5/28 to 9/28 (+4) with zero regression, timeout, or crash; this
+  ties the existing graph-selector arm and does not establish superiority over
+  AiZynthFinder. Evidence is stored under
+  `data/comparison/formal_v1.0.3_candidate_20260909/full_policy_gap28/`.
+- Fixed the candidate-graph selector to accept both JSONL pools and the
+  hash-pinned static-generator `proposals` artifact. Artifact output preserves
+  original candidate and provenance fields, while root-target candidates stay
+  unbounded and only intermediate targets are capped. Added tests for format
+  conversion, provenance retention, and non-displacing root selection.
+- Added deterministic missing-target group export to
+  `diagnose_competitor_route_coverage.py`. On VAL-200, all 310 target-level
+  gaps produced candidates with the full 9,974-template set (20,808 rows,
+  zero generation failures). Unioning the non-displacing expansion raised
+  competitor-edge target coverage from 68/378 to 378/378 and exact precursor
+  multiset matches from 52/378 to 265/378. This remains a candidate-coverage
+  diagnostic until staged recovery confirms route regression=0.
+- Completed the non-displacing VAL-200 recovery arm with the expanded union
+  artifact. Native first attempt remained 133/200 and staged recovery remained
+  143/200, with 10 recoveries, regression=0, strict validation 143/200,
+  parseability 143/143, timeout 5/200, and crash 0/200. The larger candidate
+  pool produced no additional route beyond the graph selector, so downstream
+  scheduling and stock reachability remain the next bottlenecks.
+- Added `verify_non_displacing_recovery.py`, a dependency-free gate that
+  compares the first native recovery attempt with the final selected result
+  per row and fails when a native success is displaced. Applied it to the
+  completed VAL-200 run: baseline 133, final 143, recovered 10, regression 0,
+  timeout 5, crash 0.
+- Added opt-in bounded multi-hop stock lookahead to the candidate-graph
+  selector. The fixed gap28 measurement recovered 8/28 with regression 0,
+  but did not match the existing 9/28 graph-selector arm; the policy is
+  retained as an experiment and is not enabled by default.
+- Added opt-in diversity selection to the candidate-graph selector. It keeps
+  the best candidate from each `(precursor count, source-rank band)` bucket
+  before filling remaining slots, without using competitor labels or
+  removing root candidates. On the fixed gap28 paired arm it reached 7/28
+  (baseline 5/28, two recoveries) with regression=0, but remained below the
+  existing graph selector's 9/28 and is therefore not enabled by default.
+- Added `diagnose_candidate_mismatch.py` to classify the 113 competitor-edge
+  precursor mismatches left after candidate-pool union. It found 42 partial
+  overlaps and 71 cases with no shared precursor. With the supplied canonical
+  stock, a conservative candidate-graph reachability check found 49 stock-
+  reachable cases (24 partial, 25 no-overlap) and 64 unreachable cases; it
+  deliberately makes no claim about chemical equivalence.
+- The mismatch diagnostic now reports whether missing expected precursors are
+  already stock-terminal. Among the 42 partial overlaps, 28 have a missing
+  stock precursor and 14 require downstream exploration, separating stock
+  identity/termination work from candidate-search work.
+- Measured a diagnostic policy that preserves all 24 stock-reachable
+  partial-overlap intermediate targets without capping them. It recovered 7/28
+  (baseline 5/28) with regression=0, but remained below the graph selector's
+  9/28 and is not enabled by default.
+- Added diagnostic counters for direct-generator proposals, admissions, and
+  integrity/parse/self-target rejections so candidate loss can be separated
+  from downstream search loss without changing search behavior.
+- Applied the counters to the fixed gap28 recovery arm: 23,685 generator
+  proposals were supplied, 23,407 admitted, and 278 rejected at integrity;
+  no SMILES parse rejection occurred. The arm finished at 7/28, confirming
+  that downstream search and stock termination remain the limiting boundary.
+- Propagated generator candidates into later element, beam, and depth retries
+  after the dedicated generator stages miss. The fixed gap28 arm stayed at
+  7/28 with regression=0 but p95 latency rose to 102.34 seconds, so this
+  remains opt-in and is not enabled by default.
+- Added a narrowly guarded complementary `boc_protection_retro` candidate
+  generator for neutral primary/secondary aliphatic amines. It preserves the
+  existing `boc_deprotection_retro` behavior and covers route representations
+  that need an N-Boc precursor downstream. Focused chemistry and element-delta
+  tests pass; the representative L1006 gap still has no strict route, so this
+  is recorded as candidate-coverage progress rather than a benchmark win.
+- Added `diagnose_competitor_route_coverage.py` to compare competitor route
+  edges with a RENKIN canonical candidate pool, including fixed-cohort
+  filtering and exact precursor-multiset matching. This reports candidate
+  coverage separately from downstream stock reachability; it does not claim
+  route success by itself.
+- Added `expand_candidate_frontier.py` for bounded, offline intermediate
+  expansion. Each round feeds newly discovered precursors to `renkin-pool-gen`
+  and unions all rows, so staged candidate generation cannot displace earlier
+  candidates; compiled-stock inputs stop at stock-terminal molecules.
+- Paired the frontier cap at 32 and 256 intermediate targets on the fixed
+  gap28 recovery arm. Both retained 7/28 with zero regression and no runtime
+  failures; 256 produced 27,541 candidate rows but no new recovery and raised
+  p95 total elapsed to about 95.0 seconds. Larger candidate volume is therefore
+  not promoted as the default; selection and downstream stock reachability are
+  the next targets.
+- Added and measured a stock-aware frontier selector using parent-candidate
+  stock-hit ratio, hit count, and source rank. The fixed gap28 arm produced
+  5,333 union rows but remained 7/28 with zero regression or runtime failures;
+  p95 total elapsed was about 102.0 seconds. Stock proximity alone is not
+  promoted as the selection policy.
+- Added `select_retro_generator_graph.py`, which ranks only intermediate
+  targets by child-candidate count and child stock termination while preserving
+  every root candidate. It is an offline, label-free selector intended for the
+  next fixed-cohort paired measurement.
+- Measured the graph selector on the fixed gap28 recovery arm: coverage rose
+  from 7/28 to 9/28 by recovering `uspto50k_val#L274` and `#L370`; all seven
+  previous successes were retained, with zero invalid runs or timeout/crash.
+  All nine route trees were parseable. p95 total elapsed was about 101.5
+  seconds, so the selector remains an opt-in candidate-stage policy.
+- Applied the graph selector to VAL-200. The same-run native first attempt
+  found 133/200 routes; staged recovery found 143/200, adding 10 routes with
+  zero regression among completed native successes. All 143 selected routes
+  were strict validated and parseable; five wrapper timeouts and no crashes
+  were recorded. This remains a candidate-stage result, not a same-condition
+  superiority claim against AiZynthFinder.
+- Re-ran the two newly recovered targets with the same graph-selected artifact
+  and recovery configuration: both remained route-found, strictly validated,
+  and parseable, with no invalid run or timeout/crash.
+- Added an opt-in widened direct-generator recovery stage. When callers set
+  `retro_generator_slots` explicitly and the first generator stage completes
+  without a route, recovery retries with up to twice the generator capacity
+  (bounded by the existing proposal limit). Native candidates remain reserved
+  ahead of both stages, so this does not change the regression boundary.
+- Raised only the explicit, hash-pinned retro-generator artifact limit to
+  128 MiB so a full intermediate-candidate fixture can be evaluated; the
+  bounded 8-target check remained 2/8 (no gain over the stock32 fixture) while
+  p95 RSS rose to about 606 MiB. Full-artifact admission is therefore retained
+  for research diagnostics only, not as a default or formal benchmark arm.
+- Added staged direct-generator augmentation: native successes are returned
+  without generator expansion, while only completed native misses receive a
+  second search with hash-pinned direct proposals. This prevents candidate
+  augmentation from displacing existing successes.
+- Added opt-in `retro_generator_slots` admission for staged retries: the
+  native top-beam is retained first and direct-generator proposals use only
+  explicit extra capacity. The default remains zero, so legacy beam behavior
+  is unchanged; a 28-target common-stock remeasurement confirmed no
+  regression, invalid route, timeout, or crash, but the current static
+  fixture produced no additional route.
+- Measured the full 500→5,000→9,997-template staged recovery on the fixed
+  common-stock gap-28 cohort: strict coverage increased to 7/28, with all
+  3/28 baseline successes preserved and no invalid, timeout, or crash rows.
+  The additional recoveries were attributed to coverage, element-accounting,
+  and beam stages; the latency/RSS increase keeps this path opt-in.
+- Rebuilt a direct-generator fixture from the current full template input
+  (9,974 rules loaded) for the fixed gap-28 cohort. The pool contained 2,676
+  rows with zero empty targets, but staged admission remained at 3/28: no
+  extra route was recovered, while baseline regression, invalid routes,
+  timeouts, and crashes remained zero. This keeps the next work focused on
+  reaction-center applicability, chemical validity, and downstream stock
+  reachability rather than unbounded candidate growth.
+- Added `scripts/diagnose_candidate_stock_frontier.py` to separate direct
+  stock-terminal candidates from proposals that require downstream search.
+  On the same 2,676-candidate gap-28 pool, only 3 candidates across 3 targets
+  had every precursor in the common stock union; the remaining 25 targets
+  require downstream expansion. Partial stock overlap is reported as a
+  diagnostic, never as route success.
+- Added the bounded `--retro-generator-slots` CLI control for explicit staged
+  admission capacity. The default remains zero and the value is capped at
+  1,000 proposals, making native-beam preservation and augmentation capacity
+  reproducible in comparison manifests.
+- Tested an exact-stock-aware ordering signal for the opt-in direct-generator
+  arm and rejected it after paired measurement: gap-28 strict coverage fell
+  from the prior 5/28 to 4/28. Stock proximity remains a diagnostic/selection
+  signal, separate from chemistry-derived route cost.
+- Added a coverage fallback for `bond_index`: only an empty indexed result
+  or a non-empty indexed result that yields zero applicable proposals retries
+  against the complete rule set. Non-empty successful indexed candidate sets
+  and their ordering remain unchanged, and both fallback counts are exposed in
+  search diagnostics. This addresses possible coarse-signature misses without
+  changing the default non-indexed search.
+- Extended the comparison harness with an explicit `--bond-index` arm and
+  persisted both fallback counters in per-target diagnostics. On the fixed
+  gap-8 smoke, both counters were zero with 1/8 routes found and no invalid,
+  timeout, or crash rows; this rules out an index-empty cause for that sample.
+- Measured the combined staged direct-generator and `bond_index` arm on the
+  fixed gap-28 cohort: strict coverage remained 5/28 with zero baseline
+  regression, invalid, timeout, crash, or fallback rows. This confirms that
+  adding the coarse index to the current augmentation arm produces no extra
+  recovery on this cohort.
+- Added a route-integrity precheck for direct-generator proposals. Candidates
+  that cannot satisfy the strict structural boundary are rejected before
+  frontier allocation; native proposals remain unchanged, and the behavior
+  is covered by unit and CLI regression tests.
+- Paired 32-versus-48 intermediate-candidate admission. The 48-candidate
+  arm fell to 4/28 from 5/28 and raised p95 RSS to about 208 MiB, despite
+  zero baseline regression, invalid route, timeout, or crash. The 32-candidate
+  stock-aware bound remains the selected opt-in configuration.
+- Exposed `--retro-generator-slots` in the comparison harness and included
+  its value in the RENKIN configuration identifier, so staged admission
+  capacity is preserved in reproducible benchmark manifests.
+- Preserved `best_upstream_rank` when converting candidate-pool rows into the
+  static direct-generator fixture instead of replacing it with file order.
+  A current-release remeasurement stayed at 3/28 on the fixed gap cohort with
+  zero regression, invalid route, timeout, or crash; the remaining limitation
+  is downstream expansion rather than rank transport.
+- Tested bounded root-plus-intermediate augmentation: 2,617 intermediate
+  targets were generated from the root pool, then limited to 32 stock-aware
+  candidates per intermediate to stay below the artifact limit. The fixed
+  gap-28 cohort remained at 3/28 with zero regression, invalid route,
+  timeout, or crash, while p95 RSS rose to about 155 MiB. Broadening proposal
+  supply alone is therefore not adopted as the coverage strategy.
+- Connected preserved generator `source_rank` to a bounded ordering-only
+  bonus after stock-aware intermediate selection. On the fixed common-stock
+  gap-28 cohort, the current release recovered 5/28 versus the 3/28 native
+  baseline, while preserving all baseline successes (regression=0) and
+  keeping strict invalid, timeout, and crash counts at zero. The result is
+  limited to this cohort; it is not a claim of overall AiZynthFinder
+  superiority.
+- Fixed `renkin-pool-gen` input normalization for comparison sample rows with
+  `canonical_smiles` and optional sample metadata.
 - Added versioned MCP `AuditReceipt` metadata for modern `tools/call` responses.
   Receipts retain tool/version/model, parent-task correlation, task ID, canonical
   argument/result hashes, status, failure code, and timestamp without copying
@@ -29,6 +234,19 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   profile is requested.
 - Extended the comparison harness to forward `fast`, `balanced`, and `deep` profiles and retain
   their effective metadata in per-target rows; profile measurements remain a separate gate.
+- Added a bounded bond-index recall fallback: when indexed retrieval yields at most one
+  applicable proposal, the complete rule set is retried and merged without changing the
+  ordinary non-indexed path. The fixed gap-28 paired measurement preserved 5/28 strict
+  coverage with zero regression, invalid, timeout, or crash.
+- Added an offline one-step stock-lookahead selector for bounded generator fixtures. Its
+  paired gap-28 result fell from 5/28 to 4/28, so it is retained for reproducible analysis
+  but is not used by the search path.
+- Fixed recovery-mode staging so its baseline is strictly native and a configured direct
+  generator is invoked only after a completed native miss, with reserved augmentation slots.
+- Verified the combined native → direct-generator → depth/beam → coverage cascade on the
+  fixed gap-28 cohort: 7/28 strict routes, zero baseline regression/invalid/timeout/crash;
+  retained as an explicit deep-recovery arm because p95 elapsed was about 26.6 seconds and
+  p95 RSS about 408 MiB.
 - Added fail-closed profile metadata validation plus profile identity and schema version to
   comparison aggregates and run manifests.
 - Fixed the v1.0.4 CI documentation gates: synchronized `CITATION.cff` to 1.0.4 and removed
@@ -2403,7 +2621,8 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
 
 ---
 
-[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v1.0.4...HEAD
+[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v1.0.5...HEAD
+[1.0.5]: https://github.com/kent-tokyo/renkin/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/kent-tokyo/renkin/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/kent-tokyo/renkin/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/kent-tokyo/renkin/compare/v1.0.1...v1.0.2

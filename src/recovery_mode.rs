@@ -8,8 +8,8 @@
 use crate::chem_env::{ChemEnv, PreparedRuleSet, RetroRule, TemplateBondIndex};
 use crate::coverage_mode::validate_coverage_mode_config;
 use crate::search::{
-    self, BeamDiversityPolicy, ElementAccountingGatePolicy, SearchConfig, SearchControl,
-    SearchRunResult, SearchTermination,
+    self, BeamDiversityPolicy, ElementAccountingGatePolicy, MAX_DIRECT_GENERATOR_PROPOSALS,
+    SearchConfig, SearchControl, SearchRunResult, SearchTermination,
 };
 use anyhow::{Result, bail};
 use serde::Serialize;
@@ -28,6 +28,14 @@ pub enum RecoveryStage {
     /// whose useful branch is both deeper than the baseline and crowded out
     /// by the baseline beam; neither independent retry can recover it.
     CombinedDepthBeam,
+    /// Direct-generator augmentation after the native baseline has completed
+    /// without a route. Native baseline candidates are never displaced by
+    /// this stage.
+    RetroGenerator,
+    /// A widened direct-generator admission stage after the first generator
+    /// stage has completed without a route. Native candidates remain reserved
+    /// ahead of both generator stages.
+    RetroGeneratorWidened,
     Coverage,
 }
 
@@ -65,6 +73,11 @@ pub struct RecoveryAttempt {
     pub max_depth_reached: bool,
     pub routes_rejected: u64,
     pub unaccounted_target_element: u64,
+    pub direct_generator_proposals: u64,
+    pub direct_generator_admitted: u64,
+    pub direct_generator_integrity_rejected: u64,
+    pub direct_generator_parse_rejected: u64,
+    pub direct_generator_same_target_rejected: u64,
     pub elapsed_ms: f64,
 }
 
@@ -187,6 +200,17 @@ fn recovery_attempt(
         max_depth_reached: result.stats.max_depth_reached,
         routes_rejected: result.stats.route_integrity.routes_rejected,
         unaccounted_target_element: result.stats.route_integrity.unaccounted_target_element,
+        direct_generator_proposals: result.stats.crowd_out.direct_generator_proposals,
+        direct_generator_admitted: result.stats.crowd_out.direct_generator_admitted,
+        direct_generator_integrity_rejected: result
+            .stats
+            .crowd_out
+            .direct_generator_integrity_rejected,
+        direct_generator_parse_rejected: result.stats.crowd_out.direct_generator_parse_rejected,
+        direct_generator_same_target_rejected: result
+            .stats
+            .crowd_out
+            .direct_generator_same_target_rejected,
         elapsed_ms,
     }
 }
@@ -327,6 +351,11 @@ pub fn run_recovery_mode_with_context(
     baseline_config.element_accounting_policy = ElementAccountingGatePolicy::Off;
     baseline_config.beam_diversity_policy = BeamDiversityPolicy::Off;
     baseline_config.beam_diversity_slots = 0;
+    // Recovery mode owns the stage ordering. Keep the first pass strictly
+    // native so a configured generator cannot crowd out an established
+    // candidate before the direct-generator stage is explicitly reached.
+    baseline_config.retro_generator = None;
+    baseline_config.retro_generator_slots = 0;
     let (baseline, elapsed_ms) = run_stage(
         target_smiles,
         env,
@@ -354,9 +383,105 @@ pub fn run_recovery_mode_with_context(
         ));
     }
 
+    if let Some(generator) = config.retro_generator.clone() {
+        // A zero value keeps the historical single generator stage. A
+        // positive, explicit value opts into a second bounded admission pass
+        // that can expose lower-ranked generator candidates without changing
+        // the native beam. This is intentionally not inferred from the
+        // auto-sized default below: callers must opt into the extra work.
+        let explicit_generator_slots = config.retro_generator_slots;
+        let mut generator_config = baseline_config.clone();
+        generator_config.retro_generator = Some(generator);
+        if generator_config.retro_generator_slots == 0 && generator_config.beam_width > 0 {
+            generator_config.retro_generator_slots = (generator_config.beam_width / 5).max(1);
+        }
+        let (generated, elapsed_ms) = run_stage(
+            target_smiles,
+            env,
+            baseline_rules,
+            &generator_config,
+            &recovery_control,
+            &context.prepared_rules,
+            context.prepared_bond_index.as_ref(),
+        )?;
+        attempts.push(recovery_attempt(
+            RecoveryStage::RetroGenerator,
+            "native_baseline_completed_without_route",
+            &generator_config,
+            baseline_rules,
+            &generated,
+            elapsed_ms,
+            None,
+        ));
+        if !generated.routes.is_empty() || generated.termination != SearchTermination::Completed {
+            return Ok(finish(
+                generated,
+                RecoveryStage::RetroGenerator,
+                attempts,
+                total_start,
+            ));
+        }
+
+        if explicit_generator_slots > 0 {
+            let widened_slots = generator_config
+                .retro_generator_slots
+                .saturating_mul(2)
+                .min(MAX_DIRECT_GENERATOR_PROPOSALS);
+            if widened_slots > generator_config.retro_generator_slots {
+                let mut widened_config = generator_config.clone();
+                widened_config.retro_generator_slots = widened_slots;
+                let (widened, elapsed_ms) = run_stage(
+                    target_smiles,
+                    env,
+                    baseline_rules,
+                    &widened_config,
+                    &recovery_control,
+                    &context.prepared_rules,
+                    context.prepared_bond_index.as_ref(),
+                )?;
+                attempts.push(recovery_attempt(
+                    RecoveryStage::RetroGeneratorWidened,
+                    "generator_stage_completed_without_route",
+                    &widened_config,
+                    baseline_rules,
+                    &widened,
+                    elapsed_ms,
+                    None,
+                ));
+                if !widened.routes.is_empty() || widened.termination != SearchTermination::Completed
+                {
+                    return Ok(finish(
+                        widened,
+                        RecoveryStage::RetroGeneratorWidened,
+                        attempts,
+                        total_start,
+                    ));
+                }
+            }
+        }
+    }
+
     let integrity_triggered = baseline.stats.route_integrity.unaccounted_target_element > 0;
     let beam_triggered = baseline.stats.beam_limit_hit;
     let depth_triggered = baseline.stats.max_depth_reached;
+    // Once the dedicated generator stages have failed, keep their candidates
+    // available in the later budget retries as well. The native baseline has
+    // already been preserved and returned immediately on success, so this
+    // cannot displace an established native route.
+    let retry_generator_slots = config.retro_generator.as_ref().map_or(0, |_| {
+        if config.retro_generator_slots > 0 {
+            config.retro_generator_slots
+        } else {
+            (config.beam_width / 5).max(1)
+        }
+    });
+    let with_retry_generator = |mut retry_config: SearchConfig| {
+        if let Some(generator) = config.retro_generator.clone() {
+            retry_config.retro_generator = Some(generator);
+            retry_config.retro_generator_slots = retry_generator_slots;
+        }
+        retry_config
+    };
     // If the baseline rule set produced no applicable templates at the root,
     // deeper/ wider retries with that same set cannot create a first edge.
     // Keep coverage tiers eligible below because they may contain different
@@ -364,7 +489,7 @@ pub fn run_recovery_mode_with_context(
     let baseline_has_no_templates = baseline.stats.matched_templates == 0;
 
     if options.stage_policy == RecoveryStagePolicy::Full && integrity_triggered {
-        let mut gated_config = baseline_config.clone();
+        let mut gated_config = with_retry_generator(baseline_config.clone());
         gated_config.element_accounting_policy = ElementAccountingGatePolicy::Gated;
         let (gated, elapsed_ms) = run_stage(
             target_smiles,
@@ -398,7 +523,7 @@ pub fn run_recovery_mode_with_context(
         && beam_triggered
         && let Some(width) = options.recovery_beam_width
     {
-        let mut wider_config = baseline_config.clone();
+        let mut wider_config = with_retry_generator(baseline_config.clone());
         wider_config.beam_width = width;
         let (wider, elapsed_ms) = run_stage(
             target_smiles,
@@ -429,7 +554,7 @@ pub fn run_recovery_mode_with_context(
     }
 
     if !baseline_has_no_templates && beam_triggered && options.beam_diversity_slots > 0 {
-        let mut diversity_config = baseline_config.clone();
+        let mut diversity_config = with_retry_generator(baseline_config.clone());
         diversity_config.beam_diversity_policy = BeamDiversityPolicy::Active;
         diversity_config.beam_diversity_slots = options.beam_diversity_slots;
         let (diversity, elapsed_ms) = run_stage(
@@ -461,7 +586,7 @@ pub fn run_recovery_mode_with_context(
     }
 
     if !baseline_has_no_templates && depth_triggered {
-        let mut depth_config = baseline_config.clone();
+        let mut depth_config = with_retry_generator(baseline_config.clone());
         depth_config.max_depth = options.recovery_depth;
 
         let (depth, elapsed_ms) = run_stage(
@@ -491,7 +616,7 @@ pub fn run_recovery_mode_with_context(
             // combined retry replaced it. Only then try the combined budget,
             // which targets branches that are both deeper and crowded out.
             if let Some(width) = options.recovery_beam_width {
-                let mut combined_config = depth_config.clone();
+                let mut combined_config = with_retry_generator(depth_config.clone());
                 combined_config.beam_width = width;
                 let (combined, elapsed_ms) = run_stage(
                     target_smiles,
@@ -661,6 +786,12 @@ pub fn run_recovery_mode_with_context(
 mod tests {
     use super::*;
     use crate::chem_env::default_rules;
+    use crate::retro_generator::{
+        GeneratorProvenance, RetroGenerationContext, RetroGenerator, RetroGeneratorDecision,
+        RetroProposal,
+    };
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn config(depth: u32, beam_width: usize) -> SearchConfig {
         SearchConfig {
@@ -695,6 +826,160 @@ mod tests {
         assert_eq!(result.audit.selected_stage, RecoveryStage::Baseline);
         assert_eq!(result.audit.attempts.len(), 1);
         assert!(!result.audit.recovered_route);
+    }
+
+    #[test]
+    fn generator_stage_runs_only_after_native_baseline_miss() {
+        struct FixtureGenerator {
+            calls: Arc<AtomicUsize>,
+        }
+        impl RetroGenerator for FixtureGenerator {
+            fn propose(
+                &self,
+                target: &str,
+                _context: &RetroGenerationContext,
+            ) -> RetroGeneratorDecision {
+                self.calls.fetch_add(1, Ordering::Relaxed);
+                RetroGeneratorDecision {
+                    proposals: vec![RetroProposal {
+                        candidate_id: "recovery-generator-route".to_owned(),
+                        target: target.to_owned(),
+                        precursors: vec!["CC".to_owned(), "O".to_owned()],
+                        atom_mapping: None,
+                        provenance: GeneratorProvenance {
+                            generator_id: "recovery-fixture".to_owned(),
+                            generator_version: "1".to_owned(),
+                            artifact_sha256: "sha256:fixture".to_owned(),
+                            source_rank: 0,
+                            model_confidence: None,
+                        },
+                    }],
+                    abstained: false,
+                }
+            }
+        }
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let config = SearchConfig {
+            max_depth: 1,
+            max_routes: 1,
+            beam_width: 2,
+            retro_generator: Some(Arc::new(FixtureGenerator {
+                calls: Arc::clone(&calls),
+            })),
+            ..Default::default()
+        };
+        let result = run_recovery_mode(
+            "CCO",
+            &ChemEnv::in_memory(&["CC", "O"]),
+            &[],
+            &config,
+            &RecoveryOptions {
+                stage_policy: RecoveryStagePolicy::Native,
+                recovery_depth: 2,
+                beam_diversity_slots: 0,
+                recovery_beam_width: None,
+                recovery_timeout: None,
+                coverage_rule_tiers: Vec::new(),
+                coverage_timeout: None,
+                coverage_beam_width: None,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result.audit.selected_stage, RecoveryStage::RetroGenerator);
+        assert!(result.audit.recovered_route);
+        assert_eq!(result.audit.attempts.len(), 2);
+        assert_eq!(result.audit.attempts[0].stage, RecoveryStage::Baseline);
+        assert_eq!(result.audit.attempts[0].routes_found, 0);
+        assert_eq!(
+            result.audit.attempts[1].stage,
+            RecoveryStage::RetroGenerator
+        );
+        assert!(calls.load(Ordering::Relaxed) > 0);
+    }
+
+    #[test]
+    fn explicit_generator_slots_enable_a_widened_non_displacing_stage() {
+        struct WideningGenerator {
+            root_calls: Arc<AtomicUsize>,
+        }
+        impl RetroGenerator for WideningGenerator {
+            fn propose(
+                &self,
+                target: &str,
+                _context: &RetroGenerationContext,
+            ) -> RetroGeneratorDecision {
+                let call = self.root_calls.fetch_add(1, Ordering::Relaxed);
+                if call == 0 {
+                    return RetroGeneratorDecision {
+                        proposals: Vec::new(),
+                        abstained: true,
+                    };
+                }
+                RetroGeneratorDecision {
+                    proposals: vec![RetroProposal {
+                        candidate_id: "widening-success".to_owned(),
+                        target: target.to_owned(),
+                        precursors: vec!["CC".to_owned(), "O".to_owned()],
+                        atom_mapping: None,
+                        provenance: GeneratorProvenance {
+                            generator_id: "recovery-widening-fixture".to_owned(),
+                            generator_version: "1".to_owned(),
+                            artifact_sha256: "sha256:fixture".to_owned(),
+                            source_rank: call,
+                            model_confidence: None,
+                        },
+                    }],
+                    abstained: false,
+                }
+            }
+        }
+
+        let root_calls = Arc::new(AtomicUsize::new(0));
+        let config = SearchConfig {
+            max_depth: 1,
+            max_routes: 1,
+            beam_width: 1,
+            retro_generator: Some(Arc::new(WideningGenerator {
+                root_calls: Arc::clone(&root_calls),
+            })),
+            retro_generator_slots: 1,
+            ..Default::default()
+        };
+        let result = run_recovery_mode(
+            "CCO",
+            &ChemEnv::in_memory(&["CC", "O"]),
+            &[],
+            &config,
+            &RecoveryOptions {
+                stage_policy: RecoveryStagePolicy::Native,
+                recovery_depth: 2,
+                beam_diversity_slots: 0,
+                recovery_beam_width: None,
+                recovery_timeout: None,
+                coverage_rule_tiers: Vec::new(),
+                coverage_timeout: None,
+                coverage_beam_width: None,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            result.audit.selected_stage,
+            RecoveryStage::RetroGeneratorWidened
+        );
+        assert_eq!(result.audit.attempts.len(), 3);
+        assert_eq!(
+            result.audit.attempts[1].stage,
+            RecoveryStage::RetroGenerator
+        );
+        assert_eq!(
+            result.audit.attempts[2].stage,
+            RecoveryStage::RetroGeneratorWidened
+        );
+        assert!(result.audit.recovered_route);
+        assert_eq!(root_calls.load(Ordering::Relaxed), 2);
     }
 
     #[test]

@@ -46,6 +46,7 @@ const SULFONYL_DELTA: ElementDelta = &[(Element::H, 1), (Element::CL, 1)]; // + 
 const CARBAMATE_DELTA: ElementDelta = &[(Element::H, 1), (Element::CL, 1)]; // + HCl
 const UREA_DELTA: ElementDelta = &[]; // urea -> isocyanate + amine, atom balanced
 const BOC_DELTA: ElementDelta = &[(Element::C, -5), (Element::H, -8), (Element::O, -2)]; // - C5H8O2
+const BOC_PROTECTION_DELTA: ElementDelta = &[(Element::C, 5), (Element::H, 8), (Element::O, 2)]; // + C5H8O2
 const CBZ_DELTA: ElementDelta = &[(Element::C, -8), (Element::H, -6), (Element::O, -2)]; // - C8H6O2
 
 /// Sum element counts (heavy atoms + implicit H) across one or more SMILES.
@@ -130,6 +131,7 @@ pub fn validate_graph_step(
         "carbamate_cleavage" => validate_delta(target, precursors, CARBAMATE_DELTA),
         "urea_cleavage" => validate_delta(target, precursors, UREA_DELTA),
         "boc_deprotection_retro" => validate_delta(target, precursors, BOC_DELTA),
+        "boc_protection_retro" => validate_delta(target, precursors, BOC_PROTECTION_DELTA),
         "cbz_deprotection_retro" => validate_delta(target, precursors, CBZ_DELTA),
         _ => StepValidationStatus::NotEvaluable,
     }
@@ -319,6 +321,17 @@ mod tests {
         assert_eq!(status, StepValidationStatus::Invalid);
     }
 
+    #[test]
+    fn boc_protection_valid() {
+        // Piperidine -> N-Boc-piperidine adds the tracked C5H8O2 group.
+        let status = validate_graph_step(
+            "boc_protection_retro",
+            "C1CCNCC1",
+            &precs(&["CC(C)(C)OC(=O)N1CCCCC1"]),
+        );
+        assert_eq!(status, StepValidationStatus::Valid);
+    }
+
     // ── cbz_deprotection_retro ───────────────────────────────────────────────
     #[test]
     fn cbz_deprotection_valid() {
@@ -373,6 +386,7 @@ mod tests {
             "carbamate_cleavage",
             "urea_cleavage",
             "boc_deprotection_retro",
+            "boc_protection_retro",
             "cbz_deprotection_retro",
         ]
         .into_iter()

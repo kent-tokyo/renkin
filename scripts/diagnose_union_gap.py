@@ -16,6 +16,11 @@ def main() -> int:
     p.add_argument("--stock", required=True)
     p.add_argument("--templates", required=True)
     p.add_argument("--output", required=True)
+    p.add_argument(
+        "--bond-index",
+        action="store_true",
+        help="also enable bond-index retrieval to audit its coverage fallback",
+    )
     args = p.parse_args()
     atlas = json.load(open(args.atlas, encoding="utf-8"))
     results = []
@@ -40,6 +45,8 @@ def main() -> int:
             "--format",
             "json",
         ]
+        if args.bond_index:
+            cmd.insert(-2, "--bond-index")
         proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
         try:
             payload = json.loads(proc.stdout[proc.stdout.find("{") :])
@@ -60,6 +67,16 @@ def main() -> int:
                 "stock_terminal_candidates": diagnostics.get("stock_terminal_candidates"),
                 "non_stock_candidates": diagnostics.get("non_stock_candidates"),
                 "candidates_generated_before_dedup": diagnostics.get("candidates_generated_before_dedup"),
+                "bond_index_candidates_before_element_filter": diagnostics.get(
+                    "bond_index_candidates_before_element_filter"
+                ),
+                "bond_index_candidates_after_element_filter": diagnostics.get(
+                    "bond_index_candidates_after_element_filter"
+                ),
+                "bond_index_empty_fallbacks": diagnostics.get("bond_index_empty_fallbacks"),
+                "bond_index_no_proposal_fallbacks": diagnostics.get(
+                    "bond_index_no_proposal_fallbacks"
+                ),
                 "branching_by_depth": diagnostics.get("branching_by_depth"),
                 "stderr_tail": proc.stderr[-1000:],
             }

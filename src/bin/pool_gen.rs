@@ -58,9 +58,45 @@ Options:\n\
   -h, --help                Print help";
 
 #[derive(Debug, Deserialize)]
+struct RawGroupInput {
+    group_id: Option<String>,
+    target_id: Option<String>,
+    canonical_smiles: Option<String>,
+    target_smiles: Option<String>,
+}
+
+#[derive(Debug)]
 struct GroupInput {
     group_id: String,
     target_id: String,
+}
+
+impl<'de> Deserialize<'de> for GroupInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = RawGroupInput::deserialize(deserializer)?;
+        let group_id = raw
+            .group_id
+            .or_else(|| raw.target_id.clone())
+            .ok_or_else(|| serde::de::Error::missing_field("group_id or target_id"))?;
+        let target_id = raw
+            .canonical_smiles
+            .or(raw.target_smiles)
+            .or(raw.target_id)
+            .ok_or_else(|| serde::de::Error::missing_field("target_id or canonical_smiles"))?;
+        if group_id.is_empty() {
+            return Err(serde::de::Error::custom("group_id must not be empty"));
+        }
+        if target_id.is_empty() {
+            return Err(serde::de::Error::custom("target_id must not be empty"));
+        }
+        Ok(Self {
+            group_id,
+            target_id,
+        })
+    }
 }
 
 fn arg_value(args: &[String], flag: &str, default: &str) -> String {

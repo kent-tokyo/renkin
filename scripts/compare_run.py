@@ -79,6 +79,7 @@ def renkin_config_and_id(args):
         templates_path=args.templates,
         depth=args.depth,
         beam_width=args.beam_width,
+        bond_index=args.bond_index,
         max_routes=args.max_routes,
         route_selection=args.route_selection,
         external_timeout_s=args.timeout_s,
@@ -93,6 +94,7 @@ def renkin_config_and_id(args):
         template_policy_artifact=args.template_policy_artifact,
         retro_generator_manifest=args.retro_generator_manifest,
         retro_generator_artifact=args.retro_generator_artifact,
+        retro_generator_slots=args.retro_generator_slots,
         scorer=args.scorer,
         scorer_ordering_blend=args.scorer_ordering_blend,
         speed_profile=args.speed_profile,
@@ -163,16 +165,22 @@ def renkin_config_and_id(args):
         if args.template_policy_manifest and args.template_policy_artifact
         else ""
     )
-    generator_suffix = "-retro_generator" if args.retro_generator_manifest else ""
+    generator_suffix = (
+        f"-retro_generator-s{args.retro_generator_slots}"
+        if args.retro_generator_manifest
+        else ""
+    )
     scorer_suffix = (
         f"-onnx_ordering-w{args.scorer_ordering_blend:g}" if args.scorer else ""
     )
     speed_suffix = "-speed" if args.speed_profile else ""
+    bond_index_suffix = "-bond-index" if args.bond_index else ""
     search_profile_suffix = f"-sp_{args.search_profile}" if args.search_profile else ""
     configuration_id = (
         f"renkin-{args.comparison_mode}-d{args.depth}-b{args.beam_width}"
         f"-mr{args.max_routes}-{args.route_selection}"
         f"{policy_suffix}{reranker_suffix}{coverage_suffix}{coverage_beam_suffix}"
+        f"{bond_index_suffix}"
         f"{recovery_depth_suffix}{recovery_slots_suffix}{recovery_tiers_suffix}"
         f"{recovery_policy_suffix}"
         f"{spectator_bond_suffix}{element_accounting_suffix}{beam_diversity_suffix}"
@@ -279,6 +287,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--depth", type=int, default=5)
     parser.add_argument("--beam-width", type=int, default=100)
     parser.add_argument(
+        "--bond-index",
+        action="store_true",
+        help="RENKIN-only: enable bond-index retrieval and coverage fallback",
+    )
+    parser.add_argument(
         "--max-routes",
         type=int,
         default=1,
@@ -361,6 +374,12 @@ def main(argv: list[str] | None = None) -> int:
         "--retro-generator-artifact",
         default=None,
         help="RENKIN-only direct-generator proposal artifact.",
+    )
+    parser.add_argument(
+        "--retro-generator-slots",
+        type=int,
+        default=0,
+        help="RENKIN-only explicit extra beam capacity for direct-generator proposals.",
     )
     parser.add_argument(
         "--scorer",
@@ -540,6 +559,8 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.beam_diversity_slots < 0:
         parser.error("--beam-diversity-slots must be non-negative")
+    if args.retro_generator_slots < 0 or args.retro_generator_slots > 1000:
+        parser.error("--retro-generator-slots must be between 0 and 1000")
     if (
         args.beam_diversity_policy in {"active", "adaptive", "retry-on-beam-exhaustion"}
         and args.beam_diversity_slots == 0
@@ -606,6 +627,7 @@ def main(argv: list[str] | None = None) -> int:
                 resource_budget={
                     "depth": args.depth,
                     "beam_width": args.beam_width,
+                    "bond_index": args.bond_index,
                     "timeout_s": args.timeout_s,
                     "grace_s": args.grace_s,
                     "max_routes": args.max_routes,

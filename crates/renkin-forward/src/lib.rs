@@ -1741,8 +1741,8 @@ mod tests {
                 Err(_) => rejected += 1,
             }
         }
-        assert_eq!(graph_based, 10, "graph-based default rule count changed");
-        assert_eq!(smirks_based, rules.len() - 10);
+        assert_eq!(graph_based, 11, "graph-based default rule count changed");
+        assert_eq!(smirks_based, rules.len() - 11);
         assert_eq!(
             rejected, 0,
             "every SMIRKS-backed default rule must remain accepted by predict/enumerate's validator"

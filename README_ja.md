@@ -142,7 +142,7 @@ OC(=O)c1ccccc1OC(=O)C
 
 ## 現在の制約
 
-現行リリースは **v1.0.4** です。
+現行リリースは **v1.0.5** です。
 
 ⚠️ 修正版v1.0.1の4,903-target shared-stock比較は完了しました。RENKINは591/4,903（12.05%）、AiZynthFinder 4.4.1は200/4,903（4.08%）で、paired差は+7.975 percentage points、95% CIは[+7.098,+8.852]です。v1.0.1全件armはintegrity verificationを通過し、統計的優越性gate・正式公開gateともにPASSです。これは宣言済みshared-stock endpointでの結果であり、一般的なCASP優越性の主張ではありません。このリポジトリの他箇所にある78.0%/95.9%/81.8%(ChEMBL)はvalidator修正前の値であり無効化されています。RENKINは収率・実験的に較正された成功確率・副反応を予測せず、文献の自動検索も行いません（`success_probability`はtemplate頻度由来の探索スコアであり、較正された予測値ではありません）。
 

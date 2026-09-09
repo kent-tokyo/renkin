@@ -208,6 +208,7 @@ fn main() -> Result<()> {
     let mut value_model_artifact_path: Option<String> = None;
     let mut retro_generator_manifest_path: Option<String> = None;
     let mut retro_generator_artifact_path: Option<String> = None;
+    let mut retro_generator_slots_arg: Option<String> = None;
     let mut template_metadata_path: Option<String> = None;
     let mut top_templates: Option<usize> = None;
     let mut max_routes: usize = 5;
@@ -294,6 +295,10 @@ fn main() -> Result<()> {
                 retro_generator_artifact_path = Some(
                     required_flag_value(&args, &mut i, "--retro-generator-artifact")?.to_owned(),
                 );
+            }
+            "--retro-generator-slots" => {
+                retro_generator_slots_arg =
+                    Some(required_flag_value(&args, &mut i, "--retro-generator-slots")?.to_owned());
             }
             "--template-metadata" => {
                 template_metadata_path =
@@ -554,6 +559,7 @@ fn main() -> Result<()> {
              --template-policy-artifact <path>  Static policy score-table artifact\n  \
              --value-model-manifest <path>  Hash-pinned value-model manifest\n  \
              --value-model-artifact <path>  Static value-model artifact\n  \
+             --retro-generator-slots <N>  Extra beam capacity for direct-generator proposals\n  \
              --format / -f      Output format: json (default), tree, mermaid\n  \
              --avoid-elements / -e  Comma-separated elements to ban from BBs (e.g. \"Br,I\")\n  \
              --require-elements / -r  Comma-separated elements each route must supply (e.g. \"B\")\n  \
@@ -1143,6 +1149,16 @@ fn main() -> Result<()> {
             }
         },
     };
+    let retro_generator_slots: usize = match retro_generator_slots_arg.as_deref() {
+        None => 0,
+        Some(v) => match v.parse() {
+            Ok(n) => n,
+            Err(_) => {
+                eprintln!("error: --retro-generator-slots '{v}' must be a non-negative integer");
+                std::process::exit(1);
+            }
+        },
+    };
     if element_accounting_retry && beam_diversity_retry {
         bail!(
             "--element-accounting-policy retry-on-integrity-failure cannot be combined with \
@@ -1290,6 +1306,7 @@ fn main() -> Result<()> {
         reranker,
         reaction_prior,
         retro_generator,
+        retro_generator_slots,
         spectator_bond_policy,
         element_accounting_policy,
         beam_diversity_policy,
@@ -1326,7 +1343,20 @@ fn main() -> Result<()> {
         recovery_meta,
     ): SearchDispatchResult = match search_mode {
         SearchMode::Standard => {
-            if element_accounting_retry {
+            if config.retro_generator.is_some()
+                && !element_accounting_retry
+                && !beam_diversity_retry
+            {
+                let result = search::find_routes_with_retro_generator_retry(
+                    &target_smiles,
+                    &env,
+                    &rules,
+                    &config,
+                    &search::SearchControl::unlimited(),
+                )?;
+                let selected = result.selected;
+                (selected.routes, selected.stats, None, None, None, None)
+            } else if element_accounting_retry {
                 let result = search::find_routes_with_element_accounting_retry(
                     &target_smiles,
                     &env,

@@ -1,0 +1,12 @@
+{
+  "schema_version": "renkin-non-displacing-recovery-verification/1",
+  "row_count": 28,
+  "baseline_success_count": 5,
+  "final_success_count": 9,
+  "recovered_count": 4,
+  "regression_count": 0,
+  "timeout_count": 0,
+  "crash_count": 0,
+  "missing_attempts_count": 0,
+  "zero_regression": true
+}

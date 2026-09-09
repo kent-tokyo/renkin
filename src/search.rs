@@ -45,6 +45,12 @@ fn validate_search_budget(target_smiles: &str, config: &SearchConfig) -> Result<
     if config.beam_width > MAX_BEAM_WIDTH {
         bail!("resource_exhausted: beam_width exceeds {}", MAX_BEAM_WIDTH);
     }
+    if config.retro_generator_slots > MAX_DIRECT_GENERATOR_PROPOSALS {
+        bail!(
+            "resource_exhausted: retro_generator_slots exceeds {}",
+            MAX_DIRECT_GENERATOR_PROPOSALS
+        );
+    }
     if config
         .candidate_trace_cap
         .is_some_and(|cap| cap > MAX_CANDIDATE_TRACE)
@@ -539,6 +545,14 @@ pub fn diagnose(stats: &SearchStats, max_depth: u32) -> (Vec<&'static str>, Vec<
 /// by ranking or pruning itself.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct CrowdOutDiagnostics {
+    /// Direct-generator proposals and the reasons they did not enter the
+    /// candidate frontier. These counters are diagnostics-only and never
+    /// change admission or ordering.
+    pub direct_generator_proposals: u64,
+    pub direct_generator_admitted: u64,
+    pub direct_generator_integrity_rejected: u64,
+    pub direct_generator_parse_rejected: u64,
+    pub direct_generator_same_target_rejected: u64,
     /// Number of times [`beam_prune`] actually truncated the open-node heap.
     pub beam_prune_invocations: u64,
     /// Total nodes evicted across all `beam_prune` invocations.
@@ -575,6 +589,14 @@ pub struct CrowdOutDiagnostics {
     /// Number of unique bond-index candidates remaining after the required
     /// element filter, summed across cache-miss expansions.
     pub bond_index_candidates_after_element_filter: u64,
+    /// Number of cache-miss expansions where bond-index retrieval returned
+    /// no rules and the search retried against the complete rule set. This
+    /// is a coverage fallback only; non-empty indexed retrieval is unchanged.
+    pub bond_index_empty_fallbacks: u64,
+    /// Number of cache-miss expansions where the indexed rule set produced
+    /// zero or one proposal and the complete rule set was retried. The field
+    /// name is retained for diagnostics-schema compatibility.
+    pub bond_index_no_proposal_fallbacks: u64,
     /// Cumulative wall-clock microseconds spent inside the retro-cache-miss
     /// expansion block (rule matching/candidate generation via
     /// `candidate::raw_propose`, plus its NN-reranking and dedup-counting
@@ -1448,6 +1470,7 @@ pub fn reaction_family_for_rule(rule: &str) -> Option<&'static str> {
         "carbamate_cleavage" => Some("carbamate_formation"),
         "urea_cleavage" => Some("urea_formation"),
         "boc_deprotection_retro" => Some("boc_deprotection"),
+        "boc_protection_retro" => Some("boc_protection"),
         "cbz_deprotection_retro" => Some("cbz_deprotection"),
         // n_benzylation_retro / michael_retro / negishi_retro /
         // grignard_addition_retro removed from default_rules() (v0.36.0
@@ -1579,6 +1602,9 @@ fn procedure_hint_for_rule(rule: &str) -> Option<&'static str> {
         "boc_deprotection_retro" => {
             Some("Treat with TFA (20% in DCM) at rt for 1 h, then evaporate.")
         }
+        "boc_protection_retro" => {
+            Some("Treat the amine with di-tert-butyl dicarbonate and base in DCM at rt.")
+        }
         "cbz_deprotection_retro" => Some("Hydrogenate (H₂, 1 atm) over Pd/C (10%) in EtOH at rt."),
         // grignard_addition_retro's entry removed with the rule (v0.36.0
         // rule-safety census) -- see reaction_family_for_rule above.
@@ -1679,34 +1705,80 @@ fn node_score_cmp(a: &Node, b: &Node) -> std::cmp::Ordering {
         .unwrap_or(std::cmp::Ordering::Equal)
 }
 
+fn node_is_direct_generator(node: &Node) -> bool {
+    node.path
+        .as_ref()
+        .and_then(|path| path.expansions.get(path.entry_index))
+        .is_some_and(|entry| entry.rule_name == "direct_generator")
+}
+
 /// Convert checked direct-generator output into the same lightweight
 /// expansion representation used by native rules. This is deliberately a
 /// separate helper: generator transport/SMILES validation happens at the
 /// adapter boundary, while frontier insertion remains subject to the normal
 /// deduplication, heuristic, stock, and completed-route integrity checks.
+#[derive(Debug, Clone, Copy, Default)]
+struct DirectGeneratorDiagnostics {
+    proposals: u64,
+    admitted: u64,
+    integrity_rejected: u64,
+    parse_rejected: u64,
+    same_target_rejected: u64,
+}
+
 fn direct_generator_entries(
     generator: &dyn RetroGenerator,
     target: &str,
     depth: u32,
     molecule_cache: &mut FxHashMap<Arc<str>, Arc<Molecule>>,
-) -> Vec<RetroEntry> {
+) -> (Vec<RetroEntry>, DirectGeneratorDiagnostics) {
     let context = RetroGenerationContext {
         depth,
         max_proposals: MAX_DIRECT_GENERATOR_PROPOSALS,
     };
     let Ok(decision) = generator.propose_checked(target, &context) else {
-        return Vec::new();
+        return (Vec::new(), DirectGeneratorDiagnostics::default());
     };
-    decision
+    let mut diagnostics = DirectGeneratorDiagnostics {
+        proposals: decision.proposals.len() as u64,
+        ..Default::default()
+    };
+    let max_source_rank = decision
+        .proposals
+        .iter()
+        .map(|proposal| proposal.provenance.source_rank)
+        .max()
+        .unwrap_or(0);
+    let entries = decision
         .proposals
         .into_iter()
         .filter_map(|proposal| {
+            // A direct proposal is still only a candidate, but proposals
+            // that already violate RENKIN's route-integrity boundary can
+            // never become a strict route by adding downstream steps. Drop
+            // those before allocating frontier state. This is intentionally
+            // limited to the opt-in direct-generator arm; native candidates
+            // retain their established behavior and the staged retry can
+            // therefore never regress an existing native success.
+            if !route_integrity_defects(
+                &crate::retro_generator::proposal_to_route(&proposal),
+                target,
+            )
+            .is_empty()
+            {
+                diagnostics.integrity_rejected += 1;
+                return None;
+            }
             let mut precursors = Vec::with_capacity(proposal.precursors.len());
             for smiles in proposal.precursors {
-                let mol = mol_from_smiles(&smiles).ok()?;
+                let Ok(mol) = mol_from_smiles(&smiles) else {
+                    diagnostics.parse_rejected += 1;
+                    return None;
+                };
                 let mol = standardize(&mol, &crate::chem_env::STANDARDIZE_OPTS);
                 let canonical = to_canonical(&mol);
                 if canonical == target {
+                    diagnostics.same_target_rejected += 1;
                     return None;
                 }
                 precursors.push(crate::chem_env::PrecursorMol {
@@ -1715,6 +1787,18 @@ fn direct_generator_entries(
                 });
             }
             let step_cost = step_cost_iter(precursors.iter().map(|p| &p.mol));
+            // Preserve the generator's explicit rank as a small
+            // ordering-only signal. The bounded 0.02 correction is much
+            // smaller than the chemistry-derived cost and is used only for
+            // the opt-in direct-generator arm; native candidates retain
+            // their original score. This makes source rank useful without
+            // pretending it is a calibrated synthesis cost.
+            let rank_bonus = if max_source_rank == 0 {
+                0.0
+            } else {
+                0.02 * (max_source_rank.saturating_sub(proposal.provenance.source_rank) as f64
+                    / max_source_rank as f64)
+            };
             let precursor_smiles = precursors
                 .into_iter()
                 .map(|precursor| {
@@ -1725,17 +1809,19 @@ fn direct_generator_entries(
                     smiles
                 })
                 .collect();
+            diagnostics.admitted += 1;
             Some(RetroEntry {
                 rule_name: "direct_generator".to_owned(),
                 template_id: format!(
                     "generator:{}:{}",
                     proposal.provenance.generator_id, proposal.candidate_id
                 ),
-                step_cost,
+                step_cost: step_cost - rank_bonus,
                 precursor_smiles,
             })
         })
-        .collect()
+        .collect::<Vec<_>>();
+    (entries, diagnostics)
 }
 
 /// Returns `(eviction_stats, trace_ranks, diversity_stats)`.
@@ -1769,12 +1855,103 @@ fn beam_prune(
     Vec<TraceRank>,
     DiversityReservationStats,
 ) {
+    beam_prune_with_direct_reservation(heap, beam_width, diversity_policy, diversity_slots, 0)
+}
+
+/// Beam pruning with optional generator-only augmentation slots.
+///
+/// `direct_generator_slots` is deliberately separate from `beam_width`: when
+/// nonzero, the pure-score native survivors (the same top `beam_width` that a
+/// native-only run would retain) are kept first, and up to this many direct
+/// generator nodes are appended as additional capacity. Thus a direct
+/// proposal can never evict a native proposal that would have survived the
+/// corresponding native-only beam. The extra capacity is opt-in and is used
+/// only by the staged retry orchestration; the default path remains byte-for-
+/// byte identical through `beam_prune` above.
+fn beam_prune_with_direct_reservation(
+    heap: &mut BinaryHeap<Node>,
+    beam_width: usize,
+    diversity_policy: BeamDiversityPolicy,
+    diversity_slots: usize,
+    direct_generator_slots: usize,
+) -> (
+    Option<BeamEvictionStats>,
+    Vec<TraceRank>,
+    DiversityReservationStats,
+) {
     if beam_width == 0 || heap.len() <= beam_width {
         return (None, Vec::new(), DiversityReservationStats::default());
     }
     let mut nodes: Vec<Node> = heap.drain().collect();
 
     nodes.sort_unstable_by(node_score_cmp);
+
+    if direct_generator_slots > 0 && diversity_policy == BeamDiversityPolicy::Off {
+        let native: Vec<Node> = nodes
+            .iter()
+            .filter(|node| !node_is_direct_generator(node))
+            .cloned()
+            .collect();
+        let direct: Vec<Node> = nodes
+            .iter()
+            .filter(|node| node_is_direct_generator(node))
+            .cloned()
+            .collect();
+        let native_keep = native.len().min(beam_width);
+        let direct_keep = direct.len().min(direct_generator_slots);
+        let effective_capacity = native_keep + direct_keep;
+        if effective_capacity >= nodes.len() {
+            *heap = nodes.into_iter().collect();
+            return (None, Vec::new(), DiversityReservationStats::default());
+        }
+        let trace_ranks: Vec<TraceRank> = nodes
+            .iter()
+            .enumerate()
+            .filter_map(|(rank, node)| {
+                node.trace_id
+                    .map(|id| (id, rank, node_is_direct_generator(node)))
+            })
+            .map(|(id, rank, is_direct)| {
+                let survived = if is_direct {
+                    rank < direct.len()
+                        && direct[..direct_keep]
+                            .iter()
+                            .any(|node| node.trace_id == Some(id))
+                } else {
+                    rank < native.len()
+                        && native[..native_keep]
+                            .iter()
+                            .any(|node| node.trace_id == Some(id))
+                };
+                (id, rank, survived)
+            })
+            .collect();
+        let evicted = nodes.len().saturating_sub(effective_capacity);
+        let evicted_f_min = nodes
+            .iter()
+            .skip(effective_capacity)
+            .map(Node::f)
+            .fold(f64::INFINITY, f64::min);
+        let evicted_f_max = nodes
+            .iter()
+            .skip(effective_capacity)
+            .map(Node::f)
+            .fold(f64::NEG_INFINITY, f64::max);
+        let boundary_f = nodes
+            .get(effective_capacity.saturating_sub(1))
+            .map(Node::f)
+            .unwrap_or(f64::INFINITY);
+
+        let direct_survivors: Vec<Node> = direct.into_iter().take(direct_keep).collect();
+        let mut survivors: Vec<Node> = native.into_iter().take(native_keep).collect();
+        survivors.extend(direct_survivors);
+        *heap = survivors.into_iter().collect();
+        return (
+            Some((evicted, evicted_f_min, evicted_f_max, boundary_f)),
+            trace_ranks,
+            DiversityReservationStats::default(),
+        );
+    }
 
     if diversity_policy == BeamDiversityPolicy::Off {
         // Exact pre-existing behavior, byte-for-byte, zero extra cost --
@@ -2221,6 +2398,11 @@ pub struct SearchConfig {
     /// into the normal frontier only when this is explicitly configured;
     /// native rule proposals, validation, and stock semantics remain intact.
     pub retro_generator: Option<std::sync::Arc<dyn RetroGenerator>>,
+    /// Extra beam capacity for direct-generator candidates in staged retry.
+    /// Native top-beam candidates are retained first, so generator output
+    /// cannot evict an established native candidate when this is nonzero.
+    /// Zero preserves the ordinary mixed-beam behavior.
+    pub retro_generator_slots: usize,
     /// Optional template metadata sidecar (`--template-metadata` / Python
     /// `template_metadata_path`), keyed by `RetroRule::template_id`. When Some,
     /// matching steps get `evidence` populated in post-processing; unmatched
@@ -2360,6 +2542,7 @@ impl Default for SearchConfig {
             value_estimator: None,
             reaction_prior: None,
             retro_generator: None,
+            retro_generator_slots: 0,
             template_metadata: None,
             #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
             nn_scorer: None,
@@ -2539,6 +2722,72 @@ pub struct BeamDiversityRetryRunResult {
     pub selected: SearchRunResult,
     /// The original score-only run when a retry was invoked.
     pub initial: Option<SearchRunResult>,
+}
+
+/// Result of the opt-in, staged direct-generator search. The native proposer
+/// always runs first; direct-generator proposals are admitted only for a
+/// completed run with no route, so an external generator cannot displace an
+/// established native success.
+#[derive(Debug)]
+pub struct RetroGeneratorRetryRunResult {
+    pub selected: SearchRunResult,
+    pub initial: Option<SearchRunResult>,
+}
+
+/// Run the native search first and augment only an unsuccessful, completed
+/// target with direct-generator proposals. This is intentionally separate
+/// from `SearchConfig::retro_generator`'s low-level augmentation seam so the
+/// caller can choose a regression-safe staged policy.
+pub fn find_routes_with_retro_generator_retry(
+    target_smiles: &str,
+    env: &ChemEnv,
+    rules: &[RetroRule],
+    config: &SearchConfig,
+    control: &SearchControl,
+) -> Result<RetroGeneratorRetryRunResult> {
+    if config.retro_generator.is_none() {
+        return Ok(RetroGeneratorRetryRunResult {
+            selected: find_routes_with_control(target_smiles, env, rules, config, control)?,
+            initial: None,
+        });
+    }
+    let prepared_rules = crate::chem_env::PreparedRuleSet::new(rules);
+    let mut native_config = config.clone();
+    native_config.retro_generator = None;
+    let initial = find_routes_with_control_prepared(
+        target_smiles,
+        env,
+        rules,
+        &native_config,
+        control,
+        &prepared_rules,
+        None,
+    )?;
+    if !initial.routes.is_empty() || initial.termination != SearchTermination::Completed {
+        return Ok(RetroGeneratorRetryRunResult {
+            selected: initial,
+            initial: None,
+        });
+    }
+    let retry = find_routes_with_control_prepared(
+        target_smiles,
+        env,
+        rules,
+        &{
+            let mut staged_config = config.clone();
+            if staged_config.retro_generator_slots == 0 && staged_config.beam_width > 0 {
+                staged_config.retro_generator_slots = (staged_config.beam_width / 5).max(1);
+            }
+            staged_config
+        },
+        control,
+        &prepared_rules,
+        None,
+    )?;
+    Ok(RetroGeneratorRetryRunResult {
+        selected: retry,
+        initial: Some(initial),
+    })
 }
 
 /// Reusable, immutable search assets for repeated queries against one stock
@@ -2998,11 +3247,21 @@ pub(crate) fn find_routes_with_control_prepared(
                     retrieval.candidates_before_element_filter as u64;
                 crowd_out.bond_index_candidates_after_element_filter +=
                     retrieval.candidates_after_element_filter as u64;
-                retrieved = retrieval
-                    .indices
-                    .into_iter()
-                    .filter_map(|i| rules.get(i))
-                    .collect();
+                retrieved = if retrieval.indices.is_empty() {
+                    // An empty indexed result is a strong signal that the
+                    // coarse bond signature missed the target, not that no
+                    // chemistry is applicable. Retry the complete rule set
+                    // only in this case. Existing non-empty indexed runs
+                    // retain their exact candidate set and ordering.
+                    crowd_out.bond_index_empty_fallbacks += 1;
+                    ranked_rules.clone()
+                } else {
+                    retrieval
+                        .indices
+                        .into_iter()
+                        .filter_map(|i| rules.get(i))
+                        .collect()
+                };
                 &retrieved
             } else if let Some(v) = nn_rank(config, rules, target_smi) {
                 per_node = v;
@@ -3035,7 +3294,7 @@ pub(crate) fn find_routes_with_control_prepared(
                 })
                 .collect();
             let (
-                raw_proposals,
+                mut raw_proposals,
                 step_ring_diag,
                 step_sbl_findings,
                 step_gated_out,
@@ -3051,6 +3310,64 @@ pub(crate) fn find_routes_with_control_prepared(
                 config.spectator_bond_policy,
                 config.element_accounting_policy,
             );
+            let mut step_ring_diag = step_ring_diag;
+            let mut step_sbl_findings = step_sbl_findings;
+            let mut step_gated_out = step_gated_out;
+            let mut step_element_accounting_gated_out = step_element_accounting_gated_out;
+
+            // A coarse bond index can return a non-empty rule set whose
+            // applicable set is suspiciously small: a relevant reaction
+            // center may share only a coarse element-pair signature with
+            // the target. Retry the complete rule set for zero or one
+            // indexed proposal, then merge only proposals not already
+            // present. Larger indexed pools retain the fast path and exact
+            // candidate set. This is an opt-in recall guard and never runs
+            // when bond-index retrieval is disabled.
+            if raw_proposals.len() <= 1
+                && bond_idx.is_some()
+                && active_rules.len() < ranked_rules.len()
+            {
+                let full_scored_rules: Vec<crate::candidate::ScoredRuleRef<'_>> = ranked_rules
+                    .iter()
+                    .enumerate()
+                    .map(|(rank, &rule)| crate::candidate::ScoredRuleRef {
+                        rule,
+                        source_rank: rank,
+                        upstream_score: None,
+                        upstream_score_status: crate::candidate::UpstreamScoreStatus::NotApplicable,
+                    })
+                    .collect();
+                let (
+                    full_proposals,
+                    full_ring_diag,
+                    full_sbl_findings,
+                    full_gated_out,
+                    full_element_accounting_gated_out,
+                ) = crate::candidate::raw_propose(
+                    &target_mol,
+                    target_smi,
+                    &full_scored_rules,
+                    Some(prepared_rules),
+                    crate::ring_context::RingContextArgs {
+                        config: config.ring_context.clone(),
+                    },
+                    config.spectator_bond_policy,
+                    config.element_accounting_policy,
+                );
+                if !full_proposals.is_empty() {
+                    crowd_out.bond_index_no_proposal_fallbacks += 1;
+                    // Candidate-level canonical merging below already
+                    // deduplicates identical precursor multisets while
+                    // retaining all source provenance. Keep both raw pools
+                    // here so a full-rule proposal that shares a precursor
+                    // set with an indexed proposal cannot lose provenance.
+                    raw_proposals.extend(full_proposals);
+                    step_ring_diag.merge(&full_ring_diag);
+                    step_sbl_findings.extend(full_sbl_findings);
+                    step_gated_out.extend(full_gated_out);
+                    step_element_accounting_gated_out.extend(full_element_accounting_gated_out);
+                }
+            }
             ring_context_diagnostics.merge(&step_ring_diag);
             crowd_out
                 .spectator_bond_loss_findings
@@ -3166,12 +3483,20 @@ pub(crate) fn find_routes_with_control_prepared(
             // replaces, native rule proposals so an external model cannot
             // silently narrow RENKIN's established candidate space.
             if let Some(generator) = config.retro_generator.as_deref() {
-                entries.extend(direct_generator_entries(
+                let (direct_entries, direct_diagnostics) = direct_generator_entries(
                     generator,
                     target_smi,
                     node.depth,
                     &mut molecule_cache,
-                ));
+                );
+                crowd_out.direct_generator_proposals += direct_diagnostics.proposals;
+                crowd_out.direct_generator_admitted += direct_diagnostics.admitted;
+                crowd_out.direct_generator_integrity_rejected +=
+                    direct_diagnostics.integrity_rejected;
+                crowd_out.direct_generator_parse_rejected += direct_diagnostics.parse_rejected;
+                crowd_out.direct_generator_same_target_rejected +=
+                    direct_diagnostics.same_target_rejected;
+                entries.extend(direct_entries);
             }
 
             // Account for duplicate outcomes before the child loop. Exact
@@ -3379,12 +3704,22 @@ pub(crate) fn find_routes_with_control_prepared(
         if config.beam_width > 0 && heap.len() > config.beam_width {
             beam_limit_hit = true;
         }
-        let (eviction_stats, trace_ranks, diversity_stats) = beam_prune(
-            &mut heap,
-            config.beam_width,
-            config.beam_diversity_policy,
-            config.beam_diversity_slots,
-        );
+        let (eviction_stats, trace_ranks, diversity_stats) = if config.retro_generator_slots == 0 {
+            beam_prune(
+                &mut heap,
+                config.beam_width,
+                config.beam_diversity_policy,
+                config.beam_diversity_slots,
+            )
+        } else {
+            beam_prune_with_direct_reservation(
+                &mut heap,
+                config.beam_width,
+                config.beam_diversity_policy,
+                config.beam_diversity_slots,
+                config.retro_generator_slots,
+            )
+        };
         if let Some((evicted_n, evicted_min, evicted_max, boundary)) = eviction_stats {
             crowd_out.beam_prune_invocations += 1;
             crowd_out.candidates_evicted_total += evicted_n as u64;
@@ -3991,6 +4326,43 @@ mod tests {
         }
     }
 
+    fn direct_generator_node(f: f64) -> Node {
+        let expansions = Arc::new(vec![RetroEntry {
+            rule_name: "direct_generator".to_owned(),
+            template_id: "generator:fixture:1".to_owned(),
+            step_cost: f,
+            precursor_smiles: retro_precursors(&["CC"]),
+        }]);
+        Node {
+            g: f,
+            path: Some(Arc::new(PathNode {
+                target: "CCO".to_owned(),
+                expansions,
+                entry_index: 0,
+                prev: None,
+            })),
+            ..node(f)
+        }
+    }
+
+    #[test]
+    fn direct_generator_reservation_keeps_native_beam_and_adds_extra_slot() {
+        let mut heap: BinaryHeap<Node> =
+            vec![node(1.0), node(2.0), node(3.0), direct_generator_node(0.1)]
+                .into_iter()
+                .collect();
+
+        let (_, _, _) =
+            beam_prune_with_direct_reservation(&mut heap, 2, BeamDiversityPolicy::Off, 0, 1);
+        let mut scores: Vec<f64> = heap.iter().map(Node::f).collect();
+        scores.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_eq!(scores, vec![0.1, 1.0, 2.0]);
+        assert!(
+            heap.iter().any(node_is_direct_generator),
+            "the direct candidate should use only the reserved extra slot"
+        );
+    }
+
     // ── select_beam_survivors tests (diversity-reserved beam, rollout
     //    stage 2 -- see docs/design/diversity-reserved-beam-v0.md) ─────────
 
@@ -4478,6 +4850,26 @@ mod tests {
             stats.crowd_out.bond_index_candidates_after_element_filter
                 <= stats.crowd_out.bond_index_candidates_before_element_filter
         );
+    }
+
+    #[test]
+    fn bond_index_empty_result_falls_back_to_full_rule_set() {
+        let env = ChemEnv::in_memory(&["O"]);
+        let rules = vec![RetroRule {
+            name: "carbon_bond_probe".to_owned(),
+            template_id: "rule:carbon_bond_probe".to_owned(),
+            smirks: "[C:1][C:2]>>[C:1].[C:2]".to_owned(),
+            weight: 1.0,
+            required_elements: 0,
+        }];
+        let config = SearchConfig {
+            max_depth: 1,
+            max_routes: 1,
+            bond_index: true,
+            ..Default::default()
+        };
+        let (_, stats) = find_routes("O", &env, &rules, &config).unwrap();
+        assert_eq!(stats.crowd_out.bond_index_empty_fallbacks, 1);
     }
 
     #[test]
@@ -5179,7 +5571,7 @@ mod tests {
                     proposals: vec![crate::retro_generator::RetroProposal {
                         candidate_id: "fixture-1".to_owned(),
                         target: target.to_owned(),
-                        precursors: vec!["CC".to_owned()],
+                        precursors: vec!["CC".to_owned(), "O".to_owned()],
                         atom_mapping: None,
                         provenance: crate::retro_generator::GeneratorProvenance {
                             generator_id: "fixture".to_owned(),
@@ -5194,13 +5586,161 @@ mod tests {
             }
         }
 
+        let target = to_canonical(&mol_from_smiles("CCO").unwrap());
         let mut molecule_cache = FxHashMap::default();
-        let entries = direct_generator_entries(&FixtureGenerator, "CCO", 0, &mut molecule_cache);
+        let (entries, diagnostics) =
+            direct_generator_entries(&FixtureGenerator, &target, 0, &mut molecule_cache);
+        assert_eq!(diagnostics.proposals, 1);
+        assert_eq!(diagnostics.admitted, 1);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].rule_name, "direct_generator");
         assert_eq!(entries[0].template_id, "generator:fixture:fixture-1");
-        assert_eq!(entries[0].precursor_smiles, vec![Arc::<str>::from("CC")]);
+        assert_eq!(
+            entries[0].precursor_smiles,
+            vec![Arc::<str>::from("CC"), Arc::<str>::from("O")]
+        );
         assert!(molecule_cache.contains_key("CC"));
+    }
+
+    #[test]
+    fn direct_generator_entries_drop_integrity_impossible_proposals() {
+        struct InvalidGenerator;
+        impl crate::retro_generator::RetroGenerator for InvalidGenerator {
+            fn propose(
+                &self,
+                target: &str,
+                _context: &crate::retro_generator::RetroGenerationContext,
+            ) -> crate::retro_generator::RetroGeneratorDecision {
+                crate::retro_generator::RetroGeneratorDecision {
+                    proposals: vec![crate::retro_generator::RetroProposal {
+                        candidate_id: "missing-oxygen".to_owned(),
+                        target: target.to_owned(),
+                        precursors: vec!["CC".to_owned()],
+                        atom_mapping: None,
+                        provenance: crate::retro_generator::GeneratorProvenance {
+                            generator_id: "invalid-fixture".to_owned(),
+                            generator_version: "1".to_owned(),
+                            artifact_sha256: "sha256:fixture".to_owned(),
+                            source_rank: 0,
+                            model_confidence: None,
+                        },
+                    }],
+                    abstained: false,
+                }
+            }
+        }
+
+        let mut molecule_cache = FxHashMap::default();
+        let (entries, diagnostics) =
+            direct_generator_entries(&InvalidGenerator, "CCO", 0, &mut molecule_cache);
+        assert!(entries.is_empty());
+        assert_eq!(diagnostics.integrity_rejected, 1);
+        assert!(molecule_cache.is_empty());
+    }
+
+    #[test]
+    fn direct_generator_rank_is_an_ordering_only_bonus() {
+        struct RankedGenerator;
+        impl crate::retro_generator::RetroGenerator for RankedGenerator {
+            fn propose(
+                &self,
+                target: &str,
+                _context: &crate::retro_generator::RetroGenerationContext,
+            ) -> crate::retro_generator::RetroGeneratorDecision {
+                let provenance = |rank| crate::retro_generator::GeneratorProvenance {
+                    generator_id: "ranked-fixture".to_owned(),
+                    generator_version: "1".to_owned(),
+                    artifact_sha256: "sha256:fixture".to_owned(),
+                    source_rank: rank,
+                    model_confidence: None,
+                };
+                crate::retro_generator::RetroGeneratorDecision {
+                    proposals: vec![
+                        crate::retro_generator::RetroProposal {
+                            candidate_id: "top".to_owned(),
+                            target: target.to_owned(),
+                            precursors: vec!["CC".to_owned(), "O".to_owned()],
+                            atom_mapping: None,
+                            provenance: provenance(0),
+                        },
+                        crate::retro_generator::RetroProposal {
+                            candidate_id: "lower".to_owned(),
+                            target: target.to_owned(),
+                            precursors: vec!["CC".to_owned(), "O".to_owned()],
+                            atom_mapping: None,
+                            provenance: provenance(10),
+                        },
+                    ],
+                    abstained: false,
+                }
+            }
+        }
+
+        let target = to_canonical(&mol_from_smiles("CCO").unwrap());
+        let mut molecule_cache = FxHashMap::default();
+        let (entries, diagnostics) =
+            direct_generator_entries(&RankedGenerator, &target, 0, &mut molecule_cache);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(diagnostics.admitted, 2);
+        assert!(entries[0].step_cost < entries[1].step_cost);
+        assert!((entries[0].step_cost - entries[1].step_cost).abs() < 0.021);
+    }
+
+    #[test]
+    fn staged_generator_retry_returns_native_success_without_running_generator_arm() {
+        struct AdversarialGenerator;
+        impl crate::retro_generator::RetroGenerator for AdversarialGenerator {
+            fn propose(
+                &self,
+                target: &str,
+                _context: &crate::retro_generator::RetroGenerationContext,
+            ) -> crate::retro_generator::RetroGeneratorDecision {
+                crate::retro_generator::RetroGeneratorDecision {
+                    proposals: vec![crate::retro_generator::RetroProposal {
+                        candidate_id: "would-displace-native".to_owned(),
+                        target: target.to_owned(),
+                        precursors: vec!["CC".to_owned()],
+                        atom_mapping: None,
+                        provenance: crate::retro_generator::GeneratorProvenance {
+                            generator_id: "adversarial-fixture".to_owned(),
+                            generator_version: "1".to_owned(),
+                            artifact_sha256: "sha256:fixture".to_owned(),
+                            source_rank: 0,
+                            model_confidence: Some(1.0),
+                        },
+                    }],
+                    abstained: false,
+                }
+            }
+        }
+
+        let config = SearchConfig {
+            max_depth: 3,
+            max_routes: 1,
+            beam_width: 10,
+            retro_generator: Some(Arc::new(AdversarialGenerator)),
+            ..Default::default()
+        };
+        let env = aspirin_env();
+        let result = find_routes_with_retro_generator_retry(
+            "CC(=O)Oc1ccccc1C(=O)O",
+            &env,
+            &default_rules(),
+            &config,
+            &SearchControl::unlimited(),
+        )
+        .unwrap();
+
+        assert!(result.initial.is_none(), "native success must not retry");
+        assert!(!result.selected.routes.is_empty());
+        assert!(
+            result
+                .selected
+                .routes
+                .iter()
+                .flat_map(|route| route.steps.iter())
+                .all(|step| step.rule != "direct_generator")
+        );
     }
 
     #[test]
@@ -5671,6 +6211,7 @@ mod tests {
             ("carbamate_cleavage", Some("carbamate_formation")),
             ("urea_cleavage", Some("urea_formation")),
             ("boc_deprotection_retro", Some("boc_deprotection")),
+            ("boc_protection_retro", Some("boc_protection")),
             ("cbz_deprotection_retro", Some("cbz_deprotection")),
             ("claisen_retro", Some("claisen_condensation")),
             ("acyl_chloride_from_acid", Some("acyl_chloride_formation")),

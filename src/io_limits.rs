@@ -8,6 +8,11 @@ use anyhow::{Context, Result, bail};
 /// Maximum size accepted for a caller-supplied text file.
 pub const MAX_TEXT_FILE_BYTES: u64 = 64 * 1024 * 1024;
 pub const MAX_TEXT_LINE_BYTES: usize = 64 * 1024;
+/// Direct-generator artifacts are explicit, hash-pinned model inputs and can
+/// contain a larger candidate table than ordinary text/configuration files.
+/// Keep this separate from the shared text-file cap so ordinary inputs do not
+/// silently receive a larger allocation budget.
+pub const MAX_RETRO_ARTIFACT_BYTES: u64 = 128 * 1024 * 1024;
 
 /// Read one UTF-8 line without allocating beyond the shared line cap. An
 /// oversized line is consumed through its newline before returning an error,
@@ -91,6 +96,17 @@ pub fn read_bounded_bytes_file(path: &str, label: &str) -> Result<Vec<u8>> {
 
 /// Path-generic byte reader for binary artifacts and provenance hashing.
 pub fn read_bounded_bytes_path(path: impl AsRef<Path>, label: &str) -> Result<Vec<u8>> {
+    read_bounded_bytes_path_with_limit(path, label, MAX_TEXT_FILE_BYTES)
+}
+
+/// Path-generic byte reader with an explicit, caller-selected hard cap.
+/// Callers must keep specialized limits narrow and document why they differ
+/// from [`MAX_TEXT_FILE_BYTES`].
+pub fn read_bounded_bytes_path_with_limit(
+    path: impl AsRef<Path>,
+    label: &str,
+    max_bytes: u64,
+) -> Result<Vec<u8>> {
     let path = path.as_ref();
     let link_metadata = std::fs::symlink_metadata(path)
         .with_context(|| format!("failed to inspect {label} {}", path.display()))?;
@@ -105,21 +121,15 @@ pub fn read_bounded_bytes_path(path: impl AsRef<Path>, label: &str) -> Result<Ve
     if !metadata.is_file() {
         bail!("{label} {path:?} is not a regular file");
     }
-    if metadata.len() > MAX_TEXT_FILE_BYTES {
-        bail!(
-            "resource_exhausted: {label} exceeds {} bytes",
-            MAX_TEXT_FILE_BYTES
-        );
+    if metadata.len() > max_bytes {
+        bail!("resource_exhausted: {label} exceeds {} bytes", max_bytes);
     }
     let mut bytes = Vec::new();
-    file.take(MAX_TEXT_FILE_BYTES + 1)
+    file.take(max_bytes + 1)
         .read_to_end(&mut bytes)
         .with_context(|| format!("failed to read {label} {}", path.display()))?;
-    if bytes.len() as u64 > MAX_TEXT_FILE_BYTES {
-        bail!(
-            "resource_exhausted: {label} exceeds {} bytes",
-            MAX_TEXT_FILE_BYTES
-        );
+    if bytes.len() as u64 > max_bytes {
+        bail!("resource_exhausted: {label} exceeds {} bytes", max_bytes);
     }
     Ok(bytes)
 }

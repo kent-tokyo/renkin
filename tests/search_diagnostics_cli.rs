@@ -53,7 +53,13 @@ fn default_output_omits_search_diagnostics_when_route_found() {
 
 #[test]
 fn malformed_numeric_limits_fail_closed_instead_of_using_defaults() {
-    for flag in ["--depth", "--max-routes", "--beam-width", "--top-templates"] {
+    for flag in [
+        "--depth",
+        "--max-routes",
+        "--beam-width",
+        "--top-templates",
+        "--retro-generator-slots",
+    ] {
         let stderr = run_failure(&["--target", BUILDING_BLOCK, flag, "not-a-number"]);
         assert!(
             stderr.contains("must be a non-negative integer"),
@@ -64,7 +70,13 @@ fn malformed_numeric_limits_fail_closed_instead_of_using_defaults() {
 
 #[test]
 fn missing_numeric_limit_values_fail_closed() {
-    for flag in ["--depth", "--max-routes", "--beam-width", "--top-templates"] {
+    for flag in [
+        "--depth",
+        "--max-routes",
+        "--beam-width",
+        "--top-templates",
+        "--retro-generator-slots",
+    ] {
         let stderr = run_failure(&["--target", BUILDING_BLOCK, flag]);
         assert!(
             stderr.contains("requires a value"),

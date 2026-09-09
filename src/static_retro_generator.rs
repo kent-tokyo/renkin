@@ -50,7 +50,11 @@ impl StaticRetroGenerator {
         if manifest.model_kind != ModelKind::RetroGenerator {
             bail!("model manifest kind must be retro_generator");
         }
-        let bytes = crate::io_limits::read_bounded_bytes_path(&artifact_path, "retro artifact")?;
+        let bytes = crate::io_limits::read_bounded_bytes_path_with_limit(
+            &artifact_path,
+            "retro artifact",
+            crate::io_limits::MAX_RETRO_ARTIFACT_BYTES,
+        )?;
         let actual_hash = format!("sha256:{}", crate::sha256_hex(Sha256::digest(&bytes)));
         if actual_hash != manifest.model_sha256 {
             bail!(

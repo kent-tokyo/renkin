@@ -171,7 +171,7 @@ Use `--format mermaid` for GitHub/Notion-compatible flowcharts.
 
 ## Current Limitations
 
-Current release: **v1.0.4**.
+Current release: **v1.0.5**.
 
 ⚠️ The corrected 4,903-target v1.0.1 shared-stock comparison is complete. RENKIN
 recorded 591/4,903 primary successes (12.05%) versus AiZynthFinder 4.4.1's

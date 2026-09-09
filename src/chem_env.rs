@@ -1471,6 +1471,7 @@ fn apply_retro_impl(
             "carbamate_cleavage" => carbamate_cleavage_graph(mol),
             "urea_cleavage" => urea_cleavage_graph(mol),
             "boc_deprotection_retro" => boc_deprotection(mol),
+            "boc_protection_retro" => boc_protection(mol),
             "cbz_deprotection_retro" => cbz_deprotection(mol),
             _ => vec![],
         };
@@ -3116,6 +3117,8 @@ pub fn default_rules() -> Vec<RetroRule> {
         // ── N-protection / deprotection ──────────────────────────────────────
         // N-Boc → N-H (deprotect: TFA removes Boc). Graph-based to avoid leakage.
         rr("boc_deprotection_retro", ""),
+        // Free amine → N-Boc precursor, complementary to the direction above.
+        rr("boc_protection_retro", ""),
         // ── N-alkylation (more specific than cn_aliphatic_cleavage) ──────────
         // `n_benzylation_retro` ("[N:1][CH2:2][c:3]>>[N:1].[Br][CH2:2][c:3]")
         // was removed: v0.36.0's rule-safety census (issue #77-class screen,
@@ -3645,6 +3648,101 @@ fn boc_deprotection(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
             continue;
         }
         results.push(precs);
+    }
+    results
+}
+
+/// Graph-based complementary Boc-protection disconnection:
+/// free primary/secondary amine -> N-Boc amine.
+///
+/// This is separate from `boc_deprotection_retro`, which preserves the
+/// historical N-Boc -> amine direction used by existing routes.  The
+/// complementary direction is needed when a valid upstream route explicitly
+/// represents the final deprotection precursor.  Only neutral, aliphatic N
+/// atoms with one or two heavy-atom neighbours are eligible; amide,
+/// carbamate, and sulfonamide nitrogens are excluded.
+fn boc_protection(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
+    let mut results = Vec::new();
+    for (n_idx, atom) in mol.atoms() {
+        if atom.element != Element::N || atom.aromatic || atom.charge != 0 {
+            continue;
+        }
+        let neighbours: Vec<(AtomIdx, BondIdx)> = mol.neighbors(n_idx).collect();
+        if neighbours.is_empty() || neighbours.len() > 2 {
+            continue;
+        }
+        if neighbours.iter().any(|(other, bond_idx)| {
+            let neighbour = mol.atom(*other);
+            let bond = mol.bond(*bond_idx);
+            bond.order != BondOrder::Single
+                || (neighbour.element == Element::C
+                    && mol
+                        .neighbors(*other)
+                        .any(|(carbonyl_neighbour, carbonyl_bond)| {
+                            mol.atom(carbonyl_neighbour).element == Element::O
+                                && mol.bond(carbonyl_bond).order == BondOrder::Double
+                        }))
+                || (neighbour.element == Element::S
+                    && mol
+                        .neighbors(*other)
+                        .any(|(sulfur_neighbour, sulfur_bond)| {
+                            mol.atom(sulfur_neighbour).element == Element::O
+                                && mol.bond(sulfur_bond).order == BondOrder::Double
+                        }))
+        }) {
+            continue;
+        }
+
+        let mut builder = MoleculeBuilder::new();
+        let mut idx_map: FxHashMap<AtomIdx, AtomIdx> = FxHashMap::default();
+        for (old_idx, existing_atom) in mol.atoms() {
+            let new_idx = builder.add_atom(existing_atom.clone());
+            idx_map.insert(old_idx, new_idx);
+        }
+        let mut copy_failed = false;
+        for (_, bond) in mol.bonds() {
+            let (Some(&a), Some(&b)) = (idx_map.get(&bond.atom1), idx_map.get(&bond.atom2)) else {
+                copy_failed = true;
+                break;
+            };
+            if builder.add_bond(a, b, bond.order).is_err() {
+                copy_failed = true;
+                break;
+            }
+        }
+        if copy_failed {
+            continue;
+        }
+
+        let carbonyl_c = builder.add_atom(Atom::new(Element::C));
+        let carbonyl_o = builder.add_atom(Atom::new(Element::O));
+        let linker_o = builder.add_atom(Atom::new(Element::O));
+        let tert_c = builder.add_atom(Atom::new(Element::C));
+        let methyl_a = builder.add_atom(Atom::new(Element::C));
+        let methyl_b = builder.add_atom(Atom::new(Element::C));
+        let methyl_c = builder.add_atom(Atom::new(Element::C));
+        let Some(&new_n) = idx_map.get(&n_idx) else {
+            continue;
+        };
+        let bonds = [
+            (new_n, carbonyl_c, BondOrder::Single),
+            (carbonyl_c, carbonyl_o, BondOrder::Double),
+            (carbonyl_c, linker_o, BondOrder::Single),
+            (linker_o, tert_c, BondOrder::Single),
+            (tert_c, methyl_a, BondOrder::Single),
+            (tert_c, methyl_b, BondOrder::Single),
+            (tert_c, methyl_c, BondOrder::Single),
+        ];
+        if bonds
+            .into_iter()
+            .any(|(a, b, order)| builder.add_bond(a, b, order).is_err())
+        {
+            continue;
+        }
+        let precursors = split_fragments(&builder.build());
+        if !precursors.is_empty() {
+            results.push(precursors);
+        }
     }
     results
 }
@@ -5712,6 +5810,33 @@ mod tests {
             smiles.iter().any(|s| s.contains('O')),
             "products should contain oxygen; got {smiles:?}"
         );
+    }
+
+    #[test]
+    fn boc_protection_retro_adds_a_boc_group_to_a_secondary_amine() {
+        let mol = mol_from_smiles("C1CCNCC1").unwrap();
+        let rule = rr("boc_protection_retro", "");
+        let results = apply_retro(&mol, &rule);
+        let expected = canonical_smiles(&mol_from_smiles("CC(C)(C)OC(=O)N1CCCCC1").unwrap());
+        assert!(
+            results
+                .iter()
+                .flatten()
+                .any(|precursor| precursor.smiles == expected),
+            "complementary Boc rule must produce N-Boc piperidine"
+        );
+    }
+
+    #[test]
+    fn boc_protection_retro_excludes_deactivated_and_tertiary_nitrogens() {
+        let rule = rr("boc_protection_retro", "");
+        for smiles in ["CC(=O)NCC", "CS(=O)(=O)NCC", "CN(C)C"] {
+            let mol = mol_from_smiles(smiles).unwrap();
+            assert!(
+                apply_retro(&mol, &rule).is_empty(),
+                "Boc protection must not fire on {smiles}"
+            );
+        }
     }
 
     // ── Layer 2: graph function unit tests ───────────────────────────────────

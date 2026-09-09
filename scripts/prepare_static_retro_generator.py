@@ -59,6 +59,9 @@ def load_rows(path: Path, generator_id: str, generator_version: str, max_per_tar
                 not isinstance(confidence, (int, float)) or not 0.0 <= confidence <= 1.0
             ):
                 raise ValueError(f"line {line_number}: model_confidence must be in [0,1]")
+            source_rank = row.get("source_rank", row.get("best_upstream_rank", len(proposals[target])))
+            if not isinstance(source_rank, int) or source_rank < 0:
+                raise ValueError(f"line {line_number}: source_rank must be a non-negative integer")
             seen_ids[target].add(candidate_id)
             proposals[target].append(
                 {
@@ -70,7 +73,7 @@ def load_rows(path: Path, generator_id: str, generator_version: str, max_per_tar
                         "generator_id": generator_id,
                         "generator_version": generator_version,
                         "artifact_sha256": source_hash,
-                        "source_rank": len(proposals[target]),
+                        "source_rank": source_rank,
                         "model_confidence": confidence,
                     },
                 }

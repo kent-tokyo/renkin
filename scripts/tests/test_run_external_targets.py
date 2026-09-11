@@ -40,6 +40,7 @@ class ExternalOrchestratorTests(unittest.TestCase):
         self.assertIn("none", command)
         self.assertIn("--memory", command)
         self.assertIn("planner:dev", command)
+        self.assertEqual(command[-2:], ["--output", "/artifacts/row.jsonl"])
 
 
 if __name__ == "__main__":

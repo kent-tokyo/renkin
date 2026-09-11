@@ -58,7 +58,9 @@ def container_command(args: argparse.Namespace, command: list[str], row_path: Pa
         "docker", "run", "--rm", "--network", "none", "--cpus", str(args.cpus),
         "--memory", args.memory, "--memory-swap", args.memory,
         "-v", f"{repo}:/repo:ro", "-v", f"{artifacts}:/artifacts:rw",
-        args.container_image, *translated[:2], *translated[2:],
+        # The benchmark images use `python` as their ENTRYPOINT; omit the
+        # host interpreter token from the command passed after the image.
+        args.container_image, *translated[1:],
     ]
 
 

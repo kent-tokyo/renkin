@@ -16,6 +16,14 @@ docker build --platform linux/arm64 \
 Before a formal run, record each image digest and `requirements-lock.txt`
 hash in the registry/run manifest. The image tag alone is not provenance.
 
+After the build, verify the immutable local image IDs with:
+
+```sh
+python3 scripts/verify_four_tool_images.py \
+  benchmarks/four_tool/configuration_registry.json \
+  --output <run-dir>/image-identities.json
+```
+
 The external runner accepts `--container-image`. It mounts the checked-out
 repository read-only at `/repo`, the per-run artifact directory at
 `/artifacts`, disables network access, and applies `--cpus 8 --memory 6g

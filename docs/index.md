@@ -14,7 +14,7 @@ Current release: **v1.0.5**.
 [![Crates.io](https://img.shields.io/crates/v/renkin)](https://crates.io/crates/renkin)
 [![PyPI](https://img.shields.io/pypi/v/renkin)](https://pypi.org/project/renkin/)
 [![npm](https://img.shields.io/npm/v/renkin)](https://www.npmjs.com/package/renkin)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/kent-tokyo/renkin/blob/master/LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/kent-tokyo/renkin/blob/main/LICENSE)
 
 ## What is RENKIN?
 
@@ -28,7 +28,7 @@ RENKIN is a **retrosynthesis engine** that automatically plans multi-step chemic
     Runs entirely in WebAssembly — no server, no installation.
 
 === "Google Colab (Python)"
-    [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kent-tokyo/renkin/blob/master/examples/renkin_quickstart.ipynb)
+    [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kent-tokyo/renkin/blob/main/examples/renkin_quickstart.ipynb)
 
     One-click Python notebook — `pip install renkin` + aspirin example + RDKit visualization.
 

@@ -4,8 +4,8 @@
 > Named after 錬金 (れんきん, *renkin*) — Japanese for alchemy: just as alchemists transformed base metals into gold, RENKIN transforms target molecules back into cheap starting materials.
 
 <p>
-  <a href="https://github.com/kent-tokyo/renkin/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/kent-tokyo/renkin/actions/workflows/ci.yml/badge.svg?branch=master"></a>
-  <a href="https://github.com/kent-tokyo/renkin/actions/workflows/docs.yml"><img alt="Docs" src="https://github.com/kent-tokyo/renkin/actions/workflows/docs.yml/badge.svg?branch=master"></a>
+  <a href="https://github.com/kent-tokyo/renkin/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/kent-tokyo/renkin/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/kent-tokyo/renkin/actions/workflows/docs.yml"><img alt="Docs" src="https://github.com/kent-tokyo/renkin/actions/workflows/docs.yml/badge.svg?branch=main"></a>
 </p>
 
 <p>
@@ -165,7 +165,7 @@ OC(=O)c1ccccc1OC(=O)C
 
 Use `--format mermaid` for GitHub/Notion-compatible flowcharts.
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kent-tokyo/renkin/blob/master/examples/renkin_quickstart.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kent-tokyo/renkin/blob/main/examples/renkin_quickstart.ipynb)
 
 ---
 
@@ -512,7 +512,7 @@ superiority. [Protocol and status](docs/benchmark/formal-v1.0-competitor-compari
 | Atom-balance-filtered rate | `atom_balanced_solved_rate` | **15.41%** (756/4,907) — subset of search-to-stock |
 | Current-validator-confirmed rate | `provenance_validated_solved_rate` | **0.88%** (43/4,907) — subset of atom-balance-filtered |
 
-402 building blocks (unique compounds actually loaded from `data/building_blocks.smi` — see below), 5,000 extracted templates, 28 handcrafted rules, depth=5, beam=100. These three rates are a nested series over the same 4,907 targets, not independent numbers, and none is an experimentally-verified synthesis success rate or a human-chemist-reviewed route-accuracy figure. `provenance_validated_solved_rate` is not a measured chemical-accuracy rate and not a proven lower bound on correctness — it only counts routes the current validator can positively confirm, and an unknown fraction of "invalid" verdicts may be validator false negatives rather than real chemistry or route errors (the split is unmeasured). Full methodology, per-rule breakdown, and reproduction command: [`tasks/phase31_final_remeasurement_run.md`](https://github.com/kent-tokyo/renkin/blob/master/tasks/phase31_final_remeasurement_run.md) · [Full benchmark details →](https://kent-tokyo.github.io/renkin/benchmark/)
+402 building blocks (unique compounds actually loaded from `data/building_blocks.smi` — see below), 5,000 extracted templates, 24 handcrafted rules, depth=5, beam=100. These three rates are a nested series over the same 4,907 targets, not independent numbers, and none is an experimentally-verified synthesis success rate or a human-chemist-reviewed route-accuracy figure. `provenance_validated_solved_rate` is not a measured chemical-accuracy rate and not a proven lower bound on correctness — it only counts routes the current validator can positively confirm, and an unknown fraction of "invalid" verdicts may be validator false negatives rather than real chemistry or route errors (the split is unmeasured). Full methodology, per-rule breakdown, and reproduction command: [`tasks/phase31_final_remeasurement_run.md`](https://github.com/kent-tokyo/renkin/blob/main/tasks/phase31_final_remeasurement_run.md) · [Full benchmark details →](https://kent-tokyo.github.io/renkin/benchmark/)
 
 ### Historical progression (pre-fix, invalidated — see notice above)
 

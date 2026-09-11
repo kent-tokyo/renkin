@@ -171,7 +171,7 @@ jobs:
           else
             gh release create "${TAG}" \
               --title "RENKIN ${TAG}" \
-              --notes "See [CHANGELOG.md](https://github.com/kent-tokyo/renkin/blob/master/CHANGELOG.md) for details." \
+              --notes "See [CHANGELOG.md](https://github.com/kent-tokyo/renkin/blob/main/CHANGELOG.md) for details." \
               --latest
           fi
       - name: Upload coverage-template asset (if this tag owns it)

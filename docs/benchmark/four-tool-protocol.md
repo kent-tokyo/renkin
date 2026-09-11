@@ -37,6 +37,14 @@ The following remain native to each configuration and are reported explicitly:
 - atom-mapping and route-export behavior;
 - random seed behavior and determinism guarantees.
 
+An arm is not admitted to the formal table merely because its process accepts
+the same numeric limits. The runner must enforce the CPU and memory ceiling
+and record the enforcement method. The current Syntheseus and SynPlanner
+Python runners are feasibility implementations on the host; until they are
+run inside an equivalent bounded container (or an independently verified
+host isolation mechanism), their resource-sensitive results remain
+`candidate`/`not_measured` rather than evidence for a same-resource claim.
+
 Giving every tool the same reaction model or template list is not required for
 this end-to-end comparison and would not represent how the tools are actually
 used. An engine-only comparison is a separate experiment.

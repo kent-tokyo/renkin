@@ -28,6 +28,7 @@ schema, post-hoc audit, and statistical procedure.
 | Shared stock | `<path and SHA-256>` |
 | Runner commit | `<commit>` |
 | Host/container | `<OS, image digest, CPU, memory>` |
+| Resource enforcement | `<per-arm mechanism; verified or not_measured>` |
 | Timeout / grace | `<seconds> / <seconds>` |
 | Formal target count | `<N>` |
 

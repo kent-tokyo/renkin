@@ -1214,6 +1214,14 @@ O1の初回差分分類を実施した。VAL-200 recoveryではstrict validator-
 `scripts/analyze_recovery_quality.py`に固定した。回復stage別の内訳はbaseline 121、
 depth 66、element_accounting 7、beam_width 6である。
 
+49.6の独立cohort初回測定として、VAL由来の固定disjoint-200
+(`data/phase_b1_frontier/val_sample_disjoint_200.jsonl`)へ現行fast profileを適用した。
+入力・stock・templateのhash付きmanifestを生成し、route_found/strict validatedは21/200
+(10.5%)、p95 total elapsed 5.701秒、p95 RSS 44.7 MiB、invalid・timeout・crash 0だった。
+これは200件の固定cohortに対する初回generalization evidenceであり、単独実行なので再現性の
+完了条件や競合性能の主張には使わない。証跡は
+`data/comparison/search_profiles_disjoint_200_20260911/`に保存した。
+
 次のO1実装として、比較adapterに`--max-routes`と`--route-selection strict_validated`
 を追加した。既存のrank-1 armは変更せず、明示した実験armだけが複数候補を受け取り、
 同じroute-tree／reaction-step／element-accounting validatorを通過した最初の候補を

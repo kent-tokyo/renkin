@@ -1218,9 +1218,13 @@ depth 66、element_accounting 7、beam_width 6である。
 (`data/phase_b1_frontier/val_sample_disjoint_200.jsonl`)へ現行fast profileを適用した。
 入力・stock・templateのhash付きmanifestを生成し、route_found/strict validatedは21/200
 (10.5%)、p95 total elapsed 5.701秒、p95 RSS 44.7 MiB、invalid・timeout・crash 0だった。
-これは200件の固定cohortに対する初回generalization evidenceであり、単独実行なので再現性の
-完了条件や競合性能の主張には使わない。証跡は
-`data/comparison/search_profiles_disjoint_200_20260911/`に保存した。
+これは200件の固定cohortに対する初回generalization evidenceであり、再実行で同一route_found
+件数と0失敗を確認するまで単独では再現性の主張に使わない。初回証跡は
+`data/comparison/search_profiles_disjoint_200_20260911/`、再実行証跡は
+`data/comparison/search_profiles_disjoint_200_20260911_rerun/`に保存した。両runの入力・stock・
+template hashとconfiguration IDは一致し、route_found/strict validatedはともに21/200
+(10.5%)、invalid・timeout・crashもともに0だった。これはこのdisjoint-200 cohortに限る
+再現性・一般化の証拠であり、外部corpusや競合優位性の主張ではない。
 
 次のO1実装として、比較adapterに`--max-routes`と`--route-selection strict_validated`
 を追加した。既存のrank-1 armは変更せず、明示した実験armだけが複数候補を受け取り、

@@ -117,6 +117,8 @@ configuration and target/stock manifests, per-target JSONL rows, aggregate
 tables, route artifacts, image identities and dependency locks, reproduction
 commands, and citation metadata. A formal result is publishable only after an
 independent clean checkout reproduces the aggregate from the frozen artifact.
+The publication gate is detailed in
+[`doi-release-checklist.md`](doi-release-checklist.md).
 
 The unified runner can generate the machine-readable and Markdown reports from
 the same merged rows using `--report-output` and

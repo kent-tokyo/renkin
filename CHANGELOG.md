@@ -8,6 +8,10 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Documentation consistency pass: aligned the documented hand-crafted rule
+  count with `default_rules()` (24), switched current branch and workflow links
+  from `master` to `main`, and corrected the stock-identity description.
+
 ## [1.0.6] - 2026-09-11 "Model Boundary and Search Hot-Path Hardening"
 
 - Search hot-path optimization: memoize both positive and negative building-block

@@ -157,7 +157,18 @@ def _run_container(
             stdout, stderr = proc.communicate(timeout=config.external_timeout_s)
             returncode = proc.returncode
         except subprocess.TimeoutExpired:
-            subprocess.run(["docker", "kill", container_name], capture_output=True)
+            # Docker Desktop can itself become slow while the container is
+            # under memory pressure. Cleanup must not defeat the per-target
+            # deadline, so both the control-plane calls and the child wait are
+            # bounded independently.
+            try:
+                subprocess.run(
+                    ["docker", "kill", container_name],
+                    capture_output=True,
+                    timeout=min(config.grace_s, 10.0),
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                pass
             try:
                 stdout, stderr = proc.communicate(timeout=config.grace_s)
             except subprocess.TimeoutExpired:
@@ -169,7 +180,14 @@ def _run_container(
     finally:
         stop_event.set()
         rss_thread.join(timeout=2)
-        subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
+        try:
+            subprocess.run(
+                ["docker", "rm", "-f", container_name],
+                capture_output=True,
+                timeout=10.0,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            pass
 
     hint = "timeout" if wrapper_killed else ("exit_zero" if returncode == 0 else "exit_nonzero")
     return hint, stdout, stderr, wall_clock_s, rss_result.get("peak_rss_bytes"), wrapper_killed

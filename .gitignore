@@ -236,3 +236,15 @@ data/phase_b1_frontier/*/*_pool_gen.log
 data/phase_b1_frontier/*/*_run.log
 data/phase_b1_frontier/*/*.log
 data/phase_b1_frontier/val_sample_full_sorted.jsonl
+
+# Local benchmark outputs. These runs are reproducible or retained separately
+# as local evidence; do not accidentally include multi-gigabyte artifacts in a
+# release commit.
+.synplanner-data-v*/
+data/comparison/formal_v1.0.1/
+data/comparison/formal_v1.0.2/
+data/comparison/formal_v1.0.3_candidate_*/
+data/comparison/search_profiles_*/
+data/pool_gen_*.jsonl
+data/pool_gen_manifest.json
+data/templates_extracted_5000.smi.manifest.json

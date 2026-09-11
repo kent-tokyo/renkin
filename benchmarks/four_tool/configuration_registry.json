@@ -1,0 +1,102 @@
+{
+  "schema_version": "renkin-four-tool-benchmark-config/1",
+  "registry_status": "feasibility",
+  "common": {
+    "target_source": "data/comparison/sample_full_sorted.jsonl",
+    "target_freeze": "hash-addressed target IDs and canonical SMILES; freeze before formal results",
+    "pilot_target_count": 50,
+    "formal_target_count": 500,
+    "external_timeout_s": 150,
+    "termination_grace_s": 10,
+    "cpus": 8,
+    "memory_limit": "6g",
+    "comparison_modes": ["native", "shared_stock"],
+    "shared_stock": "data/comparison/shared_stock/shared_stock.smi",
+    "pairing_key": "target_id",
+    "common_audit": "scripts/compare_validation.py",
+    "statistics": "scripts/four_tool_report.py (paired_comparisons)",
+    "orchestrator": "scripts/run_four_tool_benchmark.py"
+  },
+  "arms": [
+    {
+      "arm_id": "renkin-v1.0.5-shared-stock",
+      "tool": "renkin",
+      "status": "candidate",
+      "version": "1.0.5",
+      "source_ref": "v1.0.5",
+      "search_algorithm": "A* AND/OR",
+      "model_or_templates": "data/templates_extracted_500.smi",
+      "stock": "data/comparison/shared_stock/shared_stock.smi",
+      "parameters": {"depth": 5, "beam_width": 100, "max_routes": 1},
+      "runner": "scripts/compare_run.py",
+      "runtime": {"kind": "native", "python": "system", "resource_enforcement": "linux_rlimit_as_rlimit_cpu_plus_thread_env; verification pending"},
+      "artifact_paths": [
+        "data/templates_extracted_500.smi",
+        "data/comparison/shared_stock/shared_stock.smi"
+      ]
+    },
+    {
+      "arm_id": "aizynthfinder-4.4.1-shared-stock",
+      "tool": "aizynthfinder",
+      "status": "candidate",
+      "version": "4.4.1",
+      "source_ref": "renkin-compare-66/aizynthfinder:4.4.1",
+      "search_algorithm": "AiZynthFinder default search",
+      "model_or_templates": "data/comparison/aizynthfinder_public_data/uspto_model.onnx",
+      "stock": "data/comparison/shared_stock/shared_stock.smi",
+      "parameters": {"time_limit_s": 120, "iteration_limit": 100},
+      "runner": "scripts/compare_run.py",
+      "runtime": {"kind": "docker", "image": "renkin-compare-66/aizynthfinder:4.4.1", "resource_enforcement": "docker_run_8cpu_6g_network_none; digest pending"},
+      "artifact_paths": [
+        "data/comparison/aizynthfinder_public_data/config_shared_stock.yml",
+        "data/comparison/aizynthfinder_public_data/shared_stock.hdf5"
+      ]
+    },
+    {
+      "arm_id": "syntheseus-0.8.0-localretro-retrostar-shared-stock",
+      "tool": "syntheseus",
+      "status": "candidate",
+      "version": "0.8.0",
+      "source_ref": "pypi:syntheseus==0.8.0",
+      "search_algorithm": "RetroStar",
+      "model_or_templates": "LocalRetro (USPTO-50K checkpoint)",
+      "stock": "data/comparison/shared_stock/shared_stock.smi",
+      "parameters": {"limit_iterations": 30, "limit_reaction_model_calls": 1000, "time_limit_s": 120},
+      "runner": "scripts/run_syntheseus_target.py",
+      "runtime": {
+        "kind": "docker",
+        "image": "renkin-bench/syntheseus:0.8.0",
+        "container_recipe": "docker/syntheseus-benchmark.Dockerfile",
+        "resource_enforcement": "docker_run_8cpu_6g_network_none; digest pending build",
+        "python": "3.11",
+        "packages": {"syntheseus": "0.8.0", "torch": "2.14.0", "dgl": "1.1.3", "packaging": "26.3"}
+      },
+      "artifact_paths": [
+        ".benchmark-assets/syntheseus/0.8.0/LocalRetro_backward",
+        "data/comparison/shared_stock/shared_stock.smi"
+      ]
+    },
+    {
+      "arm_id": "synplanner-1.6.0-shared-stock",
+      "tool": "synplanner",
+      "status": "candidate",
+      "version": "1.6.0",
+      "source_ref": "pypi:synplan==1.6.0",
+      "search_algorithm": "MCTS evaluation_first",
+      "model_or_templates": ".synplanner-data-v1.6.0/policy/supervised_gps/v1/reaction_rules.tsv",
+      "stock": "data/comparison/shared_stock/shared_stock.smi",
+      "parameters": {"max_iterations": 30, "max_time": 120, "max_depth": 6, "top_rules": 50},
+      "runner": "scripts/run_synplanner_target.py",
+      "runtime": {
+        "kind": "docker",
+        "image": "renkin-bench/synplanner:1.6.0",
+        "container_recipe": "docker/synplanner-benchmark.Dockerfile",
+        "resource_enforcement": "docker_run_8cpu_6g_network_none; digest pending build"
+      },
+      "artifact_paths": [
+        "benchmarks/synplanner_v1.6.0_smoke.yaml",
+        ".synplanner-data-v1.6.0/presets/synplanner-gps.yaml"
+      ]
+    }
+  ]
+}

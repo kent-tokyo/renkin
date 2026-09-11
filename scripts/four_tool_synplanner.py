@@ -21,6 +21,20 @@ from typing import Any
 from four_tool_record import FourToolRecord
 
 
+def load_target_manifest(path: str | Path) -> dict[str, tuple[str, int]]:
+    mapping = {}
+    with open(path, encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, 1):
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            try:
+                mapping[row["canonical_smiles"]] = (row["target_id"], row["sample_rank"])
+            except KeyError as exc:
+                raise ValueError(f"{path}:{line_number}: missing manifest field {exc}") from exc
+    return mapping
+
+
 def load_export(path: str | Path) -> dict[str, list[dict[str, Any]]]:
     """Load plain JSON or gzip-compressed SynPlanner export results."""
     source = Path(path)
@@ -92,13 +106,18 @@ def main() -> int:
     parser.add_argument("--stock", required=True)
     parser.add_argument("--renkin", default="target/release/renkin")
     parser.add_argument("--arm-id", default="synplanner-1.6.0-shared-stock")
+    parser.add_argument("--target-manifest", help="frozen target JSONL manifest")
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
     started = time.perf_counter()
     results = load_export(args.results)
+    target_manifest = load_target_manifest(args.target_manifest) if args.target_manifest else {}
     raw_hash = hashlib.sha256(Path(args.results).read_bytes()).hexdigest()
     rows = []
     for rank, (target_smiles, routes) in enumerate(results.items()):
+        target_id, sample_rank = target_manifest.get(
+            target_smiles, (f"target-{rank:04d}", rank)
+        )
         audit = None
         if routes:
             try:
@@ -111,16 +130,16 @@ def main() -> int:
                 # not available. Keep the native result and mark the common
                 # measurement missing; this is not a strict failure.
                 record = record_for_target(
-                    target_id=f"target-{rank:04d}", target_smiles=target_smiles,
-                    sample_rank=rank, arm_id=args.arm_id, routes=routes,
+                    target_id=target_id, target_smiles=target_smiles,
+                    sample_rank=sample_rank, arm_id=args.arm_id, routes=routes,
                     raw_output_sha256=raw_hash,
                 )
                 record.warnings.append({"code": "common_audit_unavailable", "detail": str(exc)})
                 rows.append(record.to_json_line())
                 continue
         record = record_for_target(
-            target_id=f"target-{rank:04d}", target_smiles=target_smiles,
-            sample_rank=rank, arm_id=args.arm_id, routes=routes,
+            target_id=target_id, target_smiles=target_smiles,
+            sample_rank=sample_rank, arm_id=args.arm_id, routes=routes,
             raw_output_sha256=raw_hash, audit=audit,
         )
         rows.append(record.to_json_line())

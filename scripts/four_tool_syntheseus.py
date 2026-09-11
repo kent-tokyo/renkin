@@ -66,13 +66,14 @@ def main() -> int:
     parser.add_argument("--renkin", default="target/release/renkin")
     parser.add_argument("--arm-id", default="syntheseus-0.8.0-localretro-retrostar-shared-stock")
     parser.add_argument("--target-id", default="target-0000")
+    parser.add_argument("--sample-rank", type=int, default=0)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
     route = load_route(args.route)
     raw_hash = hashlib.sha256(Path(args.route).read_bytes()).hexdigest()
     audit = audit_route(route, renkin_binary=args.renkin, stock=args.stock,
                         work_dir=Path(args.output).with_suffix(""))
-    record = record_for_route(route, target_id=args.target_id, sample_rank=0,
+    record = record_for_route(route, target_id=args.target_id, sample_rank=args.sample_rank,
                               arm_id=args.arm_id, raw_output_sha256=raw_hash, audit=audit)
     Path(args.output).write_text(record.to_json_line() + "\n", encoding="utf-8")
     print(json.dumps({"schema_version": "renkin-four-tool-row/1", "n_rows": 1}, indent=2))

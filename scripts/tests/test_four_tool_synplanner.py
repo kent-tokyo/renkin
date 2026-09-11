@@ -2,13 +2,19 @@ import json
 import unittest
 from pathlib import Path
 
-from scripts.four_tool_synplanner import load_export, record_for_target
+from scripts.four_tool_synplanner import load_export, load_target_manifest, record_for_target
 
 
 FIXTURE = Path(__file__).parents[2] / "tests/fixtures/synplanner/v1.6.0/real_planning_export.results.json"
 
 
 class SynPlannerAdapterTests(unittest.TestCase):
+    def test_manifest_maps_canonical_smiles_to_frozen_identity(self):
+        manifest = Path("data/comparison/sample_full_sorted.jsonl")
+        mapping = load_target_manifest(manifest)
+        first = json.loads(manifest.read_text(encoding="utf-8").splitlines()[0])
+        self.assertEqual(mapping[first["canonical_smiles"]], (first["target_id"], first["sample_rank"]))
+
     def test_loads_target_keyed_export_and_preserves_order(self):
         export = load_export(FIXTURE)
         self.assertEqual(list(export), ["CC(=O)Oc1ccccc1C(=O)O"])

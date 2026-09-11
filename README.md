@@ -92,6 +92,12 @@ The planner uses A*/AND-OR search, template indexing, beam limits,
 stock-aware scoring, and forward validation. See the [API documentation](https://docs.rs/renkin)
 and [retrosynthesis guide](https://kent-tokyo.github.io/renkin/guides/rust-retrosynthesis/).
 
+The following counts describe this checkout and may be invalidated by future
+changes. The default planner includes 24 hand-crafted rules. The repository stock file
+contains 402 compounds; installed users without that file use a compiled-in
+152-compound fallback. Additional extracted templates can be supplied with
+`--templates`.
+
 ## Components
 
 | Component | Purpose |

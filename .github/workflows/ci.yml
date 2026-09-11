@@ -41,7 +41,7 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - run: pip install lightgbm scikit-learn
+      - run: pip install lightgbm scikit-learn rdkit
       - run: python3 scripts/train_reranker.py --self-test
       - run: python3 -m unittest discover -s scripts/tests -p "test_*.py"
 

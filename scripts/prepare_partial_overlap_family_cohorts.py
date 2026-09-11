@@ -21,6 +21,10 @@ def sha256_file(path: Path) -> str:
     return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def sample_key(canonical: str) -> str:
+    return hashlib.sha256(f"renkin-issue66-sample-v1|{canonical}".encode("utf-8")).hexdigest()
+
+
 def load_subset(path: Path) -> set[str]:
     targets: set[str] = set()
     for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
@@ -57,19 +61,36 @@ def partition(diagnostic: dict[str, Any], subset: set[str]) -> dict[str, Any]:
     cohorts: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for record in selected:
         cohorts[record["reaction_family_proxy"]].append(record)
+    cohort_values = {}
+    for family, rows in sorted(cohorts.items()):
+        unique_samples = []
+        seen_target_ids: set[str] = set()
+        for row in rows:
+            if row["target_id"] in seen_target_ids:
+                continue
+            seen_target_ids.add(row["target_id"])
+            unique_samples.append(
+                {
+                    "sample_rank": len(unique_samples),
+                    "canonical_smiles": row["canonical_target"],
+                    "sample_key": sample_key(row["canonical_target"]),
+                    "target_id": row["target_id"],
+                    "target_smiles": row["canonical_target"],
+                }
+            )
+        cohort_values[family] = {
+            "count": len(rows),
+            "unique_target_count": len(unique_samples),
+            "sample_rows": unique_samples,
+            "records": rows,
+        }
     return {
         "schema_version": "renkin-partial-overlap-family-cohorts/1",
         "evidence_level": diagnostic.get("evidence_level", "unknown"),
         "route_validity_unchanged": True,
         "subset_count": len(selected),
         "family_counts": dict(sorted(Counter(record["reaction_family_proxy"] for record in selected).items())),
-        "cohorts": {
-            family: {
-                "count": len(rows),
-                "records": rows,
-            }
-            for family, rows in sorted(cohorts.items())
-        },
+        "cohorts": cohort_values,
     }
 
 
@@ -78,6 +99,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--diagnostic", type=Path, required=True)
     parser.add_argument("--subset", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--samples-dir",
+        type=Path,
+        help="optional directory for one target_id/target_smiles JSONL per family",
+    )
     args = parser.parse_args(argv)
     result = partition(
         json.loads(args.diagnostic.read_text(encoding="utf-8")),
@@ -89,6 +115,13 @@ def main(argv: list[str] | None = None) -> int:
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    if args.samples_dir:
+        args.samples_dir.mkdir(parents=True, exist_ok=True)
+        for family, cohort in result["cohorts"].items():
+            (args.samples_dir / f"{family}.jsonl").write_text(
+                "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in cohort["sample_rows"]),
+                encoding="utf-8",
+            )
     print(json.dumps({"subset_count": result["subset_count"], "family_counts": result["family_counts"]}))
     return 0
 

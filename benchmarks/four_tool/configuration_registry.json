@@ -29,7 +29,7 @@
       "stock": "data/comparison/shared_stock/shared_stock.smi",
       "parameters": {"depth": 5, "beam_width": 100, "max_routes": 1},
       "runner": "scripts/compare_run.py",
-      "runtime": {"kind": "native", "python": "system"},
+      "runtime": {"kind": "native", "python": "system", "resource_enforcement": "linux_rlimit_as_rlimit_cpu_plus_thread_env; verification pending"},
       "artifact_paths": [
         "data/templates_extracted_500.smi",
         "data/comparison/shared_stock/shared_stock.smi"
@@ -46,7 +46,7 @@
       "stock": "data/comparison/shared_stock/shared_stock.smi",
       "parameters": {"time_limit_s": 120, "iteration_limit": 100},
       "runner": "scripts/compare_run.py",
-      "runtime": {"kind": "docker", "image": "renkin-compare-66/aizynthfinder:4.4.1"},
+      "runtime": {"kind": "docker", "image": "renkin-compare-66/aizynthfinder:4.4.1", "resource_enforcement": "docker_run_8cpu_6g_network_none; digest pending"},
       "artifact_paths": [
         "data/comparison/aizynthfinder_public_data/config_shared_stock.yml",
         "data/comparison/aizynthfinder_public_data/shared_stock.hdf5"

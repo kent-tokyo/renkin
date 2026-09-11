@@ -33,6 +33,11 @@ class ValidateFourToolRegistryTests(unittest.TestCase):
         problems = validate_registry(payload, Path.cwd())
         self.assertTrue(any("requires reason" in problem for problem in problems))
 
+    def test_formal_gate_rejects_candidate_or_pending_runtime(self):
+        payload = load_registry()
+        problems = validate_registry(payload, Path.cwd(), formal=True)
+        self.assertTrue(any("formal" in problem or "verified" in problem for problem in problems))
+
 
 if __name__ == "__main__":
     unittest.main()

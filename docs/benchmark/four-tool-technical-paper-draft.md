@@ -85,12 +85,12 @@ criterion.
 
 ## 5. Results (to be populated after the gates)
 
-| Tool / arm | Rows | Native route found | Strict shared-stock pass | Planning median (ms) |
-|---|---:|---:|---:|---:|
-| RENKIN | `<N>` | `<n/N; 95% CI>` | `<n/N; 95% CI>` | `<value>` |
-| AiZynthFinder | `<N>` | `<n/N; 95% CI>` | `<n/N; 95% CI>` | `<value>` |
-| Syntheseus | `<N>` | `<n/N; 95% CI>` | `<n/N; 95% CI>` | `<value>` |
-| SynPlanner | `<N>` | `<n/N; 95% CI>` | `<n/N; 95% CI>` | `<value>` |
+| Tool / arm | Rows | Native route found | Strict shared-stock pass | Planning p50 / p95 (ms) | Peak RSS (bytes; method) |
+|---|---:|---:|---:|---:|---|
+| RENKIN | `<N>` | `<n/N; 95% CI>` | `<n/N; 95% CI>` | `<p50 / p95>` | `<value; method>` |
+| AiZynthFinder | `<N>` | `<n/N; 95% CI>` | `<n/N; 95% CI>` | `<p50 / p95>` | `<value; method>` |
+| Syntheseus | `<N>` | `<n/N; 95% CI>` | `<n/N; 95% CI>` | `<p50 / p95>` | `<value; method>` |
+| SynPlanner | `<N>` | `<n/N; 95% CI>` | `<n/N; 95% CI>` | `<p50 / p95>` | `<value; method>` |
 
 Pairwise differences, discordant counts, and exact tests will be copied from
 the generated `paired_comparisons` object. No result will be entered by hand

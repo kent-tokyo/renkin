@@ -43,12 +43,12 @@ The primary common outcome is `strict_route_to_shared_stock` for the rank-1
 available route. The native `route_found` signal is a separate outcome and
 must not be substituted for it.
 
-| Tool / arm | N rows | Native route found (n/N) | Rank-1 common audit pass (n/N measured) | Not measured | Median planning ms |
-|---|---:|---:|---:|---:|---:|
-| RENKIN | | | | | |
-| AiZynthFinder | | | | | |
-| Syntheseus | | | | | |
-| SynPlanner | | | | | |
+| Tool / arm | N rows | Native route found (n/N) | Rank-1 common audit pass (n/N measured) | Not measured | Planning p50 / p95 ms | Peak RSS bytes / method |
+|---|---:|---:|---:|---:|---:|---|
+| RENKIN | | | | | | |
+| AiZynthFinder | | | | | | |
+| Syntheseus | | | | | | |
+| SynPlanner | | | | | | |
 
 Report the Wilson 95% interval next to every rate. For paired comparisons,
 use `target_id` as the pairing key and state the treatment of timeout,

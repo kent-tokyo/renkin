@@ -2,7 +2,7 @@ import json
 import unittest
 
 from scripts.four_tool_record import FourToolRecord
-from scripts.four_tool_report import render_markdown, summarize, wilson_interval
+from scripts.four_tool_report import percentile, render_markdown, summarize, wilson_interval
 
 
 def row(tool, target, strict, elapsed):
@@ -20,6 +20,10 @@ class FourToolReportTests(unittest.TestCase):
         self.assertIsNone(wilson_interval(0, 0))
         self.assertEqual(len(wilson_interval(1, 1)), 2)
 
+    def test_percentile_uses_nearest_rank(self):
+        self.assertIsNone(percentile([], 0.95))
+        self.assertEqual(percentile([30, 10, 20], 0.95), 30)
+
     def test_summary_keeps_unmeasured_out_of_denominator(self):
         records = [row("renkin", "t0", True, 10), row("renkin", "t1", None, 20)]
         payload = summarize(records)
@@ -27,6 +31,7 @@ class FourToolReportTests(unittest.TestCase):
         self.assertEqual(group["strict_route_to_shared_stock"]["successes"], 1)
         self.assertEqual(group["strict_route_to_shared_stock"]["trials"], 1)
         self.assertEqual(group["planning_elapsed_ms"]["median"], 15)
+        self.assertEqual(group["planning_elapsed_ms"]["p95"], 20)
 
     def test_groups_are_tool_and_arm_specific(self):
         payload = summarize([row("renkin", "t0", True, 10), row("aizynthfinder", "t0", False, 20)])

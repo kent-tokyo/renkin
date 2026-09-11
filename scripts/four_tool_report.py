@@ -40,6 +40,17 @@ def _rate(values: list[bool | None]) -> dict[str, object]:
     }
 
 
+def percentile(values: list[float], quantile: float) -> float | None:
+    """Return the nearest-rank percentile with a documented deterministic rule."""
+    if not values:
+        return None
+    if not 0 <= quantile <= 1:
+        raise ValueError("quantile must be between 0 and 1")
+    ordered = sorted(values)
+    rank = max(1, math.ceil(quantile * len(ordered)))
+    return ordered[rank - 1]
+
+
 def _paired_bootstrap_ci(values: list[int], seed: int = 0, draws: int = 10_000) -> list[float] | None:
     """Return a deterministic percentile CI for a paired difference sample."""
     if not values:
@@ -92,6 +103,7 @@ def summarize(records: list[FourToolRecord]) -> dict[str, object]:
     summaries = []
     for (tool, arm_id), rows in sorted(groups.items()):
         planning = [row.planning_elapsed_ms for row in rows if row.planning_elapsed_ms is not None]
+        rss = [row.peak_rss_bytes for row in rows if row.peak_rss_bytes is not None]
         summaries.append({
             "tool": tool,
             "arm_id": arm_id,
@@ -107,6 +119,15 @@ def summarize(records: list[FourToolRecord]) -> dict[str, object]:
             "planning_elapsed_ms": {
                 "n": len(planning),
                 "median": median(planning) if planning else None,
+                "p95": percentile(planning, 0.95),
+            },
+            "peak_rss_bytes": {
+                "n": len(rss),
+                "max": max(rss) if rss else None,
+                "measurement_methods": sorted({
+                    row.rss_measurement_method for row in rows
+                    if row.peak_rss_bytes is not None and row.rss_measurement_method
+                }),
             },
             "resource_enforcement": sorted({
                 str(row.tool_specific.get(tool, {}).get("resource_enforcement"))
@@ -153,17 +174,23 @@ def render_markdown(payload: dict[str, object]) -> str:
         "",
         "## Summary",
         "",
-        "| Tool / arm | Rows | Native route found | Strict shared-stock pass | Planning median (ms) | Resource enforcement |",
+        "| Tool / arm | Rows | Native route found | Strict shared-stock pass | Planning p50 / p95 (ms) | Peak RSS (bytes; method) | Resource enforcement |",
         "|---|---:|---|---|---:|---|",
     ]
     for group in payload["groups"]:
         enforcement = ", ".join(group["resource_enforcement"]) or "not_measured"
-        median_ms = group["planning_elapsed_ms"]["median"]
+        planning = group["planning_elapsed_ms"]
+        latency = ("not_measured" if planning["median"] is None else
+                   f"{planning['median']} / {planning['p95']}")
+        rss = group["peak_rss_bytes"]
+        rss_text = "not_measured" if rss["max"] is None else str(rss["max"])
+        if rss["measurement_methods"]:
+            rss_text += "; " + ", ".join(rss["measurement_methods"])
         lines.append(
             f"| `{group['tool']}` / `{group['arm_id']}` | {group['n_rows']} | "
             f"{_rate_text(group['native_route_found'])} | "
             f"{_rate_text(group['strict_route_to_shared_stock'])} | "
-            f"{median_ms if median_ms is not None else 'not_measured'} | {enforcement} |"
+            f"{latency} | {rss_text} | {enforcement} |"
         )
     lines += [
         "",

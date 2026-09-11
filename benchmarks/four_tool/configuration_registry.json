@@ -61,7 +61,7 @@
       "model_or_templates": "LocalRetro (USPTO-50K checkpoint)",
       "stock": "data/comparison/shared_stock/shared_stock.smi",
       "parameters": {"limit_iterations": 30, "limit_reaction_model_calls": 1000, "time_limit_s": 120},
-      "runner": "pending: four-tool runner implementation",
+      "runner": "pending: Syntheseus runner implementation",
       "runtime": {
         "kind": "python",
         "python": "3.11",
@@ -82,7 +82,7 @@
       "model_or_templates": ".synplanner-data-v1.6.0/policy/supervised_gps/v1/reaction_rules.tsv",
       "stock": "data/comparison/shared_stock/shared_stock.smi",
       "parameters": {"max_iterations": 30, "max_time": 120, "max_depth": 6, "top_rules": 50},
-      "runner": "pending: four-tool runner implementation",
+      "runner": "scripts/run_synplanner_target.py",
       "runtime": {"kind": "python", "python": "3.13"},
       "artifact_paths": [
         "benchmarks/synplanner_v1.6.0_smoke.yaml",

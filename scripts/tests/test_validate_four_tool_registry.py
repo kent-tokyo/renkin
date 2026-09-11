@@ -33,6 +33,32 @@ class ValidateFourToolRegistryTests(unittest.TestCase):
         problems = validate_registry(payload, Path.cwd())
         self.assertTrue(any("requires reason" in problem for problem in problems))
 
+    def test_formal_gate_rejects_candidate_or_pending_runtime(self):
+        payload = load_registry()
+        problems = validate_registry(payload, Path.cwd(), formal=True)
+        self.assertTrue(any("formal" in problem or "verified" in problem for problem in problems))
+
+    def test_formal_gate_requires_immutable_docker_identity(self):
+        payload = load_registry()
+        for arm in payload["arms"]:
+            arm["status"] = "verified"
+            arm["runtime"]["resource_enforcement"] = "docker_run_8cpu_6g_network_none"
+        problems = validate_registry(payload, Path.cwd(), formal=True, image_identities={"images": []})
+        self.assertTrue(any("image identity is missing" in problem for problem in problems))
+
+    def test_formal_gate_accepts_declared_docker_identity(self):
+        payload = load_registry()
+        identities = []
+        for arm in payload["arms"]:
+            arm["status"] = "verified"
+            arm["runtime"]["resource_enforcement"] = "docker_run_8cpu_6g_network_none"
+            if "image" in arm["runtime"]:
+                identities.append({"image": arm["runtime"]["image"], "id": "sha256:" + "a" * 64})
+        problems = validate_registry(
+            payload, Path.cwd(), formal=True, image_identities={"images": identities}
+        )
+        self.assertEqual(problems, [])
+
 
 if __name__ == "__main__":
     unittest.main()

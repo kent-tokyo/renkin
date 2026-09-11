@@ -44,7 +44,13 @@ REQUIRED_ARM = {
 }
 
 
-def validate_registry(payload: object, root: Path, check_artifacts: bool = False) -> list[str]:
+def validate_registry(
+    payload: object,
+    root: Path,
+    check_artifacts: bool = False,
+    formal: bool = False,
+    image_identities: object | None = None,
+) -> list[str]:
     problems: list[str] = []
     if not isinstance(payload, dict):
         return ["registry must be a JSON object"]
@@ -65,6 +71,14 @@ def validate_registry(payload: object, root: Path, check_artifacts: bool = False
         return problems + ["arms must be an array"]
     seen_ids: set[str] = set()
     seen_tools: set[str] = set()
+    identity_by_image: dict[str, str] = {}
+    if image_identities is not None:
+        if not isinstance(image_identities, dict) or not isinstance(image_identities.get("images"), list):
+            problems.append("image identities must contain an 'images' array")
+        else:
+            for identity in image_identities["images"]:
+                if isinstance(identity, dict) and isinstance(identity.get("image"), str) and isinstance(identity.get("id"), str):
+                    identity_by_image[identity["image"]] = identity["id"]
     for index, arm in enumerate(arms):
         prefix = f"arms[{index}]"
         if not isinstance(arm, dict):
@@ -100,6 +114,21 @@ def validate_registry(payload: object, root: Path, check_artifacts: bool = False
                     problems.append(f"{prefix} missing artifact: {path}")
         if arm.get("status") in {"not_measured", "excluded"} and not arm.get("reason"):
             problems.append(f"{prefix} requires reason when status is {arm.get('status')!r}")
+        if formal:
+            if arm.get("status") != "verified":
+                problems.append(f"{prefix} must be 'verified' for a formal run")
+            runtime = arm.get("runtime")
+            enforcement = runtime.get("resource_enforcement", "") if isinstance(runtime, dict) else ""
+            if not isinstance(enforcement, str) or any(
+                marker in enforcement.lower()
+                for marker in ("pending", "unverified", "unavailable")
+            ):
+                problems.append(f"{prefix} has no verified formal resource enforcement")
+            image = runtime.get("image") if isinstance(runtime, dict) else None
+            if image and image not in identity_by_image:
+                problems.append(f"{prefix} image identity is missing for {image!r}")
+            elif image and not identity_by_image[image].startswith("sha256:"):
+                problems.append(f"{prefix} image identity is not immutable for {image!r}")
 
     if seen_tools != EXPECTED_TOOLS:
         problems.append(f"arm tool set must equal {sorted(EXPECTED_TOOLS)}, got {sorted(seen_tools)}")
@@ -111,9 +140,17 @@ def main() -> int:
     parser.add_argument("registry", type=Path)
     parser.add_argument("--repo-root", type=Path, default=Path("."))
     parser.add_argument("--check-artifacts", action="store_true")
+    parser.add_argument("--formal", action="store_true",
+                        help="fail unless every arm is verified with a bounded resource runtime")
+    parser.add_argument("--image-identities", type=Path,
+                        help="JSON emitted by verify_four_tool_images.py; required for formal Docker arms")
     args = parser.parse_args()
     payload = json.loads(args.registry.read_text(encoding="utf-8"))
-    problems = validate_registry(payload, args.repo_root.resolve(), args.check_artifacts)
+    identities = (json.loads(args.image_identities.read_text(encoding="utf-8"))
+                  if args.image_identities else None)
+    problems = validate_registry(
+        payload, args.repo_root.resolve(), args.check_artifacts, args.formal, identities
+    )
     if problems:
         for problem in problems:
             print(f"ERROR: {problem}")

@@ -44,6 +44,7 @@ from compare_validation import (
     route_edge_snapshot,
     validate_stock_leaves,
 )
+from four_tool_resources import apply_resource_limits, enforcement_label, resource_environment
 
 
 @dataclass
@@ -142,6 +143,8 @@ def _run_with_time_wrapper(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             start_new_session=True,
+            env={**os.environ, **resource_environment()},
+            preexec_fn=apply_resource_limits,
         )
         wrapper_killed = False
         try:
@@ -277,7 +280,11 @@ def run_one_target(
         cpu_sys_s,
     ) = _run_with_time_wrapper(argv, config.external_timeout_s, config.grace_s)
     total_elapsed_ms = wall_clock_s * 1000.0
-    cpu_time_tool_specific = {"cpu_user_s": cpu_user_s, "cpu_sys_s": cpu_sys_s}
+    cpu_time_tool_specific = {
+        "cpu_user_s": cpu_user_s,
+        "cpu_sys_s": cpu_sys_s,
+        "resource_enforcement": enforcement_label(),
+    }
 
     base = dict(
         target_id=target_id,

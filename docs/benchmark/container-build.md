@@ -22,7 +22,16 @@ After the build, verify the immutable local image IDs with:
 python3 scripts/verify_four_tool_images.py \
   benchmarks/four_tool/configuration_registry.json \
   --output <run-dir>/image-identities.json
+
+python3 scripts/validate_four_tool_registry.py \
+  benchmarks/four_tool/configuration_registry.json \
+  --repo-root . --check-artifacts --formal \
+  --image-identities <run-dir>/image-identities.json
 ```
+
+The second command is fail-closed: every arm must be marked `verified`, have
+verified resource enforcement, and have an immutable `sha256:` identity for
+each declared Docker image before formal results are admitted.
 
 The external runner accepts `--container-image`. It mounts the checked-out
 repository read-only at `/repo`, the per-run artifact directory at

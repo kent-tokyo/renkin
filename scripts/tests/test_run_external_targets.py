@@ -4,6 +4,7 @@ from pathlib import Path
 
 from scripts.run_external_targets import command_for
 from scripts.run_external_targets import container_command
+from scripts.run_external_targets import parse_docker_memory_usage
 
 
 TARGET = {"target_id": "t0", "canonical_smiles": "CCO", "sample_rank": 0}
@@ -41,6 +42,19 @@ class ExternalOrchestratorTests(unittest.TestCase):
         self.assertIn("--memory", command)
         self.assertIn("planner:dev", command)
         self.assertEqual(command[-2:], ["--output", "/artifacts/row.jsonl"])
+
+    def test_docker_memory_usage_parser_handles_binary_units(self):
+        self.assertEqual(parse_docker_memory_usage("12.5MiB / 6GiB"), 13_107_200)
+        self.assertEqual(parse_docker_memory_usage("512kB / 6GB"), 512_000)
+        self.assertIsNone(parse_docker_memory_usage("not available"))
+
+    def test_container_command_can_name_container_for_stats_sampling(self):
+        args = argparse.Namespace(repo_root="/repo", artifact_dir="/artifacts", cpus=8,
+                                  memory="6g", container_image="planner:dev")
+        command = container_command(args, ["python", "/repo/scripts/run.py"],
+                                     Path("/artifacts/row.jsonl"), "renkin-synplanner-1")
+        self.assertIn("--name", command)
+        self.assertIn("renkin-synplanner-1", command)
 
 
 if __name__ == "__main__":

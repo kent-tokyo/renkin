@@ -11,13 +11,67 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
 from four_tool_record import FourToolRecord, load_records
 from four_tool_resources import apply_resource_limits, resource_environment
+
+
+_DOCKER_MEM_RE = re.compile(r"^\s*([0-9.]+)\s*([kmgt]i?b|b)\s*/", re.IGNORECASE)
+_MEMORY_UNITS = {
+    "b": 1,
+    "kb": 1000,
+    "kib": 1024,
+    "mb": 1000**2,
+    "mib": 1024**2,
+    "gb": 1000**3,
+    "gib": 1024**3,
+    "tb": 1000**4,
+    "tib": 1024**4,
+}
+
+
+def parse_docker_memory_usage(text: str) -> int | None:
+    """Parse the used-memory part of Docker's ``MemUsage`` output."""
+    match = _DOCKER_MEM_RE.search(text)
+    if not match:
+        return None
+    return int(float(match.group(1)) * _MEMORY_UNITS[match.group(2).lower()])
+
+
+def _poll_docker_peak_rss(container_name: str, stop: threading.Event, result: dict[str, int]) -> None:
+    while not stop.is_set():
+        try:
+            completed = subprocess.run(
+                ["docker", "stats", "--no-stream", "--format", "{{.MemUsage}}", container_name],
+                capture_output=True, text=True, timeout=2, check=False,
+            )
+            if completed.returncode == 0:
+                usage = parse_docker_memory_usage(completed.stdout)
+                if usage is not None:
+                    result["peak_rss_bytes"] = max(result.get("peak_rss_bytes", 0), usage)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        stop.wait(0.25)
+
+
+def _cleanup_container(container_name: str, timeout_s: float = 10.0) -> None:
+    """Best-effort bounded cleanup for a timed-out named container."""
+    try:
+        subprocess.run(["docker", "kill", container_name], capture_output=True,
+                       text=True, timeout=timeout_s, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    try:
+        subprocess.run(["docker", "rm", "-f", container_name], capture_output=True,
+                       text=True, timeout=timeout_s, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
 
 
 def command_for(args: argparse.Namespace, target: dict, output: Path) -> list[str]:
@@ -36,7 +90,9 @@ def command_for(args: argparse.Namespace, target: dict, output: Path) -> list[st
             "--model-dir", args.model_dir, *common, "--timeout-s", str(args.timeout_s)]
 
 
-def container_command(args: argparse.Namespace, command: list[str], row_path: Path) -> list[str]:
+def container_command(
+    args: argparse.Namespace, command: list[str], row_path: Path, container_name: str | None = None
+) -> list[str]:
     """Translate a host runner command into a bounded, network-isolated container."""
     repo = Path(args.repo_root).resolve()
     artifacts = Path(args.artifact_dir).resolve()
@@ -54,7 +110,7 @@ def container_command(args: argparse.Namespace, command: list[str], row_path: Pa
     translated = ["python" if index == 0 else mapped(value) for index, value in enumerate(command)]
     translated = ["/repo/scripts/" + Path(command[1]).name if index == 1 else value
                   for index, value in enumerate(translated)]
-    return [
+    docker_command = [
         "docker", "run", "--rm", "--network", "none", "--cpus", str(args.cpus),
         "--memory", args.memory, "--memory-swap", args.memory,
         "-v", f"{repo}:/repo:ro", "-v", f"{artifacts}:/artifacts:rw",
@@ -62,6 +118,9 @@ def container_command(args: argparse.Namespace, command: list[str], row_path: Pa
         # host interpreter token from the command passed after the image.
         args.container_image, *translated[1:],
     ]
+    if container_name:
+        docker_command[3:3] = ["--name", container_name]
+    return docker_command
 
 
 def failure(target: dict, tool: str, arm_id: str, status: str, reason: str) -> FourToolRecord:
@@ -88,20 +147,52 @@ def run(args: argparse.Namespace) -> int:
                 continue
             row_path = artifact_dir / f"{target['sample_rank']:06d}.row.jsonl"
             started = time.perf_counter()
+            container_name = f"renkin-{args.tool}-{os.getpid()}-{target['sample_rank']}"
+            peak_result: dict[str, int] = {}
+            stop_stats = threading.Event()
+            stats_thread = None
+            container_timed_out = False
             try:
-                completed = subprocess.run(
-                    (container_command(args, command_for(args, target, row_path), row_path)
-                     if args.container_image else command_for(args, target, row_path)), check=False,
-                    capture_output=True, text=True,
-                    timeout=args.timeout_s + args.grace_s + args.runner_overhead_s,
-                    env={**os.environ, **resource_environment(args.cpus)},
-                    preexec_fn=(None if args.container_image else
-                                lambda: apply_resource_limits(args.memory_bytes, int(args.timeout_s + args.grace_s))),
-                )
+                command = (container_command(args, command_for(args, target, row_path), row_path, container_name)
+                           if args.container_image else command_for(args, target, row_path))
+                if args.container_image:
+                    process = subprocess.Popen(
+                        command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                        env={**os.environ, **resource_environment(args.cpus)},
+                    )
+                    stats_thread = threading.Thread(
+                        target=_poll_docker_peak_rss,
+                        args=(container_name, stop_stats, peak_result), daemon=True,
+                    )
+                    stats_thread.start()
+                    try:
+                        stdout, stderr = process.communicate(
+                            timeout=args.timeout_s + args.grace_s + args.runner_overhead_s
+                        )
+                    except subprocess.TimeoutExpired:
+                        container_timed_out = True
+                        process.kill()
+                        stdout, stderr = process.communicate()
+                        _cleanup_container(container_name)
+                    completed = subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+                else:
+                    completed = subprocess.run(
+                        command, check=False, capture_output=True, text=True,
+                        timeout=args.timeout_s + args.grace_s + args.runner_overhead_s,
+                        env={**os.environ, **resource_environment(args.cpus)},
+                        preexec_fn=lambda: apply_resource_limits(
+                            args.memory_bytes, int(args.timeout_s + args.grace_s)
+                        ),
+                    )
             except subprocess.TimeoutExpired as exc:
                 record = failure(target, args.tool, args.arm_id, "timeout", str(exc))
             else:
-                if row_path.exists():
+                if container_timed_out:
+                    record = failure(
+                        target, args.tool, args.arm_id, "timeout",
+                        f"container exceeded {args.timeout_s + args.grace_s + args.runner_overhead_s}s",
+                    )
+                elif row_path.exists():
                     lines = [line for line in row_path.read_text(encoding="utf-8").splitlines() if line.strip()]
                     if len(lines) != 1:
                         record = failure(target, args.tool, args.arm_id, "parse_error",
@@ -113,6 +204,14 @@ def run(args: argparse.Namespace) -> int:
                 else:
                     reason = completed.stderr.strip() or completed.stdout.strip() or "runner emitted no row"
                     record = failure(target, args.tool, args.arm_id, "crashed", reason[-2000:])
+            finally:
+                stop_stats.set()
+                if stats_thread:
+                    stats_thread.join(timeout=2)
+
+            if peak_result.get("peak_rss_bytes") is not None:
+                record.peak_rss_bytes = peak_result["peak_rss_bytes"]
+                record.rss_measurement_method = "docker_stats_sampled"
             
             sink.write(record.to_json_line() + "\n")
             sink.flush()

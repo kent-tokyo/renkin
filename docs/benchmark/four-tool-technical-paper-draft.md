@@ -34,7 +34,7 @@ image must be recorded in the configuration registry.
 
 The preregistered protocol is [`four-tool-protocol.md`](four-tool-protocol.md),
 and the declarative configuration is
-[`configuration_registry.json`](../../benchmarks/four_tool/configuration_registry.json).
+[`configuration_registry.json`](https://github.com/kent-tokyo/renkin/blob/master/benchmarks/four_tool/configuration_registry.json).
 The primary endpoint is the rank-1
 `strict_route_to_shared_stock` result produced by the common post-hoc audit.
 The tool-native `route_found` signal is retained as a secondary outcome and

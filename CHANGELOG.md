@@ -8,6 +8,10 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Model adapter hardening: static `TemplatePolicy` artifacts must now use the
+  same `schema_version` as their manifest. Mismatches fail closed before the
+  artifact can influence search ordering.
+
 ## [1.0.5] - 2026-09-10 "Staged Candidate Recovery"
 
 - VAL-200再測定では、RENKINの`route_found`はAiZynthFinderと同率の

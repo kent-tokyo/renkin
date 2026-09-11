@@ -58,6 +58,13 @@ impl StaticTemplatePolicy {
         if artifact.schema_version == 0 {
             bail!("static policy artifact schema_version must be positive");
         }
+        if artifact.schema_version != manifest.schema_version {
+            bail!(
+                "static policy artifact schema_version {} does not match manifest schema_version {}",
+                artifact.schema_version,
+                manifest.schema_version
+            );
+        }
         Ok((
             manifest,
             Arc::new(Self {
@@ -138,6 +145,45 @@ mod tests {
         assert!(!decision.abstained);
         assert_eq!(decision.scores.len(), 2);
         assert!(policy.rank_templates("unknown", &rules).abstained);
+        let _ = std::fs::remove_file(artifact_path);
+        let _ = std::fs::remove_file(manifest_path);
+    }
+
+    #[test]
+    fn rejects_static_policy_artifact_with_mismatched_manifest_schema() {
+        let dir = std::env::temp_dir();
+        let stem = format!("renkin-static-policy-schema-{}", std::process::id());
+        let artifact_path = dir.join(format!("{stem}.json"));
+        let manifest_path = dir.join(format!("{stem}-manifest.json"));
+        let artifact = serde_json::json!({
+            "schema_version": 2,
+            "scores": {}
+        });
+        let bytes = serde_json::to_vec(&artifact).unwrap();
+        let hash = format!("sha256:{}", crate::sha256_hex(Sha256::digest(&bytes)));
+        let manifest = serde_json::json!({
+            "schema_version": 1,
+            "model_id": "fixture",
+            "model_kind": "template_policy",
+            "model_version": "0.1.0",
+            "model_sha256": hash,
+            "input_schema": "canonical-smiles-v1",
+            "output_semantics": "logit",
+            "template_set_sha256": format!("sha256:{}", "b".repeat(64)),
+            "license": "MIT",
+            "ood_abstain": true
+        });
+        std::fs::write(&artifact_path, bytes).unwrap();
+        std::fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+
+        let result = StaticTemplatePolicy::from_files(&manifest_path, &artifact_path);
+        let error = result
+            .as_ref()
+            .err()
+            .expect("schema mismatch must fail closed")
+            .to_string();
+        assert!(error.contains("schema_version"));
+
         let _ = std::fs::remove_file(artifact_path);
         let _ = std::fs::remove_file(manifest_path);
     }

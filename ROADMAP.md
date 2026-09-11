@@ -1202,7 +1202,7 @@ stereo-only 2、not-equivalent 32、候補unparseable/非同値8、stock direct�
 downstream-or-unavailableは44だった。これは拡張候補artifact上の診断であり、化学的同値性や
 route成功を意味しない。証跡は`data/comparison/formal_v1.0.3_candidate_20260909/
 candidate_expansion_val200/partial_overlap_diagnostic_recomputed.json`に保存し、24件の
-stock-reachable subsetに対するfamily別非押し出しpaired評価は引き続き未完了とする。
+stock-reachable subsetに対するfamily別非押し出しpaired評価を次段階で実施する。
 
 53.5acの次段階として、24 edge（21 unique target）を`reaction_family_proxy`別のfixtureへ
 分割する`prepare_partial_overlap_family_cohorts.py`を追加した。amide_like 5、
@@ -1210,17 +1210,19 @@ carbonyl_oxygen_like 1、ester_like 1、sulfonamide_like 2、other_or_unknown 12
 unique targetを同一sample contract・同一stock/template設定でbaseline測定し、合計19/21
 (90.5%)、invalid・timeout・crash 0を得た。これはfamily別の問題規模を比較するbaselineであり、
 既存候補を保持した非押し出し補完のpaired結果ではない。中間targetに対するdirect-generator
-recoveryは今回の測定では発動しておらず、53.5ac本体のpaired supplementation gateは未完了
-のまま維持する。証跡は`data/comparison/formal_v1.0.3_candidate_20260909/
+recoveryは今回のbaseline測定では発動しておらず、証跡は`data/comparison/formal_v1.0.3_candidate_20260909/
 candidate_expansion_val200/`配下に保存した。
 
 同じ21 unique targetへRecovery監査を再実行した。全21件が正常完了し、route_foundは3/21、
 direct-generatorは19/21件で起動、5,043 proposal中4,980件を追加枠へadmitしたが、generator
 stage単独の新規回収は0件だった。回収3件はbaseline/beam/depthの後段で、integrity拒否63、
 parse拒否・自己同一候補拒否0。これは候補を押し出さない段階投入と監査計装の確認であり、
-standard modeのbaseline 19/21との差を同一実行内で比較したpaired efficacyではないため、
-53.5acの非押し出し補完ゲートは未完了のまま維持する。結果はfamily_samples配下の
-`*_recovery_result.jsonl`と`*_recovery_aggregate.json`に保存した。
+standard modeのbaseline 19/21との差を同一実行内で比較した性能paired efficacyではない。
+ただし、Recovery内の非押し出し検証はbaseline raw成功1→最終3、回収2、regression=0、
+timeout/crash=0で通過した。generator stage単独の新規回収は0件だったため、53.5acは
+候補供給の保護とnegative resultの確定まで完了し、下流探索・stock終端の改善を次課題とする。
+結果はfamily_samples配下の`*_recovery_result.jsonl`、`*_recovery_aggregate.json`、および
+`partial_overlap_recovery_non_displacing_verification.json`に保存した。
 
 O1の初回差分分類を実施した。VAL-200 recoveryではstrict validator-confirmedが127/200
 (63.5%)、未評価8件は全て深さ0の直接購入であり、実行失敗や化学的な棄却ではない。

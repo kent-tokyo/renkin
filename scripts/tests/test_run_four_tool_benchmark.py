@@ -7,6 +7,7 @@ from scripts.run_four_tool_benchmark import (
     external_command,
     merge_rows,
     sha256_file,
+    validate_formal_inputs,
     validate_target_coverage,
 )
 
@@ -58,6 +59,15 @@ class FourToolBenchmarkTests(unittest.TestCase):
                 [{"target_id": "t0", "canonical_smiles": "CCO", "sample_rank": 0}],
                 ["renkin"],
             )
+
+    def test_formal_preflight_rejects_candidate_registry(self):
+        args = argparse.Namespace(
+            registry="benchmarks/four_tool/configuration_registry.json",
+            image_identities=None, repo_root=".", sample_size=500,
+            tools=["renkin", "aizynthfinder", "syntheseus", "synplanner"],
+        )
+        with self.assertRaisesRegex(ValueError, "formal registry preflight failed"):
+            validate_formal_inputs(args)
 
 
 if __name__ == "__main__":

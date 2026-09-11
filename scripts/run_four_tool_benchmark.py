@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 
 from four_tool_record import FourToolRecord, load_records
+from validate_four_tool_registry import validate_registry
 
 
 def sha256_file(path: str | Path) -> str:
@@ -126,6 +127,31 @@ def validate_target_coverage(
                 raise ValueError(f"{tool} target metadata mismatch for {target_id!r}")
 
 
+def validate_formal_inputs(args: argparse.Namespace) -> None:
+    """Fail closed before starting a formal four-arm run."""
+    if not args.registry:
+        raise ValueError("--registry is required with --formal")
+    if set(args.tools) != {"renkin", "aizynthfinder", "syntheseus", "synplanner"}:
+        raise ValueError("--formal requires all four benchmark tools")
+    registry_path = Path(args.registry)
+    payload = json.loads(registry_path.read_text(encoding="utf-8"))
+    identities = None
+    if args.image_identities:
+        identities = json.loads(Path(args.image_identities).read_text(encoding="utf-8"))
+    problems = validate_registry(
+        payload, Path(args.repo_root).resolve(), check_artifacts=True,
+        formal=True, image_identities=identities,
+    )
+    if problems:
+        raise ValueError("formal registry preflight failed: " + "; ".join(problems))
+    expected_count = payload["common"]["formal_target_count"]
+    if args.sample_size != expected_count:
+        raise ValueError(
+            f"formal sample size must equal registry common.formal_target_count ({expected_count}); "
+            f"got {args.sample_size}"
+        )
+
+
 def write_run_manifest(args: argparse.Namespace, output: Path, count: int) -> None:
     payload = {
         "schema_version": "renkin-four-tool-run-manifest/1",
@@ -151,6 +177,10 @@ def main() -> int:
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--merged-output", required=True)
     parser.add_argument("--registry")
+    parser.add_argument("--formal", action="store_true",
+                        help="run only after the verified four-arm formal preflight")
+    parser.add_argument("--image-identities",
+                        help="JSON emitted by verify_four_tool_images.py; required with --formal")
     parser.add_argument("--tools", nargs="+", choices=["renkin", "aizynthfinder", "syntheseus", "synplanner"],
                         default=["renkin", "aizynthfinder", "syntheseus", "synplanner"])
     parser.add_argument("--comparison-mode", choices=["native", "shared_stock"], default="shared_stock")
@@ -175,6 +205,11 @@ def main() -> int:
     parser.add_argument("--value-network", default="")
     args = parser.parse_args()
     args.arm_id = dict(args.arm_id)
+    if args.formal:
+        try:
+            validate_formal_inputs(args)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            parser.error(str(exc))
     defaults = {
         "syntheseus": "syntheseus-0.8.0-localretro-retrostar-shared-stock",
         "synplanner": "synplanner-1.6.0-shared-stock",

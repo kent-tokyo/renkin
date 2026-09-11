@@ -1204,6 +1204,16 @@ route成功を意味しない。証跡は`data/comparison/formal_v1.0.3_candidat
 candidate_expansion_val200/partial_overlap_diagnostic_recomputed.json`に保存し、24件の
 stock-reachable subsetに対するfamily別非押し出しpaired評価は引き続き未完了とする。
 
+53.5acの次段階として、24 edge（21 unique target）を`reaction_family_proxy`別のfixtureへ
+分割する`prepare_partial_overlap_family_cohorts.py`を追加した。amide_like 5、
+carbonyl_oxygen_like 1、ester_like 1、sulfonamide_like 2、other_or_unknown 12の
+unique targetを同一sample contract・同一stock/template設定でbaseline測定し、合計19/21
+(90.5%)、invalid・timeout・crash 0を得た。これはfamily別の問題規模を比較するbaselineであり、
+既存候補を保持した非押し出し補完のpaired結果ではない。中間targetに対するdirect-generator
+recoveryは今回の測定では発動しておらず、53.5ac本体のpaired supplementation gateは未完了
+のまま維持する。証跡は`data/comparison/formal_v1.0.3_candidate_20260909/
+candidate_expansion_val200/`配下に保存した。
+
 O1の初回差分分類を実施した。VAL-200 recoveryではstrict validator-confirmedが127/200
 (63.5%)、未評価8件は全て深さ0の直接購入であり、実行失敗や化学的な棄却ではない。
 共通警告は`stereo_center_count_mismatch`のみで、情報警告として扱われる。したがって

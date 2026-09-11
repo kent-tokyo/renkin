@@ -61,7 +61,7 @@
       "model_or_templates": "LocalRetro (USPTO-50K checkpoint)",
       "stock": "data/comparison/shared_stock/shared_stock.smi",
       "parameters": {"limit_iterations": 30, "limit_reaction_model_calls": 1000, "time_limit_s": 120},
-      "runner": "pending: Syntheseus runner implementation",
+      "runner": "scripts/run_syntheseus_target.py",
       "runtime": {
         "kind": "python",
         "python": "3.11",

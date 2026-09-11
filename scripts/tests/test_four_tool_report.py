@@ -40,6 +40,22 @@ class FourToolReportTests(unittest.TestCase):
         self.assertIn("Popularity metrics: not included", markdown)
         self.assertNotIn("star", markdown.lower())
 
+    def test_paired_comparison_uses_common_evaluable_targets(self):
+        payload = summarize([
+            row("renkin", "t0", True, 10),
+            row("renkin", "t1", False, 10),
+            row("aizynthfinder", "t0", False, 10),
+            row("aizynthfinder", "t1", False, 10),
+        ])
+        comparison = next(iter(payload["paired_comparisons"].values()))
+        self.assertEqual(comparison["paired_trials"], 2)
+        self.assertEqual(comparison["left_wins"], 0)
+        self.assertEqual(comparison["right_wins"], 1)
+        self.assertEqual(comparison["ties"], 1)
+        self.assertEqual(comparison["difference_left_minus_right"], -0.5)
+        self.assertEqual(len(comparison["paired_bootstrap_95"]), 2)
+        self.assertEqual(comparison["mcnemar_exact_two_sided_p"], 1.0)
+
 
 if __name__ == "__main__":
     unittest.main()

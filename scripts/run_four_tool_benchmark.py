@@ -162,6 +162,11 @@ def write_run_manifest(args: argparse.Namespace, output: Path, count: int) -> No
             "sha256": sha256_file(identity_path),
             "images": json.loads(identity_path.read_text(encoding="utf-8")).get("images", []),
         }
+    reports = {}
+    for label, path in (("json", args.report_output), ("markdown", args.markdown_report_output)):
+        if path:
+            report_path = Path(path)
+            reports[label] = {"path": str(report_path.resolve()), "sha256": sha256_file(report_path)}
     payload = {
         "schema_version": "renkin-four-tool-run-manifest/1",
         "target_manifest": {"path": str(Path(args.target_manifest).resolve()),
@@ -174,7 +179,9 @@ def write_run_manifest(args: argparse.Namespace, output: Path, count: int) -> No
         "image_identities": image_identities,
         "comparison_mode": args.comparison_mode,
         "tools": args.tools,
-        "merged_output": str(Path(args.merged_output).resolve()),
+        "merged_output": {"path": str(Path(args.merged_output).resolve()),
+                          "sha256": sha256_file(args.merged_output)},
+        "reports": reports,
         "n_records": count,
     }
     output.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

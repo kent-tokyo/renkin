@@ -14,7 +14,7 @@
     "shared_stock": "data/comparison/shared_stock/shared_stock.smi",
     "pairing_key": "target_id",
     "common_audit": "scripts/compare_validation.py",
-    "statistics": "scripts/compare_paired_report.py",
+    "statistics": "scripts/four_tool_report.py (paired_comparisons)",
     "orchestrator": "scripts/run_four_tool_benchmark.py"
   },
   "arms": [

@@ -2,7 +2,7 @@ import argparse
 import unittest
 from pathlib import Path
 
-from scripts.run_four_tool_benchmark import external_command, merge_rows
+from scripts.run_four_tool_benchmark import external_command, merge_rows, sha256_file
 
 
 class FourToolBenchmarkTests(unittest.TestCase):
@@ -19,6 +19,11 @@ class FourToolBenchmarkTests(unittest.TestCase):
 
     def test_merge_rows_rejects_duplicate_identity(self):
         self.assertTrue(callable(merge_rows))
+
+    def test_hash_is_stable_for_existing_input(self):
+        digest = sha256_file("data/comparison/sample_full_sorted.jsonl")
+        self.assertEqual(len(digest), 64)
+        self.assertEqual(digest, sha256_file("data/comparison/sample_full_sorted.jsonl"))
 
 
 if __name__ == "__main__":

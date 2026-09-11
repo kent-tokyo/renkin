@@ -9,12 +9,21 @@ output. Every intermediate file is retained under ``--output-dir``.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
 import sys
 from pathlib import Path
 
 from four_tool_record import FourToolRecord, load_records
+
+
+def sha256_file(path: str | Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def run_command(command: list[str]) -> None:
@@ -71,12 +80,31 @@ def merge_rows(paths: list[Path], output: Path) -> int:
     return len(records)
 
 
+def write_run_manifest(args: argparse.Namespace, output: Path, count: int) -> None:
+    payload = {
+        "schema_version": "renkin-four-tool-run-manifest/1",
+        "target_manifest": {"path": str(Path(args.target_manifest).resolve()),
+                            "sha256": sha256_file(args.target_manifest),
+                            "sample_size": args.sample_size},
+        "shared_stock": {"path": str(Path(args.stock).resolve()),
+                          "sha256": sha256_file(args.stock)},
+        "registry": ({"path": str(Path(args.registry).resolve()),
+                      "sha256": sha256_file(args.registry)} if args.registry else None),
+        "comparison_mode": args.comparison_mode,
+        "tools": args.tools,
+        "merged_output": str(Path(args.merged_output).resolve()),
+        "n_records": count,
+    }
+    output.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target-manifest", required=True)
     parser.add_argument("--sample-size", type=int, required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--merged-output", required=True)
+    parser.add_argument("--registry")
     parser.add_argument("--tools", nargs="+", choices=["renkin", "aizynthfinder", "syntheseus", "synplanner"],
                         default=["renkin", "aizynthfinder", "syntheseus", "synplanner"])
     parser.add_argument("--comparison-mode", choices=["native", "shared_stock"], default="shared_stock")
@@ -128,6 +156,7 @@ def main() -> int:
             run_command(external_command(args, tool, output, output_dir / f"{tool}-artifacts"))
             row_paths.append(output)
     count = merge_rows(row_paths, Path(args.merged_output))
+    write_run_manifest(args, output_dir / "run_manifest.json", count)
     print(json.dumps({"schema_version": "renkin-four-tool-run/1", "n_records": count,
                       "tools": args.tools}, indent=2))
     return 0

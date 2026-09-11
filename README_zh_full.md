@@ -547,7 +547,7 @@ renkin/                          ← Cargo workspace 根目录
 
 - [x] `renkin-forward enumerate` — 从单一已知反应物加明确partner库进行有界、template引导的正向枚举（[#64](https://github.com/kent-tokyo/renkin/issues/64)）
 - [x] `renkin-forward hints` — 无需partner输入的检索提示（匹配的template slot、缺失partner的SMARTS、结合变化），不预测具体产物（[#64](https://github.com/kent-tokyo/renkin/issues/64) phase 2）
-- [x] `apply_retro`/`run_reactants` 性能回归修复 — `chematic` 从窄范围的 git-pin 修复迁移到已发布的 `0.8.0`（上游 automorphism-orbit-pruned canonicalization，[chematic#193](https://github.com/kent-tokyo/chematic/pull/193)）；正确性零变化
+- [x] `apply_retro`/`run_reactants` 性能回归修复 — `chematic` 从窄范围的 git-pin 修复迁移到已发布的 `1.0.9`（上游 automorphism-orbit-pruned canonicalization，[chematic#193](https://github.com/kent-tokyo/chematic/pull/193)）；正确性零变化
 - [x] `renkin-forward` CLI 强化 — 带版本号的 `ForwardPredictionReport`、确定性候选ID/合并/来源信息、与 reactant 顺序无关的匹配（最多 3 个反应物）、严格的 CLI/route-JSON 校验
 - [x] 受 RETROSPECT 启发的离线候选重排序基础设施 — proposal/selection 分离、feature schema v1、manifest v2、leakage-safe 的 train/val/test 划分、7 个确定性 baseline arm + 训练模型 arm、paired bootstrap + 离线门控工具（[#59](https://github.com/kent-tokyo/renkin/pull/59)）
 - [x] 确定性的 ORD（Open Reaction Database）evidence 导入 — 离线的 `renkin evidence match`（exact-set 批量 template matcher）+ `scripts/ord_evidence_audit.py`（audit/converter）转换为 `schema_version: 2` 附加文件。无网络访问、无 fuzzy matching，存疑/来源不明的记录不会被猜测，而是记录在 audit report 中并注明排除原因（[#41](https://github.com/kent-tokyo/renkin/issues/41) phase 3A）

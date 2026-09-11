@@ -132,7 +132,7 @@ retro-templates (each with its own `missing_partners[].query_smarts` and
 `search_terms`) plus aryl chloride-to-bromide (a unary rule -- no
 `missing_partners` slot, `search_terms` only) — a realistic spread of
 "what to search for" starting from one aryl bromide, none of it invented.
-(Verified against the current 22-rule `default_rules()` set, 2026-08-24;
+(Verified against the 22-rule `default_rules()` set on 2026-08-24;
 the exact top-5 shifts if the rule set changes, since ranking depends on
 which templates are loaded.)
 
@@ -287,7 +287,7 @@ reaction-feasibility probability; `proposal_score` is a ranking signal only
 ## Performance
 
 See `cargo run --release -p renkin-forward --example hints_benchmark` for a
-reproducible timing + stats report across the embedded 28 default rules,
+reproducible timing + stats report across the embedded default rules,
 the first 100 extracted templates, and the full 500-template extracted
 corpus, at small/medium/large reactant sizes. Measured on this development
 machine: from under 1ms (28 rules, a single small aromatic ring) up to

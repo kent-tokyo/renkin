@@ -613,7 +613,7 @@ The server auto-detects `data/building_blocks.smi` and the optional, locally
 generated `data/templates_extracted_5000.smi` in the working directory. It
 falls back to the embedded `DEFAULT_BUILDING_BLOCKS` / `default_rules()`
 defaults if they are not found (152 unique building blocks per
-`ChemEnv::bb_count()`, 23 handcrafted rules).
+`ChemEnv::bb_count()`, 24 handcrafted rules).
 
 ```bash
 cargo build --release
@@ -780,7 +780,7 @@ see [Benchmark](#benchmark) for the corrected historical baseline.
 - [x] `renkin-forward enumerate` — bounded, template-guided forward enumeration from a single known reactant plus an explicit partner library ([#64](https://github.com/kent-tokyo/renkin/issues/64))
 - [x] `renkin-forward hints` — partner-free retrieval hints (matched template slots, missing-partner SMARTS, bond deltas) for patent/database search, no concrete product predicted ([#64](https://github.com/kent-tokyo/renkin/issues/64) phase 2)
 - [x] `renkin-forward` CLI hardening — versioned `ForwardPredictionReport`, deterministic candidate IDs/merge/provenance, reactant-order-independent matching, strict CLI/route-JSON validation
-- [x] `apply_retro`/`run_reactants` performance regression resolved — `chematic` moved to the published `0.8.0` release (upstream automorphism-orbit-pruned canonicalization, [chematic#193](https://github.com/kent-tokyo/chematic/pull/193)); zero correctness change
+- [x] `apply_retro`/`run_reactants` performance regression resolved — `chematic` moved to the published `1.0.9` release (upstream automorphism-orbit-pruned canonicalization, [chematic#193](https://github.com/kent-tokyo/chematic/pull/193)); zero correctness change
 - [x] `renkin-bench cascade` — multi-stage search (fast defaults → hard cases re-run deeper); only unsolved targets propagate to later stages
 - [x] `renkin-bench --failure-taxonomy` — classify unsolved targets by cause (beam limit / depth limit / template gap / stock near-miss)
 - [x] Graph-based ester cleavage — BFS-leakage-free `R-C(=O)-O-R' → RCOOH + R'OH`

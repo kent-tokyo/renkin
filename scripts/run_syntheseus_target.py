@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 
 from four_tool_record import FourToolRecord
+from four_tool_resources import apply_resource_limits, enforcement_label, resource_environment
 
 
 def load_stock(path: str) -> list[str]:
@@ -58,7 +59,8 @@ def run(args: argparse.Namespace) -> FourToolRecord:
             sample_rank=args.sample_rank, tool="syntheseus", arm_id=args.arm_id,
             run_status="completed", route_found=False, tool_reported_route_count=0,
             planning_elapsed_ms=elapsed_ms,
-            tool_specific={"syntheseus": {"export_schema": "syntheseus-route-v1", "audit_rank": 1}},
+            tool_specific={"syntheseus": {"export_schema": "syntheseus-route-v1", "audit_rank": 1,
+                                           "resource_enforcement": enforcement_label()}},
         )
     route_graph = graph.to_synthesis_graph(routes[0])
     route = exporter.export_syntheseus_route_v1(route_graph)
@@ -81,7 +83,8 @@ def run(args: argparse.Namespace) -> FourToolRecord:
         route_artifact_sha256=hashlib.sha256(
             json.dumps(route, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest(),
-        tool_specific={"syntheseus": {"export_schema": "syntheseus-route-v1", "audit_rank": 1}},
+        tool_specific={"syntheseus": {"export_schema": "syntheseus-route-v1", "audit_rank": 1,
+                                       "resource_enforcement": enforcement_label()}},
     )
 
 
@@ -98,7 +101,12 @@ def main() -> int:
     parser.add_argument("--limit-iterations", type=int, default=30)
     parser.add_argument("--limit-reaction-model-calls", type=int, default=1000)
     parser.add_argument("--timeout-s", type=float, default=120)
+    parser.add_argument("--cpus", type=int, default=8)
+    parser.add_argument("--memory-bytes", type=int, default=6 * 1024**3)
     args = parser.parse_args()
+    import os
+    os.environ.update(resource_environment(args.cpus))
+    apply_resource_limits(args.memory_bytes, int(args.timeout_s))
     record = run(args)
     Path(args.output).write_text(record.to_json_line() + "\n", encoding="utf-8")
     print(record.to_json_line())

@@ -83,6 +83,7 @@ def record_for_target(
     *, target_id: str, target_smiles: str, sample_rank: int, arm_id: str,
     routes: list[dict[str, Any]], raw_output_sha256: str | None = None,
     audit: dict[str, Any] | None = None, planning_elapsed_ms: float | None = None,
+    resource_enforcement: str | None = None,
 ) -> FourToolRecord:
     """Build a row while keeping native route count separate from audit status."""
     route = routes[0] if routes else None
@@ -96,7 +97,10 @@ def record_for_target(
         common_audit_status=common_status,
         planning_elapsed_ms=planning_elapsed_ms, raw_output_sha256=raw_output_sha256,
         route_artifact_sha256=canonical_sha256(route) if route else None,
-        tool_specific={"synplanner": {"route_export_schema": "synplan-routes/1", "audit_rank": 1}},
+        tool_specific={"synplanner": {
+            "route_export_schema": "synplan-routes/1", "audit_rank": 1,
+            **({"resource_enforcement": resource_enforcement} if resource_enforcement else {}),
+        }},
     )
 
 

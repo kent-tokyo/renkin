@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 
 from four_tool_record import FourToolRecord
+from four_tool_resources import apply_resource_limits, enforcement_label, resource_environment
 from four_tool_synplanner import audit_rank1_route, load_export, record_for_target
 
 
@@ -83,6 +84,7 @@ def run(args: argparse.Namespace) -> FourToolRecord:
             sample_rank=args.sample_rank, arm_id=args.arm_id, routes=routes,
             raw_output_sha256=hashlib.sha256(results_path.read_bytes()).hexdigest(),
             audit=audit, planning_elapsed_ms=elapsed_ms,
+            resource_enforcement=enforcement_label(),
         )
         if warning:
             record.warnings.append(warning)
@@ -109,7 +111,12 @@ def main() -> int:
     parser.add_argument("--timeout-s", type=float, default=150)
     parser.add_argument("--grace-s", type=float, default=10)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--cpus", type=int, default=8)
+    parser.add_argument("--memory-bytes", type=int, default=6 * 1024**3)
     args = parser.parse_args()
+    import os
+    os.environ.update(resource_environment(args.cpus))
+    apply_resource_limits(args.memory_bytes, int(args.timeout_s + args.grace_s))
     record = run(args)
     Path(args.output).write_text(record.to_json_line() + "\n", encoding="utf-8")
     print(record.to_json_line())

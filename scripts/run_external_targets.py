@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 
 from four_tool_record import FourToolRecord, load_records
+from four_tool_resources import apply_resource_limits, resource_environment
 
 
 def command_for(args: argparse.Namespace, target: dict, output: Path) -> list[str]:
@@ -63,6 +64,8 @@ def run(args: argparse.Namespace) -> int:
                     command_for(args, target, row_path), check=False,
                     capture_output=True, text=True,
                     timeout=args.timeout_s + args.grace_s + args.runner_overhead_s,
+                    env={**__import__("os").environ, **resource_environment(args.cpus)},
+                    preexec_fn=lambda: apply_resource_limits(args.memory_bytes, int(args.timeout_s + args.grace_s)),
                 )
             except subprocess.TimeoutExpired as exc:
                 record = failure(target, args.tool, args.arm_id, "timeout", str(exc))
@@ -99,6 +102,8 @@ def main() -> int:
     parser.add_argument("--timeout-s", type=float, default=150)
     parser.add_argument("--grace-s", type=float, default=10)
     parser.add_argument("--runner-overhead-s", type=float, default=5)
+    parser.add_argument("--cpus", type=int, default=8)
+    parser.add_argument("--memory-bytes", type=int, default=6 * 1024**3)
     parser.add_argument("--python", default=sys.executable)
     parser.add_argument("--model-dir", default="")
     parser.add_argument("--synplan", default="")

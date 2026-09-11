@@ -13,7 +13,7 @@ search never had to narrow down first.
 
 This is inspired by Pappala et al. (2026), "RETROSPECT: RETROsynthesis via
 Sequential Prediction, and Chemically Transformed-ranking" (arXiv:2606.07181)
-— see [`CITATION.cff`](https://github.com/kent-tokyo/renkin/blob/master/CITATION.cff)
+— see [`CITATION.cff`](https://github.com/kent-tokyo/renkin/blob/main/CITATION.cff)
 for the citation. This is an independent RENKIN implementation; no upstream
 source was copied, and no benchmark from that paper is reproduced here.
 

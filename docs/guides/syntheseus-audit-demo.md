@@ -27,7 +27,7 @@ objects built from Syntheseus's own public interface classes
 (`Molecule`/`Bag`/`SingleProductReaction`), validated by Syntheseus's own
 `assert_validity()`, then exported. Full provenance — exact construction
 code, package versions, checksums — is in the sibling
-[`PROVENANCE.md`](https://github.com/kent-tokyo/renkin/blob/master/tests/fixtures/syntheseus/0.7.2/PROVENANCE.md).
+[`PROVENANCE.md`](https://github.com/kent-tokyo/renkin/blob/main/tests/fixtures/syntheseus/0.7.2/PROVENANCE.md).
 
 - `linear_two_leaf_route.json` — a single-step route, both leaves carrying
   full purchasability metadata.

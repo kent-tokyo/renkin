@@ -23,7 +23,7 @@ a real `aizynthcli --smiles "CCOC(=O)c1ccc(N)cc1" ...` run (benzocaine),
 captured once and committed for CI to use without needing AiZynthFinder
 installed. Full capture provenance — exact command, model/stock file
 SHA-256 hashes, ZINC stock size — is in the sibling
-[`PROVENANCE.md`](https://github.com/kent-tokyo/renkin/blob/master/tests/fixtures/aizynthfinder/v4.4.1/PROVENANCE.md).
+[`PROVENANCE.md`](https://github.com/kent-tokyo/renkin/blob/main/tests/fixtures/aizynthfinder/v4.4.1/PROVENANCE.md).
 
 ## Step 1: audit without a configured stock
 
@@ -120,7 +120,7 @@ run against the identical public model/stock data bundle (confirmed
 byte-identical by SHA-256 across all three captures) and the identical
 target molecules, so any behavioral difference found is attributable to
 the `aizynthfinder` package itself, not to different inputs —
-[`tests/aizynthfinder_version_matrix.rs`](https://github.com/kent-tokyo/renkin/blob/master/tests/aizynthfinder_version_matrix.rs)
+[`tests/aizynthfinder_version_matrix.rs`](https://github.com/kent-tokyo/renkin/blob/main/tests/aizynthfinder_version_matrix.rs)
 asserts all three produce identical audit verdicts for the same real
 routes. One confirmed, harmless cross-version JSON difference was found in
 the process: `4.3.2`'s route `scores` object carries an extra

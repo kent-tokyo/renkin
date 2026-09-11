@@ -12,7 +12,7 @@ Thank you for your interest in contributing! RENKIN is a Pure Rust retrosynthesi
 | `release/*` | Version bump + CHANGELOG + tag |
 | `security/*` | Security fixes |
 
-Open a PR against `master`. Direct pushes to `master` are reserved for Dependabot merges and release tags.
+Open a PR against `main`. Direct pushes to `main` are reserved for Dependabot merges and release tags.
 
 ## Ways to Contribute
 

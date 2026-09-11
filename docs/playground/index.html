@@ -31,6 +31,11 @@
     .nav-links a:hover { color:var(--text); }
     .badge { font-size:0.75rem; color:var(--accent2); background:rgba(79,195,247,0.08);
       border:1px solid rgba(79,195,247,0.25); padding:0.2rem 0.7rem; border-radius:999px; }
+    .value-strip { display:grid; grid-template-columns:repeat(3,1fr); gap:0.75rem; margin-bottom:1.25rem; }
+    .value-card { background:linear-gradient(135deg,rgba(124,106,247,0.12),rgba(79,195,247,0.05));
+      border:1px solid var(--border); border-radius:8px; padding:0.85rem 1rem; }
+    .value-card strong { display:block; font-size:0.82rem; margin-bottom:0.25rem; }
+    .value-card span { display:block; color:var(--muted); font-size:0.74rem; line-height:1.45; }
 
     /* ── Language switcher ──────────────────────────────────────── */
     .lang-btns { display:flex; gap:0.25rem; }
@@ -83,6 +88,8 @@
     .example-btn { background:var(--surface); border:1px solid var(--border); color:var(--muted);
       font-weight:500; font-size:0.8rem; padding:0.4rem 0.85rem; height:auto; align-self:auto; }
     .example-btn:hover { opacity:1; color:var(--text); border-color:var(--accent2); }
+    .quick-demo-row { display:flex; align-items:center; gap:0.45rem; flex-wrap:wrap; margin-top:0.65rem; }
+    .quick-demo-label { color:var(--muted); font-size:0.72rem; margin-right:0.2rem; }
 
     /* ── Advanced settings ──────────────────────────────────────── */
     .advanced-details { margin-top:0.85rem; }
@@ -162,6 +169,7 @@
       color:var(--muted); margin-bottom:0.3rem; }
     .target-smiles-txt { font-family:var(--mono); font-size:0.9rem; word-break:break-all; }
     .stats-row { display:flex; gap:2rem; flex-wrap:wrap; margin-bottom:1.25rem; }
+    .results-toolbar { display:flex; justify-content:flex-end; gap:0.45rem; margin:-0.65rem 0 1rem; }
     .stat { display:flex; flex-direction:column; gap:0.2rem; }
     .stat-value { font-size:1.5rem; font-weight:700; color:var(--accent); }
     .stat-label { font-size:0.72rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; }
@@ -252,6 +260,7 @@
     footer { text-align:center; padding:1rem; font-size:0.75rem;
       color:var(--muted); border-top:1px solid var(--border); }
     footer a { color:var(--accent); text-decoration:none; }
+    @media (max-width:640px) { .value-strip { grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
@@ -277,6 +286,11 @@
 <main>
   <div id="wasm-status" class="wasm-status loading" data-i18n="wasm_loading">Loading WebAssembly module…</div>
   <div id="capabilities-banner" class="wasm-status ready" style="display:none"></div>
+  <section class="value-strip" aria-label="RENKIN capabilities">
+    <div class="value-card"><strong data-i18n="value_local_title">Runs locally</strong><span data-i18n="value_local_body">Your target stays in the browser by default.</span></div>
+    <div class="value-card"><strong data-i18n="value_search_title">Searches routes</strong><span data-i18n="value_search_body">Explore disconnections and commercially available building blocks.</span></div>
+    <div class="value-card"><strong data-i18n="value_audit_title">Audits evidence</strong><span data-i18n="value_audit_body">Send a generated route directly to structural and stock checks.</span></div>
+  </section>
 
   <div class="tabs" role="tablist">
     <button class="tab-btn active" id="tab-plan-btn" role="tab" aria-selected="true" data-i18n="tab_plan">Plan a Route</button>
@@ -318,6 +332,12 @@
           <option value="CC(=O)N">Acetamide</option>
         </optgroup>
       </select>
+      <div class="quick-demo-row">
+        <span class="quick-demo-label" data-i18n="quick_demo_label">Quick demo:</span>
+        <button type="button" class="example-btn" data-demo-smiles="CC(=O)Oc1ccccc1C(=O)O" data-i18n="quick_demo_aspirin">Aspirin</button>
+        <button type="button" class="example-btn" data-demo-smiles="c1ccc(-c2ccccc2)cc1" data-i18n="quick_demo_biphenyl">Biphenyl</button>
+        <button type="button" class="example-btn" data-demo-smiles="CCO" data-i18n="quick_demo_stock">Direct-buy check</button>
+      </div>
     </div>
 
     <div class="search-row">
@@ -483,6 +503,10 @@
       nav_docs: 'Docs',
       panel_title: 'Target Molecule',
       presets_label: 'Preset examples',
+      quick_demo_label: 'Quick demo:',
+      quick_demo_aspirin: 'Aspirin',
+      quick_demo_biphenyl: 'Biphenyl',
+      quick_demo_stock: 'Direct-buy check',
       preset_placeholder: '— select a molecule —',
       smiles_label: 'Target SMILES',
       smiles_placeholder: 'e.g. CC(=O)Oc1ccccc1C(=O)O',
@@ -520,10 +544,19 @@
       tip_require: 'Element that must appear in ≥1 building block (e.g. B for boronic acids)',
       copy_label: 'Copy:',
       copy_session: 'Session JSON',
+      share_link: 'Share settings',
+      download_run: 'Download run JSON',
+      audit_route_btn: 'Audit this route',
       browser_edition_label: 'Browser edition',
       browser_edition_bb: 'embedded building blocks',
       browser_edition_rules: 'curated rules',
       browser_edition_note: 'The CLI and Python package support the full dataset and additional workflows.',
+      value_local_title: 'Runs locally',
+      value_local_body: 'Your target stays in the browser by default.',
+      value_search_title: 'Searches routes',
+      value_search_body: 'Explore disconnections and commercially available building blocks.',
+      value_audit_title: 'Audits evidence',
+      value_audit_body: 'Send a generated route directly to structural and stock checks.',
       render_externally: 'Render via CDK Depict (sends this SMILES to simolecule.com)',
       metric_score: 'score',
       metric_confidence: 'confidence',
@@ -586,6 +619,10 @@
       nav_docs: 'ドキュメント',
       panel_title: '目標分子',
       presets_label: 'プリセット例',
+      quick_demo_label: 'クイックデモ:',
+      quick_demo_aspirin: 'アスピリン',
+      quick_demo_biphenyl: 'ビフェニル',
+      quick_demo_stock: '直接購入チェック',
       preset_placeholder: '— 分子を選択 —',
       smiles_label: '目標分子 SMILES',
       smiles_placeholder: '例: CC(=O)Oc1ccccc1C(=O)O',
@@ -623,10 +660,19 @@
       tip_require: '少なくとも1つの原料に含まれるべき元素（例: ボロン酸ならB）',
       copy_label: 'コピー:',
       copy_session: 'セッションJSON',
+      share_link: '設定を共有',
+      download_run: '探索結果を保存',
+      audit_route_btn: 'この経路を監査',
       browser_edition_label: 'ブラウザ版',
       browser_edition_bb: '件の内蔵原料',
       browser_edition_rules: '件の厳選ルール',
       browser_edition_note: 'CLI・Pythonパッケージは全データセットと追加のワークフローに対応しています。',
+      value_local_title: 'ローカルで実行',
+      value_local_body: '入力した目標分子は、標準ではブラウザ内に留まります。',
+      value_search_title: '経路を探索',
+      value_search_body: '結合切断と市販ビルディングブロックへの経路を探索します。',
+      value_audit_title: '証拠を監査',
+      value_audit_body: '生成した経路を構造・在庫チェックへ直接送れます。',
       render_externally: 'CDK Depictで描画（このSMILESをsimolecule.comへ送信）',
       metric_score: 'スコア',
       metric_confidence: '確信度',
@@ -689,6 +735,10 @@
       nav_docs: '文档',
       panel_title: '目标分子',
       presets_label: '预设示例',
+      quick_demo_label: '快速演示:',
+      quick_demo_aspirin: '阿司匹林',
+      quick_demo_biphenyl: '联苯',
+      quick_demo_stock: '直接购买检查',
       preset_placeholder: '— 请选择分子 —',
       smiles_label: '目标分子 SMILES',
       smiles_placeholder: '例如: CC(=O)Oc1ccccc1C(=O)O',
@@ -726,10 +776,19 @@
       tip_require: '至少一个原料中必须包含的元素（如硼酸类为 B）',
       copy_label: '复制:',
       copy_session: '会话 JSON',
+      share_link: '分享设置',
+      download_run: '下载搜索结果',
+      audit_route_btn: '审计此路径',
       browser_edition_label: '浏览器版',
       browser_edition_bb: '个内置原料',
       browser_edition_rules: '个精选规则',
       browser_edition_note: 'CLI 和 Python 包支持完整数据集及更多工作流程。',
+      value_local_title: '本地运行',
+      value_local_body: '默认情况下，目标分子只留在浏览器中。',
+      value_search_title: '搜索路径',
+      value_search_body: '探索断键方案和商业可购的构建块。',
+      value_audit_title: '审计证据',
+      value_audit_body: '将生成的路径直接送入结构和库存检查。',
       render_externally: '通过 CDK Depict 渲染（将此 SMILES 发送至 simolecule.com）',
       metric_score: '得分',
       metric_confidence: '置信度',
@@ -1156,6 +1215,19 @@
     const demoParam = new URLSearchParams(location.search).get('demo');
     if (demoParam && AUDIT_EXAMPLES[demoParam]) {
       loadAuditExample(demoParam);
+    } else {
+      const shared = new URLSearchParams(location.search);
+      const sharedTarget = shared.get('target');
+      if (sharedTarget) {
+        smilesEl.value = sharedTarget;
+        if (shared.has('depth')) document.getElementById('depth-input').value = shared.get('depth');
+        if (shared.has('routes')) document.getElementById('routes-input').value = shared.get('routes');
+        if (shared.has('beam')) beamInputEl.value = shared.get('beam');
+        if (shared.has('avoid')) document.getElementById('avoid-input').value = shared.get('avoid');
+        if (shared.has('require')) document.getElementById('require-input').value = shared.get('require');
+        updateBeamWarning();
+        runSearch();
+      }
     }
   } catch (e) {
     wasmStatusEl.className = 'wasm-status failed';
@@ -1364,6 +1436,13 @@
   const timeBudgetSelect = document.getElementById('time-budget-select');
 
   examplesEl.addEventListener('change', () => { if (examplesEl.value) smilesEl.value = examplesEl.value; });
+  document.querySelectorAll('[data-demo-smiles]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      smilesEl.value = btn.dataset.demoSmiles;
+      examplesEl.value = btn.dataset.demoSmiles;
+      runSearch();
+    });
+  });
   searchBtn.addEventListener('click', runSearch);
   smilesEl.addEventListener('keydown', e => { if (e.key === 'Enter') runSearch(); });
 
@@ -1396,7 +1475,7 @@
   }
 
   async function runSearch() {
-    if (!worker) return;
+    if (!worker || searchBtn.disabled) return;
     const target     = smilesEl.value.trim();
     const depth      = parseInt(document.getElementById('depth-input').value) || 5;
     const maxRoutes  = parseInt(document.getElementById('routes-input').value) || 5;
@@ -1508,6 +1587,16 @@
     });
     resultsEl.appendChild(statsRow);
     const search = data._search || { target: targetSmiles, depth: 5, maxRoutes: 5, beamWidth: 0, avoidEls: '', requireEls: '' };
+    const toolbar = document.createElement('div'); toolbar.className = 'results-toolbar';
+    const shareBtn = document.createElement('button'); shareBtn.className = 'copy-btn';
+    shareBtn.textContent = t('share_link');
+    shareBtn.addEventListener('click', () => shareSearch(search, shareBtn));
+    toolbar.appendChild(shareBtn);
+    const downloadBtn = document.createElement('button'); downloadBtn.className = 'copy-btn';
+    downloadBtn.textContent = t('download_run');
+    downloadBtn.addEventListener('click', () => downloadSearchResult(data, elapsed, search));
+    toolbar.appendChild(downloadBtn);
+    resultsEl.appendChild(toolbar);
     data.routes.forEach((route, i) => resultsEl.appendChild(buildRouteCard(route, i + 1, search)));
   }
 
@@ -1579,9 +1668,12 @@
     const btnSession = document.createElement('button'); btnSession.className = 'copy-btn'; btnSession.textContent = t('copy_session');
     btnSession.addEventListener('click', () => downloadSessionJson(route, search));
 
+    const btnAudit = document.createElement('button'); btnAudit.className = 'copy-btn'; btnAudit.textContent = t('audit_route_btn');
+    btnAudit.addEventListener('click', () => loadRouteForAudit(route, search.target));
+
     actions.appendChild(btnJSON); actions.appendChild(btnCLI);
     actions.appendChild(btnMermaid); actions.appendChild(btnPython);
-    actions.appendChild(btnSession);
+    actions.appendChild(btnSession); actions.appendChild(btnAudit);
     card.appendChild(actions);
 
     return card;
@@ -1637,6 +1729,52 @@
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+  }
+
+  function downloadSearchResult(data, elapsed, search) {
+    const payload = {
+      renkin_version: wasmVersion,
+      playground_schema_version: 2,
+      elapsed_ms: Number(elapsed),
+      search,
+      capabilities: wasmCapabilities || {},
+      result: data,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `renkin-run-${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function buildShareUrl(search) {
+    const params = new URLSearchParams({
+      target: search.target,
+      depth: String(search.depth),
+      routes: String(search.maxRoutes),
+      beam: String(search.beamWidth),
+    });
+    if (search.avoidEls) params.set('avoid', search.avoidEls);
+    if (search.requireEls) params.set('require', search.requireEls);
+    return `${location.origin}${location.pathname}?${params.toString()}`;
+  }
+
+  function shareSearch(search, btn) {
+    const url = buildShareUrl(search);
+    copyToClipboard(url, btn);
+    if (history.replaceState) history.replaceState(null, '', url);
+  }
+
+  function loadRouteForAudit(route, target) {
+    switchTab('audit');
+    auditFormatSelect.value = 'renkin';
+    auditRouteInput.value = JSON.stringify({ target, routes: [route] }, null, 2);
+    auditStockInput.value = '';
+    if (!auditBtn.disabled) runAudit();
   }
 
   function buildStep(step, idx, total) {

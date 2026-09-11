@@ -2,7 +2,7 @@
 
 Retrosynthesis planning and route auditing in Rust.
 
-[![CI](https://github.com/kent-tokyo/renkin/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/kent-tokyo/renkin/actions/workflows/ci.yml)
+[![CI](https://github.com/kent-tokyo/renkin/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/kent-tokyo/renkin/actions/workflows/ci.yml)
 [![Crates.io](https://img.shields.io/crates/v/renkin.svg)](https://crates.io/crates/renkin)
 [![PyPI](https://img.shields.io/pypi/v/renkin.svg)](https://pypi.org/project/renkin/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)

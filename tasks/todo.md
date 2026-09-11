@@ -77,7 +77,7 @@ template被覆・stock差を順に改善する。同一条件のAiZynthFinder成
 - [x] **51.3c** `scripts/compare_search_profiles.py`で同一cohortの3 profile実行、arm artifact hash、portfolio manifest生成を自動化。dry-runと単体テストを追加
 - [x] **51.3d** profile smokeで発見したaggregateのconfiguration ID未束縛を修正。同一10-targetで3 arm完走、rows/aggregate/manifest/portfolio hashを確認
 - [x] **51.3e** 同一10-targetでfast/balanced/deep smokeを実測。各1/10 route_found、invalid=0、timeout=0、crash=0。p95 total elapsedはfast約6.1秒、balanced約15.0秒、deep約120.1秒で、profile metadata・arm hash・portfolio manifestの生成を確認。正式VAL-200のpaired gateは未完了
-- [ ] **51.4** 同一cohortでfast/balanced/deepをpaired測定し、coverage・latency・RSS・strict validityをmanifestから再生成できることを確認
+- [x] **51.4** 同一VAL-200 cohortでfast/balanced/deepをpaired測定。route_found/strict validatedはそれぞれ24/200 (12.0%)、27/200 (13.5%)、29/200 (14.5%)、invalid・timeout・crash=0。p95 total elapsedは8.085秒、15.073秒、86.456秒、p95 RSSは46.3、46.5、79.1 MiBで、profile・arm・portfolio hashをmanifestから再生成できることを確認した。証跡は`data/comparison/search_profiles_formal_20260911_retry/`。
 
 ## Phase 50: Search hot-path acceleration（次期候補、2026-09-08）
 

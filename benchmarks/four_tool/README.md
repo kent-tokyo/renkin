@@ -52,6 +52,9 @@ python3 scripts/run_four_tool_benchmark.py \
 
 The formal runner refuses candidate registries, incomplete target coverage,
 missing rows, metadata mismatches, and unverified image/resource conditions.
+Docker-backed rows also retain the largest sampled cgroup memory value and
+the `docker_stats_sampled` measurement method; unavailable measurements remain
+`not_measured`.
 
 ## Required release contents
 

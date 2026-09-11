@@ -135,6 +135,12 @@ Every arm writes exactly one row per target ID. A row contains at least:
 - peak RSS and the measurement method where measurable;
 - failure reason and diagnostic details.
 
+The native RENKIN path records peak RSS from `/usr/bin/time -l`. Docker-backed
+arms sample the container's cgroup memory usage with `docker stats` and record
+the largest observed value as `docker_stats_sampled`. If the runtime cannot
+provide a measurement, the field remains `not_measured`; it is never reported
+as zero.
+
 Missing output rows, duplicate target IDs, malformed JSONL, unexplained
 timeouts, and input-hash changes fail the arm integrity gate.
 

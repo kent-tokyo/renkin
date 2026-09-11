@@ -142,6 +142,7 @@ class TestRenkinAdapterSmoke(unittest.TestCase):
         recovery = row.tool_specific["renkin"]["recovery"]
         self.assertIsNotNone(recovery)
         self.assertEqual(recovery["selected_stage"], "baseline")
+        self.assertEqual(row.tool_specific["renkin"]["selected_stage"], "baseline")
         self.assertEqual(len(recovery["attempts"]), 1)
 
     def test_reranker_failures_is_captured_in_tool_specific(self):

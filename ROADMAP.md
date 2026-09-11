@@ -1214,6 +1214,14 @@ recoveryは今回の測定では発動しておらず、53.5ac本体のpaired su
 のまま維持する。証跡は`data/comparison/formal_v1.0.3_candidate_20260909/
 candidate_expansion_val200/`配下に保存した。
 
+同じ21 unique targetへRecovery監査を再実行した。全21件が正常完了し、route_foundは3/21、
+direct-generatorは19/21件で起動、5,043 proposal中4,980件を追加枠へadmitしたが、generator
+stage単独の新規回収は0件だった。回収3件はbaseline/beam/depthの後段で、integrity拒否63、
+parse拒否・自己同一候補拒否0。これは候補を押し出さない段階投入と監査計装の確認であり、
+standard modeのbaseline 19/21との差を同一実行内で比較したpaired efficacyではないため、
+53.5acの非押し出し補完ゲートは未完了のまま維持する。結果はfamily_samples配下の
+`*_recovery_result.jsonl`と`*_recovery_aggregate.json`に保存した。
+
 O1の初回差分分類を実施した。VAL-200 recoveryではstrict validator-confirmedが127/200
 (63.5%)、未評価8件は全て深さ0の直接購入であり、実行失敗や化学的な棄却ではない。
 共通警告は`stereo_center_count_mismatch`のみで、情報警告として扱われる。したがって

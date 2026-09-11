@@ -2,7 +2,13 @@ import argparse
 import unittest
 from pathlib import Path
 
-from scripts.run_four_tool_benchmark import external_command, merge_rows, sha256_file
+from scripts.four_tool_record import FourToolRecord
+from scripts.run_four_tool_benchmark import (
+    external_command,
+    merge_rows,
+    sha256_file,
+    validate_target_coverage,
+)
 
 
 class FourToolBenchmarkTests(unittest.TestCase):
@@ -25,6 +31,33 @@ class FourToolBenchmarkTests(unittest.TestCase):
         digest = sha256_file("data/comparison/sample_full_sorted.jsonl")
         self.assertEqual(len(digest), 64)
         self.assertEqual(digest, sha256_file("data/comparison/sample_full_sorted.jsonl"))
+
+    def test_target_coverage_rejects_missing_arm_row(self):
+        record = FourToolRecord(
+            target_id="t0", target_smiles="CCO", sample_rank=0,
+            tool="renkin", arm_id="renkin-arm", run_status="completed",
+            route_found=False,
+        )
+        with self.assertRaisesRegex(ValueError, "target coverage mismatch"):
+            validate_target_coverage(
+                [record],
+                [{"target_id": "t0", "canonical_smiles": "CCO", "sample_rank": 0},
+                 {"target_id": "t1", "canonical_smiles": "CCC", "sample_rank": 1}],
+                ["renkin"],
+            )
+
+    def test_target_coverage_rejects_metadata_mismatch(self):
+        record = FourToolRecord(
+            target_id="t0", target_smiles="CCN", sample_rank=0,
+            tool="renkin", arm_id="renkin-arm", run_status="completed",
+            route_found=False,
+        )
+        with self.assertRaisesRegex(ValueError, "metadata mismatch"):
+            validate_target_coverage(
+                [record],
+                [{"target_id": "t0", "canonical_smiles": "CCO", "sample_rank": 0}],
+                ["renkin"],
+            )
 
 
 if __name__ == "__main__":

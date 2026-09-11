@@ -85,6 +85,47 @@ def merge_rows(paths: list[Path], output: Path) -> int:
     return len(records)
 
 
+def load_target_manifest(path: str | Path, sample_size: int) -> list[dict[str, object]]:
+    targets = []
+    with open(path, encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, 1):
+            if not line.strip():
+                continue
+            target = json.loads(line)
+            if not isinstance(target, dict):
+                raise ValueError(f"{path}:{line_number}: target must be an object")
+            targets.append(target)
+    sample = targets[:sample_size]
+    ids = [target.get("target_id") for target in sample]
+    if len(ids) != len(set(ids)):
+        raise ValueError("target manifest sample contains duplicate target_id values")
+    if not all(isinstance(target.get("target_id"), str) for target in sample):
+        raise ValueError("target manifest sample requires string target_id values")
+    return sample
+
+
+def validate_target_coverage(
+    records: list[FourToolRecord], targets: list[dict[str, object]], tools: list[str]
+) -> None:
+    """Reject missing, extra, or mismatched target rows before report output."""
+    expected = {target["target_id"]: target for target in targets}
+    if len(expected) != len(targets):
+        raise ValueError("target manifest contains duplicate target_id values")
+    for tool in tools:
+        rows = [record for record in records if record.tool == tool]
+        actual = {record.target_id: record for record in rows}
+        missing = sorted(set(expected) - set(actual))
+        extra = sorted(set(actual) - set(expected))
+        if missing or extra or len(rows) != len(actual):
+            raise ValueError(
+                f"{tool} target coverage mismatch: missing={missing[:3]} extra={extra[:3]}"
+            )
+        for target_id, record in actual.items():
+            target = expected[target_id]
+            if record.target_smiles != target.get("canonical_smiles") or record.sample_rank != target.get("sample_rank"):
+                raise ValueError(f"{tool} target metadata mismatch for {target_id!r}")
+
+
 def write_run_manifest(args: argparse.Namespace, output: Path, count: int) -> None:
     payload = {
         "schema_version": "renkin-four-tool-run-manifest/1",
@@ -163,6 +204,8 @@ def main() -> int:
             run_command(external_command(args, tool, output, output_dir / f"{tool}-artifacts"))
             row_paths.append(output)
     count = merge_rows(row_paths, Path(args.merged_output))
+    merged_records = load_records(args.merged_output)
+    validate_target_coverage(merged_records, load_target_manifest(args.target_manifest, args.sample_size), args.tools)
     write_run_manifest(args, output_dir / "run_manifest.json", count)
     print(json.dumps({"schema_version": "renkin-four-tool-run/1", "n_records": count,
                       "tools": args.tools}, indent=2))

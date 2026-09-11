@@ -8,6 +8,10 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Documentation consistency pass: aligned the documented hand-crafted rule
+  count with `default_rules()` (24), switched current branch and workflow links
+  from `master` to `main`, and corrected the stock-identity description.
+
 ## [1.0.5] - 2026-09-10 "Staged Candidate Recovery"
 
 - VAL-200再測定では、RENKINの`route_found`はAiZynthFinderと同率の

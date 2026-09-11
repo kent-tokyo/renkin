@@ -1249,7 +1249,10 @@ impl TemplatePolicyPrior {
         {
             return scores.clone();
         }
-        let decision = self.policy.rank_templates(target, &self.templates);
+        // The manifest contract is canonical-smiles-v1. Use the same
+        // standardized canonical key for the model call and the cache so
+        // equivalent input spellings cannot produce different orderings.
+        let decision = self.policy.rank_templates(&cache_key, &self.templates);
         let known: std::collections::HashSet<&str> = self
             .templates
             .iter()
@@ -5556,6 +5559,34 @@ mod tests {
         let expected = FrequencyPrior::from_rules(&rules).prior(&rules[0].name, "CCO");
         let prior = TemplatePolicyPrior::new(std::sync::Arc::new(AbstainingPolicy), &rules);
         assert_eq!(prior.prior(&rules[0].name, "CCO"), expected);
+    }
+
+    #[test]
+    fn template_policy_receives_standardized_canonical_target() {
+        struct RecordingPolicy {
+            targets: std::sync::Mutex<Vec<String>>,
+        }
+
+        impl TemplatePolicy for RecordingPolicy {
+            fn rank_templates(
+                &self,
+                target: &str,
+                _templates: &[TemplateInfo],
+            ) -> TemplatePolicyDecision {
+                self.targets.lock().unwrap().push(target.to_owned());
+                TemplatePolicyDecision::default()
+            }
+        }
+
+        let rules = default_rules();
+        let policy = std::sync::Arc::new(RecordingPolicy {
+            targets: std::sync::Mutex::new(Vec::new()),
+        });
+        let prior = TemplatePolicyPrior::new(policy.clone(), &rules);
+        let _ = prior.prior(&rules[0].name, "OCC");
+        let expected = canonical_stock_identity_from_smiles("OCC").unwrap();
+
+        assert_eq!(policy.targets.lock().unwrap().as_slice(), [expected]);
     }
 
     #[test]

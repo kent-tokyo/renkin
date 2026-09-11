@@ -666,7 +666,7 @@ renkin/                          ← Cargo workspace ルート
 - [x] `renkin-forward enumerate` — 既知反応物1つと明示的なpartnerライブラリからの、境界付きtemplate誘導型順反応列挙（[#64](https://github.com/kent-tokyo/renkin/issues/64)）
 - [x] `renkin-forward hints` — partner不要の検索用ヒント（マッチしたテンプレートslot・不足partnerのSMARTS・結合デルタ）。具体的な生成物は予測しない（[#64](https://github.com/kent-tokyo/renkin/issues/64) phase 2）
 - [x] `renkin-forward` CLI 強化 — バージョン管理された `ForwardPredictionReport`、決定的な候補ID/マージ/由来情報、reactant 順序に依存しないマッチング、厳格な CLI/route-JSON 検証
-- [x] `apply_retro`/`run_reactants` 性能回帰の解消 — `chematic`を公開済み`0.8.0`（上流のautomorphism-orbit-pruned canonicalization、[chematic#193](https://github.com/kent-tokyo/chematic/pull/193)）へ移行。correctnessへの影響ゼロ
+- [x] `apply_retro`/`run_reactants` 性能回帰の解消 — `chematic`を公開済み`1.0.9`（上流のautomorphism-orbit-pruned canonicalization、[chematic#193](https://github.com/kent-tokyo/chematic/pull/193)）へ移行。correctnessへの影響ゼロ
 - [x] `renkin-bench --plausibility` — 順方向検証による妥当性レポート
 - [x] `renkin-forward predict` — テンプレートベース順反応予測
 - [x] `renkin-forward validate` — 逆合成ルートの順反応検証；stdin パイプ対応

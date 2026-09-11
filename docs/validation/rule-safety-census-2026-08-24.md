@@ -2,7 +2,7 @@
 
 **Status: static screen only.** A flagged row here is a candidate for a target fixture, never a verdict by itself — a rule only gets fixed/disabled once a specific target reproduces the defect via direct `apply_retro` calls, matching the standard this project already applied to `aryl_amine_retro`/`buchwald_hartwig_retro`.
 
-**Updated (round 2)**: regenerated after `negishi_retro` and `grignard_addition_retro` were also confirmed via direct `apply_retro` reproduction and removed from `default_rules()` — see `negishi_retro_removed_from_default_rules`/`negishi_retro_would_corrupt_a_ring_fused_target_if_re_enabled` and `grignard_addition_retro_removed_from_default_rules`/`grignard_addition_retro_would_corrupt_a_ring_fused_target_if_re_enabled` in `src/chem_env.rs`. This follows round 1's removal of `n_benzylation_retro`/`michael_retro`. `default_rules()` now has 22 hand-crafted rules (was 26 before this round-2/round-1 pair, 24 after round 1), 6 flagged (was 10, then 8).
+**Updated (round 2)**: regenerated after `negishi_retro` and `grignard_addition_retro` were also confirmed via direct `apply_retro` reproduction and removed from `default_rules()` — see `negishi_retro_removed_from_default_rules`/`negishi_retro_would_corrupt_a_ring_fused_target_if_re_enabled` and `grignard_addition_retro_removed_from_default_rules`/`grignard_addition_retro_would_corrupt_a_ring_fused_target_if_re_enabled` in `src/chem_env.rs`. This follows round 1's removal of `n_benzylation_retro`/`michael_retro`. At the time of this 2026-08-24 census, `default_rules()` had 22 hand-crafted rules (was 26 before this round-2/round-1 pair, 24 after round 1), 6 flagged (was 10, then 8). The live rule set may have changed since this dated report.
 
 ## Purpose
 

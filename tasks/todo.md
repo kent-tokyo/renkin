@@ -136,7 +136,7 @@ template被覆・stock差を順に改善する。同一条件のAiZynthFinder成
 - [x] **48.17 / Issue #240** license/provenance/leakage境界を先に固定し、AiZynthFinder asset・benchmark route・TEST labelをrule生成/選定に使わず、同一固定TRAINのrdchiral reactant radius=0抽出を研究用higher-level abstractionとして実装。明示H緩和3案は生成0件のためproduction toolingへ残さず却下
 - [x] **48.18** 独立固定VAL 200件でTRAIN頻度閾値2/5/10/25を事前登録して評価。`count>=25`はbaseline positive 167件を全て維持し、exact positiveを1件追加、candidate 17,667→25,404（1.438x）、malformed 0でgate通過。決定論的抽出/union scriptとSHA-256 manifestを追加
 - [x] **48.19** 選定後に凍結22件holdoutへ最終coverage tierとして適用し、`L1206`・`L2879`・`L2778`・`L3129`の4件を追加回収。route tree/steps/stock/element accounting 4/4、全22 process completed、post-arm verification PASS。累積40/58、残18件
-- [ ] **48.20 / remaining boundary** 残18件（unaccounted候補のみ15件、完成候補なし3件）を、追加の独立license済みcorpusまたは別のTRAIN-only abstractionで診断する。正式4,903件の更新、既定化、配布corpus化は別の事前登録full rerunまで禁止
+- [x] **48.20 / remaining boundary** 残18件を既存の凍結holdout証跡で再監査。18/18 completed、timeout/crash/invalid output=0、新規valid route=0、完成候補10,433件は全て`unaccounted_target_element`で棄却。実行失敗ではなく候補元素accounting境界が主因と診断した。coverage解決ではないため、追加corpus・別TRAIN-only abstraction・正式4,903件更新・既定化・配布corpus化は引き続き別の事前登録full rerunまで禁止
 
 ## Phase 47: Open-issue priority follow-up（実装・検証完了、2026-09-05）
 

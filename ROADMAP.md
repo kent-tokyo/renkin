@@ -1226,6 +1226,12 @@ template hashとconfiguration IDは一致し、route_found/strict validatedは�
 (10.5%)、invalid・timeout・crashもともに0だった。これはこのdisjoint-200 cohortに限る
 再現性・一般化の証拠であり、外部corpusや競合優位性の主張ではない。
 
+48.20の残存18件は、既存の凍結holdout証跡を再監査した。18/18 process completed、
+timeout・crash・invalid outputは0、新規valid routeは0だった。完成候補10,433件は全て
+`unaccounted_target_element`で棄却されており、実行環境の失敗ではなく、TRAIN-only
+abstractionが生成する候補の元素accounting境界が主因と診断した。追加corpusや同holdout
+への再調整はせず、原因診断完了・coverage解決未完了として扱う。
+
 次のO1実装として、比較adapterに`--max-routes`と`--route-selection strict_validated`
 を追加した。既存のrank-1 armは変更せず、明示した実験armだけが複数候補を受け取り、
 同じroute-tree／reaction-step／element-accounting validatorを通過した最初の候補を

@@ -1,0 +1,452 @@
+{
+  "schema_version": "renkin-partial-overlap-family-cohorts/1",
+  "evidence_level": "heuristic_diagnostic_only",
+  "route_validity_unchanged": true,
+  "subset_count": 24,
+  "family_counts": {
+    "amide_like": 6,
+    "carbonyl_oxygen_like": 1,
+    "ester_like": 1,
+    "other_or_unknown": 14,
+    "sulfonamide_like": 2
+  },
+  "cohorts": {
+    "amide_like": {
+      "count": 6,
+      "records": [
+        {
+          "target_id": "uspto50k_val#L3809",
+          "edge_index": 3,
+          "canonical_target": "C(C(=O)O)CC(=O)N3CCC(CC3)c2c[nH]c1ccccc12",
+          "best_candidate_id": "sha256:47f232f0d39cbce3de6761bbda7c6f136ca2c59ffa0bc0c7d57b9d278528db32",
+          "best_overlap_count": 1,
+          "expected_precursor_count": 2,
+          "reaction_family_proxy": "amide_like",
+          "missing_precursors": [
+            {
+              "precursor": "C1(OC(CC1)=O)=O",
+              "representation_status": "candidate_unparseable_or_not_equivalent",
+              "stock_status": "downstream_or_unavailable"
+            }
+          ],
+          "candidate_stock_reachable": false
+        },
+        {
+          "target_id": "uspto50k_val#L195",
+          "edge_index": 0,
+          "canonical_target": "C(NC(C)(C)C#N)(NC(C)(C)C)=O",
+          "best_candidate_id": "sha256:b643e857e6699cf3d2a9b2c6cdcb16081d44a908eaba152de71c521639b2820c",
+          "best_overlap_count": 1,
+          "expected_precursor_count": 2,
+          "reaction_family_proxy": "amide_like",
+          "missing_precursors": [
+            {
+              "precursor": "CC(C#N)(C)O",
+              "representation_status": "not_equivalent_by_rdkit",
+              "stock_status": "downstream_or_unavailable"
+            }
+          ],
+          "candidate_stock_reachable": false
+        },
+        {
+          "target_id": "uspto50k_val#L2789",
+          "edge_index": 1,
+          "canonical_target": "C(n5c(C)ncc5-c1nc(NC4CCC(CC4)N3C(c2c(C3=O)cccc2)=O)ncc1)(C)C",
+          "best_candidate_id": "sha256:1ef6b4dfd9e735a29cebd51adcbd8a96774b6610222af9b9cfcaf42ff939c76b",
+          "best_overlap_count": 1,
+          "expected_precursor_count": 2,
+          "reaction_family_proxy": "amide_like",
+          "missing_precursors": [
+            {
+              "precursor": "Cc1n(c(cn1)C(=O)/C=C/N(C)C)C(C)C",
+              "representation_status": "not_equivalent_by_rdkit",
+              "stock_status": "downstream_or_unavailable"
+            }
+          ],
+          "candidate_stock_reachable": true
+        },
+        {
+          "target_id": "uspto50k_val#L2789",
+          "edge_index": 6,
+          "canonical_target": "C1(c3c(cccc3)C(=O)N1C2CCC(CC2)NC(=N)N)=O",
+          "best_candidate_id": "sha256:7ddc022b56fd0df7c7046a281c1e90d48242634e15d18601822e958c05f7730e",
+          "best_overlap_count": 1,
+          "expected_precursor_count": 2,
+          "reaction_family_proxy": "amide_like",
+          "missing_precursors": [
+            {
+              "precursor": "C(N)(=N)n1cccn1",
+              "representation_status": "not_equivalent_by_rdkit",
+              "stock_status": "downstream_or_unavailable"
+            }
+          ],
+          "candidate_stock_reachable": true
+        },
+        {
+          "target_id": "uspto50k_val#L3130",
+          "edge_index": 3,
+          "canonical_target": "c1(ccc(c2c1CCC(N2)=O)OC)C=O",
+          "best_candidate_id": "sha256:6a76c826e2f97e1ddeb30bb66ff0cc767594aed51a24ca28ed54468a15c4567b",
+          "best_overlap_count": 1,
+          "expected_precursor_count": 2,
+          "reaction_family_proxy": "amide_like",
+          "missing_precursors": [
+            {
+              "precursor": "COC(Cl)Cl",
+              "representation_status": "not_equivalent_by_rdkit",
+              "stock_status": "downstream_or_unavailable"
+            }
+          ],
+          "candidate_stock_reachable": false
+        },
+        {
+          "target_id": "uspto50k_val#L3564",
+          "edge_index": 3,
+          "canonical_target": "c1c([nH]cc1[N+](=O)[O-])C(=O)N",
+          "best_candidate_id": "sha256:2d230581a9176d684bbd280259afea6c2927d9d8a58dd5685ac0860d2f176bb7",
+          "best_overlap_count": 1,
+          "expected_precursor_count": 2,
+          "reaction_family_proxy": "amide_like",
+          "missing_precursors": [
+            {
+              "precursor": "C(Cl)(Cl)(Cl)C(c1[nH]cc(c1)[N+](=O)[O-])=O",
+              "representation_status": "candidate_unparseable_or_not_equivalent",
+              "stock_status": "downstream_or_unavailable"
+            }
+          ],
+          "candidate_stock_reachable": false
+        }
+      ]
+    },
+    "carbonyl_oxygen_like": {
+      "count": 1,
+      "records": [
+        {
+          "target_id": "uspto50k_val#L3203",
+          "edge_index": 2,
+          "canonical_target": "COc1ccc(CCNCCC(=O)OC)cc1",
+          "best_candidate_id": "sha256:5a18570c01721fac76d0dc0c5d12f20ca94fd56598e80cc9de7a5acbb52a4646",
+          "best_overlap_count": 1,
+          "expected_precursor_count": 2,
+          "reaction_family_proxy": "carbonyl_oxygen_like",
+          "missing_precursors": [
+            {
+              "precursor": "C(=C)C(OC)=O",
+              "representation_status": "not_equivalent_by_rdkit",
+              "stock_status": "downstream_or_unavailable"
+            }
+          ],
+          "candidate_stock_reachable": false
+        }
+      ]
+    },
+    "ester_like": {
+      "count": 1,
+      "records": [
+        {
+          "target_id": "uspto50k_val#L370",
+          "edge_index": 0,
+          "canonical_target": "c12n(c(c(-c3ccc(cc3)F)c1cccc2)/C=C/[C@@H](O)CC(=O)OCC)C(C)C",
+          "best_candidate_id": "sha256:03af8b0553cb90c0942c3917648432a1971d1014eb60086ec8f641e00aa5be09",
+          "best_overlap_count": 1,
+          "expected_precursor_count": 2,
+          "reaction_family_proxy": "ester_like",
+          "missing_precursors": [
+            {
+              "precursor": "c1ccccc1[P+](c3ccccc3)(c2ccccc2)C[C@H](CC(=O)OCC)O",
+              "representation_status": "stereo_only_difference",
+              "stock_status": "downstream_or_unavailable"
+            }
+          ],
+          "candidate_stock_reachable": true
+        }
+      ]
+    },
+    "other_or_unknown": {
+      "count": 14,
+      "records": [
+        {
+          "target_id": "uspto50k_val#L826",
+          "edge_index": 6,
+          "canonical_target": "BrC(C(=O)C)Br",
+          "best_candidate_id": "sha256:67a1f3ed5513fd479358286ef725040d23db85701fd97d04c3a50ef9d7472dfa",
+          "best_overlap_count": 1,
+          "expected_precursor_count": 2,
+          "reaction_family_proxy": "other_or_unknown",
+          "missing_precursors": [
+            {
+              "precursor": "C[Mg]Br",
+              "representation_status": "not_equivalent_by_rdkit",
+              "stock_status": "downstream_or_unavailable"
+            }
+          ],
+          "candidate_stock_reachable": false
+        },
+        {
+          "target_id": "uspto50k_val#L2789",
+          "edge_index": 4,
+          "canonical_target": "C(C)(C)NC(C)=N",
+          "best_candidate_id": "sha256:62c50dd020824245879c3c682892fa70972faca34b5974fe9f4c1b2517202c76",
+          "best_overlap_count": 1,
+          "expected_precursor_count": 2,
+          "reaction_family_proxy": "other_or_unknown",
+          "missing_precursors": [
+            {
+              "precursor": "CC(OCC)=N",
+              "representation_status": "not_equivalent_by_rdkit",
+              "stock_status": "downstream_or_unavailable"
+            }
+          ],
+          "candidate_stock_reachable": false
+        },
+        {
+          "target_id": "uspto50k_val#L657",
+          "edge_index": 1,
+          "canonical_target": "C(OC)c1ccoc1[Sn](C)(C)C",
+          "best_candidate_id": "sha256:fa967cd7e4fa8e13aa9c1eb18255f12331e923a7a9214c8fdeb2ffb400b92f04",
+          "best_overlap_count": 1,
+          "expected_precursor_count": 2,
+          "reaction_family_proxy": "other_or_unknown",
+          "missing_precursors": [
+            {
+              "precursor": "[Sn](Cl)(C)(C)C",
+              "representation_status": "not_equivalent_by_rdkit",
+              "stock_status": "downstream_or_unavailable"
+            }
+          ],
+          "candidate_stock_reachable": false
+        },
+        {
+          "target_id": "uspto50k_val#L2540",
+          "edge_index": 0,
+          "canonical_target": "C1CNCCCN1c3nc2ccccc2[nH]3",
+          "best_candidate_id": "sha256:284bb82700509b9e63681f4bb501137f475da65798ec82dc6ec49578b87949b5",
+          "best_overlap_count": 1,
+          "expected_precursor_count": 2,
+          "reaction_family_proxy": "other_or_unknown",
+          "missing_precursors": [
+            {
+              "precursor": "c1cc2c([nH]c(Cl)n2)cc1",
+              "representation_status": "candidate_unparseable_or_not_equivalent",
+              "stock_status": "downstream_or_unavailable"
+            }
+          ],
+          "candidate_stock_reachable": false
+        },
+        {
+          "target_id": "uspto50k_val#L1973",
+          "edge_index": 2,
+          "canonical_target": "C=Cc1c(N)c(cc(c1)C#N)C(F)(F)F",
+          "best_candidate_id": "sha256:4506a0ae498b0b9a525572f81c3c027b6b76975970cedd3590d29aa45ca95943",
+          "best_overlap_count": 1,
+          "expected_precursor_count": 2,
+          "reaction_family_proxy": "other_or_unknown",
+          "missing_precursors": [
+            {
+              "precursor": "C(=C)[Sn](CCCC)(CCCC)CCCC",
+              "representation_status": "not_equivalent_by_rdkit",
+              "stock_status": "downstream_or_unavailable"
+            }
+          ],
+          "candidate_stock_reachable": false
+        },
+        {
+          "target_id": "uspto50k_val#L1225",
+          "edge_index": 0,
+          "canonical_target": "COCC(O)Cn2ncc(c2)B1OC(C)(C)C(C)(C)O1",
+          "best_candidate_id": "sha256:2e7772b99d5735339d8fdeb21d07e2af078c955510bb5464217e6f8d9438ad98",
+          "best_overlap_count": 1,
+          "expected_precursor_count": 2,
+          "reaction_family_proxy": "other_or_unknown",
+          "missing_precursors": [
+            {
+              "precursor": "O(C)CC1CO1",
+              "representation_status": "not_equivalent_by_rdkit",
+              "stock_status": "downstream_or_unavailable"
+            }
+          ],
+          "candidate_stock_reachable": false
+        },
+        {
+          "target_id": "uspto50k_val#L995",
+          "edge_index": 2,
+          "canonical_target": "c1(Br)c(cc(OC)c(c1)C(C)C)C=O",
+          "best_candidate_id": "sha256:ca778015e2569e2009a364cf1e78d1aef7961dd703e306c3f5a0f839d6a7c754",
+          "best_overlap_count": 1,
+          "expected_precursor_count": 2,
+          "reaction_family_proxy": "other_or_unknown",
+          "missing_precursors": [
+            {
+              "precursor": "COC(Cl)Cl",
+              "representation_status": "not_equivalent_by_rdkit",
+              "stock_status": "downstream_or_unavailable"
+            }
+          ],
+          "candidate_stock_reachable": false
+        },
+        {
+          "target_id": "uspto50k_val#L4238",
+          "edge_index": 1,
+          "canonical_target": "c12cc(sc1c(ccn2)Cl)[Sn](CCCC)(CCCC)CCCC",
+          "best_candidate_id": "sha256:0d9fd6af2891bf7516b534a5c5b95fc228e719805a05e48a121cd990781abe5c",
+          "best_overlap_count": 1,
+          "expected_precursor_count": 2,
+          "reaction_family_proxy": "other_or_unknown",
+          "missing_precursors": [
+            {
+              "precursor": "C(C[Sn](CCCC)(CCCC)Cl)CC",
+              "representation_status": "not_equivalent_by_rdkit",
+              "stock_status": "downstream_or_unavailable"
+            }
+          ],
+          "candidate_stock_reachable": false
+        },
+        {
+          "target_id": "uspto50k_val#L1887",
+          "edge_index": 1,
+          "canonical_target": "c1cc(S(c2ccccc2)(=O)=O)cnc1C",
+          "best_candidate_id": "sha256:303c734a370caba8ed22b4707d14bd5e081960a63d13a74759719aa8a1f801a9",
+          "best_overlap_count": 1,
+          "expected_precursor_count": 2,
+          "reaction_family_proxy": "other_or_unknown",
+          "missing_precursors": [
+            {
+              "precursor": "c1ccccc1S(O)=O",
+              "representation_status": "not_equivalent_by_rdkit",
+              "stock_status": "downstream_or_unavailable"
+            }
+          ],
+          "candidate_stock_reachable": false
+        },
+        {
+          "target_id": "uspto50k_val#L1527",
+          "edge_index": 0,
+          "canonical_target": "c2(cc(C)c(c(N)c2)N)-c1ccccc1C(F)(F)F",
+          "best_candidate_id": "sha256:4597b623b1f2232c45b3e8b3ec010356420b8ac15e09d2a2f1268481cee40224",
+          "best_overlap_count": 1,
+          "expected_precursor_count": 2,
+          "reaction_family_proxy": "other_or_unknown",
+          "missing_precursors": [
+            {
+              "precursor": "c1(N)c(cccc1C)N",
+              "representation_status": "not_equivalent_by_rdkit",
+              "stock_status": "downstream_or_unavailable"
+            }
+          ],
+          "candidate_stock_reachable": false
+        },
+        {
+          "target_id": "uspto50k_val#L995",
+          "edge_index": 1,
+          "canonical_target": "c2cc(cc(c2)C)C(c1cc(OC)c(cc1Br)C(C)C)O",
+          "best_candidate_id": "sha256:4a29e0edd2926ddc57310a29d5bcd2fa0fc12d12e3ac08cc5196bfe2bf5648ab",
+          "best_overlap_count": 1,
+          "expected_precursor_count": 2,
+          "reaction_family_proxy": "other_or_unknown",
+          "missing_precursors": [
+            {
+              "precursor": "c1ccc(cc1[Mg]Br)C",
+              "representation_status": "not_equivalent_by_rdkit",
+              "stock_status": "downstream_or_unavailable"
+            }
+          ],
+          "candidate_stock_reachable": false
+        },
+        {
+          "target_id": "uspto50k_val#L3223",
+          "edge_index": 1,
+          "canonical_target": "c3cc1c(cc3)CCN(c2c(C#N)c(=O)[nH]cn2)CC1",
+          "best_candidate_id": "sha256:264572a90b93406423662369bf6b36fb2f6e7e311a85f4a58e9c1d9e892497a5",
+          "best_overlap_count": 1,
+          "expected_precursor_count": 2,
+          "reaction_family_proxy": "other_or_unknown",
+          "missing_precursors": [
+            {
+              "precursor": "C#N",
+              "representation_status": "candidate_unparseable_or_not_equivalent",
+              "stock_status": "downstream_or_unavailable"
+            }
+          ],
+          "candidate_stock_reachable": false
+        },
+        {
+          "target_id": "uspto50k_val#L826",
+          "edge_index": 0,
+          "canonical_target": "c4(n3nc(cc(C(CC)CC)c3nc4C)C)-c2sc(nc2C)-c1cccnc1",
+          "best_candidate_id": "sha256:99897e301b92a5a0395bf740b4f467e3f0a7c4276d550d25b206d464f6a7ff10",
+          "best_overlap_count": 1,
+          "expected_precursor_count": 2,
+          "reaction_family_proxy": "other_or_unknown",
+          "missing_precursors": [
+            {
+              "precursor": "c1sc(-c2cnccc2)nc1C",
+              "representation_status": "not_equivalent_by_rdkit",
+              "stock_status": "downstream_or_unavailable"
+            }
+          ],
+          "candidate_stock_reachable": true
+        },
+        {
+          "target_id": "uspto50k_val#L2349",
+          "edge_index": 3,
+          "canonical_target": "o1c(C(=O)Cl)cc2c1c(OC)ccc2C=O",
+          "best_candidate_id": "sha256:f43d89e704b7c04c9b2684812d32eeb7b93e35f9df033dedff2d1ccb6af823ba",
+          "best_overlap_count": 1,
+          "expected_precursor_count": 2,
+          "reaction_family_proxy": "other_or_unknown",
+          "missing_precursors": [
+            {
+              "precursor": "COC(Cl)Cl",
+              "representation_status": "not_equivalent_by_rdkit",
+              "stock_status": "downstream_or_unavailable"
+            }
+          ],
+          "candidate_stock_reachable": false
+        }
+      ]
+    },
+    "sulfonamide_like": {
+      "count": 2,
+      "records": [
+        {
+          "target_id": "uspto50k_val#L3130",
+          "edge_index": 5,
+          "canonical_target": "CS(=O)(=O)Nc1ccc(CBr)cc1",
+          "best_candidate_id": "sha256:30e6e3456e40f1635590b68806b169a2512b01d8dae7abbe464568a82d69aac8",
+          "best_overlap_count": 1,
+          "expected_precursor_count": 2,
+          "reaction_family_proxy": "sulfonamide_like",
+          "missing_precursors": [
+            {
+              "precursor": "P(Br)(Br)Br",
+              "representation_status": "not_equivalent_by_rdkit",
+              "stock_status": "downstream_or_unavailable"
+            }
+          ],
+          "candidate_stock_reachable": false
+        },
+        {
+          "target_id": "uspto50k_val#L1954",
+          "edge_index": 0,
+          "canonical_target": "c5c(C(F)(F)F)ccc(c5)-c3c4CN(CCc4n(n3)CCCN2CCN(CC2)c1c(cccc1Cl)[N+]([O-])=O)S(C)(=O)=O",
+          "best_candidate_id": "sha256:5b2759b1dba9f4a825a43670ece1ffd7bd57476f5237876294a478fc30a172b8",
+          "best_overlap_count": 1,
+          "expected_precursor_count": 2,
+          "reaction_family_proxy": "sulfonamide_like",
+          "missing_precursors": [
+            {
+              "precursor": "c3(c(c(Cl)ccc3)N1CCN(CCCOS(=O)(=O)c2ccc(cc2)C)CC1)[N+]([O-])=O",
+              "representation_status": "candidate_unparseable_or_not_equivalent",
+              "stock_status": "downstream_or_unavailable"
+            }
+          ],
+          "candidate_stock_reachable": true
+        }
+      ]
+    }
+  },
+  "inputs": {
+    "diagnostic_sha256": "sha256:9cd0568c4876ff462cf30978a7f9861eb954af63ed586dabfafa1fba6e095159",
+    "subset_sha256": "sha256:72cbcc83decd88eed457225155f23e6f39f6bba6a8f71389ee2e057e841af207"
+  }
+}

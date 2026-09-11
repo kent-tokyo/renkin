@@ -10,6 +10,7 @@ class FourToolBenchmarkTests(unittest.TestCase):
         args = argparse.Namespace(
             target_manifest="targets.jsonl", stock="stock.smi", renkin="renkin",
             arm_id={"synplanner": "syn-arm"}, timeout_s=150, grace_s=10,
+            sample_size=1,
             synplan="synplan", synplanner_config="config.yaml", reaction_rules="rules.tsv",
             building_blocks="bb.tsv", policy_network="policy.ckpt", value_network="value.ckpt",
         )

@@ -49,6 +49,7 @@ def external_command(args: argparse.Namespace, tool: str, output: Path, artifact
     command = [
         sys.executable, str(Path(__file__).with_name("run_external_targets.py")),
         "--tool", tool, "--target-manifest", args.target_manifest,
+        "--sample-size", str(args.sample_size),
         "--output", str(output), "--artifact-dir", str(artifacts),
         "--stock", args.stock, "--renkin", args.renkin, "--arm-id", args.arm_id[tool],
         "--timeout-s", str(args.timeout_s), "--grace-s", str(args.grace_s),

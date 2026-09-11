@@ -14,7 +14,7 @@ class ExternalOrchestratorTests(unittest.TestCase):
             tool="synplanner", stock="stock.smi", renkin="renkin",
             synplan="synplan", config="config.yaml", reaction_rules="rules.tsv",
             building_blocks="bb.tsv", policy_network="policy.ckpt", value_network="value.ckpt",
-            timeout_s=150, grace_s=10,
+            timeout_s=150, grace_s=10, sample_size=1,
         )
         command = command_for(args, TARGET, Path("out.jsonl"))
         self.assertIn("t0", command)

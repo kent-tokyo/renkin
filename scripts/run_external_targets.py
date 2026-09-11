@@ -46,7 +46,7 @@ def run(args: argparse.Namespace) -> int:
     targets = []
     with open(args.target_manifest, encoding="utf-8") as handle:
         import json
-        targets = [json.loads(line) for line in handle if line.strip()]
+        targets = [json.loads(line) for line in handle if line.strip()][:args.sample_size]
     existing = {r.target_id for r in load_records(args.output)} if Path(args.output).exists() else set()
     artifact_dir = Path(args.artifact_dir)
     artifact_dir.mkdir(parents=True, exist_ok=True)
@@ -90,6 +90,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tool", choices=["syntheseus", "synplanner"], required=True)
     parser.add_argument("--target-manifest", required=True)
+    parser.add_argument("--sample-size", type=int, required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--artifact-dir", required=True)
     parser.add_argument("--stock", required=True)

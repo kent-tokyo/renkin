@@ -171,7 +171,7 @@ Use `--format mermaid` for GitHub/Notion-compatible flowcharts.
 
 ## Current Limitations
 
-Current release: **v1.0.5**.
+Current release: **v1.0.6**.
 
 The latest frozen VAL-200 shared-stock rerun found native routes for 134/200
 (67.0%) targets for both RENKIN and AiZynthFinder 4.4.1. Under strict common

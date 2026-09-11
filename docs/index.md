@@ -5,7 +5,7 @@ description: "Plan multi-step synthesis routes from SMILES with RENKIN, a pure-R
 
 # RENKIN
 
-Current release: **v1.0.5**.
+Current release: **v1.0.6**.
 
 > **Computer-Aided Synthesis Planning (CASP) · Pure Rust · WebAssembly · Python**  
 > Named after 錬金 (*renkin*) — Japanese for alchemy: just as alchemists transformed base metals into gold, RENKIN transforms target molecules back into cheap starting materials.
@@ -156,7 +156,7 @@ parseable normalized trees terminating in the configured shared stock. See the
 
     ```toml
     [dependencies]
-renkin = "1.0.5"
+renkin = "1.0.6"
     ```
 
 === "npm"

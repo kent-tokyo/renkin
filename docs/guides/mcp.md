@@ -53,7 +53,7 @@ No changes from prior RENKIN releases. Register in
 
 ```
 → {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"legacy-client","version":"1.0"}}}
-← {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"renkin","version":"1.0.5"}}}
+← {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"renkin","version":"1.0.6"}}}
 
 → {"jsonrpc":"2.0","method":"notifications/initialized"}
 
@@ -95,7 +95,7 @@ No `initialize` handshake. Every request carries protocol negotiation in
     "instructions":"RENKIN provides retrosynthetic route search and route-analysis tools.",
     "ttlMs":3600000,
     "cacheScope":"public",
-    "_meta":{"io.modelcontextprotocol/serverInfo":{"name":"renkin","version":"1.0.5"}}
+    "_meta":{"io.modelcontextprotocol/serverInfo":{"name":"renkin","version":"1.0.6"}}
   }}
 
 → {"jsonrpc":"2.0","id":"t1","method":"tools/list","params":{"_meta":{
@@ -107,7 +107,7 @@ No `initialize` handshake. Every request carries protocol negotiation in
     "tools":[...],
     "ttlMs":3600000,
     "cacheScope":"public",
-    "_meta":{"io.modelcontextprotocol/serverInfo":{"name":"renkin","version":"1.0.5"}}
+    "_meta":{"io.modelcontextprotocol/serverInfo":{"name":"renkin","version":"1.0.6"}}
   }}
 ```
 

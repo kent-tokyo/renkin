@@ -9,7 +9,7 @@ retrosynthesis/CASPエンジンへ進化させるための実行計画。この�
 速度、再現性、監査可能性、オフライン実行、Rust/Python/WASMへの組み込みやすさで
 明確な優位を取ることを意味する。
 
-## Current benchmark position (2026-09-10, v1.0.5 candidate)
+## Current benchmark position (2026-09-11, v1.0.6 release)
 
 The formal VAL-200 shared-stock rerun reports native `route_found` parity with
 AiZynthFinder 4.4.1: 134/200 (67.0%) each. The strict common
@@ -212,7 +212,7 @@ gateを持ち、最後に一つのplannerへ統合する。
 | 6C–6D | CASP recommendations | 条件・収率・選択性を根拠と不確実性付きで提案する | retrieval → prediction → feedback loop |
 | 7 | ecosystem | 同じbundleをCLI／Python／WASM／MCPで再現する | release bundle、cross-surface CI |
 
-## Current baseline (v1.0.5 candidate, 2026-09-11)
+## Current baseline (v1.0.6 release, 2026-09-11)
 
 出荷済みの強み:
 
@@ -229,7 +229,7 @@ gateを持ち、最後に一つのplannerへ統合する。
   `route_found`はともに134/200（67.0%）。共通strict validator＋stockでは
   RENKIN 134/200、AiZynthFinder 123/200（点推定差+5.5pp）だった。ただし
   paired bootstrapの正式優位性判定は未完了であり、普遍的な優越性は主張しない。
-- 1.0.5候補では、static TemplatePolicy artifactのschema不一致をfail-closed化し、
+- v1.0.6では、static TemplatePolicy artifactのschema不一致をfail-closed化し、
   モデル入力を標準化canonical SMILESへ統一。stock membership lookupも検索単位で
   正負ともmemoizeした。これらはroute semanticsを変更しない安全性・ホットパス改善で、
   速度向上率は別途同一条件で測定する。

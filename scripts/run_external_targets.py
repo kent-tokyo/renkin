@@ -10,6 +10,7 @@ one-process-per-target boundary, output identity, and resume semantics.
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 import time
@@ -33,6 +34,32 @@ def command_for(args: argparse.Namespace, target: dict, output: Path) -> list[st
                 *common, "--timeout-s", str(args.timeout_s), "--grace-s", str(args.grace_s)]
     return [args.python, str(Path(__file__).with_name("run_syntheseus_target.py")),
             "--model-dir", args.model_dir, *common, "--timeout-s", str(args.timeout_s)]
+
+
+def container_command(args: argparse.Namespace, command: list[str], row_path: Path) -> list[str]:
+    """Translate a host runner command into a bounded, network-isolated container."""
+    repo = Path(args.repo_root).resolve()
+    artifacts = Path(args.artifact_dir).resolve()
+
+    def mapped(value: str) -> str:
+        path = Path(value)
+        try:
+            return "/repo/" + str(path.resolve().relative_to(repo))
+        except ValueError:
+            try:
+                return "/artifacts/" + str(path.resolve().relative_to(artifacts))
+            except ValueError:
+                return value
+
+    translated = ["python" if index == 0 else mapped(value) for index, value in enumerate(command)]
+    translated = ["/repo/scripts/" + Path(command[1]).name if index == 1 else value
+                  for index, value in enumerate(translated)]
+    return [
+        "docker", "run", "--rm", "--network", "none", "--cpus", str(args.cpus),
+        "--memory", args.memory, "--memory-swap", args.memory,
+        "-v", f"{repo}:/repo:ro", "-v", f"{artifacts}:/artifacts:rw",
+        args.container_image, *translated[:2], *translated[2:],
+    ]
 
 
 def failure(target: dict, tool: str, arm_id: str, status: str, reason: str) -> FourToolRecord:
@@ -61,11 +88,13 @@ def run(args: argparse.Namespace) -> int:
             started = time.perf_counter()
             try:
                 completed = subprocess.run(
-                    command_for(args, target, row_path), check=False,
+                    (container_command(args, command_for(args, target, row_path), row_path)
+                     if args.container_image else command_for(args, target, row_path)), check=False,
                     capture_output=True, text=True,
                     timeout=args.timeout_s + args.grace_s + args.runner_overhead_s,
-                    env={**__import__("os").environ, **resource_environment(args.cpus)},
-                    preexec_fn=lambda: apply_resource_limits(args.memory_bytes, int(args.timeout_s + args.grace_s)),
+                    env={**os.environ, **resource_environment(args.cpus)},
+                    preexec_fn=(None if args.container_image else
+                                lambda: apply_resource_limits(args.memory_bytes, int(args.timeout_s + args.grace_s))),
                 )
             except subprocess.TimeoutExpired as exc:
                 record = failure(target, args.tool, args.arm_id, "timeout", str(exc))
@@ -104,6 +133,9 @@ def main() -> int:
     parser.add_argument("--runner-overhead-s", type=float, default=5)
     parser.add_argument("--cpus", type=int, default=8)
     parser.add_argument("--memory-bytes", type=int, default=6 * 1024**3)
+    parser.add_argument("--memory", default="6g")
+    parser.add_argument("--repo-root", default=".")
+    parser.add_argument("--container-image")
     parser.add_argument("--python", default=sys.executable)
     parser.add_argument("--model-dir", default="")
     parser.add_argument("--synplan", default="")

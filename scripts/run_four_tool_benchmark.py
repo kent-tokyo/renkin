@@ -62,6 +62,10 @@ def external_command(args: argparse.Namespace, tool: str, output: Path, artifact
         ]
     else:
         command += ["--python", args.synth_python, "--model-dir", args.synth_model_dir]
+    image = (getattr(args, "synplanner_container_image", None)
+             if tool == "synplanner" else getattr(args, "syntheseus_container_image", None))
+    if image:
+        command += ["--container-image", image, "--repo-root", args.repo_root]
     return command
 
 
@@ -115,6 +119,8 @@ def main() -> int:
     parser.add_argument("--templates", default="data/templates_extracted_500.smi")
     parser.add_argument("--public-data-dir", default="data/comparison/aizynthfinder_public_data")
     parser.add_argument("--aizynthfinder-image", default="renkin-compare-66/aizynthfinder:4.4.1")
+    parser.add_argument("--syntheseus-container-image")
+    parser.add_argument("--synplanner-container-image")
     parser.add_argument("--timeout-s", type=float, default=150)
     parser.add_argument("--grace-s", type=float, default=10)
     parser.add_argument("--arm-id", nargs=2, action="append", metavar=("TOOL", "ARM"), default=[])

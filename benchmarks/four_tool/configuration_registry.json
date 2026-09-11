@@ -64,8 +64,10 @@
       "parameters": {"limit_iterations": 30, "limit_reaction_model_calls": 1000, "time_limit_s": 120},
       "runner": "scripts/run_syntheseus_target.py",
       "runtime": {
-        "kind": "python",
-        "resource_enforcement": "host-native; not formal until bounded runtime is verified",
+        "kind": "docker",
+        "image": "renkin-bench/syntheseus:0.8.0",
+        "container_recipe": "docker/syntheseus-benchmark.Dockerfile",
+        "resource_enforcement": "docker_run_8cpu_6g_network_none; digest pending build",
         "python": "3.11",
         "packages": {"syntheseus": "0.8.0", "torch": "2.14.0", "dgl": "1.1.3", "packaging": "26.3"}
       },
@@ -85,7 +87,12 @@
       "stock": "data/comparison/shared_stock/shared_stock.smi",
       "parameters": {"max_iterations": 30, "max_time": 120, "max_depth": 6, "top_rules": 50},
       "runner": "scripts/run_synplanner_target.py",
-      "runtime": {"kind": "python", "python": "3.13", "resource_enforcement": "host-native; not formal until bounded runtime is verified"},
+      "runtime": {
+        "kind": "docker",
+        "image": "renkin-bench/synplanner:1.6.0",
+        "container_recipe": "docker/synplanner-benchmark.Dockerfile",
+        "resource_enforcement": "docker_run_8cpu_6g_network_none; digest pending build"
+      },
       "artifact_paths": [
         "benchmarks/synplanner_v1.6.0_smoke.yaml",
         ".synplanner-data-v1.6.0/presets/synplanner-gps.yaml"

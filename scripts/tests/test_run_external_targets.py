@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from scripts.run_external_targets import command_for
+from scripts.run_external_targets import container_command
 
 
 TARGET = {"target_id": "t0", "canonical_smiles": "CCO", "sample_rank": 0}
@@ -28,6 +29,17 @@ class ExternalOrchestratorTests(unittest.TestCase):
         command = command_for(args, TARGET, Path("out.jsonl"))
         self.assertIn("run_syntheseus_target.py", command[1])
         self.assertIn("model", command)
+
+    def test_container_command_declares_bounded_mounts(self):
+        args = argparse.Namespace(repo_root="/repo", artifact_dir="/artifacts", cpus=8,
+                                  memory="6g", container_image="planner:dev")
+        command = container_command(args, ["/usr/bin/python", "/repo/scripts/run.py",
+                                           "--output", "/artifacts/row.jsonl"],
+                                     Path("/artifacts/row.jsonl"))
+        self.assertIn("--network", command)
+        self.assertIn("none", command)
+        self.assertIn("--memory", command)
+        self.assertIn("planner:dev", command)
 
 
 if __name__ == "__main__":

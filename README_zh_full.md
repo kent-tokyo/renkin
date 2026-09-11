@@ -155,7 +155,7 @@ OC(=O)c1ccccc1OC(=O)C
 
 当前版本：**v1.0.5**。
 
-⚠️ 修正版 v1.0.1 的 4,903-target shared-stock 比较已经完成。RENKIN 为 591/4,903（12.05%），AiZynthFinder 4.4.1 为 200/4,903（4.08%）；配对差值为 +7.975 个百分点，95% CI 为 [+7.098,+8.852]。完整 v1.0.1 arm 已通过完整性验证，因此统计优越性门槛与正式发布门槛均为 PASS。这仅是在已声明 shared-stock endpoint 下的结果，并非普遍 CASP 优越性声明。本仓库其他位置出现的 78.0%/95.9%/81.8%（ChEMBL）均为 validator 修复前的无效历史数值。RENKIN 不预测收率、经过实验校准的成功概率或副反应，也不会自动检索文献（`success_probability` 是基于模板频率的搜索排序分数，并非经过校准的预测值）。
+最新的固定 VAL-200 shared-stock 重测中，RENKIN 与 AiZynthFinder 4.4.1 都为 134/200（67.0%）native route。按共同 strict validator＋stock 判定，RENKIN 为 134/200（67.0%），AiZynthFinder 为 123/200（61.5%），点估计差值为 +5.5 个百分点。这是固定 cohort 的结果，正式 paired gate 尚未完成，也不代表普遍 CASP 优越性。本仓库其他位置出现的 78.0%/95.9%/81.8%（ChEMBL）均为 validator 修复前的无效历史数值。RENKIN 不预测收率、经过实验校准的成功概率或副反应，也不会自动检索文献（`success_probability` 是基于模板频率的搜索排序分数，并非经过校准的预测值）。
 
 ---
 
@@ -283,7 +283,7 @@ native route_found 均为 **134/200（67.0%）**。在共同 validator 与 stock
 **123/200（61.5%）**，点估计差值为 +5.5 个百分点。这是固定 cohort 的
 结果，不代表普遍优越性或实验收率。[正式报告](data/comparison/formal_v1.0.3_candidate_20260908/formal_200_native_rstock_combined_v2_20260908/FORMAL_BENCHMARK_REPORT.md)
 
-### v1.0.1 正式 shared-stock 比较（4,903 个配对目标）
+### 历史 v1.0.1 正式 shared-stock 比较（4,903 个配对目标）
 
 | Arm | Primary route-to-shared-stock 成功数 | Rate |
 |---|---:|---:|

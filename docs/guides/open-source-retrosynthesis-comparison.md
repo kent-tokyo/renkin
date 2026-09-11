@@ -404,11 +404,14 @@ stock. The archived n=100/n=500 reports below retain their historical
   scipy dependency) on paired binary route-found outcomes, as a reference
   statistic alongside the bootstrap CI, never a replacement for it.
 
-**At n=100, every number here is explicitly descriptive.** Wide confidence
+**At n=100, every number in the historical feasibility section is explicitly descriptive.** Wide confidence
 intervals are expected and are shown, not narrated away — no
 "statistically significant" claim is made at this sample size. The same
 code ran unchanged at n=500 (see "500-target results" below); the
-4,903-target full corpus remains not run.
+4,903-target statement in this historical protocol section remains a
+description of that earlier run boundary. The current frozen VAL-200 result
+is reported at the top of this page and is the reference for the present
+candidate.
 
 ## 500-target results
 

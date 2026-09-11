@@ -212,7 +212,7 @@ gateを持ち、最後に一つのplannerへ統合する。
 | 6C–6D | CASP recommendations | 条件・収率・選択性を根拠と不確実性付きで提案する | retrieval → prediction → feedback loop |
 | 7 | ecosystem | 同じbundleをCLI／Python／WASM／MCPで再現する | release bundle、cross-surface CI |
 
-## Current baseline (v1.0.4 release, 2026-09-08)
+## Current baseline (v1.0.5 candidate, 2026-09-11)
 
 出荷済みの強み:
 
@@ -225,11 +225,14 @@ gateを持ち、最後に一つのplannerへ統合する。
 - CLI、Python、WASM、MCPの複数surfaceと、決定論的なローカル実行。
 - Security S5/S6のローカル／CI共通ゲート（cargo-deny、MCP adversarial suite、
   comparison-manifest contract）を整備済み。依存制限中も公開前検証を再現できる。
-- 4,903-targetのshared-stock正式比較を完走。RENKIN v1.0.0は577/4,903
-  （11.77%）、AiZynthFinder 4.4.1は200/4,903（4.08%）で、paired差は
-  +7.689pp、95% CI [+6.812, +8.566]。統計ゲートはPASSしたが、凍結した
-  RENKIN出力2件のroute-tree整合性失敗により正式公開ゲートはHOLD。v1.0.1
-  candidateでの対象限定再実行は2件ともparseable・stock-terminatedになった。
+- VAL-200 shared-stock再測定を完了。RENKINとAiZynthFinder 4.4.1のnative
+  `route_found`はともに134/200（67.0%）。共通strict validator＋stockでは
+  RENKIN 134/200、AiZynthFinder 123/200（点推定差+5.5pp）だった。ただし
+  paired bootstrapの正式優位性判定は未完了であり、普遍的な優越性は主張しない。
+- 1.0.5候補では、static TemplatePolicy artifactのschema不一致をfail-closed化し、
+  モデル入力を標準化canonical SMILESへ統一。stock membership lookupも検索単位で
+  正負ともmemoizeした。これらはroute semanticsを変更しない安全性・ホットパス改善で、
+  速度向上率は別途同一条件で測定する。
 - `CompiledStockV1`と`PreparedRuleSet`を実装。100,397-entry stockの同一build
   比較でcompiled loadはplain `.smi` loadより約1,005x高速、template applyの
   5,000-call局所gateは19.4x高速。どちらも限定条件のlocal measurementであり、
@@ -248,9 +251,8 @@ gateを持ち、最後に一つのplannerへ統合する。
 - coverage modeのCLI/Python product integrationは完了したが、現行correctness
   stateの固定VAL再測定は+1.0ppに留まり、旧+3pp gateを未達。Stage-2 beam拡大も
   latency/RSSとのtrade-offが大きいため、coverageをdefaultにはしない。
-- v1.0.0正式比較の統計ゲートはPASSしたが、正式公開ゲートは上記2件によりHOLD。
-  v1.0.1の修正済みbinaryで全4,903-targetを再実行するまでは、一般的な優越性を
-  主張しない。
+- VAL-200の同率native結果とstrict点推定差は、同一セッションのpaired再測定・
+  信頼区間・正式publication gateを満たすまで優越性の証明とは扱わない。
 - calibrated route confidence、stock-aware planning、条件／収率／副反応モデルは
   未完成。ASKCOSのような機能を先に表面だけ再現しない。
 

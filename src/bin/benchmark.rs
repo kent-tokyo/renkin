@@ -169,6 +169,10 @@ struct BenchResult {
     max_depth_reached: bool,
     matched_templates: u64,
     stock_hits: u64,
+    stock_lookup_cache_hits: u64,
+    stock_lookup_cache_misses: u64,
+    stock_lookup_positive_results: u64,
+    stock_lookup_negative_results: u64,
     /// Phase D: retro_cache hits/misses for this target. With `--scorer` set,
     /// misses == ONNX inference calls (one per unique canonical intermediate;
     /// see `nn_rank` in search.rs), hits == reuses that needed no inference.
@@ -1319,6 +1323,10 @@ fn main() -> Result<()> {
             max_depth_reached: stats.max_depth_reached,
             matched_templates: stats.matched_templates,
             stock_hits: stats.stock_hits,
+            stock_lookup_cache_hits: stats.stock_lookup_diagnostics.cache_hits,
+            stock_lookup_cache_misses: stats.stock_lookup_diagnostics.cache_misses,
+            stock_lookup_positive_results: stats.stock_lookup_diagnostics.positive_results,
+            stock_lookup_negative_results: stats.stock_lookup_diagnostics.negative_results,
             retro_cache_hits: stats.retro_cache_hits,
             retro_cache_misses: stats.retro_cache_misses,
             retro_expansion_wall_time_us: timing_diagnostics

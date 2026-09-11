@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 
 from four_tool_record import FourToolRecord, load_records
+from four_tool_report import render_markdown, summarize
 from validate_four_tool_registry import validate_registry
 
 
@@ -179,12 +180,28 @@ def write_run_manifest(args: argparse.Namespace, output: Path, count: int) -> No
     output.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
+def write_report_outputs(
+    records: list[FourToolRecord], json_output: str | Path | None, markdown_output: str | Path | None
+) -> None:
+    payload = summarize(records)
+    if json_output:
+        Path(json_output).write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
+    if markdown_output:
+        Path(markdown_output).write_text(render_markdown(payload), encoding="utf-8")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target-manifest", required=True)
     parser.add_argument("--sample-size", type=int, required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--merged-output", required=True)
+    parser.add_argument("--report-output",
+                        help="write the machine-readable report from the merged rows")
+    parser.add_argument("--markdown-report-output",
+                        help="write the Markdown report from the merged rows")
     parser.add_argument("--registry")
     parser.add_argument("--formal", action="store_true",
                         help="run only after the verified four-arm formal preflight")
@@ -250,6 +267,7 @@ def main() -> int:
     count = merge_rows(row_paths, Path(args.merged_output))
     merged_records = load_records(args.merged_output)
     validate_target_coverage(merged_records, load_target_manifest(args.target_manifest, args.sample_size), args.tools)
+    write_report_outputs(merged_records, args.report_output, args.markdown_report_output)
     write_run_manifest(args, output_dir / "run_manifest.json", count)
     print(json.dumps({"schema_version": "renkin-four-tool-run/1", "n_records": count,
                       "tools": args.tools}, indent=2))

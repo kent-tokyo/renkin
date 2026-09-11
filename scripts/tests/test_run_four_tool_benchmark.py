@@ -9,6 +9,7 @@ from scripts.run_four_tool_benchmark import (
     sha256_file,
     validate_formal_inputs,
     validate_target_coverage,
+    write_report_outputs,
 )
 
 
@@ -68,6 +69,9 @@ class FourToolBenchmarkTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "formal registry preflight failed"):
             validate_formal_inputs(args)
+
+    def test_report_writer_is_available_from_unified_runner(self):
+        self.assertTrue(callable(write_report_outputs))
 
 
 if __name__ == "__main__":

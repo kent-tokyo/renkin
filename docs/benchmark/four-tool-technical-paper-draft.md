@@ -118,5 +118,7 @@ tables, route artifacts, image identities and dependency locks, reproduction
 commands, and citation metadata. A formal result is publishable only after an
 independent clean checkout reproduces the aggregate from the frozen artifact.
 
-Popularity indicators, including repository star counts, are outside the
-benchmark and are not reported.
+The unified runner can generate the machine-readable and Markdown reports from
+the same merged rows using `--report-output` and
+`--markdown-report-output`. Popularity indicators, including repository star
+counts, are outside the benchmark and are not reported.

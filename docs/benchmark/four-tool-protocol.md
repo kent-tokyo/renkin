@@ -37,6 +37,14 @@ The following remain native to each configuration and are reported explicitly:
 - atom-mapping and route-export behavior;
 - random seed behavior and determinism guarantees.
 
+An arm is not admitted to the formal table merely because its process accepts
+the same numeric limits. The runner must enforce the CPU and memory ceiling
+and record the enforcement method. The current Syntheseus and SynPlanner
+host-Python paths are feasibility implementations; the formal path is their
+Linux bounded container recipe. Until that image is built, digest-pinned, and
+smoke-tested, their resource-sensitive results remain
+`candidate`/`not_measured` rather than evidence for a same-resource claim.
+
 Giving every tool the same reaction model or template list is not required for
 this end-to-end comparison and would not represent how the tools are actually
 used. An engine-only comparison is a separate experiment.
@@ -135,8 +143,11 @@ timeouts, and input-hash changes fail the arm integrity gate.
 All tool comparisons use the same target IDs and are paired by target ID.
 Report both raw numerators and denominators, paired discordant counts, absolute
 differences, 95% paired bootstrap confidence intervals, and exact McNemar
-results where applicable. Use the repository's existing statistics scripts;
-do not calculate each tool's confidence interval independently and subtract it.
+results where applicable. `scripts/four_tool_report.py` is the canonical
+implementation: its JSON output contains `paired_comparisons`, and its
+Markdown output contains one row for every arm pair. The bootstrap uses a
+fixed seed and percentile interval; the exact McNemar test is two-sided.
+Do not calculate each tool's confidence interval independently and subtract it.
 
 The report must show native and strict common-audit outcomes in separate
 tables. It must also show setup errors, timeouts, crashes, and not-evaluable
@@ -160,6 +171,8 @@ without human review, or universal superiority of any planner.
 
 The release artifact must contain the report source, rendered report, frozen
 manifests, per-target JSONL, aggregate tables, reproduction scripts, container
-or environment specification, and a citation file. The formal report is not
+or environment specification, image identities, and a citation file. The
+integrated runner copies the verified image identities and their hash into its
+run manifest. The formal report is not
 ready for publication until an independent clean checkout reproduces the
 aggregate results from the tagged artifact.

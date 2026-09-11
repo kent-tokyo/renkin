@@ -158,7 +158,7 @@ def write_run_manifest(args: argparse.Namespace, output: Path, count: int) -> No
     if args.image_identities:
         identity_path = Path(args.image_identities)
         image_identities = {
-            "path": str(identity_path.resolve()),
+            "path": str(identity_path),
             "sha256": sha256_file(identity_path),
             "images": json.loads(identity_path.read_text(encoding="utf-8")).get("images", []),
         }
@@ -166,20 +166,20 @@ def write_run_manifest(args: argparse.Namespace, output: Path, count: int) -> No
     for label, path in (("json", args.report_output), ("markdown", args.markdown_report_output)):
         if path:
             report_path = Path(path)
-            reports[label] = {"path": str(report_path.resolve()), "sha256": sha256_file(report_path)}
+            reports[label] = {"path": str(report_path), "sha256": sha256_file(report_path)}
     payload = {
         "schema_version": "renkin-four-tool-run-manifest/1",
-        "target_manifest": {"path": str(Path(args.target_manifest).resolve()),
+        "target_manifest": {"path": str(Path(args.target_manifest)),
                             "sha256": sha256_file(args.target_manifest),
                             "sample_size": args.sample_size},
-        "shared_stock": {"path": str(Path(args.stock).resolve()),
+        "shared_stock": {"path": str(Path(args.stock)),
                           "sha256": sha256_file(args.stock)},
-        "registry": ({"path": str(Path(args.registry).resolve()),
+        "registry": ({"path": str(Path(args.registry)),
                       "sha256": sha256_file(args.registry)} if args.registry else None),
         "image_identities": image_identities,
         "comparison_mode": args.comparison_mode,
         "tools": args.tools,
-        "merged_output": {"path": str(Path(args.merged_output).resolve()),
+        "merged_output": {"path": str(Path(args.merged_output)),
                           "sha256": sha256_file(args.merged_output)},
         "reports": reports,
         "n_records": count,

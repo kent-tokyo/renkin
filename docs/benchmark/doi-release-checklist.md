@@ -11,6 +11,8 @@ It does not publish, tag, or mint a DOI by itself.
 - [ ] The 500-target gate and every target-coverage check pass.
 - [ ] The run manifest records target, stock, registry, image-identity, and
       artifact hashes.
+- [ ] Manifest paths are archive-relative or otherwise portable; machine-local
+      absolute paths are not the only locator.
 - [ ] Every target has one row per arm; failures and `not_measured` states have
       explicit reasons.
 - [ ] The generated JSON and Markdown reports are byte-reproducible from the

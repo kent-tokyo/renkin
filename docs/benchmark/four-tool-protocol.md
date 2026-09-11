@@ -171,6 +171,8 @@ without human review, or universal superiority of any planner.
 
 The release artifact must contain the report source, rendered report, frozen
 manifests, per-target JSONL, aggregate tables, reproduction scripts, container
-or environment specification, and a citation file. The formal report is not
+or environment specification, image identities, and a citation file. The
+integrated runner copies the verified image identities and their hash into its
+run manifest. The formal report is not
 ready for publication until an independent clean checkout reproduces the
 aggregate results from the tagged artifact.

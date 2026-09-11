@@ -153,6 +153,14 @@ def validate_formal_inputs(args: argparse.Namespace) -> None:
 
 
 def write_run_manifest(args: argparse.Namespace, output: Path, count: int) -> None:
+    image_identities = None
+    if args.image_identities:
+        identity_path = Path(args.image_identities)
+        image_identities = {
+            "path": str(identity_path.resolve()),
+            "sha256": sha256_file(identity_path),
+            "images": json.loads(identity_path.read_text(encoding="utf-8")).get("images", []),
+        }
     payload = {
         "schema_version": "renkin-four-tool-run-manifest/1",
         "target_manifest": {"path": str(Path(args.target_manifest).resolve()),
@@ -162,6 +170,7 @@ def write_run_manifest(args: argparse.Namespace, output: Path, count: int) -> No
                           "sha256": sha256_file(args.stock)},
         "registry": ({"path": str(Path(args.registry).resolve()),
                       "sha256": sha256_file(args.registry)} if args.registry else None),
+        "image_identities": image_identities,
         "comparison_mode": args.comparison_mode,
         "tools": args.tools,
         "merged_output": str(Path(args.merged_output).resolve()),

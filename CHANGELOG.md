@@ -8,6 +8,9 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Search hot-path optimization: memoize both positive and negative building-block
+  lookups within a search run, avoiding repeated stock-set probes for the same
+  canonical SMILES without changing route ordering or search semantics.
 - Model adapter hardening: static `TemplatePolicy` artifacts must now use the
   same `schema_version` as their manifest. Mismatches fail closed before the
   artifact can influence search ordering.

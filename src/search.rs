@@ -1026,18 +1026,16 @@ fn state_hash(frontier: &[FEntry]) -> u64 {
 ///
 /// Every generated frontier entry is already standardized and canonicalized
 /// with the stock-identity policy. The one externally supplied root entry is
-/// inserted into `cache` from its parsed molecule before search starts. A
-/// direct set miss can therefore be cached as `false` without reparsing and
-/// restandardizing the same canonical SMILES on the hot path.
+/// inserted into `cache` from its parsed molecule before search starts. Both
+/// positive and negative lookups are memoized, so repeated frontier visits do
+/// not even repeat the stock-set hash lookup on the hot path.
 fn is_bb_cached(smiles: &str, env: &ChemEnv, cache: &mut FxHashMap<String, bool>) -> bool {
-    if env.is_building_block_smiles(smiles) {
-        return true;
-    }
     if let Some(&cached) = cache.get(smiles) {
         return cached;
     }
-    cache.insert(smiles.to_owned(), false);
-    false
+    let matched = env.is_building_block_smiles(smiles);
+    cache.insert(smiles.to_owned(), matched);
+    matched
 }
 
 /// Pluggable molecule value estimator for the A* heuristic (Retro*-style).
@@ -5783,6 +5781,8 @@ mod tests {
 
         assert!(!is_bb_cached(&ethane, &env, &mut cache));
         assert_eq!(cache.get(&ethane), Some(&false));
+        assert!(is_bb_cached(&ethanol, &env, &mut cache));
+        assert_eq!(cache.get(&ethanol), Some(&true));
         assert!(is_bb_cached(&ethanol, &env, &mut cache));
     }
 

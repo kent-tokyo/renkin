@@ -93,6 +93,10 @@ coverage-time曲線、p50/p95、peak RSSで行う。`fast`・`balanced`・`deep`
 configuration IDを保存し、completed rowにmetadataがない場合はfail-closedする。
 同一cohortで3 profileを順番に実行し、各armのrows・aggregate・manifest hashを束ねる
 `scripts/compare_search_profiles.py`も実装済み。実測値の解釈と公開判定は、生成された
+10-target smokeで各profile 1/10 route_found、invalid・timeout・crash 0を確認した。p95 total
+elapsedはfast約6.1秒、balanced約15.0秒、deep約120.1秒で、deepのtail latencyが明確に大きい。
+このsmokeはprofile配線・manifest生成の確認であり、正式VAL-200のpaired比較や競合優位性の
+根拠ではない。
 portfolio manifestを検証してから行う。
 
 このphaseの完了条件は、少なくとも二つのprofileで既存baselineを再現でき、profile間の

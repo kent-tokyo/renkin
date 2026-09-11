@@ -328,9 +328,13 @@ def run_one_target(
     # for every field here in that case, exactly matching config.search_mode
     # == "standard" and giving every row a consistent tool_specific shape
     # regardless of which mode produced it.
+    recovery = parsed.get("recovery")
+    selected_stage = parsed.get("selected_stage")
+    if selected_stage is None and isinstance(recovery, dict):
+        selected_stage = recovery.get("selected_stage")
     coverage_mode_fields = {
         "search_mode": parsed.get("search_mode"),
-        "selected_stage": parsed.get("selected_stage"),
+        "selected_stage": selected_stage,
         "stage2_invoked": parsed.get("stage2_invoked"),
         "stage1_timeout": parsed.get("stage1_timeout"),
         "stage2_timeout": parsed.get("stage2_timeout"),
@@ -338,7 +342,7 @@ def run_one_target(
         "stage2_elapsed_ms": parsed.get("stage2_elapsed_ms"),
         "element_accounting_retry": parsed.get("element_accounting_retry"),
         "beam_diversity_retry": parsed.get("beam_diversity_retry"),
-        "recovery": parsed.get("recovery"),
+        "recovery": recovery,
         "search_profile": parsed.get("search_profile"),
     }
 

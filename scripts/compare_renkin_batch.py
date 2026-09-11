@@ -140,6 +140,11 @@ def run(args: argparse.Namespace) -> list[PlannerComparisonRow]:
                     "stock_lookup_negative_results": result["stock_lookup_negative_results"],
                     "recovery_audit": result.get("recovery_audit"),
                     "retro_expansion_wall_time_us": result.get("retro_expansion_wall_time_us"),
+                    "retro_proposal_wall_time_us": result.get("retro_proposal_wall_time_us"),
+                    "candidate_postprocess_wall_time_us": result.get("candidate_postprocess_wall_time_us"),
+                    "candidate_materialization_wall_time_us": result.get("candidate_materialization_wall_time_us"),
+                    "candidate_precompute_wall_time_us": result.get("candidate_precompute_wall_time_us"),
+                    "candidate_dedup_wall_time_us": result.get("candidate_dedup_wall_time_us"),
                     "candidates_generated_before_dedup": result.get("candidates_generated_before_dedup"),
                     "candidates_after_cross_template_dedup": result.get("candidates_after_cross_template_dedup"),
                 }
@@ -182,6 +187,11 @@ def run(args: argparse.Namespace) -> list[PlannerComparisonRow]:
                     "target_element_excess_counts": target_element_excess_counts(graph),
                     "route_edge_snapshot": route_edge_snapshot(graph),
                     "retro_expansion_wall_time_us": result.get("retro_expansion_wall_time_us"),
+                    "retro_proposal_wall_time_us": result.get("retro_proposal_wall_time_us"),
+                    "candidate_postprocess_wall_time_us": result.get("candidate_postprocess_wall_time_us"),
+                    "candidate_materialization_wall_time_us": result.get("candidate_materialization_wall_time_us"),
+                    "candidate_precompute_wall_time_us": result.get("candidate_precompute_wall_time_us"),
+                    "candidate_dedup_wall_time_us": result.get("candidate_dedup_wall_time_us"),
                     "candidates_generated_before_dedup": result.get("candidates_generated_before_dedup"),
                     "candidates_after_cross_template_dedup": result.get("candidates_after_cross_template_dedup"),
                 }

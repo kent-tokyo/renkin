@@ -631,6 +631,23 @@ pub struct CrowdOutDiagnostics {
     /// this function's own existing `#[cfg(not(target_arch = "wasm32"))]`
     /// `t0`/`nodes_popped` timing, which has the same restriction).
     pub retro_expansion_wall_time_us: u64,
+    /// Wall-clock microseconds spent inside `candidate::raw_propose`, kept
+    /// separate from the surrounding expansion block. Opt-in with
+    /// `SearchConfig::timing_diagnostics`.
+    pub retro_proposal_wall_time_us: u64,
+    /// Wall-clock microseconds spent materializing, scoring, and counting
+    /// the proposal pool after `raw_propose`. Opt-in with
+    /// `SearchConfig::timing_diagnostics`.
+    pub candidate_postprocess_wall_time_us: u64,
+    /// Wall-clock microseconds spent converting raw proposals into retained
+    /// entries. Opt-in with `SearchConfig::timing_diagnostics`.
+    pub candidate_materialization_wall_time_us: u64,
+    /// Wall-clock microseconds spent in the parallel default SA precompute.
+    /// Opt-in with `SearchConfig::timing_diagnostics`.
+    pub candidate_precompute_wall_time_us: u64,
+    /// Wall-clock microseconds spent calculating candidate dedup counts.
+    /// Opt-in with `SearchConfig::timing_diagnostics`.
+    pub candidate_dedup_wall_time_us: u64,
     /// Every [`crate::spectator_bond::SpectatorBondLossFinding`] detected
     /// across every retro-cache-miss expansion in this search -- always
     /// empty unless [`SearchConfig::spectator_bond_policy`] is
@@ -3337,17 +3354,28 @@ pub(crate) fn find_routes_with_control_prepared(
                 step_sbl_findings,
                 step_gated_out,
                 step_element_accounting_gated_out,
-            ) = crate::candidate::raw_propose(
-                &target_mol,
-                target_smi,
-                &scored_active_rules,
-                Some(prepared_rules),
-                crate::ring_context::RingContextArgs {
-                    config: config.ring_context.clone(),
-                },
-                config.spectator_bond_policy,
-                config.element_accounting_policy,
-            );
+            ) = {
+                #[cfg(not(target_arch = "wasm32"))]
+                let proposal_t0 = config.timing_diagnostics.then(std::time::Instant::now);
+                let result = crate::candidate::raw_propose(
+                    &target_mol,
+                    target_smi,
+                    &scored_active_rules,
+                    Some(prepared_rules),
+                    crate::ring_context::RingContextArgs {
+                        config: config.ring_context.clone(),
+                    },
+                    config.spectator_bond_policy,
+                    config.element_accounting_policy,
+                );
+                #[cfg(not(target_arch = "wasm32"))]
+                if let Some(t0) = proposal_t0 {
+                    crowd_out.retro_proposal_wall_time_us += t0.elapsed().as_micros() as u64;
+                }
+                result
+            };
+            #[cfg(not(target_arch = "wasm32"))]
+            let postprocess_t0 = config.timing_diagnostics.then(std::time::Instant::now);
             let mut step_ring_diag = step_ring_diag;
             let mut step_sbl_findings = step_sbl_findings;
             let mut step_gated_out = step_gated_out;
@@ -3444,6 +3472,8 @@ pub(crate) fn find_routes_with_control_prepared(
                     None
                 };
 
+            #[cfg(not(target_arch = "wasm32"))]
+            let materialization_t0 = config.timing_diagnostics.then(std::time::Instant::now);
             let mut entries: Vec<RetroEntry> = raw_proposals
                 .into_iter()
                 .map(|p| {
@@ -3495,6 +3525,10 @@ pub(crate) fn find_routes_with_control_prepared(
                     }
                 })
                 .collect();
+            #[cfg(not(target_arch = "wasm32"))]
+            if let Some(t0) = materialization_t0 {
+                crowd_out.candidate_materialization_wall_time_us += t0.elapsed().as_micros() as u64;
+            }
 
             // Default unlimited native searches can score the independent
             // unseen precursor molecules concurrently. This leaves every
@@ -3508,6 +3542,8 @@ pub(crate) fn find_routes_with_control_prepared(
                 && config.forbidden_elements == 0
                 && control.deadline.is_none()
             {
+                #[cfg(not(target_arch = "wasm32"))]
+                let precompute_t0 = config.timing_diagnostics.then(std::time::Instant::now);
                 precompute_default_sa_scores(
                     &entries,
                     &molecule_cache,
@@ -3516,6 +3552,10 @@ pub(crate) fn find_routes_with_control_prepared(
                     &mut bb_cache,
                     &mut stock_lookup_diagnostics,
                 );
+                #[cfg(not(target_arch = "wasm32"))]
+                if let Some(t0) = precompute_t0 {
+                    crowd_out.candidate_precompute_wall_time_us += t0.elapsed().as_micros() as u64;
+                }
             }
 
             // Optional direct-generator arm. It augments, rather than
@@ -3542,11 +3582,21 @@ pub(crate) fn find_routes_with_control_prepared(
             // repeats from one template are skipped there before heuristic,
             // path, and heap work; cross-template collisions remain intact so
             // distinct provenance/evidence is never discarded.
+            #[cfg(not(target_arch = "wasm32"))]
+            let dedup_t0 = config.timing_diagnostics.then(std::time::Instant::now);
             let (cross_dup, after_same_template, after_cross_template) = dedup_counts(&entries);
             crowd_out.cross_template_duplicate_precursor_signatures += cross_dup;
             crowd_out.candidates_generated_before_dedup += entries.len() as u64;
             crowd_out.candidates_after_same_template_dedup += after_same_template;
             crowd_out.candidates_after_cross_template_dedup += after_cross_template;
+            #[cfg(not(target_arch = "wasm32"))]
+            if let Some(t0) = dedup_t0 {
+                crowd_out.candidate_dedup_wall_time_us += t0.elapsed().as_micros() as u64;
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            if let Some(t0) = postprocess_t0 {
+                crowd_out.candidate_postprocess_wall_time_us += t0.elapsed().as_micros() as u64;
+            }
 
             let arc = Arc::new(entries);
             retro_cache.insert(target_smi.to_owned(), Arc::clone(&arc));

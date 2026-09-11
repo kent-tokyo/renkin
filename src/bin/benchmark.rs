@@ -181,6 +181,16 @@ struct BenchResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     retro_expansion_wall_time_us: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    retro_proposal_wall_time_us: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    candidate_postprocess_wall_time_us: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    candidate_materialization_wall_time_us: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    candidate_precompute_wall_time_us: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    candidate_dedup_wall_time_us: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     candidates_generated_before_dedup: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     candidates_after_cross_template_dedup: Option<u64>,
@@ -1331,6 +1341,16 @@ fn main() -> Result<()> {
             retro_cache_misses: stats.retro_cache_misses,
             retro_expansion_wall_time_us: timing_diagnostics
                 .then_some(stats.crowd_out.retro_expansion_wall_time_us),
+            retro_proposal_wall_time_us: timing_diagnostics
+                .then_some(stats.crowd_out.retro_proposal_wall_time_us),
+            candidate_postprocess_wall_time_us: timing_diagnostics
+                .then_some(stats.crowd_out.candidate_postprocess_wall_time_us),
+            candidate_materialization_wall_time_us: timing_diagnostics
+                .then_some(stats.crowd_out.candidate_materialization_wall_time_us),
+            candidate_precompute_wall_time_us: timing_diagnostics
+                .then_some(stats.crowd_out.candidate_precompute_wall_time_us),
+            candidate_dedup_wall_time_us: timing_diagnostics
+                .then_some(stats.crowd_out.candidate_dedup_wall_time_us),
             candidates_generated_before_dedup: timing_diagnostics
                 .then_some(stats.crowd_out.candidates_generated_before_dedup),
             candidates_after_cross_template_dedup: timing_diagnostics

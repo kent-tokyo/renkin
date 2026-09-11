@@ -1195,9 +1195,14 @@ partial overlap 24件を、既存成功を保持する非押し出し補完の�
 candidate-pool JSONLを受け付け、RDKit canonical／stereo-stripped表現差、非断定的な
 `reaction_family_proxy`、欠落前駆体のdirect-stock／downstream-or-unavailableを入力hash付き
 JSONへ出力する。これはheuristic diagnostic onlyであり、route validity、検索順位、候補集合を
-変更しない。partial overlapの実測には対応する候補poolとatlasの同一cohort入力が必要で、
-既存の`gap_atlas_formal200.json`はmismatch 0件の集計atlasのため、この段階では数値を捏造せず
-fixtureテストまでを完了境界とする。
+変更しない。実VAL-200のcoverage atlasと候補artifactを同一cohortで再計算したところ、
+partial overlap 42件を検出した（amide_like 9、ester_like 2、sulfonamide_like 4、
+carbonyl_oxygen_like 4、other_or_unknown 23）。欠落前駆体の表現判定はcanonical 3、
+stereo-only 2、not-equivalent 32、候補unparseable/非同値8、stock directは1、
+downstream-or-unavailableは44だった。これは拡張候補artifact上の診断であり、化学的同値性や
+route成功を意味しない。証跡は`data/comparison/formal_v1.0.3_candidate_20260909/
+candidate_expansion_val200/partial_overlap_diagnostic_recomputed.json`に保存し、24件の
+stock-reachable subsetに対するfamily別非押し出しpaired評価は引き続き未完了とする。
 
 O1の初回差分分類を実施した。VAL-200 recoveryではstrict validator-confirmedが127/200
 (63.5%)、未評価8件は全て深さ0の直接購入であり、実行失敗や化学的な棄却ではない。

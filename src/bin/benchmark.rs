@@ -189,6 +189,8 @@ struct BenchResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     candidate_precompute_wall_time_us: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    sa_precompute_molecules: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     candidate_dedup_wall_time_us: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     candidates_generated_before_dedup: Option<u64>,
@@ -1349,6 +1351,8 @@ fn main() -> Result<()> {
                 .then_some(stats.crowd_out.candidate_materialization_wall_time_us),
             candidate_precompute_wall_time_us: timing_diagnostics
                 .then_some(stats.crowd_out.candidate_precompute_wall_time_us),
+            sa_precompute_molecules: timing_diagnostics
+                .then_some(stats.crowd_out.sa_precompute_molecules),
             candidate_dedup_wall_time_us: timing_diagnostics
                 .then_some(stats.crowd_out.candidate_dedup_wall_time_us),
             candidates_generated_before_dedup: timing_diagnostics

@@ -645,6 +645,9 @@ pub struct CrowdOutDiagnostics {
     /// Wall-clock microseconds spent in the parallel default SA precompute.
     /// Opt-in with `SearchConfig::timing_diagnostics`.
     pub candidate_precompute_wall_time_us: u64,
+    /// Number of unique non-stock precursor molecules submitted to the
+    /// parallel default SA precompute. Diagnostic-only.
+    pub sa_precompute_molecules: u64,
     /// Wall-clock microseconds spent calculating candidate dedup counts.
     /// Opt-in with `SearchConfig::timing_diagnostics`.
     pub candidate_dedup_wall_time_us: u64,
@@ -1451,7 +1454,7 @@ fn precompute_default_sa_scores(
     sa_cache: &mut FxHashMap<String, f64>,
     bb_cache: &mut FxHashMap<String, bool>,
     stock_lookup_diagnostics: &mut StockLookupDiagnostics,
-) {
+) -> usize {
     const PARALLEL_SA_THRESHOLD: usize = 8;
 
     let mut seen: FxHashSet<&str> = FxHashSet::default();
@@ -1473,7 +1476,7 @@ fn precompute_default_sa_scores(
         pending.push((Arc::clone(smiles), Arc::clone(molecule)));
     }
     if pending.len() < PARALLEL_SA_THRESHOLD {
-        return;
+        return pending.len();
     }
 
     let scores: Vec<(Arc<str>, f64)> = pending
@@ -1483,6 +1486,7 @@ fn precompute_default_sa_scores(
     for (smiles, score) in scores {
         sa_cache.insert(smiles.to_string(), score);
     }
+    pending.len()
 }
 
 /// Classify a rule name into a human-readable reaction family.
@@ -3544,7 +3548,7 @@ pub(crate) fn find_routes_with_control_prepared(
             {
                 #[cfg(not(target_arch = "wasm32"))]
                 let precompute_t0 = config.timing_diagnostics.then(std::time::Instant::now);
-                precompute_default_sa_scores(
+                let precomputed = precompute_default_sa_scores(
                     &entries,
                     &molecule_cache,
                     env,
@@ -3552,6 +3556,7 @@ pub(crate) fn find_routes_with_control_prepared(
                     &mut bb_cache,
                     &mut stock_lookup_diagnostics,
                 );
+                crowd_out.sa_precompute_molecules += precomputed as u64;
                 #[cfg(not(target_arch = "wasm32"))]
                 if let Some(t0) = precompute_t0 {
                     crowd_out.candidate_precompute_wall_time_us += t0.elapsed().as_micros() as u64;

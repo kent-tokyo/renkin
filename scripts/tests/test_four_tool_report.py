@@ -2,7 +2,7 @@ import json
 import unittest
 
 from scripts.four_tool_record import FourToolRecord
-from scripts.four_tool_report import summarize, wilson_interval
+from scripts.four_tool_report import render_markdown, summarize, wilson_interval
 
 
 def row(tool, target, strict, elapsed):
@@ -32,6 +32,13 @@ class FourToolReportTests(unittest.TestCase):
         payload = summarize([row("renkin", "t0", True, 10), row("aizynthfinder", "t0", False, 20)])
         self.assertEqual([(g["tool"], g["arm_id"]) for g in payload["groups"]],
                          [("aizynthfinder", "aizynthfinder-arm"), ("renkin", "renkin-arm")])
+
+    def test_markdown_has_denominators_and_excludes_popularity_metrics(self):
+        markdown = render_markdown(summarize([row("renkin", "t0", True, 10)]))
+        self.assertIn("1/1", markdown)
+        self.assertIn("95% CI", markdown)
+        self.assertIn("Popularity metrics: not included", markdown)
+        self.assertNotIn("star", markdown.lower())
 
 
 if __name__ == "__main__":

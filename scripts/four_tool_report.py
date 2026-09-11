@@ -62,6 +62,11 @@ def summarize(records: list[FourToolRecord]) -> dict[str, object]:
                 "n": len(planning),
                 "median": median(planning) if planning else None,
             },
+            "resource_enforcement": sorted({
+                str(row.tool_specific.get(tool, {}).get("resource_enforcement"))
+                for row in rows
+                if row.tool_specific.get(tool, {}).get("resource_enforcement") is not None
+            }),
         })
     return {
         "schema_version": "renkin-four-tool-report/1",
@@ -70,13 +75,69 @@ def summarize(records: list[FourToolRecord]) -> dict[str, object]:
     }
 
 
+def _rate_text(value: dict[str, object]) -> str:
+    rate = value["rate"]
+    if rate is None:
+        return "not_measured"
+    interval = value["wilson_95"]
+    return f"{value['successes']}/{value['trials']} ({float(rate):.3f}; 95% CI {interval[0]:.3f}-{interval[1]:.3f})"
+
+
+def render_markdown(payload: dict[str, object]) -> str:
+    lines = [
+        "# Four-tool benchmark report",
+        "",
+        "Generated from `renkin-four-tool-row/1` records. This report contains measured outcomes only; `not_measured` is not a failure.",
+        "",
+        f"- Records: {payload['n_records']}",
+        "- Primary endpoint: rank-1 `strict_route_to_shared_stock`",
+        "- Popularity metrics: not included",
+        "",
+        "## Summary",
+        "",
+        "| Tool / arm | Rows | Native route found | Strict shared-stock pass | Planning median (ms) | Resource enforcement |",
+        "|---|---:|---|---|---:|---|",
+    ]
+    for group in payload["groups"]:
+        enforcement = ", ".join(group["resource_enforcement"]) or "not_measured"
+        median_ms = group["planning_elapsed_ms"]["median"]
+        lines.append(
+            f"| `{group['tool']}` / `{group['arm_id']}` | {group['n_rows']} | "
+            f"{_rate_text(group['native_route_found'])} | "
+            f"{_rate_text(group['strict_route_to_shared_stock'])} | "
+            f"{median_ms if median_ms is not None else 'not_measured'} | {enforcement} |"
+        )
+    lines += [
+        "",
+        "## Run-status accounting",
+        "",
+        "| Tool / arm | Status counts | Common audit statuses |",
+        "|---|---|---|",
+    ]
+    for group in payload["groups"]:
+        statuses = ", ".join(f"{key}={value}" for key, value in group["run_status"].items())
+        audits = ", ".join(f"{key}={value}" for key, value in group["common_audit_status"].items())
+        lines.append(f"| `{group['tool']}` / `{group['arm_id']}` | {statuses} | {audits} |")
+    lines += [
+        "",
+        "## Interpretation boundary",
+        "",
+        "These rates are descriptive for the supplied target cohort. They do not establish experimental yield, universal chemical correctness, or superiority outside the declared protocol.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("records")
     parser.add_argument("--output", required=True)
+    parser.add_argument("--markdown-output")
     args = parser.parse_args()
     payload = summarize(load_records(args.records))
     Path(args.output).write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    if args.markdown_output:
+        Path(args.markdown_output).write_text(render_markdown(payload), encoding="utf-8")
     print(json.dumps(payload, indent=2, ensure_ascii=False))
     return 0
 

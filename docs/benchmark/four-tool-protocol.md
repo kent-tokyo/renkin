@@ -143,8 +143,11 @@ timeouts, and input-hash changes fail the arm integrity gate.
 All tool comparisons use the same target IDs and are paired by target ID.
 Report both raw numerators and denominators, paired discordant counts, absolute
 differences, 95% paired bootstrap confidence intervals, and exact McNemar
-results where applicable. Use the repository's existing statistics scripts;
-do not calculate each tool's confidence interval independently and subtract it.
+results where applicable. `scripts/four_tool_report.py` is the canonical
+implementation: its JSON output contains `paired_comparisons`, and its
+Markdown output contains one row for every arm pair. The bootstrap uses a
+fixed seed and percentile interval; the exact McNemar test is two-sided.
+Do not calculate each tool's confidence interval independently and subtract it.
 
 The report must show native and strict common-audit outcomes in separate
 tables. It must also show setup errors, timeouts, crashes, and not-evaluable

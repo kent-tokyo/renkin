@@ -54,6 +54,12 @@ Report the Wilson 95% interval next to every rate. For paired comparisons,
 use `target_id` as the pairing key and state the treatment of timeout,
 crash, setup, and parse-error rows before looking at the result.
 
+The generated `paired_comparisons` section must report, for every pair of
+tool arms, the paired denominator, left/right wins, ties, the left-minus-right
+difference, deterministic paired-bootstrap 95% CI, and two-sided exact
+McNemar p-value. A pair is evaluable only when both arms have a non-null
+`strict_route_to_shared_stock` value for that target.
+
 ## Failure and coverage accounting
 
 Include counts for `completed`, `timeout`, `crashed`, `setup_error`,

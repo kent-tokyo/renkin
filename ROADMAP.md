@@ -1202,7 +1202,27 @@ stereo-only 2、not-equivalent 32、候補unparseable/非同値8、stock direct�
 downstream-or-unavailableは44だった。これは拡張候補artifact上の診断であり、化学的同値性や
 route成功を意味しない。証跡は`data/comparison/formal_v1.0.3_candidate_20260909/
 candidate_expansion_val200/partial_overlap_diagnostic_recomputed.json`に保存し、24件の
-stock-reachable subsetに対するfamily別非押し出しpaired評価は引き続き未完了とする。
+stock-reachable subsetに対するfamily別非押し出しpaired評価を次段階で実施する。
+
+53.5acの次段階として、24 edge（21 unique target）を`reaction_family_proxy`別のfixtureへ
+分割する`prepare_partial_overlap_family_cohorts.py`を追加した。amide_like 5、
+carbonyl_oxygen_like 1、ester_like 1、sulfonamide_like 2、other_or_unknown 12の
+unique targetを同一sample contract・同一stock/template設定でbaseline測定し、合計19/21
+(90.5%)、invalid・timeout・crash 0を得た。これはfamily別の問題規模を比較するbaselineであり、
+既存候補を保持した非押し出し補完のpaired結果ではない。中間targetに対するdirect-generator
+recoveryは今回のbaseline測定では発動しておらず、証跡は`data/comparison/formal_v1.0.3_candidate_20260909/
+candidate_expansion_val200/`配下に保存した。
+
+同じ21 unique targetへRecovery監査を再実行した。全21件が正常完了し、route_foundは3/21、
+direct-generatorは19/21件で起動、5,043 proposal中4,980件を追加枠へadmitしたが、generator
+stage単独の新規回収は0件だった。回収3件はbaseline/beam/depthの後段で、integrity拒否63、
+parse拒否・自己同一候補拒否0。これは候補を押し出さない段階投入と監査計装の確認であり、
+standard modeのbaseline 19/21との差を同一実行内で比較した性能paired efficacyではない。
+ただし、Recovery内の非押し出し検証はbaseline raw成功1→最終3、回収2、regression=0、
+timeout/crash=0で通過した。generator stage単独の新規回収は0件だったため、53.5acは
+候補供給の保護とnegative resultの確定まで完了し、下流探索・stock終端の改善を次課題とする。
+結果はfamily_samples配下の`*_recovery_result.jsonl`、`*_recovery_aggregate.json`、および
+`partial_overlap_recovery_non_displacing_verification.json`に保存した。
 
 O1の初回差分分類を実施した。VAL-200 recoveryではstrict validator-confirmedが127/200
 (63.5%)、未評価8件は全て深さ0の直接購入であり、実行失敗や化学的な棄却ではない。
@@ -1213,6 +1233,24 @@ O1の初回差分分類を実施した。VAL-200 recoveryではstrict validator-
 `data/comparison/formal_v1.0.2/o1_recovery_quality.json`、再生成スクリプトは
 `scripts/analyze_recovery_quality.py`に固定した。回復stage別の内訳はbaseline 121、
 depth 66、element_accounting 7、beam_width 6である。
+
+49.6の独立cohort初回測定として、VAL由来の固定disjoint-200
+(`data/phase_b1_frontier/val_sample_disjoint_200.jsonl`)へ現行fast profileを適用した。
+入力・stock・templateのhash付きmanifestを生成し、route_found/strict validatedは21/200
+(10.5%)、p95 total elapsed 5.701秒、p95 RSS 44.7 MiB、invalid・timeout・crash 0だった。
+これは200件の固定cohortに対する初回generalization evidenceであり、再実行で同一route_found
+件数と0失敗を確認するまで単独では再現性の主張に使わない。初回証跡は
+`data/comparison/search_profiles_disjoint_200_20260911/`、再実行証跡は
+`data/comparison/search_profiles_disjoint_200_20260911_rerun/`に保存した。両runの入力・stock・
+template hashとconfiguration IDは一致し、route_found/strict validatedはともに21/200
+(10.5%)、invalid・timeout・crashもともに0だった。これはこのdisjoint-200 cohortに限る
+再現性・一般化の証拠であり、外部corpusや競合優位性の主張ではない。
+
+48.20の残存18件は、既存の凍結holdout証跡を再監査した。18/18 process completed、
+timeout・crash・invalid outputは0、新規valid routeは0だった。完成候補10,433件は全て
+`unaccounted_target_element`で棄却されており、実行環境の失敗ではなく、TRAIN-only
+abstractionが生成する候補の元素accounting境界が主因と診断した。追加corpusや同holdout
+への再調整はせず、原因診断完了・coverage解決未完了として扱う。
 
 次のO1実装として、比較adapterに`--max-routes`と`--route-selection strict_validated`
 を追加した。既存のrank-1 armは変更せず、明示した実験armだけが複数候補を受け取り、

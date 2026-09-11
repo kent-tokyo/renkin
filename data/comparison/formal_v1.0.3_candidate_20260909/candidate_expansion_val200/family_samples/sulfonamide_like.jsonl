@@ -1,0 +1,2 @@
+{"sample_rank": 0, "canonical_smiles": "CS(=O)(=O)Nc1ccc(CBr)cc1", "sample_key": "b947dd80040bc87f7d2b598ff97a1ba7e9b3b016f26bca9614676605c678ad3e", "target_id": "uspto50k_val#L3130", "target_smiles": "CS(=O)(=O)Nc1ccc(CBr)cc1"}
+{"sample_rank": 1, "canonical_smiles": "c5c(C(F)(F)F)ccc(c5)-c3c4CN(CCc4n(n3)CCCN2CCN(CC2)c1c(cccc1Cl)[N+]([O-])=O)S(C)(=O)=O", "sample_key": "df40d3793bb6e4e202fc2a43a665e07f1dc2d41cc7a97b2ba9ae6349d759eb9f", "target_id": "uspto50k_val#L1954", "target_smiles": "c5c(C(F)(F)F)ccc(c5)-c3c4CN(CCc4n(n3)CCCN2CCN(CC2)c1c(cccc1Cl)[N+]([O-])=O)S(C)(=O)=O"}

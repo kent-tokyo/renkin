@@ -8,7 +8,9 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-- v1.0.7 is a release candidate while the formal paired AiZynthFinder
+## [1.0.7] - 2026-09-13 "Public Boundary and Benchmark Contract"
+
+- The formal paired AiZynthFinder
   comparison continues. Existing VAL-200 point estimates do not establish
   superiority; an independent frozen TEST cohort and paired confidence
   intervals remain required before making that claim.
@@ -2654,7 +2656,8 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
 
 ---
 
-[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v1.0.6...HEAD
+[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v1.0.7...HEAD
+[1.0.7]: https://github.com/kent-tokyo/renkin/compare/v1.0.6...v1.0.7
 [1.0.6]: https://github.com/kent-tokyo/renkin/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/kent-tokyo/renkin/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/kent-tokyo/renkin/compare/v1.0.3...v1.0.4

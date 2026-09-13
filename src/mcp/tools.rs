@@ -393,17 +393,26 @@ fn handle_find_routes(smiles: &str, args: &Value) -> ToolOutcome {
     } else {
         match timeout {
             Some(timeout) => {
-                let result = match engine.find_routes_with_control(
-                    smiles,
-                    &config,
-                    &search::SearchControl::with_timeout(timeout),
-                ) {
-                    Ok(result) => result,
-                    Err(e) => return ToolOutcome::error(format!("search error: {e}")),
-                };
-                let summary = (result.termination == search::SearchTermination::DeadlineExceeded)
-                    .then(|| "Search termination: deadline_exceeded\n\n".to_string());
-                (result.routes, result.stats, summary)
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    let result = match engine.find_routes_with_control(
+                        smiles,
+                        &config,
+                        &search::SearchControl::with_timeout(timeout),
+                    ) {
+                        Ok(result) => result,
+                        Err(e) => return ToolOutcome::error(format!("search error: {e}")),
+                    };
+                    let summary = (result.termination
+                        == search::SearchTermination::DeadlineExceeded)
+                        .then(|| "Search termination: deadline_exceeded\n\n".to_string());
+                    (result.routes, result.stats, summary)
+                }
+                #[cfg(target_arch = "wasm32")]
+                {
+                    let _ = timeout;
+                    return ToolOutcome::error("timeout_secs is unavailable on wasm32");
+                }
             }
             None => {
                 let result = match engine.find_routes(smiles, &config) {

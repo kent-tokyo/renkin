@@ -70,6 +70,54 @@ class TestRedactHomeDir(unittest.TestCase):
                 {"package_version": None, "chematic_version": None},
             )
 
+    @patch("compare_manifest._run_checked", return_value=(True, " M src/lib.rs\n?? scratch.json\n"))
+    def test_git_worktree_state_records_only_cleanliness_and_count(self, _run_checked):
+        self.assertEqual(
+            cm.git_worktree_state("/repo"),
+            {"clean": False, "changed_entry_count": 2},
+        )
+        _run_checked.assert_called_once_with(
+            ["git", "-C", "/repo", "status", "--porcelain"]
+        )
+
+    @patch("compare_manifest._run_checked", return_value=(True, ""))
+    def test_git_worktree_state_marks_empty_worktree_clean(self, _run_checked):
+        self.assertEqual(
+            cm.git_worktree_state("/repo"),
+            {"clean": True, "changed_entry_count": 0},
+        )
+
+    @patch("compare_manifest._run_checked", return_value=(False, ""))
+    def test_git_worktree_state_is_unknown_when_git_fails(self, _run_checked):
+        self.assertEqual(
+            cm.git_worktree_state("/repo"),
+            {"clean": None, "changed_entry_count": None},
+        )
+
+    @patch("compare_manifest._run_checked", return_value=(True, " M src/secret.txt\n"))
+    @patch("compare_manifest._run", return_value="abc123")
+    def test_start_manifest_records_worktree_summary_without_paths(
+        self, _run, _run_checked
+    ):
+        _run.side_effect = lambda argv: (
+            "abc123" if argv[:4] == ["git", "-C", "/repo", "rev-parse"] else ""
+        )
+        manifest = cm.capture_start_manifest(
+            tool="renkin",
+            comparison_mode="native",
+            ring_context_policy=None,
+            command_line=["renkin"],
+            repo_root="/repo",
+            binary_path=None,
+            docker_image=None,
+            input_files={},
+        )
+        self.assertEqual(manifest["git_commit"], "abc123")
+        self.assertEqual(
+            manifest["git_worktree"], {"clean": False, "changed_entry_count": 1}
+        )
+        self.assertNotIn("secret.txt", json.dumps(manifest))
+
     @patch("compare_manifest.sha256_file")
     def test_validate_input_hashes_accepts_unchanged_inputs(self, hash_file):
         hash_file.side_effect = lambda path: {"a": "ha", "b": "hb"}[path]
@@ -127,6 +175,7 @@ class TestRedactHomeDir(unittest.TestCase):
         contract = manifest["security_contract"]
         self.assertEqual(contract["version"], cm.SECURITY_CONTRACT_VERSION)
         self.assertEqual(contract["resource_budget"]["timeout_s"], 30)
+        self.assertEqual(manifest["resource_budget"]["timeout_s"], 30)
         self.assertTrue(contract["threat_cases"])
         self.assertTrue(all("security_case_id" in case for case in contract["threat_cases"]))
         cm.validate_security_contract(manifest)
@@ -179,6 +228,75 @@ class TestRedactHomeDir(unittest.TestCase):
         manifest["security_contract"]["version"] = cm.SECURITY_CONTRACT_VERSION + 1
         with self.assertRaisesRegex(ValueError, "unsupported"):
             cm.validate_security_contract(manifest)
+
+    @patch("compare_manifest.sha256_file", return_value="sha256:test")
+    def test_security_contract_rejects_malformed_worktree_metadata(self, _mock):
+        manifest = cm.capture_start_manifest(
+            tool="renkin",
+            comparison_mode="native",
+            ring_context_policy=None,
+            command_line=["renkin"],
+            repo_root=".",
+            binary_path=None,
+            docker_image=None,
+            input_files={},
+        )
+        manifest["git_worktree"] = {"clean": "false", "changed_entry_count": 1}
+        with self.assertRaisesRegex(ValueError, "clean"):
+            cm.validate_security_contract(manifest)
+        manifest["git_worktree"] = {"clean": False, "changed_entry_count": -1}
+        with self.assertRaisesRegex(ValueError, "changed_entry_count"):
+            cm.validate_security_contract(manifest)
+
+    @patch("compare_manifest.sha256_file", return_value="sha256:test")
+    def test_security_contract_keeps_legacy_manifest_without_worktree_metadata(self, _mock):
+        manifest = cm.capture_start_manifest(
+            tool="renkin",
+            comparison_mode="native",
+            ring_context_policy=None,
+            command_line=["renkin"],
+            repo_root=".",
+            binary_path=None,
+            docker_image=None,
+            input_files={},
+        )
+        del manifest["git_worktree"]
+        cm.validate_security_contract(manifest)
+
+    @patch("compare_manifest.sha256_file", return_value="sha256:test")
+    def test_run_identity_rejects_configuration_mismatch(self, _mock):
+        manifest = cm.capture_start_manifest(
+            tool="renkin",
+            comparison_mode="native",
+            ring_context_policy=None,
+            command_line=["renkin"],
+            repo_root=".",
+            binary_path=None,
+            docker_image=None,
+            input_files={},
+            configuration_id="renkin-native-d5",
+        )
+        cm.validate_run_identity(
+            manifest,
+            tool="renkin",
+            comparison_mode="native",
+            configuration_id="renkin-native-d5",
+        )
+        with self.assertRaisesRegex(ValueError, "configuration_id"):
+            cm.validate_run_identity(
+                manifest,
+                tool="renkin",
+                comparison_mode="native",
+                configuration_id="renkin-native-d6",
+            )
+
+    def test_run_identity_keeps_legacy_manifest_compatible(self):
+        cm.validate_run_identity(
+            {"tool": "renkin", "comparison_mode": "native"},
+            tool="renkin",
+            comparison_mode="native",
+            configuration_id="renkin-native-d5",
+        )
 
     @patch("compare_manifest.sha256_file", return_value="sha256:test")
     def test_load_and_validate_manifest_rejects_schema_drift_before_resume(self, _mock):

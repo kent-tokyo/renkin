@@ -14,6 +14,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 import sys
@@ -25,6 +26,23 @@ import compare_manifest as manifest_mod
 import compare_renkin_adapter as renkin_adapter
 import compare_sampling as sampling
 import compare_schema as schema
+
+
+_OUTPUT_LOCK_HANDLES = []
+
+
+def acquire_output_lock(output_rows: str | Path):
+    """Prevent concurrent/resumed writers from corrupting the JSONL ledger."""
+    lock_path = Path(f"{output_rows}.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    handle = lock_path.open("a+", encoding="utf-8")
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError as exc:
+        handle.close()
+        raise ValueError(f"output ledger is already locked: {output_rows}") from exc
+    _OUTPUT_LOCK_HANDLES.append(handle)
+    return handle
 
 
 def load_stock(path: str) -> list[str]:
@@ -42,6 +60,33 @@ def load_stock(path: str) -> list[str]:
         if line and not line.startswith("#"):
             stock.append(line.split()[0])
     return stock
+
+
+def manifest_input_files(args: argparse.Namespace) -> dict[str, str]:
+    """Return the exact file set whose hashes define this comparison run."""
+    stock_path = (
+        args.shared_stock_smi
+        if args.comparison_mode == "shared_stock"
+        else args.building_blocks
+    )
+    input_files = {
+        "sample_list": args.sample_list,
+        "stock": stock_path,
+        "templates": args.templates,
+        "cargo_manifest": os.path.join(args.repo_root, "Cargo.toml"),
+        "cargo_lock": os.path.join(args.repo_root, "Cargo.lock"),
+    }
+    if args.ring_context_sidecar:
+        input_files["ring_context_sidecar"] = args.ring_context_sidecar
+    if args.reranker_model:
+        input_files["reranker_model"] = args.reranker_model
+    if args.reranker_freq_table:
+        input_files["reranker_freq_table"] = args.reranker_freq_table
+    if args.search_mode in {"coverage", "recovery"} and args.coverage_templates:
+        input_files["coverage_templates"] = args.coverage_templates
+    for index, path in enumerate(args.recovery_coverage_tier, start=1):
+        input_files[f"recovery_coverage_tier_{index}"] = path
+    return input_files
 
 
 def validate_search_profile_rows(rows, requested_profile: str | None) -> None:
@@ -84,6 +129,8 @@ def renkin_config_and_id(args):
         route_selection=args.route_selection,
         external_timeout_s=args.timeout_s,
         grace_s=args.grace_s,
+        resource_cpus=args.resource_cpus,
+        resource_memory_gib=args.resource_memory_gib,
         ring_context_policy=args.ring_context_policy,
         ring_context_sidecar=args.ring_context_sidecar,
         spectator_bond_policy=args.spectator_bond_policy,
@@ -101,6 +148,7 @@ def renkin_config_and_id(args):
         search_profile=args.search_profile,
         reranker_model=args.reranker_model,
         reranker_freq_table=args.reranker_freq_table,
+        downstream_selector=args.downstream_selector,
         search_mode=args.search_mode,
         coverage_templates_path=args.coverage_templates,
         recovery_coverage_tier_paths=tuple(args.recovery_coverage_tier),
@@ -119,6 +167,7 @@ def renkin_config_and_id(args):
     reranker_suffix = (
         "-reranker_on" if args.reranker_model and args.reranker_freq_table else ""
     )
+    downstream_selector_suffix = "-downstream-selector" if args.downstream_selector else ""
     coverage_suffix = f"-{args.search_mode}" if args.search_mode != "standard" else ""
     coverage_beam_suffix = (
         f"-cb{args.coverage_beam_width}"
@@ -179,7 +228,9 @@ def renkin_config_and_id(args):
     configuration_id = (
         f"renkin-{args.comparison_mode}-d{args.depth}-b{args.beam_width}"
         f"-mr{args.max_routes}-{args.route_selection}"
-        f"{policy_suffix}{reranker_suffix}{coverage_suffix}{coverage_beam_suffix}"
+        f"-rc{args.resource_cpus}-rm{args.resource_memory_gib}g"
+        f"{policy_suffix}{reranker_suffix}{downstream_selector_suffix}"
+        f"{coverage_suffix}{coverage_beam_suffix}"
         f"{bond_index_suffix}"
         f"{recovery_depth_suffix}{recovery_slots_suffix}{recovery_tiers_suffix}"
         f"{recovery_policy_suffix}"
@@ -229,8 +280,13 @@ def aizynth_config_and_id(args):
         config_filename=config_filename,
         external_timeout_s=args.timeout_s,
         grace_s=args.grace_s,
+        cpus=str(args.resource_cpus),
+        memory=f"{args.resource_memory_gib}g",
     )
-    configuration_id = f"aizynthfinder-{args.comparison_mode}"
+    configuration_id = (
+        f"aizynthfinder-{args.comparison_mode}"
+        f"-rc{args.resource_cpus}-rm{args.resource_memory_gib}g"
+    )
     return config, configuration_id
 
 
@@ -306,6 +362,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--timeout-s", type=float, default=150.0)
     parser.add_argument("--grace-s", type=float, default=10.0)
+    parser.add_argument(
+        "--resource-cpus",
+        type=int,
+        default=8,
+        help="Declared CPU envelope applied to both arms (default: 8).",
+    )
+    parser.add_argument(
+        "--resource-memory-gib",
+        type=int,
+        default=6,
+        help="Declared memory envelope in GiB applied to both arms (default: 6).",
+    )
     parser.add_argument("--aizynthfinder-image", default="renkin-compare-66/aizynthfinder:4.4.1")
     parser.add_argument(
         "--public-data-dir", default="data/comparison/aizynthfinder_public_data"
@@ -417,6 +485,11 @@ def main(argv: list[str] | None = None) -> int:
         "Requires --reranker-model.",
     )
     parser.add_argument(
+        "--downstream-selector",
+        action="store_true",
+        help="RENKIN-only: ordering-only one-step stock-reachability selector.",
+    )
+    parser.add_argument(
         "--search-mode",
         choices=["standard", "coverage", "recovery"],
         default="standard",
@@ -489,8 +562,16 @@ def main(argv: list[str] | None = None) -> int:
         "host environment) alongside this arm's output.",
     )
     args = parser.parse_args(argv)
+    try:
+        acquire_output_lock(args.output_rows)
+    except ValueError as exc:
+        parser.error(str(exc))
     if args.max_routes <= 0:
         parser.error("--max-routes must be positive")
+    if args.resource_cpus <= 0:
+        parser.error("--resource-cpus must be positive")
+    if args.resource_memory_gib <= 0:
+        parser.error("--resource-memory-gib must be positive")
     if args.route_selection == "strict_validated" and args.max_routes < 2:
         parser.error("--route-selection strict_validated requires --max-routes >= 2")
     if args.ring_context_policy != "disabled" and not args.ring_context_sidecar:
@@ -500,6 +581,10 @@ def main(argv: list[str] | None = None) -> int:
             "--reranker-model and --reranker-freq-table must both be given or both omitted "
             "-- renkin's own CLI would silently fall back to legacy ordering on a mismatched "
             "pair, which this paired-comparison harness must not do unnoticed"
+        )
+    if args.downstream_selector and (args.reranker_model or args.reranker_freq_table):
+        parser.error(
+            "--downstream-selector cannot be combined with --reranker-model/--reranker-freq-table"
         )
     if bool(args.template_policy_manifest) != bool(args.template_policy_artifact):
         parser.error(
@@ -592,28 +677,19 @@ def main(argv: list[str] | None = None) -> int:
                 )
             existing_ids.add(row.target_id)
 
+    if args.tool == "renkin":
+        _, _, configuration_id = renkin_config_and_id(args)
+    else:
+        _, configuration_id = aizynth_config_and_id(args)
+
     if args.manifest_path:
-        building_blocks_path = (
-            args.shared_stock_smi if args.comparison_mode == "shared_stock" else args.building_blocks
-        )
-        input_files = {
-            "sample_list": args.sample_list,
-            "stock": building_blocks_path,
-            "templates": args.templates,
-            "cargo_manifest": os.path.join(args.repo_root, "Cargo.toml"),
-            "cargo_lock": os.path.join(args.repo_root, "Cargo.lock"),
-        }
-        if args.ring_context_sidecar:
-            input_files["ring_context_sidecar"] = args.ring_context_sidecar
-        if args.reranker_model:
-            input_files["reranker_model"] = args.reranker_model
-        if args.reranker_freq_table:
-            input_files["reranker_freq_table"] = args.reranker_freq_table
-        if args.search_mode in {"coverage", "recovery"} and args.coverage_templates:
-            input_files["coverage_templates"] = args.coverage_templates
-        for index, path in enumerate(args.recovery_coverage_tier, start=1):
-            input_files[f"recovery_coverage_tier_{index}"] = path
+        input_files = manifest_input_files(args)
         if not os.path.exists(args.manifest_path):
+            manifest_tool_version = (
+                renkin_adapter.resolve_tool_version(args.repo_root)
+                if args.tool == "renkin"
+                else "4.4.1"
+            )
             run_manifest = manifest_mod.capture_start_manifest(
                 tool=args.tool,
                 comparison_mode=args.comparison_mode,
@@ -624,12 +700,16 @@ def main(argv: list[str] | None = None) -> int:
                 binary_path=args.renkin_binary if args.tool == "renkin" else None,
                 docker_image=args.aizynthfinder_image if args.tool == "aizynthfinder" else None,
                 input_files=input_files,
+                configuration_id=configuration_id,
+                tool_version=manifest_tool_version,
                 resource_budget={
                     "depth": args.depth,
                     "beam_width": args.beam_width,
                     "bond_index": args.bond_index,
                     "timeout_s": args.timeout_s,
                     "grace_s": args.grace_s,
+                    "resource_cpus": args.resource_cpus,
+                    "resource_memory_gib": args.resource_memory_gib,
                     "max_routes": args.max_routes,
                     "route_selection": args.route_selection,
                     "search_mode": args.search_mode,
@@ -645,6 +725,12 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 existing_manifest = manifest_mod.load_and_validate_manifest(args.manifest_path)
                 manifest_mod.validate_input_hashes(existing_manifest, input_files)
+                manifest_mod.validate_run_identity(
+                    existing_manifest,
+                    tool=args.tool,
+                    comparison_mode=args.comparison_mode,
+                    configuration_id=configuration_id,
+                )
             except ValueError as exc:
                 parser.error(str(exc))
 
@@ -694,28 +780,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.manifest_path and len(all_rows) >= args.sample_size:
         try:
             run_manifest = manifest_mod.load_and_validate_manifest(args.manifest_path)
+            manifest_mod.validate_run_identity(
+                run_manifest,
+                tool=args.tool,
+                comparison_mode=args.comparison_mode,
+                configuration_id=configuration_id,
+            )
         except ValueError as exc:
             parser.error(str(exc))
-        building_blocks_path = (
-            args.shared_stock_smi if args.comparison_mode == "shared_stock" else args.building_blocks
-        )
-        input_files = {
-            "sample_list": args.sample_list,
-            "stock": building_blocks_path,
-            "templates": args.templates,
-            "cargo_manifest": os.path.join(args.repo_root, "Cargo.toml"),
-            "cargo_lock": os.path.join(args.repo_root, "Cargo.lock"),
-        }
-        if args.ring_context_sidecar:
-            input_files["ring_context_sidecar"] = args.ring_context_sidecar
-        if args.reranker_model:
-            input_files["reranker_model"] = args.reranker_model
-        if args.reranker_freq_table:
-            input_files["reranker_freq_table"] = args.reranker_freq_table
-        if args.search_mode in {"coverage", "recovery"} and args.coverage_templates:
-            input_files["coverage_templates"] = args.coverage_templates
-        for index, path in enumerate(args.recovery_coverage_tier, start=1):
-            input_files[f"recovery_coverage_tier_{index}"] = path
+        input_files = manifest_input_files(args)
         run_manifest = manifest_mod.finalize_manifest(run_manifest, input_files)
         manifest_mod.write_manifest_atomic(args.manifest_path, run_manifest)
 

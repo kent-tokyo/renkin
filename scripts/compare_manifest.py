@@ -138,6 +138,17 @@ def _run(argv: list[str]) -> str:
         return f"<error: {e}>"
 
 
+def _run_checked(argv: list[str]) -> tuple[bool, str]:
+    """Run a short diagnostic while preserving command success/failure."""
+    try:
+        result = subprocess.run(argv, capture_output=True, text=True, timeout=10)
+    except Exception:  # pragma: no cover -- best-effort diagnostics only
+        return False, ""
+    if result.returncode != 0:
+        return False, ""
+    return True, result.stdout.strip()
+
+
 def project_identity(repo_root: str) -> dict[str, str | None]:
     """Capture the Rust package and chematic dependency versions offline."""
     cargo_toml = os.path.join(repo_root, "Cargo.toml")
@@ -155,6 +166,17 @@ def project_identity(repo_root: str) -> dict[str, str | None]:
     return {
         "package_version": package.group(1) if package else None,
         "chematic_version": chematic.group(1) if chematic else None,
+    }
+
+
+def git_worktree_state(repo_root: str) -> dict[str, bool | int | None]:
+    """Capture reproducibility-relevant worktree state without file paths."""
+    ok, status = _run_checked(["git", "-C", repo_root, "status", "--porcelain"])
+    if not ok:
+        return {"clean": None, "changed_entry_count": None}
+    return {
+        "clean": not bool(status),
+        "changed_entry_count": len(status.splitlines()) if status else 0,
     }
 
 
@@ -249,6 +271,31 @@ def validate_security_contract(manifest: dict) -> None:
     if not isinstance(blockers, list) or not blockers or not all(isinstance(item, str) and item for item in blockers):
         raise ValueError("security_contract.release_blockers must be a non-empty string list")
 
+    # Older manifests predate this optional provenance field. When present,
+    # validate its shape without recording worktree paths or diff text.
+    worktree = manifest.get("git_worktree")
+    if worktree is not None:
+        if not isinstance(worktree, dict):
+            raise ValueError("git_worktree must be an object when present")
+        clean = worktree.get("clean")
+        changed_count = worktree.get("changed_entry_count")
+        if clean is not None and not isinstance(clean, bool):
+            raise ValueError("git_worktree.clean must be boolean or null")
+        if changed_count is not None and (
+            not isinstance(changed_count, int)
+            or isinstance(changed_count, bool)
+            or changed_count < 0
+        ):
+            raise ValueError(
+                "git_worktree.changed_entry_count must be a non-negative integer or null"
+            )
+
+    configuration_id = manifest.get("configuration_id")
+    if configuration_id is not None and (
+        not isinstance(configuration_id, str) or not configuration_id
+    ):
+        raise ValueError("configuration_id must be a non-empty string when present")
+
 
 def load_and_validate_manifest(path: str) -> dict:
     """Load a persisted comparison manifest before any resume work starts."""
@@ -297,6 +344,26 @@ def validate_input_hashes(manifest: dict, input_files: dict[str, str]) -> None:
         )
 
 
+def validate_run_identity(
+    manifest: dict, *, tool: str, comparison_mode: str, configuration_id: str
+) -> None:
+    """Prevent a resumable manifest from mixing incompatible run settings."""
+    expected = {
+        "tool": tool,
+        "comparison_mode": comparison_mode,
+        "configuration_id": configuration_id,
+    }
+    mismatches = [
+        field
+        for field, value in expected.items()
+        if field in manifest and manifest[field] != value
+    ]
+    if mismatches:
+        raise ValueError(
+            "comparison manifest run identity mismatch: " + ", ".join(mismatches)
+        )
+
+
 def write_manifest_atomic(path: str, manifest: dict) -> None:
     """Persist a manifest without exposing a partially written JSON file."""
     directory = os.path.dirname(os.path.abspath(path))
@@ -331,11 +398,14 @@ def capture_start_manifest(
     docker_image: str | None,
     input_files: dict[str, str],
     resource_budget: dict | None = None,
+    configuration_id: str | None = None,
+    tool_version: str | None = None,
 ) -> dict:
     """input_files maps a label (e.g. 'building_blocks', 'templates') to path."""
     git_commit = _run(["git", "-C", repo_root, "rev-parse", "HEAD"])
     manifest = {
         "tool": tool,
+        "tool_version": tool_version,
         "comparison_mode": comparison_mode,
         "ring_context_policy": ring_context_policy,
         # Orthogonal to ring_context_policy -- v0.35.0's spectator-bond-loss
@@ -345,6 +415,9 @@ def capture_start_manifest(
         "spectator_bond_policy": spectator_bond_policy,
         "command_line": [redact_home_dir(arg) for arg in command_line],
         "git_commit": git_commit,
+        "git_worktree": git_worktree_state(repo_root),
+        "configuration_id": configuration_id,
+        "resource_budget": resource_budget or {},
         "project_identity": project_identity(repo_root),
         "binary_sha256": sha256_file(binary_path) if binary_path else None,
         "docker_image": docker_image,

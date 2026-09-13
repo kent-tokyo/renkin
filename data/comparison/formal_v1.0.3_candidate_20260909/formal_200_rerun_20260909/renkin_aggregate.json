@@ -94,11 +94,18 @@
     "p50": 340.17516700259876,
     "p95": 14820.180416994845
   },
-  "strict_validated_route_to_configured_stock_rate": {
+  "configured_stock_route_rate": {
     "denominator_kind": "all_sampled",
     "n_denominator": 200,
     "n_numerator": 134,
     "value": 0.67
+  },
+  "strict_validated_route_to_configured_stock_rate": {
+    "definition": "route_found AND validator_confirmed_route_found AND all_leaves_in_configured_stock",
+    "denominator_kind": "all_sampled",
+    "n_denominator": 200,
+    "n_numerator": 126,
+    "value": 0.63
   },
   "target_elements_accounted_route_rate": {
     "denominator_kind": "all_sampled",

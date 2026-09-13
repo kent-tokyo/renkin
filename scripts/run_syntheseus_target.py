@@ -110,7 +110,7 @@ def main() -> int:
     args = parser.parse_args()
     import os
     os.environ.update(resource_environment(args.cpus))
-    apply_resource_limits(args.memory_bytes, int(args.timeout_s))
+    apply_resource_limits(args.memory_bytes, int(args.timeout_s), args.cpus)
     record = run(args)
     Path(args.output).write_text(record.to_json_line() + "\n", encoding="utf-8")
     print(record.to_json_line())

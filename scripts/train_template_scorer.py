@@ -28,6 +28,7 @@ Usage:
 """
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -102,18 +103,33 @@ def ecfp4_batch(smiles_list: list) -> list:
 
 # ── MLP architecture (matches Rust scorer expectations) ───────────────────────
 
+def parse_hidden_dims(value: str) -> tuple[int, ...]:
+    """Parse a positive comma-separated MLP width specification.
+
+    The output layer always covers the complete, hash-pinned template index.
+    Tuning only hidden widths therefore cannot silently alter template-ID
+    semantics while searching for a lower-latency model.
+    """
+    try:
+        dims = tuple(int(part.strip()) for part in value.split(","))
+    except ValueError as error:
+        raise ValueError("hidden dimensions must be comma-separated integers") from error
+    if not dims or any(dim <= 0 for dim in dims):
+        raise ValueError("hidden dimensions must contain one or more positive integers")
+    return dims
+
+
 class TemplateScorer(nn.Module):
-    def __init__(self, n_templates: int):
+    def __init__(self, n_templates: int, hidden_dims: tuple[int, ...] = (1024, 512)):
         super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(2048, 1024),
-            nn.ReLU(),
-            nn.Dropout(0.2),
-            nn.Linear(1024, 512),
-            nn.ReLU(),
-            nn.Dropout(0.1),
-            nn.Linear(512, n_templates),
-        )
+        layers = []
+        input_dim = 2048
+        for index, output_dim in enumerate(hidden_dims):
+            layers.extend((nn.Linear(input_dim, output_dim), nn.ReLU()))
+            layers.append(nn.Dropout(0.2 if index == 0 else 0.1))
+            input_dim = output_dim
+        layers.append(nn.Linear(input_dim, n_templates))
+        self.net = nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x)
@@ -135,8 +151,46 @@ def load_template_index(path: str) -> dict:
     return idx
 
 
-def _load_rows(reactions_path=None, dataset_id="bisectgroup/USPTO_50K", split="train"):
+def _load_rows(
+    reactions_path=None,
+    reactions_jsonl_path=None,
+    dataset_id="bisectgroup/USPTO_50K",
+    split="train",
+):
     """Load reaction rows from a local file or HuggingFace dataset."""
+    if reactions_path and reactions_jsonl_path:
+        raise ValueError("--reactions and --reactions-jsonl cannot be combined")
+    if reactions_jsonl_path:
+        print(f"Loading reaction JSONL from {reactions_jsonl_path}...", flush=True)
+        rows = []
+        with open(reactions_jsonl_path, encoding="utf-8") as handle:
+            for line_number, line in enumerate(handle, 1):
+                if not line.strip():
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError as error:
+                    raise ValueError(
+                        f"invalid JSONL at {reactions_jsonl_path}:{line_number}"
+                    ) from error
+                if not isinstance(row, dict):
+                    raise ValueError(
+                        f"expected object at {reactions_jsonl_path}:{line_number}"
+                    )
+                reactants = row.get("reactants")
+                products = row.get("products", row.get("product"))
+                if not isinstance(reactants, str) or not isinstance(products, str):
+                    raise ValueError(
+                        f"missing string reactants/product at {reactions_jsonl_path}:{line_number}"
+                    )
+                row_id = row.get("_id", row.get("id", str(line_number)))
+                rows.append({
+                    "reactants": reactants,
+                    "products": products,
+                    "_id": str(row_id),
+                })
+        print(f"  {len(rows)} reactions loaded", flush=True)
+        return rows
     if reactions_path:
         print(f"Loading reactions from {reactions_path}...", flush=True)
         rows = []
@@ -160,8 +214,14 @@ def _load_rows(reactions_path=None, dataset_id="bisectgroup/USPTO_50K", split="t
 
 
 def build_dataset(template_index: dict, verbose: bool = True,
-                  reactions_path=None, dataset_id="bisectgroup/USPTO_50K", split="train"):
-    rows = _load_rows(reactions_path, dataset_id, split)
+                  reactions_path=None, reactions_jsonl_path=None,
+                  dataset_id="bisectgroup/USPTO_50K", split="train"):
+    rows = _load_rows(
+        reactions_path=reactions_path,
+        reactions_jsonl_path=reactions_jsonl_path,
+        dataset_id=dataset_id,
+        split=split,
+    )
 
     # Pass 1: extract (product_smiles, template_label) pairs
     pairs = []  # list of (smiles, label)
@@ -227,16 +287,16 @@ def build_dataset(template_index: dict, verbose: bool = True,
 
 def train_model(X, y, n_templates: int, epochs: int, batch_size: int, lr: float,
                 device_str: str = "cpu", checkpoint_every: int = 0,
-                checkpoint_stem: str = ""):
+                checkpoint_stem: str = "", hidden_dims: tuple[int, ...] = (1024, 512)):
     device = torch.device(device_str)
-    model = TemplateScorer(n_templates).to(device)
+    model = TemplateScorer(n_templates, hidden_dims).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
     criterion = nn.CrossEntropyLoss()
 
     n_params = sum(p.numel() for p in model.parameters())
     print(
-        f"Training MLP: 2048->1024->512->{n_templates} | "
+        f"Training MLP: 2048->{'->'.join(map(str, hidden_dims))}->{n_templates} | "
         f"{n_params/1e6:.1f}M params | {len(X)} samples | device={device_str}",
         flush=True,
     )
@@ -290,6 +350,10 @@ def train_model(X, y, n_templates: int, epochs: int, batch_size: int, lr: float,
 # ── ONNX export ───────────────────────────────────────────────────────────────
 
 def export_onnx(model, output_path: str) -> None:
+    # The ONNX exporter traces CPU tensors.  A model trained through MPS must
+    # therefore be moved back first; otherwise PyTorch 2.12 mixes CPU fake
+    # inputs with MPS parameters during export.
+    model = model.to("cpu")
     model.train(False)
     dummy = torch.zeros(1, 2048)
     torch.onnx.export(
@@ -321,6 +385,11 @@ def main() -> None:
         help="Local reactions file (one reactants>>products per line). "
              "Takes precedence over --dataset when specified.",
     )
+    parser.add_argument(
+        "--reactions-jsonl", default=None,
+        help="Local JSONL with string reactants and product/products fields. "
+             "Mutually exclusive with --reactions and takes precedence over --dataset.",
+    )
     parser.add_argument("--dataset", default="bisectgroup/USPTO_50K",
                         help="HuggingFace dataset ID (default: bisectgroup/USPTO_50K)")
     parser.add_argument("--split", default="train",
@@ -330,6 +399,12 @@ def main() -> None:
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--batch-size", type=int, default=512)
     parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument(
+        "--hidden-dims",
+        default="1024,512",
+        help="Comma-separated positive hidden widths (default: 1024,512). "
+             "The output width remains the complete template index.",
+    )
     parser.add_argument("--checkpoint-every", type=int, default=0,
                         help="Save checkpoint every N epochs (0 = disabled)")
     parser.add_argument(
@@ -343,12 +418,18 @@ def main() -> None:
 
     X, y = build_dataset(template_index,
                          reactions_path=args.reactions,
+                         reactions_jsonl_path=args.reactions_jsonl,
                          dataset_id=args.dataset,
                          split=args.split)
 
     if len(X) == 0:
         print("ERROR: no training pairs found.", file=sys.stderr)
         sys.exit(1)
+
+    try:
+        hidden_dims = parse_hidden_dims(args.hidden_dims)
+    except ValueError as error:
+        parser.error(str(error))
 
     checkpoint_stem = Path(args.output).stem if args.checkpoint_every > 0 else ""
     model = train_model(X, y, n_templates,
@@ -357,7 +438,8 @@ def main() -> None:
                         lr=args.lr,
                         device_str=args.device,
                         checkpoint_every=args.checkpoint_every,
-                        checkpoint_stem=checkpoint_stem)
+                        checkpoint_stem=checkpoint_stem,
+                        hidden_dims=hidden_dims)
 
     if args.save_pt:
         torch.save({"state_dict": model.state_dict(), "n_templates": n_templates}, args.save_pt)

@@ -100,7 +100,9 @@ def run(args: argparse.Namespace) -> int:
                     timeout=args.timeout_s + args.grace_s + args.runner_overhead_s,
                     env={**os.environ, **resource_environment(args.cpus)},
                     preexec_fn=(None if args.container_image else
-                                lambda: apply_resource_limits(args.memory_bytes, int(args.timeout_s + args.grace_s))),
+                                lambda: apply_resource_limits(
+                                    args.memory_bytes, int(args.timeout_s + args.grace_s), args.cpus
+                                )),
                 )
             except subprocess.TimeoutExpired as exc:
                 record = failure(target, args.tool, args.arm_id, "timeout", str(exc))

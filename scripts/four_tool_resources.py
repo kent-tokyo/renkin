@@ -15,9 +15,30 @@ def resource_environment(cpus: int = 8) -> dict[str, str]:
     )}
 
 
-def apply_resource_limits(memory_bytes: int = 6 * 1024**3, cpu_seconds: int = 150) -> None:
+def cpu_rlimit_seconds(wall_clock_seconds: int, cpus: int) -> int:
+    """Return a CPU-time limit that cannot preempt the wall-clock deadline.
+
+    ``RLIMIT_CPU`` charges aggregate CPU time across every worker thread.
+    A process allowed to use ``cpus`` threads therefore consumes up to
+    ``wall_clock_seconds * cpus`` CPU seconds before its wall-clock deadline.
+    Applying the bare wall-clock number here kills parallel native planners
+    early (for example, 150 CPU seconds after roughly 20 seconds on 8 cores).
+    """
+    if wall_clock_seconds <= 0:
+        raise ValueError("wall_clock_seconds must be positive")
+    if cpus <= 0:
+        raise ValueError("cpus must be positive")
+    return wall_clock_seconds * cpus
+
+
+def apply_resource_limits(
+    memory_bytes: int = 6 * 1024**3,
+    wall_clock_seconds: int = 150,
+    cpus: int = 8,
+) -> None:
     if os.name != "posix":
         return
+    cpu_seconds = cpu_rlimit_seconds(wall_clock_seconds, cpus)
     resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
     # macOS exposes RLIMIT_AS but rejects finite values for this process
     # class. Keep CPU limiting active and let the caller's label disclose that

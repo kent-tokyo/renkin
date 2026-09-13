@@ -33,6 +33,7 @@ import sys
 import tempfile
 import time
 from dataclasses import dataclass
+from functools import partial
 
 from compare_route_graph import count_leaves, normalize_renkin_route, normalized_route_sha256
 from compare_schema import PlannerComparisonRow
@@ -62,6 +63,11 @@ class RenkinConfig:
     route_selection: str = "rank1"
     external_timeout_s: float = 150.0
     grace_s: float = 10.0
+    # The comparison runner passes the same declared envelope to both arms.
+    # On macOS RLIMIT_AS is advisory/unavailable (reported in the row), but
+    # the thread cap and aggregate CPU-time ceiling are still applied.
+    resource_cpus: int = 8
+    resource_memory_gib: int = 6
     # Ring-context safety guard (Issue #72/#242) -- None/"disabled" runs the
     # shipped default (guard off); any other policy also requires a sidecar
     # path and is used for the guard-cost comparison arm, never the primary
@@ -102,6 +108,10 @@ class RenkinConfig:
     # fails -- this adapter doesn't duplicate that validation).
     reranker_model: str | None = None
     reranker_freq_table: str | None = None
+    # Opt-in runtime downstream reachability ordering. This is mutually
+    # exclusive with the learned reranker and is kept in the arm config so
+    # the comparison identity cannot hide the selector.
+    downstream_selector: bool = False
     # v0.24 coverage mode (Issue #101, Phase 41.18B) -- "coverage" requires
     # coverage_templates_path; coverage_timeout_secs is optional (None means
     # no cooperative-cancellation deadline on Stage 2). Issue #239 adds
@@ -125,7 +135,8 @@ _CPU_TIME_RE = re.compile(
 
 
 def _run_with_time_wrapper(
-    argv: list[str], timeout_s: float, grace_s: float
+    argv: list[str], timeout_s: float, grace_s: float, resource_cpus: int = 8,
+    resource_memory_gib: int = 6,
 ) -> tuple[int | None, bytes, bytes, float, int | None, bool, float | None, float | None]:
     """Runs argv under `/usr/bin/time -l`, enforcing an external wall-clock
     deadline authoritative over anything the tool itself does.
@@ -146,8 +157,13 @@ def _run_with_time_wrapper(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             start_new_session=True,
-            env={**os.environ, **resource_environment()},
-            preexec_fn=apply_resource_limits,
+            env={**os.environ, **resource_environment(resource_cpus)},
+            preexec_fn=partial(
+                apply_resource_limits,
+                resource_memory_gib * 1024**3,
+                int(timeout_s + grace_s),
+                resource_cpus,
+            ),
         )
         wrapper_killed = False
         try:
@@ -245,6 +261,8 @@ def run_one_target(
     if config.reranker_model and config.reranker_freq_table:
         argv += ["--reranker-model", config.reranker_model]
         argv += ["--reranker-freq-table", config.reranker_freq_table]
+    if config.downstream_selector:
+        argv += ["--downstream-selector"]
     if config.template_policy_manifest and config.template_policy_artifact:
         argv += ["--template-policy-manifest", config.template_policy_manifest]
         argv += ["--template-policy-artifact", config.template_policy_artifact]
@@ -281,12 +299,20 @@ def run_one_target(
         wrapper_killed,
         cpu_user_s,
         cpu_sys_s,
-    ) = _run_with_time_wrapper(argv, config.external_timeout_s, config.grace_s)
+    ) = _run_with_time_wrapper(
+        argv,
+        config.external_timeout_s,
+        config.grace_s,
+        config.resource_cpus,
+        config.resource_memory_gib,
+    )
     total_elapsed_ms = wall_clock_s * 1000.0
     cpu_time_tool_specific = {
         "cpu_user_s": cpu_user_s,
         "cpu_sys_s": cpu_sys_s,
         "resource_enforcement": enforcement_label(),
+        "resource_cpus": config.resource_cpus,
+        "resource_memory_gib": config.resource_memory_gib,
     }
 
     base = dict(

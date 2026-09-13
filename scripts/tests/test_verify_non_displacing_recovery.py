@@ -53,6 +53,27 @@ class NonDisplacingRecoveryTests(unittest.TestCase):
         self.assertEqual(result["regression_count"], 1)
         self.assertFalse(result["zero_regression"])
 
+    def test_optional_budget_check_reports_overrun(self):
+        rows = [
+            {
+                "route_found": False,
+                "run_status": "completed",
+                "tool_specific": {
+                    "renkin": {
+                        "recovery": {
+                            "attempts": [{"routes_found": 0}],
+                            "total_elapsed_ms": 1250,
+                        }
+                    }
+                },
+            }
+        ]
+        result = MODULE.summarize(rows, budget_ms=1000)
+        self.assertEqual(result["budget_observed_count"], 1)
+        self.assertEqual(result["budget_overrun_count"], 1)
+        self.assertEqual(result["budget_max_elapsed_ms"], 1250)
+        self.assertFalse(result["within_budget"])
+
 
 if __name__ == "__main__":
     unittest.main()

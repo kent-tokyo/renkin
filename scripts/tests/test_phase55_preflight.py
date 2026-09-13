@@ -1,0 +1,119 @@
+import importlib.util
+import json
+import tempfile
+from pathlib import Path
+
+
+MODULE_PATH = Path(__file__).parents[1] / "phase55_preflight.py"
+SPEC = importlib.util.spec_from_file_location("phase55_preflight", MODULE_PATH)
+assert SPEC and SPEC.loader
+MODULE = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(MODULE)
+
+
+def manifest(commit="abc", clean=True):
+    return {
+        "comparison_mode": "shared_stock",
+        "tool_version": "1.0.6",
+        "input_file_sha256": {"sample_list": "s", "stock": "k", "templates": "t"},
+        "resource_budget": {
+            "depth": 5,
+            "beam_width": 100,
+            "timeout_s": 120,
+            "grace_s": 5,
+            "max_routes": 1,
+        },
+        "git_commit": commit,
+        "worktree": {"clean": clean},
+        "input_files_unchanged_during_run": True,
+    }
+
+
+def test_matching_pair_is_eligible():
+    result = MODULE.preflight(manifest(), manifest(), {"a", "b"}, {"a", "b"})
+    assert result["eligible"] is True
+    assert result["blockers"] == []
+
+
+def test_current_git_worktree_schema_is_accepted():
+    current = manifest()
+    current.pop("worktree")
+    current["git_worktree"] = {"clean": True, "changed_entry_count": 0}
+    result = MODULE.preflight(current, current, {"a"}, {"a"})
+    assert result["eligible"] is True
+
+
+def test_tool_specific_depth_and_beam_may_differ():
+    right = manifest()
+    right["resource_budget"].update({"depth": 6, "beam_width": 200})
+    result = MODULE.preflight(manifest(), right, {"a"}, {"a"})
+    assert result["eligible"] is True
+
+
+def test_preflight_rejects_stale_or_incomplete_pair():
+    right = manifest(commit="different", clean=False)
+    right["input_file_sha256"]["stock"] = "other"
+    right["resource_budget"] = None
+    result = MODULE.preflight(manifest(), right, {"a"}, {"b"})
+    assert result["eligible"] is False
+    assert {
+        "target_id_set_mismatch:left_only=1:right_only=1",
+        "input_hash_mismatch:stock",
+        "missing_resource_budget",
+        "git_revision_mismatch",
+        "right_worktree_not_clean_or_unrecorded",
+    } <= set(result["blockers"])
+
+
+def test_frozen_cohort_preflight_checks_sample_list_identity():
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        sample = root / "sample.jsonl"
+        rows = [
+            {"target_id": "a"},
+            {"target_id": "b"},
+        ]
+        sample.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+        import hashlib
+
+        sample_hash = hashlib.sha256(sample.read_bytes()).hexdigest()
+        frozen = root / "frozen.json"
+        frozen.write_text(
+            json.dumps(
+                {
+                    "freeze_status": "frozen",
+                    "freeze_id": "test",
+                    "targets": rows,
+                    "sample_list": {
+                        "path": str(sample),
+                        "sha256": sample_hash,
+                        "rows": 2,
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        result = MODULE.frozen_cohort_preflight(frozen)
+        assert result["eligible"] is True
+        assert result["target_count"] == 2
+
+
+def test_frozen_cohort_preflight_rejects_changed_sample_list():
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        sample = root / "sample.jsonl"
+        sample.write_text('{"target_id": "a"}\n', encoding="utf-8")
+        frozen = root / "frozen.json"
+        frozen.write_text(
+            json.dumps(
+                {
+                    "freeze_status": "frozen",
+                    "targets": [{"target_id": "a"}],
+                    "sample_list": {"path": str(sample), "sha256": "wrong", "rows": 1},
+                }
+            ),
+            encoding="utf-8",
+        )
+        result = MODULE.frozen_cohort_preflight(frozen)
+        assert result["eligible"] is False
+        assert "cohort_sample_list_hash_mismatch" in result["blockers"]

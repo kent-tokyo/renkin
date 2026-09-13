@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 
 
-def summarize(rows: list[dict]) -> dict:
+def summarize(rows: list[dict], budget_ms: float | None = None) -> dict:
     baseline_success = 0
     final_success = 0
     recovered = 0
@@ -21,6 +21,7 @@ def summarize(rows: list[dict]) -> dict:
     timeout = 0
     crash = 0
     missing_attempts = 0
+    recovery_elapsed_values: list[float] = []
     for row in rows:
         run_status = row.get("run_status")
         if run_status == "timeout":
@@ -29,6 +30,8 @@ def summarize(rows: list[dict]) -> dict:
             crash += 1
         recovery = row.get("tool_specific", {}).get("renkin", {}).get("recovery", {})
         attempts = recovery.get("attempts") if isinstance(recovery, dict) else None
+        if isinstance(recovery, dict) and isinstance(recovery.get("total_elapsed_ms"), (int, float)):
+            recovery_elapsed_values.append(float(recovery["total_elapsed_ms"]))
         if not isinstance(attempts, list) or not attempts:
             missing_attempts += 1
             continue
@@ -39,7 +42,7 @@ def summarize(rows: list[dict]) -> dict:
         final_success += int(final_found)
         recovered += int(final_found and not native_found)
         regression += int(native_found and not final_found)
-    return {
+    result = {
         "schema_version": "renkin-non-displacing-recovery-verification/1",
         "row_count": len(rows),
         "baseline_success_count": baseline_success,
@@ -51,6 +54,14 @@ def summarize(rows: list[dict]) -> dict:
         "missing_attempts_count": missing_attempts,
         "zero_regression": regression == 0,
     }
+    if budget_ms is not None:
+        over_budget = [elapsed for elapsed in recovery_elapsed_values if elapsed > budget_ms]
+        result["budget_ms"] = budget_ms
+        result["budget_observed_count"] = len(recovery_elapsed_values)
+        result["budget_overrun_count"] = len(over_budget)
+        result["budget_max_elapsed_ms"] = max(recovery_elapsed_values, default=None)
+        result["within_budget"] = not over_budget
+    return result
 
 
 def load_rows(path: Path) -> list[dict]:
@@ -71,12 +82,19 @@ def main() -> int:
     parser.add_argument("--rows", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--require-zero-regression", action="store_true")
+    parser.add_argument(
+        "--budget-ms",
+        type=float,
+        help="optionally verify each recorded recovery total_elapsed_ms is within this bound",
+    )
     args = parser.parse_args()
-    result = summarize(load_rows(args.rows))
+    result = summarize(load_rows(args.rows), args.budget_ms)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(result, ensure_ascii=False))
     if args.require_zero_regression and not result["zero_regression"]:
+        return 1
+    if args.budget_ms is not None and not result["within_budget"]:
         return 1
     return 0
 

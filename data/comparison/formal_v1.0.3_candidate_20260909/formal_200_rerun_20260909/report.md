@@ -13,7 +13,8 @@
 
 - route_found: **134/200 (67.0%)**
 - validator-confirmed route: 126/200 (63.0%)
-- strict validated route to configured stock: 134/200 (67.0%)
+- route with all leaves in configured stock: 134/200 (67.0%)
+- combined strict route (validator-confirmed and configured stock): 126/200 (63.0%)
 - route tree parseable: 134/134
 - timeout/crash: 0/200
 - total elapsed p50/p95: 1.55s / 30.24s
@@ -25,6 +26,8 @@ The latest stored AiZynthFinder arm reports route_found 134/200 (67.0%),
 strict validated route 123/200 (61.5%), and total elapsed p50/p95 4.71s /
 7.17s. These figures are useful context, but are not a new same-session paired
 run; adapter output and validation semantics differ. Therefore this rerun
-establishes parity in route_found count, not a proven universal win.
+establishes parity in route_found count. It does not establish a strict accuracy
+win: the combined strict result is 126/200 (63.0%), and this is not a new
+same-session paired run or a v1.0.6-specific measurement.
 
 Raw rows, aggregate, and manifest are stored beside this report.

@@ -2,9 +2,254 @@
 
 ## Current objective
 
-Phase 53を現行目標とする。native探索成功を保護しながら追加候補を段階投入し、候補生成・
-template被覆・stock差を順に改善する。同一条件のAiZynthFinder成功率超えを目標とし、
-既存成功regression=0、invalid=0、再現可能な測定manifestを必須条件とする。
+Phase 55を次の開発目標とする。同一stock・時間予算でAiZynthFinderのnative成功率と
+共通検証後の成功率をともに超え、未使用TESTで検証する。Phase 54の残る配布・回帰gateは
+55.0の前提として維持する。[優先順位](../ROADMAP.md)と
+[詳細計画・合格条件](../docs/roadmap/aizynthfinder-accuracy.md)を参照。
+
+## Phase 55: AiZynthFinder accuracy — active
+
+2026-09-12に計画を追加。以下は未完了・未正式測定。過去の134/200同率と候補段階の
+133→143/200を新条件の測定値として流用しない。
+
+実装順は固定する。候補被覆 → 候補保存 → 下流到達性 → 非置換recovery → 独立TESTの順で、
+各段階のnegative resultは次段の前提にしない。正式なAiZynthFinder超えは、未使用TESTで
+native/common-strictのpaired 95% CI下限がともに0を超えた場合だけ成立とする。
+
+55.0 progress: VAL-200 rerunのraw rowを再集計し、旧reportのstock endpoint 134/200と
+combined strict 126/200の混同を訂正。集計JSON・report・truth tableを整合させた。変更は
+まだ測定revisionの凍結、clean checkout再現、50-target resource gateを含まないため、
+55.0は未完了。
+
+55.1 evidence: 既存の`gap_atlas_formal200.json`はAiZynthFinder-only 30件を
+`depth_limit` 22件と`diagnostics_missing` 8件に分類し、`gap_atlas_diagnostics_current.json`
+は8件を`depth_zero_stock_route`として記録している。これは初期診断資産であり、全200件の
+root/intermediate stage atlasではない。
+
+追加確認: rerun raw 200行では route_found 134、未発見66。recovery attemptの集計は
+termination=`completed` 317 / `deadline_exceeded` 38、beam limit hit 320、max depth reached
+192で、direct generator proposalsは0だった（attempt単位で重複するためtarget件数ではない）。
+このため55.1では「depth/beamが当たった」だけで原因確定とせず、66件の各stage traceと
+stock/validatorの第一喪失点をtarget単位に落とす。
+
+55.1 progress: `scripts/phase55_failure_atlas.py`を追加し、VAL-200全200行の保守的な
+atlasを生成。paired relationはAiZynthFinder-only 25、RENKIN-only 25、both 109、neither
+41。RENKINのprimary signalはbudget_exhausted 38、depth_and_beam_limit 28、
+validator_not_evaluable 8、solved_and_validator_confirmed 126。成果物は
+`data/comparison/formal_v1.0.3_candidate_20260909/phase55_failure_atlas_200.json`。
+このatlasはrowに記録されたsignalだけを分類し、中間体の第一喪失点は推測しない。
+
+55.1 ledger refinement: atlasへrecovery attemptの観測フィールド（stage、termination、
+depth/beam、nodes、routes、generator counters、elapsed）を追加した。route edgeや競合
+経路は取り込まず、化学的な第一喪失点を推測しない。script unit test 5件を通過。
+既存rerunディレクトリにpaired原本がないため、同じVAL-200 target setの2026-09-08
+paired tableを明示的な比較入力として再利用し、schema v2のartifactを再生成した。これは
+2026-09-10 RENKIN rerunと同時実行されたAiZynthFinder測定ではないため、正式な新比較の
+証明には使わない。
+
+- [ ] **55.0 / Contract** baseline revision、native/common-strict/forwardの定義、stock・
+  budget・モデルhashを固定。既存未コミット変更の回帰gateと2-tool protocolの事前登録。
+- [ ] **55.1 / Diagnosis** 全VAL-200のroot/intermediate失敗atlasを作り、候補欠落、
+  ranking、beam、stock、validation、時間切れを区別。競合route由来情報は診断に隔離。
+- [ ] **55.2 / Policy** 既存ONNX TemplatePolicyで実モデルordering-onlyを評価。
+  fingerprint/template mappingを検証し、未知中間体・abstain・候補集合不変のgateを追加。
+- [ ] **55.3 / Downstream** graph selectorを任意中間体へ動的適用するRust実行時処理へ。
+  全precursorのstock到達性、cycle、cache identity、候補の非置換をテスト。
+- [ ] **55.4 / Recovery** 全stage合計のdeadline下で未解決のみ段階探索。
+  native成功保持、予算内成功regression=0、strict非悪化を全200件で確認。
+- [ ] **55.5 / Coverage** 残る正候補欠落に限定してtemplate補完・direct generatorを投入。
+  候補生成時間を課金し、参照routeやTEST labelの持込みを禁止。不要なら根拠付きskip。
+- [ ] **55.6 / Evidence** 開発目安144/200を確認後、候補を固定し未使用TESTをpaired実行。
+  native/common-strictのCI・効果量・失敗・資源を公開。優位性未達はHOLD。
+
+55.2 progress: `cargo check --features nn-scoring --bin renkin`とfeature付きbinary buildが
+成功し、`data/template_scorer_500.onnx`を`--scorer --scorer-ordering-only`で代表targetへ
+接続できた。出力は`routes_found=1`を返した。これは接続smokeであり、外部モデルとの精度比較、
+template mappingの完全検証、VAL-200 A/B、実モデルの正式採用を意味しない。
+
+55.0 regression evidence: MCP golden修正後、`cargo test --workspace`は全workspaceで成功。
+root 864、CLI 42、benchmark 4、pool-gen 5、各integrationを含む全test suiteに失敗なし
+（ignored 2件）。通常のpytestは環境plugin衝突があったため、自動plugin無効化で比較・atlas
+関連30件を実行し全通過。これらは現working treeの検証であり、clean checkout gateは未完了。
+
+55.2 A/B smoke evidence: 同じVAL先頭10件、depth=3、beam=50、templates=500、各30秒で
+legacy armは0/10（timeout 2）、ONNX ordering-only armは0/10（timeout 5）。ONNX armは
+crash 0で接続自体は成立したが、timeout増加と改善なしのため採用しない。この結果は小標本・
+低depthの診断値に限り、VAL-200の精度やモデル品質の証拠にはしない。
+
+55.3 implementation progress: `DownstreamReachabilityReranker`を追加し、候補集合を
+削らず、各precursorについて「exact stock」または「全precursorがstockとなる1段子候補」
+を使ってordering-onlyスコアを計算する。stock/rule snapshotごとのcache、AND条件、
+no-op回避、bond-index（下流SMIRKS上限32）、検索run単位のlookahead上限16を実装し、CLIの
+`--downstream-selector`へ接続した。単体テスト2件、workspace check、MCP回帰、Aspirin
+CLI smokeを通過。既定動作は不変で、VAL-200の改善・正式採用は未測定。
+
+55.3 smoke evidence: Aspirin depth=2/max-routes=1でselector armは`routes_found=1`。
+同一targetのwall-clockはbaseline 0.35s、selector 0.36s（単一smokeのため性能値ではない）。
+候補集合を保持する単体fixtureと、複数precursorをANDで要求するfixtureを確認した。
+
+55.3 negative evidence: VAL先頭10件の初期selectorは4/5件が30秒timeoutとなり、
+全rule再適用を撤回。bond-indexとlookahead上限16へ修正後も2件中1件がtimeoutしたため、
+selectorは既定値へ採用せず、正式A/Bへ進めない。これは精度差ではなく、下流lookaheadの
+runtime costが現行実装のままでは高いという設計上の判断であり、次段では検索本体の
+候補cache・既存retro expansionとの共有を優先する。
+
+55.3 cache-sharing progress: `CandidateRankingContext`と任意のlookup callbackを
+`CandidateReranker`へ追加し、検索側の既存`retro_cache`から既知中間体のstock-terminal
+結果をselectorへ渡すようにした。未展開中間体ではselector側の追加反応適用を行わない。
+既存rerankerはdefault実装で互換性を維持し、context fixture、workspace clippy、CLI smokeを
+通過。selectorの独自lookaheadはoffline/standalone呼出し時だけ残り、formal defaultには
+昇格していない。
+
+55.3 shared-cache A/B smoke: 同じVAL先頭10件、depth=3、beam=50、500 templates、
+30秒/targetでbaselineは0/10、timeout 1、総計90.66秒。selectorは0/10、timeout 0、
+crash 1、総計69.37秒、p95 elapsed 29.63秒、p95 RSS約25MiBだった。crashは同じ重い
+targetで`time` wrapperが異常終了したもので、精度改善は確認できない。低標本のため正式
+性能値ではなく、共有cacheにより前回のtimeout-heavy挙動が軽減された診断結果として扱う。
+
+55.4 budget verifier progress: 現行formal rerun 200行のrecovery ledgerを検証し、baseline
+129、final 134、recovered 5、regression 0、timeout 0、crash 0、missing attempts 0を確認。
+検索側のrecovery timeout 30,000msを厳密に適用すると38行が最大30,036.895ms（協調停止と
+計時境界の差）を超えた。一方、protocolの1秒計時許容を含む31,000msでは超過0。成果物は
+`data/comparison/formal_v1.0.3_candidate_20260909/formal_200_rerun_20260909/recovery_budget_verification_31s.json`。
+これは既存rerunの検証であり、selector採用やAiZynthFinder超過の証明ではない。
+
+55.5 contract check: 既存のdirect-generator admission pathは、候補数上限、proposal
+provenance、SMILES/atom-map検証、same-target拒否、native beam reservationを備え、
+search unit testsで確認済み。未使用targetで候補欠落を埋める正式な改善効果はまだ測って
+いないため、55.5は未完了のまま据え置く。
+
+55.5 smoke evidence: hash付き`renkin-5000-template-augmentation` artifactの対象1件を
+depth=5/beam=100でbaselineとA/Bし、baseline・generator armともroute_found=0だった。
+generator armは70 proposalsを70 admitted、integrity/parse/same-target reject各0として
+通常探索へ投入できたが、成功回収はなかった。候補を投入できることとcoverage改善を
+混同せず、正式VALへは昇格しない。
+
+55.5 staged-recovery smoke: 同じ対象をnative baseline→direct-generator→widened generator
+→beam recovery（共有30秒）で再実行した。baseline/generator/widened各stageは0 route、
+generatorは各70 admitted、integrity rejection 0だった。最終stageはdeadline_exceededで
+終了し、候補補完による成功回収はなかった。このartifactは正式候補から除外し、55.6へ
+持ち込む実装は候補補完なしの現行baselineに限定する。
+
+55.6 preflight progress: `scripts/phase55_preflight.py`を追加し、target集合、comparison
+mode、tool version、sample/stock/template hash、resource budget、git revision、worktreeと
+入力不変性をfail-closedで確認する。既存RENKIN rerunとAiZynthFinder 200件を照合し、target
+集合は一致したが、version・stock/template hash・budget・revision・clean stateの不一致を
+検出してeligible=falseとなった。unit test 2件を通過。正式な再測定armが揃うまで55.6は
+HOLDとする。
+
+55.6 manifest hardening: 新規`compare_run.py`測定では`tool_version`とtop-level
+`resource_budget`も開始manifestへ保存するよう修正した（従来のsecurity_contract内snapshot
+は維持）。これにより次回paired測定はpreflightに必要な情報を開始時点で固定できる。
+preflightはdepth/beam等のtool固有設定を記録しつつ、timeout/grace/max_routesの共通契約
+だけをarm間で一致要求する。manifest/55系関連テスト計42件が通過。
+1 targetの実run smokeでもtool_version=`1.0.6`、resource_budget、git_worktree、入力不変性
+がmanifestへ保存されることを確認した（これはdirty working treeのためformal eligibleではない）。
+
+55.6 cohort preparation: `scripts/prepare_phase55_independent_cohort.py`を追加し、既知の
+historical artifactからtarget ID/canonical SMILESを除外した候補cohortを決定論的に生成できる
+ようにした。選定hash、入力hash、除外artifact hash、`pending_provenance_audit`をmanifestへ
+残す。候補の独立性を自動で断定しない設計で、専用テストと既存55系テスト計46件が通過。
+まだ学習/template抽出データとの重複監査、manifestの凍結、両toolの同一契約実行は未完了。
+既存results_100/results_500とVAL-200 artifactを除外して候補500件を生成した試行では、
+eligible 4,403件だった。初版はcohort hash=`05cd44c60f80ed8ab91e6e2e8265e81437d5eeb36667f0d9a4d992a077e8c944`で、
+source_line_numberを落としていたため正式候補から除外した。
+`scripts/audit_phase55_cohort_provenance.py`も追加し、train/val raw splitとのexact ID/canonical
+構造重複を検査した。証拠ファイルを指定しない初回監査では、現候補の重複0・unparseable 0を
+確認しつつ、学習・template抽出履歴未提示のためeligible=falseとなった。
+source provenance（TEST）、template provenance（TRAIN）、frozen reranker provenance
+（TRAIN+VAL）を指定した再監査ではeligible=trueとなり、scaffold診断はTRAIN 166/424、
+VAL 95/424だった。監査器・cohort選定器を含む55系テストは51件通過。詳細は
+`docs/benchmark/phase55-independent-test-selection.md`。この時点ではcandidate manifestは
+一時領域だったが、後続のfreeze工程でversioned artifactへ昇格した。
+`scripts/freeze_phase55_cohort.py`を追加し、監査済みcandidate・audit hash・freeze IDを照合して
+上書き不能形式へ昇格する境界を実装した。実候補500件を`phase55-test-candidate-20260912-001`
+として一時領域でfreezeするrehearsalに成功。freeze utilityを含む55系テストは54件通過したが、
+この時点ではversioned manifestの保存前だった。
+source_line_number保持とfreeze schemaを修正後、同じ除外条件で候補を再生成した。新候補は
+provenance監査eligible=true、500/500行にsource_line_numberを保持した。sample list出力と
+そのhash記録をfreeze処理へ追加し、`data/comparison/aizynthfinder_accuracy_phase55/phase55-test-candidate-20260912-003/`
+へfreezeした。freeze IDは`phase55-test-candidate-20260912-003`、manifest SHA-256は
+`9b9c91ed85fe68b7122f18d41ab0ef1a81061b274656021bf5774d0fc34daf0a`、sample list SHA-256は
+`2e0f53a3b3dbfd388341e4a220946e912ca16359deb9e7d0005c7650863e7067`。保存後verifyと
+`compare_sampling.load_sample`（500行、rank 0〜499、source_line_number 500/500）を通過。
+freeze utilityのsample list対応後、55系テストは56件通過。clean checkoutでのarm preflightと両tool正式実行は未完了。
+`phase55_preflight.py`へcohort-level preflightを追加し、保存済みfreeze-003のfrozen status、
+500 target IDs、sample list hash、target ID集合、件数を再検証した。結果はeligible=true、
+関連テストは58件通過。arm manifestのclean-checkout preflightと両tool正式実行は未完了。
+Docker Desktopは`docker desktop start`が「already running」を返す一方、daemonへの
+`docker version`は応答を返さずハングしたため、確認プロセスを停止した。起動済み表示を
+daemon利用可能とは扱わず、AiZynthFinder armは`not_measured`のまま保持する。
+追加の`docker desktop restart`も約60秒無出力で完了せず、成功とは扱わなかった。
+10-target RENKIN smokeの外部終了後に同一outputへresumeした際、並列・重複writerにより
+同一targetが二重化した一時JSONLを検出した。これは正式artifactではなく、runnerへoutput
+ledgerの非ブロッキング排他lockを追加し、既存のduplicate検査と合わせて再発時は開始前に
+拒否するよう修正した。lock regressionを含む55系テストは59件通過。既存の壊れた一時artifactは
+正式測定へ流用しない。
+
+## Phase 54: Public WASM boundary hardening
+
+- [x] **54.1 / Security S1-S2** WASMの全versioned search exportで、共有search budgetと
+  element-filter textの上限を探索開始前に検証する`wasm_limits`境界を追加。既存の検索
+  semantics・native APIは変更せず、巨大filter、depth、route数、beam、diversity slot、
+  candidate trace limitをfail-closedで拒否する。通常Playground入力・共有search上限・
+  oversized filterの3回帰テスト、workspace clippy、formatを通過。WASM target buildと
+  公開版の実ブラウザ確認は別の配布gateとして未実施。
+- [x] **54.2 / Distribution S1** `wasm-pack build --target web --no-default-features`を
+  独立targetで完走し、生成された`renkin.js`/`renkin.d.ts`が`find_routes_v6`と
+  `audit_route_v2`を公開することを確認。Playgroundのworker・inline module syntax、
+  WASM packageの必須ファイル、`git diff --check`も通過。公開GitHub Pagesの実ブラウザ
+  動作確認はmainへの配布後に行う別gateとして未実施。
+- [x] **54.3 / Security S1** 共通の`chem_env::validate_element_symbols`を追加し、CLI・
+  Python・MCP・WASMの公開search入口で空target、未知元素、空トークン、過大filterを
+  fail-closed検証。低レベルの互換mask helperは維持し、chem_env 122件・MCP 6件、
+  workspace clippy、format、workspace check、WASM再ビルドを通過。
+- [x] **54.4 / Security S2** malformed element filterのprocess-level adversarial回帰を
+  CLI/MCPへ追加。`Xx`と`C,,N`が探索へ到達せず`invalid_input`になることを確認し、対象
+  テスト2件、workspace clippy、format、workspace checkを通過。
+- [x] **54.5 / Security S2** ブラウザ公開面へnative上限とは別のWASM budget（depth 16、
+  routes 100、beam 10,000、candidate trace 50,000）を追加。直接WASM呼び出しの過大な
+  CPU/RAM予約を探索前に拒否し、normal input、native/shared境界、browser-specific境界の
+  回帰テスト、workspace check、clippy、formatを通過。
+- [x] **54.6 / Security S3** stock path importのsymlink拒否をprocess-independentな回帰
+  テストで固定。既存のbounded text/template/evidence readerと同じfail-closed境界を
+  stock importerにも明示し、workspace check、clippy、formatを通過。
+- [x] **54.7 / Security S3 audit** template・evidence・model manifest・stockの各file
+  entry pointを再点検。bounded read、UTF-8、symlink、regular-file、schema/hash不一致の
+  既存拒否と改ざんmanifest回帰を確認し、重複する新loaderは追加しない判断を記録。
+- [x] **54.8 / Security S4** MCPの`u64`引数を`u32`/`usize`へ`as`変換せず、typed checked
+  conversionでoverflowを`resource_exhausted`として拒否。depth、route数、max steps、
+  candidate traceのwraparoundを防止し、overflow process-level回帰2件、workspace check、
+  clippy、formatを通過。
+- [x] **54.9 / Security S4** MCP全search handlerの数値引数読取を共通checked helperへ統一。
+  platform幅によるwraparoundをdepth、route数、max steps、candidate traceで防止し、
+  既存overflow回帰に加えてroute count overflowを確認。workspace check、clippy、formatを通過。
+- [x] **54.10 / Security S4** MCP `find_routes`へ任意の`timeout_secs`を追加し、standard
+  searchだけを`SearchControl`で協調停止。coverageの`coverage_timeout_secs`と混同せず、
+  timeout時は`deadline_exceeded`を結果本文へ分類。通常timeout requestのprocess-level回帰、
+  MCP全9件、workspace check、clippy、formatを通過。
+- [x] **54.11 / Contract S4** `timeout_secs`の標準検索限定、coverage timeoutとの排他、
+  `deadline_exceeded`の完了結果との非同一性をMCPガイド・SECURITY契約・schema回帰テストへ
+  反映。利用者がpartial/timeout結果を成功として集計しない公開契約を固定。
+- [x] **54.12 / Benchmark provenance S0** 比較manifestへ作業ツリーのclean状態と変更件数を
+  追加。パスやファイル内容は出力せず、未コミット差分を含む測定を後から識別できるようにし、
+  clean・dirty・git失敗時unknownの回帰テストを追加。
+- [x] **54.13 / Benchmark provenance S0** `git status`の終了コードを確認するchecked診断を
+  導入。gitコマンド失敗時に空出力をcleanと誤認せず、worktree状態をunknownとして記録する
+  回帰テストを追加。
+- [x] **54.14 / Benchmark provenance S0** 新しい`git_worktree` provenanceの型・非負値を
+  manifest validatorで検証し、旧manifest（フィールドなし）との互換性を維持。壊れたclean/
+  changed-entry metadataをrelease evidenceとして受理しない回帰テストを追加。
+- [x] **54.15 / Benchmark provenance S0** manifest生成側でも作業ツリー要約が保存され、差分
+  パスを漏らさないことを回帰テストで固定。provenanceの生成・検証の両側を閉じた。
+- [x] **54.16 / Benchmark provenance S0** 比較manifestへ`configuration_id`を保存し、resume/
+  finalize時にtool・mode・設定IDの混在を拒否。旧manifestに対する後方互換も維持した。
+- [x] **54.17 / Refactor** 比較manifestの入力ファイル集合を`manifest_input_files`へ抽出し、
+  start/resumeとfinalizeで同一のhash対象定義を共有。重複した条件分岐を削減し、将来の
+  provenance項目追加時の片側更新漏れを防止した。
+- [x] **54.18 / Refactor** `audit-route`のprivate stock/policy読込を専用helperへ抽出。
+  ルート監査本体からvendor table・policy解析と組み合わせ検証を分離し、監査結果生成と
+  入力境界の責務を明確化。出力とエラー契約は維持した。
 
 ## Phase 53: Candidate augmentation without regression
 

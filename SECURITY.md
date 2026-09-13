@@ -86,8 +86,14 @@ Minimum release blockers:
 The MCP transport also has a fail-closed protocol rule: malformed JSON is a
 `-32700` Parse error, a non-object request, missing/non-string method, or
 non-scalar request ID is a `-32600` Invalid Request, and an unknown method is a
-`-32601` Method not found. These errors are structured JSON-RPC responses and
-never echo the rejected input.
+  `-32601` Method not found. These errors are structured JSON-RPC responses and
+  never echo the rejected input.
+
+For standard MCP `find_routes`, `timeout_secs` is a per-request cooperative
+deadline. Its `deadline_exceeded` classification is distinct from completed,
+resource-exhausted, parse-rejected, and validation-failed work. Coverage search
+keeps its stage-specific `coverage_timeout_secs` so a caller cannot silently
+reinterpret a partial coverage stage as a completed standard search.
 
 The MCP envelope also requires the exact JSON-RPC version string `"2.0"` before
 method dispatch. Missing, non-string, or unsupported protocol versions are

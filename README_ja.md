@@ -12,6 +12,13 @@ RENKINには2つの役割があります。
 監査はローカルで完結し、構造整合性、stock充足、forward replay、provenance、
 再現可能なaudit manifestを確認します。
 
+次期リリース候補は **v1.0.7** です。公開APIは実行前に入力を検証します。
+WASMには探索上限があり、MCPの数値引数とelement filterは不正値を受け付けません。
+標準MCP探索には協調的な `timeout_secs` を指定できます。
+
+auditとprivate stock policyの処理は決定論的な小さな段階に分割されており、
+report schemaとpolicyの挙動は安定しています。
+
 ## インストール
 
 ```bash
@@ -97,8 +104,10 @@ stdio経由でroute探索、validation、説明、制約、diagnostics、audit r
 
 ## ベンチマーク
 
-最新の正式比較は、明示したshared-stock条件で実施しています。RENKINとAiZynthFinderは
-同数のrouteに到達しましたが、普遍的なCASP優位性を証明する結果ではありません。
+最新の正式比較は、明示したshared-stock条件で実施しています。native route探索では
+RENKINとAiZynthFinder 4.4.1がともに134/200（67.0%）でした。共通strict validator
+ではRENKIN 134/200、AiZynthFinder 123/200です。ただしこれは固定cohortの点推定であり、
+正式なpaired gateは未完了、普遍的なCASP優位性の主張ではありません。
 成功率、速度、stock定義、validation、route品質は分けて報告します。
 
 [ベンチマーク詳細](https://kent-tokyo.github.io/renkin/benchmark/)
@@ -113,6 +122,10 @@ cargo fmt --all -- --check
 
 詳細は[`AGENTS.md`](AGENTS.md)、[`tasks/lessons.md`](tasks/lessons.md)、
 [`ROADMAP.md`](ROADMAP.md)を参照してください。
+
+重要な境界：stock identityはstandardize後のcanonical SMILES完全一致です。
+比較manifestにはtool、configuration、入力ファイル、検証済みworktree状態を記録し、
+再開時に異なる条件が混ざらないようにします。
 
 ## ライセンス
 

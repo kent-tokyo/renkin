@@ -69,6 +69,25 @@ custom building blocks list from the WASM entry point (unlike the CLI/Python
 bindings). See [Rust API](rust.md) or [Python API](python.md) for
 `--templates`/`templates_path` support.
 
+### Input limits and validation
+
+Public WASM search exports validate inputs before starting search. The current
+limits are:
+
+| Input | Maximum |
+| --- | ---: |
+| Search depth | 16 |
+| Returned routes | 100 |
+| Beam width and diversity slots | 10,000 |
+| Candidate trace records | 50,000 |
+| Target SMILES | 64 KiB |
+| Element-filter text | 256 bytes |
+
+Element filters accept the supported symbols (`H`, `B`, `C`, `N`, `O`, `F`,
+`Si`, `P`, `S`, `Cl`, `Br`, `I`) as a comma-separated list. Empty tokens,
+unknown symbols, and oversized values return an error. These bounds protect
+the browser boundary and do not change native CLI or Python limits.
+
 **Return value (JSON):**
 
 ```typescript

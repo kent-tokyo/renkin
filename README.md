@@ -17,6 +17,14 @@ RENKIN has two uses:
 Auditing is local and reproducible. Reports include structural checks, stock
 coverage, forward replay, provenance, and a verifiable audit manifest.
 
+Next release candidate: **v1.0.7**. Public inputs are validated before execution;
+WASM applies bounded search limits, and MCP numeric and element-filter
+arguments fail closed when invalid. Standard MCP search also accepts an
+optional cooperative `timeout_secs` budget.
+
+The audit and private-stock policy layers are split into deterministic,
+testable steps so their report schema and policy behavior remain stable.
+
 ## Install
 
 ```bash
@@ -122,8 +130,10 @@ explanation, constraints, diagnostics, and audit receipts. See the [MCP guide](h
 ## Benchmark status
 
 The latest checked-in formal comparison uses a declared shared-stock endpoint.
-RENKIN and AiZynthFinder reached the same route count in the published
-equal-condition comparison; universal CASP superiority is not proven.
+Native route discovery reached 134/200 (67.0%) for both RENKIN and
+AiZynthFinder 4.4.1. Under the common strict validator, RENKIN reached
+134/200 and AiZynthFinder 123/200; this fixed-cohort point estimate is not a
+universal CASP superiority claim, and the formal paired gate remains pending.
 Success rate, speed, stock definition, validation, and route quality must be
 reported separately.
 
@@ -146,6 +156,8 @@ Important boundaries:
 - stock identity is exact standardized canonical-SMILES membership;
 - route success is not experimental success;
 - external model output is evidence or candidates, not automatic validity;
+- comparison manifests bind the tool, configuration, input files, and checked
+  worktree state so resumed runs cannot silently mix configurations;
 - benchmark claims must name the dataset, stock, versions, and endpoint.
 
 ## License

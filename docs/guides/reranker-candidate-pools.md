@@ -41,10 +41,18 @@ source was copied, and no benchmark from that paper is reproduced here.
   evaluation script below is implemented and self-tested, but has not
   been run against a real corpus, and no offline-gate decision (whether a
   trained reranker actually improves route-search quality) has been made.
-- **No runtime integration.** Nothing here wires a trained reranker into
-  `find_routes`. `CandidateReranker` (the trait a future runtime reranker
-  would implement) exists in `src/candidate.rs`, but nothing implements or
-  calls it yet.
+- **No formal accuracy gain has been established.** The LightGBM
+  `CandidateReranker` is runtime-integrated as an opt-in ordering-only path,
+  and the separate `--downstream-selector` provides a bounded stock-
+  reachability ordering experiment. Neither is a released default or a
+  proof of improved route coverage; the downstream lookahead is currently
+  held back after timeout-heavy smoke measurements.
+
+At runtime, the downstream selector receives a `CandidateRankingContext`
+backed by the search's existing retro-cache. Already-expanded intermediates
+are scored without applying reaction rules a second time; unexpanded
+intermediates remain unknown. The selector's separate bounded lookahead is
+reserved for standalone local experiments.
 
 ## Rule-selection modes (`ProposalMode`)
 

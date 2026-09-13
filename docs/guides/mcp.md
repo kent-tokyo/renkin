@@ -173,6 +173,12 @@ eras advertise progressive coverage search and bounded candidate traces on
 `find_routes`, and the complete element/building-block/cost/step/confidence/
 reaction-family filters on `plan_with_constraints`.
 
+`find_routes` also accepts an optional `timeout_secs` (1–3,600 seconds) for
+standard search. The deadline is cooperative: a request that reaches it is
+classified as `deadline_exceeded`, not as a completed search. Coverage mode
+uses its separate `coverage_timeout_secs`; the two timeout arguments cannot be
+combined.
+
 ### Structured tool output
 
 `validate_route`, `estimate_diversity`, and `diagnose_failure` return

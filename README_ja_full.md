@@ -146,6 +146,10 @@ OC(=O)c1ccccc1OC(=O)C
 
 最新の固定VAL-200 shared-stock再測定では、RENKINとAiZynthFinder 4.4.1がともに134/200（67.0%）のnative routeを発見しました。共通strict validator＋stock判定ではRENKIN 134/200（67.0%）、AiZynthFinder 123/200（61.5%）で、点推定差は+5.5ppです。これは固定cohortの結果であり、正式なpaired gateは未完了、普遍的なCASP優越性の主張ではありません。このリポジトリの他箇所にある78.0%/95.9%/81.8%(ChEMBL)はvalidator修正前の値であり無効化されています。RENKINは収率・実験的に較正された成功確率・副反応を予測せず、文献の自動検索も行いません（`success_probability`はtemplate頻度由来の探索スコアであり、較正された予測値ではありません）。
 
+公開WASM APIは探索前に入力を検証し、depth・route数・beam幅・candidate trace・target長・element filterに上限を設けます。MCPも数値引数とelement filterを検証します。標準探索の協調的な`timeout_secs`とcoverage mode専用の`coverage_timeout_secs`は別の予算です。
+
+chemical reviewとprivate stockの層は、決定論的な段階へ分割されています。重複したrecord生成を減らしつつ、report schemaとpolicyの挙動を維持します。
+
 ---
 
 ## RENKIN を選ぶ理由

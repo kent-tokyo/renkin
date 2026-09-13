@@ -8,6 +8,26 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- v1.0.7 is a release candidate while the formal paired AiZynthFinder
+  comparison continues. Existing VAL-200 point estimates do not establish
+  superiority; an independent frozen TEST cohort and paired confidence
+  intervals remain required before making that claim.
+- Hardened the public WASM boundary with explicit limits for search depth,
+  route count, beam width, candidate traces, target size, and element filters.
+  Invalid or oversized inputs fail closed before search begins.
+- Added checked numeric conversion and strict element-filter validation to the
+  MCP search and constraint tools. Standard MCP search now supports an
+  optional cooperative `timeout_secs` budget; coverage mode keeps its separate
+  `coverage_timeout_secs` budget and reports `deadline_exceeded` on expiry.
+- Extended comparison manifests with checked worktree state and a
+  `configuration_id`, so resumed or finalized runs cannot silently mix source
+  or configuration identities. Shared manifest input-file enumeration is now
+  centralized to keep hashing consistent.
+- Refactored private-stock attachment in the audit CLI without changing the
+  report schema or policy behavior.
+- Refactored chemical review and private-stock assessment into focused,
+  deterministic helpers. The refactor reduces duplicated record construction
+  and keeps policy ordering, review statuses, and serialized output unchanged.
 - Documentation consistency pass: aligned the documented hand-crafted rule
   count with `default_rules()` (24), switched current branch and workflow links
   from `master` to `main`, and corrected the stock-identity description.

@@ -11,6 +11,13 @@ RENKIN 有两个用途：
 
 审计完全在本地运行并可复现，检查结构完整性、stock覆盖、正向重现、来源信息和审计清单。
 
+下一版本候选：**v1.0.7**。公开 API 会在执行前验证输入；WASM 具有明确的搜索上限，
+MCP 的数值参数和元素过滤器对非法值直接失败。标准 MCP 搜索还支持协作式
+`timeout_secs` 超时预算。
+
+审计和私有 stock policy 已拆分为确定性的可测试步骤，因此 report schema 和 policy
+行为保持稳定。
+
 ## 安装
 
 ```bash
@@ -94,8 +101,11 @@ MCP服务器通过stdio提供路线搜索、验证、解释、约束、诊断和
 
 ## 基准测试
 
-最新正式比较使用明确声明的shared-stock条件。RENKIN与AiZynthFinder达到相同的路线数量，
-但这并不证明RENKIN在所有CASP场景中普遍优于对方。成功率、速度、stock定义、验证和路线质量应分别报告。
+最新正式比较使用明确声明的 shared-stock 条件。native route 搜索中，RENKIN 与
+AiZynthFinder 4.4.1 均为 134/200（67.0%）。在共同 strict validator 下，RENKIN 为
+134/200，AiZynthFinder 为 123/200；但这只是固定 cohort 的点估计，正式 paired gate
+尚未完成，也不代表 RENKIN 在所有 CASP 场景中普遍优于对方。成功率、速度、stock 定义、
+验证和路线质量应分别报告。
 
 [基准测试详情](https://kent-tokyo.github.io/renkin/benchmark/)
 
@@ -109,6 +119,10 @@ cargo fmt --all -- --check
 
 开始修改前请阅读 [`AGENTS.md`](AGENTS.md)、[`tasks/lessons.md`](tasks/lessons.md)
 和 [`ROADMAP.md`](ROADMAP.md)。
+
+重要边界：stock identity 使用标准化后的 canonical SMILES 完全匹配。
+比较 manifest 会记录工具、配置、输入文件和经过检查的 worktree 状态，避免恢复运行时
+静默混用不同配置。
 
 ## 许可证
 

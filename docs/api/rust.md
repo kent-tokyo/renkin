@@ -117,6 +117,10 @@ println!("{}", canon);  // "CC(=O)O"
 | `nn-scoring` | ONNX-based template relevance scorer (`--scorer` CLI flag); not available on wasm32 |
 | *(default: wasm32 target)* | WASM bindings via `wasm-bindgen`, gated on `target_arch = "wasm32"` rather than a Cargo feature |
 
+The CLI-only `--downstream-selector` is an opt-in ordering experiment using
+bounded stock reachability. It preserves candidates and is not a default or
+accuracy claim; see the candidate-pool guide for its current evaluation status.
+
 ## Error Types
 
 RENKIN uses `anyhow::Error` for all fallible operations in the CLI and native

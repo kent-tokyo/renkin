@@ -187,6 +187,16 @@ search-ranking score, not a calibrated prediction — see
 historical baseline, full methodology, and known limitations — that page is a
 frozen, single-commit measurement, not a live number).
 
+The public WASM API validates inputs before search and enforces bounded depth,
+route count, beam width, candidate traces, target size, and element-filter
+text. MCP search validates numeric and element-filter arguments as well;
+standard search accepts a cooperative `timeout_secs` budget, while coverage
+mode uses its separate `coverage_timeout_secs` budget.
+
+The chemical-review and private-stock layers are implemented as focused,
+deterministic stages. This reduces duplicated record construction while
+preserving the report schema and policy behavior.
+
 ---
 
 ## Why RENKIN?

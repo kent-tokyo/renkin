@@ -241,11 +241,11 @@ pub fn find_routes_py(
         min_confidence,
         min_success_probability,
     )
-    .map_err(PyValueError::new_err)?;
+    .map_err(|error| PyValueError::new_err(error.to_string()))?;
     crate::chem_env::validate_element_symbols("avoid_elements", avoid_elements)
-        .map_err(PyValueError::new_err)?;
+        .map_err(|error| PyValueError::new_err(error.to_string()))?;
     crate::chem_env::validate_element_symbols("require_elements", require_elements)
-        .map_err(PyValueError::new_err)?;
+        .map_err(|error| PyValueError::new_err(error.to_string()))?;
     if search_mode != "standard" && search_mode != "coverage" {
         return Err(PyValueError::new_err(format!(
             "invalid search_mode {search_mode:?} (expected \"standard\" or \"coverage\")"
@@ -686,8 +686,8 @@ pub fn predict_forward_py(
         rules.extend(load_rules_from_file(path));
     }
     let refs: Vec<&str> = reactants.iter().map(|s| s.as_str()).collect();
-    let preds =
-        py_predict_forward_core(&refs, &rules, max_results).map_err(PyValueError::new_err)?;
+    let preds = py_predict_forward_core(&refs, &rules, max_results)
+        .map_err(|error| PyValueError::new_err(error.to_string()))?;
     serde_json::to_string(&preds).map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
@@ -743,7 +743,7 @@ pub fn validate_forward_py(
             .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
             .unwrap_or_default();
         let preds = py_predict_forward_core(&prec_refs, &rules, max_results)
-            .map_err(PyValueError::new_err)?;
+            .map_err(|error| PyValueError::new_err(error.to_string()))?;
         let target_canon = mol_from_smiles(target)
             .ok()
             .map(|m| canon(&m))
@@ -821,7 +821,9 @@ pub fn audit_route_py(
 ) -> PyResult<String> {
     bridge::validate_audit_text_inputs(content, stock_text)
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
-    let policy: bridge::AuditPolicy = policy.parse().map_err(PyValueError::new_err)?;
+    let policy: bridge::AuditPolicy = policy
+        .parse::<bridge::AuditPolicy>()
+        .map_err(|error| PyValueError::new_err(error.to_string()))?;
     let stock = (!stock_text.trim().is_empty()).then(|| bridge::parse_stock_text(stock_text));
     let rules = default_rules();
     let report = bridge::build_audit_route_report_with_policy(

@@ -166,158 +166,167 @@ fn offer_sort_key(
     )
 }
 
+fn empty_decision(
+    smiles: String,
+    decision: PrivateStockDecision,
+    reason: PrivateStockReason,
+) -> PrivateStockDecisionRecord {
+    PrivateStockDecisionRecord {
+        smiles,
+        decision,
+        reason,
+        vendor: None,
+        catalog_id: None,
+        price: None,
+        lead_time_days: None,
+        hazard: None,
+        region: None,
+    }
+}
+
+fn matched_decision(
+    smiles: &str,
+    record: &crate::vendor_stock::VendorStockRecord,
+) -> PrivateStockDecisionRecord {
+    PrivateStockDecisionRecord {
+        smiles: smiles.to_string(),
+        decision: PrivateStockDecision::Matched,
+        reason: PrivateStockReason::PrivateInventoryHit,
+        vendor: record.vendor.clone(),
+        catalog_id: record.id.clone(),
+        price: record.price,
+        lead_time_days: record.lead_time_days,
+        hazard: record.hazard.clone(),
+        region: record.region.clone(),
+    }
+}
+
+fn eligible_record(
+    record: &crate::vendor_stock::VendorStockRecord,
+    policy: &PrivateStockPolicy,
+) -> Result<(), PrivateStockReason> {
+    if !vendor_allowed(record.vendor.as_deref(), policy) {
+        return Err(
+            if record
+                .vendor
+                .as_deref()
+                .is_some_and(|v| policy.blocked_vendors.iter().any(|b| b == v))
+            {
+                PrivateStockReason::VendorBlocked
+            } else {
+                PrivateStockReason::VendorNotAllowed
+            },
+        );
+    }
+    if policy.require_available && !record.available {
+        return Err(PrivateStockReason::NotAvailable);
+    }
+    if policy
+        .max_price
+        .is_some_and(|max| record.price.is_none_or(|p| p > max))
+    {
+        return Err(PrivateStockReason::PriceLimitExceeded);
+    }
+    if policy
+        .max_lead_time_days
+        .is_some_and(|max| record.lead_time_days.is_none_or(|d| d > max))
+    {
+        return Err(PrivateStockReason::LeadTimeExceeded);
+    }
+    if record
+        .hazard
+        .as_deref()
+        .is_some_and(|hazard| policy.blocked_hazards.iter().any(|b| b == hazard))
+    {
+        return Err(PrivateStockReason::HazardBlocked);
+    }
+    if !policy.allowed_regions.is_empty()
+        && record.region.as_deref().is_none_or(|region| {
+            !policy
+                .allowed_regions
+                .iter()
+                .any(|allowed| allowed == region)
+        })
+    {
+        return Err(PrivateStockReason::RegionNotAllowed);
+    }
+    if record.region.as_deref().is_some_and(|region| {
+        policy
+            .blocked_regions
+            .iter()
+            .any(|blocked| blocked == region)
+    }) {
+        return Err(PrivateStockReason::RegionBlocked);
+    }
+    Ok(())
+}
+
+fn decision_for_leaf(
+    smiles: String,
+    index: &VendorStockIndex,
+    policy: &PrivateStockPolicy,
+    blocked: &BTreeSet<String>,
+) -> PrivateStockDecisionRecord {
+    if blocked.contains(&smiles) {
+        return empty_decision(
+            smiles,
+            PrivateStockDecision::Rejected,
+            PrivateStockReason::ProhibitedSubstance,
+        );
+    }
+    let found = match index.lookup(&smiles, crate::vendor_stock::MatchMode::Exact) {
+        Ok(Some(found)) => found,
+        Ok(None) => {
+            return empty_decision(
+                smiles,
+                PrivateStockDecision::Unknown,
+                PrivateStockReason::NoExactVendorRecord,
+            );
+        }
+        Err(_) => {
+            return empty_decision(
+                smiles,
+                PrivateStockDecision::Unknown,
+                PrivateStockReason::InvalidLeafSmiles,
+            );
+        }
+    };
+
+    let mut rejected_reason = None;
+    let eligible = found.record_indices.iter().filter_map(|&record_index| {
+        let record = &index.records()[record_index];
+        match eligible_record(record, policy) {
+            Ok(()) => Some(record_index),
+            Err(reason) => {
+                rejected_reason.get_or_insert(reason);
+                None
+            }
+        }
+    });
+    if let Some(record_index) = eligible.min_by(|&left, &right| {
+        offer_sort_key(&index.records()[left])
+            .partial_cmp(&offer_sort_key(&index.records()[right]))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    }) {
+        return matched_decision(&smiles, &index.records()[record_index]);
+    }
+    empty_decision(
+        smiles,
+        PrivateStockDecision::Rejected,
+        rejected_reason.unwrap_or(PrivateStockReason::NoExactVendorRecord),
+    )
+}
+
 pub fn assess_report(
     report: &AuditReport,
     index: &VendorStockIndex,
     policy: &PrivateStockPolicy,
 ) -> PrivateStockReport {
     let blocked: BTreeSet<String> = policy.blocked_smiles.iter().cloned().collect();
-    let mut decisions = Vec::new();
-    for smiles in leaves(report) {
-        if blocked.contains(&smiles) {
-            decisions.push(PrivateStockDecisionRecord {
-                smiles: smiles.clone(),
-                decision: PrivateStockDecision::Rejected,
-                reason: PrivateStockReason::ProhibitedSubstance,
-                vendor: None,
-                catalog_id: None,
-                price: None,
-                lead_time_days: None,
-                hazard: None,
-                region: None,
-            });
-            continue;
-        }
-        let found = match index.lookup(&smiles, crate::vendor_stock::MatchMode::Exact) {
-            Ok(found) => found,
-            Err(_) => {
-                decisions.push(PrivateStockDecisionRecord {
-                    smiles,
-                    decision: PrivateStockDecision::Unknown,
-                    reason: PrivateStockReason::InvalidLeafSmiles,
-                    vendor: None,
-                    catalog_id: None,
-                    price: None,
-                    lead_time_days: None,
-                    hazard: None,
-                    region: None,
-                });
-                continue;
-            }
-        };
-        let Some(found) = found else {
-            decisions.push(PrivateStockDecisionRecord {
-                smiles,
-                decision: PrivateStockDecision::Unknown,
-                reason: PrivateStockReason::NoExactVendorRecord,
-                vendor: None,
-                catalog_id: None,
-                price: None,
-                lead_time_days: None,
-                hazard: None,
-                region: None,
-            });
-            continue;
-        };
-        let mut rejected_reason = None;
-        let mut eligible = Vec::new();
-        for &record_index in &found.record_indices {
-            let record = &index.records()[record_index];
-            if !vendor_allowed(record.vendor.as_deref(), policy) {
-                rejected_reason.get_or_insert(
-                    if record
-                        .vendor
-                        .as_deref()
-                        .is_some_and(|v| policy.blocked_vendors.iter().any(|b| b == v))
-                    {
-                        PrivateStockReason::VendorBlocked
-                    } else {
-                        PrivateStockReason::VendorNotAllowed
-                    },
-                );
-                continue;
-            }
-            if policy.require_available && !record.available {
-                rejected_reason.get_or_insert(PrivateStockReason::NotAvailable);
-                continue;
-            }
-            if policy
-                .max_price
-                .is_some_and(|max| record.price.is_none_or(|p| p > max))
-            {
-                rejected_reason.get_or_insert(PrivateStockReason::PriceLimitExceeded);
-                continue;
-            }
-            if policy
-                .max_lead_time_days
-                .is_some_and(|max| record.lead_time_days.is_none_or(|d| d > max))
-            {
-                rejected_reason.get_or_insert(PrivateStockReason::LeadTimeExceeded);
-                continue;
-            }
-            if record
-                .hazard
-                .as_deref()
-                .is_some_and(|hazard| policy.blocked_hazards.iter().any(|b| b == hazard))
-            {
-                rejected_reason.get_or_insert(PrivateStockReason::HazardBlocked);
-                continue;
-            }
-            if !policy.allowed_regions.is_empty()
-                && record.region.as_deref().is_none_or(|region| {
-                    !policy
-                        .allowed_regions
-                        .iter()
-                        .any(|allowed| allowed == region)
-                })
-            {
-                rejected_reason.get_or_insert(PrivateStockReason::RegionNotAllowed);
-                continue;
-            }
-            if record.region.as_deref().is_some_and(|region| {
-                policy
-                    .blocked_regions
-                    .iter()
-                    .any(|blocked| blocked == region)
-            }) {
-                rejected_reason.get_or_insert(PrivateStockReason::RegionBlocked);
-                continue;
-            }
-            eligible.push(record_index);
-        }
-        if let Some(&record_index) = eligible.iter().min_by(|&&left, &&right| {
-            offer_sort_key(&index.records()[left])
-                .partial_cmp(&offer_sort_key(&index.records()[right]))
-                .unwrap_or(std::cmp::Ordering::Equal)
-        }) {
-            let record = &index.records()[record_index];
-            decisions.push(PrivateStockDecisionRecord {
-                smiles: smiles.clone(),
-                decision: PrivateStockDecision::Matched,
-                reason: PrivateStockReason::PrivateInventoryHit,
-                vendor: record.vendor.clone(),
-                catalog_id: record.id.clone(),
-                price: record.price,
-                lead_time_days: record.lead_time_days,
-                hazard: record.hazard.clone(),
-                region: record.region.clone(),
-            });
-            rejected_reason = None;
-        }
-        if let Some(reason) = rejected_reason {
-            decisions.push(PrivateStockDecisionRecord {
-                smiles,
-                decision: PrivateStockDecision::Rejected,
-                reason,
-                vendor: None,
-                catalog_id: None,
-                price: None,
-                lead_time_days: None,
-                hazard: None,
-                region: None,
-            });
-        }
-    }
+    let decisions = leaves(report)
+        .into_iter()
+        .map(|smiles| decision_for_leaf(smiles, index, policy, &blocked))
+        .collect::<Vec<_>>();
     let matched_leaves = decisions
         .iter()
         .filter(|d| d.decision == PrivateStockDecision::Matched)

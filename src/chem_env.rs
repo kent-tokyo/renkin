@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use chematic::chem::standardize::{StandardizeOptions, ZwitterionHandling, standardize};
 use chematic::core::{Atom, AtomIdx, BondIdx, BondOrder, Element, MoleculeBuilder};
 use chematic::rxn::{PreparedReaction, run_reactants};
@@ -3440,6 +3440,32 @@ impl TemplateBondIndex {
 
 /// Map comma-separated element symbols (e.g. `"Br,I"`) to the same bitmask
 /// format as `RetroRule::required_elements`.  Unknown symbols are silently skipped.
+pub const MAX_ELEMENT_FILTER_BYTES: usize = 256;
+
+/// Validate an externally supplied comma-separated element filter before it is
+/// converted to a bitmask. The legacy mask helper below intentionally remains
+/// permissive for internal callers and compatibility; public boundaries should
+/// call this function first so malformed filters cannot silently become a
+/// different search request.
+pub fn validate_element_symbols(name: &str, csv: &str) -> Result<()> {
+    if csv.len() > MAX_ELEMENT_FILTER_BYTES {
+        bail!("resource_exhausted: {name} exceeds {MAX_ELEMENT_FILTER_BYTES} bytes");
+    }
+    if csv.trim().is_empty() {
+        return Ok(());
+    }
+    for symbol in csv.split(',') {
+        let symbol = symbol.trim();
+        if !matches!(
+            symbol,
+            "H" | "B" | "C" | "N" | "O" | "F" | "Si" | "P" | "S" | "Cl" | "Br" | "I"
+        ) {
+            bail!("invalid_input: {name} contains unknown element {symbol:?}");
+        }
+    }
+    Ok(())
+}
+
 pub fn elem_symbols_to_mask(csv: &str) -> u64 {
     let mut mask = 0u64;
     for sym in csv.split(',') {

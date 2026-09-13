@@ -242,6 +242,10 @@ pub fn find_routes_py(
         min_success_probability,
     )
     .map_err(PyValueError::new_err)?;
+    crate::chem_env::validate_element_symbols("avoid_elements", avoid_elements)
+        .map_err(PyValueError::new_err)?;
+    crate::chem_env::validate_element_symbols("require_elements", require_elements)
+        .map_err(PyValueError::new_err)?;
     if search_mode != "standard" && search_mode != "coverage" {
         return Err(PyValueError::new_err(format!(
             "invalid search_mode {search_mode:?} (expected \"standard\" or \"coverage\")"

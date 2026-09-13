@@ -241,6 +241,7 @@ fn main() -> Result<()> {
     let mut recovery_stage_policy_arg: Option<String> = None;
     let mut reranker_model_path: Option<String> = None;
     let mut reranker_freq_table_path: Option<String> = None;
+    let mut downstream_selector = false;
     let mut search_mode_arg: Option<String> = None;
     let mut coverage_templates_path: Option<String> = None;
     let mut recovery_coverage_tier_paths: Vec<String> = Vec::new();
@@ -432,6 +433,9 @@ fn main() -> Result<()> {
                 };
                 reranker_freq_table_path = Some(v.clone());
             }
+            "--downstream-selector" => {
+                downstream_selector = true;
+            }
             "--search-mode" => {
                 i += 1;
                 let Some(v) = args.get(i) else {
@@ -610,6 +614,8 @@ fn main() -> Result<()> {
              reranker\n  \
              (either flag missing, or the model fails to load, falls back to legacy ordering \
              with a stderr warning -- never a hard error)\n  \
+             --downstream-selector          Opt-in one-step stock-reachability ordering; \
+             ordering-only and mutually exclusive with --reranker-model/--reranker-freq-table\n  \
              --search-mode standard|coverage|recovery  standard (default): unchanged behavior. \
              coverage: Stage 1 (--templates) runs first; only if it finds nothing does Stage 2 \
              run against --coverage-templates (Phase 41.18B, docs/design/coverage-mode-v0.md). \
@@ -900,6 +906,10 @@ fn main() -> Result<()> {
             rules.iter().map(|r| r.template_id.as_str()).collect();
         renkin::evidence::warn_unknown_templates(tm, &known_ids);
     }
+    // Keep the selector's lookahead cache tied to this exact stock/rule
+    // snapshot while the search borrows the same loaded inputs.
+    let env = std::sync::Arc::new(env);
+    let rules_for_selector = std::sync::Arc::new(rules.clone());
     #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
     let nn_scorer: Option<std::sync::Arc<renkin::scorer::nn::TemplateScorer>> =
         scorer_path.as_deref().map(|p| {
@@ -924,31 +934,48 @@ fn main() -> Result<()> {
     // and the whole point of a staged rollout is that a bad model file or a
     // missing sibling flag degrades to this crate's pre-existing ordering
     // rather than blocking prediction.
-    let reranker: Option<std::sync::Arc<dyn renkin::candidate::CandidateReranker>> = match (
-        reranker_model_path.as_deref(),
-        reranker_freq_table_path.as_deref(),
-    ) {
-        (Some(model_path), Some(freq_path)) => {
-            match renkin::reranker::RuntimeReranker::from_paths(model_path, freq_path) {
-                Ok(r) => Some(std::sync::Arc::new(r)),
-                Err(e) => {
+    let reranker: Option<std::sync::Arc<dyn renkin::candidate::CandidateReranker>> =
+        if downstream_selector {
+            if reranker_model_path.is_some() || reranker_freq_table_path.is_some() {
+                bail!(
+                    "--downstream-selector cannot be combined with \
+                     --reranker-model/--reranker-freq-table"
+                );
+            }
+            eprintln!("Loaded ordering-only downstream reachability selector");
+            Some(std::sync::Arc::new(
+                renkin::candidate::DownstreamReachabilityReranker::new(
+                    std::sync::Arc::clone(&env),
+                    std::sync::Arc::clone(&rules_for_selector),
+                ),
+            ))
+        } else {
+            match (
+                reranker_model_path.as_deref(),
+                reranker_freq_table_path.as_deref(),
+            ) {
+                (Some(model_path), Some(freq_path)) => {
+                    match renkin::reranker::RuntimeReranker::from_paths(model_path, freq_path) {
+                        Ok(r) => Some(std::sync::Arc::new(r)),
+                        Err(e) => {
+                            eprintln!(
+                                "warning: failed to load --reranker-model/--reranker-freq-table \
+                                 ({e:#}); falling back to legacy ordering for this run"
+                            );
+                            None
+                        }
+                    }
+                }
+                (None, None) => None,
+                _ => {
                     eprintln!(
-                        "warning: failed to load --reranker-model/--reranker-freq-table \
-                             ({e:#}); falling back to legacy ordering for this run"
+                        "warning: --reranker-model and --reranker-freq-table must both be given; \
+                         falling back to legacy ordering for this run"
                     );
                     None
                 }
             }
-        }
-        (None, None) => None,
-        _ => {
-            eprintln!(
-                "warning: --reranker-model and --reranker-freq-table must both be given; \
-                     falling back to legacy ordering for this run"
-            );
-            None
-        }
-    };
+        };
 
     #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
     let reaction_prior: Option<std::sync::Arc<dyn search::ReactionPrior>> = match (
@@ -1284,6 +1311,24 @@ fn main() -> Result<()> {
                 .unwrap_or(&[])
                 .join(","),
         );
+    chem_env::validate_element_symbols("avoid_elements", &avoid_elements)?;
+    chem_env::validate_element_symbols(
+        "constraints.avoid_elements",
+        &constraints
+            .avoid_elements
+            .as_deref()
+            .unwrap_or(&[])
+            .join(","),
+    )?;
+    chem_env::validate_element_symbols("require_elements", &require_elements)?;
+    chem_env::validate_element_symbols(
+        "constraints.require_elements",
+        &constraints
+            .require_elements
+            .as_deref()
+            .unwrap_or(&[])
+            .join(","),
+    )?;
     if let Some(ref obj) = constraints.objectives {
         objectives_spec = obj.clone();
     }
@@ -2076,6 +2121,32 @@ fn read_maybe_gzip(path: &str) -> Result<String> {
     }
 }
 
+fn attach_private_stock_policy(
+    report: &mut bridge::audit_route::AuditRouteReport,
+    args: &[String],
+) -> Result<()> {
+    let private_stock_path = flag_value(args, "--private-stock");
+    let stock_policy_path = flag_value(args, "--stock-policy");
+    match (private_stock_path, stock_policy_path) {
+        (Some(vendor_path), Some(policy_path)) => {
+            let vendor_content = read_bounded_text_file(vendor_path, "--private-stock")?;
+            let records = vendor_stock::import_vendor_table(&vendor_content, None)
+                .with_context(|| format!("failed to parse --private-stock {vendor_path}"))?;
+            let index = vendor_stock::VendorStockIndex::from_records(records)
+                .with_context(|| format!("failed to index --private-stock {vendor_path}"))?;
+            let policy_content = read_bounded_text_file(policy_path, "--stock-policy")?;
+            let policy: bridge::PrivateStockPolicy = serde_json::from_str(&policy_content)
+                .with_context(|| format!("failed to parse --stock-policy {policy_path}"))?;
+            report.attach_private_stock(&index, &policy)?;
+        }
+        (None, None) => {}
+        _ => bail!(
+            "renkin audit-route: --private-stock and --stock-policy must be provided together"
+        ),
+    }
+    Ok(())
+}
+
 fn run_audit_route(args: &[String]) -> Result<()> {
     let path = args
         .iter()
@@ -2125,25 +2196,7 @@ fn run_audit_route(args: &[String]) -> Result<()> {
     )
     .with_context(|| format!("{path}: audit input rejected"))?;
 
-    let private_stock_path = flag_value(args, "--private-stock");
-    let stock_policy_path = flag_value(args, "--stock-policy");
-    match (private_stock_path, stock_policy_path) {
-        (Some(vendor_path), Some(policy_path)) => {
-            let vendor_content = read_bounded_text_file(vendor_path, "--private-stock")?;
-            let records = vendor_stock::import_vendor_table(&vendor_content, None)
-                .with_context(|| format!("failed to parse --private-stock {vendor_path}"))?;
-            let index = vendor_stock::VendorStockIndex::from_records(records)
-                .with_context(|| format!("failed to index --private-stock {vendor_path}"))?;
-            let policy_content = read_bounded_text_file(policy_path, "--stock-policy")?;
-            let policy: bridge::PrivateStockPolicy = serde_json::from_str(&policy_content)
-                .with_context(|| format!("failed to parse --stock-policy {policy_path}"))?;
-            out.attach_private_stock(&index, &policy)?;
-        }
-        (None, None) => {}
-        _ => bail!(
-            "renkin audit-route: --private-stock and --stock-policy must be provided together"
-        ),
-    }
+    attach_private_stock_policy(&mut out, args)?;
 
     if args.iter().any(|a| a == "--interchange") {
         out.attach_interchange();

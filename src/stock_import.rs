@@ -428,6 +428,26 @@ mod tests {
         assert!(error.to_string().contains("resource_exhausted"));
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn path_import_rejects_symlink_before_opening_stock() {
+        let base = std::env::temp_dir().join(format!(
+            "renkin-stock-symlink-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
+        let target = base.with_extension("smi");
+        let link = base.with_extension("link");
+        std::fs::write(&target, "CCO\n").expect("create stock target");
+        std::os::unix::fs::symlink(&target, &link).expect("create stock symlink");
+
+        let error = import_stock_from_path(&link, &opts())
+            .expect_err("symlinked stock input must fail closed");
+        let _ = std::fs::remove_file(&link);
+        let _ = std::fs::remove_file(&target);
+        assert!(error.to_string().contains("symlink"));
+    }
+
     #[test]
     fn invalid_utf8_stock_input_is_rejected() {
         let error = import_stock([0xff, 0xfe].as_slice(), &opts())

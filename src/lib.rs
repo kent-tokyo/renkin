@@ -33,6 +33,7 @@ pub mod synthesizability;
 pub mod template_policy;
 pub mod validation;
 pub mod vendor_stock;
+pub mod wasm_limits;
 
 #[cfg(feature = "python")]
 pub mod python;

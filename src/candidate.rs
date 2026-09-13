@@ -42,7 +42,8 @@
 use std::collections::HashMap;
 #[cfg(feature = "perf-instrumentation")]
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 #[cfg(feature = "perf-instrumentation")]
 use std::time::Instant;
 
@@ -51,10 +52,9 @@ use rayon::prelude::*;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-#[cfg(test)]
-use crate::chem_env::apply_retro;
 use crate::chem_env::{
-    Molecule, PrecursorMol, RetroRule, TemplateBondIndex, mol_from_smiles, to_canonical,
+    ChemEnv, Molecule, PrecursorMol, RetroRule, TemplateBondIndex, apply_retro, mol_from_smiles,
+    to_canonical,
 };
 use crate::score::step_cost_iter;
 #[cfg(test)]
@@ -297,8 +297,180 @@ pub struct CandidatePoolStats {
     pub duplicate_candidates: usize,
 }
 
+/// Optional facts already known by the surrounding search when a candidate
+/// pool is scored. A callback returning `None` means that the molecule has
+/// not been expanded yet; callers must not interpret that as a chemical
+/// failure or trigger an unbounded second search implicitly.
+pub type OneStepStockTerminalLookup<'a> = dyn Fn(&str) -> Option<bool> + 'a;
+
+pub struct CandidateRankingContext<'a> {
+    pub one_step_stock_terminal: Option<&'a OneStepStockTerminalLookup<'a>>,
+}
+
 pub trait CandidateReranker: Send + Sync {
     fn score_pool(&self, target: &str, candidates: &mut [ReactionCandidate]) -> anyhow::Result<()>;
+
+    /// Score with facts shared by the active search. Existing implementations
+    /// remain source-compatible because the default delegates to
+    /// [`Self::score_pool`].
+    fn score_pool_with_context(
+        &self,
+        target: &str,
+        candidates: &mut [ReactionCandidate],
+        _context: &CandidateRankingContext<'_>,
+    ) -> anyhow::Result<()> {
+        self.score_pool(target, candidates)
+    }
+}
+
+/// Ordering-only selector that prefers candidates whose entire precursor set
+/// is already in stock or has a bounded one-step route to stock.
+///
+/// This is deliberately a reranker, not a candidate filter: every candidate
+/// passed to [`CandidateReranker::score_pool`] receives a score and remains
+/// available to the search. The selector is therefore safe to compare with a
+/// legacy run without silently turning a reachability heuristic into a
+/// correctness gate. A child is considered resolved only when *all* of its
+/// precursors are exact stock identities; one stock child in an otherwise
+/// unresolved AND branch is not enough.
+///
+/// The selector is opt-in because the one-step lookahead applies reaction
+/// rules at runtime and can cost more than a learned ordering model. Results
+/// are cached by the standardized canonical precursor identity, and the
+/// cache is private to this selector instance so stock/rule configurations
+/// cannot contaminate one another.
+pub struct DownstreamReachabilityReranker {
+    stock: Arc<ChemEnv>,
+    rules: Arc<Vec<RetroRule>>,
+    bond_index: TemplateBondIndex,
+    cache: Mutex<HashMap<String, bool>>,
+    remaining_lookaheads: AtomicUsize,
+}
+
+impl DownstreamReachabilityReranker {
+    /// Hard cap on expensive one-step lookahead applications per search run.
+    /// Direct stock checks remain unlimited and do not consume this budget.
+    /// The selector is a bounded ordering hint, never an unbounded second
+    /// search hidden inside every candidate-pool call.
+    const MAX_LOOKAHEAD_EVALUATIONS: usize = 16;
+
+    pub fn new(stock: Arc<ChemEnv>, rules: Arc<Vec<RetroRule>>) -> Self {
+        Self {
+            stock,
+            bond_index: TemplateBondIndex::build(&rules),
+            rules,
+            cache: Mutex::new(HashMap::new()),
+            remaining_lookaheads: AtomicUsize::new(Self::MAX_LOOKAHEAD_EVALUATIONS),
+        }
+    }
+
+    fn one_step_stock_terminal(&self, smiles: &str) -> bool {
+        if self.stock.is_building_block_smiles(smiles) {
+            return true;
+        }
+        if let Ok(cache) = self.cache.lock()
+            && let Some(&resolved) = cache.get(smiles)
+        {
+            return resolved;
+        }
+
+        // Once the bounded budget is exhausted, fail closed to "not known
+        // reachable". This preserves the legacy candidate ordering tie-break
+        // instead of allowing the optional selector to dominate runtime.
+        if self
+            .remaining_lookaheads
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
+                remaining.checked_sub(1)
+            })
+            .is_err()
+        {
+            return false;
+        }
+
+        let resolved = mol_from_smiles(smiles).is_ok_and(|mol| {
+            self.bond_index
+                // Keep the lookahead bounded independently of the search's
+                // own template budget. Graph-based rules remain included by
+                // the index; only the highest-weight matching SMIRKS rules
+                // are considered here.
+                .retrieve(&mol, 32, self.rules.as_slice())
+                .into_iter()
+                .any(|rule_index| {
+                    apply_retro(&mol, &self.rules[rule_index])
+                        .into_iter()
+                        .any(|precursors| {
+                            !precursors.is_empty()
+                                && precursors.iter().all(|precursor| {
+                                    precursor.smiles != smiles
+                                        && self.stock.is_building_block_smiles(&precursor.smiles)
+                                })
+                        })
+                })
+        });
+        if let Ok(mut cache) = self.cache.lock() {
+            cache.insert(smiles.to_owned(), resolved);
+        }
+        resolved
+    }
+
+    fn candidate_score(&self, candidate: &ReactionCandidate) -> f64 {
+        self.candidate_score_with_lookup(candidate, None)
+    }
+
+    fn candidate_score_with_lookup(
+        &self,
+        candidate: &ReactionCandidate,
+        lookup: Option<&OneStepStockTerminalLookup<'_>>,
+    ) -> f64 {
+        if candidate.precursor_smiles.is_empty() {
+            return 0.0;
+        }
+        let resolved = candidate
+            .precursor_smiles
+            .iter()
+            .filter(|smiles| {
+                if self.stock.is_building_block_smiles(smiles) {
+                    return true;
+                }
+                match lookup {
+                    Some(lookup) => lookup(smiles).unwrap_or(false),
+                    None => self.one_step_stock_terminal(smiles),
+                }
+            })
+            .count();
+        let fraction = resolved as f64 / candidate.precursor_smiles.len() as f64;
+        let all_resolved = f64::from(resolved == candidate.precursor_smiles.len());
+        // Keep a small deterministic chemistry-cost tie-break without making
+        // stock proximity the sole meaning of the score.
+        let cost_tiebreak = 1.0 / (1.0 + candidate.min_base_step_cost.max(0.0));
+        (0.70 * fraction + 0.25 * all_resolved + 0.05 * cost_tiebreak).clamp(0.0, 1.0)
+    }
+}
+
+impl CandidateReranker for DownstreamReachabilityReranker {
+    fn score_pool(
+        &self,
+        _target: &str,
+        candidates: &mut [ReactionCandidate],
+    ) -> anyhow::Result<()> {
+        for candidate in candidates {
+            candidate.reranker_score = Some(self.candidate_score(candidate));
+        }
+        Ok(())
+    }
+
+    fn score_pool_with_context(
+        &self,
+        _target: &str,
+        candidates: &mut [ReactionCandidate],
+        context: &CandidateRankingContext<'_>,
+    ) -> anyhow::Result<()> {
+        for candidate in candidates {
+            candidate.reranker_score =
+                Some(self.candidate_score_with_lookup(candidate, context.one_step_stock_terminal));
+        }
+        Ok(())
+    }
 }
 
 /// Template-level reaction-center features, computed once per template
@@ -3464,6 +3636,81 @@ mod tests {
             .into_iter()
             .next()
             .expect("expected at least one candidate for this fixture")
+    }
+
+    fn synthetic_candidate(target: &str, precursors: &[&str]) -> ReactionCandidate {
+        ReactionCandidate {
+            candidate_id: format!("candidate:{target}:{precursors:?}"),
+            target_smiles: target.to_owned(),
+            precursor_smiles: precursors.iter().map(|s| (*s).to_owned()).collect(),
+            sources: vec![],
+            source_template_count: 0,
+            best_upstream_score: None,
+            best_upstream_rank: 0,
+            min_base_step_cost: 1.0,
+            max_template_frequency: None,
+            mean_template_frequency: None,
+            features: CandidateFeatures::default(),
+            reranker_score: None,
+        }
+    }
+
+    #[test]
+    fn downstream_selector_prefers_exact_stock_and_preserves_candidates() {
+        let ethanol = crate::chem_env::canonical_stock_identity_from_smiles("CCO").unwrap();
+        let stock = Arc::new(ChemEnv::in_memory(&["CCO"]));
+        let reranker = DownstreamReachabilityReranker::new(stock, Arc::new(vec![]));
+        let mut candidates = vec![
+            synthetic_candidate("CCCO", &[&ethanol]),
+            synthetic_candidate("CCCO", &["CCCC"]),
+        ];
+
+        reranker.score_pool("CCCO", &mut candidates).unwrap();
+
+        assert_eq!(
+            candidates.len(),
+            2,
+            "ordering-only must not filter candidates"
+        );
+        assert!(
+            candidates[0].reranker_score.unwrap() > candidates[1].reranker_score.unwrap(),
+            "scores: {:?} > {:?}",
+            candidates[0].reranker_score,
+            candidates[1].reranker_score
+        );
+    }
+
+    #[test]
+    fn downstream_selector_requires_all_precursors_for_a_child_route() {
+        let stock = Arc::new(ChemEnv::in_memory(&["CC(=O)O", "CO"]));
+        let rules = Arc::new(vec![rule("ester_cleavage", "")]);
+        let reranker = DownstreamReachabilityReranker::new(stock, rules);
+        let mut candidates = vec![synthetic_candidate("CC(=O)OC", &["CC(=O)OC"])];
+
+        reranker.score_pool("CC(=O)OC", &mut candidates).unwrap();
+
+        assert!(
+            candidates[0].reranker_score.unwrap() > 0.25,
+            "a one-step all-stock child should be treated as resolved"
+        );
+    }
+
+    #[test]
+    fn downstream_selector_uses_shared_context_without_extra_lookahead() {
+        let stock = Arc::new(ChemEnv::in_memory(&["CCO"]));
+        let reranker = DownstreamReachabilityReranker::new(stock, Arc::new(vec![]));
+        let mut candidates = vec![synthetic_candidate("CCCO", &["CCCC"])];
+        let shared = |smiles: &str| (smiles == "CCCC").then_some(true);
+        let context = CandidateRankingContext {
+            one_step_stock_terminal: Some(&shared),
+        };
+
+        reranker
+            .score_pool_with_context("CCCO", &mut candidates, &context)
+            .unwrap();
+
+        assert_eq!(reranker.remaining_lookaheads.load(Ordering::Relaxed), 16);
+        assert!(candidates[0].reranker_score.unwrap() > 0.25);
     }
 
     #[test]

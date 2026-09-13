@@ -97,6 +97,48 @@ fn overflowing_search_budget_is_rejected_before_search() {
 }
 
 #[test]
+fn overflowing_route_count_cannot_wrap_into_a_small_request() {
+    let responses = run_legacy(
+        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"find_routes\",\"arguments\":{\"smiles\":\"CCO\",\"max_routes\":18446744073709551615}}}\n",
+    );
+    assert_eq!(responses.len(), 1);
+    assert_eq!(responses[0]["result"]["isError"], true);
+    assert!(
+        responses[0]["result"]["content"][0]["text"]
+            .as_str()
+            .expect("error text")
+            .contains("resource_exhausted")
+    );
+}
+
+#[test]
+fn malformed_element_filters_are_rejected_before_search() {
+    let responses = run_legacy(
+        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"find_routes\",\"arguments\":{\"smiles\":\"CCO\",\"avoid_elements\":\"C,,N\"}}}\n",
+    );
+    assert_eq!(responses.len(), 1);
+    assert_eq!(responses[0]["result"]["isError"], true);
+    let text = responses[0]["result"]["content"][0]["text"]
+        .as_str()
+        .expect("error text");
+    assert!(text.contains("invalid_input"));
+    assert!(text.contains("avoid_elements"));
+}
+
+#[test]
+fn standard_search_accepts_a_cooperative_timeout() {
+    let responses = run_legacy(
+        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"find_routes\",\"arguments\":{\"smiles\":\"CCO\",\"timeout_secs\":1}}}\n",
+    );
+    assert_eq!(responses.len(), 1);
+    assert_eq!(responses[0]["result"]["isError"], Value::Null);
+    let text = responses[0]["result"]["content"][0]["text"]
+        .as_str()
+        .expect("result text");
+    assert!(text.contains("Target: CCO"));
+}
+
+#[test]
 fn repeated_rejections_do_not_poison_a_following_request() {
     let responses = run_legacy(
         "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"find_routes\",\"arguments\":{\"smiles\":\"CCO\",\"deph\":2}}}\n\

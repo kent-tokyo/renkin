@@ -71,7 +71,25 @@ impl ToolOutcome {
     }
 }
 
+fn bounded_u32_arg(args: &Value, name: &str, default: u32) -> Result<u32, String> {
+    match args.get(name).and_then(Value::as_u64) {
+        None => Ok(default),
+        Some(value) => u32::try_from(value)
+            .map_err(|_| format!("resource_exhausted: {name} exceeds u32 range")),
+    }
+}
+
+fn bounded_usize_arg(args: &Value, name: &str, default: usize) -> Result<usize, String> {
+    match args.get(name).and_then(Value::as_u64) {
+        None => Ok(default),
+        Some(value) => usize::try_from(value)
+            .map_err(|_| format!("resource_exhausted: {name} exceeds platform size range")),
+    }
+}
+
 type ToolHandler = fn(smiles: &str, args: &Value) -> ToolOutcome;
+
+const MAX_STANDARD_TIMEOUT_SECS: u64 = 3_600;
 
 pub struct ToolDefinition {
     pub name: &'static str,
@@ -262,19 +280,31 @@ fn search_engine() -> &'static SearchEngine {
 }
 
 fn handle_find_routes(smiles: &str, args: &Value) -> ToolOutcome {
-    let depth = args["depth"].as_u64().unwrap_or(5) as u32;
-    let max_routes = args["max_routes"].as_u64().unwrap_or(5) as usize;
+    let depth = match bounded_u32_arg(args, "depth", 5) {
+        Ok(value) => value,
+        Err(error) => return ToolOutcome::error(error),
+    };
+    let max_routes = match bounded_usize_arg(args, "max_routes", 5) {
+        Ok(value) => value,
+        Err(error) => return ToolOutcome::error(error),
+    };
     let avoid = args["avoid_elements"].as_str().unwrap_or("");
     let require = args["require_elements"].as_str().unwrap_or("");
+    if let Err(error) = chem_env::validate_element_symbols("avoid_elements", avoid)
+        .and_then(|_| chem_env::validate_element_symbols("require_elements", require))
+    {
+        return ToolOutcome::error(error.to_string());
+    }
     let search_mode = args["search_mode"].as_str().unwrap_or("standard");
     if search_mode != "standard" && search_mode != "coverage" {
         return ToolOutcome::error("invalid search_mode (expected standard or coverage)");
     }
     let coverage_path = args["coverage_templates"].as_str();
-    let candidate_trace_limit = args["candidate_trace_limit"]
-        .as_u64()
-        .filter(|limit| *limit > 0)
-        .map(|limit| limit as usize);
+    let candidate_trace_limit = match bounded_usize_arg(args, "candidate_trace_limit", 0) {
+        Ok(0) => None,
+        Ok(limit) => Some(limit),
+        Err(error) => return ToolOutcome::error(error),
+    };
     let coverage_timeout = match args["coverage_timeout_secs"].as_u64() {
         Some(0) => {
             return ToolOutcome::error("coverage_timeout_secs must be a positive integer");
@@ -282,6 +312,21 @@ fn handle_find_routes(smiles: &str, args: &Value) -> ToolOutcome {
         Some(seconds) => Some(std::time::Duration::from_secs(seconds)),
         None => None,
     };
+    let timeout = match args["timeout_secs"].as_u64() {
+        Some(0) => return ToolOutcome::error("timeout_secs must be a positive integer"),
+        Some(seconds) if seconds > MAX_STANDARD_TIMEOUT_SECS => {
+            return ToolOutcome::error(format!(
+                "resource_exhausted: timeout_secs exceeds {MAX_STANDARD_TIMEOUT_SECS}"
+            ));
+        }
+        Some(seconds) => Some(std::time::Duration::from_secs(seconds)),
+        None => None,
+    };
+    if search_mode == "coverage" && timeout.is_some() {
+        return ToolOutcome::error(
+            "timeout_secs requires search_mode=standard; use coverage_timeout_secs for coverage",
+        );
+    }
     if search_mode == "standard" && (coverage_path.is_some() || coverage_timeout.is_some()) {
         return ToolOutcome::error(
             "coverage_templates and coverage_timeout_secs require search_mode=coverage",
@@ -346,11 +391,28 @@ fn handle_find_routes(smiles: &str, args: &Value) -> ToolOutcome {
             return ToolOutcome::error("coverage search is unavailable on wasm32");
         }
     } else {
-        let result = match engine.find_routes(smiles, &config) {
-            Ok(r) => r,
-            Err(e) => return ToolOutcome::error(format!("search error: {e}")),
-        };
-        (result.0, result.1, None::<String>)
+        match timeout {
+            Some(timeout) => {
+                let result = match engine.find_routes_with_control(
+                    smiles,
+                    &config,
+                    &search::SearchControl::with_timeout(timeout),
+                ) {
+                    Ok(result) => result,
+                    Err(e) => return ToolOutcome::error(format!("search error: {e}")),
+                };
+                let summary = (result.termination == search::SearchTermination::DeadlineExceeded)
+                    .then(|| "Search termination: deadline_exceeded\n\n".to_string());
+                (result.routes, result.stats, summary)
+            }
+            None => {
+                let result = match engine.find_routes(smiles, &config) {
+                    Ok(r) => r,
+                    Err(e) => return ToolOutcome::error(format!("search error: {e}")),
+                };
+                (result.0, result.1, None::<String>)
+            }
+        }
     };
 
     let mut text = coverage_summary.unwrap_or_default();
@@ -398,8 +460,14 @@ fn handle_find_routes(smiles: &str, args: &Value) -> ToolOutcome {
 }
 
 fn handle_explain_route(smiles: &str, args: &Value) -> ToolOutcome {
-    let depth = args["depth"].as_u64().unwrap_or(5) as u32;
-    let max_routes = args["max_routes"].as_u64().unwrap_or(1) as usize;
+    let depth = match bounded_u32_arg(args, "depth", 5) {
+        Ok(value) => value,
+        Err(error) => return ToolOutcome::error(error),
+    };
+    let max_routes = match bounded_usize_arg(args, "max_routes", 1) {
+        Ok(value) => value,
+        Err(error) => return ToolOutcome::error(error),
+    };
     let engine = search_engine();
     let config = SearchConfig {
         max_depth: depth,
@@ -422,10 +490,21 @@ fn handle_explain_route(smiles: &str, args: &Value) -> ToolOutcome {
 }
 
 fn handle_plan_with_constraints(smiles: &str, args: &Value) -> ToolOutcome {
-    let depth = args["depth"].as_u64().unwrap_or(5) as u32;
-    let max_routes = args["max_routes"].as_u64().unwrap_or(5) as usize;
+    let depth = match bounded_u32_arg(args, "depth", 5) {
+        Ok(value) => value,
+        Err(error) => return ToolOutcome::error(error),
+    };
+    let max_routes = match bounded_usize_arg(args, "max_routes", 5) {
+        Ok(value) => value,
+        Err(error) => return ToolOutcome::error(error),
+    };
     let avoid = args["avoid_elements"].as_str().unwrap_or("");
     let require = args["require_elements"].as_str().unwrap_or("");
+    if let Err(error) = chem_env::validate_element_symbols("avoid_elements", avoid)
+        .and_then(|_| chem_env::validate_element_symbols("require_elements", require))
+    {
+        return ToolOutcome::error(error.to_string());
+    }
     let avoid_bbs: Option<Vec<String>> = args["avoid_building_blocks"].as_str().map(|value| {
         value
             .split(',')
@@ -438,7 +517,11 @@ fn handle_plan_with_constraints(smiles: &str, args: &Value) -> ToolOutcome {
             .map(|item| item.trim().to_string())
             .collect()
     });
-    let max_steps = args["max_steps"].as_u64().map(|n| n as usize);
+    let max_steps = match bounded_usize_arg(args, "max_steps", 0) {
+        Ok(0) => None,
+        Ok(value) => Some(value),
+        Err(error) => return ToolOutcome::error(error),
+    };
     let max_route_cost = args["max_route_cost"].as_f64();
     let min_confidence = args["min_confidence"].as_f64();
     let min_success_prob = args["min_success_probability"].as_f64();
@@ -560,8 +643,14 @@ fn handle_plan_with_constraints(smiles: &str, args: &Value) -> ToolOutcome {
 }
 
 fn handle_find_pareto_routes(smiles: &str, args: &Value) -> ToolOutcome {
-    let depth = args["depth"].as_u64().unwrap_or(5) as u32;
-    let max_routes = args["max_routes"].as_u64().unwrap_or(10) as usize;
+    let depth = match bounded_u32_arg(args, "depth", 5) {
+        Ok(value) => value,
+        Err(error) => return ToolOutcome::error(error),
+    };
+    let max_routes = match bounded_usize_arg(args, "max_routes", 10) {
+        Ok(value) => value,
+        Err(error) => return ToolOutcome::error(error),
+    };
     let obj_spec = args["objectives"]
         .as_str()
         .unwrap_or("cost:min,success_probability:max,steps:min");
@@ -747,7 +836,10 @@ fn mcp_tradeoff_label(
 }
 
 fn handle_validate_route(smiles: &str, args: &Value) -> ToolOutcome {
-    let depth = args["depth"].as_u64().unwrap_or(5) as u32;
+    let depth = match bounded_u32_arg(args, "depth", 5) {
+        Ok(value) => value,
+        Err(error) => return ToolOutcome::error(error),
+    };
     let engine = search_engine();
     let config = SearchConfig {
         max_depth: depth,
@@ -846,8 +938,14 @@ fn route_diversity(routes: &[Route]) -> f64 {
 }
 
 fn handle_estimate_diversity(smiles: &str, args: &Value) -> ToolOutcome {
-    let depth = args["depth"].as_u64().unwrap_or(5) as u32;
-    let max_routes = args["max_routes"].as_u64().unwrap_or(5) as usize;
+    let depth = match bounded_u32_arg(args, "depth", 5) {
+        Ok(value) => value,
+        Err(error) => return ToolOutcome::error(error),
+    };
+    let max_routes = match bounded_usize_arg(args, "max_routes", 5) {
+        Ok(value) => value,
+        Err(error) => return ToolOutcome::error(error),
+    };
     let engine = search_engine();
     let config = SearchConfig {
         max_depth: depth,
@@ -903,7 +1001,10 @@ fn handle_estimate_diversity(smiles: &str, args: &Value) -> ToolOutcome {
 }
 
 fn handle_diagnose_failure(smiles: &str, args: &Value) -> ToolOutcome {
-    let depth = args["depth"].as_u64().unwrap_or(5) as u32;
+    let depth = match bounded_u32_arg(args, "depth", 5) {
+        Ok(value) => value,
+        Err(error) => return ToolOutcome::error(error),
+    };
     let engine = search_engine();
     let config = SearchConfig {
         max_depth: depth,
@@ -1000,6 +1101,7 @@ fn legacy_schema_find_routes() -> Value {
             "search_mode": {"type": "string", "enum": ["standard", "coverage"], "description": "Search mode (default: standard). Coverage runs Stage 2 only when Stage 1 finds no route."},
             "coverage_templates": {"type": "string", "description": "Stage-2 template file; required when search_mode is coverage. Invalid or empty files fail loudly."},
             "coverage_timeout_secs": {"type": "integer", "minimum": 1, "description": "Optional cooperative Stage-2 timeout in seconds."},
+            "timeout_secs": {"type": "integer", "minimum": 1, "maximum": 3600, "description": "Optional cooperative timeout for standard search, in seconds."},
             "candidate_trace_limit": {"type": "integer", "minimum": 0, "description": "Optional maximum number of candidate-level crowd-out trace records; adds a diagnostic section to the response."}
         },
         "required": ["smiles"]
@@ -1124,6 +1226,7 @@ fn modern_schema_find_routes() -> Value {
             "search_mode": {"type": "string", "enum": ["standard", "coverage"], "description": "Search mode (default: standard). Coverage runs Stage 2 only when Stage 1 finds no route."},
             "coverage_templates": {"type": "string", "description": "Stage-2 template file; required when search_mode is coverage. Invalid or empty files fail loudly."},
             "coverage_timeout_secs": {"type": "integer", "minimum": 1, "description": "Optional cooperative Stage-2 timeout in seconds."},
+            "timeout_secs": {"type": "integer", "minimum": 1, "maximum": 3600, "description": "Optional cooperative timeout for standard search, in seconds."},
             "candidate_trace_limit": {"type": "integer", "minimum": 0, "maximum": search::MAX_CANDIDATE_TRACE, "description": "Optional maximum number of candidate-level crowd-out trace records; adds a diagnostic section to the response."}
         },
         "required": ["smiles"],
@@ -1339,6 +1442,7 @@ mod tests {
             assert!(properties["coverage_templates"].is_object());
             assert!(properties["coverage_timeout_secs"].is_object());
             assert!(properties["candidate_trace_limit"].is_object());
+            assert!(properties["timeout_secs"].is_object());
         }
     }
 
@@ -1388,6 +1492,32 @@ mod tests {
         let outcome = handle_find_routes("CCO", &json!({"search_mode": "coverage"}));
         assert!(outcome.is_error);
         assert!(outcome.text.contains("requires coverage_templates"));
+    }
+
+    #[test]
+    fn standard_timeout_is_not_combined_with_coverage_timeout() {
+        let outcome = handle_find_routes(
+            "CCO",
+            &json!({
+                "search_mode": "coverage",
+                "coverage_templates": "unused",
+                "timeout_secs": 1,
+            }),
+        );
+        assert!(outcome.is_error);
+        assert!(outcome.text.contains("timeout_secs"));
+        assert!(outcome.text.contains("coverage_timeout_secs"));
+    }
+
+    #[test]
+    fn standard_timeout_above_public_limit_is_rejected() {
+        let outcome = handle_find_routes(
+            "CCO",
+            &json!({ "timeout_secs": MAX_STANDARD_TIMEOUT_SECS + 1 }),
+        );
+        assert!(outcome.is_error);
+        assert!(outcome.text.contains("resource_exhausted"));
+        assert!(outcome.text.contains("timeout_secs"));
     }
 
     #[test]

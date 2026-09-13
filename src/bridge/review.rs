@@ -75,34 +75,35 @@ fn finding(
 /// Derive the review from existing audit facts only. No conditions,
 /// selectivity, substrate scope, protecting-group semantics, or strategic
 /// intent are inferred when the interchange document does not carry them.
-pub fn review_report(report: &AuditReport) -> ChemicalReview {
-    let mut findings = Vec::new();
-    let structure_status = if report.route_tree_parseable {
-        ReviewStatus::Pass
-    } else {
-        ReviewStatus::Review
-    };
-    findings.push(finding(
+fn structure_finding(report: &AuditReport) -> ReviewFinding {
+    let passed = report.route_tree_parseable;
+    finding(
         ReviewDimension::Structure,
-        if report.route_tree_parseable {
+        if passed {
             "structure_audit_passed"
         } else {
             "route_tree_not_parseable"
         },
-        structure_status,
-        if report.route_tree_parseable {
+        if passed {
+            ReviewStatus::Pass
+        } else {
+            ReviewStatus::Review
+        },
+        if passed {
             ReviewSeverity::Informational
         } else {
             ReviewSeverity::High
         },
-        if report.route_tree_parseable {
+        if passed {
             "route graph was normalized and structural checks completed"
         } else {
             "route graph could not be normalized; inspect the audit findings"
         },
-    ));
+    )
+}
 
-    findings.push(match report.stock_validation.as_ref().map(|v| v.status) {
+fn stock_finding(report: &AuditReport) -> ReviewFinding {
+    match report.stock_validation.as_ref().map(|v| v.status) {
         Some(CheckStatus::Pass) => finding(
             ReviewDimension::Stock,
             "stock_audit_passed",
@@ -124,8 +125,10 @@ pub fn review_report(report: &AuditReport) -> ChemicalReview {
             ReviewSeverity::Informational,
             "no stock set was supplied to the audit",
         ),
-    });
+    }
+}
 
+fn forward_finding(report: &AuditReport) -> (ReviewFinding, bool) {
     let forward_failed = report
         .steps
         .iter()
@@ -134,7 +137,7 @@ pub fn review_report(report: &AuditReport) -> ChemicalReview {
         .steps
         .iter()
         .any(|s| s.forward_validation.status == CheckStatus::NotEvaluable);
-    findings.push(if forward_failed {
+    let finding = if forward_failed {
         finding(
             ReviewDimension::ForwardReplay,
             "forward_replay_failed",
@@ -166,9 +169,12 @@ pub fn review_report(report: &AuditReport) -> ChemicalReview {
             ReviewSeverity::Informational,
             "all declared reaction steps reproduced their recorded parents",
         )
-    });
+    };
+    (finding, forward_failed)
+}
 
-    for (dimension, code, reason) in [
+fn unevaluable_findings() -> Vec<ReviewFinding> {
+    [
         (
             ReviewDimension::SelectivityRisk,
             "selectivity_evidence_not_provided",
@@ -194,17 +200,27 @@ pub fn review_report(report: &AuditReport) -> ChemicalReview {
             "strategic_route_review_not_evaluable",
             "route strategy and alternatives require an explicit review rubric or human judgement",
         ),
-    ] {
-        findings.push(finding(
+    ]
+    .into_iter()
+    .map(|(dimension, code, reason)| {
+        finding(
             dimension,
             code,
             ReviewStatus::NotEvaluable,
             ReviewSeverity::Informational,
             reason,
-        ));
-    }
+        )
+    })
+    .collect()
+}
 
-    let status = if report.status == AuditStatus::Fail
+fn review_status(
+    report: &AuditReport,
+    structure_status: ReviewStatus,
+    forward_failed: bool,
+    findings: &[ReviewFinding],
+) -> ReviewStatus {
+    if report.status == AuditStatus::Fail
         || structure_status == ReviewStatus::Review
         || forward_failed
         || report
@@ -220,7 +236,18 @@ pub fn review_report(report: &AuditReport) -> ChemicalReview {
         ReviewStatus::NotEvaluable
     } else {
         ReviewStatus::Pass
-    };
+    }
+}
+
+pub fn review_report(report: &AuditReport) -> ChemicalReview {
+    let structure = structure_finding(report);
+    let stock = stock_finding(report);
+    let (forward, forward_failed) = forward_finding(report);
+    let structure_status = structure.status;
+    let mut findings = vec![structure, stock, forward];
+    findings.extend(unevaluable_findings());
+
+    let status = review_status(report, structure_status, forward_failed, &findings);
     ChemicalReview {
         rubric_version: CHEMICAL_REVIEW_RUBRIC_VERSION,
         judge_id: "renkin-deterministic",

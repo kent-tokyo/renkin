@@ -121,6 +121,17 @@ fn unknown_output_format_fails_before_search() {
 }
 
 #[test]
+fn malformed_element_filters_fail_closed_before_search() {
+    for filter in ["Xx", "C,,N"] {
+        let stderr = run_failure(&["--target", BUILDING_BLOCK, "--avoid-elements", filter]);
+        assert!(
+            stderr.contains("invalid_input") && stderr.contains("avoid_elements"),
+            "malformed element filter must be rejected: {stderr}"
+        );
+    }
+}
+
+#[test]
 fn default_output_omits_search_diagnostics_when_no_route_found() {
     // depth=1 vs a stock containing only water: exercises the routes.is_empty() branch.
     let v = run(&[

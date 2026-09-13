@@ -23,6 +23,11 @@ use crate::search::{SearchConfig, find_routes as rs_find_routes};
 /// ```
 #[wasm_bindgen]
 pub fn find_routes(target: &str, depth: u32, max_routes: usize, beam_width: usize) -> String {
+    if let Err(error) = crate::wasm_limits::validate_search_inputs(
+        target, depth, max_routes, beam_width, "", "", 0, None,
+    ) {
+        return wasm_error(&error.to_string());
+    }
     let env = ChemEnv::in_memory(DEFAULT_BUILDING_BLOCKS);
     let rules = default_rules();
     let config = SearchConfig {
@@ -77,6 +82,18 @@ pub fn find_routes_v2(
     avoid_elements: &str,
     require_elements: &str,
 ) -> String {
+    if let Err(error) = crate::wasm_limits::validate_search_inputs(
+        target,
+        depth,
+        max_routes,
+        beam_width,
+        avoid_elements,
+        require_elements,
+        0,
+        None,
+    ) {
+        return wasm_error(&error.to_string());
+    }
     let env = ChemEnv::in_memory(DEFAULT_BUILDING_BLOCKS);
     let rules = default_rules();
     let config = SearchConfig {
@@ -136,6 +153,18 @@ pub fn find_routes_v3(
     require_elements: &str,
     spectator_bond_policy: &str,
 ) -> String {
+    if let Err(error) = crate::wasm_limits::validate_search_inputs(
+        target,
+        depth,
+        max_routes,
+        beam_width,
+        avoid_elements,
+        require_elements,
+        0,
+        None,
+    ) {
+        return wasm_error(&error.to_string());
+    }
     let policy = match spectator_bond_policy {
         "off" => crate::spectator_bond::SpectatorBondPolicy::Off,
         "diagnostics_only" => crate::spectator_bond::SpectatorBondPolicy::DiagnosticsOnly,
@@ -211,6 +240,18 @@ pub fn find_routes_v4(
     beam_diversity_policy: &str,
     beam_diversity_slots: usize,
 ) -> String {
+    if let Err(error) = crate::wasm_limits::validate_search_inputs(
+        target,
+        depth,
+        max_routes,
+        beam_width,
+        avoid_elements,
+        require_elements,
+        beam_diversity_slots,
+        None,
+    ) {
+        return wasm_error(&error.to_string());
+    }
     let spectator_policy = match spectator_bond_policy {
         "off" => crate::spectator_bond::SpectatorBondPolicy::Off,
         "diagnostics_only" => crate::spectator_bond::SpectatorBondPolicy::DiagnosticsOnly,
@@ -304,6 +345,18 @@ pub fn find_routes_v5(
     beam_diversity_policy: &str,
     beam_diversity_slots: usize,
 ) -> String {
+    if let Err(error) = crate::wasm_limits::validate_search_inputs(
+        target,
+        depth,
+        max_routes,
+        beam_width,
+        avoid_elements,
+        require_elements,
+        beam_diversity_slots,
+        None,
+    ) {
+        return wasm_error(&error.to_string());
+    }
     let spectator_policy = match spectator_bond_policy {
         "off" => crate::spectator_bond::SpectatorBondPolicy::Off,
         "diagnostics_only" => crate::spectator_bond::SpectatorBondPolicy::DiagnosticsOnly,
@@ -405,6 +458,18 @@ pub fn find_routes_v6(
     beam_diversity_slots: usize,
     candidate_trace_limit: usize,
 ) -> String {
+    if let Err(error) = crate::wasm_limits::validate_search_inputs(
+        target,
+        depth,
+        max_routes,
+        beam_width,
+        avoid_elements,
+        require_elements,
+        beam_diversity_slots,
+        Some(candidate_trace_limit),
+    ) {
+        return wasm_error(&error.to_string());
+    }
     let spectator_policy = match spectator_bond_policy {
         "off" => crate::spectator_bond::SpectatorBondPolicy::Off,
         "diagnostics_only" => crate::spectator_bond::SpectatorBondPolicy::DiagnosticsOnly,

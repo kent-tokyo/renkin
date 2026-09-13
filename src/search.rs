@@ -2375,18 +2375,34 @@ fn insert_cross_template_signature<'a>(
 /// added on top: summing both would push the effective step-cost bonus
 /// outside the calibrated range the A*/beam-prune g/h split assumes, and
 /// would stop this from being an ordering-only change.
+fn cached_one_step_stock_terminal(
+    smiles: &str,
+    retro_cache: &RetroCache,
+    env: &ChemEnv,
+) -> Option<bool> {
+    let entries = retro_cache.get(smiles)?;
+    Some(entries.iter().any(|entry| {
+        !entry.precursor_smiles.is_empty()
+            && entry
+                .precursor_smiles
+                .iter()
+                .all(|precursor| env.is_building_block_smiles(precursor))
+    }))
+}
+
 fn reranker_rank_bonuses(
     reranker: &dyn crate::candidate::CandidateReranker,
     target_smi: &str,
     target_mol: &crate::chem_env::Molecule,
     raw_proposals: &[crate::candidate::RawCandidate],
     templates_by_id: &std::collections::HashMap<String, &RetroRule>,
+    ranking_context: &crate::candidate::CandidateRankingContext<'_>,
 ) -> anyhow::Result<FxHashMap<String, f64>> {
     let mut candidates = crate::candidate::merge_into_candidates(target_smi, raw_proposals)?;
     for c in candidates.iter_mut() {
         c.features = crate::candidate::extract_features(c, target_mol, templates_by_id, None);
     }
-    reranker.score_pool(target_smi, &mut candidates)?;
+    reranker.score_pool_with_context(target_smi, &mut candidates, ranking_context)?;
     candidates.sort_by(|a, b| {
         b.reranker_score
             .partial_cmp(&a.reranker_score)
@@ -3454,12 +3470,18 @@ pub(crate) fn find_routes_with_control_prepared(
             // this expansion and every later one -- never a hard error.
             let reranker_bonus_by_id: Option<FxHashMap<String, f64>> =
                 if let Some(reranker) = active_reranker {
+                    let cached_lookup =
+                        |smiles: &str| cached_one_step_stock_terminal(smiles, &retro_cache, env);
+                    let ranking_context = crate::candidate::CandidateRankingContext {
+                        one_step_stock_terminal: Some(&cached_lookup),
+                    };
                     match reranker_rank_bonuses(
                         reranker,
                         target_smi,
                         &target_mol,
                         &raw_proposals,
                         &templates_by_id,
+                        &ranking_context,
                     ) {
                         Ok(map) => Some(map),
                         Err(e) => {
@@ -6145,6 +6167,9 @@ mod tests {
             &target_mol,
             &raw_proposals,
             &templates_by_id,
+            &crate::candidate::CandidateRankingContext {
+                one_step_stock_terminal: None,
+            },
         )
         .unwrap();
 

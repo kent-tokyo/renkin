@@ -112,6 +112,7 @@ fn legacy_transcript_stdout_matches_golden_fixture_structurally() {
                 "coverage_templates",
                 "coverage_timeout_secs",
                 "candidate_trace_limit",
+                "timeout_secs",
             ] {
                 assert!(find_properties.remove(key).is_some(), "missing {key}");
             }

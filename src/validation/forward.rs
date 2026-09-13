@@ -16,17 +16,16 @@
 //!
 //! chematic's `canonical_smiles` is a stable fixed point but NOT invariant
 //! under input atom order / bracket-atom notation (lessons.md L2, confirmed
-//! still present in chematic 0.4.30 during the Phase 32 gold-set audit):
+//! still present during the Phase 32 gold-set audit):
 //! the same molecule, parsed from two differently-written SMILES, can
 //! canonicalize to two different strings that never converge even after
-//! repeated re-canonicalization. `ChemEnv::is_building_block` already works
-//! around this exact issue with a VF2 structural-isomorphism fallback
-//! (`chematic::smarts::find_matches`); [`rule_reverses_to`] mirrors that
-//! precedent here, since a naive string-equality reversal check inherits the
-//! same false-negative failure mode whenever a forward-reaction product
-//! happens to serialize with different bracket-atom style than the target
-//! (empirically the majority cause of "Invalid" verdicts on a gold-set
-//! sample — see the Track F report for measurements).
+//! repeated re-canonicalization. Forward validation handles this representation
+//! mismatch with a guarded VF2 structural-isomorphism fallback in
+//! [`matches_target`], since a naive string-equality reversal check can produce
+//! false negatives when a forward-reaction product serializes with different
+//! bracket-atom style than the target. This fallback is specific to forward
+//! validation; stock membership uses exact canonical identity after
+//! standardization and must never use subgraph matching.
 //!
 //! The VF2 fallback is skipped whenever either side's canonical SMILES
 //! contains a `@`/`@@` tetrahedral stereo marker: `find_matches` was

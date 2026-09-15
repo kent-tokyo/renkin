@@ -25,8 +25,11 @@ a chemical-quality claim. For AiZynthFinder, the typed evidence also retains
 the source `template_hash` and `classification` when those fields are present;
 they are provenance, not an independent quality verdict.
 
-The schema version is currently `1`. Human or LLM review can be added as a
-separate judge record without overwriting deterministic audit findings.
+`--interchange` emits the compatibility v1 format. `--interchange-v2` emits
+an explicit occurrence tree, retaining direct-purchase roots and repeated
+precursor occurrences rather than reconstructing them from flat steps. The
+Rust bridge exposes `reauditable_import_v2`; node IDs derive from route hash
+and child-index path. Human or LLM review can remain a separate judge record.
 
 Every export also contains a required `loss_report` with schema version `1`.
 It records each canonical field as `preserved`, `normalized`, `inferred`,
@@ -67,6 +70,18 @@ explicit waste mass; it is not derived as `PMI - 1`. Missing inputs produce
 `not_evaluable` with a reason code, never zero. Reported source values remain
 separate from RENKIN's recomputation.
 
+`--route-metrics-sidecar process-sidecar.json` is the stricter local form.
+Its `source_artifact` and `ledgers` are checked by recomputing the artifact
+hash and requiring every ledger's `source_sha256` to match. The public report
+contains source, sidecar, and receipt hashes only—not the artifact.
+
+## MCP execution receipts
+
+For canonical v1 re-audit, `--receipt-bindings bindings.json` verifies local
+arguments and results against their hash-only MCP receipt, then binds it to
+the canonical interchange and final audit hashes. Raw tool material is never
+serialized; this form requires canonical input and `--stock`.
+
 ## Image and OCR input provenance
 
 `--input-artifact artifact.json` accepts a local `InputArtifactReceipt` for a
@@ -86,8 +101,10 @@ Routes are compared only when all values are finite and those contracts match;
 unknown values or differing currencies/process boundaries become
 `incomparable`, never zero. A failed audit is always `rejected`, and a partial
 audit is at most `needs_review`, regardless of supplied objective values.
-Weighted ranking and sensitivity analysis remain a later explicit-profile
-feature; this initial surface is deliberately Pareto-only.
+`--weighted-ranking weighted.json` uses a fixed profile: every axis declares
+key, direction, unit, basis, bounds, and positive weight, with all weights
+totaling one. Missing, out-of-range, or incompatible values are rejected, not
+reweighted. The receipt records deterministic ±10% per-axis sensitivity.
 
 ## External mechanistic evidence
 
@@ -98,3 +115,7 @@ the unit must match that physical quantity. Computed values require a method,
 charge, multiplicity, and geometry hash. They remain provenance attached to an
 audited step: RENKIN does not execute DFT, mix incompatible calculations, or
 use these values to override an audit verdict or reorder search results.
+`project_comparable_axis` is the Rust bridge's safe ranking projection: it
+requires exactly one same-step, same-quantity, same-unit, same-origin record
+per route, and identical calculation contexts for computed values. It never
+averages steps or mixes methods.

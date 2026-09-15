@@ -8,6 +8,26 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Added opt-in canonical interchange v1 re-audit: `renkin audit-route
+  interchange.json --format interchange --stock stock.smi` reconstructs and
+  re-runs structure, stock, element, and forward checks. It fail-closes on
+  missing topology, duplicate decompositions, cycles, non-canonical SMILES,
+  unknown v1 fields, or a reconstructed route-hash mismatch.
+- Added opt-in local `--route-metrics` process-mass receipts, bound to an
+  exact normalized route hash. PMI is computed only from explicitly supplied,
+  complete required mass categories; E-factor additionally requires explicit
+  waste mass. Missing data remains `not_evaluable`, and reported values stay
+  distinct from recomputed values.
+- Added local `--input-artifact` provenance receipts for image/SVG/PDF/text
+  inputs. OCR/normalization/review metadata binds to the audited target while
+  reports redact locators, raw predictions, normalized SMILES, and reviewer
+  identifiers.
+- Added post-audit `--audit-ranking` Pareto receipts and
+  `--mechanistic-evidence` step receipts. Ranking cannot promote failed or
+  partial routes; incomplete or non-comparable objective contracts remain
+  explicit. Mechanistic evidence records external provenance only and never
+  runs DFT or changes search ordering.
+
 ## [1.0.7] - 2026-09-13 "Public Boundary and Benchmark Contract"
 
 - The formal paired AiZynthFinder

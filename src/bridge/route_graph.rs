@@ -4,7 +4,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::bridge::audit::AuditFindingCode;
 use crate::chem_env::{declared_forward_smirks, mol_from_smiles, to_canonical};
@@ -41,7 +41,7 @@ pub enum RouteSource {
 /// Consumed by RENKIN Bridge PR4's forward-validation
 /// (`bridge::forward::validate_step_forward`) to resolve which single
 /// declared reaction to replay -- never a scan over alternatives.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReactionEvidence {
     /// RENKIN-native: the `RetroRule` this step's search claimed to use.
@@ -103,7 +103,7 @@ pub enum ReactionEvidence {
 /// output but normalized to `String` here (an opaque identifier, never
 /// arithmetic on it) so this type doesn't depend on `route_metadata`'s exact
 /// numeric-vs-string convention holding across SynPlanner versions.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SynPlannerRuleProvenance {
     pub rule_id: Option<String>,
     pub rule_source: Option<String>,

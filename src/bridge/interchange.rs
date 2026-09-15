@@ -5,13 +5,18 @@
 //! current adapters do not retain as `null`; it never invents source versions
 //! or original node identifiers.
 
-use serde::Serialize;
+use std::collections::{HashMap, HashSet};
+
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::bridge::audit::{AuditFinding, AuditReport, AuditStatus, CheckStatus};
+use crate::bridge::audit::{
+    AuditFinding, AuditPolicy, AuditReport, AuditStatus, CheckStatus, audit_document_with_policy,
+};
 use crate::bridge::forward::EvidenceBasis;
 use crate::bridge::private_stock::PrivateStockReport;
-use crate::bridge::route_graph::ReactionEvidence;
+use crate::bridge::route_graph::{ReactionEvidence, RouteDocument, RouteNode, RouteSource};
+use crate::chem_env::{RetroRule, mol_from_smiles, to_canonical};
 
 pub const ROUTE_INTERCHANGE_SCHEMA_VERSION: u32 = 1;
 pub const ADAPTER_LOSS_SCHEMA_VERSION: u32 = 1;
@@ -114,6 +119,24 @@ pub fn validate_strict_import(value: &Value) -> anyhow::Result<()> {
     let object = value
         .as_object()
         .ok_or_else(|| anyhow::anyhow!("canonical interchange must be a JSON object"))?;
+    const ENVELOPE_FIELDS: &[&str] = &[
+        "schema_version",
+        "source_tool",
+        "source_version",
+        "source_route_id",
+        "route_id",
+        "audit_status",
+        "steps",
+        "audit_findings",
+        "loss_report",
+        "stock_provenance",
+    ];
+    if let Some(field) = object
+        .keys()
+        .find(|field| !ENVELOPE_FIELDS.contains(&field.as_str()))
+    {
+        anyhow::bail!("unknown canonical interchange v1 field {field:?}");
+    }
     if object.get("schema_version").and_then(Value::as_u64)
         != Some(ROUTE_INTERCHANGE_SCHEMA_VERSION as u64)
     {
@@ -126,8 +149,26 @@ pub fn validate_strict_import(value: &Value) -> anyhow::Result<()> {
     {
         anyhow::bail!("canonical interchange route_id is required");
     }
-    if !object.get("steps").is_some_and(Value::is_array) {
+    let Some(steps) = object.get("steps").and_then(Value::as_array) else {
         anyhow::bail!("canonical interchange steps must be an array");
+    };
+    for step in steps {
+        let step = step
+            .as_object()
+            .ok_or_else(|| anyhow::anyhow!("canonical interchange step must be an object"))?;
+        const STEP_FIELDS: &[&str] = &[
+            "canonical_node_id",
+            "original_node_id",
+            "target",
+            "precursors",
+            "reaction_provenance",
+        ];
+        if let Some(field) = step
+            .keys()
+            .find(|field| !STEP_FIELDS.contains(&field.as_str()))
+        {
+            anyhow::bail!("unknown canonical interchange v1 step field {field:?}");
+        }
     }
     let loss_report = object
         .get("loss_report")
@@ -168,6 +209,202 @@ pub fn validate_strict_import(value: &Value) -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+/// Result of a strict canonical re-import followed by RENKIN's ordinary
+/// structure, stock, element, and forward audit. `route_id` is verified
+/// against the reconstructed normalized tree; it is never trusted from the
+/// imported document.
+#[derive(Debug, Clone, Serialize)]
+pub struct InterchangeReaudit {
+    pub source_tool: String,
+    pub imported_route_id: String,
+    pub recomputed_route_id: String,
+    pub audit: AuditReport,
+}
+
+#[derive(Debug, Deserialize)]
+struct ImportEnvelope {
+    schema_version: u32,
+    source_tool: String,
+    route_id: String,
+    steps: Vec<ImportStep>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ImportStep {
+    canonical_node_id: String,
+    target: String,
+    precursors: Vec<String>,
+    reaction_provenance: ImportReactionProvenance,
+}
+
+#[derive(Debug, Deserialize)]
+struct ImportReactionProvenance {
+    #[serde(default)]
+    reaction_evidence: Option<ReactionEvidence>,
+}
+
+/// Strictly re-import an interchange v1 document and run the normal audit.
+///
+/// Version 1 stores a flattened list of steps rather than an explicit graph.
+/// It can therefore be reconstructed only when every decomposed molecule has
+/// one step, there is one root, and the resulting graph is acyclic. Ambiguous
+/// routes are rejected instead of being guessed. A configured stock set is
+/// required because v1 does not preserve leaf-stock assertions; the imported
+/// route hash is then recomputed from the resulting current-stock tree and
+/// must match exactly.
+pub fn reauditable_import_v1(
+    value: &Value,
+    configured_stock: &HashSet<String>,
+    rules: &[RetroRule],
+    policy: AuditPolicy,
+) -> anyhow::Result<InterchangeReaudit> {
+    validate_strict_import(value)?;
+    let envelope: ImportEnvelope = serde_json::from_value(value.clone())
+        .map_err(|error| anyhow::anyhow!("canonical interchange v1 decode failed: {error}"))?;
+    if envelope.schema_version != ROUTE_INTERCHANGE_SCHEMA_VERSION {
+        anyhow::bail!("unsupported canonical interchange schema_version");
+    }
+    let source = import_source(&envelope.source_tool)?;
+    let document = document_from_v1_steps(&envelope.steps, source, configured_stock)?;
+    let audit = audit_document_with_policy(&document, Some(configured_stock), Some(rules), policy);
+    let recomputed_route_id = audit
+        .normalized_route_sha256
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("re-imported route did not yield a normalized route ID"))?;
+    if envelope.route_id != recomputed_route_id {
+        anyhow::bail!(
+            "canonical interchange route_id mismatch: imported {} but reconstructed {}",
+            envelope.route_id,
+            recomputed_route_id
+        );
+    }
+    Ok(InterchangeReaudit {
+        source_tool: envelope.source_tool,
+        imported_route_id: envelope.route_id,
+        recomputed_route_id,
+        audit,
+    })
+}
+
+fn import_source(source_tool: &str) -> anyhow::Result<RouteSource> {
+    match source_tool {
+        "renkin" => Ok(RouteSource::Renkin),
+        "aizynthfinder" => Ok(RouteSource::AiZynthFinder),
+        "syntheseus" => Ok(RouteSource::Syntheseus),
+        "synplanner" => Ok(RouteSource::SynPlanner),
+        _ => anyhow::bail!("unsupported canonical interchange source_tool {source_tool:?}"),
+    }
+}
+
+fn canonical_import_smiles(smiles: &str, field: &str) -> anyhow::Result<String> {
+    let canonical = to_canonical(&mol_from_smiles(smiles).map_err(|error| {
+        anyhow::anyhow!("canonical interchange {field} is not valid SMILES: {error}")
+    })?);
+    if canonical != smiles {
+        anyhow::bail!("canonical interchange {field} is not RENKIN canonical SMILES: {smiles:?}");
+    }
+    Ok(canonical)
+}
+
+fn document_from_v1_steps(
+    steps: &[ImportStep],
+    source: RouteSource,
+    configured_stock: &HashSet<String>,
+) -> anyhow::Result<RouteDocument> {
+    if steps.is_empty() {
+        anyhow::bail!(
+            "canonical interchange v1 cannot re-import a route with no steps: root identity is absent"
+        );
+    }
+
+    let mut step_ids = HashSet::with_capacity(steps.len());
+    let mut by_target = HashMap::with_capacity(steps.len());
+    let mut all_precursors = HashSet::new();
+    for step in steps {
+        if step.canonical_node_id.trim().is_empty() || !step_ids.insert(&step.canonical_node_id) {
+            anyhow::bail!("canonical interchange contains an empty or duplicate canonical_node_id");
+        }
+        let target = canonical_import_smiles(&step.target, "step target")?;
+        let precursors = step
+            .precursors
+            .iter()
+            .map(|precursor| canonical_import_smiles(precursor, "step precursor"))
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        if precursors.is_empty() {
+            anyhow::bail!(
+                "canonical interchange decomposition step must contain at least one precursor"
+            );
+        }
+        if precursors.iter().any(|precursor| precursor == &target) {
+            anyhow::bail!("canonical interchange contains a self-referential decomposition step");
+        }
+        all_precursors.extend(precursors.iter().cloned());
+        if by_target
+            .insert(
+                target.clone(),
+                (
+                    precursors,
+                    step.reaction_provenance.reaction_evidence.clone(),
+                ),
+            )
+            .is_some()
+        {
+            anyhow::bail!(
+                "canonical interchange v1 has multiple decomposition steps for {target:?}; occurrence topology is ambiguous"
+            );
+        }
+    }
+
+    let roots = by_target
+        .keys()
+        .filter(|target| !all_precursors.contains(*target))
+        .cloned()
+        .collect::<Vec<_>>();
+    let [root] = roots.as_slice() else {
+        anyhow::bail!(
+            "canonical interchange v1 must have exactly one root; found {} (cycle or disconnected steps)",
+            roots.len()
+        );
+    };
+    let mut on_stack = HashSet::new();
+    let root = build_v1_node(root, &by_target, configured_stock, &mut on_stack)?;
+    Ok(RouteDocument {
+        source,
+        step_count_collapsed_edges: crate::bridge::route_graph::count_edges(&root),
+        root,
+    })
+}
+
+fn build_v1_node(
+    smiles: &str,
+    by_target: &HashMap<String, (Vec<String>, Option<ReactionEvidence>)>,
+    configured_stock: &HashSet<String>,
+    on_stack: &mut HashSet<String>,
+) -> anyhow::Result<RouteNode> {
+    let Some((precursors, evidence)) = by_target.get(smiles) else {
+        return Ok(RouteNode {
+            canonical_smiles: smiles.to_owned(),
+            is_stock_leaf: Some(configured_stock.contains(smiles)),
+            reaction_evidence: None,
+            children: Vec::new(),
+        });
+    };
+    if !on_stack.insert(smiles.to_owned()) {
+        anyhow::bail!("canonical interchange v1 contains a route cycle at {smiles:?}");
+    }
+    let children = precursors
+        .iter()
+        .map(|precursor| build_v1_node(precursor, by_target, configured_stock, on_stack))
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    on_stack.remove(smiles);
+    Ok(RouteNode {
+        canonical_smiles: smiles.to_owned(),
+        is_stock_leaf: Some(false),
+        reaction_evidence: evidence.clone(),
+        children,
+    })
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -326,5 +563,87 @@ mod tests {
         });
         let error = validate_strict_import(&value).unwrap_err().to_string();
         assert!(error.contains("loss_report"));
+    }
+
+    fn stock() -> HashSet<String> {
+        ["CC", "O"].into_iter().map(canon).collect()
+    }
+
+    fn canon(smiles: &str) -> String {
+        to_canonical(&mol_from_smiles(smiles).unwrap())
+    }
+
+    fn exported_v1() -> Value {
+        let document = RouteDocument {
+            source: RouteSource::Renkin,
+            root: RouteNode {
+                canonical_smiles: canon("CCO"),
+                is_stock_leaf: Some(false),
+                reaction_evidence: None,
+                children: vec![
+                    RouteNode {
+                        canonical_smiles: canon("CC"),
+                        is_stock_leaf: Some(true),
+                        reaction_evidence: None,
+                        children: vec![],
+                    },
+                    RouteNode {
+                        canonical_smiles: canon("O"),
+                        is_stock_leaf: Some(true),
+                        reaction_evidence: None,
+                        children: vec![],
+                    },
+                ],
+            },
+            step_count_collapsed_edges: 1,
+        };
+        let report =
+            audit_document_with_policy(&document, Some(&stock()), Some(&[]), AuditPolicy::Standard);
+        serde_json::to_value(from_audit_report("renkin", None, None, &[], &report, None)).unwrap()
+    }
+
+    #[test]
+    fn strict_reaudit_reconstructs_an_unambiguous_v1_export() {
+        let value = exported_v1();
+        let result = reauditable_import_v1(&value, &stock(), &[], AuditPolicy::Standard).unwrap();
+        assert_eq!(result.imported_route_id, result.recomputed_route_id);
+        assert_eq!(result.audit.source, RouteSource::Renkin);
+        assert!(result.audit.route_tree_parseable);
+    }
+
+    #[test]
+    fn strict_reaudit_rejects_route_hash_tampering() {
+        let mut value = exported_v1();
+        value["steps"][0]["precursors"][0] = Value::String("N".into());
+        let error = reauditable_import_v1(&value, &stock(), &[], AuditPolicy::Standard)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("route_id mismatch"));
+    }
+
+    #[test]
+    fn strict_reaudit_rejects_ambiguous_or_missing_v1_topology() {
+        let mut duplicate = exported_v1();
+        let step = duplicate["steps"][0].clone();
+        duplicate["steps"].as_array_mut().unwrap().push(step);
+        let error = reauditable_import_v1(&duplicate, &stock(), &[], AuditPolicy::Standard)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("duplicate canonical_node_id"));
+
+        let mut direct = exported_v1();
+        direct["steps"] = Value::Array(vec![]);
+        let error = reauditable_import_v1(&direct, &stock(), &[], AuditPolicy::Standard)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("root identity is absent"));
+    }
+
+    #[test]
+    fn strict_import_rejects_unversioned_extension_fields() {
+        let mut value = exported_v1();
+        value["unrecorded_extension"] = Value::Bool(true);
+        let error = validate_strict_import(&value).unwrap_err().to_string();
+        assert!(error.contains("unknown canonical interchange v1 field"));
     }
 }

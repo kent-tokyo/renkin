@@ -1,8 +1,8 @@
 # RENKIN Roadmap
 
-更新日: **2026-09-13**
+更新日: **2026-09-14**
 
-基準リリース: **v1.0.6**
+基準リリース: **v1.0.7**（`ed41338`）
 
 RENKINの目標は、単一のsolved rateだけを最大化することではない。同じtarget、stock、
 探索予算、validation policyで比較したときに、route coverage、化学的妥当性、速度、
@@ -12,10 +12,17 @@ RENKINの目標は、単一のsolved rateだけを最大化することではな
 [`CHANGELOG.md`](CHANGELOG.md)、作業単位は[`tasks/todo.md`](tasks/todo.md)、測定結果は
 `data/comparison/`と[`docs/benchmark.md`](docs/benchmark.md)を参照する。
 
-最優先の開発計画は[Phase 55: AiZynthFinder成功率超え](docs/roadmap/aizynthfinder-accuracy.md)。
-現在は55.0–55.5の実装候補を評価し、55.6の独立TEST cohortを凍結済みである。精度改善は、
-候補被覆、候補保存、下流到達性、非置換recoveryを別々に検証し、採用した構成だけを評価する。
-同一stock・時間予算でnative成功率と共通検証後の成功率をともに上回るまで、優位性は主張しない。
+今後は二つの目標を分ける。**成功率の証明はPhase 55、次の製品候補はO7.0–O7.1**とする。
+監査機能の完成をAiZynthFinderへの性能優位性と取り違えない。
+
+- **Phase 55** — 候補被覆・候補保存・下流到達性・非置換recoveryを個別に検証し、採用構成を
+  凍結した独立TESTで比較する。同一stock・予算でnative/common-strictがともに上回るまで
+  優位性を主張しない。[ローカル詳細計画](docs/roadmap/aizynthfinder-accuracy.md)
+- **O7 Evidence chain** — 入力・tool実行・route・監査結果を結び、根拠と不足データを示す。
+  直近は再importして監査できる境界を完成させ、実質量データに基づく指標receiptを追加する。
+  [ローカル詳細計画](docs/roadmap/evidence-chain.md)（公開対象外）
+
+次候補の呼称は**v1.0.8候補**とするが、この計画では版番号変更・公開・benchmark再開は行わない。
 
 ## Status legend
 
@@ -31,7 +38,8 @@ RENKINの目標は、単一のsolved rateだけを最大化することではな
 
 ## Current position
 
-保存済みVAL-200比較では、RENKINとAiZynthFinder 4.4.1のnative `route_found`はともに
+以下は保存済み測定であり、v1.0.7固有の性能値ではない。VAL-200比較では、RENKINと
+AiZynthFinder 4.4.1のnative `route_found`はともに
 134/200（67.0%）。共通構造検証・stock判定では134対123だが、paired 95% CIは
 [-1.5pp, +12.5pp]、McNemar p=0.1608で優位性は未証明。統計集計は実施済みであり、
 残るのは同一予算の再比較と独立TESTでの検証である。
@@ -48,7 +56,7 @@ VAL-200で確認された失敗を、次の4つの損失へ分けて順番に潰
 
 | 損失 | 施策 | 成功の証拠 | 進めない条件 |
 |---|---|---|---|
-| 候補が存在しない | reaction-family単位のtemplate補完、検証済みdirect proposal | zero-positive群とvalid完成routeが減る | 特定targetのoracle注入、invalid増加 |
+| 候補が存在しない | reaction-family単位のtemplate補完、検証済みdirect proposal | zero-positive群が減り、valid完成routeが増える | 特定targetのoracle注入、invalid増加 |
 | 候補が早く消える | ordering-only、既存候補を保持するquota、候補集合hash | candidate recall不変、成功取り消し0 | 候補集合の不可逆削除、mapping不一致 |
 | 候補はあるが終端へ届かない | bounded downstream reachability、段階recovery | same-budgetで未解決だけが回収される | p95/RSS悪化、既存成功の回帰 |
 | 改善が開発集合だけに適合する | frozen independent TEST、paired解析 | native/common-strictのCI下限>0 | TESTを見ながら候補選択、条件変更 |
@@ -62,7 +70,7 @@ VAL-200で確認された失敗を、次の4つの損失へ分けて順番に潰
 比較runはtarget split、stock、template/model/data provenance、hardware、並列度、seed、
 wall-clock/node budget、validation policy、configuration IDをmanifestへ記録する。
 
-| 軸 | 主指標 | Release gate |
+| 軸 | 主指標 | 採用・主張のgate |
 |---|---|---|
 | Coverage | native route_found、strict route to shared stock | Phase 55の独立TESTで両指標のpaired 95% CI下限>0、効果量・regressionも報告 |
 | Correctness | strict pass、atom loss、no-op、forward replay | coverage増加に伴うinvalid/partial増加なし |
@@ -72,9 +80,28 @@ wall-clock/node budget、validation policy、configuration IDをmanifestへ記�
 | Trust | determinism、manifest replay、audit verdict | 完了・timeout・not-evaluable・chemical invalidを混同しない |
 | Lab utility | condition/yield calibration、chemist preference | evidence、予測、abstentionを分離する |
 
+上表の競合優位性gateと、監査機能の技術的release gateは別である。O7を出荷しても
+Phase 55は完了扱いにしない。化学的にinvalidなrouteを指標の加点で合格に変えない。
+
 ## Priority order
 
-### P0 — Phase 55: AiZynthFinderの成功率を超える
+### P0 — 直近の製品開発: O7.0 → O7.1
+
+既存O6のschema・receipt・stock policyを再利用し、未接続の監査境界を先に完成させる。
+
+| 優先度 / Phase（実装順） | Status | 成果物 | 完了条件 |
+|---|---|---|---|
+| P0 / O7.0 Evidence binding | Implemented / Active | v1 canonical再import・hash照合・通常auditへの再接続、field単位loss report | 別processで再監査し同じ判定。receiptと実入力/実結果/最終監査の結合、v2 topologyは残る |
+| P0 / O7.1 Process metrics | Implemented / Active | 独立した`route_metrics_v1`、route hashに結合する質量ledger、方法・単位・境界・coverage・source付きreceipt | 手計算fixtureと一致。不足データは`not_evaluable`。sidecar provenance結合と公開surface回帰は残る |
+| P1 / O7.2 Input artifact | Implemented / Active | image/SVG/PDF/textのcontent hash、変換履歴、OCR/model、正規化・review receipt | redacted reportとtarget bindingは実装。実OCR、remote取得、複数候補/stereo reviewは残る |
+| P1 / O7.3 Audit ranking | Implemented / Active | hard gate後のaxis別Pareto | missing・非互換単位/境界は`incomparable`。weighted profileと感度receiptは残る |
+| P2 / O7.4 Mechanistic evidence | Implemented / Active | 外部計算結果とroute/step、物理量・単位・計算条件を結ぶreceipt | DFT実行なし。実利用fixtureと、比較可能性を明示したprofile統合が残る |
+
+O7.0–O7.1だけを次候補の必須範囲とする。O7.2–O7.3はその後、O7.4は実利用fixtureを
+確保してから着手する。MolScribe・DFT本体は実装しない。既存の`atom_economy`は記載された
+precursorのMW比であり、全量論試薬を扱う理論atom economyや実工程PMIへ読み替えない。
+
+### P0 — 成功率の証明: Phase 55
 
 | Phase | Status | 現在の証拠 | 次の判定 |
 |---|---|---|---|
@@ -89,6 +116,8 @@ wall-clock/node budget、validation policy、configuration IDをmanifestへ記�
 55.0から55.5で採用条件を満たした構成を一つだけ凍結し、55.6へ送る。既存VALとgap cohortは
 開発専用であり、独立TESTの代わりにしない。凍結cohort、hash、provenance、Docker blockerは
 [独立TEST選定記録](docs/benchmark/phase55-independent-test-selection.md)へ集約する。
+表の環境blockerは保存された状態であり、実行再開前に再確認する。O7の計画更新を理由に
+TEST cohort・hash・比較条件を変更したり、長時間測定を自動再開したりしない。
 
 ### P1 — Competitive capability
 
@@ -107,9 +136,17 @@ wall-clock/node budget、validation policy、configuration IDをmanifestへ記�
    predicted yieldを分離する。temporal/OOD、calibration、abstentionを通るまでroute scoreへ
    統合しない。
 
+### P2 — Upstream compatibility
+
+AiZynthFinder 4.4.1、Syntheseus 0.7.2/0.8.0と既存SynPlanner adapterはgolden fixtureを維持する。
+ASKCOSの画像入力はroute adapterから切り離す。ASKCOS/RetroCastの専用route adapterは
+現行Bridgeにあると仮定せず、version固定schema・実例・ライセンスを確認してから別件で判断する。
+releaseが同じことを「mainに変更がない」根拠にはしない。
+
 ## Phase map
 
-0–7は継続的な機能領域、55.xは今回の実行順を表す。既存Phase/O番号は改番しない。
+0–7は継続的な機能領域、55.xは成功率改善の実行順、O7.xは監査製品の実行順を表す。
+既存Phase/O番号は改番しない。
 
 | Phase | Status | Scope | 次のgate |
 |---|---|---|---|
@@ -146,18 +183,31 @@ O5 exit gate:
 
 ## Audit-native agent bridge — O6
 
-O6.1〜O6.5は実装済み。今後は互換性維持と実利用fixtureの拡充を行う。
+O6.1〜O6.5の構成要素は実装済み。ただしexport・envelope検査・trace自己整合性の確認と、
+外部証跡を再importして化学監査まで再実行することは異なる。後者をO7.0で接続する。
 
 | Phase | Status | Delivered contract |
 |---|---|---|
 | O6.1 Audit receipt | Shipped | tool/API、version、argument/result hash、status、failure code |
 | O6.2 Stock policy | Shipped | vendor、価格、納期、region、hazard、banlistのleaf判定 |
 | O6.3 Adapter loss report | Shipped | preserved/normalized/inferred/dropped/unsupported |
-| O6.4 Canonical interchange | Shipped | source IDとprovenanceを保持するroute import/export |
-| O6.5 Agent replay | Shipped | retro → condition → forward traceとreceipt hash照合 |
+| O6.4 Canonical interchange | Shipped | canonical exportとstrict envelope検査。完全なcanonical再import・再監査は未接続 |
+| O6.5 Agent replay | Shipped | retro → condition → forward traceとreceipt自己整合性確認。実入力・実結果・最終監査との結合はO7.0 |
 
 O6はroute solved rateを直接改善する機能ではない。agent出力は、RENKINの構造検証、stock
 policy、forward replayを通るまで化学的妥当性や調達可能性の証拠として扱わない。
+
+## O7 next-candidate exit gate
+
+- schema/version、route/node identity、hash対象、情報損失、機密データのexport方針を先に固定する。
+- ローカル入力 → audit → metrics receipt → export → 別processで再import・再監査を再現する。
+- 欠落質量・非有限数・不一致hash・別routeのreceipt・不明な単位を正常値へ変換しない。
+- PMI/E-factorは工程境界と実質量が揃った範囲だけ評価し、source報告値と再計算値を区別する。
+- opt-in未使用時の既存CLI/MCP出力・探索結果・stock/structure判定をgolden fixtureで維持する。
+- workspace test、clippy、WASM build、Python/MCPの公開surface回帰、docs例を候補commitで検証する。
+
+証跡のhash一致は、実験成功・計算結果の正しさ・発行者の真正性を証明しない。署名や外部認証を
+導入しない限りreceiptは自己整合性と入力結合を検査するものとして表示する。
 
 ## Security track
 
@@ -174,10 +224,10 @@ chemical invalidを別のtermination reasonとして記録する。
 | S5 Supply chain | Continuous | advisory、license、workflow pin、artifact provenance |
 | S6 Adversarial verification | Continuous | fuzz/property corpus、incident record、外部レビュー |
 
-直近のworking treeでは、WASM固有budget、厳格なelement filter、MCP checked numeric
-conversion、標準検索timeout、stock path symlink拒否、comparison manifestのworktree/
-configuration identityを実装している。release済みと混同せず、workspace test、WASM build、
-MCP adversarial suite、release smokeを通過してからShippedへ移す。
+v1.0.7は候補commitで既存CI・配布gateを通過済み。以後もWASM budget、MCP numeric/
+timeout境界、stock path保護、comparison manifest identityの回帰を維持する。O7ではさらに
+入力サイズ・深さ・件数の上限、機密情報の非出力、receiptの差し替え拒否を検証する。
+個別releaseの通過をSecurity track全体の完了とは扱わない。
 
 ## Phase 55 exit gate
 
@@ -203,11 +253,15 @@ timeout、max routes、host条件、validation policyで実行し、次をすべ
 - validatorやstock identityを緩めてsolved rateを増やさない。
 - ASKCOS、AiZynthFinder、Syntheseus、SynPlannerのUIや設定をそのまま複製しない。
 - evidenceなしのcondition、yield、success probabilityを生成しない。
+- SMILESや反応式だけからPMI/E-factorを捏造せず、既存MW比を工程サステナビリティと呼ばない。
+- OCR confidenceを構造正解率と同一視せず、URLを渡しただけでremote取得しない。
+- DFT実行・画像認識モデル・新しい検索戦略を、今回の監査receipt実装へ抱き合わせない。
 - 「脆弱性ゼロ」や「普遍的優位性」を未測定のまま宣言しない。
 
 ## Evidence and references
 
 - [Phase 55: AiZynthFinder成功率超えの実行計画](docs/roadmap/aizynthfinder-accuracy.md)
+- [O7: Evidence chain詳細計画（ローカル・公開対象外）](docs/roadmap/evidence-chain.md)
 - [Benchmark methodology](docs/benchmark.md)
 - [Open-source retrosynthesis comparison](docs/guides/open-source-retrosynthesis-comparison.md)
 - [Historical 85-program audit](docs/roadmap/renkin-85-program.md)

@@ -13,7 +13,7 @@
 //! human-readable text formatting. `src/main.rs::run_audit_route` and
 //! `src/wasm.rs::audit_route` each own that on their own side.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -290,6 +290,25 @@ pub struct AuditRouteReport {
     pub private_stock: Option<Vec<crate::bridge::private_stock::PrivateStockReport>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub route_interchange: Option<Vec<crate::bridge::interchange::RouteInterchange>>,
+    /// Local process-mass receipts supplied explicitly by the caller. They
+    /// are independent of the route's structural verdict and are absent by
+    /// default so existing audit JSON remains unchanged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub route_metrics: Option<Vec<Vec<crate::bridge::route_metrics::RouteMetricsReceipt>>>,
+    /// Redacted provenance for an image/PDF/text-derived target. The full
+    /// local receipt remains with the caller; this report never emits a URL,
+    /// raw OCR prediction, normalized structure, or reviewer identity.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_artifact: Option<crate::bridge::input_artifact::RedactedInputArtifactReceipt>,
+    /// Optional post-audit Pareto result. Audit failures and partial verdicts
+    /// constrain candidate eligibility before the ranker sees objective values.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub audit_ranking: Option<crate::bridge::audit_ranking::ParetoReceipt>,
+    /// External mechanistic evidence, retained as provenance only. It does
+    /// not change the structural audit verdict or search ordering.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mechanistic_evidence:
+        Option<Vec<Vec<crate::bridge::mechanistic_evidence::MechanisticEvidenceReceipt>>>,
     /// Adapter provenance kept out of the legacy audit JSON. These vectors
     /// align with `routes` and are consumed only by canonical interchange.
     #[serde(skip)]
@@ -371,7 +390,7 @@ impl AuditRouteReport {
                         None
                     };
                     crate::bridge::interchange::from_audit_report(
-                        self.source_format,
+                        source_tool_for_report(report),
                         self.route_source_versions.get(index).cloned().flatten(),
                         self.route_source_ids.get(index).cloned().flatten(),
                         self.route_original_node_ids
@@ -383,6 +402,145 @@ impl AuditRouteReport {
                 })
                 .collect(),
         );
+    }
+
+    /// Attach and evaluate local process-mass ledgers. A ledger must name an
+    /// exact normalized route ID from this report; metrics never get attached
+    /// to an arbitrary route by list position.
+    pub fn attach_route_metrics(
+        &mut self,
+        ledgers: &[crate::bridge::route_metrics::ProcessMassLedger],
+    ) -> anyhow::Result<()> {
+        let mut metrics = vec![Vec::new(); self.routes.len()];
+        for ledger in ledgers {
+            let matching = self
+                .routes
+                .iter()
+                .enumerate()
+                .filter_map(|(index, report)| {
+                    (report.normalized_route_sha256.as_deref() == Some(&ledger.route_id))
+                        .then_some(index)
+                })
+                .collect::<Vec<_>>();
+            let [index] = matching.as_slice() else {
+                anyhow::bail!(
+                    "route metrics route_id {:?} must match exactly one audited route (matched {})",
+                    ledger.route_id,
+                    matching.len()
+                );
+            };
+            metrics[*index].push(ledger.evaluate()?);
+        }
+        self.route_metrics = Some(metrics);
+        Ok(())
+    }
+
+    /// Bind a local input-artifact receipt to the one audited target and keep
+    /// only its redacted public view in this report.
+    pub fn attach_input_artifact(
+        &mut self,
+        artifact: &crate::bridge::input_artifact::InputArtifactReceipt,
+    ) -> anyhow::Result<()> {
+        let targets = self
+            .routes
+            .iter()
+            .filter_map(|report| report.steps.first().map(|step| step.target.as_str()))
+            .collect::<BTreeSet<_>>();
+        let targets = targets.into_iter().collect::<Vec<_>>();
+        let [target] = targets.as_slice() else {
+            anyhow::bail!(
+                "input artifact requires exactly one auditable route target; this report has no unique non-leaf target"
+            );
+        };
+        artifact.validate_for_target(target)?;
+        self.input_artifact = Some(artifact.redacted());
+        Ok(())
+    }
+
+    /// Attach a Pareto ranking after applying the existing audit verdict as a
+    /// non-overridable hard gate. User-supplied objective values cannot make a
+    /// failed route eligible or turn a partial route into a clean pass.
+    pub fn attach_pareto_ranking(
+        &mut self,
+        candidates: &[crate::bridge::audit_ranking::RankingCandidate],
+    ) -> anyhow::Result<()> {
+        let mut gated = candidates.to_vec();
+        for candidate in &mut gated {
+            let matching = self
+                .routes
+                .iter()
+                .filter(|report| {
+                    report.normalized_route_sha256.as_deref() == Some(&candidate.route_id)
+                })
+                .collect::<Vec<_>>();
+            let [report] = matching.as_slice() else {
+                anyhow::bail!(
+                    "audit ranking route_id {:?} must match exactly one audited route (matched {})",
+                    candidate.route_id,
+                    matching.len()
+                );
+            };
+            candidate.eligibility = match (report.status, candidate.eligibility) {
+                (AuditStatus::Fail, _)
+                | (_, crate::bridge::audit_ranking::AuditEligibility::Rejected) => {
+                    crate::bridge::audit_ranking::AuditEligibility::Rejected
+                }
+                (AuditStatus::Partial, _) => {
+                    crate::bridge::audit_ranking::AuditEligibility::NeedsReview
+                }
+                (AuditStatus::Pass, eligibility) => eligibility,
+            };
+        }
+        self.audit_ranking = Some(crate::bridge::audit_ranking::pareto_rank(&gated)?);
+        Ok(())
+    }
+
+    /// Attach externally computed/reported mechanistic evidence only when it
+    /// identifies an exact audited route and existing step index.
+    pub fn attach_mechanistic_evidence(
+        &mut self,
+        evidence: &[crate::bridge::mechanistic_evidence::MechanisticEvidenceReceipt],
+    ) -> anyhow::Result<()> {
+        let mut attached = vec![Vec::new(); self.routes.len()];
+        for receipt in evidence {
+            receipt.validate()?;
+            let matching = self
+                .routes
+                .iter()
+                .enumerate()
+                .filter_map(|(index, report)| {
+                    (report.normalized_route_sha256.as_deref() == Some(&receipt.route_id))
+                        .then_some(index)
+                })
+                .collect::<Vec<_>>();
+            let [index] = matching.as_slice() else {
+                anyhow::bail!(
+                    "mechanistic evidence route_id {:?} must match exactly one audited route (matched {})",
+                    receipt.route_id,
+                    matching.len()
+                );
+            };
+            if receipt.step_index >= self.routes[*index].steps.len() {
+                anyhow::bail!(
+                    "mechanistic evidence step_index {} is outside audited route {:?} with {} steps",
+                    receipt.step_index,
+                    receipt.route_id,
+                    self.routes[*index].steps.len()
+                );
+            }
+            attached[*index].push(receipt.clone());
+        }
+        self.mechanistic_evidence = Some(attached);
+        Ok(())
+    }
+}
+
+fn source_tool_for_report(report: &AuditReport) -> &'static str {
+    match report.source {
+        crate::bridge::route_graph::RouteSource::Renkin => "renkin",
+        crate::bridge::route_graph::RouteSource::AiZynthFinder => "aizynthfinder",
+        crate::bridge::route_graph::RouteSource::Syntheseus => "syntheseus",
+        crate::bridge::route_graph::RouteSource::SynPlanner => "synplanner",
     }
 }
 
@@ -408,6 +566,7 @@ struct AzfBatchRow {
 
 enum AuditRouteFormat {
     Renkin,
+    Interchange,
     AiZynthFinderSingle,
     AiZynthFinderBatch,
     Syntheseus,
@@ -464,6 +623,13 @@ fn detect_audit_route_format(value: &serde_json::Value) -> anyhow::Result<AuditR
             Ok(AuditRouteFormat::AiZynthFinderBatch)
         }
         serde_json::Value::Object(map)
+            if map.contains_key("schema_version")
+                && map.contains_key("route_id")
+                && map.contains_key("loss_report") =>
+        {
+            Ok(AuditRouteFormat::Interchange)
+        }
+        serde_json::Value::Object(map)
             if map.get("source_tool").and_then(|v| v.as_str()) == Some("syntheseus") =>
         {
             Ok(AuditRouteFormat::Syntheseus)
@@ -474,7 +640,7 @@ fn detect_audit_route_format(value: &serde_json::Value) -> anyhow::Result<AuditR
             Ok(AuditRouteFormat::Renkin)
         }
         _ => bail!(
-            "renkin audit-route: --format auto could not identify this input -- recognized shapes are RENKIN (\"target\"+\"routes\" object), AiZynthFinder single-target (top-level array), AiZynthFinder batch (Pandas \"schema\"+\"data\" object), Syntheseus (\"source_tool\": \"syntheseus\" object), SynPlanner (top-level object keyed by route-ID integers). Pass --format explicitly if this is a supported shape auto-detection doesn't recognize."
+            "renkin audit-route: --format auto could not identify this input -- recognized shapes are RENKIN (\"target\"+\"routes\" object), canonical interchange (\"schema_version\"+\"route_id\"+\"loss_report\" object), AiZynthFinder single-target (top-level array), AiZynthFinder batch (Pandas \"schema\"+\"data\" object), Syntheseus (\"source_tool\": \"syntheseus\" object), SynPlanner (top-level object keyed by route-ID integers). Pass --format explicitly if this is a supported shape auto-detection doesn't recognize."
         ),
     }
 }
@@ -484,7 +650,7 @@ fn detect_audit_route_format(value: &serde_json::Value) -> anyhow::Result<AuditR
 /// playground's Audit tab both produce -- the single shared entry point
 /// described in this module's own doc comment.
 ///
-/// `format`: `"auto" | "renkin" | "aizynthfinder"`, same vocabulary as the
+/// `format`: `"auto" | "renkin" | "interchange" | "aizynthfinder"`, same vocabulary as the
 /// CLI's `--format` flag. `stock`: canonical SMILES of the stock actually
 /// configured for this audit, or `None` for "no stock to check against"
 /// (left `not_evaluable`, never force-passed -- see [`audit::audit`]'s own
@@ -544,6 +710,7 @@ pub fn build_audit_route_report_with_options(
     if ![
         "auto",
         "renkin",
+        "interchange",
         "aizynthfinder",
         "syntheseus",
         "synplanner",
@@ -560,6 +727,7 @@ pub fn build_audit_route_report_with_options(
 
     let resolved_format = match format {
         "renkin" => AuditRouteFormat::Renkin,
+        "interchange" => AuditRouteFormat::Interchange,
         "aizynthfinder" => match &value {
             serde_json::Value::Array(_) => AuditRouteFormat::AiZynthFinderSingle,
             serde_json::Value::Object(map) if map.contains_key("data") => {
@@ -594,6 +762,21 @@ pub fn build_audit_route_report_with_options(
                 route_original_node_ids.push(Vec::new());
             }
             "renkin"
+        }
+        AuditRouteFormat::Interchange => {
+            let stock = stock.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "canonical interchange v1 re-audit requires configured stock; pass --stock"
+                )
+            })?;
+            let reaudited =
+                crate::bridge::interchange::reauditable_import_v1(&value, stock, rules, policy)?;
+            summary.record(reaudited.audit.status);
+            reports.push(reaudited.audit);
+            route_source_versions.push(None);
+            route_source_ids.push(None);
+            route_original_node_ids.push(Vec::new());
+            "interchange"
         }
         AuditRouteFormat::AiZynthFinderSingle => {
             let routes: Vec<AzfNode> = serde_json::from_value(value)
@@ -692,6 +875,10 @@ pub fn build_audit_route_report_with_options(
         }),
         private_stock: None,
         route_interchange: None,
+        route_metrics: None,
+        input_artifact: None,
+        audit_ranking: None,
+        mechanistic_evidence: None,
         route_source_versions,
         route_source_ids,
         route_original_node_ids,

@@ -2,10 +2,38 @@
 
 ## Current objective
 
-Phase 55を次の開発目標とする。同一stock・時間予算でAiZynthFinderのnative成功率と
-共通検証後の成功率をともに超え、未使用TESTで検証する。Phase 54の残る配布・回帰gateは
-55.0の前提として維持する。[優先順位](../ROADMAP.md)と
-[詳細計画・合格条件](../docs/roadmap/aizynthfinder-accuracy.md)を参照。
+2026-09-14: 基準はv1.0.7（`ed41338`）。次の製品候補はO7.0–O7.1に絞り、既存O6を
+再import・再監査まで接続して、工程指標の根拠と不足を記録する。Phase 55の「同一stock・
+予算でAiZynthFinderのnative/common-strictをともに上回り、独立TESTで証明する」目標は維持。
+監査製品の完成と競合優位性の証明を別gateにする。[優先順位](../ROADMAP.md)、
+[O7詳細・合格条件](../docs/roadmap/evidence-chain.md)、
+[Phase 55測定計画](../docs/roadmap/aizynthfinder-accuracy.md)を参照。
+
+## O7: Evidence chain — planned, next candidate O7.0–O7.1
+
+以下は計画であり未実装。次候補の呼称はv1.0.8候補だが、この文書更新では版番号・
+公開・探索設定・凍結TESTを変更しない。既存の作業記録は下に保存する。
+
+- [x] **O7.0 / v1 Contract + Replay** strict canonical v1 import、route hash照合、通常の
+  structure/stock/forward auditへの再接続、別process CLI round-tripを実装。root不明の
+  direct route、重複分解、cycle/disconnected topology、unknown field、hash差し替えは拒否。
+  receiptの実引数/実結果/最終監査への結合とv2のoccurrence topologyは残る。
+- [x] **O7.1 / Core metrics** `route_metrics_v1`の値・単位・方法・source・工程境界・coverageを
+  固定し、route hashで監査reportへ接続。source報告値／再計算値／`not_evaluable`を分離し、
+  既存MW比を上書きしない。
+- [x] **O7.1 / Calculation core** 合成fixtureと実CLIでPMI/E-factorを検証。water/solvent
+  欠落、waste欠落、g/kg、非有限数、product質量0を扱う。step間二重計上とsidecar provenance
+  bindingは複数step fixtureを追加して継続する。
+- [ ] **O7.0–O7.1 / Candidate gate** local import→audit→receipt→export→再importを完走。
+  既定動作のgolden parity、workspace test・clippy・WASM・Python/MCP回帰・docs例を確認。
+- [x] **O7.2 / Artifact core** local sidecarでoriginal content hash、source kind、transform、
+  OCR/model、normalization、reviewを検証し、対象targetへbind。reportはlocator/raw prediction/
+  normalized SMILES/reviewerをredactする。実OCR、remote取得、複数候補/stereo reviewは残る。
+- [x] **O7.3 / Pareto core** hard gate後のaxis別Paretoを実装。missing値の暗黙0扱い・通貨混在・
+  異なる工程境界の合算を禁止。weighted profileと感度分析は後続。
+- [x] **O7.4 / Mechanistic core** 外部計算の状態・方法・反応対応をroute/step receiptへ記録。
+  RENKIN内でDFTを実行せず、物理量とunit、computed時のstate/geometry不足を拒否する。
+  実利用fixtureとprofile統合は継続する。
 
 ## Phase 55: AiZynthFinder accuracy — active
 

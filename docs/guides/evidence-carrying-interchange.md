@@ -34,7 +34,67 @@ It records each canonical field as `preserved`, `normalized`, `inferred`,
 are rejected by strict import validation; an `unsupported` field is reported as
 loss and is never silently promoted to chemical validity or route success.
 
-The Rust bridge exposes `validate_strict_import` for canonical JSON input. It
-rejects an absent or malformed `loss_report` before the document is accepted
-as an audit/replay input; the normal route parser, stock evaluator, and forward
-replay still decide chemical validity afterward.
+The Rust bridge exposes `validate_strict_import` for envelope validation and
+`reauditable_import_v1` for strict re-import followed by the ordinary audit.
+The CLI exposes the same path:
+
+```bash
+renkin audit-route interchange.json --format interchange --stock stock.smi --output json
+```
+
+Version 1 is a flattened step list. Re-import accepts it only when one root,
+one decomposition per molecule, an acyclic topology, canonical SMILES, and a
+matching reconstructed route hash can be proven. It requires configured stock,
+because v1 did not retain leaf-stock claims. Direct-purchase routes, duplicate
+decompositions, cycles, disconnected components, unknown fields, and hash
+mismatches are rejected rather than inferred. The re-audit recomputes the
+structure, stock, element, and forward verdicts; it does not trust the stored
+`audit_status`.
+
+## Local process-mass receipts
+
+Attach a local JSON array of `ProcessMassLedger` records by route hash:
+
+```bash
+renkin audit-route route.json --stock stock.smi \
+  --route-metrics process-ledgers.json --output json
+```
+
+Each ledger must include an exact `route_id`, boundary, product mass, input
+categories, method, and source hash. PMI is emitted only when every declared
+required category has a finite positive mass. E-factor additionally needs an
+explicit waste mass; it is not derived as `PMI - 1`. Missing inputs produce
+`not_evaluable` with a reason code, never zero. Reported source values remain
+separate from RENKIN's recomputation.
+
+## Image and OCR input provenance
+
+`--input-artifact artifact.json` accepts a local `InputArtifactReceipt` for a
+single audited target. It records the source-content hash, image/SVG/PDF/text
+kind, optional transform lineage, OCR tool/model/version, normalization, and
+review state. It does not run OCR, render input, or fetch a URL. The audit
+report emits only a redacted receipt: no locator, raw prediction, normalized
+SMILES, reviewer identifier, or review reason. Confidence needs declared
+semantics and is never treated as proof that the drawing was recognized
+correctly.
+
+## Post-audit Pareto ranking
+
+`--audit-ranking ranking.json` accepts route-ID-keyed objective vectors only
+after normal auditing. Every vector declares its direction, unit, and basis.
+Routes are compared only when all values are finite and those contracts match;
+unknown values or differing currencies/process boundaries become
+`incomparable`, never zero. A failed audit is always `rejected`, and a partial
+audit is at most `needs_review`, regardless of supplied objective values.
+Weighted ranking and sensitivity analysis remain a later explicit-profile
+feature; this initial surface is deliberately Pareto-only.
+
+## External mechanistic evidence
+
+`--mechanistic-evidence evidence.json` accepts local records keyed by exact
+route hash and audit step index. The receipt distinguishes electronic,
+enthalpic, and Gibbs activation barriers, HOMO/LUMO gaps, and Fukui indices;
+the unit must match that physical quantity. Computed values require a method,
+charge, multiplicity, and geometry hash. They remain provenance attached to an
+audited step: RENKIN does not execute DFT, mix incompatible calculations, or
+use these values to override an audit verdict or reorder search results.

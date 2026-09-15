@@ -32,6 +32,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from dataclasses import dataclass
 from functools import partial
 
@@ -68,6 +69,8 @@ class RenkinConfig:
     # the thread cap and aggregate CPU-time ceiling are still applied.
     resource_cpus: int = 8
     resource_memory_gib: int = 6
+    container_image: str | None = None
+    repo_root: str = "."
     # Ring-context safety guard (Issue #72/#242) -- None/"disabled" runs the
     # shipped default (guard off); any other policy also requires a sidecar
     # path and is used for the guard-cost comparison arm, never the primary
@@ -207,6 +210,59 @@ def _run_with_time_wrapper(
             os.unlink(time_report_path)
 
 
+def _container_path(path: str, repo_root: str) -> str:
+    """Map a repository-contained host input into the read-only container mount."""
+    root = os.path.realpath(repo_root)
+    resolved = os.path.realpath(path)
+    if os.path.commonpath((root, resolved)) != root:
+        raise ValueError(f"containerized RENKIN input escapes repo_root: {path!r}")
+    return "/repo/" + os.path.relpath(resolved, root)
+
+
+def _run_in_container(
+    argv: list[str], config: RenkinConfig
+) -> tuple[int | None, bytes, bytes, float, int | None, bool, float | None, float | None]:
+    """Run the RENKIN CLI under the same Docker resource boundary as AiZynthFinder."""
+    container_name = f"renkin-compare-66-renkin-{uuid.uuid4().hex[:12]}"
+    repo_root = os.path.realpath(config.repo_root)
+    translated = [
+        _container_path(arg, repo_root) if index > 0 and os.path.exists(arg) else arg
+        for index, arg in enumerate(argv)
+    ]
+    docker_cmd = [
+        "docker", "run", "--name", container_name, "--platform", "linux/arm64", "--network", "none",
+        "--cpus", str(config.resource_cpus), "--memory", f"{config.resource_memory_gib}g",
+        "--memory-swap", f"{config.resource_memory_gib}g", "-v", f"{repo_root}:/repo:ro",
+        config.container_image, *translated[1:],
+    ]
+    start = time.monotonic()
+    wrapper_killed = False
+    try:
+        proc = subprocess.Popen(docker_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            stdout, stderr = proc.communicate(timeout=config.external_timeout_s)
+        except subprocess.TimeoutExpired:
+            try:
+                subprocess.run(["docker", "kill", container_name], capture_output=True, timeout=10)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+            try:
+                stdout, stderr = proc.communicate(timeout=config.grace_s)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                stdout, stderr = proc.communicate()
+            wrapper_killed = True
+        returncode = proc.returncode
+    finally:
+        wall_clock_s = time.monotonic() - start
+        try:
+            subprocess.run(["docker", "rm", "-f", container_name], capture_output=True, timeout=10)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    hint_returncode = -1 if wrapper_killed else returncode
+    return hint_returncode, stdout, stderr, wall_clock_s, None, wrapper_killed, None, None
+
+
 def run_one_target(
     target_smiles: str,
     target_id: str,
@@ -299,18 +355,25 @@ def run_one_target(
         wrapper_killed,
         cpu_user_s,
         cpu_sys_s,
-    ) = _run_with_time_wrapper(
-        argv,
-        config.external_timeout_s,
-        config.grace_s,
-        config.resource_cpus,
-        config.resource_memory_gib,
+    ) = (
+        _run_in_container(argv, config)
+        if config.container_image
+        else _run_with_time_wrapper(
+            argv,
+            config.external_timeout_s,
+            config.grace_s,
+            config.resource_cpus,
+            config.resource_memory_gib,
+        )
     )
     total_elapsed_ms = wall_clock_s * 1000.0
     cpu_time_tool_specific = {
         "cpu_user_s": cpu_user_s,
         "cpu_sys_s": cpu_sys_s,
-        "resource_enforcement": enforcement_label(),
+        "resource_enforcement": (
+            "docker_run_--cpus_--memory_--memory-swap_network_none"
+            if config.container_image else enforcement_label()
+        ),
         "resource_cpus": config.resource_cpus,
         "resource_memory_gib": config.resource_memory_gib,
     }

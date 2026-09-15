@@ -100,6 +100,15 @@ def execution_enforcement_contract(args: argparse.Namespace) -> dict:
             "memory_enforced": True,
             "memory_mechanism": "docker_run_--memory_and_--memory-swap",
         }
+    if args.renkin_container_image:
+        return {
+            "runner": "docker_run",
+            "network": "none",
+            "cpu_enforced": True,
+            "cpu_mechanism": "docker_run_--cpus",
+            "memory_enforced": True,
+            "memory_mechanism": "docker_run_--memory_and_--memory-swap",
+        }
     try:
         from four_tool_resources import enforcement_label
     except ImportError:  # pragma: no cover - package execution fallback
@@ -157,6 +166,8 @@ def renkin_config_and_id(args):
         grace_s=args.grace_s,
         resource_cpus=args.resource_cpus,
         resource_memory_gib=args.resource_memory_gib,
+        container_image=args.renkin_container_image,
+        repo_root=args.repo_root,
         ring_context_policy=args.ring_context_policy,
         ring_context_sidecar=args.ring_context_sidecar,
         spectator_bond_policy=args.spectator_bond_policy,
@@ -251,6 +262,7 @@ def renkin_config_and_id(args):
     speed_suffix = "-speed" if args.speed_profile else ""
     bond_index_suffix = "-bond-index" if args.bond_index else ""
     search_profile_suffix = f"-sp_{args.search_profile}" if args.search_profile else ""
+    container_suffix = "-docker" if args.renkin_container_image else ""
     configuration_id = (
         f"renkin-{args.comparison_mode}-d{args.depth}-b{args.beam_width}"
         f"-mr{args.max_routes}-{args.route_selection}"
@@ -262,7 +274,7 @@ def renkin_config_and_id(args):
         f"{recovery_policy_suffix}"
         f"{spectator_bond_suffix}{element_accounting_suffix}{beam_diversity_suffix}"
         f"{template_policy_suffix}{scorer_suffix}{generator_suffix}{speed_suffix}"
-        f"{search_profile_suffix}"
+        f"{search_profile_suffix}{container_suffix}"
     )
     return config, building_blocks_path, configuration_id
 
@@ -379,6 +391,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-aggregate")
     parser.add_argument("--repo-root", default=".")
     parser.add_argument("--renkin-binary", default="target/release/renkin")
+    parser.add_argument(
+        "--renkin-container-image",
+        default=None,
+        help="Optional Linux RENKIN image for formal Docker-bounded comparisons.",
+    )
     parser.add_argument("--building-blocks", default="data/building_blocks.smi")
     parser.add_argument(
         "--shared-stock-smi", default="data/comparison/shared_stock/shared_stock.smi"
@@ -747,8 +764,8 @@ def main(argv: list[str] | None = None) -> int:
                 spectator_bond_policy=args.spectator_bond_policy if args.tool == "renkin" else None,
                 command_line=sys.argv,
                 repo_root=args.repo_root,
-                binary_path=args.renkin_binary if args.tool == "renkin" else None,
-                docker_image=args.aizynthfinder_image if args.tool == "aizynthfinder" else None,
+                binary_path=(args.renkin_binary if args.tool == "renkin" and not args.renkin_container_image else None),
+                docker_image=(args.aizynthfinder_image if args.tool == "aizynthfinder" else args.renkin_container_image),
                 input_files=input_files,
                 configuration_id=configuration_id,
                 tool_version=manifest_tool_version,

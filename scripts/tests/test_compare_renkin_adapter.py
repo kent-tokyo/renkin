@@ -336,5 +336,15 @@ class TestRenkinAdapterSmoke(unittest.TestCase):
         self.assertIsNotNone(row.normalized_route_sha256)
 
 
+class TestRenkinContainerBoundary(unittest.TestCase):
+    def test_container_path_maps_only_repository_inputs(self):
+        self.assertEqual(
+            adapter._container_path(str(BUILDING_BLOCKS), str(REPO_ROOT)),
+            "/repo/data/building_blocks.smi",
+        )
+        with self.assertRaisesRegex(ValueError, "escapes repo_root"):
+            adapter._container_path("/private/outside-stock.smi", str(REPO_ROOT))
+
+
 if __name__ == "__main__":
     unittest.main()

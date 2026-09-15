@@ -64,6 +64,19 @@ def test_formal_preflight_rejects_missing_or_ineffective_enforcement():
     assert "right_memory_enforcement_not_effective" in result["blockers"]
 
 
+def test_formal_preflight_rejects_effective_depth_or_top_k_mismatch():
+    right = manifest()
+    right["tool_asset_provenance"] = {
+        "resolved_search": {"max_transforms": "6"},
+        "resolved_post_processing": {"max_routes": "5"},
+    }
+    result = MODULE.preflight(
+        manifest(), right, {"a"}, {"a"}, require_effective_output_settings=True
+    )
+    assert result["eligible"] is False
+    assert {"effective_depth_mismatch", "effective_top_k_mismatch"} <= set(result["blockers"])
+
+
 def test_preflight_rejects_stale_or_incomplete_pair():
     right = manifest(commit="different", clean=False)
     right["input_file_sha256"]["stock"] = "other"

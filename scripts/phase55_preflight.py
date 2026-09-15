@@ -177,6 +177,7 @@ def preflight(
     *,
     require_clean: bool = True,
     require_effective_resource_enforcement: bool = False,
+    require_effective_output_settings: bool = False,
 ) -> dict[str, Any]:
     blockers: list[str] = []
     if left_ids != right_ids:
@@ -220,6 +221,20 @@ def preflight(
                     blockers.append(f"{label}_cpu_enforcement_not_effective")
                 if enforcement.get("memory_enforced") is not True:
                     blockers.append(f"{label}_memory_enforcement_not_effective")
+        if require_effective_output_settings:
+            provenance = right_manifest.get("tool_asset_provenance")
+            if not isinstance(provenance, dict):
+                blockers.append("right_effective_config_missing")
+            else:
+                search = provenance.get("resolved_search")
+                post_processing = provenance.get("resolved_post_processing")
+                if not isinstance(search, dict) or not isinstance(post_processing, dict):
+                    blockers.append("right_effective_config_incomplete")
+                else:
+                    if str(left_budget.get("depth")) != str(search.get("max_transforms")):
+                        blockers.append("effective_depth_mismatch")
+                    if str(left_budget.get("max_routes")) != str(post_processing.get("max_routes")):
+                        blockers.append("effective_top_k_mismatch")
 
     left_revision = left_manifest.get("git_commit")
     right_revision = right_manifest.get("git_commit")
@@ -252,6 +267,7 @@ def preflight(
         "left_tool_specific_budget": left_budget,
         "right_tool_specific_budget": right_budget,
         "effective_resource_enforcement_required": require_effective_resource_enforcement,
+        "effective_output_settings_required": require_effective_output_settings,
     }
 
 
@@ -265,6 +281,11 @@ def main() -> int:
         "--frozen-cohort",
         type=Path,
         help="require rows to be the deterministic prefix of this frozen cohort",
+    )
+    parser.add_argument(
+        "--require-effective-output-settings",
+        action="store_true",
+        help="Require effective AiZynthFinder depth/top-k YAML settings to match RENKIN's budget.",
     )
     parser.add_argument(
         "--smoke-size",
@@ -294,6 +315,7 @@ def main() -> int:
             smoke_size=args.smoke_size,
             require_clean=not args.allow_dirty,
             require_effective_resource_enforcement=args.require_effective_resource_enforcement,
+            require_effective_output_settings=args.require_effective_output_settings,
         )
     else:
         result = preflight(

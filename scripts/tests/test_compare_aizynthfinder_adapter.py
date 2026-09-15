@@ -55,6 +55,10 @@ class TestAizynthfinderAdapterRealContainer(unittest.TestCase):
         self.assertEqual(row.run_status, "completed")
         self.assertTrue(row.route_found)
         self.assertGreater(row.tool_reported_route_count, 0)
+        timing = row.tool_specific["aizynthfinder"]["timing"]
+        self.assertEqual(timing["common_performance_metric"], "process_wall_clock_ms")
+        self.assertEqual(timing["process_wall_clock_ms"], row.total_elapsed_ms)
+        self.assertGreaterEqual(timing["adapter_audit_elapsed_ms"], 0.0)
 
     def test_route_found_reflects_is_solved_not_nonempty_trees(self):
         # AiZynthFinder returns best-effort candidate trees even when

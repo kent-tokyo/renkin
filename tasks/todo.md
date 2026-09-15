@@ -29,6 +29,14 @@ Phase 55の「同一stock・予算でAiZynthFinderのnative/common-strictをと�
 [smoke監査記録](../docs/benchmark/phase55-smoke-review-20260916.md)を現状判断の根拠とする。
 下記のDocker停止、凍結前、旧test件数の記述はそれぞれの時点の履歴。
 
+55.4の最初の開発用VAL-200 recovery再検証は、baseline 129→final 134、回収5、strict回帰0、
+timeout/crash0まで到達したが、31秒cooperative deadlineの38件が最大31,026.14msとなったためHOLD。
+閾値を後から緩めず、両armを31秒external process cap、candidate内部recoveryを30秒とするv2を再登録する。
+これはrank-1/native macOSの候補選別であり、55.0の正式resource contract、55.6の独立TEST、または
+AiZynthFinderへの優位性主張を開始したものではない。v2完走後はbaseline行とのstrict回帰、全attempt、
+recovery/process双方の31秒budget、outer timeout/crashを`verify_non_displacing_recovery.py`で確認して
+retain/HOLDを固定する。
+
 ## O7: Evidence chain — implemented, operational validation follows
 
 以下は実装済みのproduct boundaryである。次候補の呼称はv1.0.8候補だが、この文書更新では

@@ -45,7 +45,7 @@ from compare_route_graph import (
     normalize_aizynthfinder_route,
     normalized_route_sha256,
 )
-from compare_schema import PlannerComparisonRow
+from compare_schema import PlannerComparisonRow, timing_v1
 from compare_validation import (
     build_stock_set,
     check_reaction_steps_parseable,
@@ -330,19 +330,37 @@ def run_one_target(
             argv, config, workdir
         )
         total_elapsed_ms = wall_clock_s * 1000.0
+        audit_started = time.monotonic()
         rss_measurement_method = "docker_stats_sampled" if peak_rss_bytes is not None else None
 
+        def finalize(row: PlannerComparisonRow) -> PlannerComparisonRow:
+            tool_specific = dict(row.tool_specific.get("aizynthfinder", {}))
+            reported_search_s = tool_specific.get("tool_reported_search_time_s")
+            if not isinstance(reported_search_s, (int, float)) or isinstance(reported_search_s, bool):
+                reported_search_s = None
+            tool_specific["timing"] = timing_v1(
+                total_elapsed_ms,
+                (time.monotonic() - audit_started) * 1000.0,
+                tool_reported_search_time_s=reported_search_s,
+                tool_reported_search_semantics=(
+                    "AiZynthFinder output search_time; tool-defined lifecycle, not a common metric"
+                    if reported_search_s is not None else None
+                ),
+            )
+            row.tool_specific = {"aizynthfinder": tool_specific}
+            return row
+
         if hint == "timeout":
-            return PlannerComparisonRow(
+            return finalize(PlannerComparisonRow(
                 **base,
                 run_status="timeout",
                 total_elapsed_ms=total_elapsed_ms,
                 peak_rss_bytes=peak_rss_bytes,
                 rss_measurement_method=rss_measurement_method,
-            )
+            ))
 
         if hint == "exit_nonzero":
-            return PlannerComparisonRow(
+            return finalize(PlannerComparisonRow(
                 **base,
                 run_status="crashed",
                 total_elapsed_ms=total_elapsed_ms,
@@ -351,11 +369,11 @@ def run_one_target(
                 adapter_warnings=[
                     {"code": "aizynthcli_nonzero_exit", "detail": stderr.decode(errors="replace")[:2000]}
                 ],
-            )
+            ))
 
         output_path = os.path.join(workdir, "output.json")
         if not os.path.exists(output_path):
-            return PlannerComparisonRow(
+            return finalize(PlannerComparisonRow(
                 **base,
                 run_status="invalid_input",
                 total_elapsed_ms=total_elapsed_ms,
@@ -364,7 +382,7 @@ def run_one_target(
                 adapter_warnings=[
                     {"code": "aizynth_output_missing", "detail": stderr.decode(errors="replace")[:2000]}
                 ],
-            )
+            ))
 
         with open(output_path, "rb") as f:
             raw_bytes = f.read()
@@ -372,14 +390,14 @@ def run_one_target(
         try:
             parsed = json.loads(raw_bytes)
         except json.JSONDecodeError:
-            return PlannerComparisonRow(
+            return finalize(PlannerComparisonRow(
                 **base,
                 run_status="invalid_input",
                 total_elapsed_ms=total_elapsed_ms,
                 peak_rss_bytes=peak_rss_bytes,
                 rss_measurement_method=rss_measurement_method,
                 adapter_warnings=[{"code": "aizynth_output_not_json", "detail": raw_bytes[:2000].decode(errors="replace")}],
-            )
+            ))
 
     raw_output_sha256 = hashlib.sha256(raw_bytes).hexdigest()
 
@@ -394,7 +412,7 @@ def run_one_target(
     # AiZynthFinder returns its best-effort top-N candidate routes
     # regardless of whether any of them are fully stock-terminating.
     if not (isinstance(parsed, dict) and isinstance(parsed.get("data"), list) and parsed["data"]):
-        return PlannerComparisonRow(
+        return finalize(PlannerComparisonRow(
             **base,
             run_status="invalid_input",
             total_elapsed_ms=total_elapsed_ms,
@@ -402,7 +420,7 @@ def run_one_target(
             rss_measurement_method=rss_measurement_method,
             raw_output_sha256=raw_output_sha256,
             adapter_warnings=[{"code": "aizynth_output_unexpected_shape", "detail": str(type(parsed))}],
-        )
+        ))
     record = parsed["data"][0]
 
     route_found = bool(record.get("is_solved"))
@@ -434,7 +452,7 @@ def run_one_target(
     )
 
     if not route_found or not trees:
-        return PlannerComparisonRow(**row_kwargs)
+        return finalize(PlannerComparisonRow(**row_kwargs))
 
     # Rank-1 route only, per the fixed route-selection rule (see
     # docs/guides/open-source-retrosynthesis-comparison.md, "Route selection").
@@ -446,7 +464,7 @@ def run_one_target(
         # A route was reported but its own tree doesn't parse -- a concrete,
         # confirmed defect, not merely "couldn't evaluate".
         row_kwargs["validator_confirmed_route_found"] = False
-        return PlannerComparisonRow(**row_kwargs)
+        return finalize(PlannerComparisonRow(**row_kwargs))
 
     graph = outcome.graph
     # aizynthcli's own per-route depth/step-count field names are not
@@ -508,7 +526,7 @@ def run_one_target(
             steps_ok is True and accounting_status == "accounted"
         )
 
-    return PlannerComparisonRow(**row_kwargs)
+    return finalize(PlannerComparisonRow(**row_kwargs))
 
 
 if __name__ == "__main__":  # pragma: no cover -- smoke entry point, see compare_run.py

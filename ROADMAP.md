@@ -55,8 +55,20 @@ AiZynthFinder 4.4.1のnative `route_found`はともに
 RENKIN 4/50、AiZynthFinder 1/50。ただし393件stock・500 templates・cold起動の接続検証であり、
 正式計画の大規模共通stock・warm worker・top-5とは異なる。資源制限の実効性、実際の
 AiZynthFinder設定・入力hashも未検証の部分があるため、**55.0全体は未完了**。
-Docker起動問題はこのrunで解消した。詳細と時間集計訂正は
+AiZynthFinder armのDocker接続はこのrunで確認したが、RENKIN armを同じ実効resource制限で
+動かす比較containerは未準備である。詳細と時間集計訂正は
 [smoke監査記録](docs/benchmark/phase55-smoke-review-20260916.md)を参照。
+
+### 実行中の判断境界
+
+9月16日には、55.4の既実装recoveryを開発用VAL-200で再検証している。これは、baselineと
+同じcohort・stock・template・総予算で、既存成功を取り消さずに少なくとも一件を回収できるかを
+判定する**候補選別**である。完走後にbaselineとのstrict回帰、全attempt、31秒budget、外側の
+timeout/crashを検証するまでは、途中の行数やroute数を採用根拠にしない。
+
+このrunはrank-1・native macOSの開発条件であり、Phase 55.0/55.6の正式比較を開始したことを
+意味しない。実行中は探索設定、template、stock、モデル、評価scriptを変更せず、結果を検証して
+から候補をretain/HOLDのいずれかに固定する。
 
 ## Accuracy-first strategy
 
@@ -97,13 +109,15 @@ Phase 55は完了扱いにしない。化学的にinvalidなrouteを指標の加
 
 ### 直近の実行順
 
-1. **55.0 / 測定契約を閉じる** — 完了済みresume invocationの累計計時は実装済み。監督プロセス、実設定/入力hash、
-   CPU/RAM enforcement、stock identity、計時・top-k・停止条件を検証する。既存50件smokeの
+1. **55.4 / 実行中の候補選別を閉じる** — 既登録のVAL-200 recoveryを設定変更なしで完走し、
+   baselineとのnative/common-strict回帰、全attempt、31秒budget、timeout/crashを検証する。未達なら
+   HOLDに戻し、別の施策を同じrunへ混ぜない。
+2. **55.0 / 測定契約を閉じる** — 完了済みresume invocationの累計計時は実装済み。監督プロセス、実設定/入力hash、
+   CPU/RAM enforcement、stock identity、startup/search/auditの計時、top-k・停止条件を検証する。既存50件smokeの
    通過範囲を保存し、正式設定の動作確認には開発用targetを使う。
-2. **55.1 → 55.4 / 候補を選ぶ** — 既存失敗atlasから仮説を一つ選び、まず実装済みrecoveryを
-   同一総予算のVAL-200 A/Bで評価する。native/strict非悪化・成功取り消し0・予算内完了を要求。
-   55.2/55.3/55.5のHOLD施策は新しい原因証拠がある場合だけ再評価し、採用構成を一つ凍結する。
-3. **55.6 / 独立比較** — 既に結果を閲覧した50件の扱いと、VAL由来のexact McNemar検出力に
+3. **55.1 → 55.5 / 候補を一つ凍結する** — 55.4の判定を含め、HOLD中の55.2/55.3/55.5は新しい原因証拠がある場合だけ
+   単独A/Bで再評価する。採用構成以外は正式比較へ持ち込まない。
+4. **55.6 / 独立比較** — 既に結果を閲覧した50件の扱いと、VAL由来のexact McNemar検出力に
    基づく標本数を事前登録してから未使用TESTを測定する。旧500件をそのまま未使用とは扱わず、
    原本のhash・対象は保持する。
    両主指標のpaired CI、改善/悪化、資源、再現reportを揃える。
@@ -134,11 +148,11 @@ precursorのMW比であり、全量論試薬を扱う理論atom economyや実工
 
 | Phase | Status | 現在の証拠 | 次の判定 |
 |---|---|---|---|
-| 55.0 測定契約 | Active | 小規模stockの50件smoke完走・既存preflight通過。Docker起動問題は当該runで解消。completed-invocation ledgerにより再開後sliceの総時間誤表示を防止。AiZ設定は追跡templateとbyte一致、参照HDF5/ONNX/template/filterをhash固定。formal preflightは実効CPU/RAM enforcementのないarmを拒否 | stock変換identity・RENKINのcgroup/container等による実効RAM上限・startup/search/audit計時・top-k意味・監督resumeを正式契約へ結合し、開発用smokeで検証 |
+| 55.0 測定契約 | Active | 小規模stockの50件smoke完走・既存preflight通過。AiZynthFinder container接続は確認済みだが、RENKINの比較container imageは未準備。completed-invocation ledgerにより再開後sliceの総時間誤表示を防止。`planner_timing_v1`はprocess wall-clock、adapter監査、tool自己申告searchを分離して保存する。AiZ設定は追跡templateとbyte一致、参照HDF5/ONNX/template/filterをhash固定。formal preflightは実効CPU/RAM enforcementのないarmを拒否 | stock変換identity・両armの実効CPU/RAM上限・timer receiptの実run検証・top-k意味・監督resumeを正式契約へ結合し、開発用smokeで検証 |
 | 55.1 Failure atlas | Implemented / Partial | VAL-200を両者成功・片側成功・両者失敗へ分類。未観測原因はunknownとして保持 | 次の仮説に必要な第一喪失点を観測する。深さ/beam到達だけで原因確定しない |
 | 55.2 Ordering-only model | HOLD | TRAIN-only ONNX VAL-200はstrict 121→124（+3pp、95% CI −1.5〜+5.0pp、McNemar p=0.549）。timeout 0→2、p95 8.39→18.11秒、RSS p95 209→387 MiB。軽量512×128も10件でstrict 8→9・timeout 0だがp95 8.39→52.09秒、RSS p95 204→332 MiB | template-ID対応を保ったまま推論コストを下げ、timeout=0・strict非悪化を満たす候補だけ再評価 |
 | 55.3 Downstream reachability | Implemented / HOLD | shared-cache selectorを実装したが、小規模A/Bで精度向上未確認 | 全VALで成功取り消し0、strict非悪化、runtime正常なら採用 |
-| 55.4 Non-displacing recovery | Implemented | 保存VALでbaseline 129→final 134、回収5、regression/timeout/crash 0 | 最終候補を同一総予算で再測定 |
+| 55.4 Non-displacing recovery | Active / development validation | 31秒cooperative deadline版はbaseline 129→final 134、回収5、regression/timeout/crash 0だったが、38件が31秒を最大26.14ms超過してHOLD。v2は両armを31秒external cap、candidate内部recoveryを30秒として再測定する | baseline strict回帰、attempt完全性、recovery/process双方の31秒budget、timeout/crash、回収件数を機械検証し、retain/HOLDを決める |
 | 55.5 Missing proposals | HOLD | 70 direct proposalsを安全に投入したがroute未回収 | valid完成routeを増やせるfamily/modelだけ採用 |
 | 55.6 Independent TEST | Blocked | 500-target候補を凍結済み。先頭50件はsmoke結果を閲覧済み | 55.0と候補選定後、閲覧済み対象の扱い・N/検出力・専用protocolを固定してpaired解析 |
 

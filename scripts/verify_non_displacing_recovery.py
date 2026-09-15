@@ -41,6 +41,7 @@ def _rows_by_target(rows: list[dict], label: str) -> dict[str, dict]:
 def summarize(
     rows: list[dict],
     budget_ms: float | None = None,
+    process_budget_ms: float | None = None,
     baseline_rows: list[dict] | None = None,
 ) -> dict:
     baseline_success = 0
@@ -51,6 +52,7 @@ def summarize(
     crash = 0
     missing_attempts = 0
     recovery_elapsed_values: list[float] = []
+    process_elapsed_values: list[float] = []
     for row in rows:
         run_status = row.get("run_status")
         if run_status == "timeout":
@@ -61,6 +63,8 @@ def summarize(
         attempts = recovery.get("attempts") if isinstance(recovery, dict) else None
         if isinstance(recovery, dict) and isinstance(recovery.get("total_elapsed_ms"), (int, float)):
             recovery_elapsed_values.append(float(recovery["total_elapsed_ms"]))
+        if isinstance(row.get("total_elapsed_ms"), (int, float)):
+            process_elapsed_values.append(float(row["total_elapsed_ms"]))
         if not isinstance(attempts, list) or not attempts:
             missing_attempts += 1
             continue
@@ -116,6 +120,13 @@ def summarize(
         result["budget_overrun_count"] = len(over_budget)
         result["budget_max_elapsed_ms"] = max(recovery_elapsed_values, default=None)
         result["within_budget"] = not over_budget
+    if process_budget_ms is not None:
+        over_process_budget = [elapsed for elapsed in process_elapsed_values if elapsed > process_budget_ms]
+        result["process_budget_ms"] = process_budget_ms
+        result["process_budget_observed_count"] = len(process_elapsed_values)
+        result["process_budget_overrun_count"] = len(over_process_budget)
+        result["process_budget_max_elapsed_ms"] = max(process_elapsed_values, default=None)
+        result["within_process_budget"] = not over_process_budget
     return result
 
 
@@ -149,12 +160,18 @@ def main() -> int:
         type=float,
         help="optionally verify each recorded recovery total_elapsed_ms is within this bound",
     )
+    parser.add_argument(
+        "--process-budget-ms",
+        type=float,
+        help="optionally verify each row's externally observed process wall-clock is within this bound",
+    )
     args = parser.parse_args()
     if args.require_zero_strict_regression and args.baseline_rows is None:
         parser.error("--require-zero-strict-regression requires --baseline-rows")
     result = summarize(
         load_rows(args.rows),
         args.budget_ms,
+        args.process_budget_ms,
         load_rows(args.baseline_rows) if args.baseline_rows else None,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -167,6 +184,8 @@ def main() -> int:
     if args.require_complete_attempts and result["missing_attempts_count"]:
         return 1
     if args.budget_ms is not None and not result["within_budget"]:
+        return 1
+    if args.process_budget_ms is not None and not result["within_process_budget"]:
         return 1
     return 0
 

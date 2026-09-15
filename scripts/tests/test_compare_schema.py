@@ -224,6 +224,27 @@ class TestToolSpecificNamespacing(unittest.TestCase):
         self.assertEqual(row.tool_specific["renkin"]["nodes_expanded"], 10)
 
 
+class TestTimingReceipt(unittest.TestCase):
+    def test_keeps_common_and_tool_timers_separate(self):
+        receipt = schema.timing_v1(
+            100.0,
+            7.5,
+            tool_reported_search_time_s=0.08,
+            tool_reported_search_semantics="tool-defined",
+        )
+        self.assertEqual(receipt["schema_version"], schema.TIMING_SCHEMA_VERSION)
+        self.assertEqual(receipt["common_performance_metric"], "process_wall_clock_ms")
+        self.assertEqual(receipt["process_wall_clock_ms"], 100.0)
+        self.assertEqual(receipt["adapter_audit_elapsed_ms"], 7.5)
+        self.assertEqual(receipt["adapter_end_to_end_elapsed_ms"], 107.5)
+        self.assertEqual(receipt["tool_reported_search_elapsed_ms"], 80.0)
+
+    def test_rejects_invalid_duration(self):
+        for value in (-1.0, float("nan"), True):
+            with self.assertRaises(ValueError):
+                schema.timing_v1(value, 1.0)
+
+
 class TestRoundTrip(unittest.TestCase):
     def test_to_json_line_round_trips_via_load_rows(self):
         row = schema.PlannerComparisonRow(

@@ -68,6 +68,11 @@ class TestRenkinAdapterSmoke(unittest.TestCase):
         self.assertIsNotNone(row.normalized_route_sha256)
         self.assertIsNotNone(row.raw_output_sha256)
         self.assertGreater(row.total_elapsed_ms, 0)
+        timing = row.tool_specific["renkin"]["timing"]
+        self.assertEqual(timing["common_performance_metric"], "process_wall_clock_ms")
+        self.assertEqual(timing["process_wall_clock_ms"], row.total_elapsed_ms)
+        self.assertGreaterEqual(timing["adapter_audit_elapsed_ms"], 0.0)
+        self.assertIsNone(timing["tool_reported_search_elapsed_ms"])
 
     def test_spectator_bond_gated_policy_populates_gated_out_fields(self):
         # Doesn't assert a specific exclusion count (that depends on

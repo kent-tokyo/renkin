@@ -14,9 +14,11 @@ rejection, source-grep deny-list).
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import asdict, dataclass, field
 
 SCHEMA_VERSION = "1.1"
+TIMING_SCHEMA_VERSION = "planner_timing_v1"
 
 # Closed set -- exact equality is asserted in tests, not just "these are present".
 VALID_TOOLS = frozenset({"renkin", "aizynthfinder"})
@@ -47,6 +49,55 @@ _TREE_DEPENDENT_FIELDS = (
 
 class SchemaValidationError(ValueError):
     pass
+
+
+def timing_v1(
+    process_wall_clock_ms: float,
+    adapter_audit_elapsed_ms: float,
+    *,
+    tool_reported_search_time_s: float | None = None,
+    tool_reported_search_semantics: str | None = None,
+) -> dict:
+    """Build an explicit, non-conflated timing receipt for one adapter row.
+
+    ``total_elapsed_ms`` remains the cross-tool process wall-clock metric. A
+    tool's self-reported search timer is diagnostic only: it can cover a
+    different lifecycle. Common parsing and validation occur after the child
+    exits, so record that adapter work separately instead of hiding it.
+    """
+    for name, value in {
+        "process_wall_clock_ms": process_wall_clock_ms,
+        "adapter_audit_elapsed_ms": adapter_audit_elapsed_ms,
+    }.items():
+        if (
+            not isinstance(value, (int, float))
+            or isinstance(value, bool)
+            or not math.isfinite(value)
+            or value < 0
+        ):
+            raise ValueError(f"{name} must be a finite non-negative number")
+
+    receipt = {
+        "schema_version": TIMING_SCHEMA_VERSION,
+        "process_wall_clock_ms": float(process_wall_clock_ms),
+        "adapter_audit_elapsed_ms": float(adapter_audit_elapsed_ms),
+        "adapter_end_to_end_elapsed_ms": float(process_wall_clock_ms + adapter_audit_elapsed_ms),
+        "common_performance_metric": "process_wall_clock_ms",
+    }
+    if tool_reported_search_time_s is None:
+        receipt["tool_reported_search_elapsed_ms"] = None
+        receipt["tool_reported_search_semantics"] = None
+    else:
+        if (
+            not isinstance(tool_reported_search_time_s, (int, float))
+            or isinstance(tool_reported_search_time_s, bool)
+            or not math.isfinite(tool_reported_search_time_s)
+            or tool_reported_search_time_s < 0
+        ):
+            raise ValueError("tool_reported_search_time_s must be a finite non-negative number")
+        receipt["tool_reported_search_elapsed_ms"] = float(tool_reported_search_time_s * 1000.0)
+        receipt["tool_reported_search_semantics"] = tool_reported_search_semantics
+    return receipt
 
 
 def validate_tool(tool: str) -> None:

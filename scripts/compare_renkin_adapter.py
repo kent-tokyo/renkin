@@ -37,7 +37,7 @@ from dataclasses import dataclass
 from functools import partial
 
 from compare_route_graph import count_leaves, normalize_renkin_route, normalized_route_sha256
-from compare_schema import PlannerComparisonRow
+from compare_schema import PlannerComparisonRow, timing_v1
 from compare_validation import (
     build_stock_set,
     check_reaction_steps_parseable,
@@ -367,6 +367,7 @@ def run_one_target(
         )
     )
     total_elapsed_ms = wall_clock_s * 1000.0
+    audit_started = time.monotonic()
     cpu_time_tool_specific = {
         "cpu_user_s": cpu_user_s,
         "cpu_sys_s": cpu_sys_s,
@@ -389,34 +390,46 @@ def run_one_target(
         rss_measurement_method="usr_bin_time_v" if peak_rss_bytes is not None else None,
     )
 
+    def finalize(row: PlannerComparisonRow) -> PlannerComparisonRow:
+        tool_specific = dict(row.tool_specific.get("renkin", {}))
+        # Standard-mode JSON has no tool-native whole-search timer. Coverage
+        # stage timers, where emitted, describe stages only and are retained
+        # separately below rather than relabelled as a common metric.
+        tool_specific["timing"] = timing_v1(
+            total_elapsed_ms,
+            (time.monotonic() - audit_started) * 1000.0,
+        )
+        row.tool_specific = {"renkin": tool_specific}
+        return row
+
     if wrapper_killed:
-        return PlannerComparisonRow(
+        return finalize(PlannerComparisonRow(
             **base,
             run_status="timeout",
             total_elapsed_ms=total_elapsed_ms,
             peak_rss_bytes=peak_rss_bytes,
             tool_specific={"renkin": cpu_time_tool_specific},
-        )
+        ))
 
     if returncode != 0:
-        return PlannerComparisonRow(
+        return finalize(PlannerComparisonRow(
             **base,
             run_status="crashed",
             total_elapsed_ms=total_elapsed_ms,
             peak_rss_bytes=peak_rss_bytes,
             adapter_warnings=[{"code": "renkin_nonzero_exit", "detail": stderr.decode(errors="replace")[:2000]}],
-        )
+        ))
 
     try:
         parsed = json.loads(stdout)
     except json.JSONDecodeError:
-        return PlannerComparisonRow(
+        return finalize(PlannerComparisonRow(
             **base,
             run_status="invalid_input",
             total_elapsed_ms=total_elapsed_ms,
             peak_rss_bytes=peak_rss_bytes,
             adapter_warnings=[{"code": "renkin_stdout_not_json", "detail": stdout.decode(errors="replace")[:2000]}],
-        )
+        ))
 
     raw_output_sha256 = hashlib.sha256(stdout).hexdigest()
     routes_found = parsed.get("routes_found", 0)
@@ -494,7 +507,7 @@ def run_one_target(
                 **coverage_mode_fields,
             }
         }
-        return PlannerComparisonRow(**row_kwargs)
+        return finalize(PlannerComparisonRow(**row_kwargs))
 
     stock_set = build_stock_set(configured_stock_smiles)
     candidates = parsed["routes"]
@@ -560,7 +573,7 @@ def run_one_target(
         # A route was reported but its own tree doesn't parse -- a concrete,
         # confirmed defect, not merely "couldn't evaluate".
         row_kwargs["validator_confirmed_route_found"] = False
-        return PlannerComparisonRow(**row_kwargs)
+        return finalize(PlannerComparisonRow(**row_kwargs))
 
     graph = outcome.graph
     row_kwargs["best_route_leaf_count"] = count_leaves(graph.root)
@@ -588,7 +601,7 @@ def run_one_target(
             steps_ok is True and accounting_status == "accounted"
         )
 
-    return PlannerComparisonRow(**row_kwargs)
+    return finalize(PlannerComparisonRow(**row_kwargs))
 
 
 def resolve_tool_version(repo_root: str) -> str:

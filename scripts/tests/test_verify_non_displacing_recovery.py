@@ -74,6 +74,27 @@ class NonDisplacingRecoveryTests(unittest.TestCase):
         self.assertEqual(result["budget_max_elapsed_ms"], 1250)
         self.assertFalse(result["within_budget"])
 
+    def test_process_budget_is_distinct_from_recovery_budget(self):
+        rows = [
+            {
+                "route_found": False,
+                "run_status": "completed",
+                "total_elapsed_ms": 1010,
+                "tool_specific": {
+                    "renkin": {
+                        "recovery": {
+                            "attempts": [{"routes_found": 0}],
+                            "total_elapsed_ms": 990,
+                        }
+                    }
+                },
+            }
+        ]
+        result = MODULE.summarize(rows, budget_ms=1000, process_budget_ms=1000)
+        self.assertTrue(result["within_budget"])
+        self.assertEqual(result["process_budget_overrun_count"], 1)
+        self.assertFalse(result["within_process_budget"])
+
     def test_compares_strict_success_against_same_cohort_baseline(self):
         baseline = [
             {

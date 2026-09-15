@@ -1,6 +1,6 @@
 # RENKIN Roadmap
 
-更新日: **2026-09-14**
+更新日: **2026-09-15**
 
 基準リリース: **v1.0.7**（`ed41338`）
 
@@ -91,7 +91,7 @@ Phase 55は完了扱いにしない。化学的にinvalidなrouteを指標の加
 
 | 優先度 / Phase（実装順） | Status | 成果物 | 完了条件 |
 |---|---|---|---|
-| P0 / O7.0 Evidence binding | Implemented / Active | v1 canonical再import・hash照合・通常auditへの再接続、field単位loss report | 別processで再監査し同じ判定。receiptと実入力/実結果/最終監査の結合、v2 topologyは残る |
+| P0 / O7.0 Evidence binding | Implemented / Active | v1再importに加え、local receipt sidecarの実引数/実結果hash・receipt ID・final audit hash結合、および明示tree v2 API | 生データを出力せず別processで再監査。v2 CLI exportとcandidate gateは残る |
 | P0 / O7.1 Process metrics | Implemented / Active | 独立した`route_metrics_v1`、route hashに結合する質量ledger、方法・単位・境界・coverage・source付きreceipt | 手計算fixtureと一致。不足データは`not_evaluable`。sidecar provenance結合と公開surface回帰は残る |
 | P1 / O7.2 Input artifact | Implemented / Active | image/SVG/PDF/textのcontent hash、変換履歴、OCR/model、正規化・review receipt | redacted reportとtarget bindingは実装。実OCR、remote取得、複数候補/stereo reviewは残る |
 | P1 / O7.3 Audit ranking | Implemented / Active | hard gate後のaxis別Pareto | missing・非互換単位/境界は`incomparable`。weighted profileと感度receiptは残る |

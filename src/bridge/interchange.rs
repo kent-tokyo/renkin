@@ -19,9 +19,13 @@ use crate::bridge::route_graph::{ReactionEvidence, RouteDocument, RouteNode, Rou
 use crate::chem_env::{RetroRule, mol_from_smiles, to_canonical};
 
 pub const ROUTE_INTERCHANGE_SCHEMA_VERSION: u32 = 1;
+/// Explicit-tree interchange.  Version 1 remains supported for historical
+/// documents, but cannot faithfully carry direct-purchase routes or repeated
+/// molecule occurrences.
+pub const ROUTE_INTERCHANGE_V2_SCHEMA_VERSION: u32 = 2;
 pub const ADAPTER_LOSS_SCHEMA_VERSION: u32 = 1;
 
-#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum LossDisposition {
     Preserved,
@@ -31,14 +35,14 @@ pub enum LossDisposition {
     Unsupported,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AdapterLossField {
     pub field: String,
     pub disposition: LossDisposition,
     pub reason: String,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AdapterLossReport {
     pub schema_version: u32,
     pub fields: Vec<AdapterLossField>,
@@ -424,6 +428,38 @@ pub struct RouteInterchange {
     pub stock_provenance: Option<StockProvenance>,
 }
 
+/// Version 2 of the canonical route interchange.  Unlike v1's flat `steps`,
+/// each occurrence has an explicit place in the tree, so a molecule used
+/// twice is not silently collapsed and a direct-purchase root is representable.
+#[derive(Debug, Clone, Serialize)]
+pub struct RouteInterchangeV2 {
+    pub schema_version: u32,
+    pub source_tool: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_route_id: Option<String>,
+    pub route_id: String,
+    pub audit_status: AuditStatus,
+    pub root: InterchangeNodeV2,
+    pub audit_findings: Vec<AuditFinding>,
+    pub loss_report: AdapterLossReport,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stock_provenance: Option<StockProvenance>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct InterchangeNodeV2 {
+    /// Deterministic occurrence ID, derived from the normalized route ID and
+    /// the child-index path (`root`, `0`, `0.1`, ...).
+    pub canonical_node_id: String,
+    pub canonical_smiles: String,
+    pub is_stock_leaf: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reaction_evidence: Option<ReactionEvidence>,
+    pub children: Vec<InterchangeNodeV2>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct InterchangeStep {
     pub canonical_node_id: String,
@@ -497,6 +533,251 @@ pub fn from_audit_report(
         loss_report: AdapterLossReport::for_audit(report),
         stock_provenance: stock,
     }
+}
+
+/// Export an explicit-tree v2 interchange.  The caller supplies the audited
+/// normalized document so topology is taken from the actual tree rather than
+/// reconstructed from reporting steps.
+pub fn from_document_v2(
+    source_tool: &'static str,
+    source_version: Option<String>,
+    source_route_id: Option<String>,
+    document: &RouteDocument,
+    report: &AuditReport,
+    stock: Option<StockProvenance>,
+) -> RouteInterchangeV2 {
+    let route_id = report
+        .normalized_route_sha256
+        .clone()
+        .unwrap_or_else(|| "unavailable".to_string());
+    RouteInterchangeV2 {
+        schema_version: ROUTE_INTERCHANGE_V2_SCHEMA_VERSION,
+        source_tool,
+        source_version,
+        source_route_id,
+        root: node_to_v2(&document.root, &route_id, "root"),
+        route_id,
+        audit_status: report.status,
+        audit_findings: report.findings.clone(),
+        loss_report: AdapterLossReport::for_audit(report),
+        stock_provenance: stock,
+    }
+}
+
+fn node_to_v2(node: &RouteNode, route_id: &str, path: &str) -> InterchangeNodeV2 {
+    InterchangeNodeV2 {
+        canonical_node_id: format!("{route_id}:node:{path}"),
+        canonical_smiles: node.canonical_smiles.clone(),
+        is_stock_leaf: node.is_stock_leaf,
+        reaction_evidence: node.reaction_evidence.clone(),
+        children: node
+            .children
+            .iter()
+            .enumerate()
+            .map(|(index, child)| {
+                let child_path = if path == "root" {
+                    index.to_string()
+                } else {
+                    format!("{path}.{index}")
+                };
+                node_to_v2(child, route_id, &child_path)
+            })
+            .collect(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct ImportEnvelopeV2 {
+    schema_version: u32,
+    source_tool: String,
+    route_id: String,
+    root: ImportNodeV2,
+}
+
+#[derive(Debug, Deserialize)]
+struct ImportNodeV2 {
+    canonical_node_id: String,
+    canonical_smiles: String,
+    is_stock_leaf: Option<bool>,
+    #[serde(default)]
+    reaction_evidence: Option<ReactionEvidence>,
+    children: Vec<ImportNodeV2>,
+}
+
+/// Strictly re-import an explicit-tree v2 interchange and re-run RENKIN's
+/// ordinary audit.  Node identifiers are occurrence paths, so repeated
+/// precursors remain distinct.  The imported route hash must still equal the
+/// hash recomputed from the reconstructed tree.
+pub fn reauditable_import_v2(
+    value: &Value,
+    configured_stock: &HashSet<String>,
+    rules: &[RetroRule],
+    policy: AuditPolicy,
+) -> anyhow::Result<InterchangeReaudit> {
+    validate_strict_import_v2(value)?;
+    let envelope: ImportEnvelopeV2 = serde_json::from_value(value.clone())
+        .map_err(|error| anyhow::anyhow!("canonical interchange v2 decode failed: {error}"))?;
+    if envelope.schema_version != ROUTE_INTERCHANGE_V2_SCHEMA_VERSION {
+        anyhow::bail!("unsupported canonical interchange v2 schema_version");
+    }
+    let source = import_source(&envelope.source_tool)?;
+    let root = document_node_from_v2(&envelope.root, &envelope.route_id, "root", 0)?;
+    let document = RouteDocument {
+        source,
+        step_count_collapsed_edges: count_v2_steps(&root),
+        root,
+    };
+    let audit = audit_document_with_policy(&document, Some(configured_stock), Some(rules), policy);
+    let recomputed_route_id = audit
+        .normalized_route_sha256
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("re-imported route did not yield a normalized route ID"))?;
+    if envelope.route_id != recomputed_route_id {
+        anyhow::bail!(
+            "canonical interchange route_id mismatch: imported {} but reconstructed {}",
+            envelope.route_id,
+            recomputed_route_id
+        );
+    }
+    Ok(InterchangeReaudit {
+        source_tool: envelope.source_tool,
+        imported_route_id: envelope.route_id,
+        recomputed_route_id,
+        audit,
+    })
+}
+
+/// Strict envelope validation for the v2 tree contract.  It is separate from
+/// v1 deliberately: adding `root` to v1 would make old consumers guess at
+/// schema meaning.
+pub fn validate_strict_import_v2(value: &Value) -> anyhow::Result<()> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("canonical interchange must be a JSON object"))?;
+    const ENVELOPE_FIELDS: &[&str] = &[
+        "schema_version",
+        "source_tool",
+        "source_version",
+        "source_route_id",
+        "route_id",
+        "audit_status",
+        "root",
+        "audit_findings",
+        "loss_report",
+        "stock_provenance",
+    ];
+    if let Some(field) = object
+        .keys()
+        .find(|field| !ENVELOPE_FIELDS.contains(&field.as_str()))
+    {
+        anyhow::bail!("unknown canonical interchange v2 field {field:?}");
+    }
+    if object.get("schema_version").and_then(Value::as_u64)
+        != Some(ROUTE_INTERCHANGE_V2_SCHEMA_VERSION as u64)
+    {
+        anyhow::bail!("unsupported canonical interchange v2 schema_version");
+    }
+    if object
+        .get("route_id")
+        .and_then(Value::as_str)
+        .is_none_or(str::is_empty)
+    {
+        anyhow::bail!("canonical interchange route_id is required");
+    }
+    validate_v2_node(
+        object
+            .get("root")
+            .ok_or_else(|| anyhow::anyhow!("canonical interchange root is required"))?,
+        0,
+    )?;
+    let loss: AdapterLossReport = serde_json::from_value(
+        object
+            .get("loss_report")
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("canonical interchange loss_report is required"))?,
+    )
+    .map_err(|error| {
+        anyhow::anyhow!("canonical interchange v2 loss report decode failed: {error}")
+    })?;
+    loss.validate_for_strict_import()
+}
+
+fn validate_v2_node(value: &Value, depth: usize) -> anyhow::Result<()> {
+    const MAX_INTERCHANGE_DEPTH: usize = 256;
+    if depth > MAX_INTERCHANGE_DEPTH {
+        anyhow::bail!("canonical interchange v2 exceeds maximum tree depth");
+    }
+    let node = value
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("canonical interchange v2 node must be an object"))?;
+    const NODE_FIELDS: &[&str] = &[
+        "canonical_node_id",
+        "canonical_smiles",
+        "is_stock_leaf",
+        "reaction_evidence",
+        "children",
+    ];
+    if let Some(field) = node
+        .keys()
+        .find(|field| !NODE_FIELDS.contains(&field.as_str()))
+    {
+        anyhow::bail!("unknown canonical interchange v2 node field {field:?}");
+    }
+    for required in ["canonical_node_id", "canonical_smiles", "children"] {
+        if node.get(required).is_none() {
+            anyhow::bail!("canonical interchange v2 node {required} is required");
+        }
+    }
+    let children = node
+        .get("children")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            anyhow::anyhow!("canonical interchange v2 node children must be an array")
+        })?;
+    for child in children {
+        validate_v2_node(child, depth + 1)?;
+    }
+    Ok(())
+}
+
+fn document_node_from_v2(
+    node: &ImportNodeV2,
+    route_id: &str,
+    path: &str,
+    depth: usize,
+) -> anyhow::Result<RouteNode> {
+    if depth > 256 {
+        anyhow::bail!("canonical interchange v2 exceeds maximum tree depth");
+    }
+    let expected_id = format!("{route_id}:node:{path}");
+    if node.canonical_node_id != expected_id {
+        anyhow::bail!("canonical interchange v2 canonical_node_id does not match occurrence path");
+    }
+    let canonical_smiles =
+        canonical_import_smiles(&node.canonical_smiles, "node canonical_smiles")?;
+    let children = node
+        .children
+        .iter()
+        .enumerate()
+        .map(|(index, child)| {
+            let child_path = if path == "root" {
+                index.to_string()
+            } else {
+                format!("{path}.{index}")
+            };
+            document_node_from_v2(child, route_id, &child_path, depth + 1)
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    Ok(RouteNode {
+        canonical_smiles,
+        is_stock_leaf: node.is_stock_leaf,
+        reaction_evidence: node.reaction_evidence.clone(),
+        children,
+    })
+}
+
+fn count_v2_steps(node: &RouteNode) -> usize {
+    usize::from(!node.children.is_empty()) + node.children.iter().map(count_v2_steps).sum::<usize>()
 }
 
 #[cfg(test)]
@@ -645,5 +926,70 @@ mod tests {
         value["unrecorded_extension"] = Value::Bool(true);
         let error = validate_strict_import(&value).unwrap_err().to_string();
         assert!(error.contains("unknown canonical interchange v1 field"));
+    }
+
+    #[test]
+    fn v2_preserves_direct_purchase_root_and_reaudits_it() {
+        let root = RouteNode {
+            canonical_smiles: canon("CC"),
+            is_stock_leaf: Some(true),
+            reaction_evidence: None,
+            children: vec![],
+        };
+        let document = RouteDocument {
+            source: RouteSource::Renkin,
+            root,
+            step_count_collapsed_edges: 0,
+        };
+        let report =
+            audit_document_with_policy(&document, Some(&stock()), Some(&[]), AuditPolicy::Standard);
+        let value = serde_json::to_value(from_document_v2(
+            "renkin", None, None, &document, &report, None,
+        ))
+        .unwrap();
+        validate_strict_import_v2(&value).unwrap();
+        let reaudited =
+            reauditable_import_v2(&value, &stock(), &[], AuditPolicy::Standard).unwrap();
+        assert_eq!(reaudited.imported_route_id, reaudited.recomputed_route_id);
+        assert!(value["root"]["children"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn v2_retains_repeated_precursor_occurrences_and_rejects_path_tampering() {
+        let document = RouteDocument {
+            source: RouteSource::Renkin,
+            root: RouteNode {
+                canonical_smiles: canon("CCO"),
+                is_stock_leaf: Some(false),
+                reaction_evidence: None,
+                children: vec![
+                    RouteNode {
+                        canonical_smiles: canon("CC"),
+                        is_stock_leaf: Some(true),
+                        reaction_evidence: None,
+                        children: vec![],
+                    },
+                    RouteNode {
+                        canonical_smiles: canon("CC"),
+                        is_stock_leaf: Some(true),
+                        reaction_evidence: None,
+                        children: vec![],
+                    },
+                ],
+            },
+            step_count_collapsed_edges: 1,
+        };
+        let report =
+            audit_document_with_policy(&document, Some(&stock()), Some(&[]), AuditPolicy::Standard);
+        let mut value = serde_json::to_value(from_document_v2(
+            "renkin", None, None, &document, &report, None,
+        ))
+        .unwrap();
+        assert_ne!(
+            value["root"]["children"][0]["canonical_node_id"],
+            value["root"]["children"][1]["canonical_node_id"]
+        );
+        value["root"]["children"][1]["canonical_node_id"] = Value::String("forged".into());
+        assert!(reauditable_import_v2(&value, &stock(), &[], AuditPolicy::Standard).is_err());
     }
 }

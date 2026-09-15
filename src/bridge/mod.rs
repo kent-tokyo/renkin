@@ -76,6 +76,7 @@ pub mod input_artifact;
 pub mod interchange;
 pub mod mechanistic_evidence;
 pub mod private_stock;
+pub mod receipt_binding;
 pub mod review;
 pub mod route_graph;
 pub mod route_metrics;
@@ -106,9 +107,11 @@ pub use input_artifact::{
     StructureReviewStatus,
 };
 pub use interchange::{
-    ADAPTER_LOSS_SCHEMA_VERSION, AdapterLossField, AdapterLossReport, InterchangeStep,
-    LossDisposition, ROUTE_INTERCHANGE_SCHEMA_VERSION, ReactionProvenance, RouteInterchange,
-    StockProvenance, from_audit_report, reauditable_import_v1, validate_strict_import,
+    ADAPTER_LOSS_SCHEMA_VERSION, AdapterLossField, AdapterLossReport, InterchangeNodeV2,
+    InterchangeStep, LossDisposition, ROUTE_INTERCHANGE_SCHEMA_VERSION,
+    ROUTE_INTERCHANGE_V2_SCHEMA_VERSION, ReactionProvenance, RouteInterchange, RouteInterchangeV2,
+    StockProvenance, from_audit_report, from_document_v2, reauditable_import_v1,
+    reauditable_import_v2, validate_strict_import, validate_strict_import_v2,
 };
 pub use mechanistic_evidence::{
     CalculationContext, EvidenceOrigin, MECHANISTIC_EVIDENCE_SCHEMA_VERSION,
@@ -118,6 +121,10 @@ pub use private_stock::{
     PRIVATE_STOCK_POLICY_SCHEMA_VERSION, PrivateStockDecision, PrivateStockDecisionRecord,
     PrivateStockPolicy, PrivateStockReason, PrivateStockReport, PrivateStockRouteScore,
     assess_report, assign_route_ranks,
+};
+pub use receipt_binding::{
+    EvidenceChainVerification, RECEIPT_BINDING_SCHEMA_VERSION, ReceiptBindingInput,
+    ReceiptBindingReceipt, ReceiptMaterial, verify_evidence_chain_v1,
 };
 pub use review::{
     CHEMICAL_REVIEW_RUBRIC_VERSION, ChemicalReview, ReviewDimension, ReviewFinding, ReviewSeverity,

@@ -309,6 +309,11 @@ pub struct AuditRouteReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mechanistic_evidence:
         Option<Vec<Vec<crate::bridge::mechanistic_evidence::MechanisticEvidenceReceipt>>>,
+    /// Locally verified MCP execution receipts bound to an exact canonical
+    /// interchange document and its final structural audit.  Raw tool
+    /// arguments/results stay in the caller-side sidecar.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub evidence_chain: Option<crate::bridge::receipt_binding::EvidenceChainVerification>,
     /// Adapter provenance kept out of the legacy audit JSON. These vectors
     /// align with `routes` and are consumed only by canonical interchange.
     #[serde(skip)]
@@ -402,6 +407,17 @@ impl AuditRouteReport {
                 })
                 .collect(),
         );
+    }
+
+    /// Attach a verified local MCP receipt chain.  Use
+    /// [`crate::bridge::receipt_binding::verify_evidence_chain_v1`] to build
+    /// this value; accepting only the verifier's output prevents a caller
+    /// from labelling unverified receipt hashes as audit evidence.
+    pub fn attach_evidence_chain(
+        &mut self,
+        verification: crate::bridge::receipt_binding::EvidenceChainVerification,
+    ) {
+        self.evidence_chain = Some(verification);
     }
 
     /// Attach and evaluate local process-mass ledgers. A ledger must name an
@@ -879,6 +895,7 @@ pub fn build_audit_route_report_with_options(
         input_artifact: None,
         audit_ranking: None,
         mechanistic_evidence: None,
+        evidence_chain: None,
         route_source_versions,
         route_source_ids,
         route_original_node_ids,

@@ -133,7 +133,7 @@ precursorのMW比であり、全量論試薬を扱う理論atom economyや実工
 
 | Phase | Status | 現在の証拠 | 次の判定 |
 |---|---|---|---|
-| 55.0 測定契約 | Active | 小規模stockの50件smoke完走・既存preflight通過。Docker起動問題は当該runで解消。completed-invocation ledgerにより再開後sliceの総時間誤表示を防止。AiZ設定は追跡templateとbyte一致、参照HDF5/ONNX/template/filterをhash固定 | stock変換identity・資源制限・startup/search/audit計時・top-k意味・監督resumeを正式契約へ結合し、開発用smokeで検証 |
+| 55.0 測定契約 | Active | 小規模stockの50件smoke完走・既存preflight通過。Docker起動問題は当該runで解消。completed-invocation ledgerにより再開後sliceの総時間誤表示を防止。AiZ設定は追跡templateとbyte一致、参照HDF5/ONNX/template/filterをhash固定。formal preflightは実効CPU/RAM enforcementのないarmを拒否 | stock変換identity・RENKINのcgroup/container等による実効RAM上限・startup/search/audit計時・top-k意味・監督resumeを正式契約へ結合し、開発用smokeで検証 |
 | 55.1 Failure atlas | Implemented / Partial | VAL-200を両者成功・片側成功・両者失敗へ分類。未観測原因はunknownとして保持 | 次の仮説に必要な第一喪失点を観測する。深さ/beam到達だけで原因確定しない |
 | 55.2 Ordering-only model | HOLD | TRAIN-only ONNX VAL-200はstrict 121→124（+3pp、95% CI −1.5〜+5.0pp、McNemar p=0.549）。timeout 0→2、p95 8.39→18.11秒、RSS p95 209→387 MiB。軽量512×128も10件でstrict 8→9・timeout 0だがp95 8.39→52.09秒、RSS p95 204→332 MiB | template-ID対応を保ったまま推論コストを下げ、timeout=0・strict非悪化を満たす候補だけ再評価 |
 | 55.3 Downstream reachability | Implemented / HOLD | shared-cache selectorを実装したが、小規模A/Bで精度向上未確認 | 全VALで成功取り消し0、strict非悪化、runtime正常なら採用 |

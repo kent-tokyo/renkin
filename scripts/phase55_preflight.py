@@ -176,6 +176,7 @@ def preflight(
     right_ids: set[str],
     *,
     require_clean: bool = True,
+    require_effective_resource_enforcement: bool = False,
 ) -> dict[str, Any]:
     blockers: list[str] = []
     if left_ids != right_ids:
@@ -209,6 +210,16 @@ def preflight(
                 blockers.append(f"missing_common_budget:{field}")
             elif left_budget[field] != right_budget[field]:
                 blockers.append(f"common_budget_mismatch:{field}")
+        if require_effective_resource_enforcement:
+            for label, budget in (("left", left_budget), ("right", right_budget)):
+                enforcement = budget.get("execution_enforcement")
+                if not isinstance(enforcement, dict):
+                    blockers.append(f"{label}_resource_enforcement_missing")
+                    continue
+                if enforcement.get("cpu_enforced") is not True:
+                    blockers.append(f"{label}_cpu_enforcement_not_effective")
+                if enforcement.get("memory_enforced") is not True:
+                    blockers.append(f"{label}_memory_enforcement_not_effective")
 
     left_revision = left_manifest.get("git_commit")
     right_revision = right_manifest.get("git_commit")
@@ -240,6 +251,7 @@ def preflight(
         "common_budget_fields": list(COMMON_BUDGET_FIELDS),
         "left_tool_specific_budget": left_budget,
         "right_tool_specific_budget": right_budget,
+        "effective_resource_enforcement_required": require_effective_resource_enforcement,
     }
 
 
@@ -260,6 +272,11 @@ def main() -> int:
         help="number of frozen targets required when --frozen-cohort is used",
     )
     parser.add_argument("--allow-dirty", action="store_true")
+    parser.add_argument(
+        "--require-effective-resource-enforcement",
+        action="store_true",
+        help="Require each arm to record effective CPU and memory enforcement; use for a formal run.",
+    )
     args = parser.parse_args()
     if (args.frozen_cohort is None) != (args.smoke_size is None):
         parser.error("--frozen-cohort and --smoke-size must be supplied together")
@@ -276,6 +293,7 @@ def main() -> int:
             right_ids,
             smoke_size=args.smoke_size,
             require_clean=not args.allow_dirty,
+            require_effective_resource_enforcement=args.require_effective_resource_enforcement,
         )
     else:
         result = preflight(

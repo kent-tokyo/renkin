@@ -420,6 +420,7 @@ def run_one_target(
         tool_specific={
             "aizynthfinder": {
                 "diagnostics_source": "single_per_target_cli_call",
+                "resource_enforcement": "docker_run_--cpus_--memory_--memory-swap_network_none",
                 "time_limit_s": config.time_limit_s,
                 "iteration_limit": config.iteration_limit,
                 "max_transforms": config.max_transforms,

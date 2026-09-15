@@ -22,6 +22,10 @@ def manifest(commit="abc", clean=True):
             "timeout_s": 120,
             "grace_s": 5,
             "max_routes": 1,
+            "execution_enforcement": {
+                "cpu_enforced": True,
+                "memory_enforced": True,
+            },
         },
         "git_commit": commit,
         "worktree": {"clean": clean},
@@ -48,6 +52,16 @@ def test_tool_specific_depth_and_beam_may_differ():
     right["resource_budget"].update({"depth": 6, "beam_width": 200})
     result = MODULE.preflight(manifest(), right, {"a"}, {"a"})
     assert result["eligible"] is True
+
+
+def test_formal_preflight_rejects_missing_or_ineffective_enforcement():
+    right = manifest()
+    right["resource_budget"]["execution_enforcement"]["memory_enforced"] = False
+    result = MODULE.preflight(
+        manifest(), right, {"a"}, {"a"}, require_effective_resource_enforcement=True
+    )
+    assert result["eligible"] is False
+    assert "right_memory_enforcement_not_effective" in result["blockers"]
 
 
 def test_preflight_rejects_stale_or_incomplete_pair():

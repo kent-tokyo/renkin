@@ -89,6 +89,32 @@ def manifest_input_files(args: argparse.Namespace) -> dict[str, str]:
     return input_files
 
 
+def execution_enforcement_contract(args: argparse.Namespace) -> dict:
+    """Describe enforcement actually requested by this adapter, not just a budget."""
+    if args.tool == "aizynthfinder":
+        return {
+            "runner": "docker_run",
+            "network": "none",
+            "cpu_enforced": True,
+            "cpu_mechanism": "docker_run_--cpus",
+            "memory_enforced": True,
+            "memory_mechanism": "docker_run_--memory_and_--memory-swap",
+        }
+    try:
+        from four_tool_resources import enforcement_label
+    except ImportError:  # pragma: no cover - package execution fallback
+        from .four_tool_resources import enforcement_label
+    label = enforcement_label()
+    return {
+        "runner": "native_subprocess",
+        "network": "host",
+        "cpu_enforced": "rlimit_cpu" in label,
+        "cpu_mechanism": label,
+        "memory_enforced": "RLIMIT_AS_unavailable" not in label,
+        "memory_mechanism": label,
+    }
+
+
 def validate_search_profile_rows(rows, requested_profile: str | None) -> None:
     """Fail closed if a named-profile run loses its effective metadata."""
     if requested_profile is None:
@@ -735,6 +761,7 @@ def main(argv: list[str] | None = None) -> int:
                     "grace_s": args.grace_s,
                     "resource_cpus": args.resource_cpus,
                     "resource_memory_gib": args.resource_memory_gib,
+                    "execution_enforcement": execution_enforcement_contract(args),
                     "max_routes": args.max_routes,
                     "route_selection": args.route_selection,
                     "search_mode": args.search_mode,

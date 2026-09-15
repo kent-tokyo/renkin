@@ -299,6 +299,10 @@ pub struct AuditRouteReport {
     /// default so existing audit JSON remains unchanged.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub route_metrics: Option<Vec<Vec<crate::bridge::route_metrics::RouteMetricsReceipt>>>,
+    /// Hash-only proof that the route-metrics ledgers were checked against a
+    /// caller-local source artifact before their receipts were attached.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub route_metrics_sidecar: Option<crate::bridge::route_metrics::RouteMetricsSidecarBinding>,
     /// Redacted provenance for an image/PDF/text-derived target. The full
     /// local receipt remains with the caller; this report never emits a URL,
     /// raw OCR prediction, normalized structure, or reviewer identity.
@@ -520,6 +524,39 @@ impl AuditRouteReport {
             metrics[*index].push(ledger.evaluate()?);
         }
         self.route_metrics = Some(metrics);
+        Ok(())
+    }
+
+    /// Verify a local source artifact plus its ledgers, then attach the
+    /// resulting receipts. The raw source artifact is intentionally not kept
+    /// in this public report.
+    pub fn attach_route_metrics_sidecar(
+        &mut self,
+        sidecar: &crate::bridge::route_metrics::RouteMetricsSidecarInput,
+    ) -> anyhow::Result<()> {
+        let verified = sidecar.verify()?;
+        let mut metrics = vec![Vec::new(); self.routes.len()];
+        for receipt in verified.receipts {
+            let matching = self
+                .routes
+                .iter()
+                .enumerate()
+                .filter_map(|(index, report)| {
+                    (report.normalized_route_sha256.as_deref() == Some(&receipt.route_id))
+                        .then_some(index)
+                })
+                .collect::<Vec<_>>();
+            let [index] = matching.as_slice() else {
+                anyhow::bail!(
+                    "route metrics route_id {:?} must match exactly one audited route (matched {})",
+                    receipt.route_id,
+                    matching.len()
+                );
+            };
+            metrics[*index].push(receipt);
+        }
+        self.route_metrics = Some(metrics);
+        self.route_metrics_sidecar = Some(verified.binding);
         Ok(())
     }
 
@@ -972,6 +1009,7 @@ pub fn build_audit_route_report_with_options(
         route_interchange: None,
         route_interchange_v2: None,
         route_metrics: None,
+        route_metrics_sidecar: None,
         input_artifact: None,
         audit_ranking: None,
         weighted_ranking: None,

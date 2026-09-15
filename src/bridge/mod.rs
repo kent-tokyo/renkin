@@ -139,7 +139,9 @@ pub use route_graph::{
 pub use route_metrics::{
     Coverage as RouteMetricCoverage, MassAmount, MassCategory, MassUnit, MetricError, MetricScope,
     MetricStatus, MetricValue, ProcessBoundary, ProcessMassInput, ProcessMassLedger,
-    ROUTE_METRICS_SCHEMA_VERSION, ReportedMetric, RouteMetricsReceipt,
+    ROUTE_METRICS_SCHEMA_VERSION, ROUTE_METRICS_SIDECAR_SCHEMA_VERSION, ReportedMetric,
+    RouteMetricsReceipt, RouteMetricsSidecarBinding, RouteMetricsSidecarInput,
+    VerifiedRouteMetricsSidecar,
 };
 pub use synplanner::{SynPlannerNode, normalize_synplanner_route, parse_synplanner_routes};
 pub use syntheseus::{SyntheseusRouteV1, normalize_syntheseus_route};

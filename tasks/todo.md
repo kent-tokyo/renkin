@@ -24,8 +24,9 @@
   固定し、route hashで監査reportへ接続。source報告値／再計算値／`not_evaluable`を分離し、
   既存MW比を上書きしない。
 - [x] **O7.1 / Calculation core** 合成fixtureと実CLIでPMI/E-factorを検証。water/solvent
-  欠落、waste欠落、g/kg、非有限数、product質量0を扱う。step間二重計上とsidecar provenance
-  bindingは複数step fixtureを追加して継続する。
+  欠落、waste欠落、g/kg、非有限数、product質量0を扱う。`--route-metrics-sidecar`でlocal
+  source artifact hashと全ledgerを照合し、公開reportにはhashのみ保持する。step間二重計上と
+  複数step実利用fixtureは継続する。
 - [ ] **O7.0–O7.1 / Candidate gate** local import→audit→receipt→export→再importを完走。
   既定動作のgolden parity、workspace test・clippy・WASM・Python/MCP回帰・docs例を確認。
 - [x] **O7.2 / Artifact core** local sidecarでoriginal content hash、source kind、transform、

@@ -25,6 +25,10 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   complete required mass categories; E-factor additionally requires explicit
   waste mass. Missing data remains `not_evaluable`, and reported values stay
   distinct from recomputed values.
+- Added `--route-metrics-sidecar` for local provenance binding: each ledger's
+  claimed source hash must match the canonical hash recomputed from the
+  caller-held artifact, while the report retains only source/sidecar/receipt
+  hashes and never the raw artifact.
 - Added local `--input-artifact` provenance receipts for image/SVG/PDF/text
   inputs. OCR/normalization/review metadata binds to the audited target while
   reports redact locators, raw predictions, normalized SMILES, and reviewer

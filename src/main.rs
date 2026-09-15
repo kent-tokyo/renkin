@@ -2161,6 +2161,20 @@ fn attach_route_metrics(
     Ok(())
 }
 
+fn attach_route_metrics_sidecar(
+    report: &mut bridge::audit_route::AuditRouteReport,
+    args: &[String],
+) -> Result<()> {
+    let Some(path) = flag_value(args, "--route-metrics-sidecar") else {
+        return Ok(());
+    };
+    let content = read_bounded_text_file(path, "--route-metrics-sidecar")?;
+    let sidecar: bridge::RouteMetricsSidecarInput = serde_json::from_str(&content)
+        .with_context(|| format!("failed to parse --route-metrics-sidecar {path}"))?;
+    report.attach_route_metrics_sidecar(&sidecar)?;
+    Ok(())
+}
+
 fn attach_input_artifact(
     report: &mut bridge::audit_route::AuditRouteReport,
     args: &[String],
@@ -2294,6 +2308,7 @@ fn run_audit_route(args: &[String]) -> Result<()> {
 
     attach_private_stock_policy(&mut out, args)?;
     attach_route_metrics(&mut out, args)?;
+    attach_route_metrics_sidecar(&mut out, args)?;
     attach_input_artifact(&mut out, args)?;
     attach_pareto_ranking(&mut out, args)?;
     attach_weighted_ranking(&mut out, args)?;

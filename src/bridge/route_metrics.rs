@@ -7,8 +7,10 @@
 use std::{collections::BTreeSet, fmt};
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 pub const ROUTE_METRICS_SCHEMA_VERSION: u32 = 1;
+pub const ROUTE_METRICS_SIDECAR_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -148,6 +150,71 @@ pub struct RouteMetricsReceipt {
     pub source_sha256: String,
 }
 
+/// Local-only source material and ledgers. The artifact is validated locally;
+/// the public binding emits hashes and receipts, never the raw procedure.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RouteMetricsSidecarInput {
+    pub schema_version: u32,
+    pub source_artifact: Value,
+    pub ledgers: Vec<ProcessMassLedger>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct RouteMetricsSidecarBinding {
+    pub schema_version: u32,
+    pub source_artifact_sha256: String,
+    pub sidecar_sha256: String,
+    pub receipt_sha256: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct VerifiedRouteMetricsSidecar {
+    pub binding: RouteMetricsSidecarBinding,
+    pub receipts: Vec<RouteMetricsReceipt>,
+}
+
+impl RouteMetricsSidecarInput {
+    /// Verify that every ledger names exactly the same canonical hash of the
+    /// supplied source artifact, then compute receipts. A caller cannot bind
+    /// a ledger to an arbitrary claimed source hash.
+    pub fn verify(&self) -> Result<VerifiedRouteMetricsSidecar, MetricError> {
+        if self.schema_version != ROUTE_METRICS_SIDECAR_SCHEMA_VERSION {
+            return Err(MetricError::UnsupportedSidecarSchema(self.schema_version));
+        }
+        if self.ledgers.is_empty() {
+            return Err(MetricError::EmptySidecar);
+        }
+        let source_artifact_sha256 = crate::mcp::audit_receipt::sha256_value(&self.source_artifact);
+        let mut receipts = Vec::with_capacity(self.ledgers.len());
+        for ledger in &self.ledgers {
+            if ledger.source_sha256 != source_artifact_sha256 {
+                return Err(MetricError::SourceHashMismatch);
+            }
+            receipts.push(ledger.evaluate()?);
+        }
+        let receipt_sha256 = receipts
+            .iter()
+            .map(|receipt| {
+                crate::mcp::audit_receipt::sha256_value(
+                    &serde_json::to_value(receipt).expect("receipt serializes"),
+                )
+            })
+            .collect();
+        let sidecar_sha256 = crate::mcp::audit_receipt::sha256_value(
+            &serde_json::to_value(self).expect("sidecar serializes"),
+        );
+        Ok(VerifiedRouteMetricsSidecar {
+            binding: RouteMetricsSidecarBinding {
+                schema_version: ROUTE_METRICS_SIDECAR_SCHEMA_VERSION,
+                source_artifact_sha256,
+                sidecar_sha256,
+                receipt_sha256,
+            },
+            receipts,
+        })
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum MetricError {
     UnsupportedSchema(u32),
@@ -158,6 +225,9 @@ pub enum MetricError {
     InvalidRequiredCategories,
     BoundaryCategoryNotRequired { category: MassCategory },
     MissingInputLabel,
+    UnsupportedSidecarSchema(u32),
+    EmptySidecar,
+    SourceHashMismatch,
 }
 
 impl fmt::Display for MetricError {
@@ -195,6 +265,20 @@ impl fmt::Display for MetricError {
                 "process boundary includes {category:?}, but it is not a required category"
             ),
             Self::MissingInputLabel => write!(formatter, "process mass input label is required"),
+            Self::UnsupportedSidecarSchema(version) => {
+                write!(
+                    formatter,
+                    "unsupported route metrics sidecar schema_version {version}"
+                )
+            }
+            Self::EmptySidecar => write!(
+                formatter,
+                "route metrics sidecar requires at least one ledger"
+            ),
+            Self::SourceHashMismatch => write!(
+                formatter,
+                "route metrics ledger source_sha256 does not match local source artifact"
+            ),
         }
     }
 }
@@ -425,6 +509,35 @@ mod tests {
             receipt.coverage.missing_categories,
             vec![MassCategory::Water]
         );
+    }
+
+    #[test]
+    fn sidecar_binds_all_ledgers_to_the_actual_source_artifact() {
+        let source = serde_json::json!({"procedure": "local batch record"});
+        let mut input = ledger();
+        input.source_sha256 = crate::mcp::audit_receipt::sha256_value(&source);
+        let verified = RouteMetricsSidecarInput {
+            schema_version: ROUTE_METRICS_SIDECAR_SCHEMA_VERSION,
+            source_artifact: source,
+            ledgers: vec![input],
+        }
+        .verify()
+        .unwrap();
+        assert_eq!(verified.receipts.len(), 1);
+        assert_eq!(verified.binding.receipt_sha256.len(), 1);
+    }
+
+    #[test]
+    fn sidecar_rejects_claimed_source_hash_that_does_not_match_artifact() {
+        let input = ledger();
+        let error = RouteMetricsSidecarInput {
+            schema_version: ROUTE_METRICS_SIDECAR_SCHEMA_VERSION,
+            source_artifact: serde_json::json!({"procedure": "different"}),
+            ledgers: vec![input],
+        }
+        .verify()
+        .unwrap_err();
+        assert_eq!(error, MetricError::SourceHashMismatch);
     }
 
     #[test]

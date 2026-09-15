@@ -283,18 +283,36 @@ def aizynth_config_and_id(args):
         cpus=str(args.resource_cpus),
         memory=f"{args.resource_memory_gib}g",
     )
+    config_template = (
+        args.aizynthfinder_config_template
+        or os.path.join(
+            "data/comparison/aizynthfinder_config_templates", config_filename
+        )
+    )
+    provenance = aizynth_adapter.public_data_provenance(config, config_template)
+    search = provenance["resolved_search"]
+    post_processing = provenance["resolved_post_processing"]
+    try:
+        config.time_limit_s = float(search["time_limit"])
+        config.iteration_limit = int(search["iteration_limit"])
+        config.max_transforms = int(search["max_transforms"])
+        config.min_routes = int(post_processing["min_routes"])
+        config.max_routes = int(post_processing["max_routes"])
+    except ValueError as exc:
+        raise ValueError("AiZynthFinder formal config has non-numeric budget fields") from exc
     configuration_id = (
         f"aizynthfinder-{args.comparison_mode}"
+        f"-cfg{provenance['config_sha256'][:12]}"
         f"-rc{args.resource_cpus}-rm{args.resource_memory_gib}g"
     )
-    return config, configuration_id
+    return config, configuration_id, provenance
 
 
 def run_aizynthfinder(args, sample: list[dict], skip_ids: set[str]):
     """Yields rows one at a time, skipping targets already present (resume)."""
     import compare_aizynthfinder_adapter as aizynth_adapter
 
-    config, configuration_id = aizynth_config_and_id(args)
+    config, configuration_id, _ = aizynth_config_and_id(args)
     # Native mode's real stock is AiZynthFinder's ~17.4M-compound public
     # ZINC stock, not the shared stock -- passing an empty list signals the
     # adapter to trust the tool's own per-leaf claim instead of an
@@ -377,6 +395,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--aizynthfinder-image", default="renkin-compare-66/aizynthfinder:4.4.1")
     parser.add_argument(
         "--public-data-dir", default="data/comparison/aizynthfinder_public_data"
+    )
+    parser.add_argument(
+        "--aizynthfinder-config-template",
+        default=None,
+        help="Tracked formal AiZynthFinder YAML expected to byte-match the mounted config; "
+        "defaults to the mode-specific template under data/comparison/aizynthfinder_config_templates/.",
     )
     parser.add_argument(
         "--ring-context-policy",
@@ -680,7 +704,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.tool == "renkin":
         _, _, configuration_id = renkin_config_and_id(args)
     else:
-        _, configuration_id = aizynth_config_and_id(args)
+        _, configuration_id, tool_asset_provenance = aizynth_config_and_id(args)
 
     if args.manifest_path:
         input_files = manifest_input_files(args)
@@ -702,6 +726,7 @@ def main(argv: list[str] | None = None) -> int:
                 input_files=input_files,
                 configuration_id=configuration_id,
                 tool_version=manifest_tool_version,
+                tool_asset_provenance=tool_asset_provenance if args.tool == "aizynthfinder" else None,
                 resource_budget={
                     "depth": args.depth,
                     "beam_width": args.beam_width,
@@ -733,6 +758,10 @@ def main(argv: list[str] | None = None) -> int:
                         "comparison manifest is already finalized; choose a new manifest path"
                     )
                 manifest_mod.validate_input_hashes(existing_manifest, input_files)
+                manifest_mod.validate_tool_asset_provenance(
+                    existing_manifest,
+                    tool_asset_provenance if args.tool == "aizynthfinder" else None,
+                )
                 manifest_mod.validate_run_identity(
                     existing_manifest,
                     tool=args.tool,
@@ -766,7 +795,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.tool == "renkin":
         _, _, configuration_id = renkin_config_and_id(args)
     else:
-        _, configuration_id = aizynth_config_and_id(args)
+        _, configuration_id, tool_asset_provenance = aizynth_config_and_id(args)
     agg = aggregate.compute_aggregate(all_rows)
     # A resumed command measures one invocation, not necessarily the whole
     # sweep. Persist it before writing output and report only the durable sum
@@ -789,6 +818,10 @@ def main(argv: list[str] | None = None) -> int:
             )
             input_files = manifest_input_files(args)
             manifest_mod.validate_input_hashes(run_manifest, input_files)
+            manifest_mod.validate_tool_asset_provenance(
+                run_manifest,
+                tool_asset_provenance if args.tool == "aizynthfinder" else None,
+            )
             manifest_mod.write_manifest_atomic(args.manifest_path, run_manifest)
         except ValueError as exc:
             parser.error(str(exc))

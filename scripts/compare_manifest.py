@@ -296,6 +296,10 @@ def validate_security_contract(manifest: dict) -> None:
     ):
         raise ValueError("configuration_id must be a non-empty string when present")
 
+    provenance = manifest.get("tool_asset_provenance")
+    if provenance is not None and not isinstance(provenance, dict):
+        raise ValueError("tool_asset_provenance must be an object when present")
+
     invocations = manifest.get("completed_invocations", [])
     if not isinstance(invocations, list):
         raise ValueError("completed_invocations must be a list when present")
@@ -359,6 +363,16 @@ def validate_input_hashes(manifest: dict, input_files: dict[str, str]) -> None:
         )
 
 
+def validate_tool_asset_provenance(manifest: dict, current: dict | None) -> None:
+    """Reject resume when an adapter's effective mounted assets changed."""
+    expected = manifest.get("tool_asset_provenance")
+    if expected != current:
+        raise ValueError(
+            "comparison manifest tool asset provenance differs from the requested run; "
+            "refusing to mix benchmark artifacts"
+        )
+
+
 def validate_run_identity(
     manifest: dict, *, tool: str, comparison_mode: str, configuration_id: str
 ) -> None:
@@ -415,12 +429,14 @@ def capture_start_manifest(
     resource_budget: dict | None = None,
     configuration_id: str | None = None,
     tool_version: str | None = None,
+    tool_asset_provenance: dict | None = None,
 ) -> dict:
     """input_files maps a label (e.g. 'building_blocks', 'templates') to path."""
     git_commit = _run(["git", "-C", repo_root, "rev-parse", "HEAD"])
     manifest = {
         "tool": tool,
         "tool_version": tool_version,
+        "tool_asset_provenance": copy.deepcopy(tool_asset_provenance),
         "comparison_mode": comparison_mode,
         "ring_context_policy": ring_context_policy,
         # Orthogonal to ring_context_policy -- v0.35.0's spectator-bond-loss

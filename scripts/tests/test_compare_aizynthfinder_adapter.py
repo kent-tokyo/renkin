@@ -10,6 +10,7 @@ import compare_aizynthfinder_adapter as adapter  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 PUBLIC_DATA_DIR = REPO_ROOT / "data" / "comparison" / "aizynthfinder_public_data"
+CONFIG_TEMPLATES = REPO_ROOT / "data" / "comparison" / "aizynthfinder_config_templates"
 IMAGE = "renkin-compare-66/aizynthfinder:4.4.1"
 
 
@@ -124,6 +125,32 @@ class TestAizynthfinderAdapterRealContainer(unittest.TestCase):
             ACETANILIDE, "test#crash", 0, config, "native", "cfg1", "4.4.1", []
         )
         self.assertIn(row.run_status, ("crashed", "invalid_input"))
+
+
+class TestAizynthfinderPublicDataProvenance(unittest.TestCase):
+    def test_public_data_provenance_hashes_config_assets_and_explicit_budget(self):
+        config = adapter.AizynthfinderConfig(
+            image=IMAGE,
+            public_data_dir=str(PUBLIC_DATA_DIR),
+            config_filename="config_shared_stock.yml",
+        )
+        provenance = adapter.public_data_provenance(
+            config, str(CONFIG_TEMPLATES / "config_shared_stock.yml")
+        )
+        self.assertEqual(provenance["resolved_search"]["time_limit"], "120")
+        self.assertEqual(provenance["resolved_search"]["max_transforms"], "5")
+        self.assertEqual(provenance["resolved_post_processing"]["max_routes"], "5")
+        self.assertIn("shared_stock.hdf5", provenance["public_assets_sha256"])
+        self.assertIn("uspto_model.onnx", provenance["public_assets_sha256"])
+
+    def test_public_data_provenance_rejects_untracked_config(self):
+        config = adapter.AizynthfinderConfig(
+            image=IMAGE,
+            public_data_dir=str(PUBLIC_DATA_DIR),
+            config_filename="config_shared_stock.yml",
+        )
+        with self.assertRaisesRegex(ValueError, "differs from the tracked"):
+            adapter.public_data_provenance(config, str(CONFIG_TEMPLATES / "config.yml"))
 
 
 if __name__ == "__main__":

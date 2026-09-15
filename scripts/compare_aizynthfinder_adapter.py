@@ -29,6 +29,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -66,11 +67,109 @@ class AizynthfinderConfig:
     grace_s: float = 10.0
     cpus: str = "8"
     memory: str = "6g"
-    time_limit_s: float = 120.0  # aizynthfinder's own native search budget
+    time_limit_s: float = 120.0
     iteration_limit: int = 100
+    max_transforms: int = 5
+    min_routes: int = 5
+    max_routes: int = 5
 
 
 _MEM_USAGE_RE = re.compile(r"([\d.]+)\s*(B|KiB|MiB|GiB)")
+_PUBLIC_ASSET_RE = re.compile(r"/public/([A-Za-z0-9._/-]+)")
+_EXPLICIT_CONFIG_KEYS = {
+    "search": ("max_transforms", "iteration_limit", "time_limit", "return_first"),
+    "post_processing": ("min_routes", "max_routes"),
+}
+MAX_PUBLIC_ASSET_BYTES = 2 * 1024 * 1024 * 1024
+
+
+def _sha256_regular_file(path: str) -> str:
+    """Hash a mounted public-data asset with a bounded regular-file policy."""
+    metadata = os.lstat(path)
+    if not stat.S_ISREG(metadata.st_mode):
+        raise ValueError(f"AiZynthFinder public asset must be a regular file: {path!r}")
+    if metadata.st_size > MAX_PUBLIC_ASSET_BYTES:
+        raise ValueError(f"AiZynthFinder public asset exceeds size limit: {path!r}")
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _explicit_yaml_sections(text: str) -> dict[str, dict[str, str]]:
+    """Read the small, flat formal-config sections without a PyYAML dependency."""
+    sections: dict[str, dict[str, str]] = {name: {} for name in _EXPLICIT_CONFIG_KEYS}
+    current: str | None = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if line == stripped and stripped.endswith(":"):
+            current = stripped[:-1]
+            continue
+        if current in sections and line.startswith("  ") and ":" in stripped:
+            key, value = stripped.split(":", 1)
+            if key in _EXPLICIT_CONFIG_KEYS[current]:
+                sections[current][key] = value.strip()
+    return sections
+
+
+def public_data_provenance(
+    config: AizynthfinderConfig, expected_config_path: str | None = None
+) -> dict:
+    """Return hash-addressed config, assets, and explicit search semantics.
+
+    The entire mounted directory is not treated as evidence: only the config
+    and the assets it references are included. This avoids coupling a run to
+    unrelated files while still preventing a model, template, filter, or stock
+    swap from passing unnoticed.
+    """
+    root = os.path.realpath(config.public_data_dir)
+    config_path = os.path.realpath(os.path.join(root, config.config_filename))
+    if os.path.commonpath((root, config_path)) != root:
+        raise ValueError("AiZynthFinder config must remain inside public_data_dir")
+    with open(config_path, encoding="utf-8") as handle:
+        text = handle.read()
+    config_sha256 = _sha256_regular_file(config_path)
+    expected_config_sha256 = None
+    if expected_config_path:
+        expected_config_sha256 = _sha256_regular_file(expected_config_path)
+        if config_sha256 != expected_config_sha256:
+            raise ValueError(
+                "AiZynthFinder public config differs from the tracked formal template; "
+                "provision the public-data config from the selected template before measuring"
+            )
+    sections = _explicit_yaml_sections(text)
+    missing = [
+        f"{section}.{key}"
+        for section, keys in _EXPLICIT_CONFIG_KEYS.items()
+        for key in keys
+        if key not in sections[section]
+    ]
+    if missing:
+        raise ValueError(
+            "AiZynthFinder formal config is missing explicit settings: " + ", ".join(missing)
+        )
+    assets: dict[str, str] = {}
+    for relative in sorted(set(_PUBLIC_ASSET_RE.findall(text))):
+        if relative.startswith("/") or ".." in relative.split("/"):
+            raise ValueError(f"AiZynthFinder config contains unsafe public asset path: {relative!r}")
+        asset_path = os.path.realpath(os.path.join(root, relative))
+        if os.path.commonpath((root, asset_path)) != root:
+            raise ValueError(f"AiZynthFinder asset escapes public_data_dir: {relative!r}")
+        assets[relative] = _sha256_regular_file(asset_path)
+    if not assets:
+        raise ValueError("AiZynthFinder formal config references no public assets")
+    return {
+        "schema_version": 1,
+        "config_filename": config.config_filename,
+        "config_sha256": config_sha256,
+        "expected_config_sha256": expected_config_sha256,
+        "public_assets_sha256": assets,
+        "resolved_search": sections["search"],
+        "resolved_post_processing": sections["post_processing"],
+    }
 
 
 def _parse_mem_usage(text: str) -> int | None:
@@ -323,6 +422,9 @@ def run_one_target(
                 "diagnostics_source": "single_per_target_cli_call",
                 "time_limit_s": config.time_limit_s,
                 "iteration_limit": config.iteration_limit,
+                "max_transforms": config.max_transforms,
+                "min_routes": config.min_routes,
+                "max_routes": config.max_routes,
                 "number_of_solved_routes": record.get("number_of_solved_routes"),
                 "number_of_nodes": record.get("number_of_nodes"),
                 "tool_reported_search_time_s": record.get("search_time"),

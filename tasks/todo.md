@@ -21,7 +21,8 @@ Phase 55の「同一stock・予算でAiZynthFinderのnative/common-strictをと�
 - [ ] **55.1 → 55.4 / 候補選択** VALで既存recoveryを同一総予算A/B。native/strict非悪化、
   成功取り消し0、予算内完了を確認。HOLD施策は新しい損失の証拠がある場合だけ再評価。
 - [ ] **55.6 / 独立性・標本数** freeze-003先頭50件の閲覧を記録し、未観測TESTの扱いと
-  検出力に基づくNを事前登録。元500件は改変せず、新protocolは別identityで管理。
+  検出力に基づくNを事前登録。`phase55_mcnemar_power.py`でVAL由来のdiscordant仮定から
+  exact McNemarのNを決める。元500件は改変せず、新protocolは別identityで管理。
 - [ ] **O7 / 運用・候補gate** 出典・利用条件が明確な実procedureを再計算・再importし、
   不足データを明示。固定候補commitでworkspace/feature/surface/docsのgateを通す。
 

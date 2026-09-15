@@ -50,6 +50,15 @@ identity and explicit provenance; neither the remaining 450 nor a replacement
 500 is automatically eligible. Further adapter smoke checks use development
 targets. Candidate tuning uses VAL only.
 
+`scripts/phase55_mcnemar_power.py` provides the required outcome-blind
+sample-size calculation. It accepts only development-derived probabilities of
+the two discordant outcomes and enumerates the exact two-sided McNemar test
+used by the final report. It does not accept TEST rows. After one candidate
+configuration is frozen, record its VAL-derived assumptions, alpha, target
+power, N cap and selected N in the separate 55.6 execution protocol, then
+create and freeze a new cohort excluding every exposed identity. Do not select
+N from a TEST result or silently reuse the unobserved remainder of freeze-003.
+
 ## Provenance audit
 
 The fail-closed audit is implemented by

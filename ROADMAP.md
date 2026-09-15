@@ -105,7 +105,7 @@ precursorのMW比であり、全量論試薬を扱う理論atom economyや実工
 
 | Phase | Status | 現在の証拠 | 次の判定 |
 |---|---|---|---|
-| 55.0 測定契約 | Implemented / Blocked | metric truth table、manifest hardening、resume/output lock、fail-closed preflight | clean checkoutで両armの50-target smokeを通す |
+| 55.0 測定契約 | Implemented / Blocked | metric truth table、manifest hardening、resume/output lock、fail-closed preflight。凍結TESTの決定論的prefixを確認する50-target smoke gate | clean checkoutで両armの50-target smokeを通す |
 | 55.1 Failure atlas | Implemented | VAL-200を両者成功・片側成功・両者失敗へ分類。未観測原因はunknownとして保持 | 採用候補を第一喪失点へ結び付ける |
 | 55.2 Ordering-only model | HOLD | TRAIN-only ONNX VAL-200はstrict 121→124（+3pp、95% CI −1.5〜+5.0pp、McNemar p=0.549）。timeout 0→2、p95 8.39→18.11秒、RSS p95 209→387 MiB。軽量512×128も10件でstrict 8→9・timeout 0だがp95 8.39→52.09秒、RSS p95 204→332 MiB | template-ID対応を保ったまま推論コストを下げ、timeout=0・strict非悪化を満たす候補だけ再評価 |
 | 55.3 Downstream reachability | Implemented / HOLD | shared-cache selectorを実装したが、小規模A/Bで精度向上未確認 | 全VALで成功取り消し0、strict非悪化、runtime正常なら採用 |

@@ -98,6 +98,77 @@ def frozen_cohort_preflight(frozen_manifest_path: Path) -> dict[str, Any]:
     }
 
 
+def smoke_preflight(
+    frozen_manifest_path: Path,
+    left_manifest: dict[str, Any],
+    right_manifest: dict[str, Any],
+    left_ids: set[str],
+    right_ids: set[str],
+    *,
+    smoke_size: int,
+    require_clean: bool = True,
+) -> dict[str, Any]:
+    """Verify a paired smoke run is the deterministic prefix of a frozen cohort.
+
+    A 50-target smoke is an environment/adapter gate, not an opportunity to
+    choose easier targets.  Both runners keep the full frozen sample list as
+    their hash-addressed input and select its first ``smoke_size`` rows.
+    """
+    cohort = load_json(frozen_manifest_path)
+    cohort_result = frozen_cohort_preflight(frozen_manifest_path)
+    result = preflight(
+        left_manifest,
+        right_manifest,
+        left_ids,
+        right_ids,
+        require_clean=require_clean,
+    )
+    blockers = list(cohort_result["blockers"]) + list(result["blockers"])
+
+    targets = cohort.get("targets")
+    if not isinstance(smoke_size, int) or smoke_size <= 0:
+        blockers.append("smoke_size_must_be_positive")
+        targets = []
+    if not isinstance(targets, list) or smoke_size > len(targets):
+        blockers.append("smoke_size_exceeds_frozen_cohort")
+        targets = []
+    expected_ids: set[str] = set()
+    if targets:
+        for row in targets[:smoke_size]:
+            target_id = row.get("target_id") if isinstance(row, dict) else None
+            if not isinstance(target_id, str) or not target_id:
+                blockers.append("smoke_target_malformed")
+                continue
+            expected_ids.add(target_id)
+        if len(expected_ids) != smoke_size:
+            blockers.append("smoke_target_duplicate")
+
+    if left_ids != expected_ids or right_ids != expected_ids:
+        blockers.append(
+            "smoke_target_set_mismatch:"
+            f"expected={len(expected_ids)}:left={len(left_ids)}:right={len(right_ids)}"
+        )
+
+    sample = cohort.get("sample_list")
+    expected_hash = sample.get("sha256") if isinstance(sample, dict) else None
+    for label, arm in (("left", left_manifest), ("right", right_manifest)):
+        hashes = arm.get("input_file_sha256")
+        actual_hash = hashes.get("sample_list") if isinstance(hashes, dict) else None
+        if not expected_hash or actual_hash != expected_hash:
+            blockers.append(f"{label}_smoke_sample_hash_mismatch")
+
+    return {
+        "schema_version": "renkin-phase55-smoke-preflight/1",
+        "eligible": not blockers,
+        "freeze_id": cohort.get("freeze_id"),
+        "smoke_size": smoke_size,
+        "expected_target_count": len(expected_ids),
+        "blockers": blockers,
+        "pair_preflight": result,
+        "cohort_preflight": cohort_result,
+    }
+
+
 def preflight(
     left_manifest: dict[str, Any],
     right_manifest: dict[str, Any],
@@ -178,15 +249,42 @@ def main() -> int:
     parser.add_argument("--right-manifest", type=Path, required=True)
     parser.add_argument("--left-rows", type=Path, required=True)
     parser.add_argument("--right-rows", type=Path, required=True)
+    parser.add_argument(
+        "--frozen-cohort",
+        type=Path,
+        help="require rows to be the deterministic prefix of this frozen cohort",
+    )
+    parser.add_argument(
+        "--smoke-size",
+        type=int,
+        help="number of frozen targets required when --frozen-cohort is used",
+    )
     parser.add_argument("--allow-dirty", action="store_true")
     args = parser.parse_args()
-    result = preflight(
-        load_json(args.left_manifest),
-        load_json(args.right_manifest),
-        row_ids(args.left_rows),
-        row_ids(args.right_rows),
-        require_clean=not args.allow_dirty,
-    )
+    if (args.frozen_cohort is None) != (args.smoke_size is None):
+        parser.error("--frozen-cohort and --smoke-size must be supplied together")
+    left_manifest = load_json(args.left_manifest)
+    right_manifest = load_json(args.right_manifest)
+    left_ids = row_ids(args.left_rows)
+    right_ids = row_ids(args.right_rows)
+    if args.frozen_cohort:
+        result = smoke_preflight(
+            args.frozen_cohort,
+            left_manifest,
+            right_manifest,
+            left_ids,
+            right_ids,
+            smoke_size=args.smoke_size,
+            require_clean=not args.allow_dirty,
+        )
+    else:
+        result = preflight(
+            left_manifest,
+            right_manifest,
+            left_ids,
+            right_ids,
+            require_clean=not args.allow_dirty,
+        )
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     return 0 if result["eligible"] else 1
 

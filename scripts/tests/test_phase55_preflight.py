@@ -117,3 +117,69 @@ def test_frozen_cohort_preflight_rejects_changed_sample_list():
         result = MODULE.frozen_cohort_preflight(frozen)
         assert result["eligible"] is False
         assert "cohort_sample_list_hash_mismatch" in result["blockers"]
+
+
+def test_smoke_preflight_requires_frozen_prefix_and_hash():
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        sample = root / "sample.jsonl"
+        rows = [{"target_id": value} for value in ("a", "b", "c")]
+        sample.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+        import hashlib
+
+        sample_hash = hashlib.sha256(sample.read_bytes()).hexdigest()
+        frozen = root / "frozen.json"
+        frozen.write_text(
+            json.dumps(
+                {
+                    "freeze_status": "frozen",
+                    "freeze_id": "test",
+                    "targets": rows,
+                    "sample_list": {
+                        "path": str(sample),
+                        "sha256": sample_hash,
+                        "rows": len(rows),
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        left = manifest()
+        right = manifest()
+        left["input_file_sha256"]["sample_list"] = sample_hash
+        right["input_file_sha256"]["sample_list"] = sample_hash
+        result = MODULE.smoke_preflight(
+            frozen, left, right, {"a", "b"}, {"a", "b"}, smoke_size=2
+        )
+        assert result["eligible"] is True
+        assert result["freeze_id"] == "test"
+
+
+def test_smoke_preflight_rejects_non_prefix_or_wrong_input_hash():
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        sample = root / "sample.jsonl"
+        rows = [{"target_id": value} for value in ("a", "b", "c")]
+        sample.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+        import hashlib
+
+        sample_hash = hashlib.sha256(sample.read_bytes()).hexdigest()
+        frozen = root / "frozen.json"
+        frozen.write_text(
+            json.dumps(
+                {
+                    "freeze_status": "frozen",
+                    "targets": rows,
+                    "sample_list": {
+                        "path": str(sample), "sha256": sample_hash, "rows": len(rows)
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        result = MODULE.smoke_preflight(
+            frozen, manifest(), manifest(), {"a", "c"}, {"a", "c"}, smoke_size=2
+        )
+        assert result["eligible"] is False
+        assert "smoke_target_set_mismatch:expected=2:left=2:right=2" in result["blockers"]
+        assert "left_smoke_sample_hash_mismatch" in result["blockers"]

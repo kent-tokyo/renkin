@@ -34,6 +34,14 @@ The comparison runner also locks each output ledger before reading or writing
 it. A resumed run must reject an already-corrupted duplicate-target ledger or a
 concurrent writer; such an artifact is never eligible for formal statistics.
 
+Before the 500-target run, execute the first 50 rows of this same frozen list
+as the clean-checkout smoke gate. `scripts/phase55_preflight.py` accepts
+`--frozen-cohort` and `--smoke-size 50`; it rejects an arm pair unless both
+ledgers are exactly that deterministic prefix and both manifests hash the full
+frozen `sample_list.jsonl`. A passing smoke proves only that the paired
+environment and adapters are runnable. It is neither a pilot result nor a
+substitute for the 500-target TEST.
+
 ## Provenance audit
 
 The fail-closed audit is implemented by
@@ -59,6 +67,9 @@ reported with the final comparison rather than hidden.
 Before execution, verify that the frozen manifest contains the selected target
 rows, all input hashes, the provenance-audit hash, tool revisions, common
 resource budget, stock/template/model hashes, and the fixed execution order.
-Then run the existing Phase 55 preflight. If any input changes, or if the
+For the 50-target smoke, run `scripts/phase55_preflight.py` with the two
+arm manifests and ledgers, plus this `frozen_manifest.json`, `--frozen-cohort`,
+and `--smoke-size 50`. For the 500-target gate, run the ordinary paired
+preflight after all rows are present. If any input changes, or if the
 AiZynthFinder environment cannot be executed under the same contract, mark the
 arm `not_measured`; do not substitute a historical arm.

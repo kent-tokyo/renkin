@@ -2056,7 +2056,7 @@ fn load_audit_stock(path: &str) -> Result<std::collections::HashSet<String>> {
 
 /// `renkin audit-route <PATH> [--format auto|renkin|interchange|aizynthfinder|syntheseus|synplanner] [--stock <PATH>]
 /// [--private-stock <CSV|TSV>] [--stock-policy <JSON>] [--route-metrics <JSON>] [--input-artifact <JSON>] [--audit-ranking <JSON>] [--mechanistic-evidence <JSON>] [--receipt-bindings <JSON>] [--policy informational|standard|strict]
-/// [--chemical-review] [--interchange] [--output human|json]` --
+/// [--chemical-review] [--interchange] [--interchange-v2] [--output human|json]` --
 /// audits every route in a RENKIN `--format json`
 /// output file via `bridge::route_graph::normalize_renkin_route` +
 /// `bridge::audit::audit`. RENKIN-native input only: no AiZynthFinder
@@ -2233,7 +2233,7 @@ fn run_audit_route(args: &[String]) -> Result<()> {
         .iter()
         .find(|a| !a.starts_with("--"))
         .cloned()
-        .context("renkin audit-route: <PATH> is required (usage: renkin audit-route <PATH> [--format auto|renkin|interchange|aizynthfinder|syntheseus|synplanner] [--stock <PATH>] [--private-stock <CSV|TSV>] [--stock-policy <JSON>] [--route-metrics <JSON>] [--input-artifact <JSON>] [--audit-ranking <JSON>] [--mechanistic-evidence <JSON>] [--receipt-bindings <JSON>] [--policy informational|standard|strict] [--chemical-review] [--interchange] [--output human|json])")?;
+        .context("renkin audit-route: <PATH> is required (usage: renkin audit-route <PATH> [--format auto|renkin|interchange|aizynthfinder|syntheseus|synplanner] [--stock <PATH>] [--private-stock <CSV|TSV>] [--stock-policy <JSON>] [--route-metrics <JSON>] [--input-artifact <JSON>] [--audit-ranking <JSON>] [--mechanistic-evidence <JSON>] [--receipt-bindings <JSON>] [--policy informational|standard|strict] [--chemical-review] [--interchange] [--interchange-v2] [--output human|json])")?;
     let format = flag_value(args, "--format").unwrap_or("auto");
     if ![
         "auto",
@@ -2287,6 +2287,9 @@ fn run_audit_route(args: &[String]) -> Result<()> {
 
     if args.iter().any(|a| a == "--interchange") {
         out.attach_interchange();
+    }
+    if args.iter().any(|a| a == "--interchange-v2") {
+        out.attach_interchange_v2()?;
     }
 
     if output_format == "json" {

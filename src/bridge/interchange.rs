@@ -224,6 +224,8 @@ pub struct InterchangeReaudit {
     pub source_tool: String,
     pub imported_route_id: String,
     pub recomputed_route_id: String,
+    #[serde(skip_serializing)]
+    pub document: RouteDocument,
     pub audit: AuditReport,
 }
 
@@ -288,6 +290,7 @@ pub fn reauditable_import_v1(
         source_tool: envelope.source_tool,
         imported_route_id: envelope.route_id,
         recomputed_route_id,
+        document,
         audit,
     })
 }
@@ -643,6 +646,7 @@ pub fn reauditable_import_v2(
         source_tool: envelope.source_tool,
         imported_route_id: envelope.route_id,
         recomputed_route_id,
+        document,
         audit,
     })
 }

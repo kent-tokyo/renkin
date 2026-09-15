@@ -13,8 +13,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   receipt's hashes and deterministic ID, then binds only hashes, route/node
   IDs, and the final re-audit hash into the report. Raw tool material is never
   serialized. Added explicit-tree canonical interchange v2 library APIs for
-  direct-purchase routes and repeated precursor occurrences; v1 remains
-  supported unchanged.
+  direct-purchase routes and repeated precursor occurrences, including the
+  opt-in `audit-route --interchange-v2` export; v1 remains supported unchanged.
 - Added opt-in canonical interchange v1 re-audit: `renkin audit-route
   interchange.json --format interchange --stock stock.smi` reconstructs and
   re-runs structure, stock, element, and forward checks. It fail-closes on

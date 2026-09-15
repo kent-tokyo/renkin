@@ -290,6 +290,10 @@ pub struct AuditRouteReport {
     pub private_stock: Option<Vec<crate::bridge::private_stock::PrivateStockReport>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub route_interchange: Option<Vec<crate::bridge::interchange::RouteInterchange>>,
+    /// Explicit-tree canonical interchange v2.  Emitted only by the opt-in
+    /// `--interchange-v2` surface; v1 remains the compatibility default.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub route_interchange_v2: Option<Vec<crate::bridge::interchange::RouteInterchangeV2>>,
     /// Local process-mass receipts supplied explicitly by the caller. They
     /// are independent of the route's structural verdict and are absent by
     /// default so existing audit JSON remains unchanged.
@@ -322,6 +326,8 @@ pub struct AuditRouteReport {
     route_source_ids: Vec<Option<String>>,
     #[serde(skip)]
     route_original_node_ids: Vec<Vec<Option<String>>>,
+    #[serde(skip)]
+    route_documents: Vec<Option<crate::bridge::route_graph::RouteDocument>>,
 }
 
 #[derive(Debug, Serialize, Default)]
@@ -407,6 +413,51 @@ impl AuditRouteReport {
                 })
                 .collect(),
         );
+    }
+
+    /// Attach explicit-tree v2 interchange records.  A route that could not
+    /// be normalized has no trustworthy topology to export, so this fails
+    /// rather than fabricating one from a flat audit report.
+    pub fn attach_interchange_v2(&mut self) -> anyhow::Result<()> {
+        let mut output = Vec::with_capacity(self.routes.len());
+        for (index, report) in self.routes.iter().enumerate() {
+            let document = self
+                .route_documents
+                .get(index)
+                .and_then(Option::as_ref)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("route {index} has no normalized tree for v2 export")
+                })?;
+            let private_stock = self
+                .private_stock
+                .as_ref()
+                .and_then(|reports| reports.get(index).cloned());
+            let stock = if self.audit_manifest.stock_sha256.is_some()
+                || self.audit_manifest.private_stock_policy_sha256.is_some()
+                || private_stock.is_some()
+            {
+                Some(crate::bridge::interchange::StockProvenance {
+                    configured_stock_sha256: self.audit_manifest.stock_sha256.clone(),
+                    private_stock_policy_sha256: self
+                        .audit_manifest
+                        .private_stock_policy_sha256
+                        .clone(),
+                    private_stock,
+                })
+            } else {
+                None
+            };
+            output.push(crate::bridge::interchange::from_document_v2(
+                source_tool_for_report(report),
+                self.route_source_versions.get(index).cloned().flatten(),
+                self.route_source_ids.get(index).cloned().flatten(),
+                document,
+                report,
+                stock,
+            ));
+        }
+        self.route_interchange_v2 = Some(output);
+        Ok(())
     }
 
     /// Attach a verified local MCP receipt chain.  Use
@@ -763,6 +814,7 @@ pub fn build_audit_route_report_with_options(
     let mut route_source_versions = Vec::new();
     let mut route_source_ids = Vec::new();
     let mut route_original_node_ids = Vec::new();
+    let mut route_documents = Vec::new();
     let source_format = match resolved_format {
         AuditRouteFormat::Renkin => {
             let input: AuditRouteInput = serde_json::from_value(value)
@@ -771,6 +823,7 @@ pub fn build_audit_route_report_with_options(
                 let route = route_from_audit_input(entry);
                 let outcome = normalize_renkin_route(&route, &input.target);
                 let report = audit::audit_with_policy(&outcome, stock, Some(rules), policy);
+                route_documents.push(outcome.document.clone());
                 summary.record(report.status);
                 reports.push(report);
                 route_source_versions.push(None);
@@ -788,6 +841,7 @@ pub fn build_audit_route_report_with_options(
             let reaudited =
                 crate::bridge::interchange::reauditable_import_v1(&value, stock, rules, policy)?;
             summary.record(reaudited.audit.status);
+            route_documents.push(Some(reaudited.document.clone()));
             reports.push(reaudited.audit);
             route_source_versions.push(None);
             route_source_ids.push(None);
@@ -800,6 +854,7 @@ pub fn build_audit_route_report_with_options(
             for node in &routes {
                 let outcome = normalize_aizynthfinder_route(node);
                 let report = audit::audit_with_policy(&outcome, stock, Some(rules), policy);
+                route_documents.push(outcome.document.clone());
                 summary.record(report.status);
                 reports.push(report);
                 route_source_versions.push(None);
@@ -815,6 +870,7 @@ pub fn build_audit_route_report_with_options(
                 for node in &row.trees {
                     let outcome = normalize_aizynthfinder_route(node);
                     let report = audit::audit_with_policy(&outcome, stock, Some(rules), policy);
+                    route_documents.push(outcome.document.clone());
                     summary.record(report.status);
                     reports.push(report);
                     route_source_versions.push(None);
@@ -829,6 +885,7 @@ pub fn build_audit_route_report_with_options(
                 .context("input: not a recognized syntheseus-route-v1 JSON")?;
             let outcome = normalize_syntheseus_route(&input);
             let report = audit::audit_with_policy(&outcome, stock, Some(rules), policy);
+            route_documents.push(outcome.document.clone());
             let targets: Vec<String> = report
                 .steps
                 .iter()
@@ -847,6 +904,7 @@ pub fn build_audit_route_report_with_options(
             for (source_route_id, node) in &routes {
                 let outcome = normalize_synplanner_route(node);
                 let report = audit::audit_with_policy(&outcome, stock, Some(rules), policy);
+                route_documents.push(outcome.document.clone());
                 summary.record(report.status);
                 reports.push(report);
                 route_source_versions.push(None);
@@ -891,6 +949,7 @@ pub fn build_audit_route_report_with_options(
         }),
         private_stock: None,
         route_interchange: None,
+        route_interchange_v2: None,
         route_metrics: None,
         input_artifact: None,
         audit_ranking: None,
@@ -899,6 +958,7 @@ pub fn build_audit_route_report_with_options(
         route_source_versions,
         route_source_ids,
         route_original_node_ids,
+        route_documents,
         routes: reports,
     })
 }
@@ -1069,6 +1129,24 @@ mod tests {
         assert_eq!(interchange.source_route_id.as_deref(), Some("7"));
         assert_eq!(interchange.steps.len(), 1);
         assert_eq!(interchange.steps[0].original_node_id.as_deref(), Some("42"));
+    }
+
+    #[test]
+    fn explicit_v2_interchange_exports_the_normalized_tree() {
+        let mut report =
+            build_audit_route_report(RENKIN_FIXTURE, "renkin", None, &[]).expect("audits");
+        report.attach_interchange_v2().expect("exports v2");
+        let interchange = &report
+            .route_interchange_v2
+            .as_ref()
+            .expect("v2 interchange")[0];
+        assert_eq!(interchange.schema_version, 2);
+        assert_eq!(
+            interchange.root.canonical_smiles,
+            report.routes[0].steps[0].target
+        );
+        assert_eq!(interchange.root.children.len(), 2);
+        assert!(interchange.root.canonical_node_id.ends_with(":node:root"));
     }
 
     #[test]

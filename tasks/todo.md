@@ -18,8 +18,8 @@
   structure/stock/forward auditへの再接続、別process CLI round-tripを実装。root不明の
   direct route、重複分解、cycle/disconnected topology、unknown field、hash差し替えは拒否。
   `--receipt-bindings`でlocal実引数/実結果hash・receipt ID・最終audit hashへ結合し、
-  direct purchaseと重複occurrenceを保持するv2 explicit-tree APIも追加。v2 CLI exportと
-  candidate gateは残る。
+  direct purchaseと重複occurrenceを保持するv2 explicit-tree APIと`--interchange-v2`
+  exportも追加。candidate gateは残る。
 - [x] **O7.1 / Core metrics** `route_metrics_v1`の値・単位・方法・source・工程境界・coverageを
   固定し、route hashで監査reportへ接続。source報告値／再計算値／`not_evaluable`を分離し、
   既存MW比を上書きしない。

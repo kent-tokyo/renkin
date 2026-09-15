@@ -296,6 +296,21 @@ def validate_security_contract(manifest: dict) -> None:
     ):
         raise ValueError("configuration_id must be a non-empty string when present")
 
+    invocations = manifest.get("completed_invocations", [])
+    if not isinstance(invocations, list):
+        raise ValueError("completed_invocations must be a list when present")
+    for invocation in invocations:
+        if not isinstance(invocation, dict):
+            raise ValueError("completed_invocations contains a non-object")
+        for field in ("started_at_unix", "ended_at_unix", "wall_clock_s"):
+            value = invocation.get(field)
+            if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
+                raise ValueError(f"completed invocation has invalid {field}")
+        for field in ("new_row_count", "total_rows_in_file"):
+            value = invocation.get(field)
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise ValueError(f"completed invocation has invalid {field}")
+
 
 def load_and_validate_manifest(path: str) -> dict:
     """Load a persisted comparison manifest before any resume work starts."""
@@ -442,8 +457,52 @@ def capture_start_manifest(
         "end_time_unix": None,
         "end_environment": None,
         "input_file_sha256_at_end": None,
+        # A benchmark may resume after a controlled interruption.  Keep every
+        # normally completed invocation so the last resumed slice is never
+        # misrepresented as the duration of the whole sweep.
+        "completed_invocations": [],
     }
     return manifest
+
+
+def record_completed_invocation(
+    manifest: dict,
+    *,
+    started_at_unix: float,
+    elapsed_s: float,
+    new_row_count: int,
+    total_rows_in_file: int,
+) -> dict:
+    """Append durable accounting for one normally completed runner call.
+
+    An invocation killed before this record is written is intentionally absent,
+    making the accumulated time an explicit lower bound rather than fiction.
+    """
+    if elapsed_s < 0:
+        raise ValueError("completed invocation elapsed_s must be non-negative")
+    if new_row_count < 0 or total_rows_in_file < 0:
+        raise ValueError("completed invocation row counts must be non-negative")
+    invocations = manifest.setdefault("completed_invocations", [])
+    if not isinstance(invocations, list):
+        raise ValueError("completed_invocations must be a list")
+    invocations.append(
+        {
+            "started_at_unix": started_at_unix,
+            "ended_at_unix": time.time(),
+            "wall_clock_s": elapsed_s,
+            "new_row_count": new_row_count,
+            "total_rows_in_file": total_rows_in_file,
+        }
+    )
+    return manifest
+
+
+def completed_invocation_wall_clock_s(manifest: dict) -> float:
+    """Return the sum of durably recorded completed invocation durations."""
+    invocations = manifest.get("completed_invocations", [])
+    if not isinstance(invocations, list):
+        raise ValueError("completed_invocations must be a list")
+    return sum(float(invocation["wall_clock_s"]) for invocation in invocations)
 
 
 def finalize_manifest(manifest: dict, input_files: dict[str, str]) -> dict:

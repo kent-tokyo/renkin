@@ -724,6 +724,14 @@ def main(argv: list[str] | None = None) -> int:
             # manifest. The same guard is applied again at finalization.
             try:
                 existing_manifest = manifest_mod.load_and_validate_manifest(args.manifest_path)
+                if not args.resume:
+                    raise ValueError(
+                        "comparison manifest already exists; use --resume or choose a new manifest path"
+                    )
+                if existing_manifest.get("end_time_unix") is not None:
+                    raise ValueError(
+                        "comparison manifest is already finalized; choose a new manifest path"
+                    )
                 manifest_mod.validate_input_hashes(existing_manifest, input_files)
                 manifest_mod.validate_run_identity(
                     existing_manifest,
@@ -734,6 +742,7 @@ def main(argv: list[str] | None = None) -> int:
             except ValueError as exc:
                 parser.error(str(exc))
 
+    invocation_started_at_unix = time.time()
     start = time.monotonic()
     file_mode = "a" if (args.resume and os.path.exists(args.output_rows)) else "w"
     new_row_count = 0
@@ -759,7 +768,41 @@ def main(argv: list[str] | None = None) -> int:
     else:
         _, configuration_id = aizynth_config_and_id(args)
     agg = aggregate.compute_aggregate(all_rows)
-    agg["wall_clock_total_sweep_s"] = elapsed
+    # A resumed command measures one invocation, not necessarily the whole
+    # sweep. Persist it before writing output and report only the durable sum
+    # of completed invocations as the total.
+    if args.manifest_path:
+        try:
+            run_manifest = manifest_mod.load_and_validate_manifest(args.manifest_path)
+            manifest_mod.validate_run_identity(
+                run_manifest,
+                tool=args.tool,
+                comparison_mode=args.comparison_mode,
+                configuration_id=configuration_id,
+            )
+            manifest_mod.record_completed_invocation(
+                run_manifest,
+                started_at_unix=invocation_started_at_unix,
+                elapsed_s=elapsed,
+                new_row_count=new_row_count,
+                total_rows_in_file=len(all_rows),
+            )
+            input_files = manifest_input_files(args)
+            manifest_mod.validate_input_hashes(run_manifest, input_files)
+            manifest_mod.write_manifest_atomic(args.manifest_path, run_manifest)
+        except ValueError as exc:
+            parser.error(str(exc))
+        agg["wall_clock_completed_invocations_s"] = (
+            manifest_mod.completed_invocation_wall_clock_s(run_manifest)
+        )
+        agg["completed_invocation_count"] = len(run_manifest["completed_invocations"])
+    else:
+        agg["wall_clock_completed_invocations_s"] = elapsed
+        agg["completed_invocation_count"] = 1
+    agg["wall_clock_this_invocation_s"] = elapsed
+    # Compatibility field: formerly this was incorrectly only the final
+    # resumed slice. It now has the explicit cumulative meaning above.
+    agg["wall_clock_total_sweep_s"] = agg["wall_clock_completed_invocations_s"]
     agg["new_rows_this_invocation"] = new_row_count
     agg["total_rows_in_file"] = len(all_rows)
     agg["tool"] = args.tool
@@ -788,7 +831,6 @@ def main(argv: list[str] | None = None) -> int:
             )
         except ValueError as exc:
             parser.error(str(exc))
-        input_files = manifest_input_files(args)
         run_manifest = manifest_mod.finalize_manifest(run_manifest, input_files)
         manifest_mod.write_manifest_atomic(args.manifest_path, run_manifest)
 

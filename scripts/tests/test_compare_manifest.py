@@ -180,6 +180,36 @@ class TestRedactHomeDir(unittest.TestCase):
         self.assertTrue(all("security_case_id" in case for case in contract["threat_cases"]))
         cm.validate_security_contract(manifest)
 
+    def test_completed_invocation_ledger_is_cumulative(self):
+        manifest = {"completed_invocations": []}
+        with patch("compare_manifest.time.time", side_effect=[110.0, 220.0]):
+            cm.record_completed_invocation(
+                manifest,
+                started_at_unix=100.0,
+                elapsed_s=10.0,
+                new_row_count=4,
+                total_rows_in_file=4,
+            )
+            cm.record_completed_invocation(
+                manifest,
+                started_at_unix=200.0,
+                elapsed_s=20.0,
+                new_row_count=6,
+                total_rows_in_file=10,
+            )
+        self.assertEqual(cm.completed_invocation_wall_clock_s(manifest), 30.0)
+        self.assertEqual(manifest["completed_invocations"][1]["total_rows_in_file"], 10)
+
+    def test_completed_invocation_ledger_rejects_invalid_duration(self):
+        with self.assertRaisesRegex(ValueError, "elapsed_s"):
+            cm.record_completed_invocation(
+                {"completed_invocations": []},
+                started_at_unix=1.0,
+                elapsed_s=-1.0,
+                new_row_count=0,
+                total_rows_in_file=0,
+            )
+
     @patch("compare_manifest.sha256_file", return_value="sha256:test")
     def test_security_contract_rejects_missing_threat_case_field(self, _mock):
         manifest = cm.capture_start_manifest(

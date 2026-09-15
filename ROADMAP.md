@@ -97,7 +97,7 @@ Phase 55は完了扱いにしない。化学的にinvalidなrouteを指標の加
 
 ### 直近の実行順
 
-1. **55.0 / 測定契約を閉じる** — resume時間集計・監督プロセス、実設定/入力hash、
+1. **55.0 / 測定契約を閉じる** — 完了済みresume invocationの累計計時は実装済み。監督プロセス、実設定/入力hash、
    CPU/RAM enforcement、stock identity、計時・top-k・停止条件を検証する。既存50件smokeの
    通過範囲を保存し、正式設定の動作確認には開発用targetを使う。
 2. **55.1 → 55.4 / 候補を選ぶ** — 既存失敗atlasから仮説を一つ選び、まず実装済みrecoveryを
@@ -133,7 +133,7 @@ precursorのMW比であり、全量論試薬を扱う理論atom economyや実工
 
 | Phase | Status | 現在の証拠 | 次の判定 |
 |---|---|---|---|
-| 55.0 測定契約 | Active | 小規模stockの50件smoke完走・既存preflight通過。Docker起動問題は当該runで解消 | 実入力/設定・資源制限・stock・計時・top-k・resumeを正式契約へ結合し、開発用smokeで検証 |
+| 55.0 測定契約 | Active | 小規模stockの50件smoke完走・既存preflight通過。Docker起動問題は当該runで解消。completed-invocation ledgerにより再開後sliceの総時間誤表示を防止 | 実入力/設定・資源制限・stock・startup/search/audit計時・top-k・監督resumeを正式契約へ結合し、開発用smokeで検証 |
 | 55.1 Failure atlas | Implemented / Partial | VAL-200を両者成功・片側成功・両者失敗へ分類。未観測原因はunknownとして保持 | 次の仮説に必要な第一喪失点を観測する。深さ/beam到達だけで原因確定しない |
 | 55.2 Ordering-only model | HOLD | TRAIN-only ONNX VAL-200はstrict 121→124（+3pp、95% CI −1.5〜+5.0pp、McNemar p=0.549）。timeout 0→2、p95 8.39→18.11秒、RSS p95 209→387 MiB。軽量512×128も10件でstrict 8→9・timeout 0だがp95 8.39→52.09秒、RSS p95 204→332 MiB | template-ID対応を保ったまま推論コストを下げ、timeout=0・strict非悪化を満たす候補だけ再評価 |
 | 55.3 Downstream reachability | Implemented / HOLD | shared-cache selectorを実装したが、小規模A/Bで精度向上未確認 | 全VALで成功取り消し0、strict非悪化、runtime正常なら採用 |

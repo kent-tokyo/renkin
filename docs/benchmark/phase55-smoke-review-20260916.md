@@ -50,7 +50,7 @@ Row-file SHA-256:
 | Actual AiZynthFinder settings | Runner's depth/beam/max-routes values are not forwarded by `aizynth_config_and_id`; YAML specifies models and stock but no explicit search settings | Capture resolved search/termination/output settings and verify phase budget, reaction depth and top-k meanings for each arm |
 | Input provenance | `manifest_input_files` hashes the supplied `.smi` and RENKIN templates for both arms | Also hash the actual AiZynthFinder YAML, HDF5, ONNX/filter and template assets and prove stock conversion identity |
 | Preflight scope | Checks prefix IDs, selected input hashes, revision, clean state and timeout/grace/max-routes fields | Add checks for effective configuration, resource enforcement and actual per-arm assets; templates/models may legitimately differ between tools |
-| Timing / resume | Fresh process per target; final sweep time is last invocation only; run required manual continuation | Record cumulative row timing, invocation timing, startup, search and audit separately; use supervised resume with ledger/identity checks |
+| Timing / resume | Fresh process per target; final sweep time was last invocation only; run required manual continuation | `compare_run.py` now records each normally completed invocation in the manifest and reports its durable cumulative wall time separately from this invocation. An externally killed invocation remains an explicit unrecorded gap; startup/search/audit timing and supervised continuation still need protocol coverage |
 | Independent TEST | Results for the first 50 of frozen 500 targets were viewed before final candidate selection | Preserve the original cohort and record exposure; register subsequent evaluation population and sample-size/power decision before measuring it |
 
 Implementation references: `scripts/compare_run.py`,
@@ -59,7 +59,7 @@ Implementation references: `scripts/compare_run.py`,
 
 ## Next sequence
 
-1. Close these measurement gaps and validate the intended contract on
+1. Validate the new invocation ledger and close the remaining measurement gaps on
    development targets. The local Phase 55 plan proposes a large common union,
    warm workers, 120 seconds and top-5; these are proposed values until an
    executable two-tool protocol is registered.

@@ -12,8 +12,9 @@ Phase 55の「同一stock・予算でAiZynthFinderのnative/common-strictをと�
 
 ### 直近の作業（以下の過去progressより優先）
 
-- [ ] **55.0 / 計時・継続** 全行の累積時間とinvocation wallを区別し、監督下resumeを検証。
-  既存smokeは両arm50件完走。AiZynthFinderの210.52秒は再開後26件のみで、全行時間和は348.724秒。
+- [ ] **55.0 / 計時・継続** completed-invocation ledgerで累計wallと今回wallの区別は実装済み。
+  監督下resume、startup/search/auditの分解計時を検証する。既存smokeは両arm50件完走。
+  AiZynthFinderの210.52秒は再開後26件のみで、全行時間和は348.724秒。
 - [ ] **55.0 / 実効契約** 大規模共通stockのidentity、実YAML/HDF5/model/template hash、
   両armのCPU/RAM enforcement・warm/cold・deadline・reaction depth・top-kを事前登録して検証。
   今回の393件stock・500 templates・rank1は接続smokeであり、このgateを閉じない。

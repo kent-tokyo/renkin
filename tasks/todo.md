@@ -9,10 +9,10 @@
 [O7詳細・合格条件](../docs/roadmap/evidence-chain.md)、
 [Phase 55測定計画](../docs/roadmap/aizynthfinder-accuracy.md)を参照。
 
-## O7: Evidence chain — planned, next candidate O7.0–O7.1
+## O7: Evidence chain — implemented, operational validation follows
 
-以下は計画であり未実装。次候補の呼称はv1.0.8候補だが、この文書更新では版番号・
-公開・探索設定・凍結TESTを変更しない。既存の作業記録は下に保存する。
+以下は実装済みのproduct boundaryである。次候補の呼称はv1.0.8候補だが、この文書更新では
+版番号・公開・探索設定・凍結TESTを変更しない。実artifactを使う運用validationは別途行う。
 
 - [x] **O7.0 / v1 Contract + Replay** strict canonical v1 import、route hash照合、通常の
   structure/stock/forward auditへの再接続、別process CLI round-tripを実装。root不明の
@@ -27,9 +27,9 @@
   欠落、waste欠落、g/kg、非有限数、product質量0を扱う。`--route-metrics-sidecar`でlocal
   source artifact hashと全ledgerを照合し、公開reportにはhashのみ保持する。step間二重計上と
   複数step実利用fixtureは継続する。
-- [ ] **O7.0–O7.1 / Candidate gate** local import→audit→receipt→export→再importを完走。
-  MCP body→receipt→v1 interchange→再auditの統合fixture（生body非出力）を追加。既定動作の
-  golden parity、WASM・Python/MCP回帰・docs例と実artifact pipelineを確認する。
+- [x] **O7.0–O7.1 / Candidate gate** local import→audit→receipt→export→再importを完走。
+  MCP body→receipt→v1 interchange→再auditの統合fixture（生body非出力）、workspace/MCP回帰、
+  `wasm32 --lib`、Python feature、docs例を確認。実artifact pipelineは運用validationで扱う。
 - [x] **O7.2 / Artifact core** local sidecarでoriginal content hash、source kind、transform、
   OCR/model、normalization、reviewを検証し、対象targetへbind。reportはlocator/raw prediction/
   normalized SMILES/reviewerをredactする。実OCR、remote取得、複数候補/stereo reviewは残る。

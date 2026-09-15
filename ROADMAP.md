@@ -91,11 +91,11 @@ Phase 55は完了扱いにしない。化学的にinvalidなrouteを指標の加
 
 | 優先度 / Phase（実装順） | Status | 成果物 | 完了条件 |
 |---|---|---|---|
-| P0 / O7.0 Evidence binding | Implemented / Active | v1再importとlocal receipt sidecar結合、direct purchase/重複occurrenceを保持する明示tree v2 API・`--interchange-v2` export | 生データを出力せず別processで再監査。candidate gateは残る |
-| P0 / O7.1 Process metrics | Implemented / Active | `route_metrics_v1`、route hash結合ledger、source artifactを再hashするsidecar provenanceとreceipt hash | 手計算fixtureと一致。不足データは`not_evaluable`。公開surfaceの実利用回帰は残る |
-| P1 / O7.2 Input artifact | Implemented / Active | image/SVG/PDF/textのcontent hash、変換履歴、OCR/model、正規化・review receipt | redacted reportとtarget bindingは実装。実OCR、remote取得、複数候補/stereo reviewは残る |
-| P1 / O7.3 Audit ranking | Implemented / Active | hard gate後のParetoと固定normalization範囲のweighted profile、±10% sensitivity receipt | missing・非互換単位/境界は拒否。実profileの運用検証は残る |
-| P2 / O7.4 Mechanistic evidence | Implemented / Active | 外部計算receiptと、同一step・quantity・unit・origin・computed contextのみを投影するranking axis | DFT実行なし。実利用fixtureは残る |
+| P0 / O7.0 Evidence binding | Implemented | v1再importとlocal receipt sidecar結合、direct purchase/重複occurrenceを保持する明示tree v2 API・`--interchange-v2` export | body redactionを含む統合fixture、workspace・WASM lib・Python feature gateを通過 |
+| P0 / O7.1 Process metrics | Implemented | `route_metrics_v1`、route hash結合ledger、source artifactを再hashするsidecar provenanceとreceipt hash | 手計算fixtureと一致。不足データは`not_evaluable`。実procedureは運用validationで追加 |
+| P1 / O7.2 Input artifact | Implemented | image/SVG/PDF/textのcontent hash、変換履歴、OCR/model、正規化・review receipt | redacted reportとtarget bindingを実装。OCR/remote取得はlocal-first方針により別選択肢 |
+| P1 / O7.3 Audit ranking | Implemented | hard gate後のParetoと固定normalization範囲のweighted profile、±10% sensitivity receipt | missing・非互換単位/境界は拒否。実profileは運用validationで追加 |
+| P2 / O7.4 Mechanistic evidence | Implemented | 外部計算receiptと、同一step・quantity・unit・origin・computed contextのみを投影するranking axis | DFT実行なし。実計算artifactは運用validationで追加 |
 
 O7.0–O7.1だけを次候補の必須範囲とする。O7.2–O7.3はその後、O7.4は実利用fixtureを
 確保してから着手する。MolScribe・DFT本体は実装しない。既存の`atom_economy`は記載された

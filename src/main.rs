@@ -2189,6 +2189,20 @@ fn attach_pareto_ranking(
     Ok(())
 }
 
+fn attach_weighted_ranking(
+    report: &mut bridge::audit_route::AuditRouteReport,
+    args: &[String],
+) -> Result<()> {
+    let Some(path) = flag_value(args, "--weighted-ranking") else {
+        return Ok(());
+    };
+    let content = read_bounded_text_file(path, "--weighted-ranking")?;
+    let input: bridge::WeightedRankingInput = serde_json::from_str(&content)
+        .with_context(|| format!("failed to parse --weighted-ranking {path}"))?;
+    report.attach_weighted_ranking(&input)?;
+    Ok(())
+}
+
 fn attach_mechanistic_evidence(
     report: &mut bridge::audit_route::AuditRouteReport,
     args: &[String],
@@ -2282,6 +2296,7 @@ fn run_audit_route(args: &[String]) -> Result<()> {
     attach_route_metrics(&mut out, args)?;
     attach_input_artifact(&mut out, args)?;
     attach_pareto_ranking(&mut out, args)?;
+    attach_weighted_ranking(&mut out, args)?;
     attach_mechanistic_evidence(&mut out, args)?;
     attach_receipt_bindings(&mut out, args, &content, stock.as_ref(), &rules, policy)?;
 

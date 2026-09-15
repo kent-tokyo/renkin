@@ -94,7 +94,7 @@ Phase 55は完了扱いにしない。化学的にinvalidなrouteを指標の加
 | P0 / O7.0 Evidence binding | Implemented / Active | v1再importとlocal receipt sidecar結合、direct purchase/重複occurrenceを保持する明示tree v2 API・`--interchange-v2` export | 生データを出力せず別processで再監査。candidate gateは残る |
 | P0 / O7.1 Process metrics | Implemented / Active | 独立した`route_metrics_v1`、route hashに結合する質量ledger、方法・単位・境界・coverage・source付きreceipt | 手計算fixtureと一致。不足データは`not_evaluable`。sidecar provenance結合と公開surface回帰は残る |
 | P1 / O7.2 Input artifact | Implemented / Active | image/SVG/PDF/textのcontent hash、変換履歴、OCR/model、正規化・review receipt | redacted reportとtarget bindingは実装。実OCR、remote取得、複数候補/stereo reviewは残る |
-| P1 / O7.3 Audit ranking | Implemented / Active | hard gate後のaxis別Pareto | missing・非互換単位/境界は`incomparable`。weighted profileと感度receiptは残る |
+| P1 / O7.3 Audit ranking | Implemented / Active | hard gate後のParetoと固定normalization範囲のweighted profile、±10% sensitivity receipt | missing・非互換単位/境界は拒否。実profileの運用検証は残る |
 | P2 / O7.4 Mechanistic evidence | Implemented / Active | 外部計算結果とroute/step、物理量・単位・計算条件を結ぶreceipt | DFT実行なし。実利用fixtureと、比較可能性を明示したprofile統合が残る |
 
 O7.0–O7.1だけを次候補の必須範囲とする。O7.2–O7.3はその後、O7.4は実利用fixtureを

@@ -308,6 +308,10 @@ pub struct AuditRouteReport {
     /// constrain candidate eligibility before the ranker sees objective values.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub audit_ranking: Option<crate::bridge::audit_ranking::ParetoReceipt>,
+    /// Fixed-profile weighted ranking and ± sensitivity analysis. It is
+    /// post-audit only and cannot alter search or audit verdicts.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub weighted_ranking: Option<crate::bridge::audit_ranking::WeightedRankingReceipt>,
     /// External mechanistic evidence, retained as provenance only. It does
     /// not change the structural audit verdict or search ordering.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -469,6 +473,23 @@ impl AuditRouteReport {
         verification: crate::bridge::receipt_binding::EvidenceChainVerification,
     ) {
         self.evidence_chain = Some(verification);
+    }
+
+    /// Attach a fixed-profile weighted comparison after audit. This rejects
+    /// partial, ineligible, missing, or contract-mismatched axes rather than
+    /// silently ranking a subset of available values.
+    pub fn attach_weighted_ranking(
+        &mut self,
+        input: &crate::bridge::audit_ranking::WeightedRankingInput,
+    ) -> anyhow::Result<()> {
+        self.weighted_ranking = Some(
+            crate::bridge::audit_ranking::weighted_rank_with_sensitivity(
+                &input.candidates,
+                &input.profile,
+                input.sensitivity_fraction,
+            )?,
+        );
+        Ok(())
     }
 
     /// Attach and evaluate local process-mass ledgers. A ledger must name an
@@ -953,6 +974,7 @@ pub fn build_audit_route_report_with_options(
         route_metrics: None,
         input_artifact: None,
         audit_ranking: None,
+        weighted_ranking: None,
         mechanistic_evidence: None,
         evidence_chain: None,
         route_source_versions,

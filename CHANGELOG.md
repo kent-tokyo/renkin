@@ -34,6 +34,10 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   partial routes; incomplete or non-comparable objective contracts remain
   explicit. Mechanistic evidence records external provenance only and never
   runs DFT or changes search ordering.
+- Added `--weighted-ranking` for fixed-profile post-audit ranking. Each axis
+  has declared bounds, unit, basis, direction, and a weight that must sum to
+  one; missing or incompatible data is rejected rather than reweighted. The
+  receipt records deterministic ±10% per-axis sensitivity scenarios.
 
 ## [1.0.7] - 2026-09-13 "Public Boundary and Benchmark Contract"
 

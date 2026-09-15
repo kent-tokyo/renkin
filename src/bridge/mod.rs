@@ -91,7 +91,9 @@ pub use audit::{
 };
 pub use audit_ranking::{
     AUDIT_RANKING_SCHEMA_VERSION, AuditEligibility, ObjectiveDirection, ParetoReceipt,
-    ParetoStatus, ParetoVerdict, RankingAxis, RankingCandidate, pareto_rank,
+    ParetoStatus, ParetoVerdict, RankingAxis, RankingCandidate, WEIGHTED_RANKING_SCHEMA_VERSION,
+    WeightSensitivityScenario, WeightedAxis, WeightedProfile, WeightedRankingInput,
+    WeightedRankingReceipt, WeightedVerdict, pareto_rank, weighted_rank_with_sensitivity,
 };
 pub use audit_route::{
     AuditManifest, AuditRouteReport, AuditRouteSummary, build_audit_route_report,

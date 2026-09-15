@@ -32,7 +32,8 @@
   OCR/model、normalization、reviewを検証し、対象targetへbind。reportはlocator/raw prediction/
   normalized SMILES/reviewerをredactする。実OCR、remote取得、複数候補/stereo reviewは残る。
 - [x] **O7.3 / Pareto core** hard gate後のaxis別Paretoを実装。missing値の暗黙0扱い・通貨混在・
-  異なる工程境界の合算を禁止。weighted profileと感度分析は後続。
+  異なる工程境界の合算を禁止。固定profileのweighted rankingと±10%感度receiptも実装し、
+  missing・profile外値・contract不一致を拒否する。実profileの運用検証は後続。
 - [x] **O7.4 / Mechanistic core** 外部計算の状態・方法・反応対応をroute/step receiptへ記録。
   RENKIN内でDFTを実行せず、物理量とunit、computed時のstate/geometry不足を拒否する。
   実利用fixtureとprofile統合は継続する。

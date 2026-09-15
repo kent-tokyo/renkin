@@ -8,6 +8,8 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+use crate::bridge::audit_ranking::{ObjectiveDirection, RankingAxis};
+
 pub const MECHANISTIC_EVIDENCE_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -59,6 +61,21 @@ pub struct MechanisticEvidenceReceipt {
     pub calculation: Option<CalculationContext>,
 }
 
+/// The explicit contract under which mechanistic evidence may become a
+/// post-audit ranking axis.  It names one reaction step and never aggregates
+/// barriers or orbital values across a route.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MechanisticAxisSpec {
+    pub key: String,
+    pub quantity: MechanisticQuantity,
+    pub unit: String,
+    pub step_index: usize,
+    pub direction: ObjectiveDirection,
+    /// Caller-defined scientific comparison basis (for example, a protocol
+    /// revision); computed records additionally require identical contexts.
+    pub basis: String,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum MechanisticEvidenceError {
     UnsupportedSchema(u32),
@@ -68,6 +85,8 @@ pub enum MechanisticEvidenceError {
     InvalidHash(&'static str),
     MissingCalculationContext,
     IncompleteComputedContext,
+    InvalidAxisSpec,
+    IncomparableForRanking,
 }
 
 impl fmt::Display for MechanisticEvidenceError {
@@ -97,6 +116,14 @@ impl fmt::Display for MechanisticEvidenceError {
             Self::IncompleteComputedContext => write!(
                 formatter,
                 "computed mechanistic evidence requires method, state, and geometry provenance"
+            ),
+            Self::InvalidAxisSpec => write!(
+                formatter,
+                "mechanistic ranking axis specification is invalid"
+            ),
+            Self::IncomparableForRanking => write!(
+                formatter,
+                "mechanistic evidence is not comparable under one calculation contract"
             ),
         }
     }
@@ -135,6 +162,77 @@ impl MechanisticEvidenceReceipt {
         }
         Ok(())
     }
+}
+
+/// Project one exact, comparable measurement per route into ranking axes.
+/// The projection fails rather than averaging different steps, units, origins,
+/// or computational contexts.  It is intentionally post-audit data shaping;
+/// it does not alter search or audit status.
+pub fn project_comparable_axis(
+    route_ids: &[String],
+    evidence: &[MechanisticEvidenceReceipt],
+    spec: &MechanisticAxisSpec,
+) -> Result<Vec<(String, RankingAxis)>, MechanisticEvidenceError> {
+    if spec.key.trim().is_empty()
+        || spec.unit.trim().is_empty()
+        || spec.basis.trim().is_empty()
+        || !valid_unit(spec.quantity, &spec.unit)
+    {
+        return Err(MechanisticEvidenceError::InvalidAxisSpec);
+    }
+    let mut projected = Vec::with_capacity(route_ids.len());
+    let mut origin = None;
+    let mut computed_context = None;
+    for route_id in route_ids {
+        let matches = evidence
+            .iter()
+            .filter(|receipt| {
+                receipt.route_id == *route_id
+                    && receipt.step_index == spec.step_index
+                    && receipt.quantity == spec.quantity
+                    && receipt.unit == spec.unit
+            })
+            .collect::<Vec<_>>();
+        let [receipt] = matches.as_slice() else {
+            return Err(MechanisticEvidenceError::IncomparableForRanking);
+        };
+        receipt.validate()?;
+        if origin
+            .replace(receipt.origin)
+            .is_some_and(|previous| previous != receipt.origin)
+        {
+            return Err(MechanisticEvidenceError::IncomparableForRanking);
+        }
+        if receipt.origin == EvidenceOrigin::Computed {
+            let context = receipt
+                .calculation
+                .as_ref()
+                .ok_or(MechanisticEvidenceError::IncomparableForRanking)?;
+            let hash = crate::mcp::audit_receipt::sha256_value(
+                &serde_json::to_value(context).expect("calculation context serializes"),
+            );
+            if computed_context
+                .replace(hash.clone())
+                .is_some_and(|prior| prior != hash)
+            {
+                return Err(MechanisticEvidenceError::IncomparableForRanking);
+            }
+        }
+        projected.push((
+            route_id.clone(),
+            RankingAxis {
+                key: spec.key.clone(),
+                direction: spec.direction,
+                value: Some(receipt.value),
+                unit: spec.unit.clone(),
+                basis: match &computed_context {
+                    Some(hash) => format!("{}; calculation_context={hash}", spec.basis),
+                    None => spec.basis.clone(),
+                },
+            },
+        ));
+    }
+    Ok(projected)
 }
 
 fn valid_unit(quantity: MechanisticQuantity, unit: &str) -> bool {
@@ -242,6 +340,53 @@ mod tests {
         assert_eq!(
             evidence.validate(),
             Err(MechanisticEvidenceError::InvalidUnit)
+        );
+    }
+
+    #[test]
+    fn projects_only_same_step_same_unit_same_calculation_context() {
+        let first = computed();
+        let mut second = computed();
+        second.route_id = "sha256:route-2".into();
+        let spec = MechanisticAxisSpec {
+            key: "delta_g_dagger".into(),
+            quantity: MechanisticQuantity::GibbsActivation,
+            unit: "kJ/mol".into(),
+            step_index: 0,
+            direction: ObjectiveDirection::Minimize,
+            basis: "PBE0 protocol v1".into(),
+        };
+        let axes = project_comparable_axis(
+            &["sha256:route".into(), "sha256:route-2".into()],
+            &[first, second],
+            &spec,
+        )
+        .unwrap();
+        assert_eq!(axes.len(), 2);
+        assert!(axes[0].1.basis.contains("calculation_context=sha256:"));
+    }
+
+    #[test]
+    fn rejects_cross_context_or_missing_route_evidence() {
+        let first = computed();
+        let mut second = computed();
+        second.route_id = "sha256:route-2".into();
+        second.calculation.as_mut().unwrap().functional = Some("B3LYP".into());
+        let spec = MechanisticAxisSpec {
+            key: "delta_g_dagger".into(),
+            quantity: MechanisticQuantity::GibbsActivation,
+            unit: "kJ/mol".into(),
+            step_index: 0,
+            direction: ObjectiveDirection::Minimize,
+            basis: "protocol".into(),
+        };
+        assert_eq!(
+            project_comparable_axis(
+                &["sha256:route".into(), "sha256:route-2".into()],
+                &[first, second],
+                &spec
+            ),
+            Err(MechanisticEvidenceError::IncomparableForRanking)
         );
     }
 }

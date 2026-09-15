@@ -116,8 +116,9 @@ pub use interchange::{
     reauditable_import_v2, validate_strict_import, validate_strict_import_v2,
 };
 pub use mechanistic_evidence::{
-    CalculationContext, EvidenceOrigin, MECHANISTIC_EVIDENCE_SCHEMA_VERSION,
+    CalculationContext, EvidenceOrigin, MECHANISTIC_EVIDENCE_SCHEMA_VERSION, MechanisticAxisSpec,
     MechanisticEvidenceError, MechanisticEvidenceReceipt, MechanisticQuantity,
+    project_comparable_axis,
 };
 pub use private_stock::{
     PRIVATE_STOCK_POLICY_SCHEMA_VERSION, PrivateStockDecision, PrivateStockDecisionRecord,

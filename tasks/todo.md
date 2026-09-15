@@ -36,8 +36,9 @@
   異なる工程境界の合算を禁止。固定profileのweighted rankingと±10%感度receiptも実装し、
   missing・profile外値・contract不一致を拒否する。実profileの運用検証は後続。
 - [x] **O7.4 / Mechanistic core** 外部計算の状態・方法・反応対応をroute/step receiptへ記録。
-  RENKIN内でDFTを実行せず、物理量とunit、computed時のstate/geometry不足を拒否する。
-  実利用fixtureとprofile統合は継続する。
+  RENKIN内でDFTを実行せず、物理量とunit、computed時のstate/geometry不足を拒否する。ranking
+  axisへは同一step・quantity・unit・origin、computedなら同一calculation contextだけを投影する。
+  実利用fixtureは継続する。
 
 ## Phase 55: AiZynthFinder accuracy — active
 

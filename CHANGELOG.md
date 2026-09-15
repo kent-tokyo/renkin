@@ -38,6 +38,10 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   partial routes; incomplete or non-comparable objective contracts remain
   explicit. Mechanistic evidence records external provenance only and never
   runs DFT or changes search ordering.
+- Mechanistic evidence can now be projected into a post-audit ranking axis
+  only when every route supplies exactly one record for the same step,
+  quantity, unit, and origin; computed records must also share an identical
+  calculation-context hash. It never averages route steps or mixes methods.
 - Added `--weighted-ranking` for fixed-profile post-audit ranking. Each axis
   has declared bounds, unit, basis, direction, and a weight that must sum to
   one; missing or incompatible data is rejected rather than reweighted. The

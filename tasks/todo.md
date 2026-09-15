@@ -2,12 +2,30 @@
 
 ## Current objective
 
-2026-09-14: 基準はv1.0.7（`ed41338`）。次の製品候補はO7.0–O7.1に絞り、既存O6を
-再import・再監査まで接続して、工程指標の根拠と不足を記録する。Phase 55の「同一stock・
-予算でAiZynthFinderのnative/common-strictをともに上回り、独立TESTで証明する」目標は維持。
+2026-09-16: 基準はv1.0.7（`ed41338`）。O7.0–O7.4の境界は実装済みで、次は実工程の
+運用検証とv1.0.8候補gate。性能側は55.0の実効契約を閉じてから55.4の同予算VAL評価へ進む。
+Phase 55の「同一stock・予算でAiZynthFinderのnative/common-strictをともに上回り、
+独立TESTで証明する」目標は維持。
 監査製品の完成と競合優位性の証明を別gateにする。[優先順位](../ROADMAP.md)、
 [O7詳細・合格条件](../docs/roadmap/evidence-chain.md)、
 [Phase 55測定計画](../docs/roadmap/aizynthfinder-accuracy.md)を参照。
+
+### 直近の作業（以下の過去progressより優先）
+
+- [ ] **55.0 / 計時・継続** 全行の累積時間とinvocation wallを区別し、監督下resumeを検証。
+  既存smokeは両arm50件完走。AiZynthFinderの210.52秒は再開後26件のみで、全行時間和は348.724秒。
+- [ ] **55.0 / 実効契約** 大規模共通stockのidentity、実YAML/HDF5/model/template hash、
+  両armのCPU/RAM enforcement・warm/cold・deadline・reaction depth・top-kを事前登録して検証。
+  今回の393件stock・500 templates・rank1は接続smokeであり、このgateを閉じない。
+- [ ] **55.1 → 55.4 / 候補選択** VALで既存recoveryを同一総予算A/B。native/strict非悪化、
+  成功取り消し0、予算内完了を確認。HOLD施策は新しい損失の証拠がある場合だけ再評価。
+- [ ] **55.6 / 独立性・標本数** freeze-003先頭50件の閲覧を記録し、未観測TESTの扱いと
+  検出力に基づくNを事前登録。元500件は改変せず、新protocolは別identityで管理。
+- [ ] **O7 / 運用・候補gate** 出典・利用条件が明確な実procedureを再計算・再importし、
+  不足データを明示。固定候補commitでworkspace/feature/surface/docsのgateを通す。
+
+[smoke監査記録](../docs/benchmark/phase55-smoke-review-20260916.md)を現状判断の根拠とする。
+下記のDocker停止、凍結前、旧test件数の記述はそれぞれの時点の履歴。
 
 ## O7: Evidence chain — implemented, operational validation follows
 
@@ -19,7 +37,7 @@
   direct route、重複分解、cycle/disconnected topology、unknown field、hash差し替えは拒否。
   `--receipt-bindings`でlocal実引数/実結果hash・receipt ID・最終audit hashへ結合し、
   direct purchaseと重複occurrenceを保持するv2 explicit-tree APIと`--interchange-v2`
-  exportも追加。candidate gateは残る。
+  exportも追加。統合fixtureのcandidate gateは通過済み。実工程の運用検証は残る。
 - [x] **O7.1 / Core metrics** `route_metrics_v1`の値・単位・方法・source・工程境界・coverageを
   固定し、route hashで監査reportへ接続。source報告値／再計算値／`not_evaluable`を分離し、
   既存MW比を上書きしない。
@@ -46,7 +64,8 @@
 2026-09-12に計画を追加。以下は未完了・未正式測定。過去の134/200同率と候補段階の
 133→143/200を新条件の測定値として流用しない。
 
-実装順は固定する。候補被覆 → 候補保存 → 下流到達性 → 非置換recovery → 独立TESTの順で、
+損失分類は候補被覆 → 候補保存 → 下流到達性 → 非置換recovery → 独立TESTとする。
+既存の実装・負の結果を踏まえ、次の仮説は直近の作業順で選ぶ。
 各段階のnegative resultは次段の前提にしない。正式なAiZynthFinder超えは、未使用TESTで
 native/common-strictのpaired 95% CI下限がともに0を超えた場合だけ成立とする。
 
@@ -211,7 +230,7 @@ freeze utilityのsample list対応後、55系テストは56件通過。clean che
 `phase55_preflight.py`へcohort-level preflightを追加し、保存済みfreeze-003のfrozen status、
 500 target IDs、sample list hash、target ID集合、件数を再検証した。結果はeligible=true、
 関連テストは58件通過。arm manifestのclean-checkout preflightと両tool正式実行は未完了。
-Docker Desktopは`docker desktop start`が「already running」を返す一方、daemonへの
+過去の環境blocker（9月15–16日のsmokeでは解消）: Docker Desktopは`docker desktop start`が「already running」を返す一方、daemonへの
 `docker version`は応答を返さずハングしたため、確認プロセスを停止した。起動済み表示を
 daemon利用可能とは扱わず、AiZynthFinder armは`not_measured`のまま保持する。
 追加の`docker desktop restart`も約60秒無出力で完了せず、成功とは扱わなかった。

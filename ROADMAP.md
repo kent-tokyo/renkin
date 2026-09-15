@@ -1,6 +1,6 @@
 # RENKIN Roadmap
 
-更新日: **2026-09-15**
+更新日: **2026-09-16**
 
 基準リリース: **v1.0.7**（`ed41338`）
 
@@ -12,17 +12,17 @@ RENKINの目標は、単一のsolved rateだけを最大化することではな
 [`CHANGELOG.md`](CHANGELOG.md)、作業単位は[`tasks/todo.md`](tasks/todo.md)、測定結果は
 `data/comparison/`と[`docs/benchmark.md`](docs/benchmark.md)を参照する。
 
-今後は二つの目標を分ける。**成功率の証明はPhase 55、次の製品候補はO7.0–O7.1**とする。
+今後は二つの目標を分ける。**成功率の証明はPhase 55、次の製品候補はO7の運用検証・release gate**とする。
 監査機能の完成をAiZynthFinderへの性能優位性と取り違えない。
 
 - **Phase 55** — 候補被覆・候補保存・下流到達性・非置換recoveryを個別に検証し、採用構成を
   凍結した独立TESTで比較する。同一stock・予算でnative/common-strictがともに上回るまで
   優位性を主張しない。[ローカル詳細計画](docs/roadmap/aizynthfinder-accuracy.md)
 - **O7 Evidence chain** — 入力・tool実行・route・監査結果を結び、根拠と不足データを示す。
-  直近は再importして監査できる境界を完成させ、実質量データに基づく指標receiptを追加する。
+  O7.0–O7.4の境界は実装済み。直近は実工程データによる検証と候補commitの配布前検証を行う。
   [ローカル詳細計画](docs/roadmap/evidence-chain.md)（公開対象外）
 
-次候補の呼称は**v1.0.8候補**とするが、この計画では版番号変更・公開・benchmark再開は行わない。
+次候補の呼称は**v1.0.8候補**。この計画更新では版番号変更・公開・新規benchmark実行は行わない。
 
 ## Status legend
 
@@ -30,6 +30,7 @@ RENKINの目標は、単一のsolved rateだけを最大化することではな
 |---|---|
 | Shipped | 公開リリースに含まれ、回帰gateを通過済み |
 | Implemented | working treeで実装・局所検証済み。release gateは未完了 |
+| Partial | 一部の成果物は実装済みだが、当該phaseの完了条件は未達 |
 | Active | 現在の優先開発対象 |
 | HOLD | 実測で採用条件を満たさず、既定値へ昇格しない |
 | Blocked | 外部環境または必須artifactが揃うまで完了不能 |
@@ -46,8 +47,16 @@ AiZynthFinder 4.4.1のnative `route_found`はともに
 
 別条件のgraph-selector recoveryは同一run内で133→143/200、成功取り消し0件だった。
 9,974 templates・最大5 routes・120秒wrapperを使う候補段階の結果で、競合超えとは扱わない。
-また再測定の`validator-confirmed` 126/200と共通strict 134/200は別指標であり、
-forward確認済み134件とは表記しない。[根拠・指標定義](docs/roadmap/aizynthfinder-accuracy.md#evidence)
+9月10日の別runではnative/stock endpointが134/200、validator-confirmedとcombined strictが
+126/200だった。9月8日の共通strict 134件と混ぜない。
+[指標定義](docs/benchmark/phase55-metric-truth-table.md)
+
+9月15–16日の50件smokeは両arm完走、既存preflight通過。native/combined strictは
+RENKIN 4/50、AiZynthFinder 1/50。ただし393件stock・500 templates・cold起動の接続検証であり、
+正式計画の大規模共通stock・warm worker・top-5とは異なる。資源制限の実効性、実際の
+AiZynthFinder設定・入力hashも未検証の部分があるため、**55.0全体は未完了**。
+Docker起動問題はこのrunで解消した。詳細と時間集計訂正は
+[smoke監査記録](docs/benchmark/phase55-smoke-review-20260916.md)を参照。
 
 ## Accuracy-first strategy
 
@@ -61,7 +70,8 @@ VAL-200で確認された失敗を、次の4つの損失へ分けて順番に潰
 | 候補はあるが終端へ届かない | bounded downstream reachability、段階recovery | same-budgetで未解決だけが回収される | p95/RSS悪化、既存成功の回帰 |
 | 改善が開発集合だけに適合する | frozen independent TEST、paired解析 | native/common-strictのCI下限>0 | TESTを見ながら候補選択、条件変更 |
 
-実装順はこの表の上から固定する。各施策は単独A/Bで採否を決め、採用した変更だけを
+この表は原因分類であり、全施策の再実装を要求しない。観測された損失と既存の負の結果から
+次の仮説を選ぶ。各施策は単独A/Bで採否を決め、採用した変更だけを
 次段へ渡す。候補数の増加、参照routeとの一致、raw `route_found`だけでは精度改善と
 みなさず、共通strict・invalid率・予算内完了を同時に確認する。
 
@@ -85,9 +95,25 @@ Phase 55は完了扱いにしない。化学的にinvalidなrouteを指標の加
 
 ## Priority order
 
-### P0 — 直近の製品開発: O7.0 → O7.1
+### 直近の実行順
 
-既存O6のschema・receipt・stock policyを再利用し、未接続の監査境界を先に完成させる。
+1. **55.0 / 測定契約を閉じる** — resume時間集計・監督プロセス、実設定/入力hash、
+   CPU/RAM enforcement、stock identity、計時・top-k・停止条件を検証する。既存50件smokeの
+   通過範囲を保存し、正式設定の動作確認には開発用targetを使う。
+2. **55.1 → 55.4 / 候補を選ぶ** — 既存失敗atlasから仮説を一つ選び、まず実装済みrecoveryを
+   同一総予算のVAL-200 A/Bで評価する。native/strict非悪化・成功取り消し0・予算内完了を要求。
+   55.2/55.3/55.5のHOLD施策は新しい原因証拠がある場合だけ再評価し、採用構成を一つ凍結する。
+3. **55.6 / 独立比較** — 既に結果を閲覧した50件の扱いと標本数・検出力を事前登録してから
+   未使用TESTを測定する。旧500件をそのまま未使用とは扱わず、原本のhash・対象は保持する。
+   両主指標のpaired CI、改善/悪化、資源、再現reportを揃える。
+
+製品側は並行してO7の運用検証を進める。性能測定中のコード変更・他の高負荷ジョブは避け、
+新規OCR/DFT/MCTSやadapter増設より既存候補の検証を優先する。
+
+### 製品候補: O7実装済み境界の運用検証
+
+O7.0–O7.1をv1.0.8候補の必須範囲として維持する。実装済み機能を再度作らず、
+実procedureとsource artifactで再import・再監査・metricsの対応を確認する。
 
 | 優先度 / Phase（実装順） | Status | 成果物 | 完了条件 |
 |---|---|---|---|
@@ -97,27 +123,30 @@ Phase 55は完了扱いにしない。化学的にinvalidなrouteを指標の加
 | P1 / O7.3 Audit ranking | Implemented | hard gate後のParetoと固定normalization範囲のweighted profile、±10% sensitivity receipt | missing・非互換単位/境界は拒否。実profileは運用validationで追加 |
 | P2 / O7.4 Mechanistic evidence | Implemented | 外部計算receiptと、同一step・quantity・unit・origin・computed contextのみを投影するranking axis | DFT実行なし。実計算artifactは運用validationで追加 |
 
-O7.0–O7.1だけを次候補の必須範囲とする。O7.2–O7.3はその後、O7.4は実利用fixtureを
-確保してから着手する。MolScribe・DFT本体は実装しない。既存の`atom_economy`は記載された
+O7.2–O7.4は実装済みのopt-in機能として回帰を維持し、実利用fixtureは入手後に検証する。
+O7.0–O7.1は出典・利用条件の明確な工程例で手計算と照合し、不足項目を記録する。
+実データ未入手時は運用検証を未完了とし、公開範囲・既知制限を候補判定へ残す。
+MolScribe・DFT本体は実装しない。既存の`atom_economy`は記載された
 precursorのMW比であり、全量論試薬を扱う理論atom economyや実工程PMIへ読み替えない。
 
 ### P0 — 成功率の証明: Phase 55
 
 | Phase | Status | 現在の証拠 | 次の判定 |
 |---|---|---|---|
-| 55.0 測定契約 | Implemented / Blocked | metric truth table、manifest hardening、resume/output lock、fail-closed preflight。凍結TESTの決定論的prefixを確認する50-target smoke gate | clean checkoutで両armの50-target smokeを通す |
-| 55.1 Failure atlas | Implemented | VAL-200を両者成功・片側成功・両者失敗へ分類。未観測原因はunknownとして保持 | 採用候補を第一喪失点へ結び付ける |
+| 55.0 測定契約 | Active | 小規模stockの50件smoke完走・既存preflight通過。Docker起動問題は当該runで解消 | 実入力/設定・資源制限・stock・計時・top-k・resumeを正式契約へ結合し、開発用smokeで検証 |
+| 55.1 Failure atlas | Implemented / Partial | VAL-200を両者成功・片側成功・両者失敗へ分類。未観測原因はunknownとして保持 | 次の仮説に必要な第一喪失点を観測する。深さ/beam到達だけで原因確定しない |
 | 55.2 Ordering-only model | HOLD | TRAIN-only ONNX VAL-200はstrict 121→124（+3pp、95% CI −1.5〜+5.0pp、McNemar p=0.549）。timeout 0→2、p95 8.39→18.11秒、RSS p95 209→387 MiB。軽量512×128も10件でstrict 8→9・timeout 0だがp95 8.39→52.09秒、RSS p95 204→332 MiB | template-ID対応を保ったまま推論コストを下げ、timeout=0・strict非悪化を満たす候補だけ再評価 |
 | 55.3 Downstream reachability | Implemented / HOLD | shared-cache selectorを実装したが、小規模A/Bで精度向上未確認 | 全VALで成功取り消し0、strict非悪化、runtime正常なら採用 |
 | 55.4 Non-displacing recovery | Implemented | 保存VALでbaseline 129→final 134、回収5、regression/timeout/crash 0 | 最終候補を同一総予算で再測定 |
 | 55.5 Missing proposals | HOLD | 70 direct proposalsを安全に投入したがroute未回収 | valid完成routeを増やせるfamily/modelだけ採用 |
-| 55.6 Independent TEST | Active / Blocked | provenance監査済み500-target cohortを凍結し、cohort preflightはeligible | Docker復旧後に両armを同一契約で完走・paired解析 |
+| 55.6 Independent TEST | Blocked | 500-target候補を凍結済み。先頭50件はsmoke結果を閲覧済み | 55.0と候補選定後、閲覧済み対象の扱い・N/検出力・専用protocolを固定してpaired解析 |
 
 55.0から55.5で採用条件を満たした構成を一つだけ凍結し、55.6へ送る。既存VALとgap cohortは
-開発専用であり、独立TESTの代わりにしない。凍結cohort、hash、provenance、Docker blockerは
+開発専用であり、独立TESTの代わりにしない。凍結cohort、hash、provenance、閲覧履歴は
 [独立TEST選定記録](docs/benchmark/phase55-independent-test-selection.md)へ集約する。
-表の環境blockerは保存された状態であり、実行再開前に再確認する。O7の計画更新を理由に
-TEST cohort・hash・比較条件を変更したり、長時間測定を自動再開したりしない。
+元の500件を変更せず、以後の独立性監査とprotocol改訂は別artifactへ記録する。新cohortが
+必要なら既知結果の対象をID/構造で除外し、結果閲覧前にNを固定する。未観測の残り450件も
+自動的に十分な独立TESTとは扱わない。O7の完成だけを理由に正式測定を開始しない。
 
 ### P1 — Competitive capability
 
@@ -184,14 +213,14 @@ O5 exit gate:
 ## Audit-native agent bridge — O6
 
 O6.1〜O6.5の構成要素は実装済み。ただしexport・envelope検査・trace自己整合性の確認と、
-外部証跡を再importして化学監査まで再実行することは異なる。後者をO7.0で接続する。
+外部証跡を再importして化学監査まで再実行することは異なる。後者は未公開のO7.0で接続済み。
 
 | Phase | Status | Delivered contract |
 |---|---|---|
 | O6.1 Audit receipt | Shipped | tool/API、version、argument/result hash、status、failure code |
 | O6.2 Stock policy | Shipped | vendor、価格、納期、region、hazard、banlistのleaf判定 |
 | O6.3 Adapter loss report | Shipped | preserved/normalized/inferred/dropped/unsupported |
-| O6.4 Canonical interchange | Shipped | canonical exportとstrict envelope検査。完全なcanonical再import・再監査は未接続 |
+| O6.4 Canonical interchange | Shipped | 公開版はcanonical exportとstrict envelope検査。再import・再監査は未公開O7.0で接続済み |
 | O6.5 Agent replay | Shipped | retro → condition → forward traceとreceipt自己整合性確認。実入力・実結果・最終監査との結合はO7.0 |
 
 O6はroute solved rateを直接改善する機能ではない。agent出力は、RENKINの構造検証、stock

@@ -15,6 +15,9 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   serialized. Added explicit-tree canonical interchange v2 library APIs for
   direct-purchase routes and repeated precursor occurrences, including the
   opt-in `audit-route --interchange-v2` export; v1 remains supported unchanged.
+- Added an end-to-end receipt-chain regression fixture covering local MCP
+  arguments/results, canonical v1 export, strict re-audit, and redaction of
+  private tool material from the public evidence receipt.
 - Added opt-in canonical interchange v1 re-audit: `renkin audit-route
   interchange.json --format interchange --stock stock.smi` reconstructs and
   re-runs structure, stock, element, and forward checks. It fail-closes on

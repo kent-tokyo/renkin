@@ -28,7 +28,8 @@
   source artifact hashと全ledgerを照合し、公開reportにはhashのみ保持する。step間二重計上と
   複数step実利用fixtureは継続する。
 - [ ] **O7.0–O7.1 / Candidate gate** local import→audit→receipt→export→再importを完走。
-  既定動作のgolden parity、workspace test・clippy・WASM・Python/MCP回帰・docs例を確認。
+  MCP body→receipt→v1 interchange→再auditの統合fixture（生body非出力）を追加。既定動作の
+  golden parity、WASM・Python/MCP回帰・docs例と実artifact pipelineを確認する。
 - [x] **O7.2 / Artifact core** local sidecarでoriginal content hash、source kind、transform、
   OCR/model、normalization、reviewを検証し、対象targetへbind。reportはlocator/raw prediction/
   normalized SMILES/reviewerをredactする。実OCR、remote取得、複数候補/stereo reviewは残る。

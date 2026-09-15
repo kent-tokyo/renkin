@@ -195,6 +195,11 @@ fn deterministic_receipt_id(receipt: &ReceiptMaterial) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bridge::audit::{AuditPolicy, audit_document_with_policy};
+    use crate::bridge::interchange::from_audit_report;
+    use crate::bridge::route_graph::{RouteDocument, RouteNode, RouteSource};
+    use crate::chem_env::{mol_from_smiles, to_canonical};
+    use crate::mcp::audit_receipt::AuditReceipt;
     use serde_json::json;
 
     fn material(arguments: &Value, result: &Value) -> ReceiptMaterial {
@@ -248,5 +253,62 @@ mod tests {
             result,
         };
         assert!(verify_binding(&binding, "route", &HashSet::new(), "audit", "route").is_err());
+    }
+
+    #[test]
+    fn end_to_end_receipt_chain_reaudits_route_and_keeps_tool_bodies_local() {
+        let canon = |smiles: &str| to_canonical(&mol_from_smiles(smiles).unwrap());
+        let stock = HashSet::from([canon("CC"), canon("O")]);
+        let document = RouteDocument {
+            source: RouteSource::Renkin,
+            root: RouteNode {
+                canonical_smiles: canon("CCO"),
+                is_stock_leaf: Some(false),
+                reaction_evidence: None,
+                children: vec![
+                    RouteNode {
+                        canonical_smiles: canon("CC"),
+                        is_stock_leaf: Some(true),
+                        reaction_evidence: None,
+                        children: vec![],
+                    },
+                    RouteNode {
+                        canonical_smiles: canon("O"),
+                        is_stock_leaf: Some(true),
+                        reaction_evidence: None,
+                        children: vec![],
+                    },
+                ],
+            },
+            step_count_collapsed_edges: 1,
+        };
+        let audit =
+            audit_document_with_policy(&document, Some(&stock), Some(&[]), AuditPolicy::Standard);
+        let interchange =
+            serde_json::to_value(from_audit_report("renkin", None, None, &[], &audit, None))
+                .unwrap();
+        let arguments = json!({"target": "CCO", "private_token": "local-only"});
+        let result = json!({"route_id": audit.normalized_route_sha256});
+        let receipt = AuditReceipt::new(
+            "task-1".into(),
+            None,
+            "find_routes",
+            "1.0.7",
+            None,
+            &arguments,
+            &result,
+            false,
+        );
+        let binding: ReceiptBindingInput = serde_json::from_value(json!({
+            "routeId": audit.normalized_route_sha256,
+            "canonicalNodeId": format!("{}:step:0", audit.normalized_route_sha256.as_deref().unwrap()),
+            "receipt": receipt.to_value(), "arguments": arguments, "result": result,
+        })).unwrap();
+        let verified =
+            verify_evidence_chain_v1(&interchange, &stock, &[], AuditPolicy::Standard, &[binding])
+                .unwrap();
+        let public = serde_json::to_string(&verified).unwrap();
+        assert_eq!(verified.receipt_bindings.len(), 1);
+        assert!(!public.contains("local-only"));
     }
 }

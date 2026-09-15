@@ -70,6 +70,18 @@ timeout/crashを検証するまでは、途中の行数やroute数を採用根�
 意味しない。実行中は探索設定、template、stock、モデル、評価scriptを変更せず、結果を検証して
 から候補をretain/HOLDのいずれかに固定する。
 
+Phase 55は次の二本の依存関係で進める。両方が閉じるまで独立TESTは開始しない。
+
+```text
+開発候補: VAL-200 recovery v2 → 非悪化・予算検証 → development-only freeze
+正式実行: container/resource/timing contract → development smoke → TEST protocol registration
+                                                   両方の完了後 ↓
+                                                             未使用TESTのpaired比較
+```
+
+前者は候補を選ぶ工程、後者は比較を信頼できるものにする工程である。candidate freezeは
+独立TESTの結果ではなく、TESTの前に変更不能な開発判断を保存するためのreceiptとする。
+
 ## Accuracy-first strategy
 
 AiZynthFinderを超えるための主戦略は、単純なtemplate数・beam幅・深さの増量ではない。
@@ -109,15 +121,18 @@ Phase 55は完了扱いにしない。化学的にinvalidなrouteを指標の加
 
 ### 直近の実行順
 
-1. **55.4 / 実行中の候補選別を閉じる** — 既登録のVAL-200 recoveryを設定変更なしで完走し、
+1. **55.4 / 実行中の候補選別を閉じる** — 既登録のVAL-200 recovery v2を設定変更なしで完走し、
    baselineとのnative/common-strict回帰、全attempt、31秒budget、timeout/crashを検証する。未達なら
    HOLDに戻し、別の施策を同じrunへ混ぜない。
-2. **55.0 / 測定契約を閉じる** — 完了済みresume invocationの累計計時は実装済み。監督プロセス、実設定/入力hash、
+2. **candidate freeze / 開発判断を固定する** — 55.4が合格した場合だけ、baseline/candidateのfinalized
+   manifest、row ledger、non-displacing verificationをhash結合したdevelopment-only receiptを作る。不合格なら
+   freezeせず、負の結果を残して次の仮説へ戻る。
+3. **55.0 / 測定契約を閉じる** — 完了済みresume invocationの累計計時は実装済み。監督プロセス、実設定/入力hash、
    CPU/RAM enforcement、stock identity、startup/search/auditの計時、top-k・停止条件を検証する。既存50件smokeの
    通過範囲を保存し、正式設定の動作確認には開発用targetを使う。
-3. **55.1 → 55.5 / 候補を一つ凍結する** — 55.4の判定を含め、HOLD中の55.2/55.3/55.5は新しい原因証拠がある場合だけ
+4. **55.1 → 55.5 / 次の候補仮説を選ぶ** — 55.4がHOLDの場合だけ、55.2/55.3/55.5を新しい原因証拠に基づく
    単独A/Bで再評価する。採用構成以外は正式比較へ持ち込まない。
-4. **55.6 / 独立比較** — 既に結果を閲覧した50件の扱いと、VAL由来のexact McNemar検出力に
+5. **55.6 / 独立比較** — candidate freezeと55.0の両方を通過後、既に結果を閲覧した50件の扱いと、VAL由来のexact McNemar検出力に
    基づく標本数を事前登録してから未使用TESTを測定する。旧500件をそのまま未使用とは扱わず、
    原本のhash・対象は保持する。
    両主指標のpaired CI、改善/悪化、資源、再現reportを揃える。
@@ -154,7 +169,7 @@ precursorのMW比であり、全量論試薬を扱う理論atom economyや実工
 | 55.3 Downstream reachability | Implemented / HOLD | shared-cache selectorを実装したが、小規模A/Bで精度向上未確認 | 全VALで成功取り消し0、strict非悪化、runtime正常なら採用 |
 | 55.4 Non-displacing recovery | Active / development validation | 31秒cooperative deadline版はbaseline 129→final 134、回収5、regression/timeout/crash 0だったが、38件が31秒を最大26.14ms超過してHOLD。v2は両armを31秒external cap、candidate内部recoveryを30秒として再測定する | baseline strict回帰、attempt完全性、recovery/process双方の31秒budget、timeout/crash、回収件数を機械検証し、retain/HOLDを決める |
 | 55.5 Missing proposals | HOLD | 70 direct proposalsを安全に投入したがroute未回収 | valid完成routeを増やせるfamily/modelだけ採用 |
-| 55.6 Independent TEST | Blocked | 500-target候補を凍結済み。先頭50件はsmoke結果を閲覧済み | 55.0と候補選定後、閲覧済み対象の扱い・N/検出力・専用protocolを固定してpaired解析 |
+| 55.6 Independent TEST | Blocked | 500-target候補を凍結済み。先頭50件はsmoke結果を閲覧済み。candidate-freezeは開発のmanifest・rows・budget検証をhash結合して保存できる | 55.0とcandidate-freezeの両方を通過後、閲覧済み対象の扱い・N/検出力・専用protocolを固定してpaired解析 |
 
 55.0から55.5で採用条件を満たした構成を一つだけ凍結し、55.6へ送る。既存VALとgap cohortは
 開発専用であり、独立TESTの代わりにしない。凍結cohort、hash、provenance、閲覧履歴は

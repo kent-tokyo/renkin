@@ -59,6 +59,13 @@ power, N cap and selected N in the separate 55.6 execution protocol, then
 create and freeze a new cohort excluding every exposed identity. Do not select
 N from a TEST result or silently reuse the unobserved remainder of freeze-003.
 
+Before that protocol is created, the selected development configuration must
+be frozen with `scripts/freeze_phase55_candidate.py`. It accepts only finalized
+baseline/candidate manifests, exact same-cohort row ledgers, and a passing
+non-displacing verification (including both recovery and process budgets).
+Its output is explicitly `development_only`; it is an input to TEST protocol
+registration, not evidence from TEST.
+
 ## Provenance audit
 
 The fail-closed audit is implemented by

@@ -17,6 +17,7 @@ from typing import Any
 
 REQUIRED_INPUTS = ("sample_list", "stock", "templates")
 COMMON_BUDGET_FIELDS = ("timeout_s", "grace_s", "max_routes")
+TIMING_SCHEMA_VERSION = "planner_timing_v1"
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -40,6 +41,54 @@ def row_ids(path: Path) -> set[str]:
                 raise ValueError(f"{path}:{line_number}: duplicate target_id={target_id!r}")
             ids.add(target_id)
     return ids
+
+
+def timing_receipt_blockers(path: Path, tool: str) -> list[str]:
+    """Return fail-closed timing-receipt defects for one completed arm.
+
+    The shared performance endpoint is the adapter-observed process
+    wall-clock. Tool-native search time remains diagnostic, but every measured
+    row must still disclose post-exit adapter audit time so that it cannot be
+    silently folded into or omitted from a later report.
+    """
+    blockers: list[str] = []
+    with path.open(encoding="utf-8") as stream:
+        for line_number, line in enumerate(stream, 1):
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                blockers.append(f"timing_row_invalid_json:{line_number}")
+                continue
+            if not isinstance(row, dict):
+                blockers.append(f"timing_row_not_object:{line_number}")
+                continue
+            total = row.get("total_elapsed_ms")
+            timing = row.get("tool_specific", {}).get(tool, {}).get("timing")
+            if not isinstance(timing, dict):
+                blockers.append(f"timing_receipt_missing:{line_number}")
+                continue
+            if timing.get("schema_version") != TIMING_SCHEMA_VERSION:
+                blockers.append(f"timing_schema_mismatch:{line_number}")
+                continue
+            process = timing.get("process_wall_clock_ms")
+            audit = timing.get("adapter_audit_elapsed_ms")
+            end_to_end = timing.get("adapter_end_to_end_elapsed_ms")
+            values = (total, process, audit, end_to_end)
+            if any(
+                not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0
+                for value in values
+            ):
+                blockers.append(f"timing_value_invalid:{line_number}")
+                continue
+            if abs(float(total) - float(process)) > 1e-9:
+                blockers.append(f"timing_process_total_mismatch:{line_number}")
+            if abs(float(end_to_end) - (float(process) + float(audit))) > 1e-9:
+                blockers.append(f"timing_end_to_end_mismatch:{line_number}")
+            if timing.get("common_performance_metric") != "process_wall_clock_ms":
+                blockers.append(f"timing_common_metric_mismatch:{line_number}")
+    return blockers
 
 
 def _file_sha256(path: Path) -> str:
@@ -298,6 +347,11 @@ def main() -> int:
         action="store_true",
         help="Require each arm to record effective CPU and memory enforcement; use for a formal run.",
     )
+    parser.add_argument(
+        "--require-timing-receipts",
+        action="store_true",
+        help="Require every measured row to carry a consistent planner_timing_v1 receipt.",
+    )
     args = parser.parse_args()
     if (args.frozen_cohort is None) != (args.smoke_size is None):
         parser.error("--frozen-cohort and --smoke-size must be supplied together")
@@ -325,6 +379,15 @@ def main() -> int:
             right_ids,
             require_clean=not args.allow_dirty,
         )
+    if args.require_timing_receipts:
+        timing_blockers = timing_receipt_blockers(args.left_rows, left_manifest.get("tool", ""))
+        timing_blockers.extend(
+            timing_receipt_blockers(args.right_rows, right_manifest.get("tool", ""))
+        )
+        if timing_blockers:
+            result["blockers"].extend(timing_blockers)
+            result["eligible"] = False
+        result["timing_receipts_required"] = True
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     return 0 if result["eligible"] else 1
 

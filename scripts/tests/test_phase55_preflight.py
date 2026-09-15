@@ -210,3 +210,40 @@ def test_smoke_preflight_rejects_non_prefix_or_wrong_input_hash():
         assert result["eligible"] is False
         assert "smoke_target_set_mismatch:expected=2:left=2:right=2" in result["blockers"]
         assert "left_smoke_sample_hash_mismatch" in result["blockers"]
+
+
+def test_timing_receipt_requires_common_wall_clock_identity():
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "rows.jsonl"
+        path.write_text(
+            json.dumps(
+                {
+                    "total_elapsed_ms": 12.0,
+                    "tool_specific": {
+                        "renkin": {
+                            "timing": {
+                                "schema_version": "planner_timing_v1",
+                                "process_wall_clock_ms": 12.0,
+                                "adapter_audit_elapsed_ms": 2.0,
+                                "adapter_end_to_end_elapsed_ms": 14.0,
+                                "common_performance_metric": "process_wall_clock_ms",
+                            }
+                        }
+                    },
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        assert MODULE.timing_receipt_blockers(path, "renkin") == []
+        path.write_text(
+            json.dumps(
+                {
+                    "total_elapsed_ms": 12.0,
+                    "tool_specific": {"renkin": {"timing": {"schema_version": "wrong"}}},
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        assert MODULE.timing_receipt_blockers(path, "renkin") == ["timing_schema_mismatch:1"]

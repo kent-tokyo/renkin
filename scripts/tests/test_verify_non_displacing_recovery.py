@@ -74,6 +74,47 @@ class NonDisplacingRecoveryTests(unittest.TestCase):
         self.assertEqual(result["budget_max_elapsed_ms"], 1250)
         self.assertFalse(result["within_budget"])
 
+    def test_compares_strict_success_against_same_cohort_baseline(self):
+        baseline = [
+            {
+                "target_id": "a",
+                "route_found": True,
+                "all_leaves_in_configured_stock": True,
+                "validator_confirmed_route_found": True,
+            },
+            {"target_id": "b", "route_found": False},
+        ]
+        candidate = [
+            {
+                "target_id": "a",
+                "route_found": True,
+                "all_leaves_in_configured_stock": True,
+                "validator_confirmed_route_found": True,
+                "run_status": "completed",
+                "tool_specific": {"renkin": {"recovery": {"attempts": [{"routes_found": 1}]}}},
+            },
+            {
+                "target_id": "b",
+                "route_found": True,
+                "all_leaves_in_configured_stock": True,
+                "validator_confirmed_route_found": True,
+                "run_status": "completed",
+                "tool_specific": {"renkin": {"recovery": {"attempts": [{"routes_found": 0}]}}},
+            },
+        ]
+        result = MODULE.summarize(candidate, baseline_rows=baseline)
+        self.assertEqual(result["baseline_strict_success_count"], 1)
+        self.assertEqual(result["final_strict_success_count"], 2)
+        self.assertEqual(result["strict_regression_count"], 0)
+        self.assertTrue(result["zero_strict_regression"])
+
+    def test_rejects_mismatched_baseline_target_set(self):
+        with self.assertRaisesRegex(ValueError, "target sets differ"):
+            MODULE.summarize(
+                [{"target_id": "candidate", "tool_specific": {}}],
+                baseline_rows=[{"target_id": "baseline"}],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

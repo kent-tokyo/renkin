@@ -31,5 +31,10 @@ Retain the candidate only if all are true:
 5. the candidate adds at least one valid completed route.
 
 The rows, manifests, command lines, input hashes, and verification JSON are
-written to a new ignored artifact directory. The result does not alter the
-frozen Phase 55 TEST cohort or its exposure record.
+written to a new ignored artifact directory. Run
+`verify_non_displacing_recovery.py` with both candidate rows and the
+same-cohort baseline rows, `--require-zero-regression`,
+`--require-zero-strict-regression`, `--require-complete-attempts`, and
+`--budget-ms 31000`. This checks the shared-stock strict metric directly
+instead of assuming that native-route preservation implies it. The result does
+not alter the frozen Phase 55 TEST cohort or its exposure record.

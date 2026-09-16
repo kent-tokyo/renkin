@@ -8,6 +8,15 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.8] - 2026-09-16 "Evidence Chain and Reproducibility"
+
+- Consolidated the long-form English, Japanese, and Chinese READMEs into
+  compact reference pages; refreshed the public landing pages with the
+  registered Phase 55 coverage result and its explicit performance boundary.
+  The current comparison guide now links to frozen protocol/result records
+  instead of duplicating their lab-notebook history. Added `scripts/README.md`
+  as the maintained entry-point map for reproducibility tooling.
+
 - Validated the O7 local evidence chain against a public, attributable
   ethyl-benzoate procedure: canonical re-import preserves the route and stock
   verdict while the source artifact remains redacted. Missing water, workup,
@@ -2704,7 +2713,8 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
 
 ---
 
-[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v1.0.7...HEAD
+[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v1.0.8...HEAD
+[1.0.8]: https://github.com/kent-tokyo/renkin/compare/v1.0.7...v1.0.8
 [1.0.7]: https://github.com/kent-tokyo/renkin/compare/v1.0.6...v1.0.7
 [1.0.6]: https://github.com/kent-tokyo/renkin/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/kent-tokyo/renkin/compare/v1.0.4...v1.0.5

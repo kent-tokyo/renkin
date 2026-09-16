@@ -166,7 +166,7 @@ const report = JSON.parse(audit_route_v2(routeJson, "auto", "", "strict"));
 console.log(report.routes[0].status); // "pass" | "fail" | "partial"
 ```
 
-Also available from the [Live Playground](../playground/){ target="_blank" }'s
+Also available from the [Live Playground](https://kent-tokyo.github.io/renkin/playground/){ target="_blank" }'s
 `[ Audit a Route ]` tab — paste or upload a route (and optionally a stock
 list) with a policy selector, entirely client-side.
 
@@ -188,7 +188,7 @@ parameter keeps working exactly as before.
 function version(): string
 ```
 
-Returns the RENKIN version string (for example, `"1.0.7"` for the current
+Returns the RENKIN version string (for example, `"1.0.8"` for the current
 release).
 
 ## Minimal Node.js Example (CI-verified)
@@ -209,7 +209,7 @@ output as part of CI, so this call shape can't silently drift from the real API:
 
 ## Live Playground
 
-An interactive playground is available at [/playground/](../playground/){ target="_blank" }.
+An interactive playground is available at [RENKIN Playground](https://kent-tokyo.github.io/renkin/playground/){ target="_blank" }.
 
 The playground runs entirely in WebAssembly in your browser — no network calls, no server.
 

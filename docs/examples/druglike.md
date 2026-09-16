@@ -70,6 +70,6 @@ CC(=O)Nc1ccc(O)cc1
 
 ## Try More Examples
 
-[**→ Open Playground**](../playground/){ .md-button }
+[**→ Open Playground**](https://kent-tokyo.github.io/renkin/playground/){ .md-button }
 
 Paste any SMILES into the playground to explore retrosynthetic routes.

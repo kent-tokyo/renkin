@@ -76,6 +76,13 @@ def main() -> None:
             continue  # whole-page disclaimer covers every stale figure below it
 
         for pattern, label in STALE_FIGURES:
+            # The current rule count is deliberately included in
+            # STALE_FIGURES so an older checkout cannot silently retain a
+            # now-obsolete count.  On the current checkout, however, that
+            # exact value is required on landing pages and must not demand a
+            # historical-result disclaimer.
+            if label == f"{rule_count} hand-crafted rules":
+                continue
             m = pattern.search(text)
             if m:
                 line_no = text.count("\n", 0, m.start()) + 1

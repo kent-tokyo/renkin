@@ -67,6 +67,6 @@ routes.
 
 ## Try It
 
-[**→ Open in Playground**](../playground/){ .md-button }
+[**→ Open in Playground**](https://kent-tokyo.github.io/renkin/playground/){ .md-button }
 
 Enter `CC(=O)Oc1ccccc1C(=O)O` in the SMILES field to try interactively.

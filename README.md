@@ -17,7 +17,7 @@ RENKIN has two uses:
 Auditing is local and reproducible. Reports include structural checks, stock
 coverage, forward replay, provenance, and a verifiable audit manifest.
 
-Current release: **v1.0.7**. Public inputs are validated before execution;
+Current release: **v1.0.8**. Public inputs are validated before execution;
 WASM applies bounded search limits, and MCP numeric and element-filter
 arguments fail closed when invalid. Standard MCP search also accepts an
 optional cooperative `timeout_secs` budget.
@@ -129,16 +129,16 @@ explanation, constraints, diagnostics, and audit receipts. See the [MCP guide](h
 
 ## Benchmark status
 
-The latest checked-in formal comparison uses a declared shared-stock endpoint.
-Native route discovery reached 134/200 (67.0%) for both RENKIN and
-AiZynthFinder 4.4.1. Under the common strict validator, RENKIN reached
-134/200 and AiZynthFinder 123/200; this fixed-cohort point estimate is not a
-universal CASP superiority claim, and the formal paired gate remains pending.
-Success rate, speed, stock definition, validation, and route quality must be
-reported separately.
+The registered Phase 55 shared-stock, shared-budget TEST comparison completed
+690 targets: RENKIN found 481 strict routes (69.71%) and AiZynthFinder 4.4.1
+found 32 (4.64%). The paired coverage difference was +65.07 percentage points
+(95% CI +61.45 to +68.55). This is evidence only for the pinned cohort,
+assets, stock, and budget; it is neither a universal CASP claim nor evidence
+of laboratory success. Peak-RSS and time-to-first-route receipts remain open,
+so it is not a whole-cohort performance claim.
 
 See the [benchmark documentation](https://kent-tokyo.github.io/renkin/benchmark/)
-for the full measurements, methodology, confidence intervals, and limitations.
+for protocol, artifacts, and claim boundaries.
 
 ## Development
 

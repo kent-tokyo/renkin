@@ -11,7 +11,7 @@ RENKIN 有两个用途：
 
 审计完全在本地运行并可复现，检查结构完整性、stock覆盖、正向重现、来源信息和审计清单。
 
-下一版本候选：**v1.0.7**。公开 API 会在执行前验证输入；WASM 具有明确的搜索上限，
+当前版本：**v1.0.8**。公开 API 会在执行前验证输入；WASM 具有明确的搜索上限，
 MCP 的数值参数和元素过滤器对非法值直接失败。标准 MCP 搜索还支持协作式
 `timeout_secs` 超时预算。
 
@@ -101,13 +101,13 @@ MCP服务器通过stdio提供路线搜索、验证、解释、约束、诊断和
 
 ## 基准测试
 
-最新正式比较使用明确声明的 shared-stock 条件。native route 搜索中，RENKIN 与
-AiZynthFinder 4.4.1 均为 134/200（67.0%）。在共同 strict validator 下，RENKIN 为
-134/200，AiZynthFinder 为 123/200；但这只是固定 cohort 的点估计，正式 paired gate
-尚未完成，也不代表 RENKIN 在所有 CASP 场景中普遍优于对方。成功率、速度、stock 定义、
-验证和路线质量应分别报告。
+已注册的 Phase 55 shared-stock、同一预算 TEST 完成了690个 target：RENKIN 得到
+481/690 条 strict route（69.71%），AiZynthFinder 4.4.1 为32/690（4.64%）。配对 coverage
+差为+65.07个百分点（95% CI +61.45 至 +68.55）。该结果只适用于固定的 cohort、asset、stock
+和预算；并不代表普遍 CASP 优势或实验合成成功。peak RSS 与首次找到路线的 receipt 尚未完成，
+因此也不是全 cohort 的性能比较。
 
-[基准测试详情](https://kent-tokyo.github.io/renkin/benchmark/)
+[基准测试详情](https://kent-tokyo.github.io/renkin/benchmark/)提供 protocol、artifact 和主张边界。
 
 ## 开发
 

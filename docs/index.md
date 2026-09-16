@@ -1,168 +1,96 @@
 ---
-title: "RENKIN: Open-Source Retrosynthesis Engine for Python, Rust and WebAssembly"
-description: "Plan multi-step synthesis routes from SMILES with RENKIN, a pure-Rust computer-aided synthesis planning engine available for Python, CLI, Rust and WebAssembly."
+title: "RENKIN: Local Retrosynthesis Planning and Route Audit"
+description: "A pure-Rust CASP planner and reproducible local route-audit layer for Python, Rust, CLI, MCP, and WebAssembly."
 ---
 
 # RENKIN
 
-Current release: **v1.0.7**.
+**Plan routes. Audit routes. Keep the evidence local.**
 
-> **Computer-Aided Synthesis Planning (CASP) · Pure Rust · WebAssembly · Python**  
-> Named after 錬金 (*renkin*) — Japanese for alchemy: just as alchemists transformed base metals into gold, RENKIN transforms target molecules back into cheap starting materials.
+RENKIN is a pure-Rust computer-aided synthesis planning (CASP) engine and a
+tool-neutral route-audit layer. It searches from target SMILES to a declared
+stock, then can audit routes from RENKIN, AiZynthFinder, Syntheseus, and
+SynPlanner with the same deterministic checks.
 
-[![CI](https://github.com/kent-tokyo/renkin/actions/workflows/ci.yml/badge.svg)](https://github.com/kent-tokyo/renkin/actions/workflows/ci.yml)
-[![Crates.io](https://img.shields.io/crates/v/renkin)](https://crates.io/crates/renkin)
-[![PyPI](https://img.shields.io/pypi/v/renkin)](https://pypi.org/project/renkin/)
-[![npm](https://img.shields.io/npm/v/renkin)](https://www.npmjs.com/package/renkin)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/kent-tokyo/renkin/blob/main/LICENSE)
+Current release: **v1.0.8**.
 
-## What is RENKIN?
+## Start here
 
-RENKIN is a **retrosynthesis engine** that automatically plans multi-step chemical syntheses by working backwards from a target molecule to commercially available starting materials. Given a target SMILES, it searches for synthetic routes using a library of retrosynthetic reaction rules.
+=== "Browser"
 
-## Try It Now
-
-=== "Browser (no install)"
-    [**→ Open Playground**](playground/){ .md-button .md-button--primary }
-
-    Runs entirely in WebAssembly — no server, no installation.
-
-=== "Google Colab (Python)"
-    [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kent-tokyo/renkin/blob/main/examples/renkin_quickstart.ipynb)
-
-    One-click Python notebook — `pip install renkin` + aspirin example + RDKit visualization.
+    [Open the local WebAssembly playground](https://kent-tokyo.github.io/renkin/playground/){ .md-button .md-button--primary }
 
 === "Python"
+
     ```bash
     pip install renkin
     ```
+
     ```python
     import renkin
-    result = renkin.find_routes(target="CC(=O)Oc1ccccc1C(=O)O", depth=5)
+    routes = renkin.find_routes("CC(=O)Oc1ccccc1C(=O)O", depth=5)
     ```
 
-## Key Features
-
-| Feature | Details |
-|---------|---------|
-| **Pure Rust** | Zero C/C++ dependencies — safe, fast, cross-platform |
-| **WebAssembly** | Runs in the browser at near-native speed |
-| **Python bindings** | `pip install renkin` — no RDKit required |
-| **24 hand-crafted rules + up to 50k extracted via `--templates`** | Ester, amide, Suzuki, Heck, Wittig, sulfonamide, carbamate, and more; extended via rdchiral-extracted templates |
-| **Building blocks** | 402 unique compounds in `data/building_blocks.smi` (used when found relative to the current working directory); otherwise CLI/Python fall back to a compiled-in 152-compound set, which WASM always uses. Pass `--building-blocks`/`building_blocks=` to specify explicitly |
-| **A\* / beam search** | Frequency-weighted A* with beam-width control; `step_cost` reduced for high-frequency templates (Phase A) |
-| **Route scoring & diagnostics** | Separate confidence/cost, route-feasibility findings, building-block diversity, and template-proxy chemical-idea diversity; no fabricated laboratory-success score |
-| **Stable template IDs + evidence sidecar** | Every template has a stable `template_id`; attach curated conditions/yields/warnings via `--template-metadata` — see [Template Evidence](https://github.com/kent-tokyo/renkin#template-evidence-metadata) |
-| **Constraint DSL** | `--avoid-elements Br,I --require-elements B` filters routes by element profile |
-| **Forward validation** | `renkin-forward validate` verifies each retrosynthetic step by forward prediction; pipe-friendly (stdin support) |
-| **Failure diagnostics** | `renkin-bench --failure-taxonomy` classifies unsolved targets by cause (beam limit, depth limit, template gap, stock near-miss) |
-| **Cascade search** | Two-stage search: fast defaults → hard cases re-run at higher beam/depth |
-| **Staged recovery (opt-in)** | Native `--search-mode recovery` preserves baseline successes, then conditionally escalates element gating, diversity, depth, and caller-supplied coverage tiers with a per-attempt audit trail; see [Staged recovery mode](guides/staged-recovery.md) |
-| **Search budget profiles (opt-in)** | `--search-profile fast\|balanced\|deep` exposes explicit speed/coverage budgets and records effective settings in named-profile JSON output |
-| **Radius-zero abstraction (research)** | A provenance-bounded, disjoint-VAL-gated method for building an optional final recovery tier from the same TRAIN corpus; see [Staged recovery mode](guides/staged-recovery.md#radius-zero-template-abstraction-follow-up) |
-| **Stability testing** | `--quietset-out` exports observations for [quietset](https://crates.io/crates/quietset-cli) cross-config stability analysis |
-| **MCP server** | `renkin-mcp` exposes seven route, validation, Pareto, constraint, diversity, and diagnostic tools over legacy `2024-11-05` and modern `2026-07-28` stdio MCP; `find_routes` also supports opt-in coverage search |
-
-## Quick Example
-
-=== "Python"
-
-    ```python
-    --8<-- "examples/quickstart.py"
-    ```
-
-=== "Rust"
-
-    ```rust
-    --8<-- "examples/quickstart.rs"
-    ```
-
-=== "JavaScript (WASM)"
-
-    ```javascript
-    import init, { find_routes } from './pkg/renkin.js';
-
-    await init();
-    const result = JSON.parse(find_routes("CC(=O)Oc1ccccc1C(=O)O", 5, 3, 0));
-    console.log(`Found ${result.routes_found} routes`);
-    ```
-
-> **Latest benchmark:** [VAL-200 formal comparison](guides/open-source-retrosynthesis-comparison.md)
-
-## How It Works
-
-```
-Target molecule (SMILES)
-        │
-        ▼
-  Retrosynthetic   ←── 23 built-in + up to 50k extracted (--templates)
-  rule application
-        │
-        ▼
-  Precursor set    ←── Check against building block stock (402 file / 152 fallback)
-        │
-        ▼
-  A* / BFS search  ←── Beam width, depth limit
-        │
-        ▼
-  Synthetic routes (depth, steps, precursors)
-```
-
-## Reaction Rules
-
-RENKIN ships **24 hand-crafted rules** (a mix of graph-based dispatch and SMIRKS-based patterns) covering common pharmaceutical bond disconnections, plus supports up to 50k rdchiral-extracted templates via `--templates`:
-
-- **Acyl disconnections**: ester hydrolysis, amide cleavage (graph-based), carbamate cleavage (graph-based), Friedel-Crafts acylation, acyl chloride formation
-- **Aryl C-heteroatom**: Ullmann ether (C-O), sulfonamide formation, decarboxylation
-- **Aryl C-halide**: chloride/bromide halogen exchange
-- **Aryl C-C coupling**: Suzuki (graph-based), Heck, Sonogashira
-- **Sulfone disconnections**: diaryl sulfone cleavage (graph-based)
-- **Protecting groups**: Boc, Cbz deprotection (graph-based)
-- **Aliphatic**: reductive amination, Wittig, Claisen condensation
-- **Oxidation**: alcohol → carbonyl
-
-See [Benchmark](benchmark.md) for current USPTO-50k results and methodology — historical figures (78.0%/95.9%/81.8%) shown elsewhere on the web are invalidated and not representative of current performance; do not cite them.
-
-## Current formal comparison status
-
-The latest frozen VAL-200 shared-stock rerun (2026-09-08) found native routes
-for 134/200 targets (67.0%) for both RENKIN and AiZynthFinder 4.4.1. Under
-strict common validation, RENKIN was 134/200 (67.0%) and AiZynthFinder was
-123/200 (61.5%), a +5.5pp point estimate on this cohort. See the
-[formal comparison guide](guides/open-source-retrosynthesis-comparison.md)
-for the recorded metrics, hashes, and claim boundaries.
-
-The following v1.0.1 result is retained as historical evidence.
-
-## Historical formal v1.0.1 comparison
-
-The corrected 4,903-target shared-stock comparison recorded 591 primary
-successes for RENKIN v1.0.1 (12.05%) and 200 for AiZynthFinder 4.4.1 (4.08%).
-The paired difference was +7.975 percentage points with 95% CI [+7.098,
-+8.852]. The statistical and formal publication gates both **PASS**: the full
-v1.0.1 arm passed integrity verification, and all 591 reported routes had
-parseable normalized trees terminating in the configured shared stock. See the
-[formal protocol and status](benchmark/formal-v1.0-competitor-comparison.md).
-
-## Installation
-
-=== "pip"
+=== "CLI"
 
     ```bash
-    pip install renkin
+    cargo install renkin
+    renkin --target "CC(=O)Oc1ccccc1C(=O)O" --depth 5
     ```
 
-=== "cargo"
+## Two complementary jobs
 
-    ```toml
-    [dependencies]
-renkin = "1.0.7"
-    ```
+| Job | RENKIN does | Read next |
+| --- | --- | --- |
+| Plan | Searches with bounded A*/beam exploration, rule/template expansion, and declared building-block stock | [Quick start](getting_started/quickstart.md) |
+| Audit | Checks route topology, structure, stock policy, optional forward replay, and evidence receipts | [Audit reproducibility](guides/audit-reproducibility-contract.md) |
 
-=== "npm"
+The core has no C/C++ dependency and is available as a Rust crate, CLI,
+Python package, MCP server, and browser WebAssembly module. Local audit inputs
+and private-stock policies stay local unless an operator deliberately exports
+them.
 
-    ```bash
-    npm install renkin
-    ```
+The default planner currently has 24 hand-crafted rules. Its repository stock
+file contains 402 compounds; installations without that file, and WASM, use a
+compiled-in 152-compound fallback. Supply an explicit stock file when this
+distinction matters to a run.
 
-See [Installation](getting_started/installation.md) for details.
+## What an audit report means
+
+An audit verdict is `pass`, `fail`, or `partial`. `partial` is intentional:
+if the supplied route cannot support a check, for example because it lacks an
+atom-mapped reaction representation, RENKIN records `not_evaluable` instead
+of inventing a result. A route report is not an experimental-success,
+yield, safety, or regulatory claim.
+
+Useful guides:
+
+- [Private stock policy](guides/private-stock-policy.md)
+- [Chemical review rubric](guides/chemical-review-rubric.md)
+- [Evidence-carrying interchange](guides/evidence-carrying-interchange.md)
+- [MCP server](guides/mcp.md)
+
+## Benchmark boundary
+
+The registered Phase 55 TEST used a frozen 690-target cohort, shared stock,
+and declared budgets. RENKIN had 481/690 strict routes (69.71%) and
+AiZynthFinder 4.4.1 had 32/690 (4.64%); the paired coverage difference was
++65.07 percentage points (95% CI +61.45 to +68.55).
+
+This supports a coverage result only for that registered configuration. It
+does not establish universal planner superiority or experimental viability.
+Peak-RSS and time-to-first-route receipts are still pending, so it does not
+support a whole-cohort performance claim. See [Benchmark overview](benchmark.md)
+and the [formal result record](benchmark/phase55-r2-result-20260916.md).
+
+## Choose an interface
+
+| Need | Interface |
+| --- | --- |
+| Application integration | [Python API](api/python.md) or [Rust API](api/rust.md) |
+| Browser-only workflow | [WASM / JavaScript](api/wasm.md) |
+| Automation agent | [MCP server](guides/mcp.md) |
+| Forward validation and retrieval | [Forward tools](guides/forward-prediction.md) |
+
+For source, releases, and issue tracking, visit
+[github.com/kent-tokyo/renkin](https://github.com/kent-tokyo/renkin).

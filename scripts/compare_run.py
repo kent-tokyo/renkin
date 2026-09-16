@@ -215,6 +215,12 @@ def renkin_config_and_id(args):
     recovery_depth_suffix = (
         f"-rd{args.recovery_depth}" if args.search_mode == "recovery" else ""
     )
+    recovery_beam_suffix = (
+        f"-rb{args.recovery_beam_width}" if args.search_mode == "recovery" else ""
+    )
+    recovery_timeout_suffix = (
+        f"-rt{args.recovery_timeout_secs}" if args.search_mode == "recovery" else ""
+    )
     recovery_slots_suffix = (
         f"-rds{args.beam_diversity_slots}" if args.search_mode == "recovery" else ""
     )
@@ -270,7 +276,8 @@ def renkin_config_and_id(args):
         f"{policy_suffix}{reranker_suffix}{downstream_selector_suffix}"
         f"{coverage_suffix}{coverage_beam_suffix}"
         f"{bond_index_suffix}"
-        f"{recovery_depth_suffix}{recovery_slots_suffix}{recovery_tiers_suffix}"
+        f"{recovery_depth_suffix}{recovery_beam_suffix}{recovery_timeout_suffix}"
+        f"{recovery_slots_suffix}{recovery_tiers_suffix}"
         f"{recovery_policy_suffix}"
         f"{spectator_bond_suffix}{element_accounting_suffix}{beam_diversity_suffix}"
         f"{template_policy_suffix}{scorer_suffix}{generator_suffix}{speed_suffix}"
@@ -309,9 +316,10 @@ def run_renkin(args, sample: list[dict], skip_ids: set[str]):
 def aizynth_config_and_id(args):
     import compare_aizynthfinder_adapter as aizynth_adapter
 
-    config_filename = (
+    default_config_filename = (
         "config_shared_stock.yml" if args.comparison_mode == "shared_stock" else "config.yml"
     )
+    config_filename = args.aizynthfinder_config_filename or default_config_filename
     config = aizynth_adapter.AizynthfinderConfig(
         image=args.aizynthfinder_image,
         public_data_dir=args.public_data_dir,
@@ -436,6 +444,15 @@ def main(argv: list[str] | None = None) -> int:
         help="Declared memory envelope in GiB applied to both arms (default: 6).",
     )
     parser.add_argument("--aizynthfinder-image", default="renkin-compare-66/aizynthfinder:4.4.1")
+    parser.add_argument(
+        "--aizynthfinder-config-filename",
+        default=None,
+        help=(
+            "AiZynthFinder YAML filename inside --public-data-dir. Defaults to the "
+            "mode-specific config.yml/config_shared_stock.yml; use an explicit, "
+            "tracked filename for a separately registered protocol."
+        ),
+    )
     parser.add_argument(
         "--public-data-dir", default="data/comparison/aizynthfinder_public_data"
     )
@@ -784,6 +801,10 @@ def main(argv: list[str] | None = None) -> int:
                     "search_mode": args.search_mode,
                     "search_profile": args.search_profile,
                     "search_profile_schema_version": 1 if args.search_profile else None,
+                    "recovery_depth": args.recovery_depth,
+                    "recovery_beam_width": args.recovery_beam_width,
+                    "recovery_timeout_secs": args.recovery_timeout_secs,
+                    "recovery_stage_policy": args.recovery_stage_policy,
                     "recovery_coverage_tier_count": len(args.recovery_coverage_tier),
                 },
             )

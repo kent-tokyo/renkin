@@ -1,0 +1,19 @@
+search:
+  max_transforms: 5
+  iteration_limit: 100
+  time_limit: 31
+  return_first: false
+post_processing:
+  min_routes: 1
+  max_routes: 1
+expansion:
+  uspto:
+    - /public/uspto_model.onnx
+    - /public/uspto_templates.csv.gz
+  ringbreaker:
+    - /public/uspto_ringbreaker_model.onnx
+    - /public/uspto_ringbreaker_templates.csv.gz
+filter:
+  uspto: /public/uspto_filter_model.onnx
+stock:
+  shared: /public/shared_stock.hdf5

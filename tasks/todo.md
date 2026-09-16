@@ -15,12 +15,15 @@ Phase 55の「同一stock・予算でAiZynthFinderのnative/common-strictをと�
 
 - [ ] **55.6 / 独立TESTの実行** `phase55-independent-test-20260916-001` の690 target、sample-list hash、
   stock/template hash、image digest/revision、31秒deadline、8 CPU/6 GiB、解析法を事前登録済み。
-  RENKIN armを実行中。完走後、同一protocolでAiZynthFinder armを一回だけ開始する。途中結果で設定を変えない。
+  RENKIN armを実行中。開始後の監査で、AiZの31秒/rank-1 YAML hashが開始時に未固定だったことを検出した。
+  RENKIN ledgerは完走・検証するが、AiZ armは事前固定済みYAMLを示せる場合だけ開始する。示せない場合は
+  このcohortをrehearsalとして閉じ、新cohort/protocolで両armを再登録する。途中結果で設定を変えない。
 - [ ] **55.0 + 55.6 / 契約・結果の検証** 両arm完走後、input/image hash、実効CPU/RAM、timer receipt、
   output ledger、effective settingsをpreflightで検査し、native/common-strictのpaired CI・McNemar・資源を
   reportへ固定する。AiZynthFinderへの優位性はこのgateを通るまで主張しない。
-- [ ] **55.0 / resume identity補強** 正式run後にrecovery depth・beam・timeoutをconfiguration identityへ追加し、
-  予算の異なるresumeをfail-closedにする。進行中のformal runには変更を適用しない。
+- [x] **55.0 / resume identity補強** recovery depth・beam・timeout・stage policyをconfiguration identityと
+  manifest budgetへ追加し、予算の異なるresumeをfail-closedにした。完走済みrehearsalには遡及適用せず、
+  次の登録runから必須とする。
 - [x] **55.4 / 候補選択** v2 VAL-200で同一総予算A/B。strict 129→134、回収5、native/strict回帰0、
   timeout/crash/attempt欠落0、recovery/processとも31秒内を確認し、`phase55-recovery-v2-20260916`を
   development-only freezeした。正式比較の証拠ではない。
@@ -113,18 +116,18 @@ paired tableを明示的な比較入力として再利用し、schema v2のartif
 
 - [ ] **55.0 / Contract** baseline revision、native/common-strict/forwardの定義、stock・
   budget・モデルhashを固定。既存未コミット変更の回帰gateと2-tool protocolの事前登録。
-- [ ] **55.1 / Diagnosis** 全VAL-200のroot/intermediate失敗atlasを作り、候補欠落、
-  ranking、beam、stock、validation、時間切れを区別。競合route由来情報は診断に隔離。
-- [ ] **55.2 / Policy** 既存ONNX TemplatePolicyで実モデルordering-onlyを評価。
-  fingerprint/template mappingを検証し、未知中間体・abstain・候補集合不変のgateを追加。
-- [ ] **55.3 / Downstream** graph selectorを任意中間体へ動的適用するRust実行時処理へ。
-  全precursorのstock到達性、cycle、cache identity、候補の非置換をテスト。
-- [ ] **55.4 / Recovery** 全stage合計のdeadline下で未解決のみ段階探索。
-  native成功保持、予算内成功regression=0、strict非悪化を全200件で確認。
-- [ ] **55.5 / Coverage** 残る正候補欠落に限定してtemplate補完・direct generatorを投入。
-  候補生成時間を課金し、参照routeやTEST labelの持込みを禁止。不要なら根拠付きskip。
-- [ ] **55.6 / Evidence** 開発目安144/200を確認後、候補を固定し未使用TESTをpaired実行。
-  native/common-strictのCI・効果量・失敗・資源を公開。優位性未達はHOLD。
+- [ ] **55.1 / Diagnosis extension（Gated）** 既存atlasは実装済みだが第一喪失点は一部unknownのまま。
+  55.6で優位性未証明の場合だけ、formal rowsから最大の救済可能損失を一つ選び、追加計装を行う。
+- [ ] **55.2 / Policy（HOLD / Gated）** 既存ONNX ordering-onlyはresource gate未達。55.6後に
+  ranking由来の損失が最大の場合だけ、mapping不変・timeout 0・strict非悪化を満たす軽量案をA/Bする。
+- [ ] **55.3 / Downstream（Implemented / HOLD）** Rust実行時selectorは実装済み、改善未確認。
+  formal atlasが下流到達性を主因と示す場合だけ、全VALでnon-displacing A/Bを再評価する。
+- [x] **55.4 / Recovery（development-selected）** 全stage合計のdeadline下で未解決のみ段階探索。
+  v2はnative成功保持、予算内回収5、strict非悪化をVAL-200で確認し、55.6へ凍結済み。
+- [ ] **55.5 / Coverage（HOLD / Gated）** direct proposalは現状routeを回収していない。
+  formal atlasが真の候補欠落を示す場合だけ、family単位のtemplate/direct generatorを検証する。
+- [ ] **55.6 / Evidence（Active）** candidateを凍結し、未使用690 targetでpaired実行中。
+  両armのpreflight後にnative/common-strictのCI・効果量・失敗・資源を公開し、優位性未達はHOLD。
 
 55.2 progress: `cargo check --features nn-scoring --bin renkin`とfeature付きbinary buildが
 成功し、`data/template_scorer_500.onnx`を`--scorer --scorer-ordering-only`で代表targetへ

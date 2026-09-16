@@ -33,6 +33,7 @@ RENKINの目標は、単一のsolved rateだけを最大化することではな
 | Partial | 一部の成果物は実装済みだが、当該phaseの完了条件は未達 |
 | Active | 現在の優先開発対象 |
 | HOLD | 実測で採用条件を満たさず、既定値へ昇格しない |
+| Gated | 実装候補または継続領域。現在のP0を閉じ、必要な原因証拠が得られるまで新規実装を始めない |
 | Blocked | 外部環境または必須artifactが揃うまで完了不能 |
 | Planned | 前段のgate通過後に着手 |
 | Continuous | 各リリースで継続する横断作業 |
@@ -73,6 +74,13 @@ candidateをdevelopment-onlyで固定した後、別identityの未閲覧cohort�
 登録済みのrecovery v2構成（depth 5 / beam 100、recovery depth 6 / beam 200、外側31秒）で実行中であり、
 実行中は探索設定、template、stock、image、評価scriptを変更しない。RENKIN完走後は同じcohort・stock・
 資源上限でAiZynthFinder armを一回だけ実行し、両armのpreflightとpaired解析を通すまで結論を出さない。
+
+ただし実行開始後の設定監査で、既存AiZ shared-stock YAMLが120秒/top-5であり、31秒/rank-1という
+登録済み境界に対応する**hash固定済みYAMLが開始時点で存在しなかった**ことを確認した。したがってこの
+RENKIN armは完走させてledger・resource境界の検証には使うが、AiZ armを開始する前にpreflight可能な
+設定registryを完成させる。開始前のYAML hashを示せない場合、このcohortは正式な優位性判定ではなく
+protocol rehearsalとして扱い、新しいcohort・protocolで両armを再登録する。途中でAiZ設定だけを
+後付け変更して正式比較に見せない。
 
 Phase 55は次の二本の依存関係で進める。両方が閉じるまで独立TESTの**判定**は確定しない。
 
@@ -125,18 +133,32 @@ Phase 55は完了扱いにしない。化学的にinvalidなrouteを指標の加
 
 ### 直近の実行順
 
-1. **55.6 / 凍結済み独立比較を完走** — 実行中のRENKIN armを同一commandで完走する。続いて登録済みのAiZynthFinder armを
-   同じcohort・stock・資源上限で一回だけ実行する。途中結果で設定を変えない。
+1. **55.6 / 凍結済み独立比較の契約を閉じる** — 実行中のRENKIN armを同一commandで完走する。AiZ armは、
+   31秒/rank-1 YAMLのfilename・bytes hash・mounted asset hashが開始前にregistryへ固定され、同じcohortで
+   preflight可能と確認できる場合だけ開始する。確認できない場合はこのcohortをrehearsalとして閉じ、新しい
+   protocolで両armを再登録する。途中結果で探索設定を変えない。
 2. **55.0 + 55.6 / 契約・結果を検証して判定** — 両armのinput/image hash、CPU/RAM enforcement、timer receipt、
    output ledger、effective settingsをpreflightで検査し、native/common-strictのpaired CI・McNemar・資源を
    reportへ固定する。優位性の判定はこの時点だけで行う。
-3. **55.0 / resume identityを補強** — 正式run完走後に、recovery depth・beam・timeoutをresume configuration identityへ
-   含め、異なるrecovery予算での再開をfail-closedにする。進行中のrunには適用しない。
-4. **55.1 → 55.5 / 次の候補仮説** — 55.6で優位性が未証明、または55.0がcandidateを実行不能と示した場合だけ、55.2/55.3/55.5を新しい原因証拠に基づく
-   単独A/Bで再評価する。採用構成以外は正式比較へ持ち込まない。
+3. **55.0 / resume identityを補強** — recovery depth・beam・timeout・stage policyをresume configuration identityと
+   manifest budgetへ含め、異なるrecovery予算での再開をfail-closedにした。完走済みrehearsalには遡及適用せず、
+   次の登録runから必須とする。
+4. **結果に基づく次候補の選別** — 55.6で優位性が未証明、または55.0がcandidateを実行不能と示した場合だけ、formal rowsの第一喪失点を更新する。55.2/55.3/55.5のうち、原因に対応する**一つだけ**を単独A/Bへ送る。採用構成以外は次の正式比較へ持ち込まない。
 
 製品側は並行してO7の運用検証を進める。性能測定中のコード変更・他の高負荷ジョブは避け、
 新規OCR/DFT/MCTSやadapter増設より既存候補の検証を優先する。
+
+### 独立TEST後の分岐（結果を見る前に固定）
+
+| 判定 | 次に行うこと | 行わないこと |
+|---|---|---|
+| preflight不成立 | 不成立理由を修正し、protocol revision・新しいcohort・両armの再登録を行う | 片方のarmだけを都合よく再実行しない |
+| 両主指標で優位 | 完全なreport、再現手順、release candidate gateへ進む | 別条件の数値を上乗せして優位性を拡張しない |
+| 優位性未証明 | formal failure atlasから最大の救済可能な損失を一つ選び、55.2/55.3/55.5の単独VAL A/Bへ戻る | TEST結果に合わせた閾値・stock・候補の調整をしない |
+| correctness/resource gate不成立 | 当該境界の修正と最小回帰fixtureを優先する | solved rateだけで採用しない |
+
+この分岐により、実装の速さよりも独立TESTの独立性を優先する。正式run中は55.6以外を
+「次に着手可能」ではなく「結果待ちの候補」として扱う。
 
 ### 製品候補: O7実装済み境界の運用検証
 
@@ -161,7 +183,7 @@ precursorのMW比であり、全量論試薬を扱う理論atom economyや実工
 
 | Phase | Status | 現在の証拠 | 次の判定 |
 |---|---|---|---|
-| 55.0 測定契約 | Active | 小規模stockの50件smoke・既存preflight通過。RENKIN Linux image（`renkin-bench/renkin@sha256:b3b8…b2d`、OCI revision `e378e27`）を構築し、networkなし・8 CPU・6 GiB・read-only mountと`planner_timing_v1`をdevelopment smokeで確認。completed-invocation ledgerにより再開後sliceの総時間誤表示を防止。AiZ設定は追跡templateとbyte一致、参照HDF5/ONNX/template/filterをhash固定 | 両正式armの実効CPU/RAM上限・timer receipt・top-k意味・output ledgerをpreflightで検証し、結果reportへ結合。完走後にrecovery予算をresume identityへ追加 |
+| 55.0 測定契約 | Active | 小規模stockの50件smoke・既存preflight通過。RENKIN Linux image（`renkin-bench/renkin@sha256:b3b8…b2d`、OCI revision `e378e27`）を構築し、networkなし・8 CPU・6 GiB・read-only mountと`planner_timing_v1`をdevelopment smokeで確認。completed-invocation ledgerにより再開後sliceの総時間誤表示を防止。recovery depth/beam/timeout/stage policyはconfiguration identityとmanifest budgetへ固定し、異なるresumeを拒否する。AiZ用の31秒/rank-1 templateとasset hashも追加した | 両正式armの実効CPU/RAM上限・timer receipt・top-k意味・output ledgerをpreflightで検証し、**開始前に**AiZ YAML/asset hashをprotocol registryへ結合 |
 | 55.1 Failure atlas | Implemented / Partial | VAL-200を両者成功・片側成功・両者失敗へ分類。未観測原因はunknownとして保持 | 次の仮説に必要な第一喪失点を観測する。深さ/beam到達だけで原因確定しない |
 | 55.2 Ordering-only model | HOLD | TRAIN-only ONNX VAL-200はstrict 121→124（+3pp、95% CI −1.5〜+5.0pp、McNemar p=0.549）。timeout 0→2、p95 8.39→18.11秒、RSS p95 209→387 MiB。軽量512×128も10件でstrict 8→9・timeout 0だがp95 8.39→52.09秒、RSS p95 204→332 MiB | template-ID対応を保ったまま推論コストを下げ、timeout=0・strict非悪化を満たす候補だけ再評価 |
 | 55.3 Downstream reachability | Implemented / HOLD | shared-cache selectorを実装したが、小規模A/Bで精度向上未確認 | 全VALで成功取り消し0、strict非悪化、runtime正常なら採用 |
@@ -208,13 +230,13 @@ releaseが同じことを「mainに変更がない」根拠にはしない。
 | Phase | Status | Scope | 次のgate |
 |---|---|---|---|
 | 0 Benchmark contract | Shipped / Continuous | manifest、paired sampling、failure taxonomy、formal report | 新しいarmも同一schemaで再現できること |
-| 1 Candidate coverage | Active | template被覆、direct proposal、non-displacing recovery | zero-positive削減、regression=0 |
-| 2 Learned models | Active | TemplatePolicy、RetroGenerator、ValueModel、ordering-only評価 | 実モデルのpaired top-k改善 |
-| 3 Search platform | Active | A*、beam、profiles、trace、Pareto、必要時MCTS | coverage/latency Pareto改善 |
+| 1 Candidate coverage | Gated | template被覆、direct proposal、non-displacing recovery | zero-positive削減、regression=0 |
+| 2 Learned models | HOLD / Gated | TemplatePolicy、RetroGenerator、ValueModel、ordering-only評価 | 実モデルのpaired top-k改善とresource非悪化 |
+| 3 Search platform | Gated | A*、beam、profiles、trace、Pareto、必要時MCTS | coverage/latency Pareto改善 |
 | 4 Chemical correctness | Active / Continuous | structure、element accounting、ring/stereo、forward replay | strict pass非悪化 |
 | 5 Stock and constraints | Shipped / Active | private stock、vendor/price/lead time/hazard/region policy | freshness・provenance付きroute選択 |
 | 6A Evidence contract | Shipped / Active | evidence sidecar、review rubric、provenance | substrate-level coverage拡大 |
-| 6B Feasibility | Active | deterministic route diagnostics、fast-filter相当 | reaction-family別precision/recall |
+| 6B Feasibility | Gated | deterministic route diagnostics、fast-filter相当 | reaction-family別precision/recall |
 | 6C–6D Recommendations | Planned | condition、yield、selectivity、feedback | held-out calibrationとabstention |
 | 7 Product ecosystem | Continuous | CLI/Python/WASM/MCP、release、interop | cross-surface semantic consistency |
 

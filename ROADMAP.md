@@ -70,17 +70,16 @@ timeout/crashを検証するまでは、途中の行数やroute数を採用根�
 このrunはrank-1・native macOSの開発条件であり、正式比較の根拠ではない。結果を検証して
 candidateをdevelopment-onlyで固定した後、別identityの未閲覧cohortと事前登録protocolを作成した。
 
-独立TESTは `phase55-independent-test-20260916-001` として690 targetを凍結済みである。RENKIN armは
-登録済みのrecovery v2構成（depth 5 / beam 100、recovery depth 6 / beam 200、外側31秒）で実行中であり、
-実行中は探索設定、template、stock、image、評価scriptを変更しない。RENKIN完走後は同じcohort・stock・
-資源上限でAiZynthFinder armを一回だけ実行し、両armのpreflightとpaired解析を通すまで結論を出さない。
+最初の690件 `phase55-independent-test-20260916-001` は、RENKIN armを690/690・timeout/crash 0で
+完走した後に、AiZ YAML hashが開始前に固定されていなかったことを検出した。これはledger・resource境界の
+rehearsalとして保存し、AiZ armを開始しない。途中でAiZ設定だけを後付け変更して正式比較に見せない。
 
-ただし実行開始後の設定監査で、既存AiZ shared-stock YAMLが120秒/top-5であり、31秒/rank-1という
-登録済み境界に対応する**hash固定済みYAMLが開始時点で存在しなかった**ことを確認した。したがってこの
-RENKIN armは完走させてledger・resource境界の検証には使うが、AiZ armを開始する前にpreflight可能な
-設定registryを完成させる。開始前のYAML hashを示せない場合、このcohortは正式な優位性判定ではなく
-protocol rehearsalとして扱い、新しいcohort・protocolで両armを再登録する。途中でAiZ設定だけを
-後付け変更して正式比較に見せない。
+正式候補は、rehearsalの690 identityを含む既知対象を除外した
+`phase55-independent-test-20260916-002`（N=690）へ再登録した。RENKIN候補はrecovery v2
+（depth 5 / beam 100、native-only recovery depth 6 / beam 200、外側31秒）であり、AiZの31秒/rank-1
+YAMLとasset hash、両image digest、resource上限、解析法を開始前に固定した。
+RENKIN arm完走後に同一cohort・stock・資源上限でAiZ armを一回だけ実行し、両armのpreflightとpaired解析を
+通すまで結論を出さない。
 
 Phase 55は次の二本の依存関係で進める。両方が閉じるまで独立TESTの**判定**は確定しない。
 
@@ -133,10 +132,9 @@ Phase 55は完了扱いにしない。化学的にinvalidなrouteを指標の加
 
 ### 直近の実行順
 
-1. **55.6 / 凍結済み独立比較の契約を閉じる** — 実行中のRENKIN armを同一commandで完走する。AiZ armは、
-   31秒/rank-1 YAMLのfilename・bytes hash・mounted asset hashが開始前にregistryへ固定され、同じcohortで
-   preflight可能と確認できる場合だけ開始する。確認できない場合はこのcohortをrehearsalとして閉じ、新しい
-   protocolで両armを再登録する。途中結果で探索設定を変えない。
+1. **55.6 / r2独立比較を実行** — `phase55-independent-test-20260916-002` のRENKIN armを同一commandで完走する。
+   続いて、開始前に固定済みの31秒/rank-1 YAML・asset hashを使い、AiZ armを同じcohort・stock・資源上限で
+   一回だけ実行する。途中結果で探索設定を変えない。
 2. **55.0 + 55.6 / 契約・結果を検証して判定** — 両armのinput/image hash、CPU/RAM enforcement、timer receipt、
    output ledger、effective settingsをpreflightで検査し、native/common-strictのpaired CI・McNemar・資源を
    reportへ固定する。優位性の判定はこの時点だけで行う。
@@ -189,7 +187,7 @@ precursorのMW比であり、全量論試薬を扱う理論atom economyや実工
 | 55.3 Downstream reachability | Implemented / HOLD | shared-cache selectorを実装したが、小規模A/Bで精度向上未確認 | 全VALで成功取り消し0、strict非悪化、runtime正常なら採用 |
 | 55.4 Non-displacing recovery | Implemented / development-selected | v2（同一VAL-200/stock/template、外側31秒、内部30秒）はstrict 129→134、回収5、native/strict回帰0、timeout/crash 0、attempt欠落0。recovery最大30,033.92ms、process最大30,408.53msで31秒以内。`phase55-recovery-v2-20260916`をdevelopment-only freeze済み | formal container契約下でこのconfigurationを固定して55.6へ渡す。55.0不成立または独立TEST未達なら結果を見て再調整せずHOLD |
 | 55.5 Missing proposals | HOLD | 70 direct proposalsを安全に投入したがroute未回収 | valid完成routeを増やせるfamily/modelだけ採用 |
-| 55.6 Independent TEST | Active | 閲覧済み50件・VAL 200件・smoke 10件を除外した690 targetを `phase55-independent-test-20260916-001` として凍結し、N=690・image digest/revision・31秒deadline・8 CPU/6 GiB・解析法を事前登録。RENKIN armを登録構成で実行中 | RENKIN完走後に同一protocolでAiZ armを実行し、preflight・paired解析・再現reportを通す。途中結果による再測定や設定変更はしない |
+| 55.6 Independent TEST | Active | r1のRENKIN-only 690件rehearsalは完走・完全性検証済みだが、AiZ YAML hashの開始前固定欠落により正式比較には使わない。露出identityを除外したr2（N=690）を凍結し、RENKIN/AiZ image digest、31秒/rank-1 YAML hash、asset hash、8 CPU/6 GiB、解析法を事前登録 | r2のRENKIN完走後に同一protocolでAiZ armを実行し、preflight・paired解析・再現reportを通す。途中結果による再測定や設定変更はしない |
 
 55.0から55.5で採用条件を満たした構成を一つだけ凍結し、55.6へ送る。既存VALとgap cohortは
 開発専用であり、独立TESTの代わりにしない。凍結cohort、hash、provenance、閲覧履歴は

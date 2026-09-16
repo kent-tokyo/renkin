@@ -13,11 +13,11 @@ Phase 55の「同一stock・予算でAiZynthFinderのnative/common-strictをと�
 
 ### 直近の作業（以下の過去progressより優先）
 
-- [ ] **55.6 / 独立TESTの実行** `phase55-independent-test-20260916-001` の690 target、sample-list hash、
+- [ ] **55.6 / r2独立TESTの実行** `phase55-independent-test-20260916-002` の690 target、sample-list hash、
   stock/template hash、image digest/revision、31秒deadline、8 CPU/6 GiB、解析法を事前登録済み。
-  RENKIN armを実行中。開始後の監査で、AiZの31秒/rank-1 YAML hashが開始時に未固定だったことを検出した。
-  RENKIN ledgerは完走・検証するが、AiZ armは事前固定済みYAMLを示せる場合だけ開始する。示せない場合は
-  このcohortをrehearsalとして閉じ、新cohort/protocolで両armを再登録する。途中結果で設定を変えない。
+  r1はAiZ YAML hash未固定のためRENKIN-only rehearsalとして690/690を完走・完全性検証し、全identityをr2から除外した。
+  r2ではRENKIN arm後、開始前固定済みのAiZ 31秒/rank-1 YAMLとasset hashを使い同一protocolでAiZ armを一回だけ実行する。
+  途中結果で設定を変えない。
 - [ ] **55.0 + 55.6 / 契約・結果の検証** 両arm完走後、input/image hash、実効CPU/RAM、timer receipt、
   output ledger、effective settingsをpreflightで検査し、native/common-strictのpaired CI・McNemar・資源を
   reportへ固定する。AiZynthFinderへの優位性はこのgateを通るまで主張しない。

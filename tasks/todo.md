@@ -17,9 +17,12 @@ Phase 55の「同一stock・予算でAiZynthFinderのnative/common-strictをと�
   AiZynthFinderの210.52秒は再開後26件のみで、全行時間和は348.724秒。
 - [ ] **55.0 / 実効契約** 大規模共通stockのidentity、実YAML/HDF5/model/template hash、
   両armのCPU/RAM enforcement・warm/cold・deadline・reaction depth・top-kを事前登録して検証。
-  今回の393件stock・500 templates・rank1は接続smokeであり、このgateを閉じない。
-- [ ] **55.1 → 55.4 / 候補選択** VALで既存recoveryを同一総予算A/B。native/strict非悪化、
-  成功取り消し0、予算内完了を確認。HOLD施策は新しい損失の証拠がある場合だけ再評価。
+  RENKIN Docker armはimage digest・networkなし・8 CPU/6 GiB・read-only mount・timing receiptを
+  1件development smokeで確認済み。今回の393件stock・500 templates・rank1は接続smokeであり、
+  AiZ armを含む同一contract検証までこのgateを閉じない。
+- [x] **55.4 / 候補選択** v2 VAL-200で同一総予算A/B。strict 129→134、回収5、native/strict回帰0、
+  timeout/crash/attempt欠落0、recovery/processとも31秒内を確認し、`phase55-recovery-v2-20260916`を
+  development-only freezeした。正式比較の証拠ではない。
 - [ ] **55.6 / 独立性・標本数** freeze-003先頭50件の閲覧を記録し、未観測TESTの扱いと
   検出力に基づくNを事前登録。`phase55_mcnemar_power.py`でVAL由来のdiscordant仮定から
   exact McNemarのNを決める。55.4採用構成は`freeze_phase55_candidate.py`で開発manifest・

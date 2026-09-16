@@ -5,6 +5,10 @@ WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY src ./src
+# Cargo validates explicit example paths while parsing the manifest, even when
+# building only the CLI binary. Keep these sources in the build context so the
+# bounded comparison image can be reproduced from a clean checkout.
+COPY examples ./examples
 RUN cargo build --locked --release --bin renkin
 
 FROM debian:bookworm-slim

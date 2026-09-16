@@ -121,21 +121,14 @@ Phase 55は完了扱いにしない。化学的にinvalidなrouteを指標の加
 
 ### 直近の実行順
 
-1. **55.4 / 実行中の候補選別を閉じる** — 既登録のVAL-200 recovery v2を設定変更なしで完走し、
-   baselineとのnative/common-strict回帰、全attempt、31秒budget、timeout/crashを検証する。未達なら
-   HOLDに戻し、別の施策を同じrunへ混ぜない。
-2. **candidate freeze / 開発判断を固定する** — 55.4が合格した場合だけ、baseline/candidateのfinalized
-   manifest、row ledger、non-displacing verificationをhash結合したdevelopment-only receiptを作る。不合格なら
-   freezeせず、負の結果を残して次の仮説へ戻る。
-3. **55.0 / 測定契約を閉じる** — 完了済みresume invocationの累計計時は実装済み。監督プロセス、実設定/入力hash、
+1. **55.0 / 測定契約を閉じる** — recovery v2候補はdevelopment-only freeze済み。続いて、監督プロセス、実設定/入力hash、
    CPU/RAM enforcement、stock identity、startup/search/auditの計時、top-k・停止条件を検証する。既存50件smokeの
    通過範囲を保存し、正式設定の動作確認には開発用targetを使う。
-4. **55.1 → 55.5 / 次の候補仮説を選ぶ** — 55.4がHOLDの場合だけ、55.2/55.3/55.5を新しい原因証拠に基づく
+2. **55.6 / 独立比較の登録** — 55.0完了後、既に結果を閲覧した50件の扱いと、VAL由来のexact McNemar検出力に
+   基づく標本数、tool image/revision、resources、停止条件、実行順を事前登録する。未使用cohortを新しいidentityで凍結する。
+3. **55.6 / 独立比較の実行** — 登録済みprotocolだけで両armをpaired実行し、両主指標のCI、改善/悪化、資源、再現reportを揃える。
+4. **55.1 → 55.5 / 次の候補仮説** — 55.6で優位性が未証明、または55.0がcandidateを実行不能と示した場合だけ、55.2/55.3/55.5を新しい原因証拠に基づく
    単独A/Bで再評価する。採用構成以外は正式比較へ持ち込まない。
-5. **55.6 / 独立比較** — candidate freezeと55.0の両方を通過後、既に結果を閲覧した50件の扱いと、VAL由来のexact McNemar検出力に
-   基づく標本数を事前登録してから未使用TESTを測定する。旧500件をそのまま未使用とは扱わず、
-   原本のhash・対象は保持する。
-   両主指標のpaired CI、改善/悪化、資源、再現reportを揃える。
 
 製品側は並行してO7の運用検証を進める。性能測定中のコード変更・他の高負荷ジョブは避け、
 新規OCR/DFT/MCTSやadapter増設より既存候補の検証を優先する。
@@ -163,13 +156,13 @@ precursorのMW比であり、全量論試薬を扱う理論atom economyや実工
 
 | Phase | Status | 現在の証拠 | 次の判定 |
 |---|---|---|---|
-| 55.0 測定契約 | Active | 小規模stockの50件smoke完走・既存preflight通過。AiZynthFinder container接続は確認済みだが、RENKINの比較container imageは未準備。completed-invocation ledgerにより再開後sliceの総時間誤表示を防止。`planner_timing_v1`はprocess wall-clock、adapter監査、tool自己申告searchを分離して保存する。AiZ設定は追跡templateとbyte一致、参照HDF5/ONNX/template/filterをhash固定。formal preflightは実効CPU/RAM enforcementのないarmを拒否 | stock変換identity・両armの実効CPU/RAM上限・timer receiptの実run検証・top-k意味・監督resumeを正式契約へ結合し、開発用smokeで検証 |
+| 55.0 測定契約 | Active | 小規模stockの50件smoke・既存preflight通過。RENKIN Linux image（`renkin-bench/renkin:1.0.7@sha256:c9af…c49f`）を構築し、networkなし・8 CPU・6 GiB・read-only mountと`planner_timing_v1`を1件development smokeのmanifestで確認。completed-invocation ledgerにより再開後sliceの総時間誤表示を防止。AiZ設定は追跡templateとbyte一致、参照HDF5/ONNX/template/filterをhash固定 | stock変換identity・AiZ armを含む両armの実効CPU/RAM上限・timer receipt・top-k意味・監督resumeを同一開発smokeで検証し、formal protocolへ結合 |
 | 55.1 Failure atlas | Implemented / Partial | VAL-200を両者成功・片側成功・両者失敗へ分類。未観測原因はunknownとして保持 | 次の仮説に必要な第一喪失点を観測する。深さ/beam到達だけで原因確定しない |
 | 55.2 Ordering-only model | HOLD | TRAIN-only ONNX VAL-200はstrict 121→124（+3pp、95% CI −1.5〜+5.0pp、McNemar p=0.549）。timeout 0→2、p95 8.39→18.11秒、RSS p95 209→387 MiB。軽量512×128も10件でstrict 8→9・timeout 0だがp95 8.39→52.09秒、RSS p95 204→332 MiB | template-ID対応を保ったまま推論コストを下げ、timeout=0・strict非悪化を満たす候補だけ再評価 |
 | 55.3 Downstream reachability | Implemented / HOLD | shared-cache selectorを実装したが、小規模A/Bで精度向上未確認 | 全VALで成功取り消し0、strict非悪化、runtime正常なら採用 |
-| 55.4 Non-displacing recovery | Active / development validation | 31秒cooperative deadline版はbaseline 129→final 134、回収5、regression/timeout/crash 0だったが、38件が31秒を最大26.14ms超過してHOLD。v2は両armを31秒external cap、candidate内部recoveryを30秒として再測定する | baseline strict回帰、attempt完全性、recovery/process双方の31秒budget、timeout/crash、回収件数を機械検証し、retain/HOLDを決める |
+| 55.4 Non-displacing recovery | Implemented / development-selected | v2（同一VAL-200/stock/template、外側31秒、内部30秒）はstrict 129→134、回収5、native/strict回帰0、timeout/crash 0、attempt欠落0。recovery最大30,033.92ms、process最大30,408.53msで31秒以内。`phase55-recovery-v2-20260916`をdevelopment-only freeze済み | formal container契約下でこのconfigurationを固定して55.6へ渡す。55.0不成立または独立TEST未達なら結果を見て再調整せずHOLD |
 | 55.5 Missing proposals | HOLD | 70 direct proposalsを安全に投入したがroute未回収 | valid完成routeを増やせるfamily/modelだけ採用 |
-| 55.6 Independent TEST | Blocked | 500-target候補を凍結済み。先頭50件はsmoke結果を閲覧済み。candidate-freezeは開発のmanifest・rows・budget検証をhash結合して保存できる | 55.0とcandidate-freezeの両方を通過後、閲覧済み対象の扱い・N/検出力・専用protocolを固定してpaired解析 |
+| 55.6 Independent TEST | Blocked | 500-target候補を凍結済みだが先頭50件はsmoke結果を閲覧済み。development candidate `phase55-recovery-v2-20260916`はmanifest・rows・budget検証とhash結合済み | 55.0後、閲覧済み対象を除く新cohort、N/検出力、専用protocolを固定してpaired解析 |
 
 55.0から55.5で採用条件を満たした構成を一つだけ凍結し、55.6へ送る。既存VALとgap cohortは
 開発専用であり、独立TESTの代わりにしない。凍結cohort、hash、provenance、閲覧履歴は

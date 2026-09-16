@@ -16,6 +16,11 @@ docker build --platform linux/arm64 \
   -t renkin-bench/synplanner:1.6.0 .
 ```
 
+`renkin-benchmark.Dockerfile` also copies `examples/`: Cargo validates explicit
+example paths while parsing `Cargo.toml`, even when the image builds only the
+`renkin` binary. Omitting them makes a clean container build fail before the
+comparison executable is produced.
+
 Before a formal run, record each image digest and `requirements-lock.txt`
 hash in the registry/run manifest. The image tag alone is not provenance.
 

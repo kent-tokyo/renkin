@@ -56,8 +56,8 @@ AiZynthFinder 4.4.1のnative `route_found`はともに
 RENKIN 4/50、AiZynthFinder 1/50。ただし393件stock・500 templates・cold起動の接続検証であり、
 正式計画の大規模共通stock・warm worker・top-5とは異なる。資源制限の実効性、実際の
 AiZynthFinder設定・入力hashも未検証の部分があるため、**55.0全体は未完了**。
-AiZynthFinder armのDocker接続はこのrunで確認したが、RENKIN armを同じ実効resource制限で
-動かす比較containerは未準備である。詳細と時間集計訂正は
+このsmokeはr2の正式根拠ではない。r2では専用RENKIN imageと固定AiZ YAML・asset hashを
+事前登録し、同一のDocker resource contractで実行する。詳細と時間集計訂正は
 [smoke監査記録](docs/benchmark/phase55-smoke-review-20260916.md)を参照。
 
 ### 実行中の判断境界
@@ -78,8 +78,8 @@ rehearsalとして保存し、AiZ armを開始しない。途中でAiZ設定だ�
 `phase55-independent-test-20260916-002`（N=690）へ再登録した。RENKIN候補はrecovery v2
 （depth 5 / beam 100、native-only recovery depth 6 / beam 200、外側31秒）であり、AiZの31秒/rank-1
 YAMLとasset hash、両image digest、resource上限、解析法を開始前に固定した。
-RENKIN arm完走後に同一cohort・stock・資源上限でAiZ armを一回だけ実行し、両armのpreflightとpaired解析を
-通すまで結論を出さない。
+RENKIN armは開始済みであり、途中結果を候補採用・優位性の根拠にしない。RENKIN armを完走・単独検証後、
+同一cohort・stock・資源上限でAiZ armを一回だけ実行し、両armのpreflightとpaired解析を通すまで結論を出さない。
 
 Phase 55は次の二本の依存関係で進める。両方が閉じるまで独立TESTの**判定**は確定しない。
 
@@ -132,15 +132,14 @@ Phase 55は完了扱いにしない。化学的にinvalidなrouteを指標の加
 
 ### 直近の実行順
 
-1. **55.6 / r2独立比較を実行** — `phase55-independent-test-20260916-002` のRENKIN armを同一commandで完走する。
-   続いて、開始前に固定済みの31秒/rank-1 YAML・asset hashを使い、AiZ armを同じcohort・stock・資源上限で
-   一回だけ実行する。途中結果で探索設定を変えない。
-2. **55.0 + 55.6 / 契約・結果を検証して判定** — 両armのinput/image hash、CPU/RAM enforcement、timer receipt、
+1. **55.6 / RENKIN r2 armを完走・単独検証** — `phase55-independent-test-20260916-002` のRENKIN armを
+   登録済みcommandで690件まで完走し、row ledger、resume identity、入力hash、resource/timing receiptを検証する。
+   途中結果で探索設定を変えない。
+2. **55.6 / AiZ r2 armを一回だけ実行** — 前項が通った場合だけ、開始前に固定済みの31秒/rank-1 YAML・asset hashを使い、
+   同じcohort・stock・資源上限でAiZ armを実行する。片armだけの都合のよい再測定はしない。
+3. **55.0 + 55.6 / 契約・結果を検証して判定** — 両armのinput/image hash、CPU/RAM enforcement、timer receipt、
    output ledger、effective settingsをpreflightで検査し、native/common-strictのpaired CI・McNemar・資源を
    reportへ固定する。優位性の判定はこの時点だけで行う。
-3. **55.0 / resume identityを補強** — recovery depth・beam・timeout・stage policyをresume configuration identityと
-   manifest budgetへ含め、異なるrecovery予算での再開をfail-closedにした。完走済みrehearsalには遡及適用せず、
-   次の登録runから必須とする。
 4. **結果に基づく次候補の選別** — 55.6で優位性が未証明、または55.0がcandidateを実行不能と示した場合だけ、formal rowsの第一喪失点を更新する。55.2/55.3/55.5のうち、原因に対応する**一つだけ**を単独A/Bへ送る。採用構成以外は次の正式比較へ持ち込まない。
 
 製品側は並行してO7の運用検証を進める。性能測定中のコード変更・他の高負荷ジョブは避け、
@@ -181,7 +180,7 @@ precursorのMW比であり、全量論試薬を扱う理論atom economyや実工
 
 | Phase | Status | 現在の証拠 | 次の判定 |
 |---|---|---|---|
-| 55.0 測定契約 | Active | 小規模stockの50件smoke・既存preflight通過。RENKIN Linux image（`renkin-bench/renkin@sha256:b3b8…b2d`、OCI revision `e378e27`）を構築し、networkなし・8 CPU・6 GiB・read-only mountと`planner_timing_v1`をdevelopment smokeで確認。completed-invocation ledgerにより再開後sliceの総時間誤表示を防止。recovery depth/beam/timeout/stage policyはconfiguration identityとmanifest budgetへ固定し、異なるresumeを拒否する。AiZ用の31秒/rank-1 templateとasset hashも追加した | 両正式armの実効CPU/RAM上限・timer receipt・top-k意味・output ledgerをpreflightで検証し、**開始前に**AiZ YAML/asset hashをprotocol registryへ結合 |
+| 55.0 測定契約 | Active | 小規模stockの50件smoke・既存preflight通過。r2はRENKIN Linux image（`renkin-bench/renkin@sha256:7baf…72b37`、OCI revision `b98a5c1`）とAiZ 31秒/rank-1 YAML・asset hash、8 CPU/6 GiB、networkなしを事前登録した。completed-invocation ledgerにより再開後sliceの総時間誤表示を防止。recovery depth/beam/timeout/stage policyはconfiguration identityとmanifest budgetへ固定し、異なるresumeを拒否する | r2両armの実効CPU/RAM上限・timer receipt・top-k意味・output ledgerをpreflightで検証する。r2 protocolへの事後設定変更はしない |
 | 55.1 Failure atlas | Implemented / Partial | VAL-200を両者成功・片側成功・両者失敗へ分類。未観測原因はunknownとして保持 | 次の仮説に必要な第一喪失点を観測する。深さ/beam到達だけで原因確定しない |
 | 55.2 Ordering-only model | HOLD | TRAIN-only ONNX VAL-200はstrict 121→124（+3pp、95% CI −1.5〜+5.0pp、McNemar p=0.549）。timeout 0→2、p95 8.39→18.11秒、RSS p95 209→387 MiB。軽量512×128も10件でstrict 8→9・timeout 0だがp95 8.39→52.09秒、RSS p95 204→332 MiB | template-ID対応を保ったまま推論コストを下げ、timeout=0・strict非悪化を満たす候補だけ再評価 |
 | 55.3 Downstream reachability | Implemented / HOLD | shared-cache selectorを実装したが、小規模A/Bで精度向上未確認 | 全VALで成功取り消し0、strict非悪化、runtime正常なら採用 |

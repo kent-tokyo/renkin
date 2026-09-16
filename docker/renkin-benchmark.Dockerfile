@@ -12,5 +12,7 @@ COPY examples ./examples
 RUN cargo build --locked --release --bin renkin
 
 FROM debian:bookworm-slim
+ARG VCS_REF=unknown
+LABEL org.opencontainers.image.revision=$VCS_REF
 COPY --from=build /src/target/release/renkin /usr/local/bin/renkin
 ENTRYPOINT ["renkin"]

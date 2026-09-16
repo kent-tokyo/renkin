@@ -38,7 +38,8 @@ class TestFreezePhase55Cohort(unittest.TestCase):
         candidate_path = self._write(self._candidate())
         import hashlib
 
-        candidate_hash = hashlib.sha256(open(candidate_path, "rb").read()).hexdigest()
+        with open(candidate_path, "rb") as handle:
+            candidate_hash = hashlib.sha256(handle.read()).hexdigest()
         audit_path = self._write(
             {"eligible": True, "blockers": [], "manifest": {"sha256": candidate_hash}}
         )
@@ -58,7 +59,8 @@ class TestFreezePhase55Cohort(unittest.TestCase):
         candidate_path = self._write(self._candidate())
         import hashlib
 
-        candidate_hash = hashlib.sha256(open(candidate_path, "rb").read()).hexdigest()
+        with open(candidate_path, "rb") as handle:
+            candidate_hash = hashlib.sha256(handle.read()).hexdigest()
         audit_path = self._write(
             {"eligible": True, "blockers": [], "manifest": {"sha256": candidate_hash}}
         )
@@ -69,7 +71,8 @@ class TestFreezePhase55Cohort(unittest.TestCase):
     def test_verifies_saved_manifest(self):
         candidate_path = self._write(self._candidate())
 
-        candidate_hash = hashlib.sha256(open(candidate_path, "rb").read()).hexdigest()
+        with open(candidate_path, "rb") as handle:
+            candidate_hash = hashlib.sha256(handle.read()).hexdigest()
         audit_path = self._write(
             {"eligible": True, "blockers": [], "manifest": {"sha256": candidate_hash}}
         )
@@ -81,7 +84,8 @@ class TestFreezePhase55Cohort(unittest.TestCase):
 
     def test_freeze_records_and_verifies_sample_list(self):
         candidate_path = self._write(self._candidate())
-        candidate_hash = hashlib.sha256(open(candidate_path, "rb").read()).hexdigest()
+        with open(candidate_path, "rb") as handle:
+            candidate_hash = hashlib.sha256(handle.read()).hexdigest()
         audit_path = self._write(
             {"eligible": True, "blockers": [], "manifest": {"sha256": candidate_hash}}
         )
@@ -95,7 +99,8 @@ class TestFreezePhase55Cohort(unittest.TestCase):
             "phase55-test-002",
             sample_list_output=sample_output,
         )
-        saved = json.load(open(output, encoding="utf-8"))
+        with open(output, encoding="utf-8") as handle:
+            saved = json.load(handle)
         self.assertEqual(saved["sample_list"]["rows"], 1)
         self.assertTrue(freeze.verify_frozen_manifest(output)["eligible"])
 

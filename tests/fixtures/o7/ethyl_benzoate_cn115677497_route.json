@@ -1,0 +1,16 @@
+{
+  "target": "CCOC(=O)c1ccccc1",
+  "routes": [
+    {
+      "steps": [
+        {
+          "rule": "",
+          "target": "CCOC(=O)c1ccccc1",
+          "precursors": ["O=C(Cl)c1ccccc1", "CCO"],
+          "template_id": "external:CN115677497A:example_2"
+        }
+      ],
+      "building_blocks": ["O=C(Cl)c1ccccc1", "CCO"]
+    }
+  ]
+}

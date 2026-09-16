@@ -8,6 +8,12 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Validated the O7 local evidence chain against a public, attributable
+  ethyl-benzoate procedure: canonical re-import preserves the route and stock
+  verdict while the source artifact remains redacted. Missing water, workup,
+  and waste data stay `not_evaluable`; this is not a process-performance or
+  chemical-validity claim.
+
 - Added local `--receipt-bindings` verification for canonical v1 interchange.
   It checks the original local arguments/result bodies against an MCP
   receipt's hashes and deterministic ID, then binds only hashes, route/node

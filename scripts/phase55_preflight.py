@@ -156,6 +156,8 @@ def smoke_preflight(
     *,
     smoke_size: int,
     require_clean: bool = True,
+    require_effective_resource_enforcement: bool = False,
+    require_effective_output_settings: bool = False,
 ) -> dict[str, Any]:
     """Verify a paired smoke run is the deterministic prefix of a frozen cohort.
 
@@ -171,6 +173,8 @@ def smoke_preflight(
         left_ids,
         right_ids,
         require_clean=require_clean,
+        require_effective_resource_enforcement=require_effective_resource_enforcement,
+        require_effective_output_settings=require_effective_output_settings,
     )
     blockers = list(cohort_result["blockers"]) + list(result["blockers"])
 

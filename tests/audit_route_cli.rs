@@ -205,6 +205,111 @@ fn route_metrics_attach_by_route_hash_and_keep_reported_values_separate() {
 }
 
 #[test]
+fn o7_public_procedure_round_trips_with_redacted_incomplete_mass_receipt() {
+    // This is a curated, attributable numeric extraction from a public patent
+    // procedure, not a synthetic mass-ledger fixture. The route deliberately
+    // has no forward-replay evidence: the test verifies that a real procedure
+    // can remain partial while its source binding and missing mass data remain
+    // auditable through a fresh canonical-import process.
+    let route_path = "tests/fixtures/o7/ethyl_benzoate_cn115677497_route.json";
+    let stock_path = "tests/fixtures/o7/ethyl_benzoate_cn115677497_stock.smi";
+    let source: serde_json::Value = serde_json::from_str(include_str!(
+        "fixtures/o7/ethyl_benzoate_cn115677497_procedure.json"
+    ))
+    .unwrap();
+    let initial = run(&[
+        "audit-route",
+        route_path,
+        "--stock",
+        stock_path,
+        "--interchange",
+        "--output",
+        "json",
+    ]);
+    assert!(
+        initial.status.success(),
+        "{}",
+        String::from_utf8_lossy(&initial.stderr)
+    );
+    let initial: serde_json::Value = serde_json::from_slice(&initial.stdout).unwrap();
+    assert_eq!(initial["routes"][0]["status"], "partial", "{initial}");
+    let route_id = initial["routes"][0]["normalized_route_sha256"]
+        .as_str()
+        .unwrap();
+    let interchange_path = unique_temp_path("o7_public_procedure_interchange");
+    std::fs::write(
+        &interchange_path,
+        serde_json::to_vec(&initial["route_interchange"][0]).unwrap(),
+    )
+    .unwrap();
+
+    let source_sha256 = renkin::mcp::audit_receipt::sha256_value(&source);
+    let sidecar_path = unique_temp_path("o7_public_procedure_sidecar");
+    let sidecar = serde_json::json!({
+        "schema_version": 1,
+        "source_artifact": source,
+        "ledgers": [{
+            "schema_version": 1,
+            "route_id": route_id,
+            "scope": "route",
+            "boundary": {
+                "description": "Reported production batch; water and workup are within the intended accounting boundary but not reported.",
+                "includes_water": true,
+                "includes_workup": true,
+                "recycling_policy": "No recovery credit; allocation is not reported."
+            },
+            "product": {"value": 956.8, "unit": "kilogram"},
+            "inputs": [
+                {"category": "starting_material", "amount": {"value": 940.2, "unit": "kilogram"}, "label": "benzoyl chloride"},
+                {"category": "starting_material", "amount": {"value": 318.2, "unit": "kilogram"}, "label": "ethanol"}
+            ],
+            "required_categories": ["starting_material", "water", "workup"],
+            "waste": null,
+            "method": "O7 operational validation: source quantities only; no missing quantity is inferred.",
+            "source_sha256": source_sha256
+        }]
+    });
+    std::fs::write(&sidecar_path, serde_json::to_vec(&sidecar).unwrap()).unwrap();
+
+    let reaudited = run(&[
+        "audit-route",
+        interchange_path.to_str().unwrap(),
+        "--format",
+        "interchange",
+        "--stock",
+        stock_path,
+        "--route-metrics-sidecar",
+        sidecar_path.to_str().unwrap(),
+        "--output",
+        "json",
+    ]);
+    assert!(
+        reaudited.status.success(),
+        "{}",
+        String::from_utf8_lossy(&reaudited.stderr)
+    );
+    let reaudited: serde_json::Value = serde_json::from_slice(&reaudited.stdout).unwrap();
+    assert_eq!(reaudited["routes"][0]["normalized_route_sha256"], route_id);
+    let metrics = &reaudited["route_metrics"][0][0];
+    assert_eq!(metrics["process_mass_intensity"]["status"], "not_evaluable");
+    assert_eq!(metrics["e_factor"]["status"], "not_evaluable");
+    assert_eq!(
+        metrics["coverage"]["missing_categories"],
+        serde_json::json!(["water", "workup"])
+    );
+    assert_eq!(
+        reaudited["route_metrics_sidecar"]["source_artifact_sha256"],
+        source_sha256
+    );
+    assert!(
+        !reaudited.to_string().contains("patents.google.com"),
+        "raw source material must not leak into the public report"
+    );
+    std::fs::remove_file(interchange_path).ok();
+    std::fs::remove_file(sidecar_path).ok();
+}
+
+#[test]
 fn input_artifact_binds_target_but_redacts_local_details() {
     let route_path = generate_route_fixture();
     let baseline = run(&[

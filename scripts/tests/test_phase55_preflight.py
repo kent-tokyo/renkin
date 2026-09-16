@@ -212,6 +212,45 @@ def test_smoke_preflight_rejects_non_prefix_or_wrong_input_hash():
         assert "left_smoke_sample_hash_mismatch" in result["blockers"]
 
 
+def test_smoke_preflight_forwards_effective_enforcement_requirements():
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        sample = root / "sample.jsonl"
+        sample.write_text(json.dumps({"target_id": "a"}) + "\n", encoding="utf-8")
+        import hashlib
+
+        sample_hash = hashlib.sha256(sample.read_bytes()).hexdigest()
+        frozen = root / "frozen.json"
+        frozen.write_text(
+            json.dumps(
+                {
+                    "freeze_status": "frozen",
+                    "targets": [{"target_id": "a"}],
+                    "sample_list": {"path": str(sample), "sha256": sample_hash, "rows": 1},
+                }
+            ),
+            encoding="utf-8",
+        )
+        left = manifest()
+        right = manifest()
+        left["input_file_sha256"]["sample_list"] = sample_hash
+        right["input_file_sha256"]["sample_list"] = sample_hash
+        left["resource_budget"].pop("execution_enforcement")
+        right["resource_budget"].pop("execution_enforcement")
+        result = MODULE.smoke_preflight(
+            frozen,
+            left,
+            right,
+            {"a"},
+            {"a"},
+            smoke_size=1,
+            require_effective_resource_enforcement=True,
+        )
+        assert result["eligible"] is False
+        assert "left_resource_enforcement_missing" in result["blockers"]
+        assert "right_resource_enforcement_missing" in result["blockers"]
+
+
 def test_timing_receipt_requires_common_wall_clock_identity():
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory) / "rows.jsonl"

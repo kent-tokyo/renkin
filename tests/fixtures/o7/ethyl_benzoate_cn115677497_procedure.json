@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "artifact_kind": "public_patent_procedure_extraction",
+  "source": {
+    "publication_id": "CN115677497A",
+    "publication_url": "https://patents.google.com/patent/CN115677497A/en",
+    "access": "public patent publication",
+    "retrieved_on": "2026-09-16",
+    "extraction_method": "Manually transcribed numeric fields from the English publication page; no source document text is redistributed."
+  },
+  "procedure": {
+    "example_label": "Example 2",
+    "target_smiles": "CCOC(=O)c1ccccc1",
+    "precursors": [
+      {
+        "label": "benzoyl chloride",
+        "smiles": "O=C(Cl)c1ccccc1",
+        "mass": { "value": 940.2, "unit": "kilogram" }
+      },
+      {
+        "label": "ethanol",
+        "smiles": "CCO",
+        "mass": { "value": 318.2, "unit": "kilogram" }
+      }
+    ],
+    "product": {
+      "label": "ethyl benzoate",
+      "smiles": "CCOC(=O)c1ccccc1",
+      "mass": { "value": 956.8, "unit": "kilogram" }
+    },
+    "conditions": {
+      "temperature_celsius": 60,
+      "post_feed_reaction_hours": 4
+    }
+  },
+  "known_missing_mass_data": [
+    "nitrogen purge or carrier gas",
+    "utility inputs",
+    "workup inputs",
+    "water inputs and wastewater mass",
+    "total waste mass"
+  ],
+  "interpretation": "This is a provenance artifact for a single reported procedure. It does not establish that the imported route is forward-replayable, that the procedure is safe, or that PMI/E-factor can be computed from the reported fields."
+}

@@ -2,9 +2,9 @@
 
 ## Current objective
 
-2026-09-16: 基準はv1.0.7（`ed41338`）。O7.0–O7.4の境界は実装済みで、次は実工程の
-運用検証とv1.0.8候補gate。性能側は55.4の同予算VAL評価を完了し、candidateをdevelopment-onlyで
-freezeした。現在は55.0/55.6の凍結済み独立TESTを実行する。
+2026-09-16: 基準はv1.0.7（`ed41338`）。O7.0–O7.4の境界と公開実procedureの運用検証を完了し、
+次はv1.0.8候補commitの全gate。性能側は55.4の同予算VAL評価を完了し、candidateをdevelopment-onlyで
+freezeした。r2独立TESTはcoverage gateを通過し、次はperformance receiptを閉じる。
 Phase 55の「同一stock・予算でAiZynthFinderのnative/common-strictをともに上回り、
 独立TESTで証明する」目標は維持。
 監査製品の完成と競合優位性の証明を別gateにする。[優先順位](../ROADMAP.md)、
@@ -13,23 +13,26 @@ Phase 55の「同一stock・予算でAiZynthFinderのnative/common-strictをと�
 
 ### 直近の作業（以下の過去progressより優先）
 
-- [ ] **55.6 / r2独立TESTの実行** `phase55-independent-test-20260916-002` の690 target、sample-list hash、
+- [x] **55.6 / r2独立TESTの実行** `phase55-independent-test-20260916-002` の690 target、sample-list hash、
   stock/template hash、image digest/revision、31秒deadline、8 CPU/6 GiB、解析法を事前登録済み。
   r1はAiZ YAML hash未固定のためRENKIN-only rehearsalとして690/690を完走・完全性検証し、全identityをr2から除外した。
-  r2のRENKIN armは実行中であり、完走後にledger・resume identity・入力hash・resource/timing receiptを単独検証する。
-  その検証後だけ、開始前固定済みのAiZ 31秒/rank-1 YAMLとasset hashを使い同一protocolでAiZ armを一回だけ実行する。
-  途中結果で設定を変えない。
-- [ ] **55.0 + 55.6 / 契約・結果の検証** 両arm完走後、input/image hash、実効CPU/RAM、timer receipt、
-  output ledger、effective settingsをpreflightで検査し、native/common-strictのpaired CI・McNemar・資源を
-  reportへ固定する。AiZynthFinderへの優位性はこのgateを通るまで主張しない。
+  r2のRENKIN armは690/690で完走し、ledger・入力不変性・route hashを単独検証済み。
+  開始前固定済みのAiZ 31秒/rank-1 YAMLとasset hashを使う同一protocolでAiZ armも690/690を完走・単独検証した。
+- [x] **55.0 + 55.6 / 契約・結果の検証** preflight・native/shared-stock paired reportを通過。native/strictは
+  RENKIN 481/690、AiZynthFinder 32/690、差+65.07pp（95% CI [+61.45, +68.55]pp）。coverage gateは通過したが、
+  RENKINのpeak RSS/time-to-first-route未計測のため性能軸を含むPhase 55 exit gate全体は未完了。
 - [x] **55.0 / resume identity補強** recovery depth・beam・timeout・stage policyをconfiguration identityと
   manifest budgetへ追加し、予算の異なるresumeをfail-closedにした。完走済みrehearsalには遡及適用せず、
   次の登録runから必須とする。
 - [x] **55.4 / 候補選択** v2 VAL-200で同一総予算A/B。strict 129→134、回収5、native/strict回帰0、
   timeout/crash/attempt欠落0、recovery/processとも31秒内を確認し、`phase55-recovery-v2-20260916`を
   development-only freezeした。正式比較の証拠ではない。
-- [ ] **O7 / 運用・候補gate** 出典・利用条件が明確な実procedureを再計算・再importし、
-  不足データを明示。固定候補commitでworkspace/feature/surface/docsのgateを通す。
+- [ ] **55.0 / performance receipt** RENKIN container armのpeak RSSとtime-to-first-routeを同じraw rowsから
+  再生成できるreceiptとして保存する。r2 coverage結果を再測定して置換しない。
+- [x] **O7 / 運用validation** 公開特許CN115677497Aの工程例を、source artifact → audit →
+  metrics sidecar → canonical export → 別process再importで検証。water/workup/wasteの未報告は
+  `not_evaluable`として保持し、source bodyは公開reportへ出力しない。
+- [ ] **O7 / 候補commit gate** 固定候補commitでworkspace/feature/surface/docsのgateを通す。
 
 [smoke監査記録](../docs/benchmark/phase55-smoke-review-20260916.md)を現状判断の根拠とする。
 下記のDocker停止、凍結前、旧test件数の記述はそれぞれの時点の履歴。
@@ -127,8 +130,9 @@ paired tableを明示的な比較入力として再利用し、schema v2のartif
   v2はnative成功保持、予算内回収5、strict非悪化をVAL-200で確認し、55.6へ凍結済み。
 - [ ] **55.5 / Coverage（HOLD / Gated）** direct proposalは現状routeを回収していない。
   formal atlasが真の候補欠落を示す場合だけ、family単位のtemplate/direct generatorを検証する。
-- [ ] **55.6 / Evidence（Active）** candidateを凍結し、未使用690 targetでpaired実行中。
-  両armのpreflight後にnative/common-strictのCI・効果量・失敗・資源を公開し、優位性未達はHOLD。
+- [x] **55.6 / Evidence（coverage gate passed）** candidateを凍結した未使用690 targetでpaired実行し、
+  preflight・native/common-strict CI・効果量を固定した。native/strictとも差+65.07pp（95% CI [+61.45, +68.55]pp）。
+  peak RSS/time-to-first-route不足は55.0のperformance receiptとして別管理する。
 
 55.2 progress: `cargo check --features nn-scoring --bin renkin`とfeature付きbinary buildが
 成功し、`data/template_scorer_500.onnx`を`--scorer --scorer-ordering-only`で代表targetへ

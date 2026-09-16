@@ -19,7 +19,7 @@ RENKINの目標は、単一のsolved rateだけを最大化することではな
   凍結した独立TESTで比較する。同一stock・予算でnative/common-strictがともに上回るまで
   優位性を主張しない。[ローカル詳細計画](docs/roadmap/aizynthfinder-accuracy.md)
 - **O7 Evidence chain** — 入力・tool実行・route・監査結果を結び、根拠と不足データを示す。
-  O7.0–O7.4の境界は実装済み。直近は実工程データによる検証と候補commitの配布前検証を行う。
+  O7.0–O7.4の境界と実工程データによる運用検証は完了。直近は候補commitの配布前検証を行う。
   [ローカル詳細計画](docs/roadmap/evidence-chain.md)（公開対象外）
 
 次候補の呼称は**v1.0.8候補**。この計画更新では版番号変更・公開・新規benchmark実行は行わない。
@@ -52,6 +52,12 @@ AiZynthFinder 4.4.1のnative `route_found`はともに
 126/200だった。9月8日の共通strict 134件と混ぜない。
 [指標定義](docs/benchmark/phase55-metric-truth-table.md)
 
+2026-09-16の凍結r2独立TEST（690 target）では、登録済みのAiZynthFinder 4.4.1
+shared-stock構成に対し、RENKINはnative/strictとも481/690、AiZynthFinderは32/690だった。
+paired差は+65.07pp（95% CI [+61.45, +68.55]pp）で、**coverage gateは通過**した。
+ただしRENKINのpeak RSSとtime-to-first-routeは未計測であり、性能軸を含むPhase 55 exit gate全体は
+未完了とする。詳細は[正式結果](docs/benchmark/phase55-r2-result-20260916.md)を参照。
+
 9月15–16日の50件smokeは両arm完走、既存preflight通過。native/combined strictは
 RENKIN 4/50、AiZynthFinder 1/50。ただし393件stock・500 templates・cold起動の接続検証であり、
 正式計画の大規模共通stock・warm worker・top-5とは異なる。資源制限の実効性、実際の
@@ -78,8 +84,8 @@ rehearsalとして保存し、AiZ armを開始しない。途中でAiZ設定だ�
 `phase55-independent-test-20260916-002`（N=690）へ再登録した。RENKIN候補はrecovery v2
 （depth 5 / beam 100、native-only recovery depth 6 / beam 200、外側31秒）であり、AiZの31秒/rank-1
 YAMLとasset hash、両image digest、resource上限、解析法を開始前に固定した。
-RENKIN armは開始済みであり、途中結果を候補採用・優位性の根拠にしない。RENKIN armを完走・単独検証後、
-同一cohort・stock・資源上限でAiZ armを一回だけ実行し、両armのpreflightとpaired解析を通すまで結論を出さない。
+両armは690/690で完走し、row ledger・入力不変性・route hashを単独検証済みである。preflightと
+paired解析も通過し、coverage結論を固定した。結果の都合による再測定や設定変更は行わない。
 
 Phase 55は次の二本の依存関係で進める。両方が閉じるまで独立TESTの**判定**は確定しない。
 
@@ -132,18 +138,16 @@ Phase 55は完了扱いにしない。化学的にinvalidなrouteを指標の加
 
 ### 直近の実行順
 
-1. **55.6 / RENKIN r2 armを完走・単独検証** — `phase55-independent-test-20260916-002` のRENKIN armを
-   登録済みcommandで690件まで完走し、row ledger、resume identity、入力hash、resource/timing receiptを検証する。
-   途中結果で探索設定を変えない。
-2. **55.6 / AiZ r2 armを一回だけ実行** — 前項が通った場合だけ、開始前に固定済みの31秒/rank-1 YAML・asset hashを使い、
-   同じcohort・stock・資源上限でAiZ armを実行する。片armだけの都合のよい再測定はしない。
-3. **55.0 + 55.6 / 契約・結果を検証して判定** — 両armのinput/image hash、CPU/RAM enforcement、timer receipt、
-   output ledger、effective settingsをpreflightで検査し、native/common-strictのpaired CI・McNemar・資源を
-   reportへ固定する。優位性の判定はこの時点だけで行う。
-4. **結果に基づく次候補の選別** — 55.6で優位性が未証明、または55.0がcandidateを実行不能と示した場合だけ、formal rowsの第一喪失点を更新する。55.2/55.3/55.5のうち、原因に対応する**一つだけ**を単独A/Bへ送る。採用構成以外は次の正式比較へ持ち込まない。
+1. **55.0 / performance receiptの補完** — coverageのr2結論は固定し、RENKIN container armにもpeak RSSと
+   time-to-first-routeを同じraw rowsから再生成できるreceiptとして記録する。coverage結果を再測定して置換しない。
+2. **O7 / 候補commitの配布前検証** — 実procedure運用validationは完了。固定候補commitでworkspace、
+   clippy、WASM、Python/MCP surface、docs例を再確認し、評価不能の範囲をCHANGELOGへ残す。
+3. **55.1/55.2/55.3/55.5の選別** — coverageの追加改善を狙う場合だけ、formal rowsの第一喪失点を更新し、
+   原因に対応する一つの仮説を単独A/Bへ送る。登録済みr2の条件は変更しない。
 
 製品側は並行してO7の運用検証を進める。性能測定中のコード変更・他の高負荷ジョブは避け、
-新規OCR/DFT/MCTSやadapter増設より既存候補の検証を優先する。
+新規OCR/DFT/MCTSやadapter増設より既存候補の検証を優先する。実procedureが未入手なら
+O7の運用validationは未完了のまま保持し、合成データや推定値で埋めない。
 
 ### 独立TEST後の分岐（結果を見る前に固定）
 
@@ -159,20 +163,21 @@ Phase 55は完了扱いにしない。化学的にinvalidなrouteを指標の加
 
 ### 製品候補: O7実装済み境界の運用検証
 
-O7.0–O7.1をv1.0.8候補の必須範囲として維持する。実装済み機能を再度作らず、
-実procedureとsource artifactで再import・再監査・metricsの対応を確認する。
+O7.0–O7.1をv1.0.8候補の必須範囲として維持する。実procedureとsource artifactで
+再import・再監査・metricsの対応は確認済みであり、実装済み機能を再度作らない。
 
 | 優先度 / Phase（実装順） | Status | 成果物 | 完了条件 |
 |---|---|---|---|
 | P0 / O7.0 Evidence binding | Implemented | v1再importとlocal receipt sidecar結合、direct purchase/重複occurrenceを保持する明示tree v2 API・`--interchange-v2` export | body redactionを含む統合fixture、workspace・WASM lib・Python feature gateを通過 |
-| P0 / O7.1 Process metrics | Implemented | `route_metrics_v1`、route hash結合ledger、source artifactを再hashするsidecar provenanceとreceipt hash | 手計算fixtureと一致。不足データは`not_evaluable`。実procedureは運用validationで追加 |
+| P0 / O7.1 Process metrics | Implemented / Operationally validated | `route_metrics_v1`、route hash結合ledger、source artifactを再hashするsidecar provenanceとreceipt hash | 手計算fixtureと一致。不足データは`not_evaluable`。公開特許の実procedureで再import・再監査・欠落検出を確認 |
 | P1 / O7.2 Input artifact | Implemented | image/SVG/PDF/textのcontent hash、変換履歴、OCR/model、正規化・review receipt | redacted reportとtarget bindingを実装。OCR/remote取得はlocal-first方針により別選択肢 |
 | P1 / O7.3 Audit ranking | Implemented | hard gate後のParetoと固定normalization範囲のweighted profile、±10% sensitivity receipt | missing・非互換単位/境界は拒否。実profileは運用validationで追加 |
 | P2 / O7.4 Mechanistic evidence | Implemented | 外部計算receiptと、同一step・quantity・unit・origin・computed contextのみを投影するranking axis | DFT実行なし。実計算artifactは運用validationで追加 |
 
 O7.2–O7.4は実装済みのopt-in機能として回帰を維持し、実利用fixtureは入手後に検証する。
-O7.0–O7.1は出典・利用条件の明確な工程例で手計算と照合し、不足項目を記録する。
-実データ未入手時は運用検証を未完了とし、公開範囲・既知制限を候補判定へ残す。
+O7.0–O7.1は公開特許の工程例で再import・再監査し、水・workup・廃棄物の不足を
+`not_evaluable`として記録した。詳細は
+[O7運用記録](docs/benchmark/o7-operational-validation-20260916.md)を参照。
 MolScribe・DFT本体は実装しない。既存の`atom_economy`は記載された
 precursorのMW比であり、全量論試薬を扱う理論atom economyや実工程PMIへ読み替えない。
 
@@ -180,13 +185,13 @@ precursorのMW比であり、全量論試薬を扱う理論atom economyや実工
 
 | Phase | Status | 現在の証拠 | 次の判定 |
 |---|---|---|---|
-| 55.0 測定契約 | Active | 小規模stockの50件smoke・既存preflight通過。r2はRENKIN Linux image（`renkin-bench/renkin@sha256:7baf…72b37`、OCI revision `b98a5c1`）とAiZ 31秒/rank-1 YAML・asset hash、8 CPU/6 GiB、networkなしを事前登録した。completed-invocation ledgerにより再開後sliceの総時間誤表示を防止。recovery depth/beam/timeout/stage policyはconfiguration identityとmanifest budgetへ固定し、異なるresumeを拒否する | r2両armの実効CPU/RAM上限・timer receipt・top-k意味・output ledgerをpreflightで検証する。r2 protocolへの事後設定変更はしない |
+| 55.0 測定契約 | Implemented / Partial | r2はRENKIN Linux image（`renkin-bench/renkin@sha256:7baf…72b37`、OCI revision `b98a5c1`）とAiZ 31秒/rank-1 YAML・asset hash、8 CPU/6 GiB、networkなしを事前登録し、両armの実効CPU/RAM上限・timer receipt・top-k意味・output ledgerをpreflightで検証した。completed-invocation ledgerは再開後sliceの総時間誤表示を防止する | RENKIN container armのpeak RSSとtime-to-first-routeをraw rowから再生成できるようにする。r2 protocolへの事後設定変更はしない |
 | 55.1 Failure atlas | Implemented / Partial | VAL-200を両者成功・片側成功・両者失敗へ分類。未観測原因はunknownとして保持 | 次の仮説に必要な第一喪失点を観測する。深さ/beam到達だけで原因確定しない |
 | 55.2 Ordering-only model | HOLD | TRAIN-only ONNX VAL-200はstrict 121→124（+3pp、95% CI −1.5〜+5.0pp、McNemar p=0.549）。timeout 0→2、p95 8.39→18.11秒、RSS p95 209→387 MiB。軽量512×128も10件でstrict 8→9・timeout 0だがp95 8.39→52.09秒、RSS p95 204→332 MiB | template-ID対応を保ったまま推論コストを下げ、timeout=0・strict非悪化を満たす候補だけ再評価 |
 | 55.3 Downstream reachability | Implemented / HOLD | shared-cache selectorを実装したが、小規模A/Bで精度向上未確認 | 全VALで成功取り消し0、strict非悪化、runtime正常なら採用 |
 | 55.4 Non-displacing recovery | Implemented / development-selected | v2（同一VAL-200/stock/template、外側31秒、内部30秒）はstrict 129→134、回収5、native/strict回帰0、timeout/crash 0、attempt欠落0。recovery最大30,033.92ms、process最大30,408.53msで31秒以内。`phase55-recovery-v2-20260916`をdevelopment-only freeze済み | formal container契約下でこのconfigurationを固定して55.6へ渡す。55.0不成立または独立TEST未達なら結果を見て再調整せずHOLD |
 | 55.5 Missing proposals | HOLD | 70 direct proposalsを安全に投入したがroute未回収 | valid完成routeを増やせるfamily/modelだけ採用 |
-| 55.6 Independent TEST | Active | r1のRENKIN-only 690件rehearsalは完走・完全性検証済みだが、AiZ YAML hashの開始前固定欠落により正式比較には使わない。露出identityを除外したr2（N=690）を凍結し、RENKIN/AiZ image digest、31秒/rank-1 YAML hash、asset hash、8 CPU/6 GiB、解析法を事前登録 | r2のRENKIN完走後に同一protocolでAiZ armを実行し、preflight・paired解析・再現reportを通す。途中結果による再測定や設定変更はしない |
+| 55.6 Independent TEST | Coverage gate passed / Partial | r1はAiZ YAML hashの開始前固定欠落により正式比較には使わない。露出identityを除外したr2（N=690）は、RENKIN/AiZ image digest、31秒/rank-1 YAML hash、asset hash、8 CPU/6 GiB、解析法を事前登録した。両armは690/690・単独検証済みで、preflightとpaired解析によりnative/strictのCI下限>0を確認した | coverage結論を保持し、Phase 55 exit gateのperformance receipt不足を補完する。r2の設定変更・片arm再測定は行わない |
 
 55.0から55.5で採用条件を満たした構成を一つだけ凍結し、55.6へ送る。既存VALとgap cohortは
 開発専用であり、独立TESTの代わりにしない。凍結cohort、hash、provenance、閲覧履歴は

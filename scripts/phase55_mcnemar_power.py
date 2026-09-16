@@ -15,6 +15,7 @@ observed TEST outcome from selecting its own sample size.
 from __future__ import annotations
 
 import argparse
+from functools import lru_cache
 import json
 import math
 
@@ -52,6 +53,24 @@ def _binomial_probability(trials: int, successes: int, probability: float) -> fl
     return math.exp(log_value)
 
 
+@lru_cache(maxsize=None)
+def _conditional_rejection_probability(
+    discordant: int, renkin_given_discordant: float, alpha: float
+) -> float:
+    """Return P(exact McNemar rejects | fixed discordant count).
+
+    This value depends only on the registered alternative and the discordant
+    count, not on the total sample size.  Planning scans many possible sample
+    sizes, so caching it avoids repeatedly re-enumerating the same conditional
+    binomial distribution without changing the exact test boundary.
+    """
+    return sum(
+        _binomial_probability(discordant, renkin_only, renkin_given_discordant)
+        for renkin_only in range(discordant + 1)
+        if exact_mcnemar_p_value(renkin_only, discordant - renkin_only) <= alpha
+    )
+
+
 def exact_power(
     sample_size: int,
     renkin_only_probability: float,
@@ -75,13 +94,9 @@ def exact_power(
         p_discordant = _binomial_probability(sample_size, discordant, discordant_probability)
         if p_discordant == 0.0:
             continue
-        reject_given_discordant = 0.0
-        for renkin_only in range(discordant + 1):
-            aizynthfinder_only = discordant - renkin_only
-            if exact_mcnemar_p_value(renkin_only, aizynthfinder_only) <= alpha:
-                reject_given_discordant += _binomial_probability(
-                    discordant, renkin_only, renkin_given_discordant
-                )
+        reject_given_discordant = _conditional_rejection_probability(
+            discordant, renkin_given_discordant, alpha
+        )
         power += p_discordant * reject_given_discordant
     return min(1.0, max(0.0, power))
 

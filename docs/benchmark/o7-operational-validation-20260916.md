@@ -63,3 +63,13 @@ must not be promoted into a complete process metric by inferring density,
 yield, utilities, water, workup, recycling, or waste. A future source with a
 complete, compatible mass boundary may yield evaluated PMI/E-factor receipts;
 this run does not.
+
+## Candidate release gate
+
+On candidate commit `e7ed5ce`, the following all passed: `cargo fmt --check`,
+`cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D
+warnings`, MCP integration tests, a locally built Python wheel/API smoke and
+quickstart, wasm32 library build plus nodejs quickstart, live documentation
+facts, and `mkdocs build --strict`. The final O7 receipt was regenerated from
+the release binary in a fresh output directory. This gate does not publish a
+release or establish Phase 55 performance superiority.

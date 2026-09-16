@@ -19,7 +19,8 @@ RENKINの目標は、単一のsolved rateだけを最大化することではな
   凍結した独立TESTで比較する。同一stock・予算でnative/common-strictがともに上回るまで
   優位性を主張しない。[ローカル詳細計画](docs/roadmap/aizynthfinder-accuracy.md)
 - **O7 Evidence chain** — 入力・tool実行・route・監査結果を結び、根拠と不足データを示す。
-  O7.0–O7.4の境界と実工程データによる運用検証は完了。直近は候補commitの配布前検証を行う。
+  O7.0–O7.4の境界、実工程データによる運用検証、候補commitの配布前検証は完了。
+  次の製品作業はrelease scopeを固定すること。
   [ローカル詳細計画](docs/roadmap/evidence-chain.md)（公開対象外）
 
 次候補の呼称は**v1.0.8候補**。この計画更新では版番号変更・公開・新規benchmark実行は行わない。
@@ -140,8 +141,8 @@ Phase 55は完了扱いにしない。化学的にinvalidなrouteを指標の加
 
 1. **55.0 / performance receiptの補完** — coverageのr2結論は固定し、RENKIN container armにもpeak RSSと
    time-to-first-routeを同じraw rowsから再生成できるreceiptとして記録する。coverage結果を再測定して置換しない。
-2. **O7 / 候補commitの配布前検証** — 実procedure運用validationは完了。固定候補commitでworkspace、
-   clippy、WASM、Python/MCP surface、docs例を再確認し、評価不能の範囲をCHANGELOGへ残す。
+2. **O7 / release scope固定** — 実procedure運用validationと候補commit gateは完了。版上げ前に
+   CHANGELOG、配布物、公開主張を固定し、評価不能の範囲を維持する。
 3. **55.1/55.2/55.3/55.5の選別** — coverageの追加改善を狙う場合だけ、formal rowsの第一喪失点を更新し、
    原因に対応する一つの仮説を単独A/Bへ送る。登録済みr2の条件は変更しない。
 

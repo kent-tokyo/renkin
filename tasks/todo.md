@@ -32,7 +32,9 @@ Phase 55の「同一stock・予算でAiZynthFinderのnative/common-strictをと�
 - [x] **O7 / 運用validation** 公開特許CN115677497Aの工程例を、source artifact → audit →
   metrics sidecar → canonical export → 別process再importで検証。water/workup/wasteの未報告は
   `not_evaluable`として保持し、source bodyは公開reportへ出力しない。
-- [ ] **O7 / 候補commit gate** 固定候補commitでworkspace/feature/surface/docsのgateを通す。
+- [x] **O7 / 候補commit gate** `e7ed5ce`でworkspace test、clippy、MCP integration、Python wheel/API、
+  WASM/nodejs quickstart、docs facts、strict site buildを通過。候補gate通過はPhase 55の性能exitや
+  v1.0.8の版上げ・公開を意味しない。
 
 [smoke監査記録](../docs/benchmark/phase55-smoke-review-20260916.md)を現状判断の根拠とする。
 下記のDocker停止、凍結前、旧test件数の記述はそれぞれの時点の履歴。

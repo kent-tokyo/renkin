@@ -3,7 +3,26 @@ site_description: Computer-Aided Synthesis Planning — Pure Rust retrosynthesis
 site_url: https://kent-tokyo.github.io/renkin/
 repo_url: https://github.com/kent-tokyo/renkin
 repo_name: kent-tokyo/renkin
-edit_uri: edit/master/docs/
+edit_uri: edit/main/docs/
+
+# Roadmaps are repository-local planning records and intentionally link to
+# source, scripts, and task logs outside docs/. They are not public-site input.
+exclude_docs: |
+  roadmap/**
+
+# These supporting records remain addressable when linked directly, but are
+# intentionally absent from the compact public navigation.
+not_in_nav: |
+  benchmark/*
+  !benchmark/formal-v1.0-competitor-comparison.md
+  comparison/**
+  design/**
+  validation/**
+  guides/agent-execution-replay.md
+  guides/forward-benchmark.md
+  guides/open-source-retrosynthesis-comparison.md
+  guides/reranker-candidate-pools.md
+  guides/staged-recovery.md
 
 theme:
   name: material
@@ -36,6 +55,10 @@ theme:
 plugins:
   - search
   - social:
+      # GitHub Actions supplies CI=true and has Cairo installed. Keep public
+      # social cards there while allowing a local strict documentation gate on
+      # platforms without Cairo's shared library.
+      enabled: !ENV [CI, false]
       cards_layout_options:
         background_color: "#7c4dff"
 

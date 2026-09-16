@@ -3,7 +3,8 @@
 ## Current objective
 
 2026-09-16: 基準はv1.0.7（`ed41338`）。O7.0–O7.4の境界は実装済みで、次は実工程の
-運用検証とv1.0.8候補gate。性能側は55.0の実効契約を閉じてから55.4の同予算VAL評価へ進む。
+運用検証とv1.0.8候補gate。性能側は55.4の同予算VAL評価を完了し、candidateをdevelopment-onlyで
+freezeした。現在は55.0/55.6の凍結済み独立TESTを実行する。
 Phase 55の「同一stock・予算でAiZynthFinderのnative/common-strictをともに上回り、
 独立TESTで証明する」目標は維持。
 監査製品の完成と競合優位性の証明を別gateにする。[優先順位](../ROADMAP.md)、
@@ -12,21 +13,17 @@ Phase 55の「同一stock・予算でAiZynthFinderのnative/common-strictをと�
 
 ### 直近の作業（以下の過去progressより優先）
 
-- [ ] **55.0 / 計時・継続** completed-invocation ledgerで累計wallと今回wallの区別は実装済み。
-  監督下resume、startup/search/auditの分解計時を検証する。既存smokeは両arm50件完走。
-  AiZynthFinderの210.52秒は再開後26件のみで、全行時間和は348.724秒。
-- [ ] **55.0 / 実効契約** 大規模共通stockのidentity、実YAML/HDF5/model/template hash、
-  両armのCPU/RAM enforcement・warm/cold・deadline・reaction depth・top-kを事前登録して検証。
-  RENKIN Docker armはimage digest・networkなし・8 CPU/6 GiB・read-only mount・timing receiptを
-  1件development smokeで確認済み。今回の393件stock・500 templates・rank1は接続smokeであり、
-  AiZ armを含む同一contract検証までこのgateを閉じない。
+- [ ] **55.6 / 独立TESTの実行** `phase55-independent-test-20260916-001` の690 target、sample-list hash、
+  stock/template hash、image digest/revision、31秒deadline、8 CPU/6 GiB、解析法を事前登録済み。
+  RENKIN armを実行中。完走後、同一protocolでAiZynthFinder armを一回だけ開始する。途中結果で設定を変えない。
+- [ ] **55.0 + 55.6 / 契約・結果の検証** 両arm完走後、input/image hash、実効CPU/RAM、timer receipt、
+  output ledger、effective settingsをpreflightで検査し、native/common-strictのpaired CI・McNemar・資源を
+  reportへ固定する。AiZynthFinderへの優位性はこのgateを通るまで主張しない。
+- [ ] **55.0 / resume identity補強** 正式run後にrecovery depth・beam・timeoutをconfiguration identityへ追加し、
+  予算の異なるresumeをfail-closedにする。進行中のformal runには変更を適用しない。
 - [x] **55.4 / 候補選択** v2 VAL-200で同一総予算A/B。strict 129→134、回収5、native/strict回帰0、
   timeout/crash/attempt欠落0、recovery/processとも31秒内を確認し、`phase55-recovery-v2-20260916`を
   development-only freezeした。正式比較の証拠ではない。
-- [ ] **55.6 / 独立性・標本数** freeze-003先頭50件の閲覧を記録し、未観測TESTの扱いと
-  検出力に基づくNを事前登録。`phase55_mcnemar_power.py`でVAL由来のdiscordant仮定から
-  exact McNemarのNを決める。55.4採用構成は`freeze_phase55_candidate.py`で開発manifest・
-  rows・budget検証とhash結合してから使う。元500件は改変せず、新protocolは別identityで管理。
 - [ ] **O7 / 運用・候補gate** 出典・利用条件が明確な実procedureを再計算・再importし、
   不足データを明示。固定候補commitでworkspace/feature/surface/docsのgateを通す。
 

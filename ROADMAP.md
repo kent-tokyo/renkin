@@ -61,16 +61,20 @@ AiZynthFinder armのDocker接続はこのrunで確認したが、RENKIN armを�
 
 ### 実行中の判断境界
 
-9月16日には、55.4の既実装recoveryを開発用VAL-200で再検証している。これは、baselineと
+9月16日に、55.4の既実装recoveryを開発用VAL-200で再検証した。これは、baselineと
 同じcohort・stock・template・総予算で、既存成功を取り消さずに少なくとも一件を回収できるかを
 判定する**候補選別**である。完走後にbaselineとのstrict回帰、全attempt、31秒budget、外側の
 timeout/crashを検証するまでは、途中の行数やroute数を採用根拠にしない。
 
-このrunはrank-1・native macOSの開発条件であり、Phase 55.0/55.6の正式比較を開始したことを
-意味しない。実行中は探索設定、template、stock、モデル、評価scriptを変更せず、結果を検証して
-から候補をretain/HOLDのいずれかに固定する。
+このrunはrank-1・native macOSの開発条件であり、正式比較の根拠ではない。結果を検証して
+candidateをdevelopment-onlyで固定した後、別identityの未閲覧cohortと事前登録protocolを作成した。
 
-Phase 55は次の二本の依存関係で進める。両方が閉じるまで独立TESTは開始しない。
+独立TESTは `phase55-independent-test-20260916-001` として690 targetを凍結済みである。RENKIN armは
+登録済みのrecovery v2構成（depth 5 / beam 100、recovery depth 6 / beam 200、外側31秒）で実行中であり、
+実行中は探索設定、template、stock、image、評価scriptを変更しない。RENKIN完走後は同じcohort・stock・
+資源上限でAiZynthFinder armを一回だけ実行し、両armのpreflightとpaired解析を通すまで結論を出さない。
+
+Phase 55は次の二本の依存関係で進める。両方が閉じるまで独立TESTの**判定**は確定しない。
 
 ```text
 開発候補: VAL-200 recovery v2 → 非悪化・予算検証 → development-only freeze
@@ -121,12 +125,13 @@ Phase 55は完了扱いにしない。化学的にinvalidなrouteを指標の加
 
 ### 直近の実行順
 
-1. **55.0 / 測定契約を閉じる** — recovery v2候補はdevelopment-only freeze済み。続いて、監督プロセス、実設定/入力hash、
-   CPU/RAM enforcement、stock identity、startup/search/auditの計時、top-k・停止条件を検証する。既存50件smokeの
-   通過範囲を保存し、正式設定の動作確認には開発用targetを使う。
-2. **55.6 / 独立比較の登録** — 55.0完了後、既に結果を閲覧した50件の扱いと、VAL由来のexact McNemar検出力に
-   基づく標本数、tool image/revision、resources、停止条件、実行順を事前登録する。未使用cohortを新しいidentityで凍結する。
-3. **55.6 / 独立比較の実行** — 登録済みprotocolだけで両armをpaired実行し、両主指標のCI、改善/悪化、資源、再現reportを揃える。
+1. **55.6 / 凍結済み独立比較を完走** — 実行中のRENKIN armを同一commandで完走する。続いて登録済みのAiZynthFinder armを
+   同じcohort・stock・資源上限で一回だけ実行する。途中結果で設定を変えない。
+2. **55.0 + 55.6 / 契約・結果を検証して判定** — 両armのinput/image hash、CPU/RAM enforcement、timer receipt、
+   output ledger、effective settingsをpreflightで検査し、native/common-strictのpaired CI・McNemar・資源を
+   reportへ固定する。優位性の判定はこの時点だけで行う。
+3. **55.0 / resume identityを補強** — 正式run完走後に、recovery depth・beam・timeoutをresume configuration identityへ
+   含め、異なるrecovery予算での再開をfail-closedにする。進行中のrunには適用しない。
 4. **55.1 → 55.5 / 次の候補仮説** — 55.6で優位性が未証明、または55.0がcandidateを実行不能と示した場合だけ、55.2/55.3/55.5を新しい原因証拠に基づく
    単独A/Bで再評価する。採用構成以外は正式比較へ持ち込まない。
 
@@ -156,13 +161,13 @@ precursorのMW比であり、全量論試薬を扱う理論atom economyや実工
 
 | Phase | Status | 現在の証拠 | 次の判定 |
 |---|---|---|---|
-| 55.0 測定契約 | Active | 小規模stockの50件smoke・既存preflight通過。RENKIN Linux image（`renkin-bench/renkin:1.0.7@sha256:c9af…c49f`）を構築し、networkなし・8 CPU・6 GiB・read-only mountと`planner_timing_v1`を1件development smokeのmanifestで確認。completed-invocation ledgerにより再開後sliceの総時間誤表示を防止。AiZ設定は追跡templateとbyte一致、参照HDF5/ONNX/template/filterをhash固定 | stock変換identity・AiZ armを含む両armの実効CPU/RAM上限・timer receipt・top-k意味・監督resumeを同一開発smokeで検証し、formal protocolへ結合 |
+| 55.0 測定契約 | Active | 小規模stockの50件smoke・既存preflight通過。RENKIN Linux image（`renkin-bench/renkin@sha256:b3b8…b2d`、OCI revision `e378e27`）を構築し、networkなし・8 CPU・6 GiB・read-only mountと`planner_timing_v1`をdevelopment smokeで確認。completed-invocation ledgerにより再開後sliceの総時間誤表示を防止。AiZ設定は追跡templateとbyte一致、参照HDF5/ONNX/template/filterをhash固定 | 両正式armの実効CPU/RAM上限・timer receipt・top-k意味・output ledgerをpreflightで検証し、結果reportへ結合。完走後にrecovery予算をresume identityへ追加 |
 | 55.1 Failure atlas | Implemented / Partial | VAL-200を両者成功・片側成功・両者失敗へ分類。未観測原因はunknownとして保持 | 次の仮説に必要な第一喪失点を観測する。深さ/beam到達だけで原因確定しない |
 | 55.2 Ordering-only model | HOLD | TRAIN-only ONNX VAL-200はstrict 121→124（+3pp、95% CI −1.5〜+5.0pp、McNemar p=0.549）。timeout 0→2、p95 8.39→18.11秒、RSS p95 209→387 MiB。軽量512×128も10件でstrict 8→9・timeout 0だがp95 8.39→52.09秒、RSS p95 204→332 MiB | template-ID対応を保ったまま推論コストを下げ、timeout=0・strict非悪化を満たす候補だけ再評価 |
 | 55.3 Downstream reachability | Implemented / HOLD | shared-cache selectorを実装したが、小規模A/Bで精度向上未確認 | 全VALで成功取り消し0、strict非悪化、runtime正常なら採用 |
 | 55.4 Non-displacing recovery | Implemented / development-selected | v2（同一VAL-200/stock/template、外側31秒、内部30秒）はstrict 129→134、回収5、native/strict回帰0、timeout/crash 0、attempt欠落0。recovery最大30,033.92ms、process最大30,408.53msで31秒以内。`phase55-recovery-v2-20260916`をdevelopment-only freeze済み | formal container契約下でこのconfigurationを固定して55.6へ渡す。55.0不成立または独立TEST未達なら結果を見て再調整せずHOLD |
 | 55.5 Missing proposals | HOLD | 70 direct proposalsを安全に投入したがroute未回収 | valid完成routeを増やせるfamily/modelだけ採用 |
-| 55.6 Independent TEST | Blocked | 500-target候補を凍結済みだが先頭50件はsmoke結果を閲覧済み。development candidate `phase55-recovery-v2-20260916`はmanifest・rows・budget検証とhash結合済み | 55.0後、閲覧済み対象を除く新cohort、N/検出力、専用protocolを固定してpaired解析 |
+| 55.6 Independent TEST | Active | 閲覧済み50件・VAL 200件・smoke 10件を除外した690 targetを `phase55-independent-test-20260916-001` として凍結し、N=690・image digest/revision・31秒deadline・8 CPU/6 GiB・解析法を事前登録。RENKIN armを登録構成で実行中 | RENKIN完走後に同一protocolでAiZ armを実行し、preflight・paired解析・再現reportを通す。途中結果による再測定や設定変更はしない |
 
 55.0から55.5で採用条件を満たした構成を一つだけ凍結し、55.6へ送る。既存VALとgap cohortは
 開発専用であり、独立TESTの代わりにしない。凍結cohort、hash、provenance、閲覧履歴は

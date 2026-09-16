@@ -9,8 +9,8 @@ This protocol is registered before either planner runs on this cohort.
 - Candidate: `phase55-recovery-v2-20260916`; depth 5 / beam 100 followed only
   for unresolved native cases by depth 6 / beam 200 recovery, 30 s internal.
 - Runtime: Docker `--network none --cpus 8 --memory 6g --memory-swap 6g`.
-- Images: RENKIN `renkin-bench/renkin@sha256:5575b13dd261f5eafc36c683d0b01b85bbc2f49e3787fb3c4cbc5590c37a2fd0`
-  with OCI revision `e4a5cf2b7d9394824654cf6833cce6c270f9e35f`;
+- Images: RENKIN `renkin-bench/renkin@sha256:b3b8dc81bdddb4e32dc8290169d5be529f6468a8f73b8586475fa37c6dab9b2d`
+  with OCI revision `e378e27`;
   AiZynthFinder `renkin-compare-66/aizynthfinder@sha256:e1cad6a92772917095fb73a10ae2a30ff893fd19afd488754e2b0341ee5e7ac8`.
 - Boundary: 31 s external timeout plus 10 s cleanup grace; wrapper-killed rows
   are timeouts. Top-1 native output is retained and common strict is evaluated

@@ -1,6 +1,8 @@
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -132,10 +134,32 @@ class TestAizynthfinderAdapterRealContainer(unittest.TestCase):
 
 
 class TestAizynthfinderPublicDataProvenance(unittest.TestCase):
+    def setUp(self):
+        # The full public AiZynthFinder bundle is deliberately gitignored.
+        # Provenance parsing needs only a config plus regular-file assets, so
+        # keep this contract test hermetic instead of reading a developer's
+        # optional downloaded bundle.
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.public_data_dir = Path(self.temp_dir.name)
+        for name in ("config.yml", "config_shared_stock.yml"):
+            shutil.copyfile(CONFIG_TEMPLATES / name, self.public_data_dir / name)
+        for name in (
+            "uspto_model.onnx",
+            "uspto_templates.csv.gz",
+            "uspto_ringbreaker_model.onnx",
+            "uspto_ringbreaker_templates.csv.gz",
+            "uspto_filter_model.onnx",
+            "shared_stock.hdf5",
+        ):
+            (self.public_data_dir / name).write_bytes(b"tracked-fixture-asset\n")
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
     def test_public_data_provenance_hashes_config_assets_and_explicit_budget(self):
         config = adapter.AizynthfinderConfig(
             image=IMAGE,
-            public_data_dir=str(PUBLIC_DATA_DIR),
+            public_data_dir=str(self.public_data_dir),
             config_filename="config_shared_stock.yml",
         )
         provenance = adapter.public_data_provenance(
@@ -150,7 +174,7 @@ class TestAizynthfinderPublicDataProvenance(unittest.TestCase):
     def test_public_data_provenance_rejects_untracked_config(self):
         config = adapter.AizynthfinderConfig(
             image=IMAGE,
-            public_data_dir=str(PUBLIC_DATA_DIR),
+            public_data_dir=str(self.public_data_dir),
             config_filename="config_shared_stock.yml",
         )
         with self.assertRaisesRegex(ValueError, "differs from the tracked"):

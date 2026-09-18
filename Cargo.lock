@@ -194,9 +194,9 @@ dependencies = [
 
 [[package]]
 name = "chematic-core"
-version = "1.0.9"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c4da33c5ba013bd5872ed39343ed94957e0d1940026b4ae51a396dda1bfffbf"
+checksum = "6f4357e8a67e254a7e26e3680f135d0573cd2ac0b634742071c5c7dd52fad8b3"
 
 [[package]]
 name = "chematic-fp"
@@ -239,9 +239,9 @@ dependencies = [
 
 [[package]]
 name = "chematic-perception"
-version = "1.0.9"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "007603c541f81ae5b466ef5d98b14a4508780505f1c672685b6a60da2bdafd1a"
+checksum = "8547eff080085b773a23df45e634aa18601ef8a0d73928f2a45717f0a18e8fb0"
 dependencies = [
  "chematic-core",
  "rustc-hash",
@@ -249,9 +249,9 @@ dependencies = [
 
 [[package]]
 name = "chematic-rxn"
-version = "1.0.9"
+version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "074290504dfa9abd90bde715cd5fde592ab45f13e10805e0492a41c8c84b86ae"
+checksum = "da453534c0475ca2cc00c3b4d005ec172860a9749f83a402fb811324c597d50c"
 dependencies = [
  "chematic-core",
  "chematic-perception",
@@ -259,13 +259,14 @@ dependencies = [
  "chematic-smiles",
  "rustc-hash",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
 name = "chematic-smarts"
-version = "1.0.9"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "faa830d23953347170257486184c164004a7763e72bb65bbaeaf78d87b4a715f"
+checksum = "cca5a27cd37256ba386ede11f5abd967565ed3e8dfdb2eb6b665630a5c19b1ab"
 dependencies = [
  "chematic-core",
  "chematic-perception",
@@ -275,9 +276,9 @@ dependencies = [
 
 [[package]]
 name = "chematic-smiles"
-version = "1.0.9"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6154faef287e5ed7b516f20a4b695c39ec38faaa48197f3b1e421dbc073ae3fe"
+checksum = "f3aba955771320033550e286db4256ec0d67af045af0c1aaa7bc58d324f47538"
 dependencies = [
  "chematic-core",
  "chematic-perception",

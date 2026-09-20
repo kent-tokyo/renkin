@@ -48,6 +48,11 @@ class AuditFinding:
     code: str
     severity: str
     node: Optional[str] = None
+    # Optional additive locations from the Bridge report. A path identifies a
+    # concrete tree occurrence even when the same SMILES occurs more than
+    # once; `step_index` is present only for a decomposing node.
+    occurrence_path: Optional[List[int]] = None
+    step_index: Optional[int] = None
 
 
 @dataclass
@@ -121,7 +126,14 @@ class AuditRouteReport:
 
 
 def _finding_from_json(data: dict) -> AuditFinding:
-    return AuditFinding(code=data["code"], severity=data["severity"], node=data.get("node"))
+    occurrence_path = data.get("occurrence_path")
+    return AuditFinding(
+        code=data["code"],
+        severity=data["severity"],
+        node=data.get("node"),
+        occurrence_path=(list(occurrence_path) if occurrence_path is not None else None),
+        step_index=data.get("step_index"),
+    )
 
 
 def _forward_validation_from_json(data: dict) -> ForwardValidationResult:

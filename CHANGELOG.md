@@ -8,6 +8,50 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Added optional audit-finding locations: `occurrence_path` identifies the
+  concrete route-tree occurrence and `step_index` identifies a decomposing
+  report step. The existing verdict and finding codes are unchanged; route-wide
+  findings retain no invented location.
+- Added WASM `capabilities()` fields for stable search/audit limits, accepted
+  audit formats and policies, network stance, and the absence of cooperative
+  cancellation. The browser playground now gives audit requests the same
+  bounded, termination-and-Worker-respawn cancellation behavior as search.
+  A real-browser regression cancels a 100,000-route audit, verifies the next
+  audit succeeds after respawn, rejects the stale reply, and observes no
+  console logging of the private route input.
+- Added Python `capabilities()` with versioned search, audit, and forward
+  limits; accepted route formats and policies; local-filesystem/network
+  stance; and the precise Stage-2-only timeout boundary. Wheel tests derive
+  over-limit calls from the payload and require the installed extension to
+  reject them.
+- Added `renkin capabilities`, a JSON-only capability contract for the root
+  CLI. It distinguishes the CLI's local gzip/interchange audit surface from
+  Python/WASM and records the MCP `tools/list` discovery boundary without
+  claiming arbitrary external-route import through MCP.
+- Added public trusted-route-operation and Phase 55 performance-receipt
+  contracts. The latter explicitly preserves missing historical RSS and
+  time-to-first-route values as `not_measured`; it does not reinterpret an
+  older coverage run as a speed result.
+
+### Changed
+
+- The pure-Python `AuditFinding` wrapper now preserves the additive
+  `occurrence_path` and `step_index` wire fields instead of discarding them.
+- The CI-executed Node/WASM quickstart now verifies that the machine-readable
+  capability payload matches the search and audit boundaries enforced by the
+  real exports. Rust tests cover every declared search maximum and audit
+  route-text, stock-line, and JSON boundaries at the inclusive maximum, with
+  over-limit rejection retained for route text, total stock text, stock lines,
+  nesting, and token count.
+- Corrected the Python audit documentation to include the already-supported
+  SynPlanner input format.
+- Added a provenance- and license-pinned SynPlanner 1.7.0 fixture sliced from
+  the release's own committed route JSON. Its two steps normalize and forward
+  replay successfully through the existing adapter; this is a scoped route-tree
+  format check, not a claim about every model or the separate wrapper format.
+
 ## [1.0.8] - 2026-09-16 "Evidence Chain and Reproducibility"
 
 - Consolidated the long-form English, Japanese, and Chinese READMEs into

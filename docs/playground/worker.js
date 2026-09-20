@@ -12,9 +12,9 @@
 // implemented on the main thread side by terminating this whole worker
 // (Worker.terminate()) and spawning a fresh one -- blunt, but correct and
 // simple, and it's genuinely the only thing that actually stops a running
-// WASM call from here. `audit_route` has no cancel/timeout support -- it's
-// a bounded structural walk, not an open-ended beam search, so it isn't
-// needed.
+// WASM call from here. Audit uses the same explicit termination path: input
+// limits bound its structural walk, but a browser must still be able to stop
+// a pathological or unexpectedly slow audit and accept a fresh request.
 let mod = null;
 
 self.onmessage = async (e) => {

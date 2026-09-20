@@ -552,16 +552,42 @@ pub fn version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
-/// Static capabilities of this WASM build (browser edition), as a JSON
-/// string -- real counts read from the same compiled-in data `find_routes`
-/// itself searches against, not a hardcoded UI string that can drift from
-/// what the engine actually has loaded.
+/// Static capabilities and enforced resource limits of this WASM build, as
+/// JSON. Counts and limits come from the same compiled-in constants the
+/// exports enforce; callers can therefore select a tool without treating a
+/// UI hint as an authorization to submit an unbounded request.
+///
+/// This describes this WASM module only. It does not claim that native CLI,
+/// Python, or MCP have identical cancellation or filesystem contracts.
 #[wasm_bindgen]
 pub fn capabilities() -> String {
     let env = ChemEnv::in_memory(DEFAULT_BUILDING_BLOCKS);
     serde_json::json!({
+        "schema_version": 1,
+        "surface": "wasm",
+        "network": "never",
         "building_blocks": env.bb_count(),
         "reaction_rules": default_rules().len(),
+        "search": {
+            "stability": "stable",
+            "max_target_smiles_bytes": crate::search::MAX_TARGET_SMILES_BYTES,
+            "max_depth": crate::wasm_limits::MAX_WASM_SEARCH_DEPTH,
+            "max_routes": crate::wasm_limits::MAX_WASM_ROUTES,
+            "max_beam_width": crate::wasm_limits::MAX_WASM_BEAM_WIDTH,
+            "max_candidate_trace": crate::wasm_limits::MAX_WASM_CANDIDATE_TRACE,
+            "cooperative_cancel": false,
+        },
+        "audit": {
+            "stability": "stable",
+            "max_route_text_bytes": crate::bridge::audit_route::MAX_AUDIT_ROUTE_TEXT_BYTES,
+            "max_stock_text_bytes": crate::bridge::audit_route::MAX_AUDIT_STOCK_TEXT_BYTES,
+            "max_stock_line_bytes": crate::bridge::audit_route::MAX_AUDIT_STOCK_LINE_BYTES,
+            "max_json_depth": crate::bridge::audit_route::MAX_AUDIT_JSON_DEPTH,
+            "max_json_tokens": crate::bridge::audit_route::MAX_AUDIT_JSON_TOKENS,
+            "cooperative_cancel": false,
+            "accepted_formats": ["auto", "renkin", "aizynthfinder", "syntheseus", "synplanner"],
+            "policies": ["informational", "standard", "strict"],
+        },
     })
     .to_string()
 }

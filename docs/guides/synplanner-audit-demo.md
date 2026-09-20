@@ -182,6 +182,7 @@ recognized today — a deliberate, tracked scope boundary, not a silent gap.
 | Source | Verified version | Input |
 |---|---|---|
 | SynPlanner | 1.6.0 | `write_routes_json`'s `{route_id: RouteNode}` export only — not the separate `--export_routes` wrapper format |
+| SynPlanner | 1.7.0 | Upstream route 58 from the release's committed `tests/data/routes_mol_1.json`; same `{route_id: RouteNode}` shape, not the separate wrapper/bundle format |
 
 See the [AiZynthFinder demo](aizynthfinder-audit-demo.md) and
 [Syntheseus demo](syntheseus-audit-demo.md) for those adapters' own

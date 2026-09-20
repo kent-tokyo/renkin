@@ -101,6 +101,7 @@ nav:
     - Audit a Syntheseus Route: guides/syntheseus-audit-demo.md
     - Audit a Real SynPlanner Route: guides/synplanner-audit-demo.md
     - Audit Reproducibility and Compatibility Contract: guides/audit-reproducibility-contract.md
+    - Trusted Route Operations: guides/trusted-route-operations.md
   - API Reference:
     - Rust API: api/rust.md
     - Python API: api/python.md

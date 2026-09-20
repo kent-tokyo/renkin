@@ -1,9 +1,24 @@
 ---
 title: "Python Retrosynthesis with RENKIN: API Reference and Examples"
-description: "Full Python API reference for RENKIN's find_routes, predict_forward, validate_forward, and audit_route functions, including parameters, return shapes, and error handling."
+description: "Full Python API reference for RENKIN's capabilities, find_routes, predict_forward, validate_forward, and audit_route functions, including limits, return shapes, and error handling."
 ---
 
 # Python API
+
+## `capabilities`
+
+```python
+capability = json.loads(renkin.capabilities())
+```
+
+Returns the Python extension's machine-readable capability contract: version,
+network/filesystem stance, search/audit/forward limits, accepted audit formats
+and policies, and cancellation boundaries. Values come from the same Rust
+constants used by the public functions. Python can read caller-selected local
+paths; the extension performs no network requests and does not write files.
+Normal search and audit calls are synchronous and have no cooperative cancel
+API. `coverage_stage2_timeout: true` refers only to coverage mode's optional
+Stage-2 deadline.
 
 ## `find_routes`
 
@@ -234,7 +249,7 @@ A thin binding on purpose: `content` is JSON text you already have in hand
 (read any file yourself, including a gzip-compressed AiZynthFinder batch
 export -- decompress it before passing it in, this function never touches
 the filesystem). `format` is `"auto"` (default) / `"renkin"` /
-`"aizynthfinder"` / `"syntheseus"`. `stock_text` is an optional `.smi`-style listing (one
+`"aizynthfinder"` / `"syntheseus"` / `"synplanner"`. `stock_text` is an optional `.smi`-style listing (one
 SMILES per line, `#`-comments allowed); omitted, stock validation reports
 `not_evaluable`, never a silent pass. `policy` is `"informational"` /
 `"standard"` (default) / `"strict"` -- controls only how each route's
@@ -318,7 +333,11 @@ Returns an `AuditRouteReport`:
 see [Audit Reproducibility and Compatibility Contract](../guides/audit-reproducibility-contract.md#forward-validation-evidence-basis)
 for what each means), `reason: str | None`. `StockValidationResult`:
 `status: str`, `reason: str | None`. `AuditFinding`: `code: str`,
-`severity: str`, `node: str | None`.
+`severity: str`, `node: str | None`, `occurrence_path: list[int] | None`,
+`step_index: int | None`. `occurrence_path` is the zero-based child-index path
+from the route root; `step_index` is the preorder position in the route's
+audited `steps` list and is present only for decomposing nodes. Route-wide
+findings intentionally have neither location.
 
 **Every `str | None` field here collapses two different wire-level
 states into one Python value.** In the raw JSON, some optional fields

@@ -1,3 +1,4 @@
+import hashlib
 import json
 import re
 import unittest
@@ -6,6 +7,14 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 FIXTURE_DIR = REPO_ROOT / "tests" / "fixtures" / "synplanner" / "v1.6.0"
+V1_7_FIXTURE = (
+    REPO_ROOT
+    / "tests"
+    / "fixtures"
+    / "synplanner"
+    / "v1.7.0"
+    / "route_58_upstream.json"
+)
 
 # Mirrors src/bridge/forward.rs's has_atom_mapping: a `:` immediately
 # followed by an ASCII digit.
@@ -163,6 +172,34 @@ class TestRealPlanningExportPublicContract(unittest.TestCase):
         self.assertGreaterEqual(len(routes), 1)
         for route in routes:
             self.assertEqual(route["type"], "mol")
+
+
+class TestSynPlannerV17UpstreamFixture(unittest.TestCase):
+    """Pins the exact one-route slice documented in v1.7.0/PROVENANCE.md."""
+
+    def setUp(self):
+        self.raw = V1_7_FIXTURE.read_bytes()
+        self.fixture = json.loads(self.raw)
+
+    def test_file_hash_and_route_id_are_pinned(self):
+        self.assertEqual(
+            hashlib.sha256(self.raw).hexdigest(),
+            "1de2e74148d479e0d27524ac3707d55b82caecbf64cc4e1d5664cd88a003bbe4",
+        )
+        self.assertEqual(list(self.fixture), ["58"])
+
+    def test_node_fields_stay_inside_the_supported_v1_7_shape(self):
+        allowed = {"type", "smiles", "children", "in_stock"}
+        (root,) = self.fixture.values()
+        for node in [*_iter_mol_nodes(root), *_iter_reaction_nodes(root)]:
+            self.assertLessEqual(set(node), allowed)
+
+    def test_every_reaction_retains_atom_mapping(self):
+        (root,) = self.fixture.values()
+        reactions = list(_iter_reaction_nodes(root))
+        self.assertEqual(len(reactions), 2)
+        for reaction in reactions:
+            self.assertRegex(reaction["smiles"], MAP_TOKEN_RE)
 
 
 if __name__ == "__main__":

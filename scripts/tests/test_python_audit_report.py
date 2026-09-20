@@ -17,8 +17,10 @@ loud, for every fixture below, not just one.
 """
 
 import dataclasses
+import importlib.util
 import json
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -35,6 +37,22 @@ requires_renkin_module = unittest.skipUnless(
 )
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+
+
+def _load_local_audit_report_module():
+    """Load the pure-Python wrapper without requiring a built extension."""
+    module_name = "renkin_audit_report_source_test"
+    spec = importlib.util.spec_from_file_location(
+        module_name, REPO_ROOT / "python" / "renkin" / "audit_report.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+audit_report_module = _load_local_audit_report_module()
 
 # Same target used by test_python_audit_route.py -- fast, reliable,
 # forward-replays correctly against the default rule corpus.
@@ -140,6 +158,30 @@ def _assert_report_matches_raw_json(test_case, content, **kwargs):
         "raw JSON values exactly (modulo the two documented differences)",
     )
     return report, raw_json
+
+
+class TestAuditFindingWireFields(unittest.TestCase):
+    """Pure-Python compatibility checks; no compiled extension is needed."""
+
+    def test_optional_location_fields_are_preserved(self):
+        finding = audit_report_module._finding_from_json(
+            {
+                "code": "leaf_unresolved",
+                "severity": "gating",
+                "node": "CCO",
+                "occurrence_path": [1, 0],
+                "step_index": 3,
+            }
+        )
+        self.assertEqual(finding.occurrence_path, [1, 0])
+        self.assertEqual(finding.step_index, 3)
+
+    def test_absent_location_fields_remain_none(self):
+        finding = audit_report_module._finding_from_json(
+            {"code": "route_parse_error", "severity": "gating"}
+        )
+        self.assertIsNone(finding.occurrence_path)
+        self.assertIsNone(finding.step_index)
 
 
 @requires_renkin_module

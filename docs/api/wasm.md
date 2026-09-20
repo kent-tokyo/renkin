@@ -132,8 +132,8 @@ available for compatibility.
 
 ```typescript
 function audit_route_v2(
-  content: string,    // Route export JSON text (RENKIN, AiZynthFinder, or Syntheseus)
-  format: string,      // "auto" | "renkin" | "aizynthfinder" | "syntheseus"
+  content: string,    // Route export JSON text (RENKIN, AiZynthFinder, Syntheseus, or SynPlanner)
+  format: string,      // "auto" | "renkin" | "aizynthfinder" | "syntheseus" | "synplanner"
   stockText: string,    // "" for no stock, else one SMILES per line (.smi-style)
   policy: string         // "informational" | "standard" | "strict"
 ): string  // JSON-encoded AuditRouteReport, or {"error": "..."}
@@ -169,6 +169,30 @@ console.log(report.routes[0].status); // "pass" | "fail" | "partial"
 Also available from the [Live Playground](https://kent-tokyo.github.io/renkin/playground/){ target="_blank" }'s
 `[ Audit a Route ]` tab — paste or upload a route (and optionally a stock
 list) with a policy selector, entirely client-side.
+
+### Limits, locations, and cancellation
+
+`capabilities()` returns machine-readable limits and accepted audit formats for
+the WASM module. Call it instead of copying a numeric limit into a browser
+client; it also states that the module has no network access and no
+cooperative-cancellation API.
+
+The Node/WASM quickstart executed in CI derives over-limit search and stock-line
+requests from this payload and requires the real exports to reject each with
+`resource_exhausted`. Rust boundary tests separately cover the inclusive
+maximum and `max + 1` for every published search limit, plus the route-text,
+stock-text/line, nesting, and token-count audit boundaries.
+
+Each node-specific finding can include an additive `occurrence_path` (zero-based
+child indices from the route root) and, for a decomposing node, a preorder
+`step_index` into the report's `steps` array. Route-wide parse failures have no
+invented location. Existing consumers that ignore these optional fields remain
+compatible.
+
+The live playground provides cancellation by terminating and respawning its
+Worker. That discards the interrupted WASM operation; it is not an in-module
+cancel signal. See [Trusted Route Operations](../guides/trusted-route-operations.md)
+for the cross-binding and browser-operation boundary.
 
 ## `audit_route`
 

@@ -57,6 +57,41 @@ def _generate_route_fixture_json():
 
 
 @requires_renkin_module
+class TestPythonCapabilities(unittest.TestCase):
+    def test_payload_matches_enforced_public_boundaries(self):
+        capability = json.loads(renkin.capabilities())
+        self.assertEqual(capability["schema_version"], 1)
+        self.assertEqual(capability["surface"], "python")
+        self.assertEqual(capability["version"], renkin.__version__)
+        self.assertEqual(capability["network"], "never")
+        self.assertEqual(
+            capability["audit"]["accepted_formats"],
+            ["auto", "renkin", "aizynthfinder", "syntheseus", "synplanner"],
+        )
+        self.assertEqual(
+            capability["audit"]["policies"],
+            ["informational", "standard", "strict"],
+        )
+        self.assertFalse(capability["search"]["cooperative_cancel"])
+        self.assertTrue(capability["search"]["coverage_stage2_timeout"])
+
+        with self.assertRaisesRegex(ValueError, "resource_exhausted"):
+            renkin.find_routes(
+                "CCO", depth=capability["search"]["max_depth"] + 1
+            )
+        with self.assertRaisesRegex(ValueError, "resource_exhausted"):
+            renkin.audit_route(
+                "{}",
+                stock_text="C"
+                * (capability["audit"]["max_stock_line_bytes"] + 1),
+            )
+        with self.assertRaisesRegex(ValueError, "resource_exhausted"):
+            renkin.predict_forward(
+                ["CCO"], max_results=capability["forward"]["max_results"] + 1
+            )
+
+
+@requires_renkin_module
 class TestPythonAuditRoute(unittest.TestCase):
     def setUp(self):
         content = _generate_route_fixture_json()

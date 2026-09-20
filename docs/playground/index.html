@@ -466,6 +466,16 @@
 
     <div class="search-row">
       <button id="audit-btn" disabled data-i18n="audit_btn">Audit</button>
+      <button id="audit-cancel-btn" class="cancel-btn" style="display:none" data-i18n="cancel_btn">Cancel</button>
+      <div class="field" style="min-width:150px">
+        <label for="audit-time-budget-select" data-i18n="audit_time_budget_label">Audit time budget</label>
+        <select id="audit-time-budget-select">
+          <option value="10" data-i18n="time_budget_10">10s</option>
+          <option value="30" data-i18n="time_budget_30" selected>30s</option>
+          <option value="60" data-i18n="time_budget_60">60s</option>
+          <option value="0" data-i18n="time_budget_none">No limit</option>
+        </select>
+      </div>
     </div>
   </div>
 
@@ -605,8 +615,12 @@
       audit_stock_label: 'Stock (optional — one SMILES per line, .smi-style)',
       audit_stock_placeholder: 'CCO ethanol',
       audit_btn: 'Audit',
+      audit_time_budget_label: 'Audit time budget',
       audit_status_init: 'Paste or upload a route, then click Audit.',
       audit_status_running: 'Auditing…',
+      audit_status_worker_reinit: 'Restarting audit worker…',
+      audit_status_cancelled: 'Audit cancelled.',
+      audit_status_timeout: 'Audit cancelled — exceeded the {budget}s time budget.',
       audit_status_error: 'Error.',
       audit_summary: '{total} routes audited — {pass} pass, {fail} fail, {partial} partial',
       audit_download_btn: 'Download report (JSON)',
@@ -721,8 +735,12 @@
       audit_stock_label: '在庫（任意 — 1行に1SMILES、.smi形式）',
       audit_stock_placeholder: 'CCO エタノール',
       audit_btn: '監査',
+      audit_time_budget_label: '監査の時間制限',
       audit_status_init: 'ルートを貼り付けまたはアップロードして「監査」をクリック。',
       audit_status_running: '監査中…',
+      audit_status_worker_reinit: '監査ワーカーを再起動中…',
+      audit_status_cancelled: '監査をキャンセルしました。',
+      audit_status_timeout: '監査をキャンセルしました — タイムバジェット{budget}秒を超過しました。',
       audit_status_error: 'エラー。',
       audit_summary: '{total}件のルートを監査 — 合格{pass}、不合格{fail}、部分的{partial}',
       audit_download_btn: 'レポートをダウンロード（JSON）',
@@ -837,8 +855,12 @@
       audit_stock_label: '库存（可选 — 每行一个 SMILES，.smi 格式）',
       audit_stock_placeholder: 'CCO 乙醇',
       audit_btn: '审计',
+      audit_time_budget_label: '审计时间预算',
       audit_status_init: '粘贴或上传路径，然后点击"审计"。',
       audit_status_running: '审计中…',
+      audit_status_worker_reinit: '正在重启审计工作线程…',
+      audit_status_cancelled: '审计已取消。',
+      audit_status_timeout: '审计已取消 — 超过了{budget}秒的时间预算。',
       audit_status_error: '错误。',
       audit_summary: '已审计{total}条路径 — 通过{pass}，失败{fail}，部分{partial}',
       audit_download_btn: '下载报告（JSON）',
@@ -1000,6 +1022,8 @@
 
   // ── Audit tab (PR3) element refs ──────────────────────────────────────
   const auditBtn          = document.getElementById('audit-btn');
+  const auditCancelBtn    = document.getElementById('audit-cancel-btn');
+  const auditTimeBudgetEl = document.getElementById('audit-time-budget-select');
   const auditFormatSelect = document.getElementById('audit-format-select');
   const auditPolicySelect = document.getElementById('audit-policy-select');
   const auditRouteInput   = document.getElementById('audit-route-input');
@@ -1475,7 +1499,7 @@
   }
 
   async function runSearch() {
-    if (!worker || searchBtn.disabled) return;
+    if (!worker || searchBtn.disabled || pendingSearch || pendingAudit) return;
     const target     = smilesEl.value.trim();
     const depth      = parseInt(document.getElementById('depth-input').value) || 5;
     const maxRoutes  = parseInt(document.getElementById('routes-input').value) || 5;
@@ -1486,6 +1510,7 @@
     if (!target) return;
 
     searchBtn.disabled = true;
+    auditBtn.disabled = true;
     cancelBtn.style.display = '';
     cancelBtn.disabled = false;
     spinner.classList.add('active');
@@ -1539,6 +1564,7 @@
 
   function done() {
     searchBtn.disabled = false;
+    auditBtn.disabled = false;
     cancelBtn.style.display = 'none';
     cancelBtn.disabled = false;
     spinner.classList.remove('active');
@@ -1818,15 +1844,36 @@
   }
 
   // ── Audit (PR3) ────────────────────────────────────────────────────────────
-  // Same worker/module as search (auditInWorker above); audit_route is a
-  // bounded structural walk, not open-ended search, so no cancel/time-budget
-  // handling is needed here (see worker.js's own comment).
+  // Same worker/module as search. There is no cooperative WASM cancellation,
+  // so cancellation or a time budget terminates and respawns this worker.
+  // A request ID prevents a response from an old worker generation from being
+  // applied to a later audit.
   let lastAuditReport = null;
+  let auditTimeoutHandle = null;
 
   auditBtn.addEventListener('click', runAudit);
+  auditCancelBtn.addEventListener('click', () => {
+    if (auditTimeoutHandle) { clearTimeout(auditTimeoutHandle); auditTimeoutHandle = null; }
+    if (pendingAudit) {
+      const err = new Error('cancelled');
+      err.__cancelled = true;
+      pendingAudit.reject(err);
+      pendingAudit = null;
+    }
+  });
+
+  function auditTimeoutRejection(sec) {
+    return new Promise((_, reject) => {
+      auditTimeoutHandle = setTimeout(() => {
+        const err = new Error('timeout');
+        err.__timedOut = true;
+        reject(err);
+      }, sec * 1000);
+    });
+  }
 
   async function runAudit() {
-    if (!worker) return;
+    if (!worker || auditBtn.disabled || pendingSearch || pendingAudit) return;
     // Not trimmed: input_sha256 must hash exactly what was uploaded/pasted,
     // the same way the CLI hashes the raw file text it read (no trimming)
     // -- auditing the same file via the CLI and via a browser upload must
@@ -1837,23 +1884,44 @@
     const format = auditFormatSelect.value;
     const stockText = auditStockInput.value;
     const policy = auditPolicySelect.value;
+    const budgetSec = parseInt(auditTimeBudgetEl.value) || 0;
 
     auditBtn.disabled = true;
+    auditCancelBtn.style.display = '';
+    auditCancelBtn.disabled = false;
+    searchBtn.disabled = true;
     auditSpinner.classList.add('active');
     auditStatusTextEl.textContent = t('audit_status_running');
     auditResultsEl.textContent = '';
 
     let raw;
     try {
-      raw = await auditInWorker({ content, format, stockText, policy });
+      const auditPromise = auditInWorker({ content, format, stockText, policy });
+      raw = budgetSec > 0
+        ? await Promise.race([auditPromise, auditTimeoutRejection(budgetSec)])
+        : await auditPromise;
     } catch (err) {
+      if (err && (err.__timedOut || err.__cancelled)) {
+        auditCancelBtn.disabled = true;
+        auditStatusTextEl.textContent = t('audit_status_worker_reinit');
+        try {
+          await terminateAndRespawn();
+        } catch (reinitErr) {
+          showAuditError(String(reinitErr.message || reinitErr));
+          finishAudit();
+          return;
+        }
+        auditStatusTextEl.textContent = err.__timedOut
+          ? t('audit_status_timeout').replace('{budget}', budgetSec)
+          : t('audit_status_cancelled');
+        finishAudit();
+        return;
+      }
       showAuditError(String(err.message || err));
-      auditBtn.disabled = false;
-      auditSpinner.classList.remove('active');
+      finishAudit();
       return;
     }
-    auditBtn.disabled = false;
-    auditSpinner.classList.remove('active');
+    finishAudit();
 
     let report;
     try { report = JSON.parse(raw); }
@@ -1863,6 +1931,15 @@
     auditStatusTextEl.textContent = '';
     lastAuditReport = report;
     renderAuditResults(report);
+  }
+
+  function finishAudit() {
+    auditBtn.disabled = false;
+    auditCancelBtn.style.display = 'none';
+    auditCancelBtn.disabled = false;
+    searchBtn.disabled = false;
+    auditSpinner.classList.remove('active');
+    if (auditTimeoutHandle) { clearTimeout(auditTimeoutHandle); auditTimeoutHandle = null; }
   }
 
   function showAuditError(msg) {

@@ -7,6 +7,8 @@
 //! `synplan planning` CLI end to end) -- see
 //! `tests/fixtures/synplanner/v1.6.0/PROVENANCE.md` and
 //! `real_planning_route.PROVENANCE.md` for exact capture provenance.
+//! SynPlanner v1.7.0 route-tree compatibility is separately pinned to an
+//! upstream release fixture; see `tests/fixtures/synplanner/v1.7.0/PROVENANCE.md`.
 //!
 //! Structurally identical in shape to AiZynthFinder's `mol`/`reaction`
 //! alternating tree (this module ports [`crate::bridge::aizynthfinder`]'s
@@ -263,20 +265,51 @@ pub fn parse_synplanner_routes(
 // chython input run through the real exporter, and a real MCTS-searched
 // planning run), not hand-authored -- see
 // tests/fixtures/synplanner/v1.6.0/PROVENANCE.md and
-// real_planning_route.PROVENANCE.md.
+// real_planning_route.PROVENANCE.md. v1.7.0 adds a release-pinned upstream
+// route-tree slice; its narrower boundary is documented in its own provenance.
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn load_fixture(name: &str) -> BTreeMap<String, SynPlannerNode> {
+    fn load_versioned_fixture(version: &str, name: &str) -> BTreeMap<String, SynPlannerNode> {
         let path = format!(
-            "{}/tests/fixtures/synplanner/v1.6.0/{name}",
-            env!("CARGO_MANIFEST_DIR")
+            "{}/tests/fixtures/synplanner/{version}/{name}",
+            env!("CARGO_MANIFEST_DIR"),
         );
         let content = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
         let value: serde_json::Value =
             serde_json::from_str(&content).unwrap_or_else(|e| panic!("{path}: {e}"));
         parse_synplanner_routes(value).unwrap_or_else(|e| panic!("{path}: {e}"))
+    }
+
+    fn load_fixture(name: &str) -> BTreeMap<String, SynPlannerNode> {
+        load_versioned_fixture("v1.6.0", name)
+    }
+
+    #[test]
+    fn upstream_v1_7_route_shape_normalizes_and_replays_without_adapter_changes() {
+        let routes = load_versioned_fixture("v1.7.0", "route_58_upstream.json");
+        let (route_id, node) = routes.iter().next().unwrap();
+        assert_eq!(route_id, "58");
+
+        let outcome = normalize_synplanner_route(node);
+        assert!(outcome.parseable, "{:?}", outcome.defects);
+        let doc = outcome.document.unwrap();
+        assert_eq!(doc.source, RouteSource::SynPlanner);
+        assert_eq!(doc.steps().len(), 2);
+        for step in doc.steps() {
+            let forward = crate::bridge::forward::validate_step_forward(
+                &step.target,
+                &step.precursors,
+                step.reaction_evidence.as_ref(),
+                None,
+            );
+            assert_eq!(
+                forward.status,
+                crate::bridge::audit::CheckStatus::Pass,
+                "upstream v1.7 reaction should replay as declared: {forward:?}"
+            );
+        }
     }
 
     #[test]

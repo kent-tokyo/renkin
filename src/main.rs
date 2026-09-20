@@ -197,6 +197,9 @@ fn main() -> Result<()> {
     if args.get(1).map(|s| s.as_str()) == Some("doctor") {
         return run_doctor(&args[2..]);
     }
+    if args.get(1).map(|s| s.as_str()) == Some("capabilities") {
+        return run_capabilities(&args[2..]);
+    }
 
     let mut target: Option<String> = None;
     let mut max_depth: u32 = 5;
@@ -1729,6 +1732,65 @@ fn main() -> Result<()> {
             }
         }
     }
+    Ok(())
+}
+
+/// Print the root CLI's machine-readable capability and resource contract.
+///
+/// This intentionally describes the `renkin` executable rather than the
+/// separate `renkin-forward`, `renkin-mcp`, Python, or WASM surfaces. It is
+/// a static contract: callers still validate every supplied local path and
+/// option at invocation time.
+fn run_capabilities(args: &[String]) -> Result<()> {
+    if args.len() == 1 && args[0] == "--help" {
+        println!("Usage: renkin capabilities [--output json]");
+        println!("Print the root CLI's machine-readable capability and resource contract.");
+        return Ok(());
+    }
+    if !args.is_empty() && !(args.len() == 2 && args[0] == "--output" && args[1] == "json") {
+        bail!("renkin capabilities: only --output json is supported");
+    }
+
+    let payload = serde_json::json!({
+        "schema_version": 1,
+        "surface": "cli",
+        "version": env!("CARGO_PKG_VERSION"),
+        "network": "never",
+        "filesystem": {
+            "reads_caller_paths": true,
+            "writes": "command_specific",
+        },
+        "search": {
+            "stability": "stable",
+            "max_target_smiles_bytes": search::MAX_TARGET_SMILES_BYTES,
+            "max_depth": search::MAX_SEARCH_DEPTH,
+            "max_routes": search::MAX_ROUTES,
+            "max_beam_width": search::MAX_BEAM_WIDTH,
+            "max_candidate_trace": search::MAX_CANDIDATE_TRACE,
+            "search_modes": ["standard", "coverage", "recovery"],
+            "cooperative_cancel": false,
+            "coverage_stage2_timeout": true,
+        },
+        "audit": {
+            "stability": "stable",
+            "max_compressed_input_bytes": MAX_AUDIT_INPUT_BYTES,
+            "max_decompressed_input_bytes": MAX_AUDIT_INPUT_BYTES,
+            "max_stock_text_bytes": bridge::audit_route::MAX_AUDIT_STOCK_TEXT_BYTES,
+            "max_stock_line_bytes": bridge::audit_route::MAX_AUDIT_STOCK_LINE_BYTES,
+            "max_json_depth": bridge::audit_route::MAX_AUDIT_JSON_DEPTH,
+            "max_json_tokens": bridge::audit_route::MAX_AUDIT_JSON_TOKENS,
+            "gzip_input": true,
+            "accepted_formats": ["auto", "renkin", "interchange", "aizynthfinder", "syntheseus", "synplanner"],
+            "policies": ["informational", "standard", "strict"],
+            "cooperative_cancel": false,
+        },
+        "mcp": {
+            "stability": "stable",
+            "discovery": "tools/list",
+            "arbitrary_external_route_import": false,
+        },
+    });
+    println!("{}", serde_json::to_string_pretty(&payload)?);
     Ok(())
 }
 

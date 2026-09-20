@@ -52,6 +52,44 @@ fn generate_route_fixture() -> std::path::PathBuf {
 }
 
 #[test]
+fn capabilities_are_machine_readable_and_describe_the_cli_boundary() {
+    let out = run(&["capabilities"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let capability: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(capability["schema_version"], 1);
+    assert_eq!(capability["surface"], "cli");
+    assert_eq!(capability["network"], "never");
+    assert_eq!(
+        capability["search"]["max_depth"],
+        serde_json::json!(renkin::search::MAX_SEARCH_DEPTH)
+    );
+    assert_eq!(
+        capability["audit"]["accepted_formats"],
+        serde_json::json!([
+            "auto",
+            "renkin",
+            "interchange",
+            "aizynthfinder",
+            "syntheseus",
+            "synplanner"
+        ])
+    );
+    assert_eq!(capability["mcp"]["discovery"], "tools/list");
+
+    let explicit_json = run(&["capabilities", "--output", "json"]);
+    assert!(explicit_json.status.success());
+    assert_eq!(explicit_json.stdout, out.stdout);
+
+    let invalid = run(&["capabilities", "--output", "human"]);
+    assert!(!invalid.status.success());
+    assert!(String::from_utf8_lossy(&invalid.stderr).contains("only --output json"));
+}
+
+#[test]
 fn passes_when_stock_and_forward_replay_succeed() {
     let route_path = generate_route_fixture();
     let out = run(&[
@@ -1026,6 +1064,36 @@ fn syntheseus_convergent_fixtures_ambiguous_leaf_fails_with_two_findings() {
 // for exact provenance. ──
 
 #[test]
+fn synplanner_v1_7_upstream_fixture_auto_detects_and_audits() {
+    let out = run(&[
+        "audit-route",
+        "tests/fixtures/synplanner/v1.7.0/route_58_upstream.json",
+        "--output",
+        "json",
+    ]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(report["audit_manifest"]["source_format"], "synplanner");
+    assert_eq!(report["summary"]["routes_total"], 1);
+    assert_eq!(report["routes"][0]["steps"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        report["routes"][0]["target_element_accounting_status"],
+        "accounted"
+    );
+    assert!(
+        report["routes"][0]["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|step| step["forward_validation"]["status"] == "pass")
+    );
+}
+
+#[test]
 fn synplanner_explicit_format_audits_the_real_two_step_planning_route() {
     let out = run(&[
         "audit-route",
@@ -1046,6 +1114,41 @@ fn synplanner_explicit_format_audits_the_real_two_step_planning_route() {
     assert_eq!(report["routes"][0]["source"], "syn_planner");
     // No stock given -> not_evaluable -> partial, never a silent pass.
     assert_eq!(report["routes"][0]["status"], "partial");
+}
+
+#[test]
+fn synplanner_findings_expose_stable_tree_and_step_locations() {
+    let out = run(&[
+        "audit-route",
+        "tests/fixtures/synplanner/v1.6.0/route_3_full_fields.json",
+        "--format",
+        "synplanner",
+        "--output",
+        "json",
+    ]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let findings = report["routes"][0]["findings"].as_array().unwrap();
+    let located = findings
+        .iter()
+        .filter(|finding| {
+            matches!(
+                finding["code"].as_str(),
+                Some("unaccounted_target_element" | "forward_reaction_not_reproduced")
+            )
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(located.len(), 2);
+    for finding in located {
+        assert_eq!(finding["occurrence_path"], serde_json::json!([]));
+        assert_eq!(finding["step_index"], 0);
+    }
 }
 
 #[test]

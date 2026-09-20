@@ -2,9 +2,9 @@
 
 ## Current objective
 
-2026-09-16: 基準はv1.0.7（`ed41338`）。O7.0–O7.4の境界と公開実procedureの運用検証を完了し、
-次はv1.0.8候補commitの全gate。性能側は55.4の同予算VAL評価を完了し、candidateをdevelopment-onlyで
-freezeした。r2独立TESTはcoverage gateを通過し、次はperformance receiptを閉じる。
+2026-09-19: 基準は公開済みv1.0.8（`4337b01`）、計画作成時のmainは`a2add72`。
+O7の再実装・再release準備ではなく、O8の診断契約と安全な実行境界を次候補の範囲とする。
+r2独立TESTは当該構成のcoverage gateを通過済み。性能receiptは不足し、v1.0.8固有の比較でもない。
 Phase 55の「同一stock・予算でAiZynthFinderのnative/common-strictをともに上回り、
 独立TESTで証明する」目標は維持。
 監査製品の完成と競合優位性の証明を別gateにする。[優先順位](../ROADMAP.md)、
@@ -12,6 +12,45 @@ Phase 55の「同一stock・予算でAiZynthFinderのnative/common-strictをと�
 [Phase 55測定計画](../docs/roadmap/aizynthfinder-accuracy.md)を参照。
 
 ### 直近の作業（以下の過去progressより優先）
+
+- [ ] **55.0 / 補足計測の契約** r2のAiZ config/model/stock/cohortと旧VALとの差を説明する。
+  未記録RSS・初回解時間は`not_measured`のまま保持。process tree/container RSS、cold/warm、
+  初回解イベント、timeout打切りの定義を固定して計測を実装し、開発smoke後に別runを登録する。
+  coverage結果を置換せず、速度比較は両armの同一条件で行う。
+  低負荷作業としてperformance receipt contractを追加済み。計測実装・smoke・新run登録は実行しない。
+- [x] **O8.0 / 対応表とfixture** validator/binding対応を棚卸しし、SynPlanner 1.7.0の版・hash・
+  ライセンス確認済みexportを採取。PR #114は未mergeなのでexperimental fixtureへ分離する。
+  対応表、既存SynPlanner 1.6 fixtureの境界、v1.7.0のrelease/tag/commit/license、upstream blobと
+  route 58のhashを固定。adapter/CLIで2 stepのparse・normalize・forward replayを回帰済み。
+  model全般や別wrapper形式の互換性は主張しない。
+- [ ] **O8.1 / 診断slice** 既存statusを保ち、reason code、step/occurrence参照、unsupported/missing
+  evidenceを明示。mappingは反応ごとに局所的として扱い、全bindingの共通対応範囲を回帰する。
+  低負荷作業として既存findingへ任意の`occurrence_path`と`step_index`を追加し、Rust unit、
+  CLI process-level、Python typed wrapperのwire-field回帰を完了。実WASMでも同じSynPlanner fixtureの
+  2 findingが`occurrence_path=[]`、`step_index=0`になることを確認。高度なmapping診断は残す。
+- [ ] **O8.2 / 実行境界slice** capability/limitを実効値から公開。browser auditの取消・timeout・
+  Worker再生成・古い応答破棄・再実行を検証し、機密入力をログへ出さない。
+  WASM capability payloadとbrowser auditの取消/timeout UIを追加。実WASMを読み込んだブラウザで
+  100,000-route監査を取消し、Worker再生成後の通常監査成功、古い応答の非反映、console logなしを確認済み。
+  公開最大値ちょうどを許可し`max+1`を拒否するRust境界回帰を追加。既存Node/WASM CI quickstartも
+  `capabilities()`の値からsearch上限+1とstock-line上限+1を作り、実exportのfail-closedを確認する。
+  Pythonにもversion付き`capabilities()`を追加し、search/audit/forward上限、形式/policy、local path・
+  network・cancel境界を公開。CPython 3.13 wheelでpayload由来の上限超過拒否を確認済み。
+  CLIにも`renkin capabilities`を追加し、native上限、gzip/interchange audit、MCP `tools/list`境界を公開。
+  MCPとの統一payloadは残す。
+- [x] **次候補gate** 候補commit `2e9f33c` でworkspace/clippy・WASM/browser・Python/MCP・
+  docsを検証。探索hash非悪化と診断追加コストの測定は別の55.0作業として残し、O8.3のinterop/UI、
+  O8.4のrepairは後段。
+  低負荷gateとしてroot library 896件（2 ignored）、audit CLI位置回帰、WASM compile、Python-feature compile、
+  MCP process-level 16件、library clippy、Python wire-field回帰、JavaScript syntax、
+  公開文書リンク・live facts、MkDocs strict build、diff checkを実行済み。CPython 3.13向けrelease wheelを一時環境で
+  build/installし、CLIとの3 policy同値とPython capability境界を含む公開監査API 20件をskipなしで通過。
+  workspace全体は896 passed/2 ignored、全target clippyとfmtを通過。nodejs WASM quickstartと、
+  実ブラウザで100,000-route監査の取消→Worker再生成→通常監査を確認。CPython 3.13 wheelは強制再install後に
+  audit API 20件とSynPlanner fixture 11件、MCPは16件、MkDocs strictとdiff checkを通過。探索hash/追加コストは
+  55.0の別計測として未実施であり、このO8 release gateの性能主張には用いない。
+
+### 完了済み・保持する証拠
 
 - [x] **55.6 / r2独立TESTの実行** `phase55-independent-test-20260916-002` の690 target、sample-list hash、
   stock/template hash、image digest/revision、31秒deadline、8 CPU/6 GiB、解析法を事前登録済み。
@@ -27,17 +66,20 @@ Phase 55の「同一stock・予算でAiZynthFinderのnative/common-strictをと�
 - [x] **55.4 / 候補選択** v2 VAL-200で同一総予算A/B。strict 129→134、回収5、native/strict回帰0、
   timeout/crash/attempt欠落0、recovery/processとも31秒内を確認し、`phase55-recovery-v2-20260916`を
   development-only freezeした。正式比較の証拠ではない。
-- [ ] **55.0 / performance receipt** RENKIN container armのpeak RSSとtime-to-first-routeを同じraw rowsから
-  再生成できるreceiptとして保存する。r2 coverage結果を再測定して置換しない。
 - [x] **O7 / 運用validation** 公開特許CN115677497Aの工程例を、source artifact → audit →
   metrics sidecar → canonical export → 別process再importで検証。water/workup/wasteの未報告は
   `not_evaluable`として保持し、source bodyは公開reportへ出力しない。
 - [x] **O7 / 候補commit gate** `e7ed5ce`でworkspace test、clippy、MCP integration、Python wheel/API、
   WASM/nodejs quickstart、docs facts、strict site buildを通過。候補gate通過はPhase 55の性能exitや
   v1.0.8の版上げ・公開を意味しない。
+- [x] **v1.0.8 release** `4337b01`として公開済み。上記候補検証とreleaseは別の完了記録。
 
-[smoke監査記録](../docs/benchmark/phase55-smoke-review-20260916.md)を現状判断の根拠とする。
-下記のDocker停止、凍結前、旧test件数の記述はそれぞれの時点の履歴。
+[r2正式結果](../docs/benchmark/phase55-r2-result-20260916.md)と
+[ROADMAP](../ROADMAP.md)を現在の判断の正本とする。
+
+## 過去の開発記録（以下の予定形は当時の判断）
+
+下記のDocker停止、凍結前、旧test件数、再実行予定はそれぞれの時点の履歴。
 
 55.4の最初の開発用VAL-200 recovery再検証は、baseline 129→final 134、回収5、strict回帰0、
 timeout/crash0まで到達したが、31秒cooperative deadlineの38件が最大31,026.14msとなったためHOLD。
@@ -47,17 +89,17 @@ AiZynthFinderへの優位性主張を開始したものではない。v2完走�
 recovery/process双方の31秒budget、outer timeout/crashを`verify_non_displacing_recovery.py`で確認して
 retain/HOLDを固定する。
 
-## O7: Evidence chain — implemented, operational validation follows
+## O7: Evidence chain — v1.0.8 shipped
 
-以下は実装済みのproduct boundaryである。次候補の呼称はv1.0.8候補だが、この文書更新では
-版番号・公開・探索設定・凍結TESTを変更しない。実artifactを使う運用validationは別途行う。
+以下は出荷済みのproduct boundary。O7.0–O7.1の実procedure検証は完了。
+O7.2–O7.4の実利用検証と複数step事例は継続する。版番号・探索設定・凍結TESTは変更しない。
 
 - [x] **O7.0 / v1 Contract + Replay** strict canonical v1 import、route hash照合、通常の
   structure/stock/forward auditへの再接続、別process CLI round-tripを実装。root不明の
   direct route、重複分解、cycle/disconnected topology、unknown field、hash差し替えは拒否。
   `--receipt-bindings`でlocal実引数/実結果hash・receipt ID・最終audit hashへ結合し、
   direct purchaseと重複occurrenceを保持するv2 explicit-tree APIと`--interchange-v2`
-  exportも追加。統合fixtureのcandidate gateは通過済み。実工程の運用検証は残る。
+  exportも追加。統合fixtureのcandidate gateとO7.0–O7.1の実工程検証は完了。
 - [x] **O7.1 / Core metrics** `route_metrics_v1`の値・単位・方法・source・工程境界・coverageを
   固定し、route hashで監査reportへ接続。source報告値／再計算値／`not_evaluable`を分離し、
   既存MW比を上書きしない。
@@ -67,7 +109,7 @@ retain/HOLDを固定する。
   複数step実利用fixtureは継続する。
 - [x] **O7.0–O7.1 / Candidate gate** local import→audit→receipt→export→再importを完走。
   MCP body→receipt→v1 interchange→再auditの統合fixture（生body非出力）、workspace/MCP回帰、
-  `wasm32 --lib`、Python feature、docs例を確認。実artifact pipelineは運用validationで扱う。
+  `wasm32 --lib`、Python feature、docs例を確認。実artifact pipelineは公開procedureで検証済み。
 - [x] **O7.2 / Artifact core** local sidecarでoriginal content hash、source kind、transform、
   OCR/model、normalization、reviewを検証し、対象targetへbind。reportはlocator/raw prediction/
   normalized SMILES/reviewerをredactする。実OCR、remote取得、複数候補/stereo reviewは残る。
@@ -81,8 +123,8 @@ retain/HOLDを固定する。
 
 ## Phase 55: AiZynthFinder accuracy — active
 
-2026-09-12に計画を追加。以下は未完了・未正式測定。過去の134/200同率と候補段階の
-133→143/200を新条件の測定値として流用しない。
+2026-09-12に計画を追加。以下のprogressは当時の履歴であり、最新は冒頭のr2結果・未達一覧。
+過去の134/200同率と候補段階の133→143/200を新条件の測定値として流用しない。
 
 損失分類は候補被覆 → 候補保存 → 下流到達性 → 非置換recovery → 独立TESTとする。
 既存の実装・負の結果を踏まえ、次の仮説は直近の作業順で選ぶ。

@@ -1,0 +1,43 @@
+{
+  "58": {
+    "type": "mol",
+    "smiles": "c1ccccc1COc2c(cccc2)C=CS(=O)(=O)CS(=O)(=O)C=Cc3ccccc3OCc4ccccc4",
+    "children": [
+      {
+        "type": "reaction",
+        "smiles": "[cH:1]1[cH:2][cH:3][cH:4][cH:5][c:6]1[CH2:7][O:8][c:9]2[cH:14][cH:13][cH:12][cH:11][c:10]2[CH:15]=[CH:16][S:17](=[O:18])(=[O:19])[CH2:20][S:21](=[O:22])(=[O:23])[CH:24]=[CH2:25].[cH:35]1[cH:36][cH:37][cH:38][cH:39][c:34]1[CH2:33][O:32][c:31]2[c:26]([Br:40])[cH:27][cH:28][cH:29][cH:30]2>>[cH:1]1[cH:2][cH:3][cH:4][cH:5][c:6]1[CH2:7][O:8][c:9]2[c:10]([cH:11][cH:12][cH:13][cH:14]2)[CH:15]=[CH:16][S:17](=[O:18])(=[O:19])[CH2:20][S:21](=[O:22])(=[O:23])[CH:24]=[CH:25][c:26]3[cH:27][cH:28][cH:29][cH:30][c:31]3[O:32][CH2:33][c:34]4[cH:35][cH:36][cH:37][cH:38][cH:39]4",
+        "children": [
+          {
+            "type": "mol",
+            "smiles": "c1ccccc1COc2ccccc2C=CS(=O)(=O)CS(=O)(=O)C=C",
+            "children": [
+              {
+                "type": "reaction",
+                "smiles": "[O:18]=[S:17](=[O:19])([CH:16]=[CH2:15])[CH2:20][S:21](=[O:22])(=[O:23])[CH:24]=[CH2:25].[c:1]1[c:2][c:3][c:4][c:5][c:6]1[CH2:7][O:8][c:9]2[c:10]([Br:41])[c:11][c:12][c:13][c:14]2>>[BrH:41].[cH:1]1[cH:2][cH:3][cH:4][cH:5][c:6]1[CH2:7][O:8][c:9]2[cH:14][cH:13][cH:12][cH:11][c:10]2[CH:15]=[CH:16][S:17](=[O:18])(=[O:19])[CH2:20][S:21](=[O:22])(=[O:23])[CH:24]=[CH2:25]",
+                "children": [
+                  {
+                    "type": "mol",
+                    "smiles": "c1ccccc1COc2c(Br)cccc2",
+                    "in_stock": true
+                  },
+                  {
+                    "type": "mol",
+                    "smiles": "O=S(=O)(C=C)CS(=O)(=O)C=C",
+                    "in_stock": true
+                  }
+                ]
+              }
+            ],
+            "in_stock": false
+          },
+          {
+            "type": "mol",
+            "smiles": "c1ccccc1COc2c(Br)cccc2",
+            "in_stock": true
+          }
+        ]
+      }
+    ],
+    "in_stock": false
+  }
+}

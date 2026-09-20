@@ -33,6 +33,60 @@ fn validate_forward_inputs(reactants: &[&str], max_results: usize) -> Result<(),
     Ok(())
 }
 
+/// Return the Python binding's stable capabilities and enforced resource
+/// limits as JSON.
+///
+/// This payload describes this extension module only. In particular, Python
+/// can read caller-selected local paths while the in-memory audit function
+/// never reads files itself; it has no network path and no general cooperative
+/// cancellation API. Coverage mode's optional timeout applies only to Stage 2.
+#[pyfunction]
+#[pyo3(name = "capabilities")]
+pub fn capabilities_py() -> PyResult<String> {
+    serde_json::to_string(&serde_json::json!({
+        "schema_version": 1,
+        "surface": "python",
+        "version": env!("CARGO_PKG_VERSION"),
+        "network": "never",
+        "filesystem": {
+            "reads_caller_paths": true,
+            "writes": false,
+        },
+        "search": {
+            "stability": "stable",
+            "max_target_smiles_bytes": crate::search::MAX_TARGET_SMILES_BYTES,
+            "max_depth": crate::search::MAX_SEARCH_DEPTH,
+            "max_routes": crate::search::MAX_ROUTES,
+            "max_beam_width": crate::search::MAX_BEAM_WIDTH,
+            "max_candidate_trace": crate::search::MAX_CANDIDATE_TRACE,
+            "search_modes": ["standard", "coverage"],
+            "cooperative_cancel": false,
+            "coverage_stage2_timeout": true,
+        },
+        "audit": {
+            "stability": "stable",
+            "max_route_text_bytes": crate::bridge::audit_route::MAX_AUDIT_ROUTE_TEXT_BYTES,
+            "max_stock_text_bytes": crate::bridge::audit_route::MAX_AUDIT_STOCK_TEXT_BYTES,
+            "max_stock_line_bytes": crate::bridge::audit_route::MAX_AUDIT_STOCK_LINE_BYTES,
+            "max_json_depth": crate::bridge::audit_route::MAX_AUDIT_JSON_DEPTH,
+            "max_json_tokens": crate::bridge::audit_route::MAX_AUDIT_JSON_TOKENS,
+            "accepted_formats": ["auto", "renkin", "aizynthfinder", "syntheseus", "synplanner"],
+            "policies": ["informational", "standard", "strict"],
+            "cooperative_cancel": false,
+        },
+        "forward": {
+            "stability": "stable",
+            "max_reactant_text_bytes": MAX_FORWARD_INPUT_BYTES,
+            "max_reactants": MAX_FORWARD_REACTANTS,
+            "max_results": MAX_FORWARD_RESULTS,
+            "max_route_json_bytes": MAX_ROUTE_JSON_BYTES,
+            "max_route_steps": MAX_ROUTE_JSON_STEPS,
+            "cooperative_cancel": false,
+        },
+    }))
+    .map_err(|error| PyValueError::new_err(error.to_string()))
+}
+
 /// Find retrosynthetic routes for a target molecule.
 ///
 /// Args:
@@ -840,6 +894,7 @@ pub fn audit_route_py(
 /// RENKIN Python module.
 #[pymodule]
 pub fn renkin(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(capabilities_py, m)?)?;
     m.add_function(wrap_pyfunction!(find_routes_py, m)?)?;
     m.add_function(wrap_pyfunction!(predict_forward_py, m)?)?;
     m.add_function(wrap_pyfunction!(validate_forward_py, m)?)?;

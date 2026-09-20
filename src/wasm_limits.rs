@@ -144,4 +144,47 @@ mod tests {
                 .to_string();
         assert!(error.contains("WASM max_depth"));
     }
+
+    #[test]
+    fn accepts_each_declared_browser_limit_at_the_boundary() {
+        let target = "C".repeat(crate::search::MAX_TARGET_SMILES_BYTES);
+        validate_search_inputs(
+            &target,
+            MAX_WASM_SEARCH_DEPTH,
+            MAX_WASM_ROUTES,
+            MAX_WASM_BEAM_WIDTH,
+            "",
+            "",
+            MAX_WASM_BEAM_WIDTH,
+            Some(MAX_WASM_CANDIDATE_TRACE),
+        )
+        .expect("every published maximum is inclusive");
+    }
+
+    #[test]
+    fn rejects_each_declared_browser_limit_at_max_plus_one() {
+        let oversized_target = "C".repeat(crate::search::MAX_TARGET_SMILES_BYTES + 1);
+        let cases = [
+            validate_search_inputs(&oversized_target, 1, 1, 1, "", "", 0, None),
+            validate_search_inputs("CCO", MAX_WASM_SEARCH_DEPTH + 1, 1, 1, "", "", 0, None),
+            validate_search_inputs("CCO", 1, MAX_WASM_ROUTES + 1, 1, "", "", 0, None),
+            validate_search_inputs("CCO", 1, 1, MAX_WASM_BEAM_WIDTH + 1, "", "", 0, None),
+            validate_search_inputs("CCO", 1, 1, 1, "", "", MAX_WASM_BEAM_WIDTH + 1, None),
+            validate_search_inputs(
+                "CCO",
+                1,
+                1,
+                1,
+                "",
+                "",
+                0,
+                Some(MAX_WASM_CANDIDATE_TRACE + 1),
+            ),
+        ];
+
+        for result in cases {
+            let error = result.expect_err("max + 1 must be rejected").to_string();
+            assert!(error.contains("resource_exhausted"), "{error}");
+        }
+    }
 }

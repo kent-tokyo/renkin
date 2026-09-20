@@ -5,7 +5,7 @@ build-backend = "maturin"
 [project]
 name = "renkin"
 version = "1.0.8"
-description = "Local retrosynthesis route auditor and planning engine for AiZynthFinder, Syntheseus and RENKIN"
+description = "Local retrosynthesis route auditor and planning engine for AiZynthFinder, Syntheseus, SynPlanner and RENKIN"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.8"
@@ -15,6 +15,7 @@ keywords = [
     "route-validation",
     "aizynthfinder",
     "syntheseus",
+    "synplanner",
     "casp",
     "cheminformatics",
 ]

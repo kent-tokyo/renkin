@@ -1134,12 +1134,31 @@ mod tests {
     }
 
     #[test]
+    fn audit_text_input_limits_accept_declared_inclusive_boundaries() {
+        let route = "x".repeat(MAX_AUDIT_ROUTE_TEXT_BYTES);
+        validate_audit_text_inputs(&route, "").expect("route byte maximum is inclusive");
+
+        let stock = format!("{}\n", "C".repeat(MAX_AUDIT_STOCK_LINE_BYTES));
+        validate_audit_text_inputs("{}", &stock).expect("stock line maximum is inclusive");
+    }
+
+    #[test]
     fn audit_json_structure_limits_ignore_brackets_in_strings() {
         validate_json_structure(r#"{"text":"[[[["}"#).expect("string content is safe");
     }
 
     #[test]
     fn audit_json_structure_limits_reject_depth_and_token_storms() {
+        let at_depth_limit = format!(
+            "{}{}",
+            "[".repeat(MAX_AUDIT_JSON_DEPTH),
+            "]".repeat(MAX_AUDIT_JSON_DEPTH)
+        );
+        validate_json_structure(&at_depth_limit).expect("JSON depth maximum is inclusive");
+
+        let at_token_limit = "[]".repeat(MAX_AUDIT_JSON_TOKENS / 2);
+        validate_json_structure(&at_token_limit).expect("JSON token maximum is inclusive");
+
         let deeply_nested = "[".repeat(MAX_AUDIT_JSON_DEPTH + 1);
         let err = validate_json_structure(&deeply_nested).unwrap_err();
         assert!(err.to_string().contains("nesting"));

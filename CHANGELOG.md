@@ -8,12 +8,19 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.9] - 2026-09-22 "Typed Route Diagnostics and Agent Limits"
+
 ### Added
 
 - Added optional audit-finding locations: `occurrence_path` identifies the
   concrete route-tree occurrence and `step_index` identifies a decomposing
   report step. The existing verdict and finding codes are unchanged; route-wide
   findings retain no invented location.
+- Added a non-authoritative atom-mapping receipt to every audited step. It
+  records duplicate reactant/product map labels, product-only labels, and the
+  normalized parent-child producer/consumer boundary as `valid`, `invalid`,
+  or `not_evaluable`. It never completes maps or changes an existing route
+  verdict.
 - Added WASM `capabilities()` fields for stable search/audit limits, accepted
   audit formats and policies, network stance, and the absence of cooperative
   cancellation. The browser playground now gives audit requests the same
@@ -30,6 +37,11 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   CLI. It distinguishes the CLI's local gzip/interchange audit surface from
   Python/WASM and records the MCP `tools/list` discovery boundary without
   claiming arbitrary external-route import through MCP.
+- Added the corresponding MCP capability contract to modern
+  `server/discover` under `capabilities.experimental`. It lists the actual
+  stdio, network, caller-path, search-limit, timeout, cancellation, and
+  refusal boundaries while retaining `tools/list` as the only source for
+  complete per-tool schemas. The legacy MCP envelope is unchanged.
 - Added public trusted-route-operation and Phase 55 performance-receipt
   contracts. The latter explicitly preserves missing historical RSS and
   time-to-first-route values as `not_measured`; it does not reinterpret an
@@ -51,6 +63,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the release's own committed route JSON. Its two steps normalize and forward
   replay successfully through the existing adapter; this is a scoped route-tree
   format check, not a claim about every model or the separate wrapper format.
+- Updated the pure-Rust `chematic` dependency family to 1.0.19 and kept the
+  direct instrumentation crate on the same registry release.
 
 ## [1.0.8] - 2026-09-16 "Evidence Chain and Reproducibility"
 
@@ -2757,7 +2771,8 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
 
 ---
 
-[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v1.0.8...HEAD
+[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v1.0.9...HEAD
+[1.0.9]: https://github.com/kent-tokyo/renkin/compare/v1.0.8...v1.0.9
 [1.0.8]: https://github.com/kent-tokyo/renkin/compare/v1.0.7...v1.0.8
 [1.0.7]: https://github.com/kent-tokyo/renkin/compare/v1.0.6...v1.0.7
 [1.0.6]: https://github.com/kent-tokyo/renkin/compare/v1.0.5...v1.0.6

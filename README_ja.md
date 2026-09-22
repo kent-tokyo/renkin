@@ -12,7 +12,7 @@ RENKINには2つの役割があります。
 監査はローカルで完結し、構造整合性、stock充足、forward replay、provenance、
 再現可能なaudit manifestを確認します。
 
-現行リリースは **v1.0.8** です。公開APIは実行前に入力を検証します。
+現行リリースは **v1.0.9** です。公開APIは実行前に入力を検証します。
 WASMには探索上限があり、MCPの数値引数とelement filterは不正値を受け付けません。
 標準MCP探索には協調的な `timeout_secs` を指定できます。
 

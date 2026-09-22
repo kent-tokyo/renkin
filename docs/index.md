@@ -12,7 +12,7 @@ tool-neutral route-audit layer. It searches from target SMILES to a declared
 stock, then can audit routes from RENKIN, AiZynthFinder, Syntheseus, and
 SynPlanner with the same deterministic checks.
 
-Current release: **v1.0.8**.
+Current release: **v1.0.9**.
 
 ## Start here
 

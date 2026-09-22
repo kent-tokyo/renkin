@@ -17,7 +17,7 @@ RENKIN has two uses:
 Auditing is local and reproducible. Reports include structural checks, stock
 coverage, forward replay, provenance, and a verifiable audit manifest.
 
-Current release: **v1.0.8**. Public inputs are validated before execution;
+Current release: **v1.0.9**. Public inputs are validated before execution;
 WASM applies bounded search limits, and MCP numeric and element-filter
 arguments fail closed when invalid. Standard MCP search also accepts an
 optional cooperative `timeout_secs` budget.

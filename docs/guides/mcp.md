@@ -53,7 +53,7 @@ No changes from prior RENKIN releases. Register in
 
 ```
 → {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"legacy-client","version":"1.0"}}}
-← {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"renkin","version":"1.0.8"}}}
+← {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"renkin","version":"1.0.9"}}}
 
 → {"jsonrpc":"2.0","method":"notifications/initialized"}
 
@@ -91,11 +91,11 @@ No `initialize` handshake. Every request carries protocol negotiation in
 ← {"jsonrpc":"2.0","id":"d1","result":{
     "resultType":"complete",
     "supportedVersions":["2026-07-28"],
-    "capabilities":{"tools":{}},
+    "capabilities":{"tools":{},"experimental":{"io.renkin/capabilityContract":{...}}},
     "instructions":"RENKIN provides retrosynthetic route search and route-analysis tools.",
     "ttlMs":3600000,
     "cacheScope":"public",
-    "_meta":{"io.modelcontextprotocol/serverInfo":{"name":"renkin","version":"1.0.8"}}
+    "_meta":{"io.modelcontextprotocol/serverInfo":{"name":"renkin","version":"1.0.9"}}
   }}
 
 → {"jsonrpc":"2.0","id":"t1","method":"tools/list","params":{"_meta":{
@@ -107,13 +107,31 @@ No `initialize` handshake. Every request carries protocol negotiation in
     "tools":[...],
     "ttlMs":3600000,
     "cacheScope":"public",
-    "_meta":{"io.modelcontextprotocol/serverInfo":{"name":"renkin","version":"1.0.8"}}
+    "_meta":{"io.modelcontextprotocol/serverInfo":{"name":"renkin","version":"1.0.9"}}
   }}
 ```
 
 `server/discover` is optional — a client can instead send `tools/list` or
 `tools/call` directly as its opening request, as long as it carries valid
 `_meta`; the connection still pins modern.
+
+### Capability and limit contract
+
+Modern `server/discover` advertises the additive
+`capabilities.experimental["io.renkin/capabilityContract"]` object. It is a
+versioned, machine-readable description of this **MCP** server: transport,
+network and caller-path boundary, stable tool names, enforced search maxima,
+timeout modes, and refusal categories. Per-tool JSON Schema remains the
+source of truth in `tools/list`; the contract deliberately references it
+instead of duplicating schemas.
+
+The server is stdio-only and never uses the network. It may read an explicitly
+supplied local coverage-template path, never writes caller data, has no
+general request-cancel method, and rejects invalid arguments at the JSON-RPC
+boundary. `find_routes.timeout_secs` is a cooperative 1–3,600 second bound
+for standard search; coverage exposes its separate Stage-2 timeout. A handler
+failure receives an audit receipt with `tool_error`; malformed arguments are a
+JSON-RPC `Invalid Params` error and do not run search.
 
 ### Audit receipts
 

@@ -207,7 +207,12 @@ fn legacy_tools_list_result() -> Value {
 fn discover_result() -> Value {
     json!({
         "supportedVersions": [MODERN_PROTOCOL_VERSION],
-        "capabilities": {"tools": {}},
+        "capabilities": {
+            "tools": {},
+            "experimental": {
+                "io.renkin/capabilityContract": tools::capability_contract(),
+            },
+        },
         "instructions": "RENKIN provides retrosynthetic route search and route-analysis tools.",
         "ttlMs": 3_600_000,
         "cacheScope": "public",
@@ -406,6 +411,7 @@ mod tests {
         assert_eq!(resp["result"]["protocolVersion"], LEGACY_PROTOCOL_VERSION);
         assert!(resp["result"].get("resultType").is_none());
         assert!(resp["result"]["_meta"].is_null());
+        assert!(resp["result"]["capabilities"].get("experimental").is_none());
     }
 
     #[test]
@@ -418,7 +424,18 @@ mod tests {
             resp["result"]["supportedVersions"],
             json!([MODERN_PROTOCOL_VERSION])
         );
-        assert_eq!(resp["result"]["capabilities"], json!({"tools": {}}));
+        assert_eq!(resp["result"]["capabilities"]["tools"], json!({}));
+        let contract =
+            &resp["result"]["capabilities"]["experimental"]["io.renkin/capabilityContract"];
+        assert_eq!(contract["schema_version"], 1);
+        assert_eq!(contract["surface"], "mcp");
+        assert_eq!(contract["network"], "never");
+        assert_eq!(contract["search"]["max_depth"], 20);
+        assert_eq!(
+            contract["search"]["standard_timeout_secs"]["maximum"],
+            3_600
+        );
+        assert_eq!(contract["search"]["request_cancel"], "not_supported");
         assert_eq!(
             resp["result"]["_meta"]["io.modelcontextprotocol/serverInfo"]["name"],
             "renkin"

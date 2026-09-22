@@ -179,6 +179,50 @@ pub fn find(name: &str) -> Option<&'static ToolDefinition> {
     TOOLS.iter().find(|t| t.name == name)
 }
 
+/// Machine-readable capability and limit contract for the MCP surface.
+///
+/// This deliberately describes only limits that the MCP server itself
+/// enforces.  Detailed, per-tool JSON Schemas remain in `tools/list`; the
+/// contract points clients there instead of copying schemas and risking
+/// drift.  It is advertised to modern clients from `server/discover` under
+/// MCP's extension namespace and never changes the legacy wire envelope.
+pub fn capability_contract() -> Value {
+    let tool_names: Vec<&str> = TOOLS.iter().map(|tool| tool.name).collect();
+    json!({
+        "schema_version": 1,
+        "surface": "mcp",
+        "version": env!("CARGO_PKG_VERSION"),
+        "stability": "stable",
+        "transport": "stdio",
+        "network": "never",
+        "filesystem": {
+            "reads_caller_paths": true,
+            "writes": false,
+        },
+        "discovery": {
+            "tool_schemas": "tools/list",
+            "supported_tools": tool_names,
+            "arbitrary_external_route_import": false,
+        },
+        "search": {
+            "stability": "stable",
+            "max_target_smiles_bytes": search::MAX_TARGET_SMILES_BYTES,
+            "max_depth": 20,
+            "max_routes": 100,
+            "max_candidate_trace": search::MAX_CANDIDATE_TRACE,
+            "search_modes": ["standard", "coverage"],
+            "standard_timeout_secs": {"minimum": 1, "maximum": MAX_STANDARD_TIMEOUT_SECS},
+            "coverage_stage2_timeout": true,
+            "request_cancel": "not_supported",
+        },
+        "refusals": {
+            "invalid_arguments": "jsonrpc_invalid_params",
+            "resource_limit": "resource_exhausted",
+            "handler_failure": "tool_error_receipt",
+        },
+    })
+}
+
 /// Legacy 2024-11-05 `tools/call` dispatch. The wire result shape remains
 /// legacy-compatible, while malformed calls retain RENKIN's v1.0 fail-closed
 /// contract: unknown tools and arguments are rejected before search.
@@ -1412,6 +1456,37 @@ mod tests {
                 "estimate_diversity",
                 "diagnose_failure",
             ]
+        );
+    }
+
+    #[test]
+    fn capability_contract_is_derived_from_the_mcp_tool_surface() {
+        let contract = capability_contract();
+        let advertised = contract["discovery"]["supported_tools"]
+            .as_array()
+            .expect("tool names must be an array")
+            .iter()
+            .map(|name| name.as_str().expect("tool name must be a string"))
+            .collect::<Vec<_>>();
+        let declared = TOOLS.iter().map(|tool| tool.name).collect::<Vec<_>>();
+        assert_eq!(advertised, declared);
+
+        let schema = modern_schema_find_routes();
+        assert_eq!(
+            contract["search"]["max_depth"],
+            schema["properties"]["depth"]["maximum"]
+        );
+        assert_eq!(
+            contract["search"]["max_routes"],
+            schema["properties"]["max_routes"]["maximum"]
+        );
+        assert_eq!(
+            contract["search"]["standard_timeout_secs"]["maximum"],
+            schema["properties"]["timeout_secs"]["maximum"]
+        );
+        assert_eq!(
+            contract["search"]["max_target_smiles_bytes"],
+            search::MAX_TARGET_SMILES_BYTES
         );
     }
 

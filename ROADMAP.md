@@ -128,8 +128,8 @@ Phase 55の長時間実行は開発と計算資源を分離する。
 | Phase / 優先度 | 目安・依存 | 成果物・対象 | 合格条件 |
 |---|---|---|---|
 | **O8.0 / P0 契約・fixture棚卸し** | Implemented | `validation/`・`bridge/`・各bindingの対応表。出所/版/hash/利用条件付きSynPlanner 1.7.0 fixtureと未対応field一覧 | v1.7.0 upstream route 58、release/tag/commit/blob/file/license hashを固定。公開18-routeのnode fieldsを棚卸しし、adapter/CLIで2-step parse・normalize・forward replayを回帰。model全般・別wrapper・未merge PRは対象外 |
-| **O8.1 / P0 Typed route diagnostics** | Active | rule/step/nodeを指すreason code、mappingとproducer/consumer診断、validation receipt | findingのoccurrence pathとstep参照を追加し、Rust/CLI/Python/WASMの共通wire意味を回帰。positive/negative/unsupported fixture拡充と高度なmapping診断は未完。invalidをpassにしない |
-| **O8.2 / P0 Capability / limit contract** | Active | 各toolのschema/version・最大bytes/atoms/nodes/records・timeout/cancel・network・stable/experimental・refusal一覧。WASM/MCPは既存discoveryへ加算 | WASM/Python/CLI capability payloadを追加。実ブラウザで100,000-route監査の取消、Worker再生成、次監査成功、古い応答の非反映、console logなしを確認済み。公開最大値/max+1をRust・実Node/WASM・packaged Pythonで回帰。MCPは標準`tools/list`を維持し、統一payloadは未完 |
+| **O8.1 / P0 Typed route diagnostics** | Implemented | rule/step/nodeを指すreason code、mappingとproducer/consumer診断、validation receipt | `forward_validation_not_evaluable` findingへreasonと位置を追加し、各`AuditedStep`へ必須occurrence pathとatom-map receiptを追加。duplicate/product-only map、正規化済み親子境界のproducer/consumer一致を`valid`/`invalid`/`not_evaluable`で記録。Rust/CLI/Python/WASMで共通wireを回帰済み。mapを補完せず、既存route statusは変更しない |
+| **O8.2 / P0 Capability / limit contract** | Implemented | 各toolのschema/version・実効上限・timeout/cancel・network・stable/experimental・refusal一覧。WASM/MCPは既存discoveryへ加算 | WASM/Python/CLI capability payloadを追加。実ブラウザで100,000-route監査の取消、Worker再生成、次監査成功、古い応答の非反映、console logなしを確認済み。公開最大値/max+1をRust・実Node/WASM・packaged Pythonで回帰。MCPはlegacy wireを保ったままmodern `server/discover` のextensionに統一payloadを追加し、`tools/list`をschemaの唯一の正本とする |
 | **O8.3 / P1 Interop + browser evidence** | 4–8週、O8.1/2後 | SynPlanner 1.7.0 import回帰、O7入力来歴のlocal upload→audit→exportデモ。需要確認後に版固定RetroCast一形式を追加 | source node/occurrence・conditions・mapping・stock/proposal provenanceのfield別loss report。無損失対応範囲だけround-trip一致。入力構造の無断修正・remote取得なし |
 | **O8.4 / P1 Bounded repair proposals** | 6–12週、O8.1/3後 | 診断に根拠がある1–2保護基familyに限定したopt-in提案。元route、before/after hash、actions、残存risk、予算、追加stock要求を保持 | 全候補を再監査し、invalid/unsupportedは採用しない。既存成功取消0、予算超過なし。開発で固定したfamilyを未使用評価集合で評価。条件未検証ならexperimental維持 |
 
@@ -162,8 +162,8 @@ validに変えない。保護・伝播・脱保護、最終target、stereo、追
 
 ### 次候補 v1.0.9の必須範囲とgate
 
-- O8.0の対応表・出所付きfixture、O8.1の既存検査に対するreason codeとstep参照を必須とする。
-  高度なmapping推論、全reaction family対応、repairは含めない。
+- O8.0の対応表・出所付きfixture、O8.1のreason code・step参照・atom-map receiptを必須とする。
+  map補完、高度なreaction semantics、全reaction family対応、repairは含めない。
 - O8.2は既存toolのcapability/limit公開とbrowser auditの取消/timeoutを必須sliceとする。
   O7全sidecarの全binding公開や新adapterを抱き合わせない。
 - opt-in未使用時の探索/stock/route hashを固定開発fixtureで維持し、追加診断の時間・RSSをA/B測定。

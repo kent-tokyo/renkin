@@ -23,12 +23,16 @@ Phase 55の「同一stock・予算でAiZynthFinderのnative/common-strictをと�
   対応表、既存SynPlanner 1.6 fixtureの境界、v1.7.0のrelease/tag/commit/license、upstream blobと
   route 58のhashを固定。adapter/CLIで2 stepのparse・normalize・forward replayを回帰済み。
   model全般や別wrapper形式の互換性は主張しない。
-- [ ] **O8.1 / 診断slice** 既存statusを保ち、reason code、step/occurrence参照、unsupported/missing
+- [x] **O8.1 / 診断slice** 既存statusを保ち、reason code、step/occurrence参照、unsupported/missing
   evidenceを明示。mappingは反応ごとに局所的として扱い、全bindingの共通対応範囲を回帰する。
   低負荷作業として既存findingへ任意の`occurrence_path`と`step_index`を追加し、Rust unit、
   CLI process-level、Python typed wrapperのwire-field回帰を完了。実WASMでも同じSynPlanner fixtureの
-  2 findingが`occurrence_path=[]`、`step_index=0`になることを確認。高度なmapping診断は残す。
-- [ ] **O8.2 / 実行境界slice** capability/limitを実効値から公開。browser auditの取消・timeout・
+  2 findingが`occurrence_path=[]`、`step_index=0`になることを確認。続いて
+  `forward_validation_not_evaluable` findingへstep-level reasonを複製し、すべての`AuditedStep`へ
+  必須`occurrence_path`を追加。さらにstep-local atom-map receiptへ重複・product-only mapを、
+  正規化済み親子境界へproducer/consumer一致を`valid`/`invalid`/`not_evaluable`で追加。
+  実Rust/CLI/Python/WASMで回帰済み。map補完と既存status変更は行わない。
+- [x] **O8.2 / 実行境界slice** capability/limitを実効値から公開。browser auditの取消・timeout・
   Worker再生成・古い応答破棄・再実行を検証し、機密入力をログへ出さない。
   WASM capability payloadとbrowser auditの取消/timeout UIを追加。実WASMを読み込んだブラウザで
   100,000-route監査を取消し、Worker再生成後の通常監査成功、古い応答の非反映、console logなしを確認済み。

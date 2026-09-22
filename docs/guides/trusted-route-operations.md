@@ -5,8 +5,8 @@ description: "The v1.0.9 contract for locating route-audit findings and declarin
 
 # Trusted route operations
 
-This is a follow-up to the evidence chain shipped in v1.0.8. It does not add
-a planner, an OCR model, a second chemistry parser, or a new route schema. It
+Released in v1.0.9, this extends the evidence chain shipped in v1.0.8. It does
+not add a planner, OCR model, second chemistry parser, or route schema. It
 makes two existing boundaries explicit: where an audit finding occurred, and
 what a caller may safely ask a public surface to do.
 

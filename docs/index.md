@@ -80,8 +80,8 @@ AiZynthFinder 4.4.1 had 32/690 (4.64%); the paired coverage difference was
 This supports a coverage result only for that registered configuration. It
 does not establish universal planner superiority or experimental viability.
 Peak-RSS and time-to-first-route receipts are still pending, so it does not
-support a whole-cohort performance claim. See [Benchmark overview](benchmark.md)
-and the [formal result record](benchmark/phase55-r2-result-20260916.md).
+support a whole-cohort performance claim. See the [Benchmark overview](benchmark.md)
+and [formal Phase 55 result record](benchmark/phase55-r2-result-20260916.md).
 
 ## Choose an interface
 

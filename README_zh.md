@@ -1,22 +1,15 @@
 # RENKIN
 
-一个用 Rust 编写的逆合成规划与路线审计工具。
+用 Rust 编写、可在本地运行的逆合成规划与路线审计工具。
 
-[English](README.md) · [日本語](README_ja.md) · [文档](https://kent-tokyo.github.io/renkin/) · [在线 Playground](https://kent-tokyo.github.io/renkin/playground/)
+[English](README.md) · [日本語](README_ja.md) · [文档](https://kent-tokyo.github.io/renkin/) · [Playground](https://kent-tokyo.github.io/renkin/playground/)
 
-RENKIN 有两个用途：
+RENKIN 有两项互补工作：
 
-- **Planner：** 从目标分子搜索到可购买起始原料的逆合成路线
-- **Bridge：** 审计 RENKIN、AiZynthFinder、Syntheseus 或 SynPlanner 生成的路线
+- **Planner：** 从 target SMILES 搜索至指定 building block 的逆合成路线。
+- **Bridge：** 用相同的确定性检查审计 RENKIN、AiZynthFinder、Syntheseus 和 SynPlanner 的路线。
 
-审计完全在本地运行并可复现，检查结构完整性、stock覆盖、正向重现、来源信息和审计清单。
-
-当前版本：**v1.0.9**。公开 API 会在执行前验证输入；WASM 具有明确的搜索上限，
-MCP 的数值参数和元素过滤器对非法值直接失败。标准 MCP 搜索还支持协作式
-`timeout_secs` 超时预算。
-
-审计和私有 stock policy 已拆分为确定性的可测试步骤，因此 report schema 和 policy
-行为保持稳定。
+当前版本为 **v1.0.9**。提供 CLI、Rust crate、Python、MCP 和浏览器 WASM；核心化学层没有 C/C++ 依赖。
 
 ## 安装
 
@@ -26,88 +19,44 @@ cargo add renkin
 npm install renkin
 ```
 
-需要 Syntheseus 支持时：
+## 快速开始
+
+规划 aspirin：
 
 ```bash
-pip install 'renkin[syntheseus]'
+renkin --target "CC(=O)Oc1ccccc1C(=O)O" --depth 5 --beam-width 100
 ```
 
-## 审计路线
-
-```python
-import json
-import renkin
-
-report = json.loads(
-    renkin.audit_route(open("trees.json").read(), format="aizynthfinder")
-)
-print(report["summary"])
-```
-
-`format`支持 `aizynthfinder`、`syntheseus`、`synplanner` 和 `renkin`。
+在本地审计导出的路线：
 
 ```bash
 renkin audit-route route.json --format auto --output json
 ```
 
-详细说明：[审计文档](https://kent-tokyo.github.io/renkin/guides/audit-reproducibility-contract/)、
-[私有 stock policy](https://kent-tokyo.github.io/renkin/guides/private-stock-policy/)、
-[路线 interchange](https://kent-tokyo.github.io/renkin/guides/evidence-carrying-interchange/)
-
-## 规划路线
+Python 使用同一引擎：
 
 ```python
-import json
-import renkin
-
-result = json.loads(renkin.find_routes(
-    target="CC(=O)Oc1ccccc1C(=O)O",  # aspirin
-    depth=5,
-    max_routes=3,
-))
-print(len(result["routes"]))
+import json, renkin
+routes = json.loads(renkin.find_routes("CC(=O)Oc1ccccc1C(=O)O", depth=5))
+report = json.loads(renkin.audit_route(open("route.json").read(), format="auto"))
 ```
 
-CLI示例：
+## 按用途选择入口
 
-```bash
-cargo run --release -- \
-  --target "CC(=O)Oc1ccccc1C(=O)O" \
-  --depth 5 --beam-width 100 --format tree
-```
-
-引擎使用 A*/AND-OR 搜索、模板索引、beam限制、stock-aware评分和正向验证。
-[API文档](https://docs.rs/renkin) · [逆合成指南](https://kent-tokyo.github.io/renkin/guides/rust-retrosynthesis/)
-
-## 组件
-
-| 组件 | 作用 |
+| 用途 | 入口 |
 | --- | --- |
-| `renkin` | planner、CLI、Python绑定和WASM |
-| `renkin-forward` | 正向预测、enumeration、hint和validation |
-| `renkin-kg` | 反应知识图谱导出 |
-| `renkin-mcp` | 本地MCP服务器 |
+| 仅在浏览器中规划或审计 | [Playground](https://kent-tokyo.github.io/renkin/playground/) · [WASM API](https://kent-tokyo.github.io/renkin/api/wasm/) |
+| 应用集成 | [Python](https://kent-tokyo.github.io/renkin/api/python/) · [Rust](https://docs.rs/renkin) |
+| 本地 agent 工作流 | [MCP 指南](https://kent-tokyo.github.io/renkin/guides/mcp/) |
+| 私有 stock 与证据审计 | [审计](https://kent-tokyo.github.io/renkin/guides/audit-reproducibility-contract/) · [policy](https://kent-tokyo.github.io/renkin/guides/private-stock-policy/) |
 
-化学处理使用 [`chematic`](https://docs.rs/chematic/)。
+CLI、Python、WASM 和现代 MCP 通过 capability payload 公布各自的实际限制。除非操作者明确导出，私有输入始终保留在本地。
 
-## MCP
+## 范围与基准边界
 
-```bash
-cargo run --release --bin renkin-mcp
-```
+审计结果是证据，不保证实验成功、收率或安全性。stock identity 使用标准化后的 canonical SMILES 完全匹配；外部模型输出和导入路线不会在未经验证时被接受。
 
-MCP服务器通过stdio提供路线搜索、验证、解释、约束、诊断和审计receipt。
-详见 [MCP指南](https://kent-tokyo.github.io/renkin/guides/mcp/)。
-
-## 基准测试
-
-已注册的 Phase 55 shared-stock、同一预算 TEST 完成了690个 target：RENKIN 得到
-481/690 条 strict route（69.71%），AiZynthFinder 4.4.1 为32/690（4.64%）。配对 coverage
-差为+65.07个百分点（95% CI +61.45 至 +68.55）。该结果只适用于固定的 cohort、asset、stock
-和预算；并不代表普遍 CASP 优势或实验合成成功。peak RSS 与首次找到路线的 receipt 尚未完成，
-因此也不是全 cohort 的性能比较。
-
-[基准测试详情](https://kent-tokyo.github.io/renkin/benchmark/)提供 protocol、artifact 和主张边界。
+注册的 Phase 55 shared-stock TEST 在固定 cohort、stock、asset 与 budget 下得到：RENKIN 为 481/690（69.71%），AiZynthFinder 4.4.1 为 32/690（4.64%）条 strict route。这不能证明普遍的 CASP 优势、实验可行性或全 cohort 的速度优势。使用数字前请阅读[结果记录](https://kent-tokyo.github.io/renkin/benchmark/phase55-r2-result-20260916/)。
 
 ## 开发
 
@@ -117,13 +66,8 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
 ```
 
-开始修改前请阅读 [`AGENTS.md`](AGENTS.md)、[`tasks/lessons.md`](tasks/lessons.md)
-和 [`ROADMAP.md`](ROADMAP.md)。
-
-重要边界：stock identity 使用标准化后的 canonical SMILES 完全匹配。
-比较 manifest 会记录工具、配置、输入文件和经过检查的 worktree 状态，避免恢复运行时
-静默混用不同配置。
+架构、贡献方式与当前计划见 [AGENTS.md](AGENTS.md)、[CONTRIBUTING.md](CONTRIBUTING.md) 和 [ROADMAP.md](ROADMAP.md)。完整发布历史保留在 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 许可证
 
-MIT，见 [LICENSE](LICENSE)。
+MIT，详见 [LICENSE](LICENSE)。

@@ -1,108 +1,47 @@
 # Contributing to RENKIN
 
-Thank you for your interest in contributing! RENKIN is a Pure Rust retrosynthesis engine and welcomes contributions of all kinds.
+Thank you for helping improve RENKIN. Keep changes small, reproducible, and
+chemically conservative: a route candidate is not evidence of experimental
+success.
 
-## Branch Naming
-
-| Prefix | Use |
-|---|---|
-| `feat/*` | New features |
-| `fix/*` | Bug fixes |
-| `docs/*` | Documentation only |
-| `release/*` | Version bump + CHANGELOG + tag |
-| `security/*` | Security fixes |
-
-Open a PR against `main`. Direct pushes to `main` are reserved for Dependabot merges and release tags.
-
-## Ways to Contribute
-
-| Type | Examples |
-|---|---|
-| 🧪 **Reaction rules** | Add new SMIRKS retro-rules, fix incorrect disconnections |
-| 🗂️ **Building blocks** | Extend the commercial reagent database |
-| 🐛 **Bug reports** | Incorrect routes, wrong SMILES output, panics |
-| ✨ **Features** | New CLI flags, API improvements |
-| 📖 **Documentation** | Fix typos, improve examples, add translations |
-| 🧬 **Benchmarks** | New test sets, external database integration |
-
-## Setup
+## Before opening a pull request
 
 ```bash
 git clone https://github.com/kent-tokyo/renkin.git
 cd renkin
-cargo build          # debug build
-cargo test --workspace               # run the full workspace suite
+cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
 ```
 
-## Adding a Reaction Rule
+Open a focused PR against `main`. Maintainers may make direct `main` pushes
+for releases or urgent fixes; contributors should use a branch and PR.
 
-Reaction rules live in `src/chem_env.rs` inside `default_rules()`.
+## Contribution areas
 
-**SMIRKS-based rule** (most rules):
-```rust
-RetroRule {
-    name: "your_reaction_retro".to_string(),
-    smirks: "[Product:1]>>[Reactant1:2].[Reactant2:3]".to_string(),
-    weight: 1.0,
-    required_elements: 0,  // or use elem_mask_from_smirks() result
-},
-```
+| Area | What to include |
+| --- | --- |
+| Bug fix | Minimal reproducer and regression test |
+| Reaction rule or template behavior | Atom-balanced rationale, targeted test, and fail-closed behavior for unsupported chemistry |
+| Building blocks | A justified update to `data/building_blocks.smi`; do not add stock entries in Rust code |
+| Binding or MCP change | Rust, CLI/Python/WASM/MCP compatibility coverage for the affected wire contract |
+| Documentation | A runnable example and an explicit claim boundary where a result is measured |
+| Benchmark tooling | Immutable input/configuration hashes and a preserved raw result path |
 
-**Graph-based rule** (for reactions where SMIRKS leaks, e.g. Suzuki):
-```rust
-RetroRule {
-    name: "your_graph_rule".to_string(),
-    smirks: String::new(),   // empty → dispatches to apply_retro match arm
-    weight: 1.0,
-    required_elements: 0,
-},
-```
-Then add a match arm in `apply_retro()` and implement the graph traversal function.
+`DEFAULT_BUILDING_BLOCKS` in `src/lib.rs` is a compiled fallback used by
+library/WASM paths. The repository's default stock data is
+`data/building_blocks.smi`.
 
-**Tips:**
-- Use [Daylight SMIRKS](https://www.daylight.com/dayhtml/doc/theory/theory.smirks.html) notation
-- Test your rule with `cargo test` — add a test in `src/chem_env.rs #[cfg(test)]`
-- `required_elements` is a u64 bitmask: set bits for elements that MUST appear in the target
+## Chemistry and evidence rules
 
-## Adding Building Blocks
+- Stock membership is exact standardized canonical-SMILES identity, never substructure matching.
+- A new disconnection must not silently discard target heavy atoms. If a balanced rule cannot be stated without inventing reagents, do not add it.
+- Keep model output, audit findings, and experimental claims separate.
+- Do not replace a registered benchmark result with a more favorable run; record changed assets, stock, budgets, and endpoints.
 
-The default set is `DEFAULT_BUILDING_BLOCKS` in `src/lib.rs` (canonical SMILES strings).
+See [AGENTS.md](AGENTS.md) for implementation constraints and
+[docs](https://kent-tokyo.github.io/renkin/) for public API contracts.
 
-For large sets, users supply `--building-blocks <file>` — no code change needed.
+## Security and license
 
-## Running the Full Benchmark
-
-```bash
-cargo build --release
-bash scripts/run_benchmark_chunks.sh \
-    data/uspto50k_test.smi \
-    data/templates_extracted_5000.smi \
-    data/bench_chunks_my_change \
-    5 100
-```
-
-## Pull Request Guidelines
-
-1. Run `cargo fmt` and `cargo clippy -- -D warnings` before submitting
-2. Add a test for new rules or features
-3. Update `CHANGELOG.md` under `[Unreleased]`
-4. Keep PRs focused — one feature/fix per PR
-
-## Security
-
-Security vulnerabilities should **not** be reported via GitHub Issues.
-Use [GitHub Private vulnerability reporting](https://github.com/kent-tokyo/renkin/security/advisories/new).
-See [SECURITY.md](SECURITY.md) for the full policy.
-
-## Reporting Bugs
-
-Use [GitHub Issues](https://github.com/kent-tokyo/renkin/issues) and include:
-- SMILES of the target molecule
-- Expected vs. actual output
-- RENKIN version (`renkin --version` or `cargo pkgid`)
-
-## License
-
-By contributing, you agree that your contributions will be licensed under the [MIT License](LICENSE).
+Report vulnerabilities through [GitHub Private vulnerability reporting](https://github.com/kent-tokyo/renkin/security/advisories/new), not a public issue. Contributions are licensed under [MIT](LICENSE).

@@ -1,29 +1,20 @@
 # RENKIN
 
-Retrosynthesis planning and route auditing in Rust.
+Local retrosynthesis planning and route auditing in Rust.
 
 [![CI](https://github.com/kent-tokyo/renkin/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/kent-tokyo/renkin/actions/workflows/ci.yml)
 [![Crates.io](https://img.shields.io/crates/v/renkin.svg)](https://crates.io/crates/renkin)
 [![PyPI](https://img.shields.io/pypi/v/renkin.svg)](https://pypi.org/project/renkin/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-[Documentation](https://kent-tokyo.github.io/renkin/) · [Playground](https://kent-tokyo.github.io/renkin/playground/) · [日本語版](README_ja.md) · [中文](README_zh.md)
+[Docs](https://kent-tokyo.github.io/renkin/) · [Playground](https://kent-tokyo.github.io/renkin/playground/) · [日本語](README_ja.md) · [中文](README_zh.md)
 
-RENKIN has two uses:
+RENKIN has two complementary jobs:
 
-- **Planner:** search retrosynthetic routes from a target molecule to building blocks.
-- **Bridge:** audit routes from RENKIN, AiZynthFinder, Syntheseus, or SynPlanner.
+- **Plan:** search retrosynthetic routes from target SMILES to declared building blocks.
+- **Audit:** apply the same deterministic structural, stock, forward-replay, and provenance checks to routes from RENKIN, AiZynthFinder, Syntheseus, or SynPlanner.
 
-Auditing is local and reproducible. Reports include structural checks, stock
-coverage, forward replay, provenance, and a verifiable audit manifest.
-
-Current release: **v1.0.9**. Public inputs are validated before execution;
-WASM applies bounded search limits, and MCP numeric and element-filter
-arguments fail closed when invalid. Standard MCP search also accepts an
-optional cooperative `timeout_secs` budget.
-
-The audit and private-stock policy layers are split into deterministic,
-testable steps so their report schema and policy behavior remain stable.
+Current release: **v1.0.9**. Core chemistry is pure Rust; the project ships a CLI, Rust crate, Python package, MCP server, and browser WebAssembly module.
 
 ## Install
 
@@ -33,112 +24,44 @@ cargo add renkin
 npm install renkin
 ```
 
-For Syntheseus support:
+## Start in two commands
+
+Plan aspirin from the CLI:
 
 ```bash
-pip install 'renkin[syntheseus]'
+renkin --target "CC(=O)Oc1ccccc1C(=O)O" --depth 5 --beam-width 100
 ```
 
-## Audit a route
-
-```python
-import json
-import renkin
-
-report = json.loads(
-    renkin.audit_route(open("trees.json").read(), format="aizynthfinder")
-)
-print(report["summary"])
-```
-
-Use `format="syntheseus"`, `format="synplanner"`, or `format="renkin"` for
-other supported route formats. The same audit pipeline is used for every
-source.
+Audit an exported route locally:
 
 ```bash
 renkin audit-route route.json --format auto --output json
 ```
 
-Optional private stock and policy checks remain local:
-
-```bash
-renkin audit-route route.json \
-  --private-stock private-vendors.csv \
-  --stock-policy private-policy.json --output json
-```
-
-See the [audit guide](https://kent-tokyo.github.io/renkin/guides/audit-reproducibility-contract/),
-[private stock policy](https://kent-tokyo.github.io/renkin/guides/private-stock-policy/),
-and [route interchange](https://kent-tokyo.github.io/renkin/guides/evidence-carrying-interchange/).
-
-## Plan a route
+Python uses the same engine:
 
 ```python
-import json
-import renkin
-
-result = json.loads(renkin.find_routes(
-    target="CC(=O)Oc1ccccc1C(=O)O",  # aspirin
-    depth=5,
-    max_routes=3,
-))
-
-for route in result["routes"]:
-    for step in route["steps"]:
-        print(step["target"], "→", " + ".join(step["precursors"]))
+import json, renkin
+routes = json.loads(renkin.find_routes("CC(=O)Oc1ccccc1C(=O)O", depth=5))
+report = json.loads(renkin.audit_route(open("route.json").read(), format="auto"))
 ```
 
-CLI:
+## Choose an interface
 
-```bash
-cargo run --release -- \
-  --target "CC(=O)Oc1ccccc1C(=O)O" \
-  --depth 5 --beam-width 100 --format tree
-```
-
-The planner uses A*/AND-OR search, template indexing, beam limits,
-stock-aware scoring, and forward validation. See the [API documentation](https://docs.rs/renkin)
-and [retrosynthesis guide](https://kent-tokyo.github.io/renkin/guides/rust-retrosynthesis/).
-
-The following counts describe this checkout and may be invalidated by future
-changes. The default planner includes 24 hand-crafted rules. The repository stock file
-contains 402 compounds; installed users without that file use a compiled-in
-152-compound fallback. Additional extracted templates can be supplied with
-`--templates`.
-
-## Components
-
-| Component | Purpose |
+| Need | Start here |
 | --- | --- |
-| `renkin` | Planner, CLI, Python bindings, and WASM module |
-| `renkin-forward` | Forward prediction, enumeration, hints, and validation |
-| `renkin-kg` | Reaction knowledge-graph export |
-| `renkin-mcp` | Local MCP server for search and audit |
+| Browser-only exploration or audit | [Playground](https://kent-tokyo.github.io/renkin/playground/) · [WASM API](https://kent-tokyo.github.io/renkin/api/wasm/) |
+| Application integration | [Python](https://kent-tokyo.github.io/renkin/api/python/) · [Rust](https://docs.rs/renkin) |
+| Local agent workflow | [MCP guide](https://kent-tokyo.github.io/renkin/guides/mcp/) |
+| Private stock or route evidence | [Audit guide](https://kent-tokyo.github.io/renkin/guides/audit-reproducibility-contract/) · [Policy guide](https://kent-tokyo.github.io/renkin/guides/private-stock-policy/) |
 
-The chemistry layer is [`chematic`](https://docs.rs/chematic/), with no
-C/C++ dependency in the core.
+`renkin capabilities`, `renkin.capabilities()`, WASM `capabilities()`, and modern MCP discovery expose each surface's effective limits. Private inputs stay local unless an operator explicitly exports them.
 
-## MCP
+## Scope and benchmark boundary
 
-```bash
-cargo run --release --bin renkin-mcp
-```
+An audit result is evidence, not a claim that a synthesis will succeed in the laboratory. Stock identity is exact standardized canonical-SMILES membership; model output and route imports are never accepted without validation.
 
-The MCP server communicates over stdio and exposes search, validation,
-explanation, constraints, diagnostics, and audit receipts. See the [MCP guide](https://kent-tokyo.github.io/renkin/guides/mcp/).
-
-## Benchmark status
-
-The registered Phase 55 shared-stock, shared-budget TEST comparison completed
-690 targets: RENKIN found 481 strict routes (69.71%) and AiZynthFinder 4.4.1
-found 32 (4.64%). The paired coverage difference was +65.07 percentage points
-(95% CI +61.45 to +68.55). This is evidence only for the pinned cohort,
-assets, stock, and budget; it is neither a universal CASP claim nor evidence
-of laboratory success. Peak-RSS and time-to-first-route receipts remain open,
-so it is not a whole-cohort performance claim.
-
-See the [benchmark documentation](https://kent-tokyo.github.io/renkin/benchmark/)
-for protocol, artifacts, and claim boundaries.
+The registered Phase 55 shared-stock TEST found strict routes for RENKIN on 481/690 targets (69.71%) and AiZynthFinder 4.4.1 on 32/690 (4.64%), under its pinned cohort, stock, assets, and budgets. It does **not** establish universal planner superiority, laboratory viability, or whole-cohort speed superiority. Read the [result record](https://kent-tokyo.github.io/renkin/benchmark/phase55-r2-result-20260916/) before reusing the figure.
 
 ## Development
 
@@ -148,17 +71,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
 ```
 
-Read [`AGENTS.md`](AGENTS.md), [`tasks/lessons.md`](tasks/lessons.md), and
-the [roadmap](ROADMAP.md) before changing the chemistry or search core.
-
-Important boundaries:
-
-- stock identity is exact standardized canonical-SMILES membership;
-- route success is not experimental success;
-- external model output is evidence or candidates, not automatic validity;
-- comparison manifests bind the tool, configuration, input files, and checked
-  worktree state so resumed runs cannot silently mix configurations;
-- benchmark claims must name the dataset, stock, versions, and endpoint.
+For architecture and contribution rules, see [AGENTS.md](AGENTS.md), [CONTRIBUTING.md](CONTRIBUTING.md), and the current [ROADMAP.md](ROADMAP.md). Full release history remains in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

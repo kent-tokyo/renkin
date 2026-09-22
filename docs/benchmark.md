@@ -1,57 +1,43 @@
 ---
 title: "RENKIN Benchmark Overview"
-description: "A concise overview of RENKIN benchmark results, comparison conditions, and reproducibility boundaries."
+description: "Current registered comparison results, historical records, and the limits of each claim."
 ---
 
 # Benchmark overview
 
-This page is a short index of benchmark results. It is not a complete lab
-notebook. Historical runs, hashes, and failure-by-failure analysis belong in
-the dedicated comparison guide and repository artifacts.
+This page separates the current registered result from older diagnostic runs.
+Every benchmark claim is tied to a tool revision, cohort, stock definition,
+assets, endpoint, and resource budget. A route found by a planner is not proof
+of experimental success.
 
-## Current comparison
+## Current registered result: Phase 55 r2
 
-The latest frozen VAL-200 shared-stock comparison found native routes for
-134/200 targets (67.0%) for both RENKIN and AiZynthFinder 4.4.1.
+The 2026-09-16 independent TEST used a frozen 690-target cohort, shared stock,
+pinned tool assets, and declared budgets. It compared RENKIN `1.0.7` at
+`b98a5c1` with AiZynthFinder `4.4.1`.
 
-Under the stricter common validator plus shared-stock endpoint:
+| Endpoint | RENKIN | AiZynthFinder | Paired difference |
+| --- | ---: | ---: | ---: |
+| Strict route to the declared shared stock | 481/690 (69.71%) | 32/690 (4.64%) | +65.07 pp, 95% CI +61.45 to +68.55 |
 
-| Tool | Success |
-|---|---:|
-| RENKIN | 134/200 (67.0%) |
-| AiZynthFinder 4.4.1 | 123/200 (61.5%) |
+This is a **coverage result for that registered configuration**. It is not a
+measurement of v1.0.9, universal CASP superiority, experimental viability,
+peak RSS, time-to-first-route, or whole-cohort latency. Those last three
+performance receipts were deliberately recorded as `not_measured`.
 
-This is a fixed-cohort result, not a universal CASP superiority claim. It does
-not measure experimental yield or replace chemist review.
+Read the [formal Phase 55 result record](benchmark/phase55-r2-result-20260916.md)
+and [metric truth table](benchmark/phase55-metric-truth-table.md) before
+quoting the result.
 
-See the [formal comparison guide](guides/open-source-retrosynthesis-comparison.md)
-for the protocol, validation policy, and claim limits.
+## Older records
 
-## Historical USPTO-50k stress test
+| Record | Why it remains | How to interpret it |
+| --- | --- | --- |
+| [VAL-200 comparison](guides/open-source-retrosynthesis-comparison.md) | Diagnosis of search/stock differences | The saved 134/200 native tie is not a new-release measurement or a superiority claim |
+| [v1.0.1 4,903-target arm](benchmark/formal-v1.0-competitor-comparison.md) | Corrected historical route-to-stock record | A separate, older configuration; do not combine it with Phase 55 |
+| `data/comparison/` | Raw rows, manifests, and audits | Evidence artifacts, not product headline copy |
 
-The former 4,907-target run used a small configured stock and was a
-route-to-stock stress test, not the canonical single-step USPTO-50k task.
-Its headline v0.15.5 figures (78.0%, 95.9%, and 81.8% OOD) were invalidated
-after rule and validator fixes. They must not be used as current performance.
-
-The corrected snapshot reported:
-
-| Metric | Result |
-|---|---:|
-| Search-to-stock | 986/4,907 (20.09%) |
-| Atom-balance filtered | 756/4,907 (15.41%) |
-| Rule-validator confirmed | 43/4,907 (0.88%) |
-
-These are historical internal diagnostics, not chemical accuracy rates.
-
-## What “solved” means
-
-Unless a benchmark says otherwise, `solved` means that the planner returned a
-complete route whose leaves satisfy the configured stock policy. It is not a
-match against USPTO ground-truth reactants and is not proof that a synthesis
-will work in the laboratory.
-
-## Reproduce a local run
+## Reproduce a local smoke run
 
 ```bash
 cargo run --release --bin renkin-bench -- \
@@ -60,4 +46,7 @@ cargo run --release --bin renkin-bench -- \
   --templates data/templates_extracted_5000.smi
 ```
 
-For matched planner comparisons, use the [comparison guide](guides/open-source-retrosynthesis-comparison.md).
+This command is a local planner smoke test. It does not reproduce a formal
+cross-tool comparison. For a registered comparison, start with the protocol,
+pin every input hash and image identity, preserve raw rows, and run the
+verification scripts described in the formal result record.

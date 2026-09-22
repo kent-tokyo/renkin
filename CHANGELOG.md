@@ -8,6 +8,17 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Documentation
+
+- Consolidated the English, Japanese, and Chinese READMEs around installation,
+  first plan/audit commands, interface selection, and explicit claim limits.
+- Replaced the historical-progress-heavy roadmap and task ledger with compact
+  v1.0.9 workboards that point to immutable benchmark artifacts and release
+  history instead of duplicating them.
+- Promoted the registered Phase 55 r2 record to the public benchmark overview
+  and grouped the documentation-site navigation by planning, audit, interop,
+  and forward-tool workflows.
+
 ## [1.0.9] - 2026-09-22 "Typed Route Diagnostics and Agent Limits"
 
 ### Added

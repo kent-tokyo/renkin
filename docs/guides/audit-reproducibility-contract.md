@@ -161,6 +161,12 @@ any future one), not just one:
    forward-compatibility rule as rule 2, applied to output instead of
    input) but treat an unexpected `schema_version` as unsupported rather
    than guessing at the new shape.
+   Each serialized `AuditedStep` carries its required normalized
+   `occurrence_path`. `AuditFinding` keeps optional location fields and, only
+   for `forward_validation_not_evaluable`, an additive `reason` matching the
+   step-level forward-validation reason. The finding reason distinguishes
+   missing evidence from unsupported input; it does not add a new verdict or
+   alter the existing `pass`/`fail`/`partial` policy derivation.
 5. **Source-tool stock claims and RENKIN's own stock verification are
    separate signals, never merged.** An AiZynthFinder route's own
    `in_stock` claim is read only as structural input (whether a node is a

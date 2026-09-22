@@ -68,6 +68,7 @@
 //! quality-scoring output, and any model-training/planning integration.
 
 pub mod aizynthfinder;
+pub mod atom_mapping;
 pub mod audit;
 pub mod audit_ranking;
 pub mod audit_route;
@@ -84,6 +85,10 @@ pub mod synplanner;
 pub mod syntheseus;
 
 pub use aizynthfinder::{AzfMetadata, AzfNode, normalize_aizynthfinder_route};
+pub use atom_mapping::{
+    AtomMappingReason, AtomMappingReceipt, AtomMappingStatus, ProducerConsumerMappingReason,
+    ProducerConsumerMappingReceipt,
+};
 pub use audit::{
     AuditFinding, AuditFindingCode, AuditPolicy, AuditReport, AuditSeverity, AuditStatus,
     AuditedStep, CheckStatus, StockNotEvaluableReason, StockValidationResult, audit,

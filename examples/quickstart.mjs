@@ -45,6 +45,33 @@ assert.match(
   /^resource_exhausted:/,
 );
 
+// A flat audit finding remains self-contained: callers can identify both the
+// normalized occurrence and why forward replay was not evaluable without
+// guessing from source-tool metadata or joining against `steps`.
+const nonEvaluableAudit = JSON.parse(audit_route_v2(JSON.stringify({
+  target: "CC(=O)Oc1ccccc1C(=O)O",
+  routes: [{
+    steps: [{
+      rule: "ester_cleavage",
+      target: "CC(=O)Oc1ccccc1C(=O)O",
+      precursors: ["C", "O"],
+      template_id: "rule:ester_cleavage",
+    }],
+    building_blocks: ["C", "O"],
+  }],
+}), "renkin", "C\nO\n", "standard"));
+const nonEvaluableFinding = nonEvaluableAudit.routes[0].findings.find(
+  (finding) => finding.code === "forward_validation_not_evaluable",
+);
+assert.deepEqual(nonEvaluableFinding.occurrence_path, []);
+assert.equal(nonEvaluableFinding.step_index, 0);
+assert.equal(nonEvaluableFinding.reason, "missing_reaction_representation");
+assert.deepEqual(nonEvaluableAudit.routes[0].steps[0].occurrence_path, []);
+assert.equal(nonEvaluableAudit.routes[0].steps[0].atom_mapping.status, "not_evaluable");
+assert.deepEqual(nonEvaluableAudit.routes[0].steps[0].atom_mapping.reasons, [
+  "missing_reaction_representation",
+]);
+
 const target = "CC(=O)Oc1ccccc1C(=O)O";
 const result = JSON.parse(find_routes(target, 5, 3, 0));
 

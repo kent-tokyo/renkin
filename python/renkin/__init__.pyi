@@ -15,11 +15,13 @@ return-shape documentation this stub deliberately doesn't duplicate.
 from .audit_report import (
     AuditedStep as AuditedStep,
     AuditFinding as AuditFinding,
+    AtomMappingReceipt as AtomMappingReceipt,
     AuditManifest as AuditManifest,
     AuditReport as AuditReport,
     AuditRouteReport as AuditRouteReport,
     AuditRouteSummary as AuditRouteSummary,
     ForwardValidationResult as ForwardValidationResult,
+    ProducerConsumerMappingReceipt as ProducerConsumerMappingReceipt,
     StockValidationResult as StockValidationResult,
 )
 

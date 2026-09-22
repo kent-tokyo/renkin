@@ -171,10 +171,12 @@ class TestAuditFindingWireFields(unittest.TestCase):
                 "node": "CCO",
                 "occurrence_path": [1, 0],
                 "step_index": 3,
+                "reason": "missing_atom_mapping",
             }
         )
         self.assertEqual(finding.occurrence_path, [1, 0])
         self.assertEqual(finding.step_index, 3)
+        self.assertEqual(finding.reason, "missing_atom_mapping")
 
     def test_absent_location_fields_remain_none(self):
         finding = audit_report_module._finding_from_json(
@@ -182,6 +184,50 @@ class TestAuditFindingWireFields(unittest.TestCase):
         )
         self.assertIsNone(finding.occurrence_path)
         self.assertIsNone(finding.step_index)
+        self.assertIsNone(finding.reason)
+
+    def test_step_occurrence_path_is_preserved_and_archived_reports_default_empty(self):
+        current = audit_report_module._step_from_json(
+            {
+                "target": "CCO",
+                "precursors": ["C", "CO"],
+                "occurrence_path": [1, 0],
+                "forward_validation": {"status": "pass", "method": "test"},
+            }
+        )
+        archived = audit_report_module._step_from_json(
+            {
+                "target": "CCO",
+                "precursors": ["C", "CO"],
+                "forward_validation": {"status": "pass", "method": "test"},
+            }
+        )
+        self.assertEqual(current.occurrence_path, [1, 0])
+        self.assertEqual(archived.occurrence_path, [])
+
+    def test_atom_mapping_receipt_and_boundary_are_preserved(self):
+        step = audit_report_module._step_from_json(
+            {
+                "target": "CCO",
+                "precursors": ["C", "CO"],
+                "occurrence_path": [1],
+                "forward_validation": {"status": "pass", "method": "test"},
+                "atom_mapping": {
+                    "status": "valid",
+                    "reactant_map_count": 3,
+                    "product_map_count": 3,
+                    "reasons": [],
+                    "producer_consumer": {
+                        "consumer_step_index": 0,
+                        "status": "valid",
+                        "reasons": [],
+                    },
+                },
+            }
+        )
+        self.assertEqual(step.atom_mapping.status, "valid")
+        self.assertEqual(step.atom_mapping.producer_consumer.consumer_step_index, 0)
+        self.assertEqual(step.atom_mapping.producer_consumer.status, "valid")
 
 
 @requires_renkin_module

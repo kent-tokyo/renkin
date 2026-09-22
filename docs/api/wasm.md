@@ -189,6 +189,17 @@ child indices from the route root) and, for a decomposing node, a preorder
 invented location. Existing consumers that ignore these optional fields remain
 compatible.
 
+Each serialized audited step has its own required `occurrence_path`. For a
+`forward_validation_not_evaluable` finding, additive `reason` repeats the
+step's forward-validation reason so a flat finding consumer can distinguish
+missing evidence from unsupported input without joining against `steps`.
+
+Each audited step also has an `atom_mapping` receipt. It reports only mapping
+evidence as `valid`, `invalid`, or `not_evaluable`, including duplicate or
+product-only map labels and, on non-root steps, an optional
+`producer_consumer` check against the parent step. This receipt never changes
+the pre-existing audit `pass`/`fail`/`partial` result.
+
 The live playground provides cancellation by terminating and respawning its
 Worker. That discards the interrupted WASM operation; it is not an in-module
 cancel signal. See [Trusted Route Operations](../guides/trusted-route-operations.md)
@@ -212,7 +223,7 @@ parameter keeps working exactly as before.
 function version(): string
 ```
 
-Returns the RENKIN version string (for example, `"1.0.8"` for the current
+Returns the RENKIN version string (for example, `"1.0.9"` for the current
 release).
 
 ## Minimal Node.js Example (CI-verified)

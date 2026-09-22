@@ -714,6 +714,26 @@ fn rejects_unreadable_path() {
     assert!(!out.status.success());
 }
 
+#[cfg(unix)]
+#[test]
+fn rejects_symlinked_audit_input_before_parsing() {
+    let target = unique_temp_path("symlink_target");
+    let link = unique_temp_path("symlink_link");
+    std::fs::write(&target, "not json").unwrap();
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+
+    let out = run(&["audit-route", link.to_str().unwrap()]);
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("must not be a symlink"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    std::fs::remove_file(link).ok();
+    std::fs::remove_file(target).ok();
+}
+
 #[test]
 fn rejects_oversized_audit_input_before_json_parsing() {
     let path = unique_temp_path("oversized");
@@ -1152,6 +1172,56 @@ fn synplanner_findings_expose_stable_tree_and_step_locations() {
 }
 
 #[test]
+fn forward_not_evaluable_finding_is_self_contained_in_cli_json() {
+    let route_path = unique_temp_path("forward_not_evaluable_reason");
+    std::fs::write(
+        &route_path,
+        r#"{
+            "target": "CC(=O)Oc1ccccc1C(=O)O",
+            "routes": [{
+                "steps": [{
+                    "rule": "ester_cleavage",
+                    "target": "CC(=O)Oc1ccccc1C(=O)O",
+                    "precursors": ["C", "O"],
+                    "template_id": "rule:ester_cleavage"
+                }],
+                "building_blocks": ["C", "O"]
+            }]
+        }"#,
+    )
+    .unwrap();
+    let out = run(&[
+        "audit-route",
+        route_path.to_str().unwrap(),
+        "--format",
+        "renkin",
+        "--output",
+        "json",
+    ]);
+    std::fs::remove_file(&route_path).ok();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let finding = report["routes"][0]["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|finding| finding["code"] == "forward_validation_not_evaluable")
+        .expect("forward validation finding");
+    assert_eq!(finding["occurrence_path"], serde_json::json!([]));
+    assert_eq!(finding["step_index"], 0);
+    assert_eq!(finding["reason"], "missing_reaction_representation");
+    assert_eq!(
+        report["routes"][0]["steps"][0]["occurrence_path"],
+        serde_json::json!([])
+    );
+}
+
+#[test]
 fn synplanner_auto_detected_via_route_id_keyed_object_shape() {
     let out = run(&[
         "audit-route",
@@ -1226,7 +1296,16 @@ fn synplanner_real_planning_reactions_genuinely_pass_forward_validation() {
     assert_eq!(steps.len(), 2, "{report}");
     for step in steps {
         assert_eq!(step["forward_validation"]["status"], "pass", "{report}");
+        assert_eq!(step["atom_mapping"]["status"], "valid", "{report}");
     }
+    assert_eq!(
+        steps[1]["atom_mapping"]["producer_consumer"]["consumer_step_index"], 0,
+        "{report}"
+    );
+    assert_eq!(
+        steps[1]["atom_mapping"]["producer_consumer"]["status"], "valid",
+        "{report}"
+    );
 }
 
 #[test]

@@ -405,12 +405,22 @@ mod tests {
             steps: vec![crate::bridge::audit::AuditedStep {
                 target: "CC=O".into(),
                 precursors: vec!["CCO".into(), "CO".into()],
+                occurrence_path: vec![],
                 reaction_evidence: None,
                 forward_validation: crate::bridge::forward::ForwardValidationResult {
                     status: CheckStatus::NotEvaluable,
                     method: "test",
                     evidence_basis: None,
                     reason: None,
+                },
+                atom_mapping: crate::bridge::atom_mapping::AtomMappingReceipt {
+                    status: crate::bridge::atom_mapping::AtomMappingStatus::NotEvaluable,
+                    reactant_map_count: None,
+                    product_map_count: None,
+                    reasons: vec![
+                        crate::bridge::atom_mapping::AtomMappingReason::MissingReactionRepresentation,
+                    ],
+                    producer_consumer: None,
                 },
             }],
             findings: vec![],

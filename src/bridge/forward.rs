@@ -157,7 +157,7 @@ fn has_atom_mapping(smirks: &str) -> bool {
 /// Resolve the declared SMIRKS for `evidence`, and whether the caller should
 /// also try it in as-declared orientation (not just RENKIN's own
 /// `target>>precursors` retro convention) -- see [`validate_step_forward`].
-fn declared_smirks<'a>(
+pub(crate) fn declared_smirks<'a>(
     evidence: &'a ReactionEvidence,
     rules_by_template_id: Option<&'a HashMap<String, &'a RetroRule>>,
 ) -> Result<(&'a str, bool, EvidenceBasis), ForwardNotEvaluableReason> {

@@ -325,7 +325,15 @@ Returns an `AuditRouteReport`:
 `findings: list[AuditFinding]`.
 
 `AuditedStep`: `target: str`, `precursors: list[str]`,
-`forward_validation: ForwardValidationResult`.
+`occurrence_path: list[int]`, `forward_validation: ForwardValidationResult`,
+`atom_mapping: AtomMappingReceipt | None`. The path is the zero-based child-index path from the normalized route root.
+
+`AtomMappingReceipt`: `status: str` (`"valid"` | `"invalid"` |
+`"not_evaluable"`), `reactant_map_count: int | None`,
+`product_map_count: int | None`, `reasons: list[str]`, and optional
+`producer_consumer: ProducerConsumerMappingReceipt`. The latter names its
+parent `consumer_step_index` and has its own status/reasons. These are
+diagnostic evidence only: they do not alter an audit route status.
 
 `ForwardValidationResult`: `status: str`, `method: str`,
 `evidence_basis: str | None` (`"declared_rule_template"` |
@@ -334,10 +342,12 @@ see [Audit Reproducibility and Compatibility Contract](../guides/audit-reproduci
 for what each means), `reason: str | None`. `StockValidationResult`:
 `status: str`, `reason: str | None`. `AuditFinding`: `code: str`,
 `severity: str`, `node: str | None`, `occurrence_path: list[int] | None`,
-`step_index: int | None`. `occurrence_path` is the zero-based child-index path
-from the route root; `step_index` is the preorder position in the route's
-audited `steps` list and is present only for decomposing nodes. Route-wide
-findings intentionally have neither location.
+`step_index: int | None`, `reason: str | None`. `occurrence_path` is the
+zero-based child-index path from the route root; `step_index` is the preorder
+position in the route's audited `steps` list and is present only for
+decomposing nodes. `reason` is present only for
+`forward_validation_not_evaluable` and matches that step's forward-validation
+reason. Route-wide findings intentionally have neither location nor reason.
 
 **Every `str | None` field here collapses two different wire-level
 states into one Python value.** In the raw JSON, some optional fields

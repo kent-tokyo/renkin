@@ -15,6 +15,8 @@ use std::collections::{HashMap, HashSet};
 use chematic::core::Element;
 use serde::Serialize;
 
+use crate::bridge::AtomMappingReceipt;
+use crate::bridge::forward::ForwardNotEvaluableReason;
 use crate::bridge::route_graph::{ParseOutcome, RouteDocument, RouteNode, RouteSource};
 use crate::chem_env::{RetroRule, mol_from_smiles};
 use crate::synthesizability::heavy_atom_counts;
@@ -54,10 +56,8 @@ pub enum AuditFindingCode {
     /// product didn't reproduce the recorded parent molecule.
     ForwardReactionNotReproduced,
     /// RENKIN Bridge PR4: a step's forward validation couldn't reach a
-    /// pass/fail verdict -- see the step's own `forward_validation.reason`
-    /// on [`AuditedStep`] for which of the six not-evaluable causes applied;
-    /// this finding code stays generic on purpose (the specific reason
-    /// already lives there, not duplicated into six finding codes).
+    /// pass/fail verdict. The generic code preserves the stable finding
+    /// taxonomy; [`AuditFinding::reason`] identifies the specific cause.
     ForwardValidationNotEvaluable,
 }
 
@@ -111,6 +111,14 @@ pub struct AuditFinding {
     /// second remains stable when two nodes have the same target SMILES.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub step_index: Option<usize>,
+    /// Specific non-evaluable cause, present only for
+    /// [`AuditFindingCode::ForwardValidationNotEvaluable`]. It mirrors the
+    /// corresponding [`AuditedStep::forward_validation`] result so a flat
+    /// finding consumer never has to join it back to `steps` merely to tell
+    /// missing evidence from unsupported input. It is never inferred for
+    /// other finding kinds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<ForwardNotEvaluableReason>,
 }
 
 impl AuditFinding {
@@ -121,6 +129,7 @@ impl AuditFinding {
             node: None,
             occurrence_path: None,
             step_index: None,
+            reason: None,
         }
     }
 
@@ -136,7 +145,13 @@ impl AuditFinding {
             node: Some(node.into()),
             occurrence_path: Some(occurrence_path),
             step_index,
+            reason: None,
         }
+    }
+
+    fn with_forward_reason(mut self, reason: Option<ForwardNotEvaluableReason>) -> Self {
+        self.reason = reason;
+        self
     }
 }
 
@@ -277,16 +292,23 @@ pub struct StockValidationResult {
 /// exactly: `{"target": ..., "precursors": [...], "forward_validation":
 /// {"status": ..., "method": ..., "evidence_basis": ..., "reason": ...}}`
 /// (`evidence_basis`/`reason` both additive/optional -- see
-/// `bridge::forward::ForwardValidationResult`'s own doc comment).
+/// `bridge::forward::ForwardValidationResult`'s own doc comment). Its
+/// additive `atom_mapping` receipt is diagnostic-only and never changes this
+/// report's existing route status.
 #[derive(Debug, Clone, Serialize)]
 pub struct AuditedStep {
     pub target: String,
     pub precursors: Vec<String>,
+    /// Zero-based child indices from the route root to this decomposing
+    /// occurrence. Unlike a finding location, every serialized audited step
+    /// has one because `steps` is derived only from a normalized tree.
+    pub occurrence_path: Vec<usize>,
     /// Kept out of the legacy audit JSON; exported by the canonical
     /// evidence-carrying interchange schema when requested.
     #[serde(skip)]
     pub reaction_evidence: Option<crate::bridge::route_graph::ReactionEvidence>,
     pub forward_validation: crate::bridge::forward::ForwardValidationResult,
+    pub atom_mapping: AtomMappingReceipt,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -695,10 +717,41 @@ pub fn audit_document_with_policy(
     let step_paths = decomposing_occurrence_paths(&document.root);
     let route_steps = document.steps();
     debug_assert_eq!(step_paths.len(), route_steps.len());
+    let mut mapping_inspections: Vec<_> = route_steps
+        .iter()
+        .map(|step| {
+            crate::bridge::atom_mapping::inspect_step_mapping(
+                step.reaction_evidence.as_ref(),
+                rules_by_template_id.as_ref(),
+            )
+        })
+        .collect();
+    let step_index_by_path: HashMap<Vec<usize>, usize> = step_paths
+        .iter()
+        .cloned()
+        .enumerate()
+        .map(|(step_index, path)| (path, step_index))
+        .collect();
+    for (producer_step_index, path) in step_paths.iter().enumerate() {
+        let Some((_, parent_path)) = path.split_last() else {
+            continue;
+        };
+        let consumer_step_index = *step_index_by_path
+            .get(parent_path)
+            .expect("a decomposing occurrence's parent must also decompose");
+        let consumer = mapping_inspections[consumer_step_index].clone();
+        crate::bridge::atom_mapping::attach_producer_consumer_receipt(
+            &mut mapping_inspections[producer_step_index],
+            &consumer,
+            consumer_step_index,
+            &route_steps[producer_step_index].target,
+        );
+    }
     let steps: Vec<AuditedStep> = route_steps
         .into_iter()
+        .zip(mapping_inspections)
         .enumerate()
-        .map(|(step_index, step)| {
+        .map(|(step_index, (step, mapping_inspection))| {
             let occurrence_path = step_paths
                 .get(step_index)
                 .cloned()
@@ -713,22 +766,27 @@ pub fn audit_document_with_policy(
                 CheckStatus::Fail => findings.push(AuditFinding::at_occurrence(
                     AuditFindingCode::ForwardReactionNotReproduced,
                     step.target.clone(),
-                    occurrence_path,
+                    occurrence_path.clone(),
                     Some(step_index),
                 )),
-                CheckStatus::NotEvaluable => findings.push(AuditFinding::at_occurrence(
-                    AuditFindingCode::ForwardValidationNotEvaluable,
-                    step.target.clone(),
-                    occurrence_path,
-                    Some(step_index),
-                )),
+                CheckStatus::NotEvaluable => findings.push(
+                    AuditFinding::at_occurrence(
+                        AuditFindingCode::ForwardValidationNotEvaluable,
+                        step.target.clone(),
+                        occurrence_path.clone(),
+                        Some(step_index),
+                    )
+                    .with_forward_reason(forward_validation.reason),
+                ),
                 CheckStatus::Pass => {}
             }
             AuditedStep {
                 target: step.target,
                 precursors: step.precursors,
+                occurrence_path,
                 reaction_evidence: step.reaction_evidence,
                 forward_validation,
+                atom_mapping: mapping_inspection.receipt,
             }
         })
         .collect();
@@ -909,6 +967,7 @@ mod tests {
             .expect("missing element-accounting finding");
         assert_eq!(finding.occurrence_path.as_deref(), Some(&[][..]));
         assert_eq!(finding.step_index, Some(0));
+        assert_eq!(finding.reason, None);
     }
 
     #[test]
@@ -1100,6 +1159,8 @@ mod tests {
             .expect("a failed forward replay must name its step");
         assert_eq!(finding.occurrence_path.as_deref(), Some(&[][..]));
         assert_eq!(finding.step_index, Some(0));
+        assert_eq!(finding.reason, None);
+        assert_eq!(report.steps[0].occurrence_path, Vec::<usize>::new());
         assert_eq!(
             report.status,
             AuditStatus::Fail,
@@ -1147,6 +1208,11 @@ mod tests {
             .expect("a non-evaluable forward check must name its step");
         assert_eq!(finding.occurrence_path.as_deref(), Some(&[][..]));
         assert_eq!(finding.step_index, Some(0));
+        assert_eq!(
+            finding.reason,
+            Some(ForwardNotEvaluableReason::MissingReactionRepresentation)
+        );
+        assert_eq!(report.steps[0].occurrence_path, Vec::<usize>::new());
         assert_eq!(
             report.status,
             AuditStatus::Partial,

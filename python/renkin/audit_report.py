@@ -32,6 +32,8 @@ from typing import List, Optional
 
 __all__ = [
     "AuditFinding",
+    "AtomMappingReceipt",
+    "ProducerConsumerMappingReceipt",
     "ForwardValidationResult",
     "StockValidationResult",
     "AuditedStep",
@@ -53,6 +55,10 @@ class AuditFinding:
     # once; `step_index` is present only for a decomposing node.
     occurrence_path: Optional[List[int]] = None
     step_index: Optional[int] = None
+    # Present only for `forward_validation_not_evaluable`; it mirrors the
+    # corresponding step result so flat finding consumers need not join
+    # against `steps` to distinguish missing from unsupported evidence.
+    reason: Optional[str] = None
 
 
 @dataclass
@@ -70,10 +76,30 @@ class StockValidationResult:
 
 
 @dataclass
+class ProducerConsumerMappingReceipt:
+    consumer_step_index: int
+    status: str
+    reasons: List[str]
+
+
+@dataclass
+class AtomMappingReceipt:
+    status: str
+    reactant_map_count: Optional[int] = None
+    product_map_count: Optional[int] = None
+    reasons: List[str] = field(default_factory=list)
+    producer_consumer: Optional[ProducerConsumerMappingReceipt] = None
+
+
+@dataclass
 class AuditedStep:
     target: str
     precursors: List[str]
+    occurrence_path: List[int]
     forward_validation: ForwardValidationResult
+    # Current reports always carry this receipt. `None` preserves the typed
+    # wrapper's ability to read an archived report produced before O8.1.
+    atom_mapping: Optional[AtomMappingReceipt] = None
 
 
 @dataclass
@@ -133,6 +159,7 @@ def _finding_from_json(data: dict) -> AuditFinding:
         node=data.get("node"),
         occurrence_path=(list(occurrence_path) if occurrence_path is not None else None),
         step_index=data.get("step_index"),
+        reason=data.get("reason"),
     )
 
 
@@ -151,11 +178,40 @@ def _stock_validation_from_json(data: Optional[dict]) -> Optional[StockValidatio
     return StockValidationResult(status=data["status"], reason=data.get("reason"))
 
 
+def _producer_consumer_mapping_from_json(
+    data: Optional[dict],
+) -> Optional[ProducerConsumerMappingReceipt]:
+    if data is None:
+        return None
+    return ProducerConsumerMappingReceipt(
+        consumer_step_index=data["consumer_step_index"],
+        status=data["status"],
+        reasons=list(data["reasons"]),
+    )
+
+
+def _atom_mapping_from_json(data: Optional[dict]) -> Optional[AtomMappingReceipt]:
+    if data is None:
+        return None
+    return AtomMappingReceipt(
+        status=data["status"],
+        reactant_map_count=data.get("reactant_map_count"),
+        product_map_count=data.get("product_map_count"),
+        reasons=list(data["reasons"]),
+        producer_consumer=_producer_consumer_mapping_from_json(data.get("producer_consumer")),
+    )
+
+
 def _step_from_json(data: dict) -> AuditedStep:
     return AuditedStep(
         target=data["target"],
         precursors=list(data["precursors"]),
+        # Current Rust reports always serialize this for a step. Accept an
+        # older report without it as an empty path so the convenience wrapper
+        # remains able to read archived audit artifacts.
+        occurrence_path=list(data.get("occurrence_path", [])),
         forward_validation=_forward_validation_from_json(data["forward_validation"]),
+        atom_mapping=_atom_mapping_from_json(data.get("atom_mapping")),
     )
 
 

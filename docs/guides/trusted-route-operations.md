@@ -24,18 +24,19 @@ in-memory content/format/policy contract. Filesystem gzip support, O7
 sidecars, process cancellation, and MCP tool availability are not silently
 claimed to be cross-binding features.
 
-## Finding location v1
+## Finding location and reason v2
 
 `AuditFinding` keeps the existing `code`, `severity`, and optional `node`.
 It also carries optional location fields:
 
 ```json
 {
-  "code": "forward_reaction_not_reproduced",
-  "severity": "gating",
+  "code": "forward_validation_not_evaluable",
+  "severity": "informational",
   "node": "CCO",
   "occurrence_path": [1, 0],
-  "step_index": 2
+  "step_index": 2,
+  "reason": "missing_atom_mapping"
 }
 ```
 
@@ -47,6 +48,21 @@ It also carries optional location fields:
 - Both are absent for a route-wide finding or a parse failure with no trusted
   normalized tree. A missing location is therefore not guessed from an
   external tool's node ID.
+- `reason` is present only for `forward_validation_not_evaluable`. It repeats
+  the matching step's forward-validation reason so flat finding consumers can
+  distinguish missing evidence from unsupported input without joining
+  `AuditReport.steps`.
+- Every serialized `AuditedStep` has a required `occurrence_path`; unlike a
+  finding, it is derived only after a normalized decomposing occurrence exists.
+
+Each `AuditedStep` also has an `atom_mapping` receipt. Its
+`valid`/`invalid`/`not_evaluable` result is a separate evidence axis, not a
+new route verdict. It reports duplicate labels within either reaction side and
+product-only labels as supplied-record defects. For each non-root step, the
+optional `producer_consumer` receipt compares its mapped forward product with
+the matching mapped reactant of its normalized parent step. Map labels are not
+compared across unrelated steps, and missing/unsupported source evidence is
+reported as `not_evaluable`, never reconstructed.
 
 The path identifies a normalized occurrence, not a source atom-map or an
 experimental reaction identity. Atom-map labels from external planner exports

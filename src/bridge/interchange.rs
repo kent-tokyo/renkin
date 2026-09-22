@@ -803,6 +803,7 @@ mod tests {
             steps: vec![AuditedStep {
                 target: "CCO".into(),
                 precursors: vec!["C".into(), "CO".into()],
+                occurrence_path: vec![],
                 reaction_evidence: Some(ReactionEvidence::SyntheseusReaction {
                     reaction_smiles: "C.CO>>CCO".into(),
                 }),
@@ -811,6 +812,15 @@ mod tests {
                     method: "declared_reaction_replay",
                     evidence_basis: None,
                     reason: None,
+                },
+                atom_mapping: crate::bridge::atom_mapping::AtomMappingReceipt {
+                    status: crate::bridge::atom_mapping::AtomMappingStatus::NotEvaluable,
+                    reactant_map_count: None,
+                    product_map_count: None,
+                    reasons: vec![
+                        crate::bridge::atom_mapping::AtomMappingReason::MissingReactionRepresentation,
+                    ],
+                    producer_consumer: None,
                 },
             }],
             findings: vec![],

@@ -1198,6 +1198,34 @@ mod tests {
     }
 
     #[test]
+    fn synplanner_real_fixture_reports_map_and_boundary_receipts_without_status_change() {
+        let content = load_synplanner_fixture("real_planning_route_2step.json");
+        let rules: Vec<RetroRule> = Vec::new();
+        let report =
+            build_audit_route_report(&content, "synplanner", None, &rules).expect("audits");
+        let route = &report.routes[0];
+        // No configured stock keeps the established route verdict partial;
+        // mapping diagnostics are evidence only and must not harden it.
+        assert_eq!(route.status, crate::bridge::audit::AuditStatus::Partial);
+        assert_eq!(route.steps.len(), 2);
+        assert!(route.steps.iter().all(|step| {
+            step.atom_mapping.status == crate::bridge::atom_mapping::AtomMappingStatus::Valid
+                && step.atom_mapping.reasons.is_empty()
+        }));
+        assert_eq!(
+            route.steps[1].atom_mapping.producer_consumer,
+            Some(
+                crate::bridge::atom_mapping::ProducerConsumerMappingReceipt {
+                    consumer_step_index: 0,
+                    status: crate::bridge::atom_mapping::AtomMappingStatus::Valid,
+                    reasons: vec![],
+                }
+            )
+        );
+        assert!(route.steps[0].atom_mapping.producer_consumer.is_none());
+    }
+
+    #[test]
     fn synplanner_full_fields_fixture_retains_original_tree_node_id() {
         let content = load_synplanner_fixture("route_3_full_fields.json");
         let rules: Vec<RetroRule> = Vec::new();

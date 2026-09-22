@@ -5,7 +5,7 @@ use anyhow::{Result, bail};
 use chematic::chem::{molecular_weight, sa_score, standardize};
 #[cfg(not(target_arch = "wasm32"))]
 use rayon::prelude::*;
-use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Serialize;
 use smallvec::{SmallVec, smallvec};
 
@@ -59,6 +59,23 @@ fn validate_search_budget(target_smiles: &str, config: &SearchConfig) -> Result<
             "resource_exhausted: candidate_trace_limit exceeds {}",
             MAX_CANDIDATE_TRACE
         );
+    }
+    Ok(())
+}
+
+/// Reject rule weights that would make heap ordering or confidence output
+/// non-deterministic. File-backed rules are validated at their parsing
+/// boundary too, but `RetroRule` is a public Rust type, so the search entry
+/// point must keep the same invariant for programmatic callers.
+fn validate_rule_weights(rules: &[RetroRule]) -> Result<()> {
+    for rule in rules {
+        if !rule.weight.is_finite() || rule.weight < 0.0 {
+            bail!(
+                "invalid_input: template {:?} has invalid frequency weight {} (expected a finite non-negative value)",
+                rule.template_id,
+                rule.weight
+            );
+        }
     }
     Ok(())
 }
@@ -908,10 +925,7 @@ impl PartialOrd for Node {
 impl Ord for Node {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         // Min-heap by f = g + h (best = lowest cost first).
-        other
-            .f()
-            .partial_cmp(&self.f())
-            .unwrap_or(std::cmp::Ordering::Equal)
+        other.f().total_cmp(&self.f())
     }
 }
 
@@ -1037,21 +1051,44 @@ pub(crate) fn element_inventory_from_molecule(mol: &Molecule) -> MoleculeInvento
     }
 }
 
-/// Hash the sorted frontier SMILES into a u64 for closed-set deduplication.
-/// Avoids String allocation per node vs. the former join-based state_key.
-/// Collision probability is 2^-64 per node pair — negligible in practice.
-fn state_hash(frontier: &[FEntry]) -> u64 {
-    use std::hash::{Hash, Hasher};
-    // Most frontiers fit in SmallVec's inline storage (the common reaction
-    // arity is <= 2). Avoid a heap allocation for this temporary key list on
-    // every closed-set probe while retaining the exact same hash.
-    let mut keys: SmallVec<[&str; 6]> = frontier.iter().map(|e| e.smiles.as_ref()).collect();
-    keys.sort_unstable();
-    let mut h = FxHasher::default();
-    for k in &keys {
-        k.hash(&mut h);
+/// Exact, multiplicity-preserving identity for an unordered search frontier.
+///
+/// A 64-bit fingerprint is useful for a cache lookup, but it cannot be the
+/// identity of an explored chemical state: a collision would silently drop a
+/// distinct route. `Arc<str>` clones keep common small frontiers cheap while
+/// `FxHashMap` still hashes this key and confirms equality before deduping.
+type FrontierKey = SmallVec<[Arc<str>; 6]>;
+
+fn frontier_key(frontier: &[FEntry]) -> FrontierKey {
+    let mut keys: FrontierKey = frontier
+        .iter()
+        .map(|entry| Arc::clone(&entry.smiles))
+        .collect();
+    keys.sort_unstable_by(|left, right| left.as_ref().cmp(right.as_ref()));
+    keys
+}
+
+/// Keeps only arrivals that improve a frontier's known path cost.
+///
+/// Model-backed priors and value estimators are public extension points and
+/// need not be A*-consistent. A boolean closed set would discard a lower-cost
+/// later arrival. Tracking the best `g` reopens that state while stale heap
+/// entries remain cheap to skip. The shared search boundary validates costs
+/// before this helper is reached.
+fn should_expand_frontier(
+    frontier: &[FEntry],
+    g: f64,
+    best_g_by_frontier: &mut FxHashMap<FrontierKey, f64>,
+) -> bool {
+    let key = frontier_key(frontier);
+    if best_g_by_frontier
+        .get(&key)
+        .is_some_and(|known_g| *known_g <= g)
+    {
+        return false;
     }
-    h.finish()
+    best_g_by_frontier.insert(key, g);
+    true
 }
 
 /// Stock-membership lookup memoized for one search run.
@@ -1740,6 +1777,92 @@ fn compute_route_cost(
     bb_cost + route.steps.len() as f64 * 0.5
 }
 
+/// Fill the derived, presentation-facing fields only after the search has
+/// selected complete routes. This leaves the main search loop responsible
+/// solely for state exploration and ties every displayed value to the final
+/// route.
+fn populate_route_metadata(
+    routes: &mut [Route],
+    rules: &[RetroRule],
+    max_rule_weight: f64,
+    config: &SearchConfig,
+) {
+    let rule_weights: FxHashMap<&str, f64> = rules
+        .iter()
+        .map(|rule| (rule.name.as_str(), rule.weight))
+        .collect();
+
+    for route in routes {
+        let min_weight = route
+            .steps
+            .iter()
+            .map(|step| rule_weights.get(step.rule.as_str()).copied().unwrap_or(1.0))
+            .fold(f64::INFINITY, f64::min);
+        route.confidence = if min_weight.is_infinite() {
+            1.0
+        } else {
+            (min_weight / max_rule_weight).clamp(0.0, 1.0)
+        };
+
+        for step in &mut route.steps {
+            let weight = rule_weights.get(step.rule.as_str()).copied().unwrap_or(1.0);
+            step.step_confidence = (weight / max_rule_weight).clamp(0.0, 1.0);
+
+            let raw = compute_atom_economy_raw(&step.target, &step.precursors);
+            let (status, display) = classify_atom_economy(raw);
+            step.atom_economy_raw_percent = raw;
+            step.atom_economy_status = status;
+            step.atom_economy = display;
+            step.evidence = config
+                .template_metadata
+                .as_ref()
+                .and_then(|metadata| metadata.get(&step.template_id))
+                .and_then(|evidence| evidence.to_step_evidence(&step.target, &step.precursors));
+        }
+
+        route.success_probability = route
+            .steps
+            .iter()
+            .map(|step| step.step_confidence)
+            .product::<f64>()
+            .clamp(0.0, 1.0);
+        route.convergency = convergency_score(&route.steps);
+        route.route_cost = compute_route_cost(route, config.bb_price_map.as_ref());
+    }
+}
+
+/// Union of elements in terminal precursors. Intermediate products are
+/// excluded because they are consumed by another step and are not purchasable
+/// leaves.
+fn route_leaf_element_mask(route: &Route) -> u64 {
+    let targets: std::collections::HashSet<&str> = route
+        .steps
+        .iter()
+        .map(|step| step.target.as_str())
+        .collect();
+    route
+        .steps
+        .iter()
+        .flat_map(|step| step.precursors.iter())
+        .filter(|precursor| !targets.contains(precursor.as_str()))
+        .fold(0_u64, |mask, precursor| {
+            mask | elem_mask_from_smiles(precursor)
+        })
+}
+
+/// Apply element policy after a route is complete. Applying it during
+/// expansion would incorrectly reject intermediates that are later consumed.
+fn apply_route_element_constraints(routes: &mut Vec<Route>, config: &SearchConfig) {
+    if config.forbidden_elements != 0 {
+        let forbidden = config.forbidden_elements;
+        routes.retain(|route| route_leaf_element_mask(route) & forbidden == 0);
+    }
+    if config.required_element_present != 0 {
+        let required = config.required_element_present;
+        routes.retain(|route| route_leaf_element_mask(route) & required == required);
+    }
+}
+
 /// Prune the heap to at most `beam_width` nodes (keep the best).
 /// Uses sort_unstable_by (lower constant than sort_by) for deterministic ordering.
 ///
@@ -1750,9 +1873,7 @@ type BeamEvictionStats = (usize, f64, f64, f64);
 type TraceRank = (u64, usize, bool);
 
 fn node_score_cmp(a: &Node, b: &Node) -> std::cmp::Ordering {
-    a.f()
-        .partial_cmp(&b.f())
-        .unwrap_or(std::cmp::Ordering::Equal)
+    a.f().total_cmp(&b.f())
 }
 
 fn node_is_direct_generator(node: &Node) -> bool {
@@ -3068,6 +3189,7 @@ pub(crate) fn find_routes_with_control_prepared(
     prepared_bond_index: Option<&TemplateBondIndex>,
 ) -> Result<SearchRunResult> {
     validate_search_budget(target_smiles, config)?;
+    validate_rule_weights(rules)?;
     let target_mol = mol_from_smiles(target_smiles)?;
     let target_canonical = to_canonical(&target_mol);
 
@@ -3157,7 +3279,7 @@ pub(crate) fn find_routes_with_control_prepared(
     let mut termination = SearchTermination::Completed;
 
     let mut routes: Vec<Route> = Vec::new();
-    let mut closed: FxHashSet<u64> = FxHashSet::default();
+    let mut best_g_by_frontier: FxHashMap<FrontierKey, f64> = FxHashMap::default();
     let mut heap: BinaryHeap<Node> = BinaryHeap::new();
     let mut sa_cache: FxHashMap<String, f64> = FxHashMap::default();
     let mut bb_cache: FxHashMap<String, bool> = FxHashMap::default();
@@ -3277,11 +3399,9 @@ pub(crate) fn find_routes_with_control_prepared(
             continue;
         }
 
-        let key = state_hash(&node.frontier);
-        if closed.contains(&key) {
+        if !should_expand_frontier(&node.frontier, node.g, &mut best_g_by_frontier) {
             continue;
         }
-        closed.insert(key);
         // This is part of the serialized search contract, including WASM;
         // only the separate `nodes_popped` timing counter is native-only.
         nodes_expanded += 1;
@@ -3503,6 +3623,7 @@ pub(crate) fn find_routes_with_control_prepared(
             let mut entries: Vec<RetroEntry> = raw_proposals
                 .into_iter()
                 .map(|p| {
+                    let fallback_bonus = template_bonus(p.rule_weight, max_rule_weight);
                     let bonus = if let Some(ref map) = reranker_bonus_by_id {
                         let mut key: Vec<String> =
                             p.precursors.iter().map(|pm| pm.smiles.clone()).collect();
@@ -3532,7 +3653,17 @@ pub(crate) fn find_routes_with_control_prepared(
                     } else if let Some(ref prior) = config.reaction_prior {
                         prior.prior_for_template(&p.template_id, &p.rule_name, target_smi)
                     } else {
-                        template_bonus(p.rule_weight, max_rule_weight)
+                        fallback_bonus
+                    };
+                    // A third-party prior is advisory ordering input, not a
+                    // trusted numerical source. Keep a malformed model
+                    // response from injecting NaN/Infinity into `g` and the
+                    // BinaryHeap; falling back is equivalent to running
+                    // without that prior for this proposal.
+                    let bonus = if bonus.is_finite() {
+                        bonus.max(0.0)
+                    } else {
+                        fallback_bonus
                     };
                     let step_c = step_cost_iter(p.precursors.iter().map(|pm| &pm.mol)) - bonus;
                     let mut precursor_smiles = Vec::with_capacity(p.precursors.len());
@@ -3890,63 +4021,8 @@ pub(crate) fn find_routes_with_control_prepared(
         }
     }
 
-    // Post-processing: confidence, atom economy, convergency.
-    {
-        let rule_weights: FxHashMap<&str, f64> =
-            rules.iter().map(|r| (r.name.as_str(), r.weight)).collect();
-        for route in &mut routes {
-            let min_w = route
-                .steps
-                .iter()
-                .map(|s| rule_weights.get(s.rule.as_str()).copied().unwrap_or(1.0))
-                .fold(f64::INFINITY, f64::min);
-            route.confidence = if min_w.is_infinite() {
-                1.0
-            } else {
-                (min_w / max_rule_weight).clamp(0.0, 1.0)
-            };
-
-            for step in &mut route.steps {
-                let w = rule_weights.get(step.rule.as_str()).copied().unwrap_or(1.0);
-                step.step_confidence = (w / max_rule_weight).clamp(0.0, 1.0);
-
-                let raw = compute_atom_economy_raw(&step.target, &step.precursors);
-                let (status, display) = classify_atom_economy(raw);
-                step.atom_economy_raw_percent = raw;
-                step.atom_economy_status = status;
-                step.atom_economy = display;
-
-                step.evidence = config
-                    .template_metadata
-                    .as_ref()
-                    .and_then(|m| m.get(&step.template_id))
-                    .and_then(|e| e.to_step_evidence(&step.target, &step.precursors));
-            }
-
-            route.success_probability = route
-                .steps
-                .iter()
-                .map(|s| s.step_confidence)
-                .product::<f64>()
-                .clamp(0.0, 1.0);
-
-            route.convergency = convergency_score(&route.steps);
-            route.route_cost = compute_route_cost(route, config.bb_price_map.as_ref());
-        }
-    }
-
-    if config.forbidden_elements != 0 {
-        let mask = config.forbidden_elements;
-        routes.retain(|route| {
-            let all_targets: std::collections::HashSet<&str> =
-                route.steps.iter().map(|s| s.target.as_str()).collect();
-            route.steps.iter().all(|step| {
-                step.precursors.iter().all(|prec| {
-                    all_targets.contains(prec.as_str()) || (elem_mask_from_smiles(prec) & mask) == 0
-                })
-            })
-        });
-    }
+    populate_route_metadata(&mut routes, rules, max_rule_weight, config);
+    apply_route_element_constraints(&mut routes, config);
 
     #[cfg(not(target_arch = "wasm32"))]
     if config.verbose {
@@ -3973,21 +4049,6 @@ pub(crate) fn find_routes_with_control_prepared(
                 serde_json::to_string(&ring_context_diagnostics).unwrap_or_default()
             );
         }
-    }
-
-    if config.required_element_present != 0 {
-        let need = config.required_element_present;
-        routes.retain(|route| {
-            let all_targets: std::collections::HashSet<&str> =
-                route.steps.iter().map(|s| s.target.as_str()).collect();
-            let leaf_union: u64 = route
-                .steps
-                .iter()
-                .flat_map(|s| s.precursors.iter())
-                .filter(|p| !all_targets.contains(p.as_str()))
-                .fold(0u64, |acc, p| acc | elem_mask_from_smiles(p));
-            (leaf_union & need) == need
-        });
     }
 
     Ok(SearchRunResult {
@@ -4286,6 +4347,23 @@ mod tests {
             let error = find_routes("CCO", &env, &rules, &config)
                 .expect_err("excessive search budget must be rejected");
             assert!(error.to_string().contains("resource_exhausted"));
+        }
+    }
+
+    #[test]
+    fn shared_search_boundary_rejects_non_finite_or_negative_rule_weights() {
+        let env = aspirin_env();
+        for weight in [f64::NAN, f64::INFINITY, -0.01] {
+            let rules = vec![RetroRule {
+                name: "invalid_weight".to_string(),
+                template_id: "rule:invalid_weight".to_string(),
+                smirks: "[C:1]>>[C:1]".to_string(),
+                weight,
+                required_elements: 0,
+            }];
+            let error = find_routes("CCO", &env, &rules, &SearchConfig::default())
+                .expect_err("invalid rule weight must be rejected before search");
+            assert!(error.to_string().contains("invalid frequency weight"));
         }
     }
 
@@ -5944,63 +6022,65 @@ mod tests {
         }
     }
 
-    // ── E2 closed-set correctness: proven LATENT bug reproduction ───────────
+    #[test]
+    fn frontier_key_is_exact_order_independent_and_reopens_only_for_lower_g() {
+        fn entry(smiles: &str) -> FEntry {
+            FEntry {
+                smiles: Arc::from(smiles),
+                mol: Arc::new(mol_from_smiles(smiles).unwrap()),
+            }
+        }
+
+        let a = entry("CCO");
+        let b = entry("CCN");
+        let c = entry("CCC");
+        assert_eq!(
+            frontier_key(&[a.clone(), b.clone()]),
+            frontier_key(&[b.clone(), a.clone()])
+        );
+        assert_ne!(
+            frontier_key(&[a.clone(), b.clone()]),
+            frontier_key(&[a.clone(), c])
+        );
+        assert_ne!(
+            frontier_key(&[a.clone(), b.clone()]),
+            frontier_key(&[a.clone(), a.clone()])
+        );
+
+        let mut best = FxHashMap::default();
+        assert!(should_expand_frontier(
+            &[a.clone(), b.clone()],
+            2.0,
+            &mut best
+        ));
+        assert!(!should_expand_frontier(
+            &[b.clone(), a.clone()],
+            2.0,
+            &mut best
+        ));
+        assert!(!should_expand_frontier(
+            &[a.clone(), b.clone()],
+            3.0,
+            &mut best
+        ));
+        assert!(should_expand_frontier(&[b, a], 1.0, &mut best));
+    }
+
+    // ── E2 closed-set reopen regression ────────────────────────────────────
     //
-    // `closed: FxHashSet<u64>` is a boolean "already visited" set keyed only
-    // by frontier molecule content (`state_hash`) — no `g` is stored, so
-    // there is no reopen-on-lower-g. For a *consistent* heuristic, A* graph
-    // search guarantees the first pop of a state has optimal `g`, so a plain
-    // closed set is safe.
-    //
-    // IMPORTANT — this test is a LATENT bug demonstration, not a live one:
-    // it requires an injected `ReactionPrior`/`MoleculeValueEstimator` (bonus
-    // 5.0, h 100.0) to force the pop order needed. Every production entry
-    // point (CLI, renkin-bench, Python, WASM) passes `reaction_prior: None`
-    // / `value_estimator: None` today (grep confirms), so this exact
-    // mechanism does not fire in current production runs. Separately, E4
-    // (below) shows the *default* cost formula is already inadmissible
-    // (net step cost can be 0.8 < the heuristic's assumed 1.0 floor) — but
-    // algebraically, that bounded 0.2 gap can never make a longer path to
-    // the same single-molecule state cheaper than a direct one (extra hop
-    // costs >=0.8, max bonus saving is 0.2), so today's default config
-    // cannot trigger *this specific* construction either. The risk is real
-    // but currently dormant: `ReactionPrior`/`MoleculeValueEstimator` are
-    // unbounded public hooks meant for future NN-based scoring (Track D/E3)
-    // — the day one is wired up without a floor clamp, this closed set will
-    // silently drop better paths in production.
-    //
-    // Minimal deterministic reproduction using the real `find_routes` (real
-    // heap, real closed set, real chematic SMIRKS chemistry), with an
-    // injected prior/estimator to force the exact pop order needed to prove
-    // the mechanism:
+    // This uses real `find_routes` and chematic SMIRKS application with a
+    // deliberately non-consistent prior/estimator. It forces a higher-cost
+    // arrival at M to be expanded before a later, cheaper arrival. The latter
+    // must reopen M; model hooks are public API and cannot rely on the A*
+    // consistency assumption that would make a boolean closed set sound.
     //
     //   T (ClCCI) --r_direct (bonus 0)--------------> M (BrCCBr)
     //   T (ClCCI) --r_step1  (bonus 5)--> Y (BrCCI)
     //                 Y      --r_step2  (bonus 5)--> M (BrCCBr)
     //   M --r_final--------------------------------> Z (FCCF, the only BB)
     //
-    // h(Y) is set artificially high (100) so the direct T->M arrival pops
-    // and closes state {M} *before* the much cheaper T->Y->M arrival is even
-    // generated. When the cheaper arrival is later popped, it finds {M}
-    // already closed and is discarded without expansion — the true-optimal
-    // route (T->Y->M->Z, deeply negative g) is never found; only the worse
-    // route (T->M->Z, g≈2.29) is returned.
-    //
-    // (RENKIN Bridge PR1: each rule below now also emits its displaced
-    // halogen as an explicit byproduct fragment, per that test's own
-    // comment further down -- this shifted every g value from the numbers
-    // originally hand-derived for the E2 investigation below by a constant
-    // per-hop offset, without changing the mechanism being demonstrated.
-    // `best_score`'s new value is verified experimentally, not hand-derived;
-    // the deeply-negative-optimum claim two paragraphs up is qualitative.)
-    //
-    // NOTE for whoever implements the E2 fix: this test asserts the CURRENT
-    // (buggy) behavior and will start FAILING once the closed set reopens on
-    // a lower g. At that point, invert the assertions below to pin the
-    // fixed behavior (re-derive the new optimum experimentally; the
-    // pre-PR1 hand-derived value of -6.755613 no longer applies).
     #[test]
-    fn closed_set_discards_better_path_reaching_same_state() {
+    fn lower_cost_rearrival_reopens_the_same_frontier() {
         fn rr(name: &str, smirks: &str) -> RetroRule {
             RetroRule {
                 name: name.to_string(),
@@ -6072,22 +6152,12 @@ mod tests {
         assert!(!routes.is_empty(), "must find at least the direct route");
         let best_score = routes.iter().map(|r| r.score).fold(f64::INFINITY, f64::min);
 
-        // The true optimum (T->Y->M->Z) is deeply negative (dominated by the
-        // two 5.0 template bonuses on r_step1/r_step2). If the closed set
-        // reopened on a better g, `best_score` would land there. Instead
-        // only the worse direct route (g ≈ 2.29) is ever recorded — proving
-        // the cheaper re-arrival at {M} was discarded unexpanded.
+        // The cheaper T->Y->M->Z route carries both 5.0 template bonuses.
+        // Its exact score is chemistry-version-sensitive, but it must remain
+        // materially below the direct T->M->Z route (about 2.29).
         assert!(
-            best_score > -1.0,
-            "expected the boolean closed-set bug to discard the better \
-             (deeply negative g) route, leaving only the worse (g≈2.29) \
-             route — but best_score={best_score} suggests the optimal \
-             route WAS found (bug fixed, or test assumptions stale)"
-        );
-        assert!(
-            (best_score - 2.290).abs() < 0.05,
-            "expected the only recorded route to be the direct-path route \
-             (g≈2.13), got best_score={best_score}"
+            best_score < -1.0,
+            "the lower-cost re-arrival must reopen M; got best_score={best_score}"
         );
     }
 

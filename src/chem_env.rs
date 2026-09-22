@@ -3498,11 +3498,7 @@ pub fn top_templates_by_weight(mut rules: Vec<RetroRule>, k: usize) -> Vec<Retro
     if rules.len() <= k {
         return rules;
     }
-    rules.sort_by(|a, b| {
-        b.weight
-            .partial_cmp(&a.weight)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    rules.sort_by(|a, b| b.weight.total_cmp(&a.weight));
     rules.truncate(k);
     rules
 }
@@ -3514,6 +3510,58 @@ pub fn top_templates_by_weight(mut rules: Vec<RetroRule>, k: usize) -> Vec<Retro
 pub const MAX_TEMPLATE_FILE_BYTES: u64 = 64 * 1024 * 1024;
 pub const MAX_TEMPLATE_LINES: usize = 200_000;
 pub const MAX_TEMPLATE_LINE_BYTES: usize = 64 * 1024;
+
+/// Parse the optional frequency column shared by the template loader and its
+/// public preflight. A missing or blank value retains the long-standing
+/// default count of one; a present malformed, non-finite, or negative value
+/// is never silently converted into a different ranking weight.
+fn parse_template_count(value: Option<&str>) -> Result<f64> {
+    let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(1.0);
+    };
+    let count: f64 = value
+        .parse()
+        .with_context(|| format!("template frequency {value:?} is not a number"))?;
+    if !count.is_finite() || count < 0.0 {
+        bail!("template frequency {value:?} must be a finite non-negative number");
+    }
+    Ok(count)
+}
+
+/// Validate the stable two-column template wire format without judging its
+/// chemistry. `template doctor` deliberately retains responsibility for
+/// reporting malformed SMIRKS as warnings; this parser only prevents a
+/// frequency typo from silently changing search ranking.
+fn validate_template_columns(content: &str) -> Result<()> {
+    for (line_index, raw_line) in content.lines().enumerate() {
+        if raw_line.trim().is_empty() || raw_line.trim_start().starts_with('#') {
+            continue;
+        }
+        // Split the untrimmed line so a trailing tab remains an explicit
+        // third column instead of being silently erased before validation.
+        let mut columns = raw_line.split('\t');
+        let Some(smirks) = columns.next() else {
+            continue;
+        };
+        let smirks = smirks.trim();
+        if smirks.is_empty() {
+            bail!(
+                "template line {} has an empty SMIRKS column",
+                line_index + 1
+            );
+        }
+        let count = columns.next();
+        if columns.next().is_some() {
+            bail!(
+                "template line {} has more than two tab-separated columns",
+                line_index + 1
+            );
+        }
+        parse_template_count(count)
+            .with_context(|| format!("invalid template frequency at line {}", line_index + 1))?;
+    }
+    Ok(())
+}
 
 pub fn validate_template_file(path: &str) -> Result<()> {
     let link_metadata = fs::symlink_metadata(path)
@@ -3554,6 +3602,7 @@ pub fn validate_template_file(path: &str) -> Result<()> {
             MAX_TEMPLATE_LINE_BYTES
         );
     }
+    validate_template_columns(&content)?;
     Ok(())
 }
 
@@ -3582,24 +3631,19 @@ pub fn load_rules_from_file(path: &str) -> Vec<RetroRule> {
 pub fn load_rules_from_content(content: &str) -> Vec<RetroRule> {
     content
         .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .filter(|line| !line.trim().is_empty() && !line.trim_start().starts_with('#'))
         .enumerate()
-        .filter_map(|(i, line)| {
-            // Format is exactly 2 tab-separated columns today: SMIRKS, count.
-            // `splitn(2, '\t')`'s second half is everything after the first tab,
-            // including any further tab-separated content -- so a naive 3rd column
-            // (e.g. a template ID or DOI for provenance metadata) added later without
-            // a format-version bump won't error here. It'll just make `count.parse()`
-            // fail on the combined string and silently fall back to `weight = 1.0`
-            // via `.unwrap_or(1.0)` below, corrupting the frequency weight for every
-            // such line. Whoever adds a 3rd column needs to change this split first.
-            let mut cols = line.splitn(2, '\t');
+        .filter_map(|(i, raw_line)| {
+            // Keep the legacy loader tolerant of a malformed SMIRKS line
+            // (doctor reports those), but never manufacture a weight from an
+            // invalid frequency. Public callers run `validate_template_file`
+            // first and therefore receive a line-numbered error instead.
+            let mut cols = raw_line.split('\t');
             let smirks = cols.next()?.trim();
-            let count: f64 = cols
-                .next()
-                .and_then(|c| c.trim().parse().ok())
-                .unwrap_or(1.0);
+            let count = parse_template_count(cols.next()).ok()?;
+            if cols.next().is_some() {
+                return None;
+            }
             let weight = (count + 1.0).ln();
             let reactant = smirks.split(">>").next()?;
             // Validate that chematic can parse the reactant SMARTS pattern.
@@ -4507,6 +4551,56 @@ mod tests {
         let _ = std::fs::remove_file(&path);
         let error = result.expect_err("oversized template line must be rejected");
         assert!(error.to_string().contains("resource_exhausted"));
+    }
+
+    #[test]
+    fn template_frequency_preflight_rejects_non_finite_negative_and_extra_columns() {
+        let dir = std::env::temp_dir();
+        let smirks = "[C:1]>>[C:1]";
+        for (suffix, line, expected) in [
+            ("nan", format!("{smirks}\tNaN\n"), "finite non-negative"),
+            (
+                "infinite",
+                format!("{smirks}\tinf\n"),
+                "finite non-negative",
+            ),
+            ("negative", format!("{smirks}\t-1\n"), "finite non-negative"),
+            (
+                "extra_column",
+                format!("{smirks}\t1\tunexpected\n"),
+                "more than two",
+            ),
+            (
+                "empty_extra_column",
+                format!("{smirks}\t1\t\n"),
+                "more than two",
+            ),
+            (
+                "not_number",
+                format!("{smirks}\tnot-a-number\n"),
+                "not a number",
+            ),
+        ] {
+            let path = write_templates_file(
+                &dir,
+                &format!(
+                    "renkin-template-frequency-{suffix}-{}.smi",
+                    std::process::id()
+                ),
+                &line,
+            );
+            let error = validate_template_file(&path)
+                .expect_err("invalid template frequency metadata must fail before search");
+            assert!(
+                format!("{error:#}").contains(expected),
+                "unexpected error for {suffix}: {error:#}"
+            );
+            assert!(
+                load_rules_from_file(&path).is_empty(),
+                "lenient loader must never synthesize a rule with invalid frequency metadata"
+            );
+            std::fs::remove_file(path).ok();
+        }
     }
 
     #[test]

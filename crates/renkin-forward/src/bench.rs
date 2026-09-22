@@ -1395,6 +1395,64 @@ fn invalid_row(attempt: &InvalidReactionAttempt, provenance: &RowProvenance) -> 
     Ok(row)
 }
 
+/// Record a prediction-engine failure as an explicit non-attempt. This must
+/// not be represented as an empty candidate pool: the latter is a measured
+/// chemistry result, whereas this state means the harness could not obtain a
+/// result at all and must be excluded from pool, latency, and accuracy
+/// aggregates.
+fn prediction_error_row(
+    reaction: &BenchReaction,
+    provenance: &RowProvenance,
+    elapsed_ms: f64,
+    rules_loaded: usize,
+) -> Result<BenchRow> {
+    let (accepted_product_count_min, accepted_product_count_max, accepted_product_count_mixed) =
+        accepted_product_arity(&reaction.accepted_products_canonical);
+    let row = BenchRow {
+        reaction_id: reaction.reaction_id.clone(),
+        source_line: reaction.source_line,
+        split: split_for_group(&reaction.group_key).to_string(),
+        leakage_group_id: Some(reaction.group_key.clone()),
+        reaction_class: reaction.reaction_class.clone(),
+        reactants_original: reaction.reactants_original.clone(),
+        reactants_canonical: reaction.reactants_canonical.clone(),
+        accepted_products_canonical: reaction.accepted_products_canonical.clone(),
+        num_reactants: reaction.reactants_canonical.len(),
+        accepted_product_count_min,
+        accepted_product_count_max,
+        accepted_product_count_mixed,
+        has_stereochemistry: reaction.has_stereochemistry,
+        candidate_count: 0,
+        raw_outcomes: 0,
+        correct_candidate_present: false,
+        best_correct_rank: None,
+        correct_ranks_top10: Vec::new(),
+        best_correct_rank_stereo_ignored: None,
+        top1_hit: false,
+        top5_hit: false,
+        top10_hit: false,
+        stereochemistry_aware_hit: false,
+        stereochemistry_ignored_outcome: StereoIgnoredOutcome::NoHit,
+        invalid_candidate_count: 0,
+        no_op_candidate_count: 0,
+        application_warning_count: 0,
+        application_error_count: 0,
+        templates_attempted: 0,
+        templates_matched: 0,
+        graph_rules_skipped: 0,
+        rules_loaded,
+        elapsed_ms,
+        failure_reason: FailureReason::PredictionError,
+        input_status: InputStatus::Valid,
+        proposal_status: ProposalStatus::Error,
+        ranking_status: RankingStatus::NotApplicable,
+        stereo_status: StereoStatus::NotApplicable,
+        provenance: provenance.clone(),
+    };
+    check_status_consistency(&row)?;
+    Ok(row)
+}
+
 fn compute_row(
     reaction: &BenchReaction,
     rules: &[RetroRule],
@@ -1420,59 +1478,15 @@ fn compute_row(
     let predict_result = predict_products_detailed(&reactant_refs, rules, &config);
     let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
 
+    let report = match predict_result {
+        Ok(r) => r,
+        Err(_) => return prediction_error_row(reaction, provenance, elapsed_ms, rules.len()),
+    };
+
     let num_reactants = reaction.reactants_canonical.len();
     let (accepted_product_count_min, accepted_product_count_max, accepted_product_count_mixed) =
         accepted_product_arity(&reaction.accepted_products_canonical);
     let split = split_for_group(&reaction.group_key).to_string();
-
-    let report = match predict_result {
-        Ok(r) => r,
-        Err(_) => {
-            let row = BenchRow {
-                reaction_id: reaction.reaction_id.clone(),
-                source_line: reaction.source_line,
-                split,
-                leakage_group_id: Some(reaction.group_key.clone()),
-                reaction_class: reaction.reaction_class.clone(),
-                reactants_original: reaction.reactants_original.clone(),
-                reactants_canonical: reaction.reactants_canonical.clone(),
-                accepted_products_canonical: reaction.accepted_products_canonical.clone(),
-                num_reactants,
-                accepted_product_count_min,
-                accepted_product_count_max,
-                accepted_product_count_mixed,
-                has_stereochemistry: reaction.has_stereochemistry,
-                candidate_count: 0,
-                raw_outcomes: 0,
-                correct_candidate_present: false,
-                best_correct_rank: None,
-                correct_ranks_top10: Vec::new(),
-                best_correct_rank_stereo_ignored: None,
-                top1_hit: false,
-                top5_hit: false,
-                top10_hit: false,
-                stereochemistry_aware_hit: false,
-                stereochemistry_ignored_outcome: StereoIgnoredOutcome::NoHit,
-                invalid_candidate_count: 0,
-                no_op_candidate_count: 0,
-                application_warning_count: 0,
-                application_error_count: 0,
-                templates_attempted: 0,
-                templates_matched: 0,
-                graph_rules_skipped: 0,
-                rules_loaded: rules.len(),
-                elapsed_ms,
-                failure_reason: FailureReason::PredictionError,
-                input_status: InputStatus::Valid,
-                proposal_status: ProposalStatus::Error,
-                ranking_status: RankingStatus::NotApplicable,
-                stereo_status: StereoStatus::NotApplicable,
-                provenance: provenance.clone(),
-            };
-            check_status_consistency(&row)?;
-            return Ok(row);
-        }
-    };
 
     // `None` (not a silent fallback) if any accepted product fails to
     // convert -- the whole ignored-comparison dimension becomes

@@ -8,6 +8,10 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Dependencies
+
+- Updated the workspace `chematic` and optional `chematic-rxn` dependency family to 1.0.26.
+
 ### Documentation
 
 - Consolidated the English, Japanese, and Chinese READMEs around installation,

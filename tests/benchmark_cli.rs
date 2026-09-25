@@ -2,14 +2,21 @@
 
 use std::fs;
 use std::process::Command;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+static NEXT_FIXTURE_ID: AtomicUsize = AtomicUsize::new(0);
 
 fn bench_bin() -> &'static str {
     env!("CARGO_BIN_EXE_renkin-bench")
 }
 
 fn target_fixture() -> std::path::PathBuf {
-    let path =
-        std::env::temp_dir().join(format!("renkin_benchmark_cli_{}.smi", std::process::id()));
+    let fixture_id = NEXT_FIXTURE_ID.fetch_add(1, Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!(
+        "renkin_benchmark_cli_{}_{}.smi",
+        std::process::id(),
+        fixture_id
+    ));
     fs::write(&path, "CC(=O)O\tacetic acid\n").unwrap();
     path
 }

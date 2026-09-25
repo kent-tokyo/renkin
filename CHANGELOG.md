@@ -11,6 +11,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Dependencies
 
 - Updated the workspace `chematic` and optional `chematic-rxn` dependency family to 1.0.26.
+- Updated optional ONNX scoring to `tract-onnx` 0.23.8 and the offline
+  ring-context tooling to `huggingface-hub` 1.32.0.
 
 ### Documentation
 

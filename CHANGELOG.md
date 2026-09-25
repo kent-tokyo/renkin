@@ -8,6 +8,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.10] - 2026-09-26 "Dependency Refresh and Documentation Consolidation"
+
 ### Dependencies
 
 - Updated the workspace `chematic` and optional `chematic-rxn` dependency family to 1.0.26.
@@ -22,7 +24,7 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Consolidated the English, Japanese, and Chinese READMEs around installation,
   first plan/audit commands, interface selection, and explicit claim limits.
 - Replaced the historical-progress-heavy roadmap and task ledger with compact
-  v1.0.9 workboards that point to immutable benchmark artifacts and release
+  v1.0.10 workboards that point to immutable benchmark artifacts and release
   history instead of duplicating them.
 - Promoted the registered Phase 55 r2 record to the public benchmark overview
   and grouped the documentation-site navigation by planning, audit, interop,
@@ -2791,7 +2793,8 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
 
 ---
 
-[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v1.0.9...HEAD
+[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v1.0.10...HEAD
+[1.0.10]: https://github.com/kent-tokyo/renkin/compare/v1.0.9...v1.0.10
 [1.0.9]: https://github.com/kent-tokyo/renkin/compare/v1.0.8...v1.0.9
 [1.0.8]: https://github.com/kent-tokyo/renkin/compare/v1.0.7...v1.0.8
 [1.0.7]: https://github.com/kent-tokyo/renkin/compare/v1.0.6...v1.0.7

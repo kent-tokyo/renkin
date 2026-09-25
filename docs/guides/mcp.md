@@ -1,299 +1,71 @@
-# MCP Server (`renkin-mcp`)
+# MCP server
 
-`renkin-mcp` exposes RENKIN's retrosynthesis tools over the [Model Context
-Protocol](https://modelcontextprotocol.io), so AI agents (Claude Desktop,
-Claude Code, and other MCP clients) can call them directly.
+`renkin-mcp` is a local JSON-RPC server over standard input/output. It lets an
+agent plan, inspect, and audit with the same bounded Rust core as the CLI. It
+does not fetch remote routes, upload private inputs, or make model calls.
 
-## Transport
+## Start it
 
-**stdio only.** `renkin-mcp` reads newline-delimited JSON-RPC 2.0 requests
-from stdin and writes one JSON-RPC message per line to stdout. Request lines
-are capped at 1 MiB and JSON structure is checked against the shared nesting
-and token budget before deserialization. Diagnostics go to stderr, never
-stdout. Streamable HTTP, OAuth-based authorization, MCP
-Apps, and the Tasks extension are not implemented — see
-[Non-goals](#non-goals-for-this-release).
-
-## Protocol support matrix
-
-| Protocol revision | Handshake | Status |
-|---|---|---|
-| `2024-11-05` ("legacy") | `initialize` → `notifications/initialized` → `tools/list` / `tools/call` | Fully supported; stable envelope with additive tool fields |
-| `2026-07-28` ("modern") | None — `server/discover` (optional) and per-request `_meta`, negotiated on the first request | Supported for the stdio subset RENKIN uses (see [Conformance](#conformance)) |
-
-A single `renkin-mcp` process serves **either** era per connection, decided
-by the first non-notification request it receives:
-
-- First request is `initialize` → the connection is pinned **legacy** for
-  its whole lifetime.
-- First request is `server/discover`, or an inline `tools/list` /
-  `tools/call` carrying valid modern `_meta`, → the connection is pinned
-  **modern**.
-- A notification alone never pins the connection.
-- An ambiguous opening request (e.g. a bare `tools/list` with no `_meta` and
-  no prior `initialize`) is rejected without pinning, so a client that
-  retries with a valid opening request still works.
-- Once pinned, a connection cannot switch eras mid-stream: a legacy
-  connection that receives `server/discover` gets `Method not found`; a
-  modern connection that receives `initialize` gets `Method not found`
-  too (`initialize` has no definition at all in the 2026-07-28 schema).
-
-## Legacy (2024-11-05) clients
-
-No changes from prior RENKIN releases. Register in
-`claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "renkin": { "command": "/path/to/renkin-mcp" }
-  }
-}
+```bash
+cargo run --release --bin renkin-mcp
 ```
 
-```
-→ {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"legacy-client","version":"1.0"}}}
-← {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"renkin","version":"1.0.9"}}}
+Use an MCP client that supports either the legacy `2024-11-05` protocol or the
+modern `2026-07-28` protocol. Modern clients should call `initialize`, then
+`tools/list`; tool schemas and effective limits are advertised rather than
+being inferred from this page.
 
-→ {"jsonrpc":"2.0","method":"notifications/initialized"}
+## Tools
 
-→ {"jsonrpc":"2.0","id":2,"method":"tools/list"}
-← {"jsonrpc":"2.0","id":2,"result":{"tools":[...]}}
+| Tool | Purpose |
+| --- | --- |
+| `find_routes` | Search bounded retrosynthetic routes from a target SMILES. |
+| `validate_route` | Audit route structure, stock coverage, and forward basis. |
+| `explain_route` | Render an existing route and its findings for review. |
+| `find_pareto_routes` | Return routes across explicit cost/quality trade-offs. |
+| `plan_with_constraints` | Plan with explicit stock, cost, element, and family constraints. |
+| `estimate_diversity` | Summarize route-set diversity without claiming experimental independence. |
+| `diagnose_failure` | Report search loss signals for an unsolved target. |
 
-→ {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"find_routes","arguments":{"smiles":"CC(=O)Nc1ccc(O)cc1"}}}
-← {"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"..."}]}}
-```
+`tools/list` is authoritative for each argument schema, required fields, and
+stable/experimental status. Clients must reject unknown parameters rather than
+assuming they are ignored.
 
-Legacy responses never carry `resultType`, per-request `_meta`,
-`supportedVersions`, the modern `_meta.serverInfo` block, or the modern
-`tools/list` caching fields (`ttlMs` / `cacheScope`). This is checked by a
-regression test against a transcript captured from the binary shipped before
-this protocol revision was added
-(`tests/fixtures/mcp/2024-11-05/legacy_transcript_output.jsonl`).
+## Limits and receipts
 
-Legacy wire envelopes remain compatible, but unsafe dispatch behavior is not
-preserved: unknown tool names, misspelled arguments, and out-of-budget numeric
-values fail closed before search. Legacy clients receive a normal tool result
-with `isError: true`; modern clients receive protocol-level `-32602 Invalid
-Params` (see below).
+Every MCP surface exposes a machine-readable capability/limit contract. It
+includes accepted tool names, search and audit limits, the local-only network
+stance, and cancellation behavior. Validate it at session setup and pin it in
+an agent run record.
 
-## Modern (2026-07-28) clients
+Successful modern `tools/call` responses include a redacted audit receipt when
+applicable. A receipt records the tool, normalized argument hash, outcome,
+and parent linkage without embedding private request bodies. It is evidence of
+this local invocation, not proof of experimental synthesis success.
 
-No `initialize` handshake. Every request carries protocol negotiation in
-`params._meta`:
+## Failure behavior
 
-```
-→ {"jsonrpc":"2.0","id":"d1","method":"server/discover","params":{"_meta":{
-    "io.modelcontextprotocol/protocolVersion":"2026-07-28",
-    "io.modelcontextprotocol/clientInfo":{"name":"test-client","version":"1.0.0"},
-    "io.modelcontextprotocol/clientCapabilities":{}
-  }}}
-← {"jsonrpc":"2.0","id":"d1","result":{
-    "resultType":"complete",
-    "supportedVersions":["2026-07-28"],
-    "capabilities":{"tools":{},"experimental":{"io.renkin/capabilityContract":{...}}},
-    "instructions":"RENKIN provides retrosynthetic route search and route-analysis tools.",
-    "ttlMs":3600000,
-    "cacheScope":"public",
-    "_meta":{"io.modelcontextprotocol/serverInfo":{"name":"renkin","version":"1.0.9"}}
-  }}
+The server validates JSON-RPC before tool dispatch:
 
-→ {"jsonrpc":"2.0","id":"t1","method":"tools/list","params":{"_meta":{
-    "io.modelcontextprotocol/protocolVersion":"2026-07-28",
-    "io.modelcontextprotocol/clientCapabilities":{}
-  }}}
-← {"jsonrpc":"2.0","id":"t1","result":{
-    "resultType":"complete",
-    "tools":[...],
-    "ttlMs":3600000,
-    "cacheScope":"public",
-    "_meta":{"io.modelcontextprotocol/serverInfo":{"name":"renkin","version":"1.0.9"}}
-  }}
-```
+- malformed JSON is a `-32700` parse error;
+- malformed envelopes or unsupported protocol versions are `-32600` invalid
+  requests;
+- unknown methods are `-32601`;
+- notifications produce no response;
+- an invalid request never poisons the following frame.
 
-`server/discover` is optional — a client can instead send `tools/list` or
-`tools/call` directly as its opening request, as long as it carries valid
-`_meta`; the connection still pins modern.
+Tool errors are structured results. Resource exhaustion, parse rejection,
+deadline expiry, and route-validation failure remain distinct; none is an
+empty successful route list. MCP uses stdio only, so reserve stdout for
+protocol frames and send human diagnostics to stderr.
 
-### Capability and limit contract
+## Safe agent workflow
 
-Modern `server/discover` advertises the additive
-`capabilities.experimental["io.renkin/capabilityContract"]` object. It is a
-versioned, machine-readable description of this **MCP** server: transport,
-network and caller-path boundary, stable tool names, enforced search maxima,
-timeout modes, and refusal categories. Per-tool JSON Schema remains the
-source of truth in `tools/list`; the contract deliberately references it
-instead of duplicating schemas.
+1. Discover tools and capability limits.
+2. Submit bounded local work with explicit stock and policy where relevant.
+3. Keep the route result, manifest, and receipt together.
+4. Treat `partial` and `not_evaluable` as missing evidence, not success.
 
-The server is stdio-only and never uses the network. It may read an explicitly
-supplied local coverage-template path, never writes caller data, has no
-general request-cancel method, and rejects invalid arguments at the JSON-RPC
-boundary. `find_routes.timeout_secs` is a cooperative 1–3,600 second bound
-for standard search; coverage exposes its separate Stage-2 timeout. A handler
-failure receives an audit receipt with `tool_error`; malformed arguments are a
-JSON-RPC `Invalid Params` error and do not run search.
-
-### Audit receipts
-
-Modern `tools/call` results carry an additive `_meta.io.renkin/auditReceipt`
-object. It records the tool name, RENKIN version, optional model and parent
-task link, JSON-RPC task id, SHA-256 hashes of canonicalized arguments and
-result, status, failure code, and an execution timestamp. Raw SMILES,
-arguments, route results, stock rows, and secrets are never copied into the
-receipt. `receiptId`, `argumentsSha256`, and `resultSha256` are deterministic;
-`timestampUnixMs` is informational and may differ between replays.
-
-An agent may pass `io.renkin/parentTaskId` and `io.renkin/model` in the
-request `_meta` to preserve parent/child execution correlation. Invalid tool
-arguments remain protocol errors and therefore do not produce a receipt;
-handler-level failures produce a receipt with `status: "failure"` and
-`failureCode: "tool_error"`. Legacy responses do not carry receipts.
-
-### Per-request `_meta`
-
-Every modern request must include, under `params._meta`:
-
-| Key | Required | Notes |
-|---|---|---|
-| `io.modelcontextprotocol/protocolVersion` | Yes | Must be exactly `"2026-07-28"`; anything else gets `-32022 Unsupported protocol version` with `data: {supported, requested}` |
-| `io.modelcontextprotocol/clientCapabilities` | Yes | Must be an object (may be empty) |
-| `io.modelcontextprotocol/clientInfo` | No | If present, must have string `name` and `version`; malformed values are rejected |
-| `io.modelcontextprotocol/logLevel`, `traceparent`, `tracestate`, `baggage` | No | Accepted but not interpreted — RENKIN does not emit log-level-gated notifications or forward trace context in this release |
-
-Client identity (`clientInfo`) is validated but never used to change
-behavior — no authorization or feature branching on client name/version.
-
-### `tools/list` caching hints
-
-Modern `tools/list` responses include `ttlMs: 3600000` (1 hour) and
-`cacheScope: "public"`: RENKIN's tool list is static per binary build and
-carries no per-user data, so any client or intermediary may cache and share
-it. `listChanged` is not advertised (RENKIN doesn't send list-change
-notifications). Tool order is fixed by declaration order — not alphabetical
-— and is covered by a determinism test, since a caching client may compare
-list contents across calls.
-
-### Tool schemas: JSON Schema 2020-12
-
-Modern `inputSchema`/`outputSchema` objects declare `"$schema":
-"https://json-schema.org/draft/2020-12/schema"` and `"additionalProperties":
-false`, and add numeric bounds RENKIN's own code already documented or
-enforces (e.g. `depth`: 1–20, `max_routes`: 1–100, `min_confidence` /
-`min_success_probability`: 0–1). Every declared bound is enforced server-side
-before the tool handler runs — a modern `tools/call` that violates the
-schema never reaches RENKIN's search code; it gets `-32602 Invalid Params`
-immediately.
-
-Legacy schemas retain their older JSON shape: they have no `$schema` or
-`additionalProperties: false`. The server nevertheless validates legacy
-arguments against the same allowlist and numeric bounds before search. Both
-eras advertise progressive coverage search and bounded candidate traces on
-`find_routes`, and the complete element/building-block/cost/step/confidence/
-reaction-family filters on `plan_with_constraints`.
-
-`find_routes` also accepts an optional `timeout_secs` (1–3,600 seconds) for
-standard search. The deadline is cooperative: a request that reaches it is
-classified as `deadline_exceeded`, not as a completed search. Coverage mode
-uses its separate `coverage_timeout_secs`; the two timeout arguments cannot be
-combined.
-
-### Structured tool output
-
-`validate_route`, `estimate_diversity`, and `diagnose_failure` return
-`structuredContent` (in addition to the existing human-readable `content`
-text) in the modern era, validated against a declared `outputSchema`. The
-other four tools (`find_routes`, `explain_route`, `find_pareto_routes`,
-`plan_with_constraints`) do not yet — their `Route` output is large and
-deeply nested; schema-fying it is left to a future PR rather than done
-partially here. `estimate_diversity` reports building-block-set diversity and
-the deterministic template-disconnection `chemical_idea_cds` proxy as
-separate values; the latter is not exact atom-mapped formed-bond CDS.
-
-### Errors
-
-| Condition | Modern behavior |
-|---|---|
-| Malformed JSON | `-32700 Parse error` (`id: null`) |
-| Request line over 1 MiB or JSON structure over budget | `-32600 resource_exhausted` (`id: null`) |
-| Missing/wrong `jsonrpc` or `method` | `-32600 Invalid Request` |
-| Unknown method | `-32601 Method not found` |
-| Unsupported/missing `_meta.protocolVersion` | `-32022` / `-32602` |
-| Unknown tool name | `-32602 Invalid Params` — **not** a fallback to `find_routes`, and **not** a tool-level `isError` result |
-| Missing/malformed required tool argument | `-32602 Invalid Params` |
-| Tool ran but failed for a data/chemistry reason (invalid SMILES, no route found is *not* an error, search internal error) | `isError: true` inside a normal `resultType: "complete"` result |
-
-The unknown-tool-name and missing-argument classification follows the
-official schema's own split (`InvalidParamsError`'s doc explicitly lists
-"unknown tool name or invalid tool arguments" under protocol-level errors),
-not this feature's own early illustrative example, which showed a
-missing-argument case as a tool-level error before the schema was checked
-against source. The **legacy** era keeps the old tool-level-error behavior
-for missing arguments unchanged, since changing it there would be a legacy
-behavior break.
-
-## Non-goals for this release
-
-Not implemented, and not advertised as implemented: Streamable HTTP
-transport, OAuth/HTTP authorization, MCP Apps, the Tasks extension,
-subscriptions, multi-round-trip elicitation, sampling, roots, and
-server-to-client requests. RENKIN's tools all complete synchronously in a
-single request/response, so Tasks and `input_required` results don't apply
-here. `ServerCapabilities.extensions` is omitted from `server/discover`
-responses rather than advertised empty.
-
-## Conformance
-
-This implementation's modern wire shapes were checked directly against the
-official RC schema (`schema.ts` / `schema.json`) and example fixtures
-vendored at `tests/fixtures/mcp/2026-07-28-rc/`, then compared with the
-official `2026-07-28` GA tag. The GA delta only renames and extends
-`subscriptions/listen` types and updates documentation links; it does not
-change the stdio/tool subset implemented here. See the fixture README for
-exact hashes and provenance.
-
-The official `modelcontextprotocol/conformance` suite was checked at commit
-`a865118206d4d8cc8dbc5f5201607839281d0c3b` (2026-07-23). At that commit it is
-a **client**-conformance framework: it spins up its own test server and
-drives a client implementation against it, and its server-testing mode
-targets Streamable HTTP (`--server-url http://.../mcp`) only. No stdio-server
-scenario exists to run RENKIN's `renkin-mcp` against, so this project's own
-tests (`tests/mcp_transcript.rs` plus the `#[cfg(test)]` unit tests in
-`src/mcp/*`) are the only conformance evidence for now.
-
-Accordingly: RENKIN **supports the MCP 2026-07-28 stdio server subset used
-by RENKIN**. It does not claim official conformance, because no official
-stdio-server conformance run has been performed.
-
-## Schema pinning and the final-spec delta check
-
-The implementation was originally pinned to RC commit
-`7634684382c3d14cf7e9f14073fe40a2d8ace3fa`. The final-spec delta check was
-completed against the official `2026-07-28` GA tag on 2026-09-05. The JSON
-and TypeScript schemas differ only in `subscriptions/listen` additions and
-documentation-link paths, outside RENKIN's declared scope; no implemented
-wire shape or error code changed. See `tests/fixtures/mcp/README.md` for the
-recorded hashes.
-
-## Troubleshooting
-
-**Client hangs after connecting.** Confirm you're sending newline-delimited
-JSON (one object per line, no pretty-printing) — `renkin-mcp` reads
-line-by-line and will not process a message until it sees the terminating
-`\n`.
-
-**"Unsupported protocol version" from a modern client.** Check
-`io.modelcontextprotocol/protocolVersion` is exactly `"2026-07-28"`, not a
-different 2025/2026 revision — the error's `data.supported` field lists what
-the server accepts.
-
-**A modern client's `tools/call` fails with `-32602` where a legacy client
-would have gotten a normal `isError` result.** This is expected for unknown
-tool names and missing/malformed required arguments — see
-[Errors](#errors) above. It's not a bug; it's the modern era following the
-official schema's own error-classification split.
-
-**stderr has diagnostic text mixed into what looks like protocol
-output in your client's logs.** `renkin-mcp` never writes anything but
-JSON-RPC messages to stdout; if you're seeing mixed output, your MCP client
-or supervisor is likely merging separate stdout/stderr streams for display —
-check the raw streams independently.
+For audit policy and manifest fields, read the [audit reproducibility
+contract](audit-reproducibility-contract.md). For browser limits, read the
+[WASM API](../api/wasm.md).

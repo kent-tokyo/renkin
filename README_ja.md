@@ -10,6 +10,9 @@ RENKINには2つの役割があります。
 - **Bridge**：RENKIN、AiZynthFinder、Syntheseus、SynPlannerのrouteを、同じ決定論的な検査で監査します。
 
 現行リリースは **v1.0.9**。CLI、Rust crate、Python、MCP、ブラウザWASMを提供し、core chemistryにC/C++依存はありません。
+標準plannerは24のhand-crafted ruleを持ちます。repository内のstock fileは402化合物、
+WASMとfileを見つけられない環境では152化合物のcompiled-in fallbackを使います。stockが
+重要なrunでは明示的に指定してください。
 
 ## インストール
 

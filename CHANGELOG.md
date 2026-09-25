@@ -14,6 +14,9 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Documentation
 
+- Condensed the security policy and the Python, MCP, forward-tool, route-audit,
+  and reaction-evidence guides around their current bounded interfaces and
+  explicit evidence limits.
 - Consolidated the English, Japanese, and Chinese READMEs around installation,
   first plan/audit commands, interface selection, and explicit claim limits.
 - Replaced the historical-progress-heavy roadmap and task ledger with compact

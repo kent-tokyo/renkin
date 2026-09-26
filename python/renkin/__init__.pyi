@@ -69,6 +69,8 @@ def find_routes(
     max_expansions: int | None = None,
     first_route_stats: bool = False,
     banned_molecules: list[str] | None = None,
+    route_diversity: bool = False,
+    diversity_radius: float = 0.999,
 ) -> str: ...
 def expand(
     target: str,

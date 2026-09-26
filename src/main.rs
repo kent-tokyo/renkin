@@ -108,6 +108,10 @@ struct Output {
     /// Present only with `--max-bb-price`.
     #[serde(skip_serializing_if = "Option::is_none")]
     stock_price_filter: Option<StockPriceFilterReceipt>,
+    /// Present only with `--route-diversity`/`--diversity-radius`
+    /// (Syntheseus packing-number parity).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    route_set_diversity: Option<renkin::diversity::PackingEstimate>,
 }
 
 /// Syntheseus-style "time / calls to first solution" receipt for the
@@ -336,6 +340,8 @@ fn run_search_cli(args: &[String]) -> Result<()> {
     let mut ban_molecules_path: Option<String> = None;
     let mut ban_smiles_arg: Option<String> = None;
     let mut max_bb_price: Option<f64> = None;
+    let mut route_diversity = false;
+    let mut diversity_radius = renkin::diversity::DEFAULT_PACKING_RADIUS;
     let mut exclude_target_from_stock = false;
     let mut cluster = false;
     let mut n_clusters: Option<usize> = None;
@@ -472,6 +478,20 @@ fn run_search_cli(args: &[String]) -> Result<()> {
             }
             "--first-route-stats" => {
                 first_route_stats = true;
+            }
+            "--route-diversity" => {
+                route_diversity = true;
+            }
+            "--diversity-radius" => {
+                let raw = required_flag_value(args, &mut i, "--diversity-radius")?;
+                let radius: f64 = raw.parse().map_err(|_| {
+                    anyhow::anyhow!("--diversity-radius must be a number in [0,1), got {raw:?}")
+                })?;
+                if !(0.0..1.0).contains(&radius) {
+                    bail!("--diversity-radius must be a number in [0,1) (got {raw})");
+                }
+                diversity_radius = radius;
+                route_diversity = true;
             }
             "--ban-molecules" => {
                 ban_molecules_path =
@@ -736,6 +756,10 @@ fn run_search_cli(args: &[String]) -> Result<()> {
              (Syntheseus/AiZynthFinder iteration limit); JSON reports \"termination\"\n  \
              --first-route-stats    Add a \"first_route\" receipt (expansions, expansion calls, \
              and wall time to the first accepted route; Syntheseus parity)\n  \
+             --route-diversity      Add \"route_set_diversity\": the packing number of \
+             pairwise-distinct routes under reaction-Jaccard distance (Syntheseus parity)\n  \
+             --diversity-radius <r> Distinctness radius in [0,1) (default 0.999 = reaction-\
+             disjoint; implies --route-diversity)\n  \
              --ban-molecules <path> SMILES file of molecules that may never appear as a \
              precursor (ASKCOS banned chemicals; exact stock identity)\n  \
              --ban-smiles <A,B,..>  Comma-separated banned molecules (same semantics)\n  \
@@ -832,6 +856,9 @@ fn run_search_cli(args: &[String]) -> Result<()> {
         );
     }
 
+    if route_diversity && format != "json" {
+        bail!("--route-diversity/--diversity-radius require --format json");
+    }
     if cluster && format != "json" {
         bail!("--cluster/--n-clusters/--max-clusters require --format json");
     }
@@ -2004,6 +2031,11 @@ fn run_search_cli(args: &[String]) -> Result<()> {
                 if let Some(ref receipt) = stock_price_filter {
                     out["stock_price_filter"] = serde_json::to_value(receipt)?;
                 }
+                if route_diversity {
+                    out["route_set_diversity"] = serde_json::to_value(
+                        renkin::diversity::route_packing_number(&routes, diversity_radius),
+                    )?;
+                }
                 if exclude_target_from_stock {
                     out["exclude_target_from_stock"] = serde_json::Value::from(true);
                 }
@@ -2023,6 +2055,8 @@ fn run_search_cli(args: &[String]) -> Result<()> {
                         .iter()
                         .map(|r| 1.0 - r.success_probability)
                         .product::<f64>();
+                let route_set_diversity = route_diversity
+                    .then(|| renkin::diversity::route_packing_number(&routes, diversity_radius));
                 let route_clusters = cluster.then(|| {
                     renkin::route_distance::cluster_routes(
                         &routes,
@@ -2063,6 +2097,7 @@ fn run_search_cli(args: &[String]) -> Result<()> {
                     first_route: first_route_receipt,
                     banned_molecules: banned_receipt,
                     stock_price_filter,
+                    route_set_diversity,
                     routes,
                 };
                 println!("{}", serde_json::to_string_pretty(&output)?);
@@ -2260,6 +2295,7 @@ fn run_capabilities(args: &[String]) -> Result<()> {
             "first_route_stats": true,
             "banned_molecules": true,
             "max_bb_price": true,
+            "route_packing_number": "reaction_jaccard",
             "route_clustering": renkin::route_distance::ROUTE_DISTANCE_METHOD,
             "export_formats": ["aizynthfinder"],
         },

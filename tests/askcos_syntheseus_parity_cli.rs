@@ -228,3 +228,49 @@ fn capabilities_advertise_new_options() {
         assert_eq!(v["search"][key], true, "{key}");
     }
 }
+
+#[test]
+fn route_diversity_reports_packing_number() {
+    let v = run(&[
+        "--target",
+        ASPIRIN,
+        "--depth",
+        "3",
+        "--max-routes",
+        "8",
+        "--route-diversity",
+    ]);
+    let routes = v["routes"].as_array().unwrap();
+    let d = &v["route_set_diversity"];
+    assert_eq!(d["distance"], "reaction_jaccard");
+    assert_eq!(d["routes"], routes.len());
+    assert_eq!(d["method"], "exact");
+    let packing = d["packing_number"].as_u64().unwrap() as usize;
+    assert!(packing >= 1 && packing <= routes.len());
+    assert_eq!(
+        d["packing_route_indices"].as_array().unwrap().len(),
+        packing
+    );
+
+    let loose = run(&[
+        "--target",
+        ASPIRIN,
+        "--depth",
+        "3",
+        "--max-routes",
+        "8",
+        "--diversity-radius",
+        "0",
+    ]);
+    assert!(
+        loose["route_set_diversity"]["packing_number"]
+            .as_u64()
+            .unwrap() as usize
+            >= packing
+    );
+
+    let err = run_failure(&["--target", ASPIRIN, "--diversity-radius", "1"]);
+    assert!(err.contains("--diversity-radius must be a number in [0,1)"));
+    let err = run_failure(&["--target", ASPIRIN, "--route-diversity", "--format", "tree"]);
+    assert!(err.contains("require --format json"));
+}

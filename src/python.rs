@@ -177,6 +177,11 @@ pub fn capabilities_py() -> PyResult<String> {
 ///     banned_molecules (list[str] | None): Molecules that may never appear
 ///         as a precursor (ASKCOS banned chemicals; exact stock identity).
 ///         Adds ``banned_molecules`` with ``count``/``candidates_removed``.
+///     route_diversity (bool): Add ``route_set_diversity``: the packing
+///         number of pairwise-distinct routes under reaction-Jaccard distance
+///         (Syntheseus parity). Default ``False``.
+///     diversity_radius (float): Distinctness radius in [0,1); the default
+///         0.999 counts reaction-disjoint routes.
 ///     cluster (bool): Add ``route_clusters`` (structural tree-edit
 ///         distance matrix + average-linkage labels; AiZynthFinder route
 ///         clustering parity, see ``src/route_distance.rs``). Default ``False``.
@@ -276,7 +281,7 @@ pub fn capabilities_py() -> PyResult<String> {
 ///     routes = json.loads(renkin.find_routes("CC(=O)Oc1ccccc1C(=O)O", depth=3))
 ///     print(routes["routes_found"])
 #[pyfunction]
-#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None, coverage_beam_width=None, search_diagnostics=false, spectator_bond_policy="off", element_accounting_policy="off", beam_diversity_policy="off", beam_diversity_slots=0, avoid_building_blocks="", require_building_blocks="", max_route_cost=None, min_confidence=None, min_success_probability=None, require_reaction_families="", avoid_reaction_families="", prefer_reaction_families="", max_steps=None, candidate_trace_limit=None, time_limit_seconds=None, exclude_target_from_stock=false, cluster=false, n_clusters=None, max_clusters=5, max_expansions=None, first_route_stats=false, banned_molecules=None))]
+#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None, coverage_beam_width=None, search_diagnostics=false, spectator_bond_policy="off", element_accounting_policy="off", beam_diversity_policy="off", beam_diversity_slots=0, avoid_building_blocks="", require_building_blocks="", max_route_cost=None, min_confidence=None, min_success_probability=None, require_reaction_families="", avoid_reaction_families="", prefer_reaction_families="", max_steps=None, candidate_trace_limit=None, time_limit_seconds=None, exclude_target_from_stock=false, cluster=false, n_clusters=None, max_clusters=5, max_expansions=None, first_route_stats=false, banned_molecules=None, route_diversity=false, diversity_radius=0.999))]
 #[allow(clippy::too_many_arguments)]
 pub fn find_routes_py(
     target: &str,
@@ -320,7 +325,14 @@ pub fn find_routes_py(
     max_expansions: Option<u64>,
     first_route_stats: bool,
     banned_molecules: Option<Vec<String>>,
+    route_diversity: bool,
+    diversity_radius: f64,
 ) -> PyResult<String> {
+    if !(0.0..1.0).contains(&diversity_radius) {
+        return Err(PyValueError::new_err(format!(
+            "diversity_radius must be in [0,1) (got {diversity_radius})"
+        )));
+    }
     if max_expansions == Some(0) {
         return Err(PyValueError::new_err(
             "max_expansions must be a positive integer (got 0)",
@@ -760,6 +772,12 @@ pub fn find_routes_py(
             "total_nodes_expanded": stats.nodes_expanded,
             "total_expansion_calls": stats.retro_cache_misses,
         });
+    }
+    if route_diversity {
+        output["route_set_diversity"] = serde_json::to_value(
+            crate::diversity::route_packing_number(&routes, diversity_radius),
+        )
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
     }
     if let Some(ref set) = banned_set {
         output["banned_molecules"] = serde_json::json!({

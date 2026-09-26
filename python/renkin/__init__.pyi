@@ -72,6 +72,7 @@ def find_routes(
     route_diversity: bool = False,
     diversity_radius: float = 0.999,
     max_branching: int | None = None,
+    small_molecule_terminal: int | None = None,
 ) -> str: ...
 def expand(
     target: str,

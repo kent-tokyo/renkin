@@ -1148,7 +1148,10 @@ fn is_bb_cached(
         diagnostics.cache_hits += 1;
         return cached;
     }
-    let matched = env.is_building_block_smiles(smiles);
+    // Stock membership, or an opt-in small-molecule terminal
+    // (`ChemEnv::with_small_molecule_terminal`); identical to the stock
+    // lookup when no threshold is configured.
+    let matched = env.is_search_terminal_smiles(smiles);
     cache.insert(smiles.to_owned(), matched);
     diagnostics.cache_misses += 1;
     if matched {
@@ -2547,7 +2550,7 @@ fn cached_one_step_stock_terminal(
             && entry
                 .precursor_smiles
                 .iter()
-                .all(|precursor| env.is_building_block_smiles(precursor))
+                .all(|precursor| env.is_search_terminal_smiles(precursor))
     }))
 }
 
@@ -3440,7 +3443,7 @@ pub(crate) fn find_routes_with_control_prepared(
     let target_is_building_block = if config.exclude_target_from_stock {
         false
     } else {
-        let in_stock = env.is_building_block(&target_mol);
+        let in_stock = env.is_search_terminal(&target_mol);
         stock_lookup_diagnostics.cache_misses += 1;
         if in_stock {
             stock_lookup_diagnostics.positive_results += 1;

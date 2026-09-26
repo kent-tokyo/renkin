@@ -365,7 +365,7 @@ impl DownstreamReachabilityReranker {
     }
 
     fn one_step_stock_terminal(&self, smiles: &str) -> bool {
-        if self.stock.is_building_block_smiles(smiles) {
+        if self.stock.is_search_terminal_smiles(smiles) {
             return true;
         }
         if let Ok(cache) = self.cache.lock()
@@ -402,7 +402,7 @@ impl DownstreamReachabilityReranker {
                             !precursors.is_empty()
                                 && precursors.iter().all(|precursor| {
                                     precursor.smiles != smiles
-                                        && self.stock.is_building_block_smiles(&precursor.smiles)
+                                        && self.stock.is_search_terminal_smiles(&precursor.smiles)
                                 })
                         })
                 })
@@ -429,7 +429,7 @@ impl DownstreamReachabilityReranker {
             .precursor_smiles
             .iter()
             .filter(|smiles| {
-                if self.stock.is_building_block_smiles(smiles) {
+                if self.stock.is_search_terminal_smiles(smiles) {
                     return true;
                 }
                 match lookup {

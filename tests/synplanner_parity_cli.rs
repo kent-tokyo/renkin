@@ -1,0 +1,83 @@
+//! Process-level tests for SynPlanner-parity options.
+
+use std::process::Command;
+
+fn bin() -> &'static str {
+    env!("CARGO_BIN_EXE_renkin")
+}
+
+fn run(args: &[&str]) -> serde_json::Value {
+    let out = Command::new(bin())
+        .args(args)
+        .output()
+        .expect("failed to spawn renkin");
+    assert!(
+        out.status.success(),
+        "renkin exited non-zero: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    serde_json::from_slice(&out.stdout).expect("stdout must be valid JSON")
+}
+
+fn run_failure(args: &[&str]) -> String {
+    let out = Command::new(bin())
+        .args(args)
+        .env("RUST_BACKTRACE", "0")
+        .output()
+        .expect("failed to spawn renkin");
+    assert!(!out.status.success(), "renkin unexpectedly succeeded");
+    String::from_utf8_lossy(&out.stderr).into_owned()
+}
+
+fn temp_file(name: &str, content: &[u8]) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("renkin-synplanner-{}-{name}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join(name);
+    std::fs::write(&path, content).unwrap();
+    path
+}
+
+const ASPIRIN: &str = "CC(=O)Oc1ccccc1C(=O)O";
+
+#[test]
+fn small_molecule_terminal_solves_with_size_terminals_and_reports_them() {
+    let stock = temp_file("salicylic.smi", b"Oc1ccccc1C(=O)O\n");
+    let plain = run(&[
+        "--target",
+        ASPIRIN,
+        "--depth",
+        "2",
+        "--building-blocks",
+        stock.to_str().unwrap(),
+    ]);
+    assert_eq!(plain["routes_found"], 0);
+    assert!(plain.get("small_molecule_terminal").is_none());
+
+    let v = run(&[
+        "--target",
+        ASPIRIN,
+        "--depth",
+        "2",
+        "--building-blocks",
+        stock.to_str().unwrap(),
+        "--small-molecule-terminal",
+        "4",
+    ]);
+    let routes = v["routes"].as_array().unwrap();
+    assert!(!routes.is_empty());
+    let receipt = &v["small_molecule_terminal"];
+    assert_eq!(receipt["max_heavy_atoms"], 4);
+    let leaves = receipt["non_stock_leaves"].as_array().unwrap();
+    assert_eq!(leaves.len(), routes.len());
+    assert_eq!(receipt["routes_with_non_stock_leaves"], routes.len());
+    for (route, non_stock) in routes.iter().zip(leaves) {
+        let bbs = route["building_blocks"].as_array().unwrap();
+        for leaf in non_stock.as_array().unwrap() {
+            assert!(bbs.contains(leaf));
+        }
+    }
+
+    // Audit keeps stock identity exact: size terminals are not stock.
+    let err = run_failure(&["--target", ASPIRIN, "--small-molecule-terminal", "-1"]);
+    assert!(err.contains("--small-molecule-terminal must be a non-negative integer"));
+}

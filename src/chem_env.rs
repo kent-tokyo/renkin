@@ -203,6 +203,10 @@ pub struct ChemEnv {
     /// Standardized canonical SMILES of every BB — the sole identity lookup.
     canon_set: FxHashSet<String>,
     bb_count: usize,
+    /// Opt-in SynPlanner `min_mol_size` parity; see
+    /// [`ChemEnv::with_small_molecule_terminal`]. Never affects stock
+    /// membership (`is_building_block*`).
+    small_molecule_terminal: Option<usize>,
 }
 
 impl ChemEnv {
@@ -254,6 +258,7 @@ impl ChemEnv {
         Self {
             canon_set,
             bb_count,
+            small_molecule_terminal: None,
         }
     }
 
@@ -267,6 +272,7 @@ impl ChemEnv {
         Self {
             canon_set,
             bb_count,
+            small_molecule_terminal: None,
         }
     }
 
@@ -282,6 +288,49 @@ impl ChemEnv {
     /// `split_fragments`'s `standardize` + `canonical_smiles` pipeline).
     pub fn is_building_block_smiles(&self, canonical_smi: &str) -> bool {
         self.canon_set.contains(canonical_smi)
+    }
+
+    /// SynPlanner `min_mol_size`/`exclude_small` parity (opt-in): during
+    /// search, any molecule with at most `max_heavy_atoms` heavy (non-H)
+    /// atoms is treated as a route terminal even if it is **not** in stock.
+    /// Stock membership itself (`is_building_block*`, audits, stock
+    /// reports) is unchanged -- only [`Self::is_search_terminal`]/
+    /// [`Self::is_search_terminal_smiles`] consult this, so callers can
+    /// always tell a size terminal apart from a purchasable building block.
+    pub fn with_small_molecule_terminal(mut self, max_heavy_atoms: usize) -> Self {
+        self.small_molecule_terminal = Some(max_heavy_atoms);
+        self
+    }
+
+    /// The configured small-molecule terminal threshold, if any.
+    pub fn small_molecule_terminal(&self) -> Option<usize> {
+        self.small_molecule_terminal
+    }
+
+    /// `true` iff a small-molecule threshold is configured and `smiles`
+    /// parses to at most that many heavy atoms. Unparseable input is never
+    /// a terminal.
+    pub fn is_small_molecule_terminal_smiles(&self, smiles: &str) -> bool {
+        let Some(limit) = self.small_molecule_terminal else {
+            return false;
+        };
+        parse(smiles).is_ok_and(|mol| heavy_atom_count(&mol) <= limit)
+    }
+
+    /// Search-time terminal check: stock membership, or (opt-in) a small
+    /// molecule. For an already-canonical, already-standardized SMILES.
+    pub fn is_search_terminal_smiles(&self, canonical_smi: &str) -> bool {
+        self.is_building_block_smiles(canonical_smi)
+            || self.is_small_molecule_terminal_smiles(canonical_smi)
+    }
+
+    /// Search-time terminal check for a parsed molecule; see
+    /// [`Self::is_search_terminal_smiles`].
+    pub fn is_search_terminal(&self, mol: &Molecule) -> bool {
+        self.is_building_block(mol)
+            || self
+                .small_molecule_terminal
+                .is_some_and(|limit| heavy_atom_count(mol) <= limit)
     }
 
     /// Check if `mol` is in the building-block library.
@@ -302,6 +351,13 @@ impl ChemEnv {
     pub fn content_sha256(&self) -> String {
         crate::compiled_stock::semantic_content_sha256(self.canon_set.iter().map(String::as_str))
     }
+}
+
+/// Number of non-hydrogen atoms (SynPlanner's `len(molecule)`).
+pub fn heavy_atom_count(mol: &Molecule) -> usize {
+    mol.atoms()
+        .filter(|(_, atom)| atom.element != chematic::core::Element::H)
+        .count()
 }
 
 /// Maximum molecular graph size accepted at the shared SMILES boundary.
@@ -3951,6 +4007,29 @@ mod tests {
             std::env::temp_dir().join(format!("renkin-chem-env-symlink-{}", std::process::id()));
         std::fs::create_dir_all(&path).expect("create stock fixture directory");
         path
+    }
+
+    #[test]
+    fn small_molecule_terminal_is_search_only_and_never_stock() {
+        let env = ChemEnv::in_memory(&["Oc1ccccc1C(=O)O"]);
+        assert!(!env.is_search_terminal_smiles("CC(O)=O"));
+        assert_eq!(env.small_molecule_terminal(), None);
+
+        let env = env.with_small_molecule_terminal(4);
+        assert_eq!(env.small_molecule_terminal(), Some(4));
+        // Acetic acid has 4 heavy atoms: a size terminal, still not stock.
+        assert!(env.is_search_terminal_smiles("CC(O)=O"));
+        assert!(!env.is_building_block_smiles("CC(O)=O"));
+        let acetic = mol_from_smiles("CC(=O)O").unwrap();
+        assert!(env.is_search_terminal(&acetic));
+        assert!(!env.is_building_block(&acetic));
+        // Five heavy atoms exceed the threshold; explicit H is not counted.
+        assert!(!env.is_search_terminal_smiles("CCC(O)=O"));
+        assert_eq!(
+            heavy_atom_count(&mol_from_smiles("[H]OC([H])=O").unwrap()),
+            3
+        );
+        assert!(!env.is_small_molecule_terminal_smiles("not((smiles"));
     }
 
     fn env_aspirin_bbs() -> ChemEnv {

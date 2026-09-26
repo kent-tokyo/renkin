@@ -108,6 +108,9 @@ struct Output {
     /// Present only with `--max-bb-price`.
     #[serde(skip_serializing_if = "Option::is_none")]
     stock_price_filter: Option<StockPriceFilterReceipt>,
+    /// Present only with `--small-molecule-terminal`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    small_molecule_terminal: Option<SmallMoleculeTerminalReceipt>,
     /// Present only with `--max-branching`.
     #[serde(skip_serializing_if = "Option::is_none")]
     max_branching: Option<BranchingReceipt>,
@@ -139,6 +142,41 @@ impl FirstRouteReceipt {
             elapsed_ms: stats.first_route_elapsed_us.map(|us| us as f64 / 1000.0),
             total_nodes_expanded: stats.nodes_expanded,
             total_expansion_calls: stats.retro_cache_misses,
+        }
+    }
+}
+
+/// SynPlanner `min_mol_size` receipt: which leaves of each returned route are
+/// size terminals rather than purchasable stock.
+#[derive(Clone, Debug, Serialize)]
+struct SmallMoleculeTerminalReceipt {
+    max_heavy_atoms: usize,
+    routes_with_non_stock_leaves: usize,
+    /// One entry per returned route, in route order.
+    non_stock_leaves: Vec<Vec<String>>,
+}
+
+impl SmallMoleculeTerminalReceipt {
+    fn build(env: &chem_env::ChemEnv, max_heavy_atoms: usize, routes: &[search::Route]) -> Self {
+        let non_stock_leaves: Vec<Vec<String>> = routes
+            .iter()
+            .map(|route| {
+                route
+                    .building_blocks
+                    .iter()
+                    .filter(|smiles| {
+                        !env.is_building_block_smiles(smiles)
+                            && !chem_env::mol_from_smiles(smiles)
+                                .is_ok_and(|mol| env.is_building_block(&mol))
+                    })
+                    .cloned()
+                    .collect()
+            })
+            .collect();
+        Self {
+            max_heavy_atoms,
+            routes_with_non_stock_leaves: non_stock_leaves.iter().filter(|l| !l.is_empty()).count(),
+            non_stock_leaves,
         }
     }
 }
@@ -352,6 +390,7 @@ fn run_search_cli(args: &[String]) -> Result<()> {
     let mut max_bb_price: Option<f64> = None;
     let mut route_diversity = false;
     let mut max_branching: Option<usize> = None;
+    let mut small_molecule_terminal: Option<usize> = None;
     let mut diversity_radius = renkin::diversity::DEFAULT_PACKING_RADIUS;
     let mut exclude_target_from_stock = false;
     let mut cluster = false;
@@ -489,6 +528,14 @@ fn run_search_cli(args: &[String]) -> Result<()> {
             }
             "--first-route-stats" => {
                 first_route_stats = true;
+            }
+            "--small-molecule-terminal" => {
+                let raw = required_flag_value(args, &mut i, "--small-molecule-terminal")?;
+                small_molecule_terminal = Some(raw.parse().map_err(|_| {
+                    anyhow::anyhow!(
+                        "--small-molecule-terminal must be a non-negative integer, got {raw:?}"
+                    )
+                })?);
             }
             "--max-branching" => {
                 let raw = required_flag_value(args, &mut i, "--max-branching")?;
@@ -777,6 +824,9 @@ fn run_search_cli(args: &[String]) -> Result<()> {
              (Syntheseus/AiZynthFinder iteration limit); JSON reports \"termination\"\n  \
              --first-route-stats    Add a \"first_route\" receipt (expansions, expansion calls, \
              and wall time to the first accepted route; Syntheseus parity)\n  \
+             --small-molecule-terminal <N>  Treat molecules with <= N heavy atoms as route \
+             terminals even when not in stock (SynPlanner min_mol_size; opt-in). JSON reports \
+             which leaves are size terminals rather than stock\n  \
              --max-branching <N>    Keep at most N distinct precursor sets per expanded \
              molecule, cheapest first (ASKCOS max_branching / AiZynthFinder cutoff_number)\n  \
              --route-diversity      Add \"route_set_diversity\": the packing number of \
@@ -1172,6 +1222,10 @@ fn run_search_cli(args: &[String]) -> Result<()> {
         };
         let prices = bb_prices_path.as_deref().map(load_prices).transpose()?;
         (env, prices)
+    };
+    let env = match small_molecule_terminal {
+        Some(max_heavy_atoms) => env.with_small_molecule_terminal(max_heavy_atoms),
+        None => env,
     };
 
     let mut rules = chem_env::default_rules();
@@ -1866,6 +1920,8 @@ fn run_search_cli(args: &[String]) -> Result<()> {
             search::SearchTermination::DeadlineExceeded => "deadline_exceeded",
         });
     let first_route_receipt = first_route_stats.then(|| FirstRouteReceipt::from_stats(&stats));
+    let small_terminal_receipt = small_molecule_terminal
+        .map(|max_heavy_atoms| SmallMoleculeTerminalReceipt::build(&env, max_heavy_atoms, &routes));
     let branching_receipt = max_branching.map(|limit| BranchingReceipt {
         limit,
         candidates_pruned: stats.branching_pruned_candidates,
@@ -2068,6 +2124,9 @@ fn run_search_cli(args: &[String]) -> Result<()> {
                 if let Some(ref receipt) = branching_receipt {
                     out["max_branching"] = serde_json::to_value(receipt)?;
                 }
+                if let Some(ref receipt) = small_terminal_receipt {
+                    out["small_molecule_terminal"] = serde_json::to_value(receipt)?;
+                }
                 if route_diversity {
                     out["route_set_diversity"] = serde_json::to_value(
                         renkin::diversity::route_packing_number(&routes, diversity_radius),
@@ -2134,6 +2193,7 @@ fn run_search_cli(args: &[String]) -> Result<()> {
                     first_route: first_route_receipt,
                     banned_molecules: banned_receipt,
                     stock_price_filter,
+                    small_molecule_terminal: small_terminal_receipt,
                     max_branching: branching_receipt,
                     route_set_diversity,
                     routes,
@@ -2335,6 +2395,7 @@ fn run_capabilities(args: &[String]) -> Result<()> {
             "max_bb_price": true,
             "route_packing_number": "reaction_jaccard",
             "max_branching": true,
+            "small_molecule_terminal": true,
             "route_clustering": renkin::route_distance::ROUTE_DISTANCE_METHOD,
             "export_formats": ["aizynthfinder"],
         },

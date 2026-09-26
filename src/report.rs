@@ -70,6 +70,9 @@ impl Role {
 struct Renderer<'a> {
     env: Option<&'a ChemEnv>,
     svg_cache: HashMap<String, String>,
+    /// Without `env`: leaves of the current route already known to be
+    /// non-stock size terminals (from a result's `small_molecule_terminal`).
+    size_terminal_leaves: std::collections::HashSet<String>,
 }
 
 impl Renderer<'_> {
@@ -98,8 +101,13 @@ impl Renderer<'_> {
 
     fn leaf_role(&self, smiles: &str) -> Role {
         let Some(env) = self.env else {
-            // Search output: every leaf of a completed route is a terminal.
-            return Role::Stock;
+            // Search output: every leaf of a completed route is a terminal;
+            // the result itself says which ones are size terminals.
+            return if self.size_terminal_leaves.contains(smiles) {
+                Role::SizeTerminal
+            } else {
+                Role::Stock
+            };
         };
         let in_stock = env.is_building_block_smiles(smiles)
             || mol_from_smiles(smiles).is_ok_and(|mol| env.is_building_block(&mol));
@@ -229,9 +237,22 @@ border:1px solid var(--line);background:#fff;color:#1d1d1b;max-width:230px}
 /// `size terminal`, or `not in stock`. Without it every leaf of a completed
 /// route is shown as a terminal (`stock`).
 pub fn routes_html_report(target: &str, routes: &[Route], env: Option<&ChemEnv>) -> String {
+    routes_html_report_with_size_terminals(target, routes, env, &[])
+}
+
+/// [`routes_html_report`] with, per route (same order), the leaves already
+/// known to be non-stock size terminals. Used when rendering a saved result
+/// without its stock (`env = None`).
+pub fn routes_html_report_with_size_terminals(
+    target: &str,
+    routes: &[Route],
+    env: Option<&ChemEnv>,
+    size_terminals: &[Vec<String>],
+) -> String {
     let mut renderer = Renderer {
         env,
         svg_cache: HashMap::new(),
+        size_terminal_leaves: std::collections::HashSet::new(),
     };
     let mut body = String::new();
     if routes.is_empty() {
@@ -257,6 +278,10 @@ pub fn routes_html_report(target: &str, routes: &[Route], env: Option<&ChemEnv>)
             sp = route.success_probability,
             bbs = route.building_blocks.len(),
         );
+        renderer.size_terminal_leaves = size_terminals
+            .get(index)
+            .map(|leaves| leaves.iter().cloned().collect())
+            .unwrap_or_default();
         let root = root_of(route, target);
         renderer.node(&mut body, root, true, &by_target, &mut Vec::new());
         body.push_str("</div></section>");
@@ -275,6 +300,95 @@ pub fn routes_html_report(target: &str, routes: &[Route], env: Option<&ChemEnv>)
         count = routes.len(),
         version = env!("CARGO_PKG_VERSION"),
     )
+}
+
+/// Render a saved RENKIN search result (the CLI's JSON output or Python
+/// `find_routes()` string) without re-running the search. Only the fields
+/// the report draws are read; `small_molecule_terminal.non_stock_leaves`,
+/// when present, labels size terminals.
+pub fn routes_html_from_result_json(
+    result_json: &str,
+    env: Option<&ChemEnv>,
+) -> anyhow::Result<String> {
+    #[derive(serde::Deserialize)]
+    struct StepInput {
+        rule: String,
+        template_id: String,
+        target: String,
+        precursors: Vec<String>,
+    }
+    #[derive(serde::Deserialize)]
+    struct RouteInput {
+        steps: Vec<StepInput>,
+        #[serde(default)]
+        depth: u32,
+        #[serde(default)]
+        score: f64,
+        #[serde(default)]
+        building_blocks: Vec<String>,
+        #[serde(default)]
+        route_cost: f64,
+        #[serde(default)]
+        success_probability: f64,
+    }
+    #[derive(serde::Deserialize, Default)]
+    struct SizeInput {
+        #[serde(default)]
+        non_stock_leaves: Vec<Vec<String>>,
+    }
+    #[derive(serde::Deserialize)]
+    struct ResultInput {
+        target: String,
+        #[serde(default)]
+        routes: Vec<RouteInput>,
+        #[serde(default)]
+        small_molecule_terminal: Option<SizeInput>,
+    }
+    let parsed: ResultInput = serde_json::from_str(result_json)
+        .map_err(|e| anyhow::anyhow!("not a RENKIN search result: {e}"))?;
+    let routes: Vec<Route> = parsed
+        .routes
+        .into_iter()
+        .map(|route| Route {
+            steps: route
+                .steps
+                .into_iter()
+                .map(|step| ReactionStep {
+                    rule: step.rule,
+                    template_id: step.template_id,
+                    target: step.target,
+                    precursors: step.precursors,
+                    conditions: None,
+                    atom_economy: None,
+                    atom_economy_raw_percent: None,
+                    atom_economy_status: crate::search::AtomEconomyStatus::NotEvaluable,
+                    step_confidence: 0.0,
+                    procedure_hint: None,
+                    reaction_family: None,
+                    metadata_source: None,
+                    metadata_scope: None,
+                    evidence: None,
+                })
+                .collect(),
+            depth: route.depth,
+            score: route.score,
+            building_blocks: route.building_blocks,
+            confidence: 0.0,
+            convergency: 0.0,
+            success_probability: route.success_probability,
+            route_cost: route.route_cost,
+        })
+        .collect();
+    let size_terminals = parsed
+        .small_molecule_terminal
+        .unwrap_or_default()
+        .non_stock_leaves;
+    Ok(routes_html_report_with_size_terminals(
+        &parsed.target,
+        &routes,
+        env,
+        &size_terminals,
+    ))
 }
 
 #[cfg(test)]
@@ -342,6 +456,7 @@ mod tests {
         let mut renderer = Renderer {
             env: None,
             svg_cache: HashMap::new(),
+            size_terminal_leaves: std::collections::HashSet::new(),
         };
         let first = renderer.svg("CCO");
         let second = renderer.svg("CCO");
@@ -349,6 +464,33 @@ mod tests {
         assert_eq!(renderer.svg_cache.len(), 1);
         assert!(renderer.svg("not((smiles").contains("no depiction"));
         assert_eq!(escape("a<b>&\"'"), "a&lt;b&gt;&amp;&quot;&#39;");
+    }
+
+    #[test]
+    fn saved_result_json_renders_with_size_terminal_labels() {
+        let json = serde_json::json!({
+            "target": ASPIRIN,
+            "routes_found": 1,
+            "routes": [{
+                "steps": [{
+                    "rule": "ester_cleavage",
+                    "template_id": "rule:ester_cleavage",
+                    "target": ASPIRIN,
+                    "precursors": ["CC(=O)O", "O=C(O)c1ccccc1O"],
+                    "step_confidence": 1.0
+                }],
+                "depth": 1,
+                "score": 1.0,
+                "building_blocks": ["CC(=O)O", "O=C(O)c1ccccc1O"],
+                "route_cost": 0.0,
+                "success_probability": 0.5
+            }],
+            "small_molecule_terminal": {"max_heavy_atoms": 4, "non_stock_leaves": [["CC(=O)O"]]}
+        });
+        let html = routes_html_from_result_json(&json.to_string(), None).unwrap();
+        assert!(html.contains("class=\"mol size\""));
+        assert!(html.contains("class=\"mol stock\""));
+        assert!(routes_html_from_result_json("{}", None).is_err());
     }
 
     #[test]

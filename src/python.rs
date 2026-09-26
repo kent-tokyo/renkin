@@ -1019,70 +1019,6 @@ pub fn routes_html_py(
     building_blocks: Option<Vec<String>>,
     small_molecule_terminal: Option<usize>,
 ) -> PyResult<String> {
-    // Only the fields the report draws are read back; everything else in the
-    // result JSON is ignored.
-    #[derive(serde::Deserialize)]
-    struct StepInput {
-        rule: String,
-        template_id: String,
-        target: String,
-        precursors: Vec<String>,
-    }
-    #[derive(serde::Deserialize)]
-    struct RouteInput {
-        steps: Vec<StepInput>,
-        #[serde(default)]
-        depth: u32,
-        #[serde(default)]
-        score: f64,
-        #[serde(default)]
-        building_blocks: Vec<String>,
-        #[serde(default)]
-        route_cost: f64,
-        #[serde(default)]
-        success_probability: f64,
-    }
-    #[derive(serde::Deserialize)]
-    struct ResultInput {
-        target: String,
-        #[serde(default)]
-        routes: Vec<RouteInput>,
-    }
-    let parsed: ResultInput = serde_json::from_str(result_json)
-        .map_err(|e| PyValueError::new_err(format!("not a find_routes() result: {e}")))?;
-    let routes: Vec<crate::search::Route> = parsed
-        .routes
-        .into_iter()
-        .map(|route| crate::search::Route {
-            steps: route
-                .steps
-                .into_iter()
-                .map(|step| crate::search::ReactionStep {
-                    rule: step.rule,
-                    template_id: step.template_id,
-                    target: step.target,
-                    precursors: step.precursors,
-                    conditions: None,
-                    atom_economy: None,
-                    atom_economy_raw_percent: None,
-                    atom_economy_status: crate::search::AtomEconomyStatus::NotEvaluable,
-                    step_confidence: 0.0,
-                    procedure_hint: None,
-                    reaction_family: None,
-                    metadata_source: None,
-                    metadata_scope: None,
-                    evidence: None,
-                })
-                .collect(),
-            depth: route.depth,
-            score: route.score,
-            building_blocks: route.building_blocks,
-            confidence: 0.0,
-            convergency: 0.0,
-            success_probability: route.success_probability,
-            route_cost: route.route_cost,
-        })
-        .collect();
     let env = building_blocks.map(|list| {
         let refs: Vec<&str> = list.iter().map(String::as_str).collect();
         let env = ChemEnv::in_memory(&refs);
@@ -1091,11 +1027,8 @@ pub fn routes_html_py(
             None => env,
         }
     });
-    Ok(crate::report::routes_html_report(
-        &parsed.target,
-        &routes,
-        env.as_ref(),
-    ))
+    crate::report::routes_html_from_result_json(result_json, env.as_ref())
+        .map_err(|e| PyValueError::new_err(format!("{e:#}")))
 }
 
 // ── Forward prediction helpers (inlined to avoid circular dep with renkin-forward) ──────

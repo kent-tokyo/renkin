@@ -347,6 +347,7 @@ fn dispatch_subcommand(args: &[String]) -> Option<Result<()>> {
         Some("doctor") => run_doctor(command_args),
         Some("capabilities") => run_capabilities(command_args),
         Some("expand") => run_expand(command_args),
+        Some("batch") => run_batch(command_args),
         _ => return None,
     };
     Some(result)
@@ -2390,6 +2391,360 @@ fn run_search_cli(args: &[String]) -> Result<()> {
     Ok(())
 }
 
+const BATCH_USAGE: &str = "Usage: renkin batch --input <targets.smi> --output-dir <dir> \
+[--jobs <N>] [--html] [--overwrite] [-- <search options>...]\n\
+\n\
+Plan every target in a SMILES file (one per line, optional name after whitespace,\n\
+'#' comments) with the normal `renkin` search, writing per-target results and a\n\
+summary (SynPlanner `synplan planning` parity):\n\
+  <dir>/routes/<NNNN>_<name>.json   full JSON result (always with --search-stats)\n\
+  <dir>/routes/<NNNN>_<name>.html   depicted route report (with --html)\n\
+  <dir>/summary.csv                 one row per target, input order\n\
+  <dir>/manifest.json               version, input, search options, counts\n\
+Everything after `--` is passed to each search unchanged (e.g. --depth 5\n\
+--beam-width 100 --time-limit-secs 60 --building-blocks stock.smi). --target and\n\
+--format are set by batch and may not be passed. --jobs defaults to 1 so a batch\n\
+does not saturate the machine; each search still uses its own internal parallelism.";
+
+/// One batch target.
+struct BatchTarget {
+    index: usize,
+    smiles: String,
+    name: String,
+}
+
+/// One summary row, in input order.
+struct BatchRow {
+    index: usize,
+    name: String,
+    smiles: String,
+    status: String,
+    error: String,
+    routes_found: Option<u64>,
+    best_depth: Option<u64>,
+    best_score: Option<f64>,
+    best_route_cost: Option<f64>,
+    nodes_expanded: Option<u64>,
+    first_route_nodes_expanded: Option<u64>,
+    search_elapsed_ms: Option<f64>,
+    termination: String,
+    json_path: String,
+    html_path: String,
+}
+
+fn batch_file_stem(target: &BatchTarget) -> String {
+    let safe: String = target
+        .name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .take(40)
+        .collect();
+    if safe.is_empty() {
+        format!("{:04}", target.index)
+    } else {
+        format!("{:04}_{safe}", target.index)
+    }
+}
+
+fn csv_field(value: &str) -> String {
+    if value.contains([',', '"', '\n', '\r']) {
+        format!("\"{}\"", value.replace('"', "\"\""))
+    } else {
+        value.to_owned()
+    }
+}
+
+fn run_batch_target(
+    exe: &std::path::Path,
+    target: &BatchTarget,
+    passthrough: &[String],
+    routes_dir: &std::path::Path,
+    html: bool,
+) -> BatchRow {
+    let stem = batch_file_stem(target);
+    let mut row = BatchRow {
+        index: target.index,
+        name: target.name.clone(),
+        smiles: target.smiles.clone(),
+        status: "error".into(),
+        error: String::new(),
+        routes_found: None,
+        best_depth: None,
+        best_score: None,
+        best_route_cost: None,
+        nodes_expanded: None,
+        first_route_nodes_expanded: None,
+        search_elapsed_ms: None,
+        termination: String::new(),
+        json_path: String::new(),
+        html_path: String::new(),
+    };
+    let output = std::process::Command::new(exe)
+        .arg("--target")
+        .arg(&target.smiles)
+        .args(["--format", "json", "--search-stats"])
+        .args(passthrough)
+        .env("RUST_BACKTRACE", "0")
+        .output();
+    let output = match output {
+        Ok(output) => output,
+        Err(e) => {
+            row.error = format!("failed to start search: {e}");
+            return row;
+        }
+    };
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let line = stderr
+            .lines()
+            .rev()
+            .find(|line| line.starts_with("Error:"))
+            .or_else(|| stderr.lines().rev().find(|line| !line.trim().is_empty()))
+            .unwrap_or("");
+        row.error = line.trim_start_matches("Error:").trim().to_owned();
+        if row.error.is_empty() {
+            row.error = format!("search exited with {}", output.status);
+        }
+        return row;
+    }
+    let json_path = routes_dir.join(format!("{stem}.json"));
+    if let Err(e) = std::fs::write(&json_path, &output.stdout) {
+        row.error = format!("could not write {}: {e}", json_path.display());
+        return row;
+    }
+    row.json_path = format!("routes/{stem}.json");
+    let value: serde_json::Value = match serde_json::from_slice(&output.stdout) {
+        Ok(value) => value,
+        Err(e) => {
+            row.error = format!("search output was not JSON: {e}");
+            return row;
+        }
+    };
+    row.status = "ok".into();
+    row.routes_found = value["routes_found"].as_u64();
+    let best = &value["routes"][0];
+    row.best_depth = best["depth"].as_u64();
+    row.best_score = best["score"].as_f64();
+    row.best_route_cost = best["route_cost"].as_f64();
+    let stats = &value["search_stats"];
+    row.nodes_expanded = stats["nodes_expanded"].as_u64();
+    row.first_route_nodes_expanded = stats["first_route_nodes_expanded"].as_u64();
+    row.search_elapsed_ms = stats["search_elapsed_ms"].as_f64();
+    row.termination = stats["termination"]
+        .as_str()
+        .unwrap_or("completed")
+        .to_owned();
+    if html {
+        #[cfg(feature = "depict")]
+        {
+            let text = String::from_utf8_lossy(&output.stdout);
+            match renkin::report::routes_html_from_result_json(&text, None) {
+                Ok(page) => {
+                    let html_path = routes_dir.join(format!("{stem}.html"));
+                    match std::fs::write(&html_path, page) {
+                        Ok(()) => row.html_path = format!("routes/{stem}.html"),
+                        Err(e) => row.error = format!("could not write HTML: {e}"),
+                    }
+                }
+                Err(e) => row.error = format!("could not render HTML: {e:#}"),
+            }
+        }
+    }
+    row
+}
+
+/// `renkin batch`: plan many targets with per-target outputs and a summary.
+fn run_batch(args: &[String]) -> Result<()> {
+    let (own, passthrough): (&[String], &[String]) = match args.iter().position(|a| a == "--") {
+        Some(split) => (&args[..split], &args[split + 1..]),
+        None => (args, &[]),
+    };
+    let mut input: Option<String> = None;
+    let mut output_dir: Option<String> = None;
+    let mut jobs: usize = 1;
+    let mut html = false;
+    let mut overwrite = false;
+    let mut i = 0;
+    while i < own.len() {
+        match own[i].as_str() {
+            "--help" | "-h" => {
+                println!("{BATCH_USAGE}");
+                return Ok(());
+            }
+            "--input" | "-i" => {
+                input = Some(required_flag_value(own, &mut i, "--input")?.to_owned())
+            }
+            "--output-dir" | "-o" => {
+                output_dir = Some(required_flag_value(own, &mut i, "--output-dir")?.to_owned())
+            }
+            "--jobs" | "-j" => {
+                let raw = required_flag_value(own, &mut i, "--jobs")?;
+                jobs = raw.parse().map_err(|_| {
+                    anyhow::anyhow!("--jobs must be a positive integer, got {raw:?}")
+                })?;
+                if jobs == 0 {
+                    bail!("--jobs must be a positive integer (got 0)");
+                }
+            }
+            "--html" => html = true,
+            "--overwrite" => overwrite = true,
+            other => bail!(
+                "renkin batch: unknown option {other:?} (search options go after `--`)\n\n{BATCH_USAGE}"
+            ),
+        }
+        i += 1;
+    }
+    let Some(input) = input else {
+        bail!("renkin batch: --input is required\n\n{BATCH_USAGE}");
+    };
+    let Some(output_dir) = output_dir else {
+        bail!("renkin batch: --output-dir is required\n\n{BATCH_USAGE}");
+    };
+    for forbidden in ["--target", "-t", "--format", "-f"] {
+        if passthrough.iter().any(|a| a == forbidden) {
+            bail!("renkin batch: {forbidden} is set by batch and cannot be passed after `--`");
+        }
+    }
+    if html && !cfg!(feature = "depict") {
+        bail!("renkin batch: --html requires a build with the `depict` feature (on by default)");
+    }
+
+    let content = read_bounded_text_file(&input, "--input")?;
+    let targets: Vec<BatchTarget> = content
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .enumerate()
+        .map(|(index, line)| {
+            let mut parts = line.split_whitespace();
+            let smiles = parts.next().unwrap_or_default().to_owned();
+            let name = parts.collect::<Vec<_>>().join(" ");
+            BatchTarget {
+                index: index + 1,
+                smiles,
+                name,
+            }
+        })
+        .collect();
+    if targets.is_empty() {
+        bail!("renkin batch: --input {input} contains no targets");
+    }
+
+    let out = std::path::Path::new(&output_dir);
+    let summary_path = out.join("summary.csv");
+    if summary_path.exists() && !overwrite {
+        bail!(
+            "renkin batch: {} already exists (use --overwrite to replace results)",
+            summary_path.display()
+        );
+    }
+    let routes_dir = out.join("routes");
+    std::fs::create_dir_all(&routes_dir)
+        .with_context(|| format!("could not create {}", routes_dir.display()))?;
+    let exe = std::env::current_exe().context("could not locate the renkin executable")?;
+
+    let started = std::time::Instant::now();
+    let rows: Vec<BatchRow> = {
+        let next = std::sync::atomic::AtomicUsize::new(0);
+        let results = std::sync::Mutex::new(Vec::with_capacity(targets.len()));
+        std::thread::scope(|scope| {
+            for _ in 0..jobs.min(targets.len()) {
+                scope.spawn(|| {
+                    loop {
+                        let k = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let Some(target) = targets.get(k) else {
+                            break;
+                        };
+                        let row = run_batch_target(&exe, target, passthrough, &routes_dir, html);
+                        eprintln!(
+                            "  [{}/{}] {} -> {} ({} route(s))",
+                            target.index,
+                            targets.len(),
+                            target.smiles,
+                            row.status,
+                            row.routes_found.unwrap_or(0)
+                        );
+                        results.lock().expect("batch results lock").push(row);
+                    }
+                });
+            }
+        });
+        let mut rows = results.into_inner().expect("batch results lock");
+        rows.sort_by_key(|row| row.index);
+        rows
+    };
+
+    let mut csv = String::from(
+        "index,name,smiles,status,routes_found,solved,best_depth,best_score,best_route_cost,\
+         nodes_expanded,first_route_nodes_expanded,search_elapsed_ms,termination,json,html,error\n",
+    );
+    let opt_u = |v: Option<u64>| v.map(|n| n.to_string()).unwrap_or_default();
+    let opt_f = |v: Option<f64>| v.map(|n| format!("{n:.6}")).unwrap_or_default();
+    for row in &rows {
+        let solved = row
+            .routes_found
+            .map(|n| (n > 0).to_string())
+            .unwrap_or_default();
+        let fields = [
+            row.index.to_string(),
+            csv_field(&row.name),
+            csv_field(&row.smiles),
+            row.status.clone(),
+            opt_u(row.routes_found),
+            solved,
+            opt_u(row.best_depth),
+            opt_f(row.best_score),
+            opt_f(row.best_route_cost),
+            opt_u(row.nodes_expanded),
+            opt_u(row.first_route_nodes_expanded),
+            opt_f(row.search_elapsed_ms),
+            row.termination.clone(),
+            row.json_path.clone(),
+            row.html_path.clone(),
+            csv_field(&row.error),
+        ];
+        csv.push_str(&fields.join(","));
+        csv.push('\n');
+    }
+    std::fs::write(&summary_path, csv)
+        .with_context(|| format!("could not write {}", summary_path.display()))?;
+
+    let solved = rows
+        .iter()
+        .filter(|row| row.routes_found.is_some_and(|n| n > 0))
+        .count();
+    let errors = rows.iter().filter(|row| row.status != "ok").count();
+    let manifest = serde_json::json!({
+        "schema_version": 1,
+        "renkin_version": env!("CARGO_PKG_VERSION"),
+        "input": input,
+        "targets": rows.len(),
+        "solved": solved,
+        "errors": errors,
+        "jobs": jobs,
+        "html": html,
+        "search_options": passthrough,
+        "elapsed_ms": started.elapsed().as_secs_f64() * 1000.0,
+    });
+    std::fs::write(
+        out.join("manifest.json"),
+        serde_json::to_string_pretty(&manifest)?,
+    )?;
+    eprintln!(
+        "renkin batch: {solved}/{} solved, {errors} error(s); summary at {}",
+        rows.len(),
+        summary_path.display()
+    );
+    println!("{}", serde_json::to_string_pretty(&manifest)?);
+    Ok(())
+}
+
 const EXPAND_USAGE: &str = "Usage: renkin expand --target <SMILES> [--templates <path>] \
 [--top-templates <K>] [--building-blocks <path> | --stock <csv>] [--max-candidates <N>] \
 [--bond-index] [--output json|human]\n\
@@ -2587,6 +2942,7 @@ fn run_capabilities(args: &[String]) -> Result<()> {
             "export_formats": ["aizynthfinder", "synplanner"],
             "html_report": cfg!(feature = "depict"),
             "search_stats": true,
+            "batch": true,
         },
         "expand": {
             "stability": "experimental",

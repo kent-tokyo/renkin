@@ -81,3 +81,56 @@ fn small_molecule_terminal_solves_with_size_terminals_and_reports_them() {
     let err = run_failure(&["--target", ASPIRIN, "--small-molecule-terminal", "-1"]);
     assert!(err.contains("--small-molecule-terminal must be a non-negative integer"));
 }
+
+#[test]
+fn synplanner_format_export_round_trips_through_audit_route() {
+    let out = Command::new(bin())
+        .args([
+            "--target",
+            ASPIRIN,
+            "--depth",
+            "3",
+            "--max-routes",
+            "3",
+            "--format",
+            "synplanner",
+        ])
+        .output()
+        .expect("failed to spawn renkin");
+    assert!(out.status.success());
+    let export: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let map = export.as_object().expect("{route_id: RouteNode}");
+    assert!(!map.is_empty());
+    for (key, tree) in map {
+        assert!(key.parse::<u64>().is_ok());
+        assert_eq!(tree["type"], "mol");
+    }
+    let path = temp_file("routes.json", &out.stdout);
+    let report = run(&[
+        "audit-route",
+        path.to_str().unwrap(),
+        "--stock",
+        "data/building_blocks.smi",
+        "--output",
+        "json",
+    ]);
+    assert_eq!(report["source_format"], "synplanner");
+    assert_eq!(report["summary"]["routes_total"], map.len());
+    for route in report["routes"].as_array().unwrap() {
+        assert_eq!(route["route_tree_parseable"], true);
+        assert_eq!(route["stock_validation"]["status"], "pass");
+    }
+}
+
+#[test]
+fn audit_route_reads_synplanner_export_routes_results_gz() {
+    use std::io::Write;
+    let raw = std::fs::read("tests/fixtures/synplanner/v1.6.0/real_planning_export.results.json")
+        .unwrap();
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(&raw).unwrap();
+    let path = temp_file("results.json.gz", &encoder.finish().unwrap());
+    let report = run(&["audit-route", path.to_str().unwrap(), "--output", "json"]);
+    assert_eq!(report["source_format"], "synplanner");
+    assert_eq!(report["summary"]["routes_total"], 2);
+}

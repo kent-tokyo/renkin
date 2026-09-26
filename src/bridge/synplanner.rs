@@ -261,6 +261,95 @@ pub fn parse_synplanner_routes(
     serde_json::from_value(value)
 }
 
+/// Export a RENKIN [`crate::search::Route`] as one SynPlanner `RouteNode`
+/// tree (the value type of SynPlanner's `write_routes_json` export), so a
+/// RENKIN route can be read by SynPlanner-side tooling and re-imported by
+/// `renkin audit-route --format synplanner`.
+///
+/// Mapping, stated so nothing is over-read:
+/// - `mol` nodes carry RENKIN's canonical SMILES; completed-route leaves are
+///   stock terminals (`in_stock: true`); intermediates and the multi-step
+///   target are `in_stock: false`. A depth-0 route is one in-stock `mol`.
+/// - `reaction.smiles` follows SynPlanner's forward direction
+///   (`reactants>>product`) and is **not atom-mapped** -- RENKIN does not
+///   fabricate a mapping. `rule_source` is `"renkin"` and `rule_key` is the
+///   RENKIN `template_id`; SynPlanner's numeric `rule_id`, `step_id`, and
+///   `tree_node_id` are omitted rather than invented.
+pub fn route_to_synplanner_tree(route: &crate::search::Route, target: &str) -> serde_json::Value {
+    use serde_json::json;
+    use std::collections::{HashMap, HashSet};
+
+    let by_target: HashMap<&str, &crate::search::ReactionStep> = route
+        .steps
+        .iter()
+        .rev() // the first step for a target wins, matching display::build_tree
+        .map(|s| (s.target.as_str(), s))
+        .collect();
+    let precursors: HashSet<&str> = route
+        .steps
+        .iter()
+        .flat_map(|s| s.precursors.iter().map(String::as_str))
+        .collect();
+    let root = route
+        .steps
+        .iter()
+        .map(|s| s.target.as_str())
+        .find(|t| !precursors.contains(t))
+        .or_else(|| route.steps.first().map(|s| s.target.as_str()))
+        .unwrap_or(target);
+
+    fn mol(
+        smiles: &str,
+        by_target: &HashMap<&str, &crate::search::ReactionStep>,
+        on_path: &mut Vec<String>,
+    ) -> serde_json::Value {
+        let step = by_target
+            .get(smiles)
+            .filter(|_| !on_path.iter().any(|s| s == smiles));
+        let Some(step) = step else {
+            return json!({ "type": "mol", "smiles": smiles, "in_stock": true });
+        };
+        on_path.push(smiles.to_owned());
+        let children: Vec<serde_json::Value> = step
+            .precursors
+            .iter()
+            .map(|p| mol(p, by_target, on_path))
+            .collect();
+        on_path.pop();
+        json!({
+            "type": "mol",
+            "smiles": smiles,
+            "in_stock": false,
+            "children": [{
+                "type": "reaction",
+                "smiles": format!("{}>>{}", step.precursors.join("."), smiles),
+                "rule_source": "renkin",
+                "rule_key": step.template_id,
+                "children": children,
+            }],
+        })
+    }
+
+    mol(root, &by_target, &mut Vec::new())
+}
+
+/// Export routes in SynPlanner's `write_routes_json` shape:
+/// `{"<route_id>": RouteNode}` with 1-based route IDs in RENKIN's route
+/// order.
+pub fn routes_to_synplanner_export(
+    routes: &[crate::search::Route],
+    target: &str,
+) -> serde_json::Value {
+    let mut map = serde_json::Map::new();
+    for (index, route) in routes.iter().enumerate() {
+        map.insert(
+            (index + 1).to_string(),
+            route_to_synplanner_tree(route, target),
+        );
+    }
+    serde_json::Value::Object(map)
+}
+
 // Fixture-parity oracle: real SynPlanner 1.6.0 output (both hand-constructed
 // chython input run through the real exporter, and a real MCTS-searched
 // planning run), not hand-authored -- see
@@ -284,6 +373,52 @@ mod tests {
 
     fn load_fixture(name: &str) -> BTreeMap<String, SynPlannerNode> {
         load_versioned_fixture("v1.6.0", name)
+    }
+
+    #[test]
+    fn exported_route_reimports_as_parseable_synplanner_routes() {
+        use crate::search::{AtomEconomyStatus, ReactionStep, Route};
+        let step = ReactionStep {
+            rule: "ester_cleavage".to_owned(),
+            template_id: "rule:ester_cleavage".to_owned(),
+            target: "CC(=O)Oc1ccccc1C(=O)O".to_owned(),
+            precursors: vec!["CC(=O)O".to_owned(), "O=C(O)c1ccccc1O".to_owned()],
+            conditions: None,
+            atom_economy: None,
+            atom_economy_raw_percent: None,
+            atom_economy_status: AtomEconomyStatus::NotEvaluable,
+            step_confidence: 1.0,
+            procedure_hint: None,
+            reaction_family: None,
+            metadata_source: None,
+            metadata_scope: None,
+            evidence: None,
+        };
+        let route = Route {
+            steps: vec![step],
+            depth: 1,
+            score: 1.0,
+            building_blocks: vec!["CC(=O)O".to_owned(), "O=C(O)c1ccccc1O".to_owned()],
+            confidence: 1.0,
+            convergency: 0.0,
+            success_probability: 1.0,
+            route_cost: 0.0,
+        };
+        let export = routes_to_synplanner_export(&[route], "CC(=O)Oc1ccccc1C(=O)O");
+        let tree = &export["1"];
+        assert_eq!(tree["in_stock"], false);
+        let reaction = &tree["children"][0];
+        assert_eq!(
+            reaction["smiles"], "CC(=O)O.O=C(O)c1ccccc1O>>CC(=O)Oc1ccccc1C(=O)O",
+            "forward direction, unmapped"
+        );
+        assert_eq!(reaction["rule_source"], "renkin");
+        assert!(reaction.get("rule_id").is_none());
+
+        let parsed = parse_synplanner_routes(export).unwrap();
+        let outcome = normalize_synplanner_route(&parsed["1"]);
+        assert!(outcome.parseable, "{:?}", outcome.defects);
+        assert_eq!(outcome.document.unwrap().source, RouteSource::SynPlanner);
     }
 
     #[test]

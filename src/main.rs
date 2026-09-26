@@ -804,7 +804,8 @@ fn run_search_cli(args: &[String]) -> Result<()> {
              --value-model-artifact <path>  Static value-model artifact\n  \
              --retro-generator-slots <N>  Extra beam capacity for direct-generator proposals\n  \
              --format / -f      Output format: json (default), tree, mermaid, aizynth \
-             (AiZynthFinder trees.json-shaped route list; unmapped reactions)\n  \
+             (AiZynthFinder trees.json-shaped route list; unmapped reactions), synplanner \
+             (SynPlanner write_routes_json-shaped object; unmapped reactions)\n  \
              --avoid-elements / -e  Comma-separated elements to ban from BBs (e.g. \"Br,I\")\n  \
              --require-elements / -r  Comma-separated elements each route must supply (e.g. \"B\")\n  \
              --verbose / -v         Print search statistics to stderr\n  \
@@ -923,9 +924,10 @@ fn run_search_cli(args: &[String]) -> Result<()> {
             | "pareto"
             | "aizynth"
             | "aizynthfinder"
+            | "synplanner"
     ) {
         bail!(
-            "unsupported --format {format:?} (expected json|tree|mermaid|explain|compare|table|compare-json|pareto|aizynth)"
+            "unsupported --format {format:?} (expected json|tree|mermaid|explain|compare|table|compare-json|pareto|aizynth|synplanner)"
         );
     }
 
@@ -1959,6 +1961,12 @@ fn run_search_cli(args: &[String]) -> Result<()> {
         "compare" | "table" => {
             println!("{}", display::format_route_table(&routes));
         }
+        "synplanner" => {
+            // SynPlanner `write_routes_json` shape: {"<route_id>": RouteNode}.
+            let export =
+                renkin::bridge::synplanner::routes_to_synplanner_export(&routes, &target_smiles);
+            println!("{}", serde_json::to_string_pretty(&export)?);
+        }
         "aizynth" | "aizynthfinder" => {
             // Same top-level shape as `aizynthcli --output trees.json`: a
             // JSON array of ReactionTree dicts (empty when nothing solved).
@@ -2397,7 +2405,7 @@ fn run_capabilities(args: &[String]) -> Result<()> {
             "max_branching": true,
             "small_molecule_terminal": true,
             "route_clustering": renkin::route_distance::ROUTE_DISTANCE_METHOD,
-            "export_formats": ["aizynthfinder"],
+            "export_formats": ["aizynthfinder", "synplanner"],
         },
         "expand": {
             "stability": "experimental",

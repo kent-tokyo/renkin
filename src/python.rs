@@ -5,7 +5,7 @@ use crate::bridge;
 use crate::chem_env::{
     ChemEnv, default_rules, elem_symbols_to_mask, load_rules_from_file, mol_from_smiles,
 };
-use crate::search::{SearchConfig, diagnose, find_routes};
+use crate::search::{SearchConfig, diagnose};
 
 const MAX_FORWARD_INPUT_BYTES: usize = 64 * 1024;
 const MAX_FORWARD_REACTANTS: usize = 32;
@@ -160,6 +160,14 @@ pub fn capabilities_py() -> PyResult<String> {
 ///         not a hard real-time bound -- see ``SearchTermination::
 ///         DeadlineExceeded``'s doc in ``src/search.rs``). ``0`` raises.
 ///         Default: ``None`` (unlimited).
+///     time_limit_seconds (int | None): Standard-mode wall-clock budget
+///         (AiZynthFinder ``time_limit`` parity; cooperative, routes found
+///         before the deadline are kept). Adds ``time_limit_secs`` and
+///         ``termination`` (``"completed"``/``"deadline_exceeded"``) to the
+///         output. ``0`` raises. Default: ``None`` (unlimited).
+///     exclude_target_from_stock (bool): Never treat the target itself as
+///         stock (AiZynthFinder parity), so an in-stock target still gets
+///         synthesis routes and no depth-0 route. Default: ``False``.
 ///     coverage_beam_width (int | None): Optional Stage-2-only beam width;
 ///         ``0`` means unlimited. Stage 1 keeps ``beam_width`` unchanged.
 ///         Default: ``None`` (same beam width as Stage 1).
@@ -253,7 +261,7 @@ pub fn capabilities_py() -> PyResult<String> {
 ///     routes = json.loads(renkin.find_routes("CC(=O)Oc1ccccc1C(=O)O", depth=3))
 ///     print(routes["routes_found"])
 #[pyfunction]
-#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None, coverage_beam_width=None, search_diagnostics=false, spectator_bond_policy="off", element_accounting_policy="off", beam_diversity_policy="off", beam_diversity_slots=0, avoid_building_blocks="", require_building_blocks="", max_route_cost=None, min_confidence=None, min_success_probability=None, require_reaction_families="", avoid_reaction_families="", prefer_reaction_families="", max_steps=None, candidate_trace_limit=None))]
+#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None, coverage_beam_width=None, search_diagnostics=false, spectator_bond_policy="off", element_accounting_policy="off", beam_diversity_policy="off", beam_diversity_slots=0, avoid_building_blocks="", require_building_blocks="", max_route_cost=None, min_confidence=None, min_success_probability=None, require_reaction_families="", avoid_reaction_families="", prefer_reaction_families="", max_steps=None, candidate_trace_limit=None, time_limit_seconds=None, exclude_target_from_stock=false))]
 #[allow(clippy::too_many_arguments)]
 pub fn find_routes_py(
     target: &str,
@@ -289,6 +297,8 @@ pub fn find_routes_py(
     prefer_reaction_families: &str,
     max_steps: Option<usize>,
     candidate_trace_limit: Option<usize>,
+    time_limit_seconds: Option<u64>,
+    exclude_target_from_stock: bool,
 ) -> PyResult<String> {
     crate::constraints::validate_route_thresholds(
         max_route_cost,
@@ -355,6 +365,17 @@ pub fn find_routes_py(
                 "coverage_beam_width requires search_mode=\"coverage\"",
             ));
         }
+    }
+    if time_limit_seconds.is_some() && search_mode != "standard" {
+        return Err(PyValueError::new_err(
+            "time_limit_seconds requires search_mode=\"standard\"; use \
+             coverage_timeout_seconds in coverage mode",
+        ));
+    }
+    if time_limit_seconds == Some(0) {
+        return Err(PyValueError::new_err(
+            "time_limit_seconds must be a positive integer (got 0)",
+        ));
     }
     if search_mode == "coverage" && coverage_timeout_seconds == Some(0) {
         return Err(PyValueError::new_err(
@@ -453,8 +474,10 @@ pub fn find_routes_py(
         beam_diversity_policy,
         beam_diversity_slots,
         candidate_trace_cap: candidate_trace_limit,
+        exclude_target_from_stock,
         ..Default::default()
     };
+    let mut standard_termination: Option<crate::search::SearchTermination> = None;
 
     struct CoverageModeMeta {
         selected_stage: &'static str,
@@ -503,9 +526,17 @@ pub fn find_routes_py(
         };
         (result.routes, result.stats, Some(meta))
     } else {
-        let (routes, stats) = find_routes(target, &env, &rules, &config)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        (routes, stats, None)
+        let control = match time_limit_seconds {
+            Some(secs) => {
+                crate::search::SearchControl::with_timeout(std::time::Duration::from_secs(secs))
+            }
+            None => crate::search::SearchControl::unlimited(),
+        };
+        let result =
+            crate::search::find_routes_with_control(target, &env, &rules, &config, &control)
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        standard_termination = Some(result.termination);
+        (result.routes, result.stats, None)
     };
 
     let avoided_building_blocks: Vec<&str> = avoid_building_blocks
@@ -648,6 +679,16 @@ pub fn find_routes_py(
         output["stage2_elapsed_ms"] = serde_json::to_value(m.stage2_elapsed_ms)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         output["total_elapsed_ms"] = serde_json::Value::from(m.total_elapsed_ms);
+    }
+    // AiZynthFinder-parity fields: absent unless requested, so legacy
+    // callers keep byte-identical output.
+    if let Some(secs) = time_limit_seconds {
+        output["time_limit_secs"] = serde_json::Value::from(secs);
+        output["termination"] = serde_json::to_value(standard_termination)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    }
+    if exclude_target_from_stock {
+        output["exclude_target_from_stock"] = serde_json::Value::from(true);
     }
 
     serde_json::to_string(&output).map_err(|e| PyValueError::new_err(e.to_string()))

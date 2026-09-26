@@ -2713,6 +2713,14 @@ pub struct SearchConfig {
     /// Opt-in same-parent cross-template deduplication. Default false
     /// preserves provenance-rich historical behavior.
     pub cross_template_dedup: bool,
+    /// AiZynthFinder `exclude_target_from_stock` parity (opt-in, default
+    /// `false`). When `true`, the root target is never treated as a stock
+    /// terminal, even when its standardized canonical SMILES is in the
+    /// stock: the search therefore never returns the depth-0 "buy it"
+    /// route and every returned route synthesizes the target. Precursor
+    /// stock identity is unchanged. `false` reproduces the historical
+    /// behavior byte-for-byte.
+    pub exclude_target_from_stock: bool,
 }
 
 impl Default for SearchConfig {
@@ -2742,6 +2750,7 @@ impl Default for SearchConfig {
             beam_diversity_policy: BeamDiversityPolicy::Off,
             beam_diversity_slots: 0,
             cross_template_dedup: false,
+            exclude_target_from_stock: false,
         }
     }
 }
@@ -3287,14 +3296,24 @@ pub(crate) fn find_routes_with_control_prepared(
     // standardized according to the stock identity policy. Resolve it once
     // from the already-parsed molecule; every generated descendant is
     // standardized before it enters the frontier.
-    let target_is_building_block = env.is_building_block(&target_mol);
-    bb_cache.insert(target_canonical.clone(), target_is_building_block);
-    stock_lookup_diagnostics.cache_misses += 1;
-    if target_is_building_block {
-        stock_lookup_diagnostics.positive_results += 1;
+    //
+    // `exclude_target_from_stock` pins the root to "not stock" in the same
+    // per-search cache every later lookup consults, so the target can never
+    // become a terminal anywhere in this search (root or a cyclic
+    // re-occurrence). No stock lookup is performed for it in that case.
+    let target_is_building_block = if config.exclude_target_from_stock {
+        false
     } else {
-        stock_lookup_diagnostics.negative_results += 1;
-    }
+        let in_stock = env.is_building_block(&target_mol);
+        stock_lookup_diagnostics.cache_misses += 1;
+        if in_stock {
+            stock_lookup_diagnostics.positive_results += 1;
+        } else {
+            stock_lookup_diagnostics.negative_results += 1;
+        }
+        in_stock
+    };
+    bb_cache.insert(target_canonical.clone(), target_is_building_block);
     let target_smiles_arc: Arc<str> = Arc::from(target_canonical.as_str());
     let target_mol_arc = Arc::new(target_mol);
     let mut molecule_cache: FxHashMap<Arc<str>, Arc<Molecule>> = FxHashMap::default();
@@ -4394,6 +4413,38 @@ mod tests {
             routes.iter().any(|r| r.depth == 0),
             "building block must return depth-0 route"
         );
+    }
+
+    #[test]
+    fn exclude_target_from_stock_forces_a_synthesis_route() {
+        // Aspirin itself is declared as stock alongside its precursors.
+        let env = ChemEnv::in_memory(&["CC(=O)Oc1ccccc1C(=O)O", "CC(=O)O", "Oc1ccccc1C(=O)O"]);
+        let rules = default_rules();
+        let aspirin = "CC(=O)Oc1ccccc1C(=O)O";
+
+        let default_routes = find_routes(aspirin, &env, &rules, &cfg(2)).unwrap().0;
+        assert!(
+            default_routes.iter().any(|r| r.depth == 0),
+            "default policy keeps the historical depth-0 buy route"
+        );
+
+        let config = SearchConfig {
+            exclude_target_from_stock: true,
+            ..cfg(2)
+        };
+        let (routes, stats) = find_routes(aspirin, &env, &rules, &config).unwrap();
+        assert!(!routes.is_empty(), "aspirin must still be synthesizable");
+        assert!(
+            routes.iter().all(|r| r.depth > 0 && !r.steps.is_empty()),
+            "an excluded target must never be returned as a depth-0 terminal"
+        );
+        assert!(
+            routes
+                .iter()
+                .all(|r| !r.building_blocks.iter().any(|bb| bb == aspirin)),
+            "the excluded target must not reappear as a building block"
+        );
+        assert!(stats.nodes_expanded > 0);
     }
 
     #[test]

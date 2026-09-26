@@ -81,6 +81,17 @@ struct Output {
     /// standard output remains byte-compatible with pre-profile callers.
     #[serde(skip_serializing_if = "Option::is_none")]
     search_profile: Option<SearchProfileMetadata>,
+    /// AiZynthFinder `time_limit` parity: present only when
+    /// `--time-limit-secs` was given, so legacy output stays byte-identical.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    time_limit_secs: Option<u64>,
+    /// `completed` or `deadline_exceeded`; present only with
+    /// `--time-limit-secs`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    termination: Option<search::SearchTermination>,
+    /// Present (always `true`) only with `--exclude-target-from-stock`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    exclude_target_from_stock: Option<bool>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -259,6 +270,8 @@ fn run_search_cli(args: &[String]) -> Result<()> {
     let mut coverage_beam_width_arg: Option<String> = None;
     let mut recovery_depth_arg: Option<String> = None;
     let mut search_profile_arg: Option<String> = None;
+    let mut time_limit_secs_arg: Option<String> = None;
+    let mut exclude_target_from_stock = false;
 
     let mut i = 1;
     while i < args.len() {
@@ -371,6 +384,13 @@ fn run_search_cli(args: &[String]) -> Result<()> {
             }
             "--bond-index" => {
                 bond_index = true;
+            }
+            "--time-limit-secs" => {
+                time_limit_secs_arg =
+                    Some(required_flag_value(args, &mut i, "--time-limit-secs")?.to_owned());
+            }
+            "--exclude-target-from-stock" => {
+                exclude_target_from_stock = true;
             }
             "--speed-profile" => {
                 // Explicit speed arm: keep the legacy default unchanged,
@@ -580,6 +600,10 @@ fn run_search_cli(args: &[String]) -> Result<()> {
              cross-template dedup, branching factor -- Issue #101) to JSON output\n  \
              --candidate-trace-limit <N>  Also collect up to N per-candidate trace records \
              (implies --search-diagnostics; offline diagnostic use, competitive program Phase 1B)\n  \
+             --time-limit-secs <N>  Standard-search wall-clock budget in seconds (cooperative; \
+             routes found before the deadline are kept; JSON reports \"termination\")\n  \
+             --exclude-target-from-stock  Never treat the target itself as stock, so an \
+             in-stock target still gets synthesis routes (no depth-0 route)\n  \
              --bond-index           Bond-center template index: ~24%% faster, no accuracy loss\n  \
              --speed-profile        Explicit speed arm; currently enables --bond-index\n  \
              --bb-prices <path>     CSV (SMILES,price_per_gram) for route cost scoring\n  \
@@ -851,6 +875,24 @@ fn run_search_cli(args: &[String]) -> Result<()> {
             }
         }
     }
+    if time_limit_secs_arg.is_some() && search_mode != SearchMode::Standard {
+        bail!(
+            "--time-limit-secs applies to --search-mode standard; use \
+             --coverage-timeout-secs or --recovery-timeout-secs for the other modes"
+        );
+    }
+    let time_limit: Option<std::time::Duration> = match time_limit_secs_arg.as_deref() {
+        None => None,
+        Some(raw) => {
+            let n: u64 = raw.parse().map_err(|_| {
+                anyhow::anyhow!("--time-limit-secs must be a positive integer, got {raw:?}")
+            })?;
+            if n == 0 {
+                bail!("--time-limit-secs must be a positive integer (got 0)");
+            }
+            Some(std::time::Duration::from_secs(n))
+        }
+    };
     let coverage_timeout: Option<std::time::Duration> = match coverage_timeout_secs_arg {
         None => None,
         Some(ref s) => {
@@ -1364,8 +1406,16 @@ fn run_search_cli(args: &[String]) -> Result<()> {
         element_accounting_policy,
         beam_diversity_policy,
         beam_diversity_slots,
+        exclude_target_from_stock,
         ..Default::default()
     };
+    // Built after all input loading so the budget covers the search itself,
+    // matching AiZynthFinder's `time_limit` (search wall time only).
+    let standard_control = match time_limit {
+        Some(limit) => search::SearchControl::with_timeout(limit),
+        None => search::SearchControl::unlimited(),
+    };
+    let mut standard_termination: Option<search::SearchTermination> = None;
 
     struct CoverageModeMeta {
         selected_stage: &'static str,
@@ -1405,8 +1455,9 @@ fn run_search_cli(args: &[String]) -> Result<()> {
                     &env,
                     &rules,
                     &config,
-                    &search::SearchControl::unlimited(),
+                    &standard_control,
                 )?;
+                standard_termination = Some(result.selected.termination);
                 let selected = result.selected;
                 (selected.routes, selected.stats, None, None, None, None)
             } else if element_accounting_retry {
@@ -1415,8 +1466,9 @@ fn run_search_cli(args: &[String]) -> Result<()> {
                     &env,
                     &rules,
                     &config,
-                    &search::SearchControl::unlimited(),
+                    &standard_control,
                 )?;
+                standard_termination = Some(result.selected.termination);
                 let invoked = result.initial.is_some();
                 let source = result.initial.as_ref().unwrap_or(&result.selected);
                 let meta = ElementAccountingRetryMeta {
@@ -1444,8 +1496,9 @@ fn run_search_cli(args: &[String]) -> Result<()> {
                     &env,
                     &rules,
                     &config,
-                    &search::SearchControl::unlimited(),
+                    &standard_control,
                 )?;
+                standard_termination = Some(result.selected.termination);
                 let invoked = result.initial.is_some();
                 let source = result.initial.as_ref().unwrap_or(&result.selected);
                 let meta = BeamDiversityRetryMeta {
@@ -1464,8 +1517,15 @@ fn run_search_cli(args: &[String]) -> Result<()> {
                     None,
                 )
             } else {
-                let (routes, stats) = search::find_routes(&target_smiles, &env, &rules, &config)?;
-                (routes, stats, None, None, None, None)
+                let result = search::find_routes_with_control(
+                    &target_smiles,
+                    &env,
+                    &rules,
+                    &config,
+                    &standard_control,
+                )?;
+                standard_termination = Some(result.termination);
+                (result.routes, result.stats, None, None, None, None)
             }
         }
         SearchMode::Coverage => {
@@ -1541,6 +1601,13 @@ fn run_search_cli(args: &[String]) -> Result<()> {
         }
     };
     apply_constraints(&mut routes, &constraints);
+    if standard_termination == Some(search::SearchTermination::DeadlineExceeded) {
+        eprintln!(
+            "warning: --time-limit-secs budget exhausted; returning the {} route(s) found \
+             before the deadline",
+            routes.len()
+        );
+    }
 
     match format.as_str() {
         "tree" => {
@@ -1700,6 +1767,13 @@ fn run_search_cli(args: &[String]) -> Result<()> {
                 if let Some(ref profile) = search_profile_metadata {
                     out["search_profile"] = serde_json::to_value(profile)?;
                 }
+                if let Some(limit) = time_limit {
+                    out["time_limit_secs"] = serde_json::Value::from(limit.as_secs());
+                    out["termination"] = serde_json::to_value(standard_termination)?;
+                }
+                if exclude_target_from_stock {
+                    out["exclude_target_from_stock"] = serde_json::Value::from(true);
+                }
                 println!("{}", serde_json::to_string_pretty(&out)?);
             } else {
                 let joint_success_probability = 1.0
@@ -1731,6 +1805,9 @@ fn run_search_cli(args: &[String]) -> Result<()> {
                     beam_diversity_retry: beam_diversity_retry_meta,
                     recovery: recovery_meta,
                     search_profile: search_profile_metadata,
+                    time_limit_secs: time_limit.map(|d| d.as_secs()),
+                    termination: time_limit.and(standard_termination),
+                    exclude_target_from_stock: exclude_target_from_stock.then_some(true),
                     routes,
                 };
                 println!("{}", serde_json::to_string_pretty(&output)?);
@@ -1775,6 +1852,8 @@ fn run_capabilities(args: &[String]) -> Result<()> {
             "search_modes": ["standard", "coverage", "recovery"],
             "cooperative_cancel": false,
             "coverage_stage2_timeout": true,
+            "standard_time_limit": true,
+            "exclude_target_from_stock": true,
         },
         "audit": {
             "stability": "stable",

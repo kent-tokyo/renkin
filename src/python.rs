@@ -168,6 +168,15 @@ pub fn capabilities_py() -> PyResult<String> {
 ///     exclude_target_from_stock (bool): Never treat the target itself as
 ///         stock (AiZynthFinder parity), so an in-stock target still gets
 ///         synthesis routes and no depth-0 route. Default: ``False``.
+///     max_expansions (int | None): Deterministic expansion budget
+///         (Syntheseus ``limit_iterations`` / AiZynthFinder ``iteration_limit``
+///         parity; standard mode only). Adds ``max_expansions`` and
+///         ``termination`` (``"expansion_limit_reached"`` when hit).
+///     first_route_stats (bool): Add a ``first_route`` receipt: expansions,
+///         expansion calls, and wall time to the first accepted route.
+///     banned_molecules (list[str] | None): Molecules that may never appear
+///         as a precursor (ASKCOS banned chemicals; exact stock identity).
+///         Adds ``banned_molecules`` with ``count``/``candidates_removed``.
 ///     cluster (bool): Add ``route_clusters`` (structural tree-edit
 ///         distance matrix + average-linkage labels; AiZynthFinder route
 ///         clustering parity, see ``src/route_distance.rs``). Default ``False``.
@@ -267,7 +276,7 @@ pub fn capabilities_py() -> PyResult<String> {
 ///     routes = json.loads(renkin.find_routes("CC(=O)Oc1ccccc1C(=O)O", depth=3))
 ///     print(routes["routes_found"])
 #[pyfunction]
-#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None, coverage_beam_width=None, search_diagnostics=false, spectator_bond_policy="off", element_accounting_policy="off", beam_diversity_policy="off", beam_diversity_slots=0, avoid_building_blocks="", require_building_blocks="", max_route_cost=None, min_confidence=None, min_success_probability=None, require_reaction_families="", avoid_reaction_families="", prefer_reaction_families="", max_steps=None, candidate_trace_limit=None, time_limit_seconds=None, exclude_target_from_stock=false, cluster=false, n_clusters=None, max_clusters=5))]
+#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None, coverage_beam_width=None, search_diagnostics=false, spectator_bond_policy="off", element_accounting_policy="off", beam_diversity_policy="off", beam_diversity_slots=0, avoid_building_blocks="", require_building_blocks="", max_route_cost=None, min_confidence=None, min_success_probability=None, require_reaction_families="", avoid_reaction_families="", prefer_reaction_families="", max_steps=None, candidate_trace_limit=None, time_limit_seconds=None, exclude_target_from_stock=false, cluster=false, n_clusters=None, max_clusters=5, max_expansions=None, first_route_stats=false, banned_molecules=None))]
 #[allow(clippy::too_many_arguments)]
 pub fn find_routes_py(
     target: &str,
@@ -308,7 +317,35 @@ pub fn find_routes_py(
     cluster: bool,
     n_clusters: Option<usize>,
     max_clusters: usize,
+    max_expansions: Option<u64>,
+    first_route_stats: bool,
+    banned_molecules: Option<Vec<String>>,
 ) -> PyResult<String> {
+    if max_expansions == Some(0) {
+        return Err(PyValueError::new_err(
+            "max_expansions must be a positive integer (got 0)",
+        ));
+    }
+    if max_expansions.is_some() && search_mode != "standard" {
+        return Err(PyValueError::new_err(
+            "max_expansions requires search_mode=\"standard\"",
+        ));
+    }
+    let banned_set = match banned_molecules {
+        Some(ref list) => {
+            let set = crate::search::banned_molecule_set(list.iter().map(String::as_str))
+                .map_err(|e| PyValueError::new_err(format!("{e:#}")))?;
+            let target_key = crate::search::banned_molecule_set([target])
+                .map_err(|e| PyValueError::new_err(format!("{e:#}")))?;
+            if target_key.iter().any(|key| set.contains(key)) {
+                return Err(PyValueError::new_err(
+                    "the target itself is in banned_molecules",
+                ));
+            }
+            Some(set)
+        }
+        None => None,
+    };
     if n_clusters == Some(0) {
         return Err(PyValueError::new_err(
             "n_clusters must be a positive integer (got 0)",
@@ -495,6 +532,8 @@ pub fn find_routes_py(
         beam_diversity_slots,
         candidate_trace_cap: candidate_trace_limit,
         exclude_target_from_stock,
+        max_expansions,
+        banned_molecules: banned_set.clone().map(std::sync::Arc::new),
         ..Default::default()
     };
     let mut standard_termination: Option<crate::search::SearchTermination> = None;
@@ -704,8 +743,29 @@ pub fn find_routes_py(
     // callers keep byte-identical output.
     if let Some(secs) = time_limit_seconds {
         output["time_limit_secs"] = serde_json::Value::from(secs);
+    }
+    if time_limit_seconds.is_some() || max_expansions.is_some() {
         output["termination"] = serde_json::to_value(standard_termination)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    }
+    if let Some(n) = max_expansions {
+        output["max_expansions"] = serde_json::Value::from(n);
+    }
+    if first_route_stats {
+        output["first_route"] = serde_json::json!({
+            "found": stats.first_route_nodes_expanded.is_some(),
+            "nodes_expanded": stats.first_route_nodes_expanded,
+            "expansion_calls": stats.first_route_expansion_calls,
+            "elapsed_ms": stats.first_route_elapsed_us.map(|us| us as f64 / 1000.0),
+            "total_nodes_expanded": stats.nodes_expanded,
+            "total_expansion_calls": stats.retro_cache_misses,
+        });
+    }
+    if let Some(ref set) = banned_set {
+        output["banned_molecules"] = serde_json::json!({
+            "count": set.len(),
+            "candidates_removed": stats.banned_precursor_candidates,
+        });
     }
     if exclude_target_from_stock {
         output["exclude_target_from_stock"] = serde_json::Value::from(true);

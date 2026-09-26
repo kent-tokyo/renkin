@@ -95,6 +95,62 @@ struct Output {
     /// AiZynthFinder route clustering parity: present only with `--cluster`.
     #[serde(skip_serializing_if = "Option::is_none")]
     route_clusters: Option<renkin::route_distance::RouteClustering>,
+    /// Present only with `--max-expansions` (Syntheseus/AiZynthFinder
+    /// iteration-limit parity).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_expansions: Option<u64>,
+    /// Present only with `--first-route-stats`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    first_route: Option<FirstRouteReceipt>,
+    /// Present only with `--ban-molecules`/`--ban-smiles`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    banned_molecules: Option<BannedMoleculesReceipt>,
+    /// Present only with `--max-bb-price`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stock_price_filter: Option<StockPriceFilterReceipt>,
+}
+
+/// Syntheseus-style "time / calls to first solution" receipt for the
+/// selected search run. `elapsed_ms` is wall-clock and machine-dependent;
+/// the two counts are deterministic for identical inputs.
+#[derive(Clone, Debug, Serialize)]
+struct FirstRouteReceipt {
+    found: bool,
+    nodes_expanded: Option<u64>,
+    expansion_calls: Option<u64>,
+    elapsed_ms: Option<f64>,
+    total_nodes_expanded: u64,
+    total_expansion_calls: u64,
+}
+
+impl FirstRouteReceipt {
+    fn from_stats(stats: &search::SearchStats) -> Self {
+        Self {
+            found: stats.first_route_nodes_expanded.is_some(),
+            nodes_expanded: stats.first_route_nodes_expanded,
+            expansion_calls: stats.first_route_expansion_calls,
+            elapsed_ms: stats.first_route_elapsed_us.map(|us| us as f64 / 1000.0),
+            total_nodes_expanded: stats.nodes_expanded,
+            total_expansion_calls: stats.retro_cache_misses,
+        }
+    }
+}
+
+/// ASKCOS banned-chemicals receipt.
+#[derive(Clone, Debug, Serialize)]
+struct BannedMoleculesReceipt {
+    count: usize,
+    candidates_removed: u64,
+}
+
+/// ASKCOS `max_ppg`-style stock price cap receipt. Prices use the stock
+/// CSV's own price column and unit.
+#[derive(Clone, Debug, Serialize)]
+struct StockPriceFilterReceipt {
+    max_price: f64,
+    entries_kept: usize,
+    entries_excluded: usize,
+    unpriced_entries_kept: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -275,6 +331,11 @@ fn run_search_cli(args: &[String]) -> Result<()> {
     let mut recovery_depth_arg: Option<String> = None;
     let mut search_profile_arg: Option<String> = None;
     let mut time_limit_secs_arg: Option<String> = None;
+    let mut max_expansions: Option<u64> = None;
+    let mut first_route_stats = false;
+    let mut ban_molecules_path: Option<String> = None;
+    let mut ban_smiles_arg: Option<String> = None;
+    let mut max_bb_price: Option<f64> = None;
     let mut exclude_target_from_stock = false;
     let mut cluster = false;
     let mut n_clusters: Option<usize> = None;
@@ -398,6 +459,37 @@ fn run_search_cli(args: &[String]) -> Result<()> {
             }
             "--exclude-target-from-stock" => {
                 exclude_target_from_stock = true;
+            }
+            "--max-expansions" => {
+                let raw = required_flag_value(args, &mut i, "--max-expansions")?;
+                let n: u64 = raw.parse().map_err(|_| {
+                    anyhow::anyhow!("--max-expansions must be a positive integer, got {raw:?}")
+                })?;
+                if n == 0 {
+                    bail!("--max-expansions must be a positive integer (got 0)");
+                }
+                max_expansions = Some(n);
+            }
+            "--first-route-stats" => {
+                first_route_stats = true;
+            }
+            "--ban-molecules" => {
+                ban_molecules_path =
+                    Some(required_flag_value(args, &mut i, "--ban-molecules")?.to_owned());
+            }
+            "--ban-smiles" => {
+                ban_smiles_arg =
+                    Some(required_flag_value(args, &mut i, "--ban-smiles")?.to_owned());
+            }
+            "--max-bb-price" => {
+                let raw = required_flag_value(args, &mut i, "--max-bb-price")?;
+                let price: f64 = raw.parse().map_err(|_| {
+                    anyhow::anyhow!("--max-bb-price must be a non-negative number, got {raw:?}")
+                })?;
+                if !price.is_finite() || price < 0.0 {
+                    bail!("--max-bb-price must be a finite non-negative number (got {raw})");
+                }
+                max_bb_price = Some(price);
             }
             "--cluster" => {
                 cluster = true;
@@ -640,6 +732,15 @@ fn run_search_cli(args: &[String]) -> Result<()> {
              average-linkage cluster labels, AiZynthFinder route-clustering parity) to JSON output\n  \
              --n-clusters <K>       Fix the cluster count (implies --cluster); default: silhouette\n  \
              --max-clusters <N>     Upper bound for silhouette selection (default 5; implies --cluster)\n  \
+             --max-expansions <N>   Deterministic expansion budget for standard search \
+             (Syntheseus/AiZynthFinder iteration limit); JSON reports \"termination\"\n  \
+             --first-route-stats    Add a \"first_route\" receipt (expansions, expansion calls, \
+             and wall time to the first accepted route; Syntheseus parity)\n  \
+             --ban-molecules <path> SMILES file of molecules that may never appear as a \
+             precursor (ASKCOS banned chemicals; exact stock identity)\n  \
+             --ban-smiles <A,B,..>  Comma-separated banned molecules (same semantics)\n  \
+             --max-bb-price <X>     Drop --stock CSV entries priced above X (ASKCOS max price; \
+             same unit as the CSV price column; unpriced entries are kept and counted)\n  \
              --bond-index           Bond-center template index: ~24%% faster, no accuracy loss\n  \
              --speed-profile        Explicit speed arm; currently enables --bond-index\n  \
              --bb-prices <path>     CSV (SMILES,price_per_gram) for route cost scoring\n  \
@@ -924,6 +1025,34 @@ fn run_search_cli(args: &[String]) -> Result<()> {
             }
         }
     }
+    if max_expansions.is_some() && search_mode != SearchMode::Standard {
+        bail!("--max-expansions applies to --search-mode standard only");
+    }
+    if max_bb_price.is_some() && stock_path.is_none() {
+        bail!("--max-bb-price requires --stock <csv> (the price column it filters on)");
+    }
+    let banned_molecules: Option<std::collections::HashSet<String>> =
+        if ban_molecules_path.is_some() || ban_smiles_arg.is_some() {
+            let mut lines: Vec<String> = Vec::new();
+            if let Some(ref path) = ban_molecules_path {
+                let content = read_bounded_text_file(path, "--ban-molecules")?;
+                lines.extend(content.lines().map(str::to_owned));
+            }
+            if let Some(ref raw) = ban_smiles_arg {
+                lines.extend(raw.split(',').map(|s| s.trim().to_owned()));
+            }
+            let set = search::banned_molecule_set(lines.iter().map(String::as_str))?;
+            if set.is_empty() {
+                bail!("--ban-molecules/--ban-smiles contained no molecules");
+            }
+            let target_key = search::banned_molecule_set([target_smiles.as_str()])?;
+            if target_key.iter().any(|key| set.contains(key)) {
+                bail!("the target itself is in the banned-molecule list");
+            }
+            Some(set)
+        } else {
+            None
+        };
     if time_limit_secs_arg.is_some() && search_mode != SearchMode::Standard {
         bail!(
             "--time-limit-secs applies to --search-mode standard; use \
@@ -963,8 +1092,20 @@ fn run_search_cli(args: &[String]) -> Result<()> {
         .transpose()?;
 
     // --stock overrides --building-blocks and --bb-prices
+    let mut stock_price_filter: Option<StockPriceFilterReceipt> = None;
     let (env, bb_price_map) = if let Some(ref path) = stock_path {
-        let entries = load_stock_csv(path)?;
+        let mut entries = load_stock_csv(path)?;
+        if let Some(cap) = max_bb_price {
+            let before = entries.len();
+            let unpriced = entries.iter().filter(|e| e.price_jpy.is_none()).count();
+            entries.retain(|e| e.price_jpy.is_none_or(|price| price <= cap));
+            stock_price_filter = Some(StockPriceFilterReceipt {
+                max_price: cap,
+                entries_kept: entries.len(),
+                entries_excluded: before - entries.len(),
+                unpriced_entries_kept: unpriced,
+            });
+        }
         let smiles_owned: Vec<String> = entries.iter().map(|e| e.smiles.clone()).collect();
         let smiles_refs: Vec<&str> = smiles_owned.iter().map(|s| s.as_str()).collect();
         let stock_env = chem_env::ChemEnv::in_memory(&smiles_refs);
@@ -1456,6 +1597,8 @@ fn run_search_cli(args: &[String]) -> Result<()> {
         beam_diversity_policy,
         beam_diversity_slots,
         exclude_target_from_stock,
+        max_expansions,
+        banned_molecules: banned_molecules.clone().map(std::sync::Arc::new),
         ..Default::default()
     };
     // Built after all input loading so the budget covers the search itself,
@@ -1657,6 +1800,19 @@ fn run_search_cli(args: &[String]) -> Result<()> {
             routes.len()
         );
     }
+    if standard_termination == Some(search::SearchTermination::ExpansionLimitReached) {
+        eprintln!(
+            "warning: --max-expansions budget exhausted; returning the {} route(s) found \
+             before the limit",
+            routes.len()
+        );
+    }
+    let report_termination = time_limit.is_some() || max_expansions.is_some();
+    let first_route_receipt = first_route_stats.then(|| FirstRouteReceipt::from_stats(&stats));
+    let banned_receipt = banned_molecules.as_ref().map(|set| BannedMoleculesReceipt {
+        count: set.len(),
+        candidates_removed: stats.banned_precursor_candidates,
+    });
 
     match format.as_str() {
         "tree" => {
@@ -1832,7 +1988,21 @@ fn run_search_cli(args: &[String]) -> Result<()> {
                 }
                 if let Some(limit) = time_limit {
                     out["time_limit_secs"] = serde_json::Value::from(limit.as_secs());
+                }
+                if report_termination {
                     out["termination"] = serde_json::to_value(standard_termination)?;
+                }
+                if let Some(n) = max_expansions {
+                    out["max_expansions"] = serde_json::Value::from(n);
+                }
+                if let Some(ref receipt) = first_route_receipt {
+                    out["first_route"] = serde_json::to_value(receipt)?;
+                }
+                if let Some(ref receipt) = banned_receipt {
+                    out["banned_molecules"] = serde_json::to_value(receipt)?;
+                }
+                if let Some(ref receipt) = stock_price_filter {
+                    out["stock_price_filter"] = serde_json::to_value(receipt)?;
                 }
                 if exclude_target_from_stock {
                     out["exclude_target_from_stock"] = serde_json::Value::from(true);
@@ -1886,9 +2056,13 @@ fn run_search_cli(args: &[String]) -> Result<()> {
                     recovery: recovery_meta,
                     search_profile: search_profile_metadata,
                     time_limit_secs: time_limit.map(|d| d.as_secs()),
-                    termination: time_limit.and(standard_termination),
+                    termination: standard_termination.filter(|_| report_termination),
                     exclude_target_from_stock: exclude_target_from_stock.then_some(true),
                     route_clusters,
+                    max_expansions,
+                    first_route: first_route_receipt,
+                    banned_molecules: banned_receipt,
+                    stock_price_filter,
                     routes,
                 };
                 println!("{}", serde_json::to_string_pretty(&output)?);
@@ -2082,6 +2256,10 @@ fn run_capabilities(args: &[String]) -> Result<()> {
             "coverage_stage2_timeout": true,
             "standard_time_limit": true,
             "exclude_target_from_stock": true,
+            "max_expansions": true,
+            "first_route_stats": true,
+            "banned_molecules": true,
+            "max_bb_price": true,
             "route_clustering": renkin::route_distance::ROUTE_DISTANCE_METHOD,
             "export_formats": ["aizynthfinder"],
         },

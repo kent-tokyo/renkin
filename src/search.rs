@@ -1,7 +1,7 @@
 use std::collections::BinaryHeap;
 use std::sync::{Arc, OnceLock};
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use chematic::chem::{molecular_weight, sa_score, standardize};
 #[cfg(not(target_arch = "wasm32"))]
 use rayon::prelude::*;
@@ -481,6 +481,35 @@ pub struct SearchStats {
     /// a nonzero value means a mixed-mode run (part reranked, part legacy)
     /// happened and should be investigated, not silently accepted.
     pub reranker_failures: u64,
+    /// First-route receipt (Syntheseus "calls to first solution" parity):
+    /// frontier expansions performed before the first route passed the
+    /// acceptance boundary. `None` when no route was accepted. Deterministic
+    /// for identical inputs. Later post-search filters (element constraints,
+    /// CLI constraint files) can still drop that route; this records the
+    /// search-time event, not the final output.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub first_route_nodes_expanded: Option<u64>,
+    /// Retro-expansion calls (retro-cache misses: one rule-set application
+    /// per unique intermediate, the analogue of Syntheseus's reaction-model
+    /// calls) made before the first accepted route. `None` when no route
+    /// was accepted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub first_route_expansion_calls: Option<u64>,
+    /// Wall-clock microseconds from search start to the first accepted
+    /// route (native targets only; always `None` on wasm32). Never
+    /// serialized with the stats, so stats JSON stays deterministic;
+    /// callers surface it explicitly.
+    #[serde(skip)]
+    pub first_route_elapsed_us: Option<u64>,
+    /// Raw one-step candidates removed because a precursor is in
+    /// `SearchConfig::banned_molecules` (counted once per unique expanded
+    /// intermediate). Always `0` without a ban list.
+    #[serde(skip_serializing_if = "is_zero_u64")]
+    pub banned_precursor_candidates: u64,
+}
+
+fn is_zero_u64(value: &u64) -> bool {
+    *value == 0
 }
 
 /// Counts stock-membership lookups and memoization reuse within one search.
@@ -2721,6 +2750,43 @@ pub struct SearchConfig {
     /// stock identity is unchanged. `false` reproduces the historical
     /// behavior byte-for-byte.
     pub exclude_target_from_stock: bool,
+    /// Deterministic expansion budget (Syntheseus `limit_iterations` /
+    /// AiZynthFinder `iteration_limit` parity). When `Some(n)`, the search
+    /// stops before its `n + 1`-th frontier expansion with
+    /// [`SearchTermination::ExpansionLimitReached`]; routes accepted so far
+    /// are returned. Unlike a wall-clock deadline this is reproducible
+    /// across machines and load. `None` (default) is unlimited.
+    pub max_expansions: Option<u64>,
+    /// ASKCOS "banned chemicals" parity: molecules (standardized canonical
+    /// SMILES, i.e. the stock-identity policy -- build with
+    /// [`banned_molecule_set`]) that may never appear as a precursor
+    /// anywhere in a route. Candidates containing one are removed at
+    /// proposal time, before scoring, so they neither enter the frontier
+    /// nor consume beam slots. `None` (default) bans nothing.
+    pub banned_molecules: Option<std::sync::Arc<std::collections::HashSet<String>>>,
+}
+
+/// Build a [`SearchConfig::banned_molecules`] set from SMILES, applying the
+/// exact stock-identity policy (standardize, then canonicalize) so a ban
+/// matches the same molecule a stock lookup would. Blank lines and `#`
+/// comments are ignored; the first whitespace-separated token of a line is
+/// the SMILES. Any unparseable SMILES is an error rather than a silently
+/// ineffective ban.
+pub fn banned_molecule_set<'a>(
+    smiles: impl IntoIterator<Item = &'a str>,
+) -> Result<std::collections::HashSet<String>> {
+    let mut set = std::collections::HashSet::new();
+    for line in smiles {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let token = line.split_whitespace().next().unwrap_or(line);
+        let key = crate::chem_env::canonical_stock_identity_from_smiles(token)
+            .with_context(|| format!("invalid banned molecule {token:?}"))?;
+        set.insert(key);
+    }
+    Ok(set)
 }
 
 impl Default for SearchConfig {
@@ -2751,6 +2817,8 @@ impl Default for SearchConfig {
             beam_diversity_slots: 0,
             cross_template_dedup: false,
             exclude_target_from_stock: false,
+            max_expansions: None,
+            banned_molecules: None,
         }
     }
 }
@@ -2879,6 +2947,11 @@ pub enum SearchTermination {
     /// were found before the deadline are still returned, never
     /// discarded.
     DeadlineExceeded,
+    /// [`SearchConfig::max_expansions`] frontier expansions were performed
+    /// and another expansion was about to start. Deterministic: the same
+    /// inputs stop at the same point on every machine. Routes accepted
+    /// before the limit are returned.
+    ExpansionLimitReached,
 }
 
 /// Return type of [`find_routes_with_control`] -- adds [`SearchTermination`]
@@ -3286,6 +3359,11 @@ pub(crate) fn find_routes_with_control_prepared(
     let mut crowd_out = CrowdOutDiagnostics::default();
     let mut route_integrity = RouteIntegrityDiagnostics::default();
     let mut termination = SearchTermination::Completed;
+    let mut first_route_nodes_expanded: Option<u64> = None;
+    let mut first_route_expansion_calls: Option<u64> = None;
+    #[allow(unused_mut)]
+    let mut first_route_elapsed_us: Option<u64> = None;
+    let mut banned_precursor_candidates: u64 = 0;
 
     let mut routes: Vec<Route> = Vec::new();
     let mut best_g_by_frontier: FxHashMap<FrontierKey, f64> = FxHashMap::default();
@@ -3407,6 +3485,15 @@ pub(crate) fn find_routes_with_control_prepared(
             // candidate would, and keeps looking for a valid one.
             let defects = route_integrity_defects(&candidate, &target_canonical);
             if defects.is_empty() {
+                if routes.is_empty() {
+                    first_route_nodes_expanded = Some(nodes_expanded);
+                    first_route_expansion_calls = Some(retro_cache_misses);
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        first_route_elapsed_us =
+                            Some(u64::try_from(t0.elapsed().as_micros()).unwrap_or(u64::MAX));
+                    }
+                }
                 routes.push(candidate);
             } else {
                 route_integrity.record(&defects);
@@ -3420,6 +3507,15 @@ pub(crate) fn find_routes_with_control_prepared(
 
         if !should_expand_frontier(&node.frontier, node.g, &mut best_g_by_frontier) {
             continue;
+        }
+        // Deterministic budget: checked immediately before an expansion
+        // would be counted, so `nodes_expanded` never exceeds the limit.
+        if config
+            .max_expansions
+            .is_some_and(|limit| nodes_expanded >= limit)
+        {
+            termination = SearchTermination::ExpansionLimitReached;
+            break;
         }
         // This is part of the serialized search contract, including WASM;
         // only the separate `nodes_popped` timing counter is native-only.
@@ -3592,6 +3688,18 @@ pub(crate) fn find_routes_with_control_prepared(
                     step_gated_out.extend(full_gated_out);
                     step_element_accounting_gated_out.extend(full_element_accounting_gated_out);
                 }
+            }
+            if let Some(banned) = config.banned_molecules.as_deref() {
+                let before = raw_proposals.len();
+                raw_proposals.retain(|proposal| {
+                    !proposal.precursors.iter().any(|precursor| {
+                        banned.contains(precursor.smiles.as_str())
+                            || banned.contains(&crate::chem_env::canonical_stock_identity(
+                                &precursor.mol,
+                            ))
+                    })
+                });
+                banned_precursor_candidates += (before - raw_proposals.len()) as u64;
             }
             ring_context_diagnostics.merge(&step_ring_diag);
             crowd_out
@@ -4085,6 +4193,10 @@ pub(crate) fn find_routes_with_control_prepared(
             crowd_out,
             route_integrity,
             reranker_failures,
+            first_route_nodes_expanded,
+            first_route_expansion_calls,
+            first_route_elapsed_us,
+            banned_precursor_candidates,
         },
         termination,
     })
@@ -4413,6 +4525,148 @@ mod tests {
             routes.iter().any(|r| r.depth == 0),
             "building block must return depth-0 route"
         );
+    }
+
+    #[test]
+    fn max_expansions_is_a_deterministic_budget() {
+        let env = aspirin_env();
+        let rules = default_rules();
+        let aspirin = "CC(=O)Oc1ccccc1C(=O)O";
+        let unlimited = find_routes_with_control(
+            aspirin,
+            &env,
+            &rules,
+            &SearchConfig {
+                max_routes: 50,
+                ..cfg(4)
+            },
+            &SearchControl::unlimited(),
+        )
+        .unwrap();
+        assert!(unlimited.stats.nodes_expanded > 3);
+
+        let limited_cfg = SearchConfig {
+            max_routes: 50,
+            max_expansions: Some(3),
+            ..cfg(4)
+        };
+        let a = find_routes_with_control(
+            aspirin,
+            &env,
+            &rules,
+            &limited_cfg,
+            &SearchControl::unlimited(),
+        )
+        .unwrap();
+        let b = find_routes_with_control(
+            aspirin,
+            &env,
+            &rules,
+            &limited_cfg,
+            &SearchControl::unlimited(),
+        )
+        .unwrap();
+        assert_eq!(a.termination, SearchTermination::ExpansionLimitReached);
+        assert_eq!(a.stats.nodes_expanded, 3);
+        assert_eq!(
+            serde_json::to_string(&a.routes).unwrap(),
+            serde_json::to_string(&b.routes).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_string(&a.stats).unwrap(),
+            serde_json::to_string(&b.stats).unwrap()
+        );
+
+        // A budget the search never reaches leaves the result unchanged.
+        let generous = find_routes_with_control(
+            aspirin,
+            &env,
+            &rules,
+            &SearchConfig {
+                max_routes: 50,
+                max_expansions: Some(u64::MAX),
+                ..cfg(4)
+            },
+            &SearchControl::unlimited(),
+        )
+        .unwrap();
+        assert_eq!(generous.termination, SearchTermination::Completed);
+        assert_eq!(
+            serde_json::to_string(&generous.routes).unwrap(),
+            serde_json::to_string(&unlimited.routes).unwrap()
+        );
+    }
+
+    #[test]
+    fn first_route_receipt_is_recorded_and_deterministic() {
+        let env = aspirin_env();
+        let rules = default_rules();
+        let aspirin = "CC(=O)Oc1ccccc1C(=O)O";
+        let (routes, stats) = find_routes(aspirin, &env, &rules, &cfg(3)).unwrap();
+        assert!(!routes.is_empty());
+        let first = stats.first_route_nodes_expanded.expect("route found");
+        assert!(first <= stats.nodes_expanded);
+        let calls = stats.first_route_expansion_calls.expect("route found");
+        assert!(calls <= stats.retro_cache_misses);
+        assert!(stats.first_route_elapsed_us.is_some());
+        let json = serde_json::to_value(&stats).unwrap();
+        assert_eq!(json["first_route_nodes_expanded"], first);
+        assert!(json.get("first_route_elapsed_us").is_none());
+
+        let (_, again) = find_routes(aspirin, &env, &rules, &cfg(3)).unwrap();
+        assert_eq!(again.first_route_nodes_expanded, Some(first));
+        assert_eq!(again.first_route_expansion_calls, Some(calls));
+
+        let empty = ChemEnv::in_memory(&["[Xe]"]);
+        let (none_routes, none_stats) = find_routes(aspirin, &empty, &rules, &cfg(1)).unwrap();
+        assert!(none_routes.is_empty());
+        assert_eq!(none_stats.first_route_nodes_expanded, None);
+        assert_eq!(none_stats.first_route_expansion_calls, None);
+        assert_eq!(none_stats.first_route_elapsed_us, None);
+    }
+
+    #[test]
+    fn banned_molecules_never_appear_in_any_route() {
+        let env = aspirin_env();
+        let rules = default_rules();
+        let aspirin = "CC(=O)Oc1ccccc1C(=O)O";
+        let salicylic = banned_molecule_set(["Oc1ccccc1C(O)=O"]).unwrap();
+        let salicylic_key = salicylic.iter().next().unwrap().clone();
+
+        let (baseline, _) = find_routes(aspirin, &env, &rules, &cfg(3)).unwrap();
+        assert!(
+            baseline.iter().any(|r| r
+                .steps
+                .iter()
+                .any(|s| s.precursors.contains(&salicylic_key))),
+            "fixture must use salicylic acid without a ban"
+        );
+
+        let config = SearchConfig {
+            banned_molecules: Some(std::sync::Arc::new(salicylic)),
+            ..cfg(3)
+        };
+        let (routes, stats) = find_routes(aspirin, &env, &rules, &config).unwrap();
+        assert!(stats.banned_precursor_candidates > 0);
+        for route in &routes {
+            assert!(!route.building_blocks.contains(&salicylic_key));
+            for step in &route.steps {
+                assert!(!step.precursors.contains(&salicylic_key));
+            }
+        }
+    }
+
+    #[test]
+    fn banned_molecule_set_uses_stock_identity_and_rejects_bad_smiles() {
+        let set = banned_molecule_set([
+            "# comment",
+            "",
+            "OC(=O)c1ccccc1O salicylic acid",
+            "Oc1ccccc1C(O)=O",
+        ])
+        .unwrap();
+        assert_eq!(set.len(), 1, "two spellings of one molecule share a key");
+        assert!(banned_molecule_set(["not((smiles"]).is_err());
     }
 
     #[test]

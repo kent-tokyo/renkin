@@ -97,3 +97,40 @@ fn metadata_sidecar_failure_is_reported_loudly() {
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("template metadata file"));
 }
+
+#[test]
+fn first_route_stats_are_opt_in_per_target_fields() {
+    let input = std::env::temp_dir().join(format!(
+        "renkin_benchmark_cli_first_route_{}.smi",
+        std::process::id()
+    ));
+    fs::write(&input, "CC(=O)Oc1ccccc1C(=O)O\taspirin\n").unwrap();
+    let run = |extra: &[&str]| {
+        let mut args = vec!["--input", input.to_str().unwrap(), "--depth", "3"];
+        args.extend_from_slice(extra);
+        let output = Command::new(bench_bin()).args(&args).output().unwrap();
+        assert!(
+            output.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap()
+    };
+    let plain = run(&[]);
+    let with_stats = run(&["--first-route-stats"]);
+    let limited = run(&["--first-route-stats", "--max-expansions", "1"]);
+    let _ = fs::remove_file(&input);
+
+    assert!(
+        plain["results"][0]
+            .get("first_route_nodes_expanded")
+            .is_none()
+    );
+    let result = &with_stats["results"][0];
+    assert_eq!(result["solved"], true);
+    let first = result["first_route_nodes_expanded"].as_u64().unwrap();
+    assert!(first <= result["nodes_expanded"].as_u64().unwrap());
+    assert!(result["first_route_expansion_calls"].as_u64().is_some());
+    assert!(result["first_route_time_ms"].as_f64().unwrap() >= 0.0);
+    assert!(limited["results"][0]["nodes_expanded"].as_u64().unwrap() <= 1);
+}

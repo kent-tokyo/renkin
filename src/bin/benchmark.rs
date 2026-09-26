@@ -178,6 +178,16 @@ struct BenchResult {
     /// see `nn_rank` in search.rs), hits == reuses that needed no inference.
     retro_cache_hits: u64,
     retro_cache_misses: u64,
+    /// `--first-route-stats` only (Syntheseus-style first-solution
+    /// receipt): expansions and retro-expansion calls before the first
+    /// accepted route (deterministic), and in-search wall time to it.
+    /// Omitted for unsolved targets and when the flag is absent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    first_route_nodes_expanded: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    first_route_expansion_calls: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    first_route_time_ms: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     retro_expansion_wall_time_us: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -808,6 +818,8 @@ fn main() -> Result<()> {
     let mut failure_taxonomy = false;
     let mut include_routes = false;
     let mut timing_diagnostics = false;
+    let mut first_route_stats = false;
+    let mut max_expansions: Option<u64> = None;
     let mut practical_max_steps: Option<u32> = None;
     let mut quietset_out: Option<String> = None;
     let mut evaluator_id: Option<String> = None;
@@ -935,6 +947,19 @@ fn main() -> Result<()> {
             }
             "--timing-diagnostics" => {
                 timing_diagnostics = true;
+            }
+            "--first-route-stats" => {
+                first_route_stats = true;
+            }
+            "--max-expansions" => {
+                i += 1;
+                match args.get(i).and_then(|s| s.parse::<u64>().ok()) {
+                    Some(n) if n > 0 => max_expansions = Some(n),
+                    _ => {
+                        eprintln!("--max-expansions requires a positive integer");
+                        std::process::exit(1);
+                    }
+                }
             }
             "--practical-max-steps" => {
                 i += 1;
@@ -1117,6 +1142,7 @@ fn main() -> Result<()> {
         beam_diversity_policy,
         beam_diversity_slots,
         timing_diagnostics,
+        max_expansions,
         #[cfg(all(not(target_arch = "wasm32"), feature = "nn-scoring"))]
         nn_scorer,
         ..Default::default()
@@ -1341,6 +1367,16 @@ fn main() -> Result<()> {
             stock_lookup_negative_results: stats.stock_lookup_diagnostics.negative_results,
             retro_cache_hits: stats.retro_cache_hits,
             retro_cache_misses: stats.retro_cache_misses,
+            first_route_nodes_expanded: first_route_stats
+                .then_some(stats.first_route_nodes_expanded)
+                .flatten(),
+            first_route_expansion_calls: first_route_stats
+                .then_some(stats.first_route_expansion_calls)
+                .flatten(),
+            first_route_time_ms: first_route_stats
+                .then_some(stats.first_route_elapsed_us)
+                .flatten()
+                .map(|us| us as f64 / 1000.0),
             retro_expansion_wall_time_us: timing_diagnostics
                 .then_some(stats.crowd_out.retro_expansion_wall_time_us),
             retro_proposal_wall_time_us: timing_diagnostics

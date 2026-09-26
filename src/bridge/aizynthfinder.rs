@@ -183,9 +183,154 @@ pub fn normalize_aizynthfinder_route(node: &AzfNode) -> ParseOutcome {
 
 // Fixture-parity oracle: real `aizynthcli 4.4.1` output, not hand-authored --
 // see `tests/fixtures/aizynthfinder/v4.4.1/PROVENANCE.md`.
+/// Export a RENKIN [`crate::search::Route`] as an AiZynthFinder
+/// `ReactionTree.to_dict()`-shaped route (the element type of
+/// `aizynthcli`'s `trees` output), so RENKIN routes can be fed to
+/// AiZynthFinder-ecosystem tooling (route-distances, visualisation,
+/// notebooks) and back into `renkin audit-route --format aizynthfinder`.
+///
+/// Mapping, stated so nothing is over-read:
+/// - `mol` nodes carry RENKIN's canonical SMILES. Leaves of a completed
+///   route are stock terminals, so `in_stock: true`; intermediates and the
+///   target of a multi-step route are `in_stock: false`. A depth-0 route is
+///   a single in-stock `mol` node.
+/// - `reaction.smiles` follows AiZynthFinder's retro direction
+///   (`product>>reactants`) but is **not atom-mapped**, and
+///   `metadata.mapped_reaction_smiles` is deliberately absent: RENKIN does
+///   not fabricate a mapping. `metadata.template_hash`/`template_code`/
+///   `policy_probability` are absent for the same reason; RENKIN's own
+///   identity is carried as `renkin_template_id`/`renkin_rule`.
+/// - `scores` uses AiZynthFinder's count-based score names where the value
+///   is well defined, plus RENKIN-prefixed scores that have no AiZ analogue.
+pub fn route_to_aizynthfinder_tree(
+    route: &crate::search::Route,
+    target: &str,
+) -> serde_json::Value {
+    use serde_json::json;
+    use std::collections::HashMap;
+
+    let by_target: HashMap<&str, &crate::search::ReactionStep> = route
+        .steps
+        .iter()
+        .rev() // the first step for a target wins, matching display::build_tree
+        .map(|s| (s.target.as_str(), s))
+        .collect();
+    let all_precursors: std::collections::HashSet<&str> = route
+        .steps
+        .iter()
+        .flat_map(|s| s.precursors.iter().map(String::as_str))
+        .collect();
+    let root = route
+        .steps
+        .iter()
+        .map(|s| s.target.as_str())
+        .find(|t| !all_precursors.contains(t))
+        .or_else(|| route.steps.first().map(|s| s.target.as_str()))
+        .unwrap_or(target);
+
+    fn mol(
+        smiles: &str,
+        by_target: &HashMap<&str, &crate::search::ReactionStep>,
+        on_path: &mut Vec<String>,
+        leaves: &mut usize,
+    ) -> serde_json::Value {
+        let step = by_target
+            .get(smiles)
+            .filter(|_| !on_path.iter().any(|s| s == smiles));
+        let Some(step) = step else {
+            *leaves += 1;
+            return json!({
+                "type": "mol",
+                "hide": false,
+                "smiles": smiles,
+                "is_chemical": true,
+                "in_stock": true,
+            });
+        };
+        on_path.push(smiles.to_owned());
+        let children: Vec<serde_json::Value> = step
+            .precursors
+            .iter()
+            .map(|p| mol(p, by_target, on_path, leaves))
+            .collect();
+        on_path.pop();
+        let mut metadata = serde_json::Map::new();
+        metadata.insert("policy_name".into(), json!("renkin"));
+        metadata.insert("renkin_template_id".into(), json!(step.template_id));
+        metadata.insert("renkin_rule".into(), json!(step.rule));
+        metadata.insert("renkin_step_confidence".into(), json!(step.step_confidence));
+        if let Some(family) = step.reaction_family.as_deref() {
+            metadata.insert("classification".into(), json!(family));
+        }
+        json!({
+            "type": "mol",
+            "hide": false,
+            "smiles": smiles,
+            "is_chemical": true,
+            "in_stock": false,
+            "children": [{
+                "type": "reaction",
+                "hide": false,
+                "smiles": format!("{}>>{}", smiles, step.precursors.join(".")),
+                "is_reaction": true,
+                "metadata": metadata,
+                "children": children,
+            }],
+        })
+    }
+
+    let mut leaves = 0usize;
+    let mut tree = mol(root, &by_target, &mut Vec::new(), &mut leaves);
+    if let Some(object) = tree.as_object_mut() {
+        object.insert(
+            "scores".into(),
+            json!({
+                "number of reactions": route.steps.len(),
+                "number of pre-cursors": leaves,
+                "number of pre-cursors in stock": leaves,
+                "renkin score": route.score,
+                "renkin route cost": route.route_cost,
+                "renkin success probability": route.success_probability,
+            }),
+        );
+        object.insert(
+            "metadata".into(),
+            json!({
+                "is_solved": true,
+                "exported_by": format!("renkin {}", env!("CARGO_PKG_VERSION")),
+            }),
+        );
+    }
+    tree
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exported_depth_zero_route_is_a_single_in_stock_molecule() {
+        let route = crate::search::Route {
+            steps: Vec::new(),
+            depth: 0,
+            score: 0.0,
+            building_blocks: vec!["CCO".to_owned()],
+            confidence: 1.0,
+            convergency: 0.0,
+            success_probability: 1.0,
+            route_cost: 0.0,
+        };
+        let tree = route_to_aizynthfinder_tree(&route, "CCO");
+        assert_eq!(tree["type"], "mol");
+        assert_eq!(tree["smiles"], "CCO");
+        assert_eq!(tree["in_stock"], true);
+        assert!(tree.get("children").is_none());
+        assert_eq!(tree["scores"]["number of reactions"], 0);
+        // The exported shape must parse back through the importer.
+        let node: AzfNode = serde_json::from_value(tree).unwrap();
+        let outcome = normalize_aizynthfinder_route(&node);
+        assert!(outcome.defects.is_empty(), "{:?}", outcome.defects);
+    }
 
     fn load_fixture(name: &str) -> Vec<AzfNode> {
         let path = format!(

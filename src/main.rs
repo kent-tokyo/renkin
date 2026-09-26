@@ -623,7 +623,8 @@ fn run_search_cli(args: &[String]) -> Result<()> {
              --value-model-manifest <path>  Hash-pinned value-model manifest\n  \
              --value-model-artifact <path>  Static value-model artifact\n  \
              --retro-generator-slots <N>  Extra beam capacity for direct-generator proposals\n  \
-             --format / -f      Output format: json (default), tree, mermaid\n  \
+             --format / -f      Output format: json (default), tree, mermaid, aizynth \
+             (AiZynthFinder trees.json-shaped route list; unmapped reactions)\n  \
              --avoid-elements / -e  Comma-separated elements to ban from BBs (e.g. \"Br,I\")\n  \
              --require-elements / -r  Comma-separated elements each route must supply (e.g. \"B\")\n  \
              --verbose / -v         Print search statistics to stderr\n  \
@@ -714,10 +715,19 @@ fn run_search_cli(args: &[String]) -> Result<()> {
 
     if !matches!(
         format.as_str(),
-        "json" | "tree" | "mermaid" | "explain" | "compare" | "table" | "compare-json" | "pareto"
+        "json"
+            | "tree"
+            | "mermaid"
+            | "explain"
+            | "compare"
+            | "table"
+            | "compare-json"
+            | "pareto"
+            | "aizynth"
+            | "aizynthfinder"
     ) {
         bail!(
-            "unsupported --format {format:?} (expected json|tree|mermaid|explain|compare|table|compare-json|pareto)"
+            "unsupported --format {format:?} (expected json|tree|mermaid|explain|compare|table|compare-json|pareto|aizynth)"
         );
     }
 
@@ -1676,6 +1686,20 @@ fn run_search_cli(args: &[String]) -> Result<()> {
         "compare" | "table" => {
             println!("{}", display::format_route_table(&routes));
         }
+        "aizynth" | "aizynthfinder" => {
+            // Same top-level shape as `aizynthcli --output trees.json`: a
+            // JSON array of ReactionTree dicts (empty when nothing solved).
+            let trees: Vec<serde_json::Value> = routes
+                .iter()
+                .map(|route| {
+                    renkin::bridge::aizynthfinder::route_to_aizynthfinder_tree(
+                        route,
+                        &target_smiles,
+                    )
+                })
+                .collect();
+            println!("{}", serde_json::to_string_pretty(&trees)?);
+        }
         "compare-json" => {
             #[derive(serde::Serialize)]
             struct RouteCompare {
@@ -2059,6 +2083,7 @@ fn run_capabilities(args: &[String]) -> Result<()> {
             "standard_time_limit": true,
             "exclude_target_from_stock": true,
             "route_clustering": renkin::route_distance::ROUTE_DISTANCE_METHOD,
+            "export_formats": ["aizynthfinder"],
         },
         "expand": {
             "stability": "experimental",

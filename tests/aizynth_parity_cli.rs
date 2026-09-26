@@ -217,3 +217,73 @@ fn cluster_requires_json_and_valid_counts() {
     let err = run_failure(&["--target", ASPIRIN, "--max-clusters", "1"]);
     assert!(err.contains("--max-clusters must be an integer >= 2"));
 }
+
+#[test]
+fn aizynth_format_exports_trees_that_audit_route_reimports() {
+    let out = Command::new(bin())
+        .args([
+            "--target",
+            ASPIRIN,
+            "--depth",
+            "3",
+            "--max-routes",
+            "3",
+            "--format",
+            "aizynth",
+        ])
+        .output()
+        .expect("failed to spawn renkin");
+    assert!(out.status.success());
+    let trees: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let trees = trees
+        .as_array()
+        .expect("top-level array like aizynthcli trees");
+    assert!(!trees.is_empty());
+    for tree in trees {
+        assert_eq!(tree["type"], "mol");
+        assert_eq!(tree["metadata"]["is_solved"], true);
+        let reaction = &tree["children"][0];
+        assert_eq!(reaction["type"], "reaction");
+        assert!(
+            reaction["smiles"]
+                .as_str()
+                .unwrap()
+                .starts_with(tree["smiles"].as_str().unwrap()),
+            "retro direction product>>reactants"
+        );
+        assert!(reaction["metadata"].get("mapped_reaction_smiles").is_none());
+        assert_eq!(
+            tree["scores"]["number of reactions"].as_u64().unwrap() as usize,
+            count_reactions(tree)
+        );
+    }
+
+    let dir = std::env::temp_dir().join(format!("renkin-aizynth-export-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("trees.json");
+    std::fs::write(&path, &out.stdout).unwrap();
+    let report = run(&[
+        "audit-route",
+        path.to_str().unwrap(),
+        "--format",
+        "aizynthfinder",
+        "--stock",
+        "data/building_blocks.smi",
+        "--output",
+        "json",
+    ]);
+    std::fs::remove_dir_all(&dir).ok();
+    assert_eq!(report["source_format"], "aizynthfinder");
+    assert_eq!(report["summary"]["routes_total"], trees.len());
+    for route in report["routes"].as_array().unwrap() {
+        assert_eq!(route["route_tree_parseable"], true);
+        assert_eq!(route["stock_validation"]["status"], "pass");
+    }
+}
+
+fn count_reactions(node: &serde_json::Value) -> usize {
+    let own = usize::from(node["type"] == "reaction");
+    own + node["children"]
+        .as_array()
+        .map_or(0, |children| children.iter().map(count_reactions).sum())
+}

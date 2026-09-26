@@ -29,12 +29,12 @@
 //!   is not threaded onto [`RouteDocument`]/`AuditReport`'s legacy schema.
 //! - The separate, explicitly versioned `--export_routes` "public contract"
 //!   wrapper (`manifest.json` + `results.json.gz`, `{target_smiles:
-//!   [RouteNode, ...]}`, confirmed in Phase 1 PR1.5): not parsed by this
-//!   module. A user following that path decompresses `results.json.gz`
-//!   themselves; only the internal `{route_id: RouteNode}` shape (the same
-//!   shape every committed fixture uses) is recognized as SynPlanner input
-//!   today. Widening detection to the wrapped shape is a real, tracked
-//!   follow-up, not silently unsupported.
+//!   [RouteNode, ...]}`, confirmed in Phase 1 PR1.5) is recognized by
+//!   `bridge::audit_route` (auto-detected, or `--format synplanner`; gzip
+//!   input is decompressed by the audit input boundary). Each route node is
+//!   normalized by this module unchanged; routes are identified as
+//!   `<target_smiles>#<index>` because that shape carries no route IDs. The
+//!   separate `manifest.json` is not required and is not read.
 
 use std::collections::BTreeMap;
 

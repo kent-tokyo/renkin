@@ -13,7 +13,7 @@
 //! human-readable text formatting. `src/main.rs::run_audit_route` and
 //! `src/wasm.rs::audit_route` each own that on their own side.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -22,7 +22,7 @@ use crate::bridge::aizynthfinder::{AzfNode, normalize_aizynthfinder_route};
 use crate::bridge::audit::{self, AuditPolicy, AuditReport, AuditStatus};
 use crate::bridge::route_graph::normalize_renkin_route;
 use crate::bridge::synplanner::{
-    normalize_synplanner_route, original_step_ids, parse_synplanner_routes,
+    SynPlannerNode, normalize_synplanner_route, original_step_ids, parse_synplanner_routes,
 };
 use crate::bridge::syntheseus::{
     SyntheseusRouteV1, normalize_syntheseus_route, original_step_ids as syntheseus_step_ids,
@@ -696,6 +696,9 @@ enum AuditRouteFormat {
     AiZynthFinderBatch,
     Syntheseus,
     SynPlanner,
+    /// SynPlanner `--export_routes` public contract (`results.json[.gz]`):
+    /// `{target_smiles: [RouteNode, ...]}`.
+    SynPlannerExport,
 }
 
 /// A real SynPlanner `write_routes_json` export: a top-level JSON object
@@ -703,17 +706,35 @@ enum AuditRouteFormat {
 /// values are themselves objects with `"type": "mol"` at their root --
 /// confirmed against real SynPlanner 1.6.0 output (both hand-constructed
 /// and real MCTS-searched, see `docs/design/synplanner-adapter-v1.md` §3.2
-/// and §7 item 1). Only the internal `{route_id: RouteNode}` shape is
-/// recognized here, not the separate `--export_routes` public-contract
-/// wrapper (`{target_smiles: [RouteNode, ...]}`) -- see
-/// `bridge::synplanner` module docs for why that's a deliberate, tracked
-/// scope boundary rather than a silent gap.
+/// and §7 item 1). The separate `--export_routes` public-contract wrapper
+/// (`{target_smiles: [RouteNode, ...]}`) is recognized by
+/// [`looks_like_synplanner_public_export`] instead.
 fn looks_like_synplanner_export(map: &serde_json::Map<String, serde_json::Value>) -> bool {
     !map.is_empty()
         && map.keys().all(|k| k.parse::<u64>().is_ok())
         && map
             .values()
             .all(|v| v.get("type").and_then(|t| t.as_str()) == Some("mol"))
+}
+
+/// SynPlanner's `--export_routes` public-contract results
+/// (`results.json.gz`, schema `synplan-routes/1`): a top-level object keyed
+/// by target SMILES whose values are arrays of `"type": "mol"` route roots.
+/// Confirmed against `tests/fixtures/synplanner/v1.6.0/
+/// real_planning_export.results.json` (real SynPlanner 1.6.0 output). Keys
+/// must not parse as route-ID integers, which keeps this disjoint from
+/// [`looks_like_synplanner_export`]; RENKIN's own `{"target": "...",
+/// "routes": [...]}` has a non-array value and never matches.
+fn looks_like_synplanner_public_export(map: &serde_json::Map<String, serde_json::Value>) -> bool {
+    !map.is_empty()
+        && map.keys().all(|k| k.parse::<u64>().is_err())
+        && map.values().all(|v| {
+            v.as_array().is_some_and(|routes| {
+                routes
+                    .iter()
+                    .all(|r| r.get("type").and_then(|t| t.as_str()) == Some("mol"))
+            })
+        })
 }
 
 /// `format: "auto"`'s sniff: RENKIN's own shape is a top-level object with
@@ -742,6 +763,9 @@ fn detect_audit_route_format(value: &serde_json::Value) -> anyhow::Result<AuditR
         serde_json::Value::Object(map) if looks_like_synplanner_export(map) => {
             Ok(AuditRouteFormat::SynPlanner)
         }
+        serde_json::Value::Object(map) if looks_like_synplanner_public_export(map) => {
+            Ok(AuditRouteFormat::SynPlannerExport)
+        }
         serde_json::Value::Object(map)
             if map.contains_key("schema") && map.contains_key("data") =>
         {
@@ -765,7 +789,7 @@ fn detect_audit_route_format(value: &serde_json::Value) -> anyhow::Result<AuditR
             Ok(AuditRouteFormat::Renkin)
         }
         _ => bail!(
-            "renkin audit-route: --format auto could not identify this input -- recognized shapes are RENKIN (\"target\"+\"routes\" object), canonical interchange (\"schema_version\"+\"route_id\"+\"loss_report\" object), AiZynthFinder single-target (top-level array), AiZynthFinder batch (Pandas \"schema\"+\"data\" object), Syntheseus (\"source_tool\": \"syntheseus\" object), SynPlanner (top-level object keyed by route-ID integers). Pass --format explicitly if this is a supported shape auto-detection doesn't recognize."
+            "renkin audit-route: --format auto could not identify this input -- recognized shapes are RENKIN (\"target\"+\"routes\" object), canonical interchange (\"schema_version\"+\"route_id\"+\"loss_report\" object), AiZynthFinder single-target (top-level array), AiZynthFinder batch (Pandas \"schema\"+\"data\" object), Syntheseus (\"source_tool\": \"syntheseus\" object), SynPlanner (top-level object keyed by route-ID integers, or the --export_routes object keyed by target SMILES with route arrays). Pass --format explicitly if this is a supported shape auto-detection doesn't recognize."
         ),
     }
 }
@@ -863,7 +887,12 @@ pub fn build_audit_route_report_with_options(
             ),
         },
         "syntheseus" => AuditRouteFormat::Syntheseus,
-        "synplanner" => AuditRouteFormat::SynPlanner,
+        "synplanner" => match &value {
+            serde_json::Value::Object(map) if looks_like_synplanner_public_export(map) => {
+                AuditRouteFormat::SynPlannerExport
+            }
+            _ => AuditRouteFormat::SynPlanner,
+        },
         _ => detect_audit_route_format(&value)?,
     };
 
@@ -975,6 +1004,32 @@ pub fn build_audit_route_report_with_options(
                         Vec::new()
                     },
                 );
+            }
+            "synplanner"
+        }
+        AuditRouteFormat::SynPlannerExport => {
+            let targets: BTreeMap<String, Vec<SynPlannerNode>> = serde_json::from_value(value)
+                .context("input: not a recognized SynPlanner --export_routes results object")?;
+            for (target, routes) in &targets {
+                for (index, node) in routes.iter().enumerate() {
+                    let outcome = normalize_synplanner_route(node);
+                    let report = audit::audit_with_policy(&outcome, stock, Some(rules), policy);
+                    route_documents.push(outcome.document.clone());
+                    summary.record(report.status);
+                    reports.push(report);
+                    route_source_versions.push(None);
+                    // No route IDs exist in this shape: identify the route by
+                    // its target key and position, stable for a given file.
+                    route_source_ids.push(Some(format!("{target}#{index}")));
+                    let ids = original_step_ids(node);
+                    route_original_node_ids.push(
+                        if reports.last().is_some_and(|r| r.steps.len() == ids.len()) {
+                            ids
+                        } else {
+                            Vec::new()
+                        },
+                    );
+                }
             }
             "synplanner"
         }
@@ -1174,6 +1229,59 @@ mod tests {
             env!("CARGO_MANIFEST_DIR")
         );
         std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"))
+    }
+
+    #[test]
+    fn synplanner_public_export_results_auto_detect_and_audit() {
+        let content = load_synplanner_fixture("real_planning_export.results.json");
+        let rules: Vec<RetroRule> = Vec::new();
+        for format in ["auto", "synplanner"] {
+            let mut report =
+                build_audit_route_report(&content, format, None, &rules).expect("audits");
+            assert_eq!(report.audit_manifest.source_format, "synplanner");
+            assert_eq!(report.summary.routes_total, 2);
+            assert!(report.routes.iter().all(|r| r.route_tree_parseable));
+            report.attach_interchange();
+            let ids: Vec<Option<String>> = report
+                .route_interchange
+                .as_ref()
+                .expect("interchange")
+                .iter()
+                .map(|route| route.source_route_id.clone())
+                .collect();
+            assert_eq!(
+                ids,
+                vec![
+                    Some("CC(=O)Oc1ccccc1C(=O)O#0".to_owned()),
+                    Some("CC(=O)Oc1ccccc1C(=O)O#1".to_owned()),
+                ]
+            );
+        }
+    }
+
+    #[test]
+    fn synplanner_public_export_detection_is_disjoint_from_other_shapes() {
+        let export: serde_json::Value = serde_json::from_str(
+            r#"{"CCO": [{"type": "mol", "smiles": "CCO", "in_stock": true}]}"#,
+        )
+        .unwrap();
+        let route_ids: serde_json::Value =
+            serde_json::from_str(r#"{"1": {"type": "mol", "smiles": "CCO", "in_stock": true}}"#)
+                .unwrap();
+        let renkin: serde_json::Value =
+            serde_json::from_str(r#"{"target": "CCO", "routes": []}"#).unwrap();
+        assert!(matches!(
+            detect_audit_route_format(&export).unwrap(),
+            AuditRouteFormat::SynPlannerExport
+        ));
+        assert!(matches!(
+            detect_audit_route_format(&route_ids).unwrap(),
+            AuditRouteFormat::SynPlanner
+        ));
+        assert!(matches!(
+            detect_audit_route_format(&renkin).unwrap(),
+            AuditRouteFormat::Renkin
+        ));
     }
 
     #[test]

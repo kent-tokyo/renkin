@@ -8,6 +8,33 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added — closing remaining SynPlanner gaps
+
+- `--format html` (CLI) / `renkin.routes_html(find_routes_json, ...)`
+  (Python) / `report::routes_html_report`: a self-contained, script-free HTML
+  route report with 2D molecule depictions from chematic-depict, similar to
+  SynPlanner's route visualisation. Molecule cards carry badges that keep exact
+  `stock` separate from an opt-in `size terminal`.
+- `renkin batch --input targets.smi --output-dir DIR [--jobs N] [--html] [--
+  search options]` plans many targets, as SynPlanner's `synplan planning`
+  does. For each target it writes a JSON result (with search stats) and an
+  optional HTML report. It also writes `summary.csv` in input order and
+  `manifest.json`. Each target runs the normal search, so every search option
+  applies unchanged. The default is one job, and existing results are never
+  overwritten without `--overwrite`.
+- `--search-stats` (CLI) / `search_stats` (Python) reports tree statistics,
+  as SynPlanner's `Tree.report()` does: the full `SearchStats` without the
+  crowd-out block, plus nodes generated, routes returned, termination, and
+  search wall time. It is reported even when routes are found; previously
+  these counts appeared only in no-route diagnostics.
+
+### Changed
+
+- New default Cargo feature `depict` (`chematic/depict`, pure Rust,
+  MIT/Apache-2.0) for the HTML report. WASM builds use
+  `--no-default-features` and do not include it. A native build without it
+  rejects `--format html` and `batch --html` with a clear error.
+
 ## [1.0.12] - 2026-09-27 "Planner Interoperability Controls"
 
 ### Added — SynPlanner feature parity

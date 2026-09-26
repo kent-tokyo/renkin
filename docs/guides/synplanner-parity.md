@@ -15,6 +15,9 @@ section below states what RENKIN actually computes.
 | `--export_routes` (`results.json.gz`) | `renkin audit-route results.json.gz` | Auto-detected. Routes are identified as `<target>#<index>`. |
 | `max_iterations`, `max_time`, `max_depth` | `--max-expansions`, `--time-limit-secs`, `--depth` | See [ASKCOS and Syntheseus parity](askcos-syntheseus-parity.md) and [AiZynthFinder parity](aizynthfinder-parity.md). |
 | `stop_at_first` | `--max-routes 1` | |
+| Route visualisation (SVG/HTML) | `--format html`, `renkin.routes_html()` | Self-contained HTML with 2D depictions. Leaf badges distinguish `stock` from `size terminal`. |
+| `synplan planning` (batch) | `renkin batch` | Per-target JSON/HTML, `summary.csv`, `manifest.json`. |
+| `Tree.report()` / `TreeStats` | `--search-stats` | Node, cache, and first-route counts, plus wall time. |
 
 All new JSON fields are opt-in. Default output does not change.
 
@@ -66,6 +69,23 @@ changes, as with any ordering prior. No candidates are added.
 also offers repeated application to a fixpoint
 (`priority_rule_multiapplication`); RENKIN does not implement it.
 
+## Route report, batch planning, and tree statistics
+
+```bash
+renkin --target "CC(=O)Oc1ccccc1C(=O)O" --depth 4 --format html > routes.html
+renkin batch --input targets.smi --output-dir results --html -- --depth 5 --beam-width 100 --time-limit-secs 60
+renkin --target "..." --search-stats
+```
+
+The HTML page has no scripts and no external resources, so it can be archived
+or attached as evidence exactly as generated. `renkin batch` runs the normal
+search once per target, in a separate process, with the options given after
+`--`. `--target` and `--format` are set by batch itself. The default is
+`--jobs 1`, so a batch leaves the rest of the machine usable. `summary.csv`
+has one row per input line, and a target that fails to parse is recorded as
+an `error` row; the batch does not abort. HTML depiction needs the default
+`depict` feature, which WASM builds leave out.
+
 ## Interoperability
 
 ```bash
@@ -89,4 +109,4 @@ reader parses route trees only. It does not read the separate `manifest.json`.
   mapping that is carried through the whole route. For RENKIN's structural
   alternative, see `--cluster` in the
   [AiZynthFinder parity guide](aizynthfinder-parity.md).
-- GUI and HTML route visualisation.
+- GUI. (A static HTML route report is available through `--format html`.)

@@ -75,6 +75,7 @@ def find_routes(
     small_molecule_terminal: int | None = None,
     max_tree_size: int | None = None,
     priority_templates: list[str] | None = None,
+    search_stats: bool = False,
 ) -> str: ...
 def expand(
     target: str,

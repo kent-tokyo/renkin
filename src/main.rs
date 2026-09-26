@@ -111,6 +111,9 @@ struct Output {
     /// Present only with `--small-molecule-terminal`.
     #[serde(skip_serializing_if = "Option::is_none")]
     small_molecule_terminal: Option<SmallMoleculeTerminalReceipt>,
+    /// Present only with `--search-stats`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    search_stats: Option<serde_json::Value>,
     /// Present only with `--max-tree-size`.
     #[serde(skip_serializing_if = "Option::is_none")]
     max_tree_size: Option<TreeSizeReceipt>,
@@ -414,6 +417,7 @@ fn run_search_cli(args: &[String]) -> Result<()> {
     let mut max_branching: Option<usize> = None;
     let mut small_molecule_terminal: Option<usize> = None;
     let mut max_tree_size: Option<u64> = None;
+    let mut search_stats = false;
     let mut priority_templates_path: Option<String> = None;
     let mut priority_rules_arg: Option<String> = None;
     let mut diversity_radius = renkin::diversity::DEFAULT_PACKING_RADIUS;
@@ -553,6 +557,9 @@ fn run_search_cli(args: &[String]) -> Result<()> {
             }
             "--first-route-stats" => {
                 first_route_stats = true;
+            }
+            "--search-stats" => {
+                search_stats = true;
             }
             "--max-tree-size" => {
                 let raw = required_flag_value(args, &mut i, "--max-tree-size")?;
@@ -869,6 +876,9 @@ fn run_search_cli(args: &[String]) -> Result<()> {
              (Syntheseus/AiZynthFinder iteration limit); JSON reports \"termination\"\n  \
              --first-route-stats    Add a \"first_route\" receipt (expansions, expansion calls, \
              and wall time to the first accepted route; Syntheseus parity)\n  \
+             --search-stats         Add \"search_stats\": nodes generated/expanded, cache and \
+             stock-lookup counts, first-route receipt, termination, and wall time (SynPlanner \
+             Tree.report parity), also when routes are found\n  \
              --max-tree-size <N>    Stop once N search nodes exist (SynPlanner max_tree_size; \
              deterministic memory bound)\n  \
              --priority-templates <path>  Template IDs or rule names (one per line) tried ahead \
@@ -1820,6 +1830,7 @@ fn run_search_cli(args: &[String]) -> Result<()> {
         Option<renkin::recovery_mode::RecoveryAudit>,
     );
 
+    let search_started = std::time::Instant::now();
     let (
         mut routes,
         stats,
@@ -1983,6 +1994,7 @@ fn run_search_cli(args: &[String]) -> Result<()> {
             )
         }
     };
+    let search_elapsed_ms = search_started.elapsed().as_secs_f64() * 1000.0;
     apply_constraints(&mut routes, &constraints);
     if standard_termination == Some(search::SearchTermination::DeadlineExceeded) {
         eprintln!(
@@ -2015,6 +2027,24 @@ fn run_search_cli(args: &[String]) -> Result<()> {
             search::SearchTermination::DeadlineExceeded => "deadline_exceeded",
         });
     let first_route_receipt = first_route_stats.then(|| FirstRouteReceipt::from_stats(&stats));
+    let search_stats_receipt: Option<serde_json::Value> = if search_stats {
+        // SynPlanner Tree.report()/TreeStats parity: the full deterministic
+        // SearchStats (minus the bulky crowd-out block, which stays behind
+        // --search-diagnostics) plus tree size and wall time.
+        let mut value = serde_json::to_value(&stats)?;
+        if let Some(object) = value.as_object_mut() {
+            object.remove("crowd_out");
+            object.insert("nodes_generated".into(), stats.nodes_generated.into());
+            object.insert("search_elapsed_ms".into(), search_elapsed_ms.into());
+            object.insert("routes_returned".into(), routes.len().into());
+            if let Some(label) = termination_label {
+                object.insert("termination".into(), label.into());
+            }
+        }
+        Some(value)
+    } else {
+        None
+    };
     let small_terminal_receipt = small_molecule_terminal
         .map(|max_heavy_atoms| SmallMoleculeTerminalReceipt::build(&env, max_heavy_atoms, &routes));
     let tree_size_receipt = max_tree_size.map(|limit| TreeSizeReceipt {
@@ -2270,6 +2300,9 @@ fn run_search_cli(args: &[String]) -> Result<()> {
                 if let Some(ref receipt) = tree_size_receipt {
                     out["max_tree_size"] = serde_json::to_value(receipt)?;
                 }
+                if let Some(ref value) = search_stats_receipt {
+                    out["search_stats"] = value.clone();
+                }
                 if let Some(ref receipt) = priority_receipt {
                     out["priority_templates"] = serde_json::to_value(receipt)?;
                 }
@@ -2342,6 +2375,7 @@ fn run_search_cli(args: &[String]) -> Result<()> {
                     first_route: first_route_receipt,
                     banned_molecules: banned_receipt,
                     stock_price_filter,
+                    search_stats: search_stats_receipt,
                     max_tree_size: tree_size_receipt,
                     priority_templates: priority_receipt,
                     small_molecule_terminal: small_terminal_receipt,
@@ -2552,6 +2586,7 @@ fn run_capabilities(args: &[String]) -> Result<()> {
             "route_clustering": renkin::route_distance::ROUTE_DISTANCE_METHOD,
             "export_formats": ["aizynthfinder", "synplanner"],
             "html_report": cfg!(feature = "depict"),
+            "search_stats": true,
         },
         "expand": {
             "stability": "experimental",

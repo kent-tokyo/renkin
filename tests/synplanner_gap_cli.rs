@@ -57,3 +57,20 @@ fn html_format_renders_a_self_contained_depicted_report() {
     let caps = run(&["capabilities", "--output", "json"]);
     assert_eq!(caps["search"]["html_report"], true);
 }
+
+#[test]
+fn search_stats_is_opt_in_and_reported_with_routes() {
+    let plain = run(&["--target", ASPIRIN, "--depth", "2"]);
+    assert!(plain.get("search_stats").is_none());
+    let v = run(&["--target", ASPIRIN, "--depth", "2", "--search-stats"]);
+    let stats = &v["search_stats"];
+    assert!(v["routes_found"].as_u64().unwrap() > 0);
+    assert!(stats["nodes_expanded"].as_u64().unwrap() > 0);
+    assert!(
+        stats["nodes_generated"].as_u64().unwrap() >= stats["nodes_expanded"].as_u64().unwrap()
+    );
+    assert_eq!(stats["routes_returned"], v["routes_found"]);
+    assert!(stats["search_elapsed_ms"].as_f64().unwrap() >= 0.0);
+    assert!(stats.get("crowd_out").is_none());
+    assert!(stats["first_route_nodes_expanded"].as_u64().is_some());
+}

@@ -2057,7 +2057,7 @@ fn run_capabilities(args: &[String]) -> Result<()> {
         println!("Print the root CLI's machine-readable capability and resource contract.");
         return Ok(());
     }
-    if !args.is_empty() && !(args.len() == 2 && args[0] == "--output" && args[1] == "json") {
+    if !(args.is_empty() || args.len() == 2 && args[0] == "--output" && args[1] == "json") {
         bail!("renkin capabilities: only --output json is supported");
     }
 
@@ -2735,7 +2735,7 @@ fn template_ids(args: &[String]) -> Result<()> {
     let path = args
         .iter()
         .enumerate()
-        .find(|(i, a)| !a.starts_with("--") && !(*i > 0 && args[*i - 1] == "--format"))
+        .find(|(i, a)| !(a.starts_with("--") || *i > 0 && args[*i - 1] == "--format"))
         .map(|(_, a)| a.as_str())
         .unwrap_or("data/templates_extracted_5000.smi");
     // load_rules_from_file warns-and-returns-empty on a read error (matching its

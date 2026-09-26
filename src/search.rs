@@ -510,6 +510,13 @@ pub struct SearchStats {
     /// once per unique expanded intermediate). Always `0` without a cap.
     #[serde(skip_serializing_if = "is_zero_u64")]
     pub branching_pruned_candidates: u64,
+    /// `true` when the search stopped because `SearchConfig::max_expansions`
+    /// was exhausted (another expansion was about to start). Deterministic.
+    /// Reported here rather than as a new [`SearchTermination`] variant so
+    /// that public enum stays unchanged for downstream exhaustive matches;
+    /// `termination` remains `Completed` in this case.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub expansion_limit_reached: bool,
 }
 
 fn is_zero_u64(value: &u64) -> bool {
@@ -2757,8 +2764,9 @@ pub struct SearchConfig {
     /// Deterministic expansion budget (Syntheseus `limit_iterations` /
     /// AiZynthFinder `iteration_limit` parity). When `Some(n)`, the search
     /// stops before its `n + 1`-th frontier expansion with
-    /// [`SearchTermination::ExpansionLimitReached`]; routes accepted so far
-    /// are returned. Unlike a wall-clock deadline this is reproducible
+    /// [`SearchStats::expansion_limit_reached`] set (termination stays
+    /// [`SearchTermination::Completed`] so the public enum is unchanged);
+    /// routes accepted so far are returned. Unlike a wall-clock deadline this is reproducible
     /// across machines and load. `None` (default) is unlimited.
     pub max_expansions: Option<u64>,
     /// ASKCOS "banned chemicals" parity: molecules (standardized canonical
@@ -2936,7 +2944,9 @@ impl SearchControl {
 #[serde(rename_all = "snake_case")]
 pub enum SearchTermination {
     /// The frontier heap emptied or `max_routes` was reached -- same
-    /// stopping conditions [`find_routes`] has always had.
+    /// stopping conditions [`find_routes`] has always had -- or the opt-in
+    /// deterministic `SearchConfig::max_expansions` budget was exhausted
+    /// (distinguished by [`SearchStats::expansion_limit_reached`]).
     Completed,
     /// [`SearchControl`]'s deadline passed at one of the search's
     /// cooperative-cancellation checkpoints. **A soft, cooperative
@@ -2959,11 +2969,6 @@ pub enum SearchTermination {
     /// were found before the deadline are still returned, never
     /// discarded.
     DeadlineExceeded,
-    /// [`SearchConfig::max_expansions`] frontier expansions were performed
-    /// and another expansion was about to start. Deterministic: the same
-    /// inputs stop at the same point on every machine. Routes accepted
-    /// before the limit are returned.
-    ExpansionLimitReached,
 }
 
 /// Return type of [`find_routes_with_control`] -- adds [`SearchTermination`]
@@ -3044,7 +3049,10 @@ pub fn find_routes_with_retro_generator_retry(
         &prepared_rules,
         None,
     )?;
-    if !initial.routes.is_empty() || initial.termination != SearchTermination::Completed {
+    if !initial.routes.is_empty()
+        || initial.termination != SearchTermination::Completed
+        || initial.stats.expansion_limit_reached
+    {
         return Ok(RetroGeneratorRetryRunResult {
             selected: initial,
             initial: None,
@@ -3225,6 +3233,7 @@ pub fn find_routes_with_element_accounting_retry(
 
     let should_retry = initial.routes.is_empty()
         && initial.termination == SearchTermination::Completed
+        && !initial.stats.expansion_limit_reached
         && initial.stats.route_integrity.unaccounted_target_element > 0;
     if !should_retry {
         return Ok(ElementAccountingRetryRunResult {
@@ -3280,6 +3289,7 @@ pub fn find_routes_with_beam_diversity_retry(
 
     let should_retry = initial.routes.is_empty()
         && initial.termination == SearchTermination::Completed
+        && !initial.stats.expansion_limit_reached
         && initial.stats.beam_limit_hit
         && config.beam_width > 0
         && config.beam_diversity_slots > 0;
@@ -3411,6 +3421,7 @@ pub(crate) fn find_routes_with_control_prepared(
     let mut first_route_elapsed_us: Option<u64> = None;
     let mut banned_precursor_candidates: u64 = 0;
     let mut branching_pruned_candidates: u64 = 0;
+    let mut expansion_limit_reached = false;
 
     let mut routes: Vec<Route> = Vec::new();
     let mut best_g_by_frontier: FxHashMap<FrontierKey, f64> = FxHashMap::default();
@@ -3561,7 +3572,7 @@ pub(crate) fn find_routes_with_control_prepared(
             .max_expansions
             .is_some_and(|limit| nodes_expanded >= limit)
         {
-            termination = SearchTermination::ExpansionLimitReached;
+            expansion_limit_reached = true;
             break;
         }
         // This is part of the serialized search contract, including WASM;
@@ -4251,6 +4262,7 @@ pub(crate) fn find_routes_with_control_prepared(
             first_route_elapsed_us,
             banned_precursor_candidates,
             branching_pruned_candidates,
+            expansion_limit_reached,
         },
         termination,
     })
@@ -4679,7 +4691,9 @@ mod tests {
             &SearchControl::unlimited(),
         )
         .unwrap();
-        assert_eq!(a.termination, SearchTermination::ExpansionLimitReached);
+        assert_eq!(a.termination, SearchTermination::Completed);
+        assert!(a.stats.expansion_limit_reached);
+        assert!(!unlimited.stats.expansion_limit_reached);
         assert_eq!(a.stats.nodes_expanded, 3);
         assert_eq!(
             serde_json::to_string(&a.routes).unwrap(),
@@ -4704,6 +4718,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(generous.termination, SearchTermination::Completed);
+        assert!(!generous.stats.expansion_limit_reached);
         assert_eq!(
             serde_json::to_string(&generous.routes).unwrap(),
             serde_json::to_string(&unlimited.routes).unwrap()

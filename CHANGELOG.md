@@ -8,6 +8,46 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added — ASKCOS and Syntheseus feature parity
+
+- `--max-expansions <N>` (CLI, `renkin-bench`) / `max_expansions` (Python) /
+  `SearchConfig::max_expansions`: a deterministic expansion budget, equivalent
+  to Syntheseus `limit_iterations` and AiZynthFinder `iteration_limit`. When it
+  is reached the search stops, sets `SearchStats::expansion_limit_reached`, and
+  keeps the routes found so far. The CLI and Python report this as
+  `termination: expansion_limit_reached`. The public `SearchTermination` enum
+  is unchanged, so downstream exhaustive matches keep compiling, and the opt-in
+  retry passes do not retry a run that stopped on this budget. Standard mode
+  only.
+- First-route receipt: `SearchStats::first_route_nodes_expanded` and
+  `first_route_expansion_calls` (deterministic) record how much search work
+  was done before the first route passed the acceptance boundary.
+  `first_route_elapsed_us` is native-only wall time and is not serialized.
+  They are exposed through `--first-route-stats` (CLI `first_route`,
+  `renkin-bench` per-target `first_route_*`) and `first_route_stats`
+  (Python). This follows Syntheseus's time and calls to first solution and
+  supplies the first-route event that Phase 55 left `not_measured`.
+- `--ban-molecules <path>` / `--ban-smiles <A,B>` (CLI) / `banned_molecules`
+  (Python) / `SearchConfig::banned_molecules` + `search::banned_molecule_set`:
+  ASKCOS banned chemicals. A banned molecule is identified by the stock
+  identity policy and removed as a precursor at proposal time, so it never
+  appears anywhere in a route. A banned target is rejected.
+- `--max-bb-price <X>`: an ASKCOS `max_ppg`-style cap that drops `--stock` CSV
+  entries priced above X. It uses the CSV's price column and unit, keeps and
+  counts unpriced entries, and reports kept/excluded counts.
+- `--max-branching <N>` (CLI) / `max_branching` (Python) /
+  `SearchConfig::max_branching`: ASKCOS `max_branching` and AiZynthFinder
+  `cutoff_number`. Each expanded molecule keeps at most N distinct precursor
+  sets, cheapest first. All sources of a kept set are retained.
+- `--route-diversity` / `--diversity-radius <r>` (CLI) / `route_diversity`,
+  `diversity_radius` (Python), backed by `diversity::route_packing_number`: the
+  Syntheseus-style route-set packing number, meaning the largest subset of
+  routes that are pairwise distinct under reaction-Jaccard distance. The
+  default radius of 0.999 counts reaction-disjoint routes. Branch-and-bound is
+  exact within a fixed budget; if the budget runs out, the result is reported
+  as a lower bound.
+- `renkin capabilities` advertises the new search options.
+
 ## [1.0.11] - 2026-09-27 "AiZynthFinder Workflow Parity"
 
 ### Added — AiZynthFinder feature parity

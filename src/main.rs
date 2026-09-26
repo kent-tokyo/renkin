@@ -88,7 +88,7 @@ struct Output {
     /// `completed` or `deadline_exceeded`; present only with
     /// `--time-limit-secs`.
     #[serde(skip_serializing_if = "Option::is_none")]
-    termination: Option<search::SearchTermination>,
+    termination: Option<&'static str>,
     /// Present (always `true`) only with `--exclude-target-from-stock`.
     #[serde(skip_serializing_if = "Option::is_none")]
     exclude_target_from_stock: Option<bool>,
@@ -1851,7 +1851,7 @@ fn run_search_cli(args: &[String]) -> Result<()> {
             routes.len()
         );
     }
-    if standard_termination == Some(search::SearchTermination::ExpansionLimitReached) {
+    if stats.expansion_limit_reached {
         eprintln!(
             "warning: --max-expansions budget exhausted; returning the {} route(s) found \
              before the limit",
@@ -1859,6 +1859,12 @@ fn run_search_cli(args: &[String]) -> Result<()> {
         );
     }
     let report_termination = time_limit.is_some() || max_expansions.is_some();
+    let termination_label: Option<&'static str> =
+        standard_termination.map(|termination| match termination {
+            _ if stats.expansion_limit_reached => "expansion_limit_reached",
+            search::SearchTermination::Completed => "completed",
+            search::SearchTermination::DeadlineExceeded => "deadline_exceeded",
+        });
     let first_route_receipt = first_route_stats.then(|| FirstRouteReceipt::from_stats(&stats));
     let branching_receipt = max_branching.map(|limit| BranchingReceipt {
         limit,
@@ -2045,7 +2051,7 @@ fn run_search_cli(args: &[String]) -> Result<()> {
                     out["time_limit_secs"] = serde_json::Value::from(limit.as_secs());
                 }
                 if report_termination {
-                    out["termination"] = serde_json::to_value(standard_termination)?;
+                    out["termination"] = serde_json::to_value(termination_label)?;
                 }
                 if let Some(n) = max_expansions {
                     out["max_expansions"] = serde_json::Value::from(n);
@@ -2121,7 +2127,7 @@ fn run_search_cli(args: &[String]) -> Result<()> {
                     recovery: recovery_meta,
                     search_profile: search_profile_metadata,
                     time_limit_secs: time_limit.map(|d| d.as_secs()),
-                    termination: standard_termination.filter(|_| report_termination),
+                    termination: termination_label.filter(|_| report_termination),
                     exclude_target_from_stock: exclude_target_from_stock.then_some(true),
                     route_clusters,
                     max_expansions,

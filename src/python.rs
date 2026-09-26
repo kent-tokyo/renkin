@@ -767,8 +767,14 @@ pub fn find_routes_py(
         output["time_limit_secs"] = serde_json::Value::from(secs);
     }
     if time_limit_seconds.is_some() || max_expansions.is_some() {
-        output["termination"] = serde_json::to_value(standard_termination)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        output["termination"] = match standard_termination {
+            None => serde_json::Value::Null,
+            Some(_) if stats.expansion_limit_reached => {
+                serde_json::Value::from("expansion_limit_reached")
+            }
+            Some(termination) => serde_json::to_value(termination)
+                .map_err(|e| PyValueError::new_err(e.to_string()))?,
+        };
     }
     if let Some(n) = max_expansions {
         output["max_expansions"] = serde_json::Value::from(n);

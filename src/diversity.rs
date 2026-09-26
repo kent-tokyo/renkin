@@ -244,14 +244,13 @@ pub fn route_packing_number(routes: &[Route], radius: f64) -> PackingEstimate {
             1.0 - sets[i].intersection(&sets[j]).count() as f64 / union as f64
         }
     };
-    let mut conflicts: Vec<Vec<bool>> = vec![vec![false; n]; n];
-    for i in 0..n {
-        for j in i + 1..n {
-            let conflict = distance(i, j) <= radius;
-            conflicts[i][j] = conflict;
-            conflicts[j][i] = conflict;
-        }
-    }
+    let conflicts: Vec<Vec<bool>> = (0..n)
+        .map(|i| {
+            (0..n)
+                .map(|j| i != j && distance(i.min(j), i.max(j)) <= radius)
+                .collect()
+        })
+        .collect();
 
     struct Search<'a> {
         conflicts: &'a [Vec<bool>],

@@ -168,6 +168,12 @@ pub fn capabilities_py() -> PyResult<String> {
 ///     exclude_target_from_stock (bool): Never treat the target itself as
 ///         stock (AiZynthFinder parity), so an in-stock target still gets
 ///         synthesis routes and no depth-0 route. Default: ``False``.
+///     cluster (bool): Add ``route_clusters`` (structural tree-edit
+///         distance matrix + average-linkage labels; AiZynthFinder route
+///         clustering parity, see ``src/route_distance.rs``). Default ``False``.
+///     n_clusters (int | None): Fix the cluster count (implies ``cluster``);
+///         ``None`` selects it by silhouette.
+///     max_clusters (int): Upper bound for silhouette selection (>= 2).
 ///     coverage_beam_width (int | None): Optional Stage-2-only beam width;
 ///         ``0`` means unlimited. Stage 1 keeps ``beam_width`` unchanged.
 ///         Default: ``None`` (same beam width as Stage 1).
@@ -261,7 +267,7 @@ pub fn capabilities_py() -> PyResult<String> {
 ///     routes = json.loads(renkin.find_routes("CC(=O)Oc1ccccc1C(=O)O", depth=3))
 ///     print(routes["routes_found"])
 #[pyfunction]
-#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None, coverage_beam_width=None, search_diagnostics=false, spectator_bond_policy="off", element_accounting_policy="off", beam_diversity_policy="off", beam_diversity_slots=0, avoid_building_blocks="", require_building_blocks="", max_route_cost=None, min_confidence=None, min_success_probability=None, require_reaction_families="", avoid_reaction_families="", prefer_reaction_families="", max_steps=None, candidate_trace_limit=None, time_limit_seconds=None, exclude_target_from_stock=false))]
+#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None, coverage_beam_width=None, search_diagnostics=false, spectator_bond_policy="off", element_accounting_policy="off", beam_diversity_policy="off", beam_diversity_slots=0, avoid_building_blocks="", require_building_blocks="", max_route_cost=None, min_confidence=None, min_success_probability=None, require_reaction_families="", avoid_reaction_families="", prefer_reaction_families="", max_steps=None, candidate_trace_limit=None, time_limit_seconds=None, exclude_target_from_stock=false, cluster=false, n_clusters=None, max_clusters=5))]
 #[allow(clippy::too_many_arguments)]
 pub fn find_routes_py(
     target: &str,
@@ -299,7 +305,21 @@ pub fn find_routes_py(
     candidate_trace_limit: Option<usize>,
     time_limit_seconds: Option<u64>,
     exclude_target_from_stock: bool,
+    cluster: bool,
+    n_clusters: Option<usize>,
+    max_clusters: usize,
 ) -> PyResult<String> {
+    if n_clusters == Some(0) {
+        return Err(PyValueError::new_err(
+            "n_clusters must be a positive integer (got 0)",
+        ));
+    }
+    if max_clusters < 2 {
+        return Err(PyValueError::new_err(format!(
+            "max_clusters must be an integer >= 2 (got {max_clusters})"
+        )));
+    }
+    let cluster = cluster || n_clusters.is_some();
     crate::constraints::validate_route_thresholds(
         max_route_cost,
         min_confidence,
@@ -689,6 +709,15 @@ pub fn find_routes_py(
     }
     if exclude_target_from_stock {
         output["exclude_target_from_stock"] = serde_json::Value::from(true);
+    }
+    if cluster {
+        output["route_clusters"] = serde_json::to_value(crate::route_distance::cluster_routes(
+            &routes,
+            target,
+            n_clusters,
+            max_clusters,
+        ))
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
     }
 
     serde_json::to_string(&output).map_err(|e| PyValueError::new_err(e.to_string()))

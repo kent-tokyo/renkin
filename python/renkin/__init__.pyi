@@ -63,6 +63,9 @@ def find_routes(
     candidate_trace_limit: int | None = None,
     time_limit_seconds: int | None = None,
     exclude_target_from_stock: bool = False,
+    cluster: bool = False,
+    n_clusters: int | None = None,
+    max_clusters: int = 5,
 ) -> str: ...
 def expand(
     target: str,

@@ -23,6 +23,7 @@ pub mod recovery_mode;
 pub mod reranker;
 pub mod retro_generator;
 pub mod ring_context;
+pub mod route_distance;
 pub mod score;
 pub mod scorer;
 pub mod search;

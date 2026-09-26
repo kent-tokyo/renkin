@@ -167,3 +167,53 @@ fn expand_rejects_missing_target_and_bad_output() {
     let err = run_failure(&["expand", "--target", ASPIRIN, "--bogus"]);
     assert!(err.contains("unknown option"));
 }
+
+#[test]
+fn cluster_adds_distance_matrix_and_labels() {
+    let v = run(&[
+        "--target",
+        ASPIRIN,
+        "--depth",
+        "3",
+        "--max-routes",
+        "6",
+        "--cluster",
+    ]);
+    let routes = v["routes"].as_array().unwrap();
+    let clusters = &v["route_clusters"];
+    assert_eq!(clusters["schema_version"], 1);
+    assert_eq!(
+        clusters["distance_method"],
+        "canonical_ordered_ted_unit_cost"
+    );
+    let labels = clusters["labels"].as_array().unwrap();
+    assert_eq!(labels.len(), routes.len());
+    assert_eq!(labels.first().and_then(|l| l.as_u64()), Some(0));
+    let matrix = clusters["distance_matrix"].as_array().unwrap();
+    assert_eq!(matrix.len(), routes.len());
+    for (i, row) in matrix.iter().enumerate() {
+        assert_eq!(row[i], 0.0);
+    }
+
+    let fixed = run(&[
+        "--target",
+        ASPIRIN,
+        "--depth",
+        "3",
+        "--max-routes",
+        "6",
+        "--n-clusters",
+        "2",
+    ]);
+    assert_eq!(fixed["route_clusters"]["selection"], "fixed");
+}
+
+#[test]
+fn cluster_requires_json_and_valid_counts() {
+    let err = run_failure(&["--target", ASPIRIN, "--cluster", "--format", "tree"]);
+    assert!(err.contains("require --format json"));
+    let err = run_failure(&["--target", ASPIRIN, "--n-clusters", "0"]);
+    assert!(err.contains("--n-clusters must be a positive integer"));
+    let err = run_failure(&["--target", ASPIRIN, "--max-clusters", "1"]);
+    assert!(err.contains("--max-clusters must be an integer >= 2"));
+}

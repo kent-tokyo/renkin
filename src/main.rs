@@ -92,6 +92,9 @@ struct Output {
     /// Present (always `true`) only with `--exclude-target-from-stock`.
     #[serde(skip_serializing_if = "Option::is_none")]
     exclude_target_from_stock: Option<bool>,
+    /// AiZynthFinder route clustering parity: present only with `--cluster`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    route_clusters: Option<renkin::route_distance::RouteClustering>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -273,6 +276,9 @@ fn run_search_cli(args: &[String]) -> Result<()> {
     let mut search_profile_arg: Option<String> = None;
     let mut time_limit_secs_arg: Option<String> = None;
     let mut exclude_target_from_stock = false;
+    let mut cluster = false;
+    let mut n_clusters: Option<usize> = None;
+    let mut max_clusters: usize = 5;
 
     let mut i = 1;
     while i < args.len() {
@@ -392,6 +398,30 @@ fn run_search_cli(args: &[String]) -> Result<()> {
             }
             "--exclude-target-from-stock" => {
                 exclude_target_from_stock = true;
+            }
+            "--cluster" => {
+                cluster = true;
+            }
+            "--n-clusters" => {
+                let raw = required_flag_value(args, &mut i, "--n-clusters")?;
+                let k: usize = raw.parse().map_err(|_| {
+                    anyhow::anyhow!("--n-clusters must be a positive integer, got {raw:?}")
+                })?;
+                if k == 0 {
+                    bail!("--n-clusters must be a positive integer (got 0)");
+                }
+                n_clusters = Some(k);
+                cluster = true;
+            }
+            "--max-clusters" => {
+                let raw = required_flag_value(args, &mut i, "--max-clusters")?;
+                max_clusters = raw.parse().map_err(|_| {
+                    anyhow::anyhow!("--max-clusters must be an integer >= 2, got {raw:?}")
+                })?;
+                if max_clusters < 2 {
+                    bail!("--max-clusters must be an integer >= 2 (got {max_clusters})");
+                }
+                cluster = true;
             }
             "--speed-profile" => {
                 // Explicit speed arm: keep the legacy default unchanged,
@@ -605,6 +635,10 @@ fn run_search_cli(args: &[String]) -> Result<()> {
              routes found before the deadline are kept; JSON reports \"termination\")\n  \
              --exclude-target-from-stock  Never treat the target itself as stock, so an \
              in-stock target still gets synthesis routes (no depth-0 route)\n  \
+             --cluster              Add \"route_clusters\" (structural tree-edit distance matrix + \
+             average-linkage cluster labels, AiZynthFinder route-clustering parity) to JSON output\n  \
+             --n-clusters <K>       Fix the cluster count (implies --cluster); default: silhouette\n  \
+             --max-clusters <N>     Upper bound for silhouette selection (default 5; implies --cluster)\n  \
              --bond-index           Bond-center template index: ~24%% faster, no accuracy loss\n  \
              --speed-profile        Explicit speed arm; currently enables --bond-index\n  \
              --bb-prices <path>     CSV (SMILES,price_per_gram) for route cost scoring\n  \
@@ -685,6 +719,10 @@ fn run_search_cli(args: &[String]) -> Result<()> {
         bail!(
             "unsupported --format {format:?} (expected json|tree|mermaid|explain|compare|table|compare-json|pareto)"
         );
+    }
+
+    if cluster && format != "json" {
+        bail!("--cluster/--n-clusters/--max-clusters require --format json");
     }
 
     let requested_search_profile = search_profile_arg.clone();
@@ -1775,6 +1813,15 @@ fn run_search_cli(args: &[String]) -> Result<()> {
                 if exclude_target_from_stock {
                     out["exclude_target_from_stock"] = serde_json::Value::from(true);
                 }
+                if cluster {
+                    out["route_clusters"] =
+                        serde_json::to_value(renkin::route_distance::cluster_routes(
+                            &routes,
+                            &target_smiles,
+                            n_clusters,
+                            max_clusters,
+                        ))?;
+                }
                 println!("{}", serde_json::to_string_pretty(&out)?);
             } else {
                 let joint_success_probability = 1.0
@@ -1782,6 +1829,14 @@ fn run_search_cli(args: &[String]) -> Result<()> {
                         .iter()
                         .map(|r| 1.0 - r.success_probability)
                         .product::<f64>();
+                let route_clusters = cluster.then(|| {
+                    renkin::route_distance::cluster_routes(
+                        &routes,
+                        &target_smiles,
+                        n_clusters,
+                        max_clusters,
+                    )
+                });
                 let output = Output {
                     target: target_smiles,
                     routes_found: routes.len(),
@@ -1809,6 +1864,7 @@ fn run_search_cli(args: &[String]) -> Result<()> {
                     time_limit_secs: time_limit.map(|d| d.as_secs()),
                     termination: time_limit.and(standard_termination),
                     exclude_target_from_stock: exclude_target_from_stock.then_some(true),
+                    route_clusters,
                     routes,
                 };
                 println!("{}", serde_json::to_string_pretty(&output)?);
@@ -2002,6 +2058,7 @@ fn run_capabilities(args: &[String]) -> Result<()> {
             "coverage_stage2_timeout": true,
             "standard_time_limit": true,
             "exclude_target_from_stock": true,
+            "route_clustering": renkin::route_distance::ROUTE_DISTANCE_METHOD,
         },
         "expand": {
             "stability": "experimental",

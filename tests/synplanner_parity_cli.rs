@@ -134,3 +134,70 @@ fn audit_route_reads_synplanner_export_routes_results_gz() {
     assert_eq!(report["source_format"], "synplanner");
     assert_eq!(report["summary"]["routes_total"], 2);
 }
+
+#[test]
+fn max_tree_size_stops_deterministically() {
+    let args = [
+        "--target",
+        ASPIRIN,
+        "--depth",
+        "4",
+        "--max-routes",
+        "50",
+        "--max-tree-size",
+        "20",
+    ];
+    let a = run(&args);
+    let b = run(&args);
+    assert_eq!(a["termination"], "tree_size_limit_reached");
+    assert_eq!(a["max_tree_size"]["reached"], true);
+    assert_eq!(a["max_tree_size"]["nodes_generated"], 20);
+    assert_eq!(a["routes"], b["routes"]);
+    let err = run_failure(&["--target", ASPIRIN, "--max-tree-size", "0"]);
+    assert!(err.contains("--max-tree-size must be a positive integer"));
+    let err = run_failure(&[
+        "--target",
+        ASPIRIN,
+        "--search-mode",
+        "recovery",
+        "--max-tree-size",
+        "5",
+    ]);
+    assert!(err.contains("--max-tree-size applies to --search-mode standard"));
+}
+
+#[test]
+fn priority_rules_promote_and_report_unknown_names() {
+    let baseline = run(&["--target", ASPIRIN, "--depth", "2"]);
+    let first_rule = |v: &serde_json::Value| {
+        v["routes"][0]["steps"][0]["rule"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let baseline_first = first_rule(&baseline);
+    let other = baseline["routes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["steps"][0]["rule"].as_str().unwrap().to_owned())
+        .find(|rule| *rule != baseline_first)
+        .expect("at least two distinct first-step rules");
+
+    let file = temp_file("priority.txt", format!("# priority\n{other}\n").as_bytes());
+    let v = run(&[
+        "--target",
+        ASPIRIN,
+        "--depth",
+        "2",
+        "--priority-templates",
+        file.to_str().unwrap(),
+        "--priority-rules",
+        "no_such_rule",
+    ]);
+    let receipt = &v["priority_templates"];
+    assert_eq!(receipt["count"], 2);
+    assert_eq!(receipt["unknown"], serde_json::json!(["no_such_rule"]));
+    assert!(receipt["candidates_promoted"].as_u64().unwrap() > 0);
+    assert_eq!(first_rule(&v), other);
+}

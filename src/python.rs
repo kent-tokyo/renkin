@@ -177,6 +177,12 @@ pub fn capabilities_py() -> PyResult<String> {
 ///     banned_molecules (list[str] | None): Molecules that may never appear
 ///         as a precursor (ASKCOS banned chemicals; exact stock identity).
 ///         Adds ``banned_molecules`` with ``count``/``candidates_removed``.
+///     max_tree_size (int | None): Stop once this many search nodes exist
+///         (SynPlanner ``max_tree_size``; standard mode only). Adds
+///         ``max_tree_size`` and ``termination``.
+///     priority_templates (list[str] | None): Template IDs or rule names
+///         tried ahead of their siblings in every expansion (SynPlanner
+///         ``use_priority``). Adds ``priority_templates``.
 ///     small_molecule_terminal (int | None): Treat molecules with at most N
 ///         heavy atoms as route terminals even when not in stock (SynPlanner
 ///         ``min_mol_size``; opt-in). Adds ``small_molecule_terminal`` with
@@ -288,7 +294,7 @@ pub fn capabilities_py() -> PyResult<String> {
 ///     routes = json.loads(renkin.find_routes("CC(=O)Oc1ccccc1C(=O)O", depth=3))
 ///     print(routes["routes_found"])
 #[pyfunction]
-#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None, coverage_beam_width=None, search_diagnostics=false, spectator_bond_policy="off", element_accounting_policy="off", beam_diversity_policy="off", beam_diversity_slots=0, avoid_building_blocks="", require_building_blocks="", max_route_cost=None, min_confidence=None, min_success_probability=None, require_reaction_families="", avoid_reaction_families="", prefer_reaction_families="", max_steps=None, candidate_trace_limit=None, time_limit_seconds=None, exclude_target_from_stock=false, cluster=false, n_clusters=None, max_clusters=5, max_expansions=None, first_route_stats=false, banned_molecules=None, route_diversity=false, diversity_radius=0.999, max_branching=None, small_molecule_terminal=None))]
+#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None, coverage_beam_width=None, search_diagnostics=false, spectator_bond_policy="off", element_accounting_policy="off", beam_diversity_policy="off", beam_diversity_slots=0, avoid_building_blocks="", require_building_blocks="", max_route_cost=None, min_confidence=None, min_success_probability=None, require_reaction_families="", avoid_reaction_families="", prefer_reaction_families="", max_steps=None, candidate_trace_limit=None, time_limit_seconds=None, exclude_target_from_stock=false, cluster=false, n_clusters=None, max_clusters=5, max_expansions=None, first_route_stats=false, banned_molecules=None, route_diversity=false, diversity_radius=0.999, max_branching=None, small_molecule_terminal=None, max_tree_size=None, priority_templates=None))]
 #[allow(clippy::too_many_arguments)]
 pub fn find_routes_py(
     target: &str,
@@ -336,7 +342,27 @@ pub fn find_routes_py(
     diversity_radius: f64,
     max_branching: Option<usize>,
     small_molecule_terminal: Option<usize>,
+    max_tree_size: Option<u64>,
+    priority_templates: Option<Vec<String>>,
 ) -> PyResult<String> {
+    if max_tree_size == Some(0) {
+        return Err(PyValueError::new_err(
+            "max_tree_size must be a positive integer (got 0)",
+        ));
+    }
+    if max_tree_size.is_some() && search_mode != "standard" {
+        return Err(PyValueError::new_err(
+            "max_tree_size requires search_mode=\"standard\"",
+        ));
+    }
+    let priority_set: Option<std::collections::HashSet<String>> =
+        priority_templates.as_ref().map(|names| {
+            names
+                .iter()
+                .map(|n| n.trim().to_owned())
+                .filter(|n| !n.is_empty())
+                .collect()
+        });
     if max_branching == Some(0) {
         return Err(PyValueError::new_err(
             "max_branching must be a positive integer (got 0)",
@@ -565,6 +591,8 @@ pub fn find_routes_py(
         max_expansions,
         banned_molecules: banned_set.clone().map(std::sync::Arc::new),
         max_branching,
+        max_tree_size,
+        priority_templates: priority_set.clone().map(std::sync::Arc::new),
         ..Default::default()
     };
     let mut standard_termination: Option<crate::search::SearchTermination> = None;
@@ -775,11 +803,14 @@ pub fn find_routes_py(
     if let Some(secs) = time_limit_seconds {
         output["time_limit_secs"] = serde_json::Value::from(secs);
     }
-    if time_limit_seconds.is_some() || max_expansions.is_some() {
+    if time_limit_seconds.is_some() || max_expansions.is_some() || max_tree_size.is_some() {
         output["termination"] = match standard_termination {
             None => serde_json::Value::Null,
             Some(_) if stats.expansion_limit_reached => {
                 serde_json::Value::from("expansion_limit_reached")
+            }
+            Some(_) if stats.tree_size_limit_reached => {
+                serde_json::Value::from("tree_size_limit_reached")
             }
             Some(termination) => serde_json::to_value(termination)
                 .map_err(|e| PyValueError::new_err(e.to_string()))?,
@@ -796,6 +827,29 @@ pub fn find_routes_py(
             "elapsed_ms": stats.first_route_elapsed_us.map(|us| us as f64 / 1000.0),
             "total_nodes_expanded": stats.nodes_expanded,
             "total_expansion_calls": stats.retro_cache_misses,
+        });
+    }
+    if let Some(limit) = max_tree_size {
+        output["max_tree_size"] = serde_json::json!({
+            "limit": limit,
+            "reached": stats.tree_size_limit_reached,
+            "nodes_generated": stats.nodes_generated,
+        });
+    }
+    if let Some(ref names) = priority_set {
+        let mut unknown: Vec<&String> = names
+            .iter()
+            .filter(|name| {
+                !rules
+                    .iter()
+                    .any(|r| r.template_id == **name || r.name == **name)
+            })
+            .collect();
+        unknown.sort();
+        output["priority_templates"] = serde_json::json!({
+            "count": names.len(),
+            "unknown": unknown,
+            "candidates_promoted": stats.priority_candidates_promoted,
         });
     }
     if let Some(max_heavy_atoms) = small_molecule_terminal {

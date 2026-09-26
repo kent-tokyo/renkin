@@ -111,6 +111,12 @@ struct Output {
     /// Present only with `--small-molecule-terminal`.
     #[serde(skip_serializing_if = "Option::is_none")]
     small_molecule_terminal: Option<SmallMoleculeTerminalReceipt>,
+    /// Present only with `--max-tree-size`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_tree_size: Option<TreeSizeReceipt>,
+    /// Present only with `--priority-templates`/`--priority-rules`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    priority_templates: Option<PriorityReceipt>,
     /// Present only with `--max-branching`.
     #[serde(skip_serializing_if = "Option::is_none")]
     max_branching: Option<BranchingReceipt>,
@@ -179,6 +185,22 @@ impl SmallMoleculeTerminalReceipt {
             non_stock_leaves,
         }
     }
+}
+
+/// SynPlanner `max_tree_size` receipt.
+#[derive(Clone, Debug, Serialize)]
+struct TreeSizeReceipt {
+    limit: u64,
+    reached: bool,
+    nodes_generated: u64,
+}
+
+/// SynPlanner `use_priority` receipt.
+#[derive(Clone, Debug, Serialize)]
+struct PriorityReceipt {
+    count: usize,
+    unknown: Vec<String>,
+    candidates_promoted: u64,
 }
 
 /// ASKCOS `max_branching` receipt.
@@ -391,6 +413,9 @@ fn run_search_cli(args: &[String]) -> Result<()> {
     let mut route_diversity = false;
     let mut max_branching: Option<usize> = None;
     let mut small_molecule_terminal: Option<usize> = None;
+    let mut max_tree_size: Option<u64> = None;
+    let mut priority_templates_path: Option<String> = None;
+    let mut priority_rules_arg: Option<String> = None;
     let mut diversity_radius = renkin::diversity::DEFAULT_PACKING_RADIUS;
     let mut exclude_target_from_stock = false;
     let mut cluster = false;
@@ -528,6 +553,24 @@ fn run_search_cli(args: &[String]) -> Result<()> {
             }
             "--first-route-stats" => {
                 first_route_stats = true;
+            }
+            "--max-tree-size" => {
+                let raw = required_flag_value(args, &mut i, "--max-tree-size")?;
+                let n: u64 = raw.parse().map_err(|_| {
+                    anyhow::anyhow!("--max-tree-size must be a positive integer, got {raw:?}")
+                })?;
+                if n == 0 {
+                    bail!("--max-tree-size must be a positive integer (got 0)");
+                }
+                max_tree_size = Some(n);
+            }
+            "--priority-templates" => {
+                priority_templates_path =
+                    Some(required_flag_value(args, &mut i, "--priority-templates")?.to_owned());
+            }
+            "--priority-rules" => {
+                priority_rules_arg =
+                    Some(required_flag_value(args, &mut i, "--priority-rules")?.to_owned());
             }
             "--small-molecule-terminal" => {
                 let raw = required_flag_value(args, &mut i, "--small-molecule-terminal")?;
@@ -825,6 +868,11 @@ fn run_search_cli(args: &[String]) -> Result<()> {
              (Syntheseus/AiZynthFinder iteration limit); JSON reports \"termination\"\n  \
              --first-route-stats    Add a \"first_route\" receipt (expansions, expansion calls, \
              and wall time to the first accepted route; Syntheseus parity)\n  \
+             --max-tree-size <N>    Stop once N search nodes exist (SynPlanner max_tree_size; \
+             deterministic memory bound)\n  \
+             --priority-templates <path>  Template IDs or rule names (one per line) tried ahead \
+             of their siblings in every expansion (SynPlanner use_priority)\n  \
+             --priority-rules <a,b> Same, comma-separated\n  \
              --small-molecule-terminal <N>  Treat molecules with <= N heavy atoms as route \
              terminals even when not in stock (SynPlanner min_mol_size; opt-in). JSON reports \
              which leaves are size terminals rather than stock\n  \
@@ -1130,6 +1178,38 @@ fn run_search_cli(args: &[String]) -> Result<()> {
     if max_expansions.is_some() && search_mode != SearchMode::Standard {
         bail!("--max-expansions applies to --search-mode standard only");
     }
+    if max_tree_size.is_some() && search_mode != SearchMode::Standard {
+        bail!("--max-tree-size applies to --search-mode standard only");
+    }
+    let priority_templates: Option<std::collections::HashSet<String>> =
+        if priority_templates_path.is_some() || priority_rules_arg.is_some() {
+            let mut names = std::collections::HashSet::new();
+            if let Some(ref path) = priority_templates_path {
+                let content = read_bounded_text_file(path, "--priority-templates")?;
+                names.extend(
+                    content
+                        .lines()
+                        .map(str::trim)
+                        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                        .filter_map(|l| l.split_whitespace().next())
+                        .map(str::to_owned),
+                );
+            }
+            if let Some(ref raw) = priority_rules_arg {
+                names.extend(
+                    raw.split(',')
+                        .map(str::trim)
+                        .filter(|n| !n.is_empty())
+                        .map(str::to_owned),
+                );
+            }
+            if names.is_empty() {
+                bail!("--priority-templates/--priority-rules contained no names");
+            }
+            Some(names)
+        } else {
+            None
+        };
     if max_bb_price.is_some() && stock_path.is_none() {
         bail!("--max-bb-price requires --stock <csv> (the price column it filters on)");
     }
@@ -1706,6 +1786,8 @@ fn run_search_cli(args: &[String]) -> Result<()> {
         max_expansions,
         banned_molecules: banned_molecules.clone().map(std::sync::Arc::new),
         max_branching,
+        max_tree_size,
+        priority_templates: priority_templates.clone().map(std::sync::Arc::new),
         ..Default::default()
     };
     // Built after all input loading so the budget covers the search itself,
@@ -1907,6 +1989,13 @@ fn run_search_cli(args: &[String]) -> Result<()> {
             routes.len()
         );
     }
+    if stats.tree_size_limit_reached {
+        eprintln!(
+            "warning: --max-tree-size limit reached; returning the {} route(s) found before \
+             the limit",
+            routes.len()
+        );
+    }
     if stats.expansion_limit_reached {
         eprintln!(
             "warning: --max-expansions budget exhausted; returning the {} route(s) found \
@@ -1914,16 +2003,49 @@ fn run_search_cli(args: &[String]) -> Result<()> {
             routes.len()
         );
     }
-    let report_termination = time_limit.is_some() || max_expansions.is_some();
+    let report_termination =
+        time_limit.is_some() || max_expansions.is_some() || max_tree_size.is_some();
     let termination_label: Option<&'static str> =
         standard_termination.map(|termination| match termination {
             _ if stats.expansion_limit_reached => "expansion_limit_reached",
+            _ if stats.tree_size_limit_reached => "tree_size_limit_reached",
             search::SearchTermination::Completed => "completed",
             search::SearchTermination::DeadlineExceeded => "deadline_exceeded",
         });
     let first_route_receipt = first_route_stats.then(|| FirstRouteReceipt::from_stats(&stats));
     let small_terminal_receipt = small_molecule_terminal
         .map(|max_heavy_atoms| SmallMoleculeTerminalReceipt::build(&env, max_heavy_atoms, &routes));
+    let tree_size_receipt = max_tree_size.map(|limit| TreeSizeReceipt {
+        limit,
+        reached: stats.tree_size_limit_reached,
+        nodes_generated: stats.nodes_generated,
+    });
+    let priority_receipt = priority_templates.as_ref().map(|names| {
+        let mut unknown: Vec<String> = names
+            .iter()
+            .filter(|name| {
+                !rules
+                    .iter()
+                    .any(|r| r.template_id == **name || r.name == **name)
+            })
+            .cloned()
+            .collect();
+        unknown.sort();
+        PriorityReceipt {
+            count: names.len(),
+            unknown,
+            candidates_promoted: stats.priority_candidates_promoted,
+        }
+    });
+    if let Some(ref receipt) = priority_receipt
+        && !receipt.unknown.is_empty()
+    {
+        eprintln!(
+            "warning: {} priority name(s) match no loaded rule or template: {}",
+            receipt.unknown.len(),
+            receipt.unknown.join(", ")
+        );
+    }
     let branching_receipt = max_branching.map(|limit| BranchingReceipt {
         limit,
         candidates_pruned: stats.branching_pruned_candidates,
@@ -2132,6 +2254,12 @@ fn run_search_cli(args: &[String]) -> Result<()> {
                 if let Some(ref receipt) = branching_receipt {
                     out["max_branching"] = serde_json::to_value(receipt)?;
                 }
+                if let Some(ref receipt) = tree_size_receipt {
+                    out["max_tree_size"] = serde_json::to_value(receipt)?;
+                }
+                if let Some(ref receipt) = priority_receipt {
+                    out["priority_templates"] = serde_json::to_value(receipt)?;
+                }
                 if let Some(ref receipt) = small_terminal_receipt {
                     out["small_molecule_terminal"] = serde_json::to_value(receipt)?;
                 }
@@ -2201,6 +2329,8 @@ fn run_search_cli(args: &[String]) -> Result<()> {
                     first_route: first_route_receipt,
                     banned_molecules: banned_receipt,
                     stock_price_filter,
+                    max_tree_size: tree_size_receipt,
+                    priority_templates: priority_receipt,
                     small_molecule_terminal: small_terminal_receipt,
                     max_branching: branching_receipt,
                     route_set_diversity,
@@ -2404,6 +2534,8 @@ fn run_capabilities(args: &[String]) -> Result<()> {
             "route_packing_number": "reaction_jaccard",
             "max_branching": true,
             "small_molecule_terminal": true,
+            "max_tree_size": true,
+            "priority_templates": true,
             "route_clustering": renkin::route_distance::ROUTE_DISTANCE_METHOD,
             "export_formats": ["aizynthfinder", "synplanner"],
         },

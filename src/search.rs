@@ -517,6 +517,20 @@ pub struct SearchStats {
     /// `termination` remains `Completed` in this case.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub expansion_limit_reached: bool,
+    /// `true` when the search stopped because `SearchConfig::max_tree_size`
+    /// search nodes had been generated. Deterministic; `termination`
+    /// remains `Completed`, as for `expansion_limit_reached`.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub tree_size_limit_reached: bool,
+    /// Search nodes generated (root plus every child pushed onto the
+    /// frontier). Not serialized with the stats, so existing stats JSON is
+    /// unchanged; surfaced explicitly by callers that report tree size.
+    #[serde(skip)]
+    pub nodes_generated: u64,
+    /// Expansion entries whose cost was lowered by
+    /// `SearchConfig::priority_templates` (once per unique intermediate).
+    #[serde(skip_serializing_if = "is_zero_u64")]
+    pub priority_candidates_promoted: u64,
 }
 
 fn is_zero_u64(value: &u64) -> bool {
@@ -2786,6 +2800,22 @@ pub struct SearchConfig {
     /// never split. Applied once per unique intermediate, before the child
     /// loop. `None` (default) keeps every proposal.
     pub max_branching: Option<usize>,
+    /// SynPlanner `max_tree_size` parity: stop once this many search nodes
+    /// (root plus every generated child) exist, bounding frontier memory
+    /// deterministically. The limit is never exceeded; routes accepted so
+    /// far are returned and [`SearchStats::tree_size_limit_reached`] is set.
+    /// `None` (default) is unlimited.
+    pub max_tree_size: Option<u64>,
+    /// SynPlanner `use_priority` parity: template IDs or rule names whose
+    /// proposals are tried ahead of their siblings. In each expansion, a
+    /// matching candidate's step cost is lowered to the cheapest sibling's
+    /// step cost, so it is never ordered behind a sibling and survives
+    /// `max_branching`/beam pruning as well as the cheapest one does. This
+    /// changes route `score` for promoted steps (like any ordering prior);
+    /// it never adds candidates. SynPlanner's repeated application to a
+    /// fixpoint (`priority_rule_multiapplication`) is not implemented.
+    /// `None` (default) promotes nothing.
+    pub priority_templates: Option<std::sync::Arc<std::collections::HashSet<String>>>,
 }
 
 /// Build a [`SearchConfig::banned_molecules`] set from SMILES, applying the
@@ -2842,6 +2872,8 @@ impl Default for SearchConfig {
             max_expansions: None,
             banned_molecules: None,
             max_branching: None,
+            max_tree_size: None,
+            priority_templates: None,
         }
     }
 }
@@ -3055,6 +3087,7 @@ pub fn find_routes_with_retro_generator_retry(
     if !initial.routes.is_empty()
         || initial.termination != SearchTermination::Completed
         || initial.stats.expansion_limit_reached
+        || initial.stats.tree_size_limit_reached
     {
         return Ok(RetroGeneratorRetryRunResult {
             selected: initial,
@@ -3147,6 +3180,33 @@ impl SearchEngine {
     }
 }
 
+/// Lower every priority entry's step cost to the cheapest sibling cost (see
+/// [`SearchConfig::priority_templates`]). Returns how many entries were
+/// promoted (cost actually lowered).
+fn promote_priority_entries(
+    entries: &mut [RetroEntry],
+    priority: &std::collections::HashSet<String>,
+) -> u64 {
+    let Some(min_cost) = entries
+        .iter()
+        .map(|e| e.step_cost)
+        .filter(|c| c.is_finite())
+        .min_by(f64::total_cmp)
+    else {
+        return 0;
+    };
+    let mut promoted = 0;
+    for entry in entries.iter_mut() {
+        if (priority.contains(&entry.template_id) || priority.contains(&entry.rule_name))
+            && entry.step_cost > min_cost
+        {
+            entry.step_cost = min_cost;
+            promoted += 1;
+        }
+    }
+    promoted
+}
+
 /// Keep the `limit` cheapest distinct precursor sets of one expansion (see
 /// [`SearchConfig::max_branching`]). Entries sharing a kept precursor set are
 /// all retained; surviving entries keep their original relative order, so
@@ -3237,6 +3297,7 @@ pub fn find_routes_with_element_accounting_retry(
     let should_retry = initial.routes.is_empty()
         && initial.termination == SearchTermination::Completed
         && !initial.stats.expansion_limit_reached
+        && !initial.stats.tree_size_limit_reached
         && initial.stats.route_integrity.unaccounted_target_element > 0;
     if !should_retry {
         return Ok(ElementAccountingRetryRunResult {
@@ -3293,6 +3354,7 @@ pub fn find_routes_with_beam_diversity_retry(
     let should_retry = initial.routes.is_empty()
         && initial.termination == SearchTermination::Completed
         && !initial.stats.expansion_limit_reached
+        && !initial.stats.tree_size_limit_reached
         && initial.stats.beam_limit_hit
         && config.beam_width > 0
         && config.beam_diversity_slots > 0;
@@ -3425,6 +3487,10 @@ pub(crate) fn find_routes_with_control_prepared(
     let mut banned_precursor_candidates: u64 = 0;
     let mut branching_pruned_candidates: u64 = 0;
     let mut expansion_limit_reached = false;
+    let mut tree_size_limit_reached = false;
+    let mut priority_candidates_promoted: u64 = 0;
+    // The root node below counts as the first generated node.
+    let mut nodes_generated: u64 = 1;
 
     let mut routes: Vec<Route> = Vec::new();
     let mut best_g_by_frontier: FxHashMap<FrontierKey, f64> = FxHashMap::default();
@@ -3944,6 +4010,10 @@ pub(crate) fn find_routes_with_control_prepared(
                 crowd_out.candidate_postprocess_wall_time_us += t0.elapsed().as_micros() as u64;
             }
 
+            if let Some(priority) = config.priority_templates.as_deref() {
+                priority_candidates_promoted += promote_priority_entries(&mut entries, priority);
+            }
+
             if let Some(limit) = config.max_branching {
                 let before = entries.len();
                 cap_branching(&mut entries, limit);
@@ -4133,6 +4203,14 @@ pub(crate) fn find_routes_with_control_prepared(
                 Some(id)
             });
 
+            if config
+                .max_tree_size
+                .is_some_and(|limit| nodes_generated >= limit)
+            {
+                tree_size_limit_reached = true;
+                break 'frontier;
+            }
+            nodes_generated += 1;
             heap.push(Node {
                 frontier: new_frontier,
                 path: new_path,
@@ -4266,6 +4344,9 @@ pub(crate) fn find_routes_with_control_prepared(
             banned_precursor_candidates,
             branching_pruned_candidates,
             expansion_limit_reached,
+            tree_size_limit_reached,
+            nodes_generated,
+            priority_candidates_promoted,
         },
         termination,
     })
@@ -4653,6 +4734,88 @@ mod tests {
         let (_, stats) = find_routes(aspirin, &env, &rules, &narrow).unwrap();
         assert!(stats.branching_pruned_candidates > 0);
         assert!(stats.nodes_expanded <= baseline_stats.nodes_expanded);
+    }
+
+    #[test]
+    fn promote_priority_entries_matches_ids_or_names_and_only_lowers() {
+        let entry = |template: &str, name: &str, cost: f64| RetroEntry {
+            rule_name: name.to_owned(),
+            template_id: template.to_owned(),
+            step_cost: cost,
+            precursor_smiles: vec![Arc::from("C")],
+        };
+        let mut entries = vec![
+            entry("rule:a", "a", 1.0),
+            entry("rule:b", "b", 3.0),
+            entry("smirks-sha256:x", "c", 2.5),
+            entry("rule:d", "d", 4.0),
+        ];
+        let priority: std::collections::HashSet<String> =
+            ["rule:b".to_owned(), "c".to_owned(), "rule:a".to_owned()].into();
+        assert_eq!(promote_priority_entries(&mut entries, &priority), 2);
+        let costs: Vec<f64> = entries.iter().map(|e| e.step_cost).collect();
+        assert_eq!(costs, vec![1.0, 1.0, 1.0, 4.0]);
+        assert_eq!(promote_priority_entries(&mut [], &priority), 0);
+    }
+
+    #[test]
+    fn priority_templates_promote_candidates_in_search() {
+        let env = aspirin_env();
+        let rules = default_rules();
+        let aspirin = "CC(=O)Oc1ccccc1C(=O)O";
+        let (baseline, _) = find_routes(aspirin, &env, &rules, &cfg(2)).unwrap();
+        // Promote a rule that does not already produce the top route.
+        let top_rule = baseline[0].steps[0].template_id.clone();
+        let other = baseline
+            .iter()
+            .flat_map(|r| r.steps.iter())
+            .map(|s| s.template_id.clone())
+            .find(|id| *id != top_rule)
+            .expect("fixture yields at least two distinct first-step rules");
+        let config = SearchConfig {
+            priority_templates: Some(std::sync::Arc::new([other.clone()].into())),
+            ..cfg(2)
+        };
+        let (routes, stats) = find_routes(aspirin, &env, &rules, &config).unwrap();
+        assert!(stats.priority_candidates_promoted > 0);
+        assert!(!routes.is_empty());
+    }
+
+    #[test]
+    fn max_tree_size_bounds_generated_nodes_deterministically() {
+        let env = aspirin_env();
+        let rules = default_rules();
+        let aspirin = "CC(=O)Oc1ccccc1C(=O)O";
+        let (_, unlimited) = find_routes(
+            aspirin,
+            &env,
+            &rules,
+            &SearchConfig {
+                max_routes: 50,
+                ..cfg(4)
+            },
+        )
+        .unwrap();
+        assert!(unlimited.nodes_generated > 10);
+        assert!(!unlimited.tree_size_limit_reached);
+
+        let limited = SearchConfig {
+            max_routes: 50,
+            max_tree_size: Some(10),
+            ..cfg(4)
+        };
+        let (a_routes, a) = find_routes(aspirin, &env, &rules, &limited).unwrap();
+        let (b_routes, b) = find_routes(aspirin, &env, &rules, &limited).unwrap();
+        assert!(a.tree_size_limit_reached);
+        assert_eq!(a.nodes_generated, 10);
+        assert_eq!(
+            serde_json::to_string(&a_routes).unwrap(),
+            serde_json::to_string(&b_routes).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_string(&a).unwrap(),
+            serde_json::to_string(&b).unwrap()
+        );
     }
 
     #[test]

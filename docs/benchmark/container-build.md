@@ -7,7 +7,7 @@ resource envelope. AiZynthFinder already has a pinned container recipe in
 ```sh
 docker build --platform linux/arm64 \
   -f docker/renkin-benchmark.Dockerfile \
-  -t renkin-bench/renkin:1.0.10 .
+  -t renkin-bench/renkin:1.0.11 .
 docker build --platform linux/arm64 \
   -f docker/syntheseus-benchmark.Dockerfile \
   -t renkin-bench/syntheseus:0.8.0 .

@@ -223,7 +223,7 @@ parameter keeps working exactly as before.
 function version(): string
 ```
 
-Returns the RENKIN version string (for example, `"1.0.10"` for the current
+Returns the RENKIN version string (for example, `"1.0.11"` for the current
 release).
 
 ## Minimal Node.js Example (CI-verified)

@@ -8,6 +8,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.11] - 2026-09-27 "AiZynthFinder Workflow Parity"
+
 ### Added — AiZynthFinder feature parity
 
 - `--time-limit-secs <N>` (CLI) / `time_limit_seconds` (Python): a wall-clock

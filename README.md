@@ -14,7 +14,7 @@ RENKIN has two complementary jobs:
 - **Plan:** search retrosynthetic routes from target SMILES to declared building blocks.
 - **Audit:** apply the same deterministic structural, stock, forward-replay, and provenance checks to routes from RENKIN, AiZynthFinder, Syntheseus, or SynPlanner.
 
-Current release: **v1.0.10**. Core chemistry is pure Rust; the project ships a CLI, Rust crate, Python package, MCP server, and browser WebAssembly module.
+Current release: **v1.0.11**. Core chemistry is pure Rust; the project ships a CLI, Rust crate, Python package, MCP server, and browser WebAssembly module.
 The default planner has 24 hand-crafted rules. Repository-backed runs use the
 402-compound stock file; WASM and installations without that file use a
 compiled-in 152-compound fallback. Supply stock explicitly when it matters.

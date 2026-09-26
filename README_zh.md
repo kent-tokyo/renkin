@@ -9,7 +9,7 @@ RENKIN 有两项互补工作：
 - **Planner：** 从 target SMILES 搜索至指定 building block 的逆合成路线。
 - **Bridge：** 用相同的确定性检查审计 RENKIN、AiZynthFinder、Syntheseus 和 SynPlanner 的路线。
 
-当前版本为 **v1.0.10**。提供 CLI、Rust crate、Python、MCP 和浏览器 WASM；核心化学层没有 C/C++ 依赖。
+当前版本为 **v1.0.11**。提供 CLI、Rust crate、Python、MCP 和浏览器 WASM；核心化学层没有 C/C++ 依赖。
 默认 planner 包含 24 条手工规则。仓库 stock 文件含 402 个化合物；WASM 和找不到该文件的
 安装环境使用内置的 152 个化合物 fallback。stock 会影响结论时，请显式指定。
 

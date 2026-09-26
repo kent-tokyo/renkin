@@ -8,6 +8,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.12] - 2026-09-27 "Planner Interoperability Controls"
+
 ### Added — SynPlanner feature parity
 
 - `--small-molecule-terminal <N>` (CLI) / `small_molecule_terminal` (Python) /
@@ -2904,7 +2906,9 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
 
 ---
 
-[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v1.0.10...HEAD
+[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v1.0.12...HEAD
+[1.0.12]: https://github.com/kent-tokyo/renkin/compare/v1.0.11...v1.0.12
+[1.0.11]: https://github.com/kent-tokyo/renkin/compare/v1.0.10...v1.0.11
 [1.0.10]: https://github.com/kent-tokyo/renkin/compare/v1.0.9...v1.0.10
 [1.0.9]: https://github.com/kent-tokyo/renkin/compare/v1.0.8...v1.0.9
 [1.0.8]: https://github.com/kent-tokyo/renkin/compare/v1.0.7...v1.0.8

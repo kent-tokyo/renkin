@@ -64,6 +64,14 @@ def find_routes(
     time_limit_seconds: int | None = None,
     exclude_target_from_stock: bool = False,
 ) -> str: ...
+def expand(
+    target: str,
+    building_blocks: list[str] | None = None,
+    templates_path: str | None = None,
+    top_templates: int | None = None,
+    max_candidates: int = 0,
+    bond_index: bool = False,
+) -> str: ...
 def predict_forward(
     reactants: list[str],
     templates_path: str | None = None,

@@ -12,6 +12,7 @@ pub mod display;
 pub mod diversity;
 pub mod evidence;
 pub mod evidence_match;
+pub mod expand;
 pub mod io_limits;
 pub mod mcp;
 pub mod model_manifest;

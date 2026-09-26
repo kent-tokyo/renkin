@@ -132,3 +132,38 @@ fn capabilities_advertise_parity_options() {
     assert_eq!(v["search"]["standard_time_limit"], true);
     assert_eq!(v["search"]["exclude_target_from_stock"], true);
 }
+
+#[test]
+fn expand_lists_ranked_one_step_disconnections() {
+    let v = run(&["expand", "--target", ASPIRIN, "--max-candidates", "3"]);
+    assert_eq!(v["schema_version"], 1);
+    assert_eq!(v["target_in_stock"], false);
+    let candidates = v["candidates"].as_array().unwrap();
+    assert_eq!(candidates.len(), 3);
+    assert_eq!(v["candidates_returned"], 3);
+    assert!(v["candidates_total"].as_u64().unwrap() >= 3);
+    for (index, candidate) in candidates.iter().enumerate() {
+        assert_eq!(candidate["rank"], index + 1);
+        assert!(
+            candidate["reaction_smiles"]
+                .as_str()
+                .unwrap()
+                .contains(">>")
+        );
+        assert!(!candidate["template_ids"].as_array().unwrap().is_empty());
+    }
+    assert!(
+        candidates.iter().any(|c| c["all_in_stock"] == true),
+        "aspirin has a one-step disconnection into stock"
+    );
+}
+
+#[test]
+fn expand_rejects_missing_target_and_bad_output() {
+    let err = run_failure(&["expand"]);
+    assert!(err.contains("--target is required"));
+    let err = run_failure(&["expand", "--target", ASPIRIN, "--output", "xml"]);
+    assert!(err.contains("--output must be json or human"));
+    let err = run_failure(&["expand", "--target", ASPIRIN, "--bogus"]);
+    assert!(err.contains("unknown option"));
+}

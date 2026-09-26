@@ -210,6 +210,7 @@ fn dispatch_subcommand(args: &[String]) -> Option<Result<()>> {
         Some("audit-route") => run_audit_route(command_args),
         Some("doctor") => run_doctor(command_args),
         Some("capabilities") => run_capabilities(command_args),
+        Some("expand") => run_expand(command_args),
         _ => return None,
     };
     Some(result)
@@ -1817,6 +1818,153 @@ fn run_search_cli(args: &[String]) -> Result<()> {
     Ok(())
 }
 
+const EXPAND_USAGE: &str = "Usage: renkin expand --target <SMILES> [--templates <path>] \
+[--top-templates <K>] [--building-blocks <path> | --stock <csv>] [--max-candidates <N>] \
+[--bond-index] [--output json|human]\n\
+\n\
+Single-step retrosynthetic expansion (AiZynthFinder AiZynthExpander parity):\n\
+list every one-step disconnection of the target under the loaded rules,\n\
+merged by canonical precursor set, with exact stock membership per precursor.\n\
+Ordering: ascending heuristic step cost, then more in-stock precursors.\n\
+The cost is not a policy probability, feasibility, or yield claim.";
+
+/// `renkin expand`: one-step disconnections without a multi-step search.
+fn run_expand(args: &[String]) -> Result<()> {
+    let mut target: Option<String> = None;
+    let mut templates_path: Option<String> = None;
+    let mut top_templates: Option<usize> = None;
+    let mut bb_path: Option<String> = None;
+    let mut stock_path: Option<String> = None;
+    let mut max_candidates: usize = 0;
+    let mut bond_index = false;
+    let mut output = "json".to_owned();
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--help" | "-h" => {
+                println!("{EXPAND_USAGE}");
+                return Ok(());
+            }
+            "--target" | "-t" => {
+                target = Some(required_flag_value(args, &mut i, "--target")?.to_owned());
+            }
+            "--templates" => {
+                templates_path = Some(required_flag_value(args, &mut i, "--templates")?.to_owned());
+            }
+            "--top-templates" => {
+                let raw = required_flag_value(args, &mut i, "--top-templates")?;
+                top_templates = Some(raw.parse().map_err(|_| {
+                    anyhow::anyhow!("--top-templates must be a non-negative integer, got {raw:?}")
+                })?);
+            }
+            "--building-blocks" | "-b" => {
+                bb_path = Some(required_flag_value(args, &mut i, "--building-blocks")?.to_owned());
+            }
+            "--stock" => {
+                stock_path = Some(required_flag_value(args, &mut i, "--stock")?.to_owned());
+            }
+            "--max-candidates" | "-n" => {
+                let raw = required_flag_value(args, &mut i, "--max-candidates")?;
+                max_candidates = raw.parse().map_err(|_| {
+                    anyhow::anyhow!("--max-candidates must be a non-negative integer, got {raw:?}")
+                })?;
+            }
+            "--bond-index" => bond_index = true,
+            "--output" | "--format" | "-f" => {
+                output = required_flag_value(args, &mut i, "--output")?.to_owned();
+            }
+            other => bail!("renkin expand: unknown option {other:?}\n\n{EXPAND_USAGE}"),
+        }
+        i += 1;
+    }
+    let Some(target) = target else {
+        bail!("renkin expand: --target is required\n\n{EXPAND_USAGE}");
+    };
+    if output != "json" && output != "human" {
+        bail!("renkin expand: --output must be json or human (got {output:?})");
+    }
+    if target.len() > search::MAX_TARGET_SMILES_BYTES {
+        bail!(
+            "renkin expand: --target exceeds {} bytes",
+            search::MAX_TARGET_SMILES_BYTES
+        );
+    }
+    if bb_path.is_some() && stock_path.is_some() {
+        bail!("renkin expand: --building-blocks and --stock are mutually exclusive");
+    }
+    let env = if let Some(ref path) = stock_path {
+        let entries = load_stock_csv(path)?;
+        let smiles: Vec<&str> = entries.iter().map(|e| e.smiles.as_str()).collect();
+        chem_env::ChemEnv::in_memory(&smiles)
+    } else {
+        match bb_path {
+            Some(ref path) => chem_env::ChemEnv::load(path)?,
+            None => chem_env::ChemEnv::load("data/building_blocks.smi")
+                .unwrap_or_else(|_| chem_env::ChemEnv::in_memory(DEFAULT_BUILDING_BLOCKS)),
+        }
+    };
+    let mut rules = chem_env::default_rules();
+    if let Some(ref path) = templates_path {
+        chem_env::validate_template_file(path)?;
+        let mut extra = chem_env::load_rules_from_file(path);
+        if let Some(k) = top_templates {
+            extra = chem_env::top_templates_by_weight(extra, k);
+        }
+        eprintln!("Loaded {} templates from {path}", extra.len());
+        rules.extend(extra);
+    } else if top_templates.is_some() {
+        bail!("renkin expand: --top-templates requires --templates");
+    }
+    let result = renkin::expand::expand_one_step(
+        &target,
+        &env,
+        &rules,
+        &renkin::expand::ExpansionOptions {
+            max_candidates,
+            bond_index,
+        },
+    )?;
+    if output == "json" {
+        println!("{}", serde_json::to_string_pretty(&result)?);
+        return Ok(());
+    }
+    println!(
+        "Target: {}{}",
+        result.target,
+        if result.target_in_stock {
+            "  (in stock)"
+        } else {
+            ""
+        }
+    );
+    println!(
+        "One-step candidates: {} shown / {} total\n",
+        result.candidates_returned, result.candidates_total
+    );
+    for candidate in &result.candidates {
+        let precursors = candidate
+            .precursors
+            .iter()
+            .map(|p| {
+                if p.in_stock {
+                    format!("{} ✓", p.smiles)
+                } else {
+                    p.smiles.clone()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" + ");
+        println!(
+            "{:>3}. cost={:.2}  [{}]  {}",
+            candidate.rank,
+            candidate.step_cost,
+            candidate.rule_names.join(","),
+            precursors
+        );
+    }
+    Ok(())
+}
+
 /// Print the root CLI's machine-readable capability and resource contract.
 ///
 /// This intentionally describes the `renkin` executable rather than the
@@ -1854,6 +2002,12 @@ fn run_capabilities(args: &[String]) -> Result<()> {
             "coverage_stage2_timeout": true,
             "standard_time_limit": true,
             "exclude_target_from_stock": true,
+        },
+        "expand": {
+            "stability": "experimental",
+            "command": "expand",
+            "schema_version": renkin::expand::EXPANSION_SCHEMA_VERSION,
+            "ordering": "step_cost_then_in_stock_count",
         },
         "audit": {
             "stability": "stable",

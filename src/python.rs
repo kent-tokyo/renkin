@@ -694,6 +694,78 @@ pub fn find_routes_py(
     serde_json::to_string(&output).map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
+/// Single-step retrosynthetic expansion (AiZynthFinder ``AiZynthExpander``
+/// parity): every one-step disconnection of ``target`` under the default
+/// rules (plus ``templates_path``), merged by canonical precursor set.
+///
+/// Args:
+///     target (str): Target SMILES.
+///     building_blocks (list[str] | None): Stock SMILES; ``None`` uses the
+///         repository stock file or the compiled-in fallback.
+///     templates_path (str | None): Extra extracted SMIRKS templates.
+///     top_templates (int | None): Keep only the K highest-weight extra
+///         templates.
+///     max_candidates (int): Candidates to return after ordering; ``0`` = all.
+///     bond_index (bool): Select rules with the reaction-center bond index.
+///
+/// Returns:
+///     str: JSON with ``schema_version``, ``target``, ``target_in_stock``,
+///     ``candidates_total``, ``candidates_returned``, ``candidates`` (each
+///     with ``rank``, ``reaction_smiles``, ``precursors[{smiles,in_stock}]``,
+///     ``all_in_stock``, ``step_cost``, ``template_ids``, ``rule_names``) and
+///     ``stats``. Ordering is ascending heuristic step cost, then more
+///     in-stock precursors; it is not a feasibility or yield claim.
+#[pyfunction]
+#[pyo3(name = "expand", signature = (target, building_blocks=None, templates_path=None, top_templates=None, max_candidates=0, bond_index=false))]
+pub fn expand_py(
+    target: &str,
+    building_blocks: Option<Vec<String>>,
+    templates_path: Option<&str>,
+    top_templates: Option<usize>,
+    max_candidates: usize,
+    bond_index: bool,
+) -> PyResult<String> {
+    if target.len() > crate::search::MAX_TARGET_SMILES_BYTES {
+        return Err(PyValueError::new_err(format!(
+            "target exceeds {} bytes",
+            crate::search::MAX_TARGET_SMILES_BYTES
+        )));
+    }
+    let env = match building_blocks {
+        Some(ref list) => {
+            let refs: Vec<&str> = list.iter().map(String::as_str).collect();
+            ChemEnv::in_memory(&refs)
+        }
+        None => ChemEnv::load("data/building_blocks.smi")
+            .unwrap_or_else(|_| ChemEnv::in_memory(crate::DEFAULT_BUILDING_BLOCKS)),
+    };
+    let mut rules = crate::chem_env::default_rules();
+    if let Some(path) = templates_path {
+        crate::chem_env::validate_template_file(path)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let mut extra = crate::chem_env::load_rules_from_file(path);
+        if let Some(k) = top_templates {
+            extra = crate::chem_env::top_templates_by_weight(extra, k);
+        }
+        rules.extend(extra);
+    } else if top_templates.is_some() {
+        return Err(PyValueError::new_err(
+            "top_templates requires templates_path",
+        ));
+    }
+    let result = crate::expand::expand_one_step(
+        target,
+        &env,
+        &rules,
+        &crate::expand::ExpansionOptions {
+            max_candidates,
+            bond_index,
+        },
+    )
+    .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    serde_json::to_string(&result).map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
 // ── Forward prediction helpers (inlined to avoid circular dep with renkin-forward) ──────
 
 fn py_reverse_smirks(s: &str) -> Option<String> {
@@ -940,6 +1012,7 @@ pub fn renkin(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(predict_forward_py, m)?)?;
     m.add_function(wrap_pyfunction!(validate_forward_py, m)?)?;
     m.add_function(wrap_pyfunction!(audit_route_py, m)?)?;
+    m.add_function(wrap_pyfunction!(expand_py, m)?)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }

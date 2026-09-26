@@ -979,6 +979,106 @@ pub fn expand_py(
     serde_json::to_string(&result).map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
+/// Render a ``find_routes()`` JSON result as a self-contained HTML route
+/// report with 2D molecule depictions (SynPlanner route-visualisation parity).
+///
+/// Args:
+///     result_json (str): The string returned by ``find_routes()``.
+///     building_blocks (list[str] | None): Stock used to badge each leaf as
+///         exact ``stock``/``not in stock``; ``None`` shows every leaf of a
+///         completed route as a terminal.
+///     small_molecule_terminal (int | None): Label leaves with at most N
+///         heavy atoms that are not stock as ``size terminal``.
+///
+/// Returns:
+///     str: One HTML document with no scripts or external resources.
+#[cfg(feature = "depict")]
+#[pyfunction]
+#[pyo3(name = "routes_html", signature = (result_json, building_blocks=None, small_molecule_terminal=None))]
+pub fn routes_html_py(
+    result_json: &str,
+    building_blocks: Option<Vec<String>>,
+    small_molecule_terminal: Option<usize>,
+) -> PyResult<String> {
+    // Only the fields the report draws are read back; everything else in the
+    // result JSON is ignored.
+    #[derive(serde::Deserialize)]
+    struct StepInput {
+        rule: String,
+        template_id: String,
+        target: String,
+        precursors: Vec<String>,
+    }
+    #[derive(serde::Deserialize)]
+    struct RouteInput {
+        steps: Vec<StepInput>,
+        #[serde(default)]
+        depth: u32,
+        #[serde(default)]
+        score: f64,
+        #[serde(default)]
+        building_blocks: Vec<String>,
+        #[serde(default)]
+        route_cost: f64,
+        #[serde(default)]
+        success_probability: f64,
+    }
+    #[derive(serde::Deserialize)]
+    struct ResultInput {
+        target: String,
+        #[serde(default)]
+        routes: Vec<RouteInput>,
+    }
+    let parsed: ResultInput = serde_json::from_str(result_json)
+        .map_err(|e| PyValueError::new_err(format!("not a find_routes() result: {e}")))?;
+    let routes: Vec<crate::search::Route> = parsed
+        .routes
+        .into_iter()
+        .map(|route| crate::search::Route {
+            steps: route
+                .steps
+                .into_iter()
+                .map(|step| crate::search::ReactionStep {
+                    rule: step.rule,
+                    template_id: step.template_id,
+                    target: step.target,
+                    precursors: step.precursors,
+                    conditions: None,
+                    atom_economy: None,
+                    atom_economy_raw_percent: None,
+                    atom_economy_status: crate::search::AtomEconomyStatus::NotEvaluable,
+                    step_confidence: 0.0,
+                    procedure_hint: None,
+                    reaction_family: None,
+                    metadata_source: None,
+                    metadata_scope: None,
+                    evidence: None,
+                })
+                .collect(),
+            depth: route.depth,
+            score: route.score,
+            building_blocks: route.building_blocks,
+            confidence: 0.0,
+            convergency: 0.0,
+            success_probability: route.success_probability,
+            route_cost: route.route_cost,
+        })
+        .collect();
+    let env = building_blocks.map(|list| {
+        let refs: Vec<&str> = list.iter().map(String::as_str).collect();
+        let env = ChemEnv::in_memory(&refs);
+        match small_molecule_terminal {
+            Some(n) => env.with_small_molecule_terminal(n),
+            None => env,
+        }
+    });
+    Ok(crate::report::routes_html_report(
+        &parsed.target,
+        &routes,
+        env.as_ref(),
+    ))
+}
+
 // ── Forward prediction helpers (inlined to avoid circular dep with renkin-forward) ──────
 
 fn py_reverse_smirks(s: &str) -> Option<String> {
@@ -1226,6 +1326,8 @@ pub fn renkin(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(validate_forward_py, m)?)?;
     m.add_function(wrap_pyfunction!(audit_route_py, m)?)?;
     m.add_function(wrap_pyfunction!(expand_py, m)?)?;
+    #[cfg(feature = "depict")]
+    m.add_function(wrap_pyfunction!(routes_html_py, m)?)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }

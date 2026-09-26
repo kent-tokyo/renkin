@@ -100,7 +100,11 @@ crate-type = ["cdylib", "rlib"]
 path = "src/lib.rs"
 
 [features]
-default = []
+default = ["depict"]
+# depict: 2D SVG molecule depiction for the self-contained HTML route report
+# (`--format html`). Pure Rust (chematic-depict). On by default for native
+# builds; WASM builds use --no-default-features and do not include it.
+depict = ["chematic/depict"]
 python = ["pyo3/extension-module"]
 # nn-scoring: ONNX-based template relevance prediction (CLI/PyO3 only, not WASM)
 # Requires: data/template_scorer.onnx built by scripts/train_template_scorer.py

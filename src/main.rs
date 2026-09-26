@@ -848,7 +848,8 @@ fn run_search_cli(args: &[String]) -> Result<()> {
              --retro-generator-slots <N>  Extra beam capacity for direct-generator proposals\n  \
              --format / -f      Output format: json (default), tree, mermaid, aizynth \
              (AiZynthFinder trees.json-shaped route list; unmapped reactions), synplanner \
-             (SynPlanner write_routes_json-shaped object; unmapped reactions)\n  \
+             (SynPlanner write_routes_json-shaped object; unmapped reactions), html \
+             (self-contained route report with 2D depictions; needs the default `depict` feature)\n  \
              --avoid-elements / -e  Comma-separated elements to ban from BBs (e.g. \"Br,I\")\n  \
              --require-elements / -r  Comma-separated elements each route must supply (e.g. \"B\")\n  \
              --verbose / -v         Print search statistics to stderr\n  \
@@ -973,9 +974,10 @@ fn run_search_cli(args: &[String]) -> Result<()> {
             | "aizynth"
             | "aizynthfinder"
             | "synplanner"
+            | "html"
     ) {
         bail!(
-            "unsupported --format {format:?} (expected json|tree|mermaid|explain|compare|table|compare-json|pareto|aizynth|synplanner)"
+            "unsupported --format {format:?} (expected json|tree|mermaid|explain|compare|table|compare-json|pareto|aizynth|synplanner|html)"
         );
     }
 
@@ -2083,6 +2085,17 @@ fn run_search_cli(args: &[String]) -> Result<()> {
         "compare" | "table" => {
             println!("{}", display::format_route_table(&routes));
         }
+        "html" => {
+            #[cfg(feature = "depict")]
+            {
+                print!(
+                    "{}",
+                    renkin::report::routes_html_report(&target_smiles, &routes, Some(&env))
+                );
+            }
+            #[cfg(not(feature = "depict"))]
+            bail!("--format html requires a build with the `depict` feature (on by default)");
+        }
         "synplanner" => {
             // SynPlanner `write_routes_json` shape: {"<route_id>": RouteNode}.
             let export =
@@ -2538,6 +2551,7 @@ fn run_capabilities(args: &[String]) -> Result<()> {
             "priority_templates": true,
             "route_clustering": renkin::route_distance::ROUTE_DISTANCE_METHOD,
             "export_formats": ["aizynthfinder", "synplanner"],
+            "html_report": cfg!(feature = "depict"),
         },
         "expand": {
             "stability": "experimental",

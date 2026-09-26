@@ -84,6 +84,11 @@ def expand(
     max_candidates: int = 0,
     bond_index: bool = False,
 ) -> str: ...
+def routes_html(
+    result_json: str,
+    building_blocks: list[str] | None = None,
+    small_molecule_terminal: int | None = None,
+) -> str: ...
 def predict_forward(
     reactants: list[str],
     templates_path: str | None = None,

@@ -19,6 +19,8 @@ pub mod model_manifest;
 pub mod pool_export;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod recovery_mode;
+#[cfg(feature = "depict")]
+pub mod report;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod reranker;
 pub mod retro_generator;

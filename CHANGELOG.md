@@ -8,6 +8,40 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added — SynPlanner feature parity
+
+- `--small-molecule-terminal <N>` (CLI) / `small_molecule_terminal` (Python) /
+  `ChemEnv::with_small_molecule_terminal`: SynPlanner `min_mol_size` /
+  `exclude_small`. During search, a molecule with at most N heavy atoms is
+  treated as a route terminal. The option is opt-in and does not change stock
+  membership: `is_building_block*`, audits, and stock reports are unaffected,
+  and the new `is_search_terminal*` methods carry the relaxed check. JSON lists
+  each route's non-stock (size-terminal) leaves, so they are never mistaken for
+  purchasable stock.
+- `renkin audit-route` now reads SynPlanner's `--export_routes` public-contract
+  results (`synplan-routes/1`, `{target_smiles: [RouteNode, ...]}`, including
+  `results.json.gz`). The format is auto-detected or selected with
+  `--format synplanner`. Routes are identified as `<target>#<index>`. This
+  closes the adapter scope gap previously tracked in `bridge::synplanner`.
+- `--format synplanner` and `bridge::synplanner::routes_to_synplanner_export`
+  export routes in SynPlanner's `write_routes_json` shape (`{route_id:
+  RouteNode}`). Reaction SMILES are forward and not atom-mapped;
+  `rule_source` is `renkin` and `rule_key` is the RENKIN template ID. No
+  `rule_id` or `step_id` is invented. The export round-trips through
+  `audit-route`.
+- `--max-tree-size <N>` (CLI) / `max_tree_size` (Python) /
+  `SearchConfig::max_tree_size`: SynPlanner `max_tree_size`. The search stops
+  once N search nodes exist and never exceeds that number. This sets
+  `SearchStats::tree_size_limit_reached` and records `nodes_generated`, which
+  is not serialized. The CLI and Python report
+  `termination: tree_size_limit_reached`. Standard mode only.
+- `--priority-templates <file>` / `--priority-rules <a,b>` (CLI) /
+  `priority_templates` (Python) / `SearchConfig::priority_templates`:
+  SynPlanner `use_priority`. In every expansion, a proposal from a listed
+  template or rule receives the cheapest sibling's step cost. Names that match
+  no loaded rule are reported. Repeated application to a fixpoint
+  (`priority_rule_multiapplication`) is not implemented.
+
 ### Added — ASKCOS and Syntheseus feature parity
 
 - `--max-expansions <N>` (CLI, `renkin-bench`) / `max_expansions` (Python) /

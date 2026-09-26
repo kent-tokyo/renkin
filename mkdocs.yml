@@ -90,6 +90,7 @@ nav:
       - Rust Retrosynthesis: guides/rust-retrosynthesis.md
       - AiZynthFinder Feature Parity: guides/aizynthfinder-parity.md
       - ASKCOS and Syntheseus Feature Parity: guides/askcos-syntheseus-parity.md
+      - SynPlanner Feature Parity: guides/synplanner-parity.md
     - Audit and policy:
       - Audit Reproducibility: guides/audit-reproducibility-contract.md
       - Trusted Route Operations: guides/trusted-route-operations.md

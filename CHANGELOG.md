@@ -8,6 +8,41 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added — AiZynthFinder feature parity
+
+- `--time-limit-secs <N>` (CLI) / `time_limit_seconds` (Python): a wall-clock
+  budget for standard search, equivalent to AiZynthFinder `time_limit`. It uses
+  the existing cooperative `SearchControl` deadline, keeps routes found before
+  the deadline, and reports `time_limit_secs` plus `termination`
+  (`completed`/`deadline_exceeded`) in JSON. Coverage and recovery modes keep
+  their own timeout flags and reject this one.
+- `--exclude-target-from-stock` (CLI) / `exclude_target_from_stock` (Python) /
+  `SearchConfig::exclude_target_from_stock`: AiZynthFinder's option of the same
+  name. The target is never a stock terminal, so an in-stock target receives
+  synthesis routes and no depth-0 route. Precursor stock identity is unchanged.
+- `renkin expand` (CLI), `renkin.expand()` (Python), and `renkin::expand`:
+  single-step expansion equivalent to AiZynthFinder `AiZynthExpander`. It reuses
+  the search's one-step proposal path, merges by canonical precursor set, marks
+  exact stock membership for each precursor, and orders by heuristic step cost,
+  then by in-stock count. The order is not a policy probability or a feasibility
+  claim.
+- `--cluster`, `--n-clusters <K>`, `--max-clusters <N>` (CLI JSON) and
+  `cluster`/`n_clusters`/`max_clusters` (Python), backed by
+  `renkin::route_distance`: a route distance matrix and cluster labels,
+  equivalent to AiZynthFinder `route_distances` and `RouteCollection.cluster`.
+  The distance is a unit-cost Zhang–Shasha tree edit distance over canonically
+  ordered molecule/reaction trees; it is not AiZynthFinder's fingerprint-weighted
+  distance. Clustering uses average linkage, with the cluster count chosen by
+  silhouette or fixed by the caller.
+- `--format aizynth` (alias `aizynthfinder`): exports routes as an
+  AiZynthFinder `trees.json`-shaped array of `ReactionTree` dicts. Reaction
+  SMILES are written in retro direction and are not atom-mapped. RENKIN does not
+  fabricate `mapped_reaction_smiles` or policy fields. The export round-trips
+  through `renkin audit-route --format aizynthfinder`.
+- `renkin capabilities` now advertises `standard_time_limit`,
+  `exclude_target_from_stock`, `route_clustering`, `export_formats`, and the
+  experimental `expand` command.
+
 ## [1.0.10] - 2026-09-26 "Dependency Refresh and Documentation Consolidation"
 
 ### Dependencies

@@ -88,6 +88,7 @@ nav:
     - Planning:
       - Python Retrosynthesis: guides/python-retrosynthesis.md
       - Rust Retrosynthesis: guides/rust-retrosynthesis.md
+      - AiZynthFinder Feature Parity: guides/aizynthfinder-parity.md
     - Audit and policy:
       - Audit Reproducibility: guides/audit-reproducibility-contract.md
       - Trusted Route Operations: guides/trusted-route-operations.md

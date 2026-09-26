@@ -24,22 +24,13 @@ use serde::Serialize;
 pub const EXPANSION_SCHEMA_VERSION: u32 = 1;
 
 /// Options for [`expand_one_step`].
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct ExpansionOptions {
     /// Maximum candidates returned after ordering; `0` means all.
     pub max_candidates: usize,
     /// Use the reaction-center bond index to select rules (mirrors the
     /// search's `--bond-index`). `false` tries every rule.
     pub bond_index: bool,
-}
-
-impl Default for ExpansionOptions {
-    fn default() -> Self {
-        Self {
-            max_candidates: 0,
-            bond_index: false,
-        }
-    }
 }
 
 /// One precursor of an expansion candidate.

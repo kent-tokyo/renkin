@@ -274,3 +274,12 @@ fn route_diversity_reports_packing_number() {
     let err = run_failure(&["--target", ASPIRIN, "--route-diversity", "--format", "tree"]);
     assert!(err.contains("require --format json"));
 }
+
+#[test]
+fn max_branching_reports_pruned_candidates() {
+    let v = run(&["--target", ASPIRIN, "--depth", "3", "--max-branching", "1"]);
+    assert_eq!(v["max_branching"]["limit"], 1);
+    assert!(v["max_branching"]["candidates_pruned"].as_u64().unwrap() > 0);
+    let err = run_failure(&["--target", ASPIRIN, "--max-branching", "0"]);
+    assert!(err.contains("--max-branching must be a positive integer"));
+}

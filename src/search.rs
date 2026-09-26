@@ -506,6 +506,10 @@ pub struct SearchStats {
     /// intermediate). Always `0` without a ban list.
     #[serde(skip_serializing_if = "is_zero_u64")]
     pub banned_precursor_candidates: u64,
+    /// Expansion entries dropped by `SearchConfig::max_branching` (counted
+    /// once per unique expanded intermediate). Always `0` without a cap.
+    #[serde(skip_serializing_if = "is_zero_u64")]
+    pub branching_pruned_candidates: u64,
 }
 
 fn is_zero_u64(value: &u64) -> bool {
@@ -2764,6 +2768,13 @@ pub struct SearchConfig {
     /// proposal time, before scoring, so they neither enter the frontier
     /// nor consume beam slots. `None` (default) bans nothing.
     pub banned_molecules: Option<std::sync::Arc<std::collections::HashSet<String>>>,
+    /// ASKCOS `max_branching` / AiZynthFinder `cutoff_number` parity: keep
+    /// at most this many distinct precursor sets per expanded molecule,
+    /// choosing the lowest search step cost (ties: proposal order). Every
+    /// source template of a kept precursor set is retained, so provenance is
+    /// never split. Applied once per unique intermediate, before the child
+    /// loop. `None` (default) keeps every proposal.
+    pub max_branching: Option<usize>,
 }
 
 /// Build a [`SearchConfig::banned_molecules`] set from SMILES, applying the
@@ -2819,6 +2830,7 @@ impl Default for SearchConfig {
             exclude_target_from_stock: false,
             max_expansions: None,
             banned_molecules: None,
+            max_branching: None,
         }
     }
 }
@@ -3124,6 +3136,40 @@ impl SearchEngine {
     }
 }
 
+/// Keep the `limit` cheapest distinct precursor sets of one expansion (see
+/// [`SearchConfig::max_branching`]). Entries sharing a kept precursor set are
+/// all retained; surviving entries keep their original relative order, so
+/// the downstream child loop sees the same sequence minus pruned entries.
+fn cap_branching(entries: &mut Vec<RetroEntry>, limit: usize) {
+    fn signature(entry: &RetroEntry) -> SmallVec<[&str; 4]> {
+        let mut sig: SmallVec<[&str; 4]> =
+            entry.precursor_smiles.iter().map(|s| s.as_ref()).collect();
+        sig.sort_unstable();
+        sig
+    }
+    let mut order: Vec<usize> = (0..entries.len()).collect();
+    // Stable: equal costs keep proposal order.
+    order.sort_by(|&a, &b| entries[a].step_cost.total_cmp(&entries[b].step_cost));
+    let mut kept: FxHashSet<SmallVec<[&str; 4]>> = FxHashSet::default();
+    for &index in &order {
+        if kept.len() >= limit {
+            break;
+        }
+        kept.insert(signature(&entries[index]));
+    }
+    let keep: Vec<bool> = entries
+        .iter()
+        .map(|entry| kept.contains(&signature(entry)))
+        .collect();
+    drop(kept);
+    let mut index = 0;
+    entries.retain(|_| {
+        let retain = keep[index];
+        index += 1;
+        retain
+    });
+}
+
 /// Same search as [`find_routes`], with an explicit cooperative-cancellation
 /// budget (`control`). [`find_routes`] is a thin wrapper over this function
 /// using [`SearchControl::unlimited`] -- this is the one place the frontier
@@ -3364,6 +3410,7 @@ pub(crate) fn find_routes_with_control_prepared(
     #[allow(unused_mut)]
     let mut first_route_elapsed_us: Option<u64> = None;
     let mut banned_precursor_candidates: u64 = 0;
+    let mut branching_pruned_candidates: u64 = 0;
 
     let mut routes: Vec<Route> = Vec::new();
     let mut best_g_by_frontier: FxHashMap<FrontierKey, f64> = FxHashMap::default();
@@ -3883,6 +3930,12 @@ pub(crate) fn find_routes_with_control_prepared(
                 crowd_out.candidate_postprocess_wall_time_us += t0.elapsed().as_micros() as u64;
             }
 
+            if let Some(limit) = config.max_branching {
+                let before = entries.len();
+                cap_branching(&mut entries, limit);
+                branching_pruned_candidates += (before - entries.len()) as u64;
+            }
+
             let arc = Arc::new(entries);
             retro_cache.insert(target_smi.to_owned(), Arc::clone(&arc));
             #[cfg(not(target_arch = "wasm32"))]
@@ -4197,6 +4250,7 @@ pub(crate) fn find_routes_with_control_prepared(
             first_route_expansion_calls,
             first_route_elapsed_us,
             banned_precursor_candidates,
+            branching_pruned_candidates,
         },
         termination,
     })
@@ -4525,6 +4579,65 @@ mod tests {
             routes.iter().any(|r| r.depth == 0),
             "building block must return depth-0 route"
         );
+    }
+
+    #[test]
+    fn cap_branching_keeps_cheapest_distinct_sets_with_all_sources() {
+        let entry = |template: &str, cost: f64, precursors: &[&str]| RetroEntry {
+            rule_name: template.to_owned(),
+            template_id: template.to_owned(),
+            step_cost: cost,
+            precursor_smiles: precursors.iter().map(|p| Arc::from(*p)).collect(),
+        };
+        let mut entries = vec![
+            entry("t1", 3.0, &["A", "B"]),
+            entry("t2", 1.0, &["C"]),
+            entry("t3", 2.0, &["B", "A"]), // same set as t1, cheaper
+            entry("t4", 1.0, &["D"]),
+            entry("t5", 5.0, &["E"]),
+        ];
+        cap_branching(&mut entries, 2);
+        let kept: Vec<&str> = entries.iter().map(|e| e.template_id.as_str()).collect();
+        // Cheapest two distinct sets are {C} and {D} (cost 1.0, proposal order).
+        assert_eq!(kept, vec!["t2", "t4"]);
+
+        let mut entries = vec![
+            entry("t1", 3.0, &["A", "B"]),
+            entry("t2", 1.0, &["C"]),
+            entry("t3", 2.0, &["B", "A"]),
+            entry("t5", 5.0, &["E"]),
+        ];
+        cap_branching(&mut entries, 2);
+        let kept: Vec<&str> = entries.iter().map(|e| e.template_id.as_str()).collect();
+        // {C} then {A,B}; both sources of {A,B} survive in original order.
+        assert_eq!(kept, vec!["t1", "t2", "t3"]);
+    }
+
+    #[test]
+    fn max_branching_prunes_search_and_generous_cap_is_identity() {
+        let env = aspirin_env();
+        let rules = default_rules();
+        let aspirin = "CC(=O)Oc1ccccc1C(=O)O";
+        let (baseline, baseline_stats) = find_routes(aspirin, &env, &rules, &cfg(3)).unwrap();
+        assert_eq!(baseline_stats.branching_pruned_candidates, 0);
+
+        let generous = SearchConfig {
+            max_branching: Some(usize::MAX),
+            ..cfg(3)
+        };
+        let (same, _) = find_routes(aspirin, &env, &rules, &generous).unwrap();
+        assert_eq!(
+            serde_json::to_string(&same).unwrap(),
+            serde_json::to_string(&baseline).unwrap()
+        );
+
+        let narrow = SearchConfig {
+            max_branching: Some(1),
+            ..cfg(3)
+        };
+        let (_, stats) = find_routes(aspirin, &env, &rules, &narrow).unwrap();
+        assert!(stats.branching_pruned_candidates > 0);
+        assert!(stats.nodes_expanded <= baseline_stats.nodes_expanded);
     }
 
     #[test]

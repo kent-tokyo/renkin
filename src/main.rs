@@ -108,6 +108,9 @@ struct Output {
     /// Present only with `--max-bb-price`.
     #[serde(skip_serializing_if = "Option::is_none")]
     stock_price_filter: Option<StockPriceFilterReceipt>,
+    /// Present only with `--max-branching`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_branching: Option<BranchingReceipt>,
     /// Present only with `--route-diversity`/`--diversity-radius`
     /// (Syntheseus packing-number parity).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -138,6 +141,13 @@ impl FirstRouteReceipt {
             total_expansion_calls: stats.retro_cache_misses,
         }
     }
+}
+
+/// ASKCOS `max_branching` receipt.
+#[derive(Clone, Debug, Serialize)]
+struct BranchingReceipt {
+    limit: usize,
+    candidates_pruned: u64,
 }
 
 /// ASKCOS banned-chemicals receipt.
@@ -341,6 +351,7 @@ fn run_search_cli(args: &[String]) -> Result<()> {
     let mut ban_smiles_arg: Option<String> = None;
     let mut max_bb_price: Option<f64> = None;
     let mut route_diversity = false;
+    let mut max_branching: Option<usize> = None;
     let mut diversity_radius = renkin::diversity::DEFAULT_PACKING_RADIUS;
     let mut exclude_target_from_stock = false;
     let mut cluster = false;
@@ -478,6 +489,16 @@ fn run_search_cli(args: &[String]) -> Result<()> {
             }
             "--first-route-stats" => {
                 first_route_stats = true;
+            }
+            "--max-branching" => {
+                let raw = required_flag_value(args, &mut i, "--max-branching")?;
+                let n: usize = raw.parse().map_err(|_| {
+                    anyhow::anyhow!("--max-branching must be a positive integer, got {raw:?}")
+                })?;
+                if n == 0 {
+                    bail!("--max-branching must be a positive integer (got 0)");
+                }
+                max_branching = Some(n);
             }
             "--route-diversity" => {
                 route_diversity = true;
@@ -756,6 +777,8 @@ fn run_search_cli(args: &[String]) -> Result<()> {
              (Syntheseus/AiZynthFinder iteration limit); JSON reports \"termination\"\n  \
              --first-route-stats    Add a \"first_route\" receipt (expansions, expansion calls, \
              and wall time to the first accepted route; Syntheseus parity)\n  \
+             --max-branching <N>    Keep at most N distinct precursor sets per expanded \
+             molecule, cheapest first (ASKCOS max_branching / AiZynthFinder cutoff_number)\n  \
              --route-diversity      Add \"route_set_diversity\": the packing number of \
              pairwise-distinct routes under reaction-Jaccard distance (Syntheseus parity)\n  \
              --diversity-radius <r> Distinctness radius in [0,1) (default 0.999 = reaction-\
@@ -1626,6 +1649,7 @@ fn run_search_cli(args: &[String]) -> Result<()> {
         exclude_target_from_stock,
         max_expansions,
         banned_molecules: banned_molecules.clone().map(std::sync::Arc::new),
+        max_branching,
         ..Default::default()
     };
     // Built after all input loading so the budget covers the search itself,
@@ -1836,6 +1860,10 @@ fn run_search_cli(args: &[String]) -> Result<()> {
     }
     let report_termination = time_limit.is_some() || max_expansions.is_some();
     let first_route_receipt = first_route_stats.then(|| FirstRouteReceipt::from_stats(&stats));
+    let branching_receipt = max_branching.map(|limit| BranchingReceipt {
+        limit,
+        candidates_pruned: stats.branching_pruned_candidates,
+    });
     let banned_receipt = banned_molecules.as_ref().map(|set| BannedMoleculesReceipt {
         count: set.len(),
         candidates_removed: stats.banned_precursor_candidates,
@@ -2031,6 +2059,9 @@ fn run_search_cli(args: &[String]) -> Result<()> {
                 if let Some(ref receipt) = stock_price_filter {
                     out["stock_price_filter"] = serde_json::to_value(receipt)?;
                 }
+                if let Some(ref receipt) = branching_receipt {
+                    out["max_branching"] = serde_json::to_value(receipt)?;
+                }
                 if route_diversity {
                     out["route_set_diversity"] = serde_json::to_value(
                         renkin::diversity::route_packing_number(&routes, diversity_radius),
@@ -2097,6 +2128,7 @@ fn run_search_cli(args: &[String]) -> Result<()> {
                     first_route: first_route_receipt,
                     banned_molecules: banned_receipt,
                     stock_price_filter,
+                    max_branching: branching_receipt,
                     route_set_diversity,
                     routes,
                 };
@@ -2296,6 +2328,7 @@ fn run_capabilities(args: &[String]) -> Result<()> {
             "banned_molecules": true,
             "max_bb_price": true,
             "route_packing_number": "reaction_jaccard",
+            "max_branching": true,
             "route_clustering": renkin::route_distance::ROUTE_DISTANCE_METHOD,
             "export_formats": ["aizynthfinder"],
         },

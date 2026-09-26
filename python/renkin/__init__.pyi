@@ -71,6 +71,7 @@ def find_routes(
     banned_molecules: list[str] | None = None,
     route_diversity: bool = False,
     diversity_radius: float = 0.999,
+    max_branching: int | None = None,
 ) -> str: ...
 def expand(
     target: str,

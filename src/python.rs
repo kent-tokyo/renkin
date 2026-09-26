@@ -177,6 +177,9 @@ pub fn capabilities_py() -> PyResult<String> {
 ///     banned_molecules (list[str] | None): Molecules that may never appear
 ///         as a precursor (ASKCOS banned chemicals; exact stock identity).
 ///         Adds ``banned_molecules`` with ``count``/``candidates_removed``.
+///     max_branching (int | None): Keep at most N distinct precursor sets per
+///         expanded molecule, cheapest first (ASKCOS ``max_branching`` /
+///         AiZynthFinder ``cutoff_number``). Adds ``max_branching``.
 ///     route_diversity (bool): Add ``route_set_diversity``: the packing
 ///         number of pairwise-distinct routes under reaction-Jaccard distance
 ///         (Syntheseus parity). Default ``False``.
@@ -281,7 +284,7 @@ pub fn capabilities_py() -> PyResult<String> {
 ///     routes = json.loads(renkin.find_routes("CC(=O)Oc1ccccc1C(=O)O", depth=3))
 ///     print(routes["routes_found"])
 #[pyfunction]
-#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None, coverage_beam_width=None, search_diagnostics=false, spectator_bond_policy="off", element_accounting_policy="off", beam_diversity_policy="off", beam_diversity_slots=0, avoid_building_blocks="", require_building_blocks="", max_route_cost=None, min_confidence=None, min_success_probability=None, require_reaction_families="", avoid_reaction_families="", prefer_reaction_families="", max_steps=None, candidate_trace_limit=None, time_limit_seconds=None, exclude_target_from_stock=false, cluster=false, n_clusters=None, max_clusters=5, max_expansions=None, first_route_stats=false, banned_molecules=None, route_diversity=false, diversity_radius=0.999))]
+#[pyo3(name = "find_routes", signature = (target, depth=5, max_routes=5, beam_width=0, building_blocks=None, avoid_elements="", require_elements="", verbose=false, bb_prices_path=None, templates_path=None, template_metadata_path=None, reranker_model_path=None, reranker_freq_table_path=None, top_templates=None, search_mode="standard", coverage_templates_path=None, coverage_timeout_seconds=None, coverage_beam_width=None, search_diagnostics=false, spectator_bond_policy="off", element_accounting_policy="off", beam_diversity_policy="off", beam_diversity_slots=0, avoid_building_blocks="", require_building_blocks="", max_route_cost=None, min_confidence=None, min_success_probability=None, require_reaction_families="", avoid_reaction_families="", prefer_reaction_families="", max_steps=None, candidate_trace_limit=None, time_limit_seconds=None, exclude_target_from_stock=false, cluster=false, n_clusters=None, max_clusters=5, max_expansions=None, first_route_stats=false, banned_molecules=None, route_diversity=false, diversity_radius=0.999, max_branching=None))]
 #[allow(clippy::too_many_arguments)]
 pub fn find_routes_py(
     target: &str,
@@ -327,7 +330,13 @@ pub fn find_routes_py(
     banned_molecules: Option<Vec<String>>,
     route_diversity: bool,
     diversity_radius: f64,
+    max_branching: Option<usize>,
 ) -> PyResult<String> {
+    if max_branching == Some(0) {
+        return Err(PyValueError::new_err(
+            "max_branching must be a positive integer (got 0)",
+        ));
+    }
     if !(0.0..1.0).contains(&diversity_radius) {
         return Err(PyValueError::new_err(format!(
             "diversity_radius must be in [0,1) (got {diversity_radius})"
@@ -546,6 +555,7 @@ pub fn find_routes_py(
         exclude_target_from_stock,
         max_expansions,
         banned_molecules: banned_set.clone().map(std::sync::Arc::new),
+        max_branching,
         ..Default::default()
     };
     let mut standard_termination: Option<crate::search::SearchTermination> = None;
@@ -771,6 +781,12 @@ pub fn find_routes_py(
             "elapsed_ms": stats.first_route_elapsed_us.map(|us| us as f64 / 1000.0),
             "total_nodes_expanded": stats.nodes_expanded,
             "total_expansion_calls": stats.retro_cache_misses,
+        });
+    }
+    if let Some(limit) = max_branching {
+        output["max_branching"] = serde_json::json!({
+            "limit": limit,
+            "candidates_pruned": stats.branching_pruned_candidates,
         });
     }
     if route_diversity {

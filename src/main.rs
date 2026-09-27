@@ -2650,7 +2650,9 @@ fn run_batch(args: &[String]) -> Result<()> {
         .read_dir()
         .map(|mut entries| entries.next().is_some())
         .unwrap_or(false);
-    if !overwrite && (summary_path.exists() || manifest_path.exists() || has_route_artifacts) {
+    if !overwrite
+        && (summary_path.exists() || manifest_path.exists() || has_route_artifacts)
+    {
         bail!(
             "renkin batch: {} already contains batch results (use --overwrite to replace results)",
             out.display()

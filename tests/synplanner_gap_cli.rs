@@ -139,7 +139,8 @@ fn batch_writes_per_target_results_summary_and_manifest() {
     // `summary.csv` is not the sole guard: a partial/manual deletion must
     // not make the already-written route artifacts silently overwritable.
     std::fs::remove_file(out_dir.join("summary.csv")).unwrap();
-    let route_before = std::fs::read(out_dir.join("routes/0001_aspirin.json")).unwrap();
+    let route_before =
+        std::fs::read(out_dir.join("routes/0001_aspirin.json")).unwrap();
     let missing_summary = run_raw(&[
         "batch",
         "--input",

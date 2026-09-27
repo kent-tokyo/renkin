@@ -2650,9 +2650,7 @@ fn run_batch(args: &[String]) -> Result<()> {
         .read_dir()
         .map(|mut entries| entries.next().is_some())
         .unwrap_or(false);
-    if !overwrite
-        && (summary_path.exists() || manifest_path.exists() || has_route_artifacts)
-    {
+    if !overwrite && (summary_path.exists() || manifest_path.exists() || has_route_artifacts) {
         bail!(
             "renkin batch: {} already contains batch results (use --overwrite to replace results)",
             out.display()
@@ -2745,10 +2743,7 @@ fn run_batch(args: &[String]) -> Result<()> {
         "search_options": passthrough,
         "elapsed_ms": started.elapsed().as_secs_f64() * 1000.0,
     });
-    std::fs::write(
-        &manifest_path,
-        serde_json::to_string_pretty(&manifest)?,
-    )?;
+    std::fs::write(&manifest_path, serde_json::to_string_pretty(&manifest)?)?;
     eprintln!(
         "renkin batch: {solved}/{} solved, {errors} error(s); summary at {}",
         rows.len(),

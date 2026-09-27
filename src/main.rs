@@ -2549,10 +2549,16 @@ fn run_batch_target(
                     let html_path = routes_dir.join(format!("{stem}.html"));
                     match std::fs::write(&html_path, page) {
                         Ok(()) => row.html_path = format!("routes/{stem}.html"),
-                        Err(e) => row.error = format!("could not write HTML: {e}"),
+                        Err(e) => {
+                            row.status = "error".into();
+                            row.error = format!("could not write HTML: {e}");
+                        }
                     }
                 }
-                Err(e) => row.error = format!("could not render HTML: {e:#}"),
+                Err(e) => {
+                    row.status = "error".into();
+                    row.error = format!("could not render HTML: {e:#}");
+                }
             }
         }
     }
@@ -2638,13 +2644,18 @@ fn run_batch(args: &[String]) -> Result<()> {
 
     let out = std::path::Path::new(&output_dir);
     let summary_path = out.join("summary.csv");
-    if summary_path.exists() && !overwrite {
+    let manifest_path = out.join("manifest.json");
+    let routes_dir = out.join("routes");
+    let has_route_artifacts = routes_dir
+        .read_dir()
+        .map(|mut entries| entries.next().is_some())
+        .unwrap_or(false);
+    if !overwrite && (summary_path.exists() || manifest_path.exists() || has_route_artifacts) {
         bail!(
-            "renkin batch: {} already exists (use --overwrite to replace results)",
-            summary_path.display()
+            "renkin batch: {} already contains batch results (use --overwrite to replace results)",
+            out.display()
         );
     }
-    let routes_dir = out.join("routes");
     std::fs::create_dir_all(&routes_dir)
         .with_context(|| format!("could not create {}", routes_dir.display()))?;
     let exe = std::env::current_exe().context("could not locate the renkin executable")?;
@@ -2733,7 +2744,7 @@ fn run_batch(args: &[String]) -> Result<()> {
         "elapsed_ms": started.elapsed().as_secs_f64() * 1000.0,
     });
     std::fs::write(
-        out.join("manifest.json"),
+        &manifest_path,
         serde_json::to_string_pretty(&manifest)?,
     )?;
     eprintln!(

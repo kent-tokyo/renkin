@@ -33,8 +33,9 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- New default Cargo feature `depict` (`chematic/depict`, pure Rust,
-  MIT/Apache-2.0) for the HTML report. WASM builds use
+- New default Cargo feature `depict` (`chematic/depict`, pure Rust) for the
+  HTML report. Its rendering dependency graph adds explicitly reviewed
+  permissive BSD-2/3-Clause components alongside MIT/Apache-2.0. WASM builds use
   `--no-default-features` and do not include it. A native build without it
   rejects `--format html` and `batch --html` with a clear error.
 

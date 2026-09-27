@@ -22,6 +22,11 @@ confidence-threshold = 0.8
 allow = [
     "0BSD",
     "Apache-2.0",
+    # `chematic/depict` uses tiny-skia, whose permissive rendering stack
+    # includes these OSI-approved BSD licenses. Keep them explicit so a future
+    # non-permissive license still fails closed in the release gate.
+    "BSD-2-Clause",
+    "BSD-3-Clause",
     "MIT",
     "Unicode-3.0",
     "Zlib",

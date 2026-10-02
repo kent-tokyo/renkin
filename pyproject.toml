@@ -46,7 +46,7 @@ classifiers = [
 # release within the interval (0.7.3..0.7.9, if any are ever published)
 # is accepted by this spec but is not individually verified unless added
 # to the exact-version CI matrix.
-syntheseus = ["syntheseus>=0.7.2,<=0.8.0"]
+syntheseus = ["syntheseus>=0.7.2,<=0.9.0"]
 
 [project.urls]
 Homepage   = "https://github.com/kent-tokyo/renkin"

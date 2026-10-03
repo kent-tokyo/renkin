@@ -4,8 +4,8 @@ title: "RENKIN: Retrosynthesis Engine for Knowledge-Informed Navigation"
 authors:
   - family-names: "Tanabe"
     given-names: "Kentaro"
-version: "1.0.13"
-date-released: "2026-09-27"
+version: "1.0.14"
+date-released: "2026-10-03"
 url: "https://github.com/kent-tokyo/renkin"
 repository-code: "https://github.com/kent-tokyo/renkin"
 license: MIT

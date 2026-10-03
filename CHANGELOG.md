@@ -8,6 +8,8 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.14] - 2026-10-03 "chematic 1.0.31 and Documentation Refresh"
+
 ### Changed
 
 - Update the `chematic` facade and optional `chematic-rxn` dependency to
@@ -18,7 +20,7 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Documentation
 
-- Align the roadmap, workboard, and Japanese benchmark overview with v1.0.13
+- Align the roadmap, workboard, and Japanese benchmark overview with v1.0.14
   and the registered Phase 55 result; retain earlier cohorts as historical
   evidence. Remove links to ignored local agent notes and shorten the WASM,
   Python, and quick-start guides without changing their API contracts.
@@ -2952,7 +2954,8 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
 
 ---
 
-[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v1.0.13...HEAD
+[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v1.0.14...HEAD
+[1.0.14]: https://github.com/kent-tokyo/renkin/compare/v1.0.13...v1.0.14
 [1.0.13]: https://github.com/kent-tokyo/renkin/compare/v1.0.12...v1.0.13
 [1.0.12]: https://github.com/kent-tokyo/renkin/compare/v1.0.11...v1.0.12
 [1.0.11]: https://github.com/kent-tokyo/renkin/compare/v1.0.10...v1.0.11

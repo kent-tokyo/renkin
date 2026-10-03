@@ -26,7 +26,7 @@ Add to `Cargo.toml`:
 
 ```toml
 [dependencies]
-renkin = "1.0.13"
+renkin = "1.0.14"
 ```
 
 Or use cargo add:

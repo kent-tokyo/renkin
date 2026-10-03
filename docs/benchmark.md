@@ -21,7 +21,7 @@ pinned tool assets, and declared budgets. It compared RENKIN `1.0.7` at
 | Strict route to the declared shared stock | 481/690 (69.71%) | 32/690 (4.64%) | +65.07 pp, 95% CI +61.45 to +68.55 |
 
 This is a **coverage result for that registered configuration**. It is not a
-measurement of v1.0.13, universal CASP superiority, experimental viability,
+measurement of v1.0.14, universal CASP superiority, experimental viability,
 peak RSS, time-to-first-route, or whole-cohort latency. Those last three
 performance receipts were deliberately recorded as `not_measured`.
 

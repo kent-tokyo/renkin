@@ -155,9 +155,9 @@ dependencies = [
 
 [[package]]
 name = "chematic"
-version = "1.0.28"
+version = "1.0.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16bc1e7c8e91c045aec5cf63dbe814eef8cd9cdfa7caa9f6606c608bc7525faf"
+checksum = "c1c12cf92aba0219489f2a2570e22e6c483c193d46df8852758c7e00d915c415"
 dependencies = [
  "chematic-chem",
  "chematic-core",
@@ -172,9 +172,9 @@ dependencies = [
 
 [[package]]
 name = "chematic-chem"
-version = "1.0.30"
+version = "1.0.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a29a1bf9405a0984fb7fb4589715152643f3ad331213f3b6438ad9476d722af1"
+checksum = "51a8819511818cf29a022b28cb0583f375ebc17cc376d747ce9321f17c56c41d"
 dependencies = [
  "chematic-cip",
  "chematic-core",
@@ -188,9 +188,9 @@ dependencies = [
 
 [[package]]
 name = "chematic-cip"
-version = "1.0.30"
+version = "1.0.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e9f7d9fce25c8e371e075f75f5c979612725ffd3b9df57e27b2ddff27c59af3d"
+checksum = "8618eae2abd325a79efa5999143b99042918b23b5f9aa68c27a47690432364fa"
 dependencies = [
  "chematic-core",
  "chematic-perception",
@@ -198,15 +198,15 @@ dependencies = [
 
 [[package]]
 name = "chematic-core"
-version = "1.0.30"
+version = "1.0.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e9ff351a443a1fd47a8c4625e6ba93aa19ab946dc3c68cc165de033a049a68c9"
+checksum = "7e57ac6a0608c83259f322c3707b209f3a2c67ec764a566df6dfe8a0432bb489"
 
 [[package]]
 name = "chematic-depict"
-version = "1.0.30"
+version = "1.0.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c0e6428dd96701be8282a77dd259b909b778b950bfe71ce43d6d2155a4abda3"
+checksum = "a850b030950b7f65e040adbfebe3aa4bb05bebd9cf4bf68e3fd43d400447380e"
 dependencies = [
  "chematic-core",
  "chematic-perception",
@@ -219,9 +219,9 @@ dependencies = [
 
 [[package]]
 name = "chematic-fp"
-version = "1.0.30"
+version = "1.0.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3e04882e20750be514a30ea9514382a1e0c7a6ec353995596719cf455fb4d715"
+checksum = "78e933d8ae6acfd912ebbca1dc88dd87c6a56fddedc3af267f70ac9ba2795e7e"
 dependencies = [
  "chematic-cip",
  "chematic-core",
@@ -236,9 +236,9 @@ dependencies = [
 
 [[package]]
 name = "chematic-inchi"
-version = "1.0.30"
+version = "1.0.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "87d4863c66775271649d7ab1aafdc79efdb16f0d44f34e4714f02a5bbbe5018a"
+checksum = "38b33f0c45e7e3ecc3650744502e28ea3cad3914b9a9a29e96fa3144569b48b6"
 dependencies = [
  "chematic-chem",
  "chematic-core",
@@ -248,9 +248,9 @@ dependencies = [
 
 [[package]]
 name = "chematic-iupac"
-version = "1.0.30"
+version = "1.0.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "accb8f0f416dc98cedb649024e35e37cd9bc59d85001c1dbccc3a3a6ec19cfd4"
+checksum = "6f378dd32bbc6011f7665099d5493d24a48690f7b532c8b8e4b367365c5e90ed"
 dependencies = [
  "chematic-core",
  "chematic-perception",
@@ -258,9 +258,9 @@ dependencies = [
 
 [[package]]
 name = "chematic-perception"
-version = "1.0.30"
+version = "1.0.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ac9213a796d74147d87053e80acf7e83e1defbdbfbe4e6233531c18f6f85a9a"
+checksum = "99bb6d8ed2bf721b33b6565d5ea4ae45b709c00a5db636e3be53bbde0db5e897"
 dependencies = [
  "chematic-core",
  "rustc-hash",
@@ -268,9 +268,9 @@ dependencies = [
 
 [[package]]
 name = "chematic-rxn"
-version = "1.0.30"
+version = "1.0.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "033ca4ff8ec2da494ae900824375ece99d28f24538c7512eb3c3d89e7a2369e9"
+checksum = "3e9e65bc4f6e66d5283cdfbfadb2031b688f4ae7d2a0cfc5f5b00a0b0c754a5d"
 dependencies = [
  "chematic-core",
  "chematic-perception",
@@ -283,9 +283,9 @@ dependencies = [
 
 [[package]]
 name = "chematic-smarts"
-version = "1.0.30"
+version = "1.0.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f6195637e57cc978882148730cdedae70b2a25ecfe0543f79e3d4cabd52573b"
+checksum = "f140ef243ef9f2693d0916b4356d8bd0e6bccad194749726f3705222c4dc714a"
 dependencies = [
  "chematic-core",
  "chematic-perception",
@@ -295,9 +295,9 @@ dependencies = [
 
 [[package]]
 name = "chematic-smiles"
-version = "1.0.30"
+version = "1.0.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8961efc9a25f0a838545c445d74fcd4f61955d98f6bec29349ec3725d76c642"
+checksum = "9dd9efb0b7dea466ab0028b30272303515cccf2439186b8c2f37758c14e361ee"
 dependencies = [
  "chematic-core",
  "chematic-perception",

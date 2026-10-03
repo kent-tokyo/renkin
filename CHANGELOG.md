@@ -8,6 +8,14 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Update the `chematic` facade and optional `chematic-rxn` dependency to
+  1.0.31. Ring-context regression tests now account for both reaction-match
+  orientations reported by this version while checking the same unique
+  precursor sets and rejection policy.
+- Fix a duplicate atomic import that prevented `perf-instrumentation` builds.
+
 ### Documentation
 
 - Align the roadmap, workboard, and Japanese benchmark overview with v1.0.13

@@ -1113,6 +1113,16 @@ mod tests {
             .collect()
     }
 
+    fn unique_smiles_of(precs: &[Vec<PrecursorMol>]) -> std::collections::BTreeSet<Vec<String>> {
+        smiles_of(precs)
+            .into_iter()
+            .map(|mut set| {
+                set.sort_unstable();
+                set
+            })
+            .collect()
+    }
+
     /// Sidecar with exactly one template (extracted_9), NonRing intent on
     /// (map 1, map 5) -- matching the real generated corpus's actual
     /// (post-attribution-fix) classification (231 non-ring observations, 0
@@ -1575,17 +1585,24 @@ mod tests {
         }
     }
 
-    /// Runs `find_reaction_matches` for extracted_9 against `target_smiles`
-    /// and returns the first match, panicking if there is none -- these
-    /// fixtures are constructed to match exactly once.
-    fn single_match(target_smiles: &str) -> (Molecule, ReactionMatch) {
+    /// chematic-rxn 1.0.31 preserves both orientations of extracted_9's
+    /// interchangeable N-substituents. They share the changed (1, 5) bond,
+    /// so either is representative for the classify_match unit tests.
+    fn representative_match(target_smiles: &str) -> (Molecule, ReactionMatch) {
         let mol = mol_from_smiles(target_smiles).unwrap();
         let matches = find_reaction_matches(EXTRACTED_9_SMIRKS, &[&mol]).unwrap();
         assert_eq!(
             matches.len(),
-            1,
-            "fixture must match extracted_9 exactly once: {target_smiles}"
+            2,
+            "fixture must have both extracted_9 orientations: {target_smiles}"
         );
+        let first = matches[0].atom_map_positions(EXTRACTED_9_SMIRKS).unwrap();
+        let second = matches[1].atom_map_positions(EXTRACTED_9_SMIRKS).unwrap();
+        for map in [1, 5] {
+            assert_eq!(first.get(&map), second.get(&map));
+        }
+        assert_eq!(first.get(&4), second.get(&6));
+        assert_eq!(first.get(&6), second.get(&4));
         let m = matches.into_iter().next().unwrap();
         (mol, m)
     }
@@ -1606,7 +1623,7 @@ mod tests {
 
     #[test]
     fn classify_match_nonring_intent_on_ring_bond_rejects() {
-        let (mol, m) = single_match(ISOINDOLINONE_RING_CASE);
+        let (mol, m) = representative_match(ISOINDOLINONE_RING_CASE);
         let compiled = compiled_with_intent(RingBondIntent::NonRing);
         let cache = RingBondCache::new(&mol);
         let mut diag = RingContextDiagnostics::default();
@@ -1620,7 +1637,7 @@ mod tests {
 
     #[test]
     fn classify_match_ring_intent_on_nonring_bond_rejects() {
-        let (mol, m) = single_match(ACYCLIC_NONRING_CASE);
+        let (mol, m) = representative_match(ACYCLIC_NONRING_CASE);
         let compiled = compiled_with_intent(RingBondIntent::Ring);
         let cache = RingBondCache::new(&mol);
         let mut diag = RingContextDiagnostics::default();
@@ -1634,7 +1651,7 @@ mod tests {
 
     #[test]
     fn classify_match_nonring_intent_on_nonring_bond_accepts() {
-        let (mol, m) = single_match(ACYCLIC_NONRING_CASE);
+        let (mol, m) = representative_match(ACYCLIC_NONRING_CASE);
         let compiled = compiled_with_intent(RingBondIntent::NonRing);
         let cache = RingBondCache::new(&mol);
         let mut diag = RingContextDiagnostics::default();
@@ -1644,7 +1661,7 @@ mod tests {
 
     #[test]
     fn classify_match_ring_intent_on_ring_bond_accepts() {
-        let (mol, m) = single_match(ISOINDOLINONE_RING_CASE);
+        let (mol, m) = representative_match(ISOINDOLINONE_RING_CASE);
         let compiled = compiled_with_intent(RingBondIntent::Ring);
         let cache = RingBondCache::new(&mol);
         let mut diag = RingContextDiagnostics::default();
@@ -1656,7 +1673,7 @@ mod tests {
     fn classify_match_either_intent_allows_ring_and_nonring() {
         let compiled = compiled_with_intent(RingBondIntent::Either);
         for target in [ISOINDOLINONE_RING_CASE, ACYCLIC_NONRING_CASE] {
-            let (mol, m) = single_match(target);
+            let (mol, m) = representative_match(target);
             let cache = RingBondCache::new(&mol);
             let mut diag = RingContextDiagnostics::default();
             let verdict = classify_match(&m, &compiled, &cache, &mut diag);
@@ -1669,7 +1686,7 @@ mod tests {
 
     #[test]
     fn classify_match_unknown_intent_on_ring_bond_rejects_fail_closed() {
-        let (mol, m) = single_match(ISOINDOLINONE_RING_CASE);
+        let (mol, m) = representative_match(ISOINDOLINONE_RING_CASE);
         let compiled = compiled_with_intent(RingBondIntent::Unknown);
         let cache = RingBondCache::new(&mol);
         let mut diag = RingContextDiagnostics::default();
@@ -1683,7 +1700,7 @@ mod tests {
 
     #[test]
     fn classify_match_unknown_intent_on_nonring_bond_allows_with_diagnostic() {
-        let (mol, m) = single_match(ACYCLIC_NONRING_CASE);
+        let (mol, m) = representative_match(ACYCLIC_NONRING_CASE);
         let compiled = compiled_with_intent(RingBondIntent::Unknown);
         let cache = RingBondCache::new(&mol);
         let mut diag = RingContextDiagnostics::default();
@@ -1714,7 +1731,7 @@ mod tests {
             conservative.is_empty(),
             "Conservative must reject the ring-opening match extracted_9's training data never saw"
         );
-        assert_eq!(diag.ring_rejects_nonring_intent_on_ring_bond, 1);
+        assert_eq!(diag.ring_rejects_nonring_intent_on_ring_bond, 2);
     }
 
     #[test]
@@ -1728,10 +1745,11 @@ mod tests {
 
         let legacy = apply_retro(&mol, &rule);
         let conservative = apply_retro_with_policy(&mol, &rule, &config, &mut diag);
+        assert!(!conservative.is_empty());
         assert_eq!(
-            legacy.len(),
-            conservative.len(),
-            "the genuine (training-consistent) acyclic case must still be produced under Conservative"
+            unique_smiles_of(&legacy),
+            unique_smiles_of(&conservative),
+            "the genuine acyclic precursor set must be preserved under Conservative"
         );
     }
 
@@ -1772,7 +1790,7 @@ mod tests {
             "AuditOnly must be byte-identical to legacy by construction"
         );
         assert_eq!(
-            diag.ring_rejects_nonring_intent_on_ring_bond, 1,
+            diag.ring_rejects_nonring_intent_on_ring_bond, 2,
             "AuditOnly must still record what Conservative would have rejected"
         );
     }
@@ -1799,7 +1817,7 @@ mod tests {
         );
 
         assert_eq!(smiles_of(&prepared), smiles_of(&legacy));
-        assert_eq!(diag.ring_rejects_nonring_intent_on_ring_bond, 1);
+        assert_eq!(diag.ring_rejects_nonring_intent_on_ring_bond, 2);
         assert_eq!(
             diag.reaction_parse_calls, 0,
             "prepared match enumeration and application must not reparse SMIRKS"
@@ -1822,7 +1840,7 @@ mod tests {
             result.is_empty(),
             "RingOnly enforces the ring-context axis regardless of the element-accounting axis"
         );
-        assert_eq!(diag.ring_rejects_nonring_intent_on_ring_bond, 1);
+        assert_eq!(diag.ring_rejects_nonring_intent_on_ring_bond, 2);
     }
 
     #[test]
@@ -1846,12 +1864,12 @@ mod tests {
 
         apply_retro_with_policy(&mol, &rule, &config, &mut diag);
         assert_eq!(
-            diag.matches_applied, 1,
+            diag.matches_applied, 2,
             "ElementOnly's ring axis is AuditOnly -- the ring-flagged match must still reach \
              apply_reaction_match rather than being skipped"
         );
         assert_eq!(
-            diag.ring_rejects_nonring_intent_on_ring_bond, 1,
+            diag.ring_rejects_nonring_intent_on_ring_bond, 2,
             "the ring-context axis is still classified/diagnosed even though not enforced"
         );
     }

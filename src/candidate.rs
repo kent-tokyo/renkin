@@ -41,7 +41,7 @@
 
 use std::collections::HashMap;
 #[cfg(feature = "perf-instrumentation")]
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::AtomicU64;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 #[cfg(feature = "perf-instrumentation")]

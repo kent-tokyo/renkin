@@ -8,6 +8,13 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Documentation
+
+- Align the roadmap, workboard, and Japanese benchmark overview with v1.0.13
+  and the registered Phase 55 result; retain earlier cohorts as historical
+  evidence. Remove links to ignored local agent notes and shorten the WASM,
+  Python, and quick-start guides without changing their API contracts.
+
 ## [1.0.13] - 2026-09-27 "SynPlanner Planning Reports"
 
 ### Added — closing remaining SynPlanner gaps

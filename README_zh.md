@@ -68,7 +68,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
 ```
 
-架构、贡献方式与当前计划见 [AGENTS.md](AGENTS.md)、[CONTRIBUTING.md](CONTRIBUTING.md) 和 [ROADMAP.md](ROADMAP.md)。完整发布历史保留在 [CHANGELOG.md](CHANGELOG.md)。
+贡献方式见 [CONTRIBUTING.md](CONTRIBUTING.md)，开发优先级见 [ROADMAP.md](ROADMAP.md)，版本记录见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 许可证
 

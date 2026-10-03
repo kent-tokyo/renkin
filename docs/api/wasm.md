@@ -15,42 +15,19 @@ npm install renkin
 
 ```html
 <script type="module">
-  import init, { find_routes, version } from './node_modules/renkin/renkin.js';
-  
+  import init, { find_routes } from './node_modules/renkin/renkin.js';
   await init();
-  console.log('RENKIN version:', version());
-  
-  const raw = find_routes(
-    "CC(=O)Oc1ccccc1C(=O)O",  // Aspirin
-    5,   // max depth
-    3,   // max routes
-    0    // beam width (0 = unlimited)
-  );
-  const result = JSON.parse(raw);
-  console.log('Routes found:', result.routes_found);
+  const result = JSON.parse(find_routes("CC(=O)Oc1ccccc1C(=O)O", 5, 3, 0));
+  console.log(result.routes_found);
 </script>
 ```
 
 ## Browser and bundler usage
 
-The npm package is currently built with `wasm-pack build --target web`.
-
-**Supported:**
-
-- Native browser ES modules
-- Vite
-- Webpack
-- Rollup and compatible bundlers
-
-**Not currently supported:**
-
-- Plain Node.js `require()`
-- Direct Node.js execution without a bundler
-
-To exercise the WASM API from a plain Node.js script (not through a
-bundler), build a `--target nodejs` package from source instead — see
-[Minimal Node.js Example](#minimal-nodejs-example-ci-verified) below,
-which is verified this way, not against the published npm package.
+The published npm package targets browser ES modules and bundlers such as Vite,
+Webpack, and Rollup. It does not support plain Node.js `require()` or direct
+Node execution. For Node, build from source with `wasm-pack --target nodejs`;
+see the [CI-tested example](#minimal-nodejs-example-ci-verified).
 
 ## `find_routes`
 
@@ -63,11 +40,8 @@ function find_routes(
 ): string  // JSON-encoded result
 ```
 
-WASM always uses the current compiled-in default rule set and
-building blocks — there is no way to load an external templates file or
-custom building blocks list from the WASM entry point (unlike the CLI/Python
-bindings). See [Rust API](rust.md) or [Python API](python.md) for
-`--templates`/`templates_path` support.
+WASM uses compiled-in rules and stock; this entry point cannot load external
+templates or stock. Use [Rust](rust.md) or [Python](python.md) for that.
 
 ### Input limits and validation
 
@@ -88,37 +62,10 @@ Element filters accept the supported symbols (`H`, `B`, `C`, `N`, `O`, `F`,
 unknown symbols, and oversized values return an error. These bounds protect
 the browser boundary and do not change native CLI or Python limits.
 
-**Return value (JSON):**
-
-```typescript
-interface Result {
-  routes_found: number;
-  routes: Route[];
-}
-
-interface Route {
-  depth: number;
-  score: number;
-  confidence: number;
-  success_probability: number;
-  convergency: number;
-  route_cost: number;
-  building_blocks: string[];
-  steps: Step[];
-}
-
-interface Step {
-  target: string;         // SMILES of target at this step
-  rule: string;           // reaction rule name
-  template_id: string;    // stable template identity (rule:<name> / smirks-sha256:<hex>)
-  precursors: string[];   // SMILES of precursor molecules
-  step_confidence: number;
-  atom_economy_status: string; // "normal" / "above_expected_range" / "not_evaluable" (always present)
-  // conditions / atom_economy / atom_economy_raw_percent / procedure_hint /
-  // reaction_family / metadata_source / metadata_scope / evidence are present
-  // when applicable and simply absent from the JSON otherwise
-}
-```
+The JSON includes `routes_found` and `routes`. Each route contains `steps` and
+`building_blocks`; each step identifies its `target`, `precursors`, and
+`template_id`. Evidence and condition fields appear only when available.
+Confidence values rank candidates; they are not measured yields.
 
 ## `find_routes_v6`
 
@@ -139,36 +86,11 @@ function audit_route_v2(
 ): string  // JSON-encoded AuditRouteReport, or {"error": "..."}
 ```
 
-The browser counterpart to `renkin audit-route` (see
-[Audit Reproducibility and Compatibility Contract](../guides/audit-reproducibility-contract.md)
-for the full `AuditRouteReport`/`audit_manifest` shape, and what each
-`policy` value means) — calls the identical
-`bridge::build_audit_route_report_with_policy` pipeline the CLI uses, so a
-route audited in the browser gets exactly the same verdict the CLI would
-produce for the same input and policy. Unlike the CLI, `content` must
-already be plain JSON text — there is no gzip support in the browser (a
-paste or file upload never needs it). `policy` controls only how each
-route's `status` is derived from findings already collected — never which
-findings are detected or reported.
-
-```js
-import init, { audit_route_v2 } from './node_modules/renkin/renkin.js';
-
-await init();
-const routeJson = JSON.stringify({
-  target: "CCOC(=O)c1ccccc1",
-  routes: [{
-    steps: [{ target: "CCOC(=O)c1ccccc1", precursors: ["CCO", "O=C(O)c1ccccc1"], template_id: "co_aliphatic_cleavage" }],
-    building_blocks: ["CCO", "O=C(O)c1ccccc1"],
-  }],
-});
-const report = JSON.parse(audit_route_v2(routeJson, "auto", "", "strict"));
-console.log(report.routes[0].status); // "pass" | "fail" | "partial"
-```
-
-Also available from the [Live Playground](https://kent-tokyo.github.io/renkin/playground/){ target="_blank" }'s
-`[ Audit a Route ]` tab — paste or upload a route (and optionally a stock
-list) with a policy selector, entirely client-side.
+This shares the CLI audit pipeline. `content` must be plain JSON (no gzip).
+The policy changes the derived `pass`/`fail`/`partial` verdict, not the
+findings. See the [audit contract](../guides/audit-reproducibility-contract.md)
+for the report shape and policy semantics, or use the
+[Playground](https://kent-tokyo.github.io/renkin/playground/) to try it locally.
 
 ### Limits, locations, and cancellation
 
@@ -177,33 +99,14 @@ the WASM module. Call it instead of copying a numeric limit into a browser
 client; it also states that the module has no network access and no
 cooperative-cancellation API.
 
-The Node/WASM quickstart executed in CI derives over-limit search and stock-line
-requests from this payload and requires the real exports to reject each with
-`resource_exhausted`. Rust boundary tests separately cover the inclusive
-maximum and `max + 1` for every published search limit, plus the route-text,
-stock-text/line, nesting, and token-count audit boundaries.
+Boundary tests reject over-limit requests with `resource_exhausted`. Audited
+steps carry `occurrence_path` and an `atom_mapping` receipt (`valid`, `invalid`,
+or `not_evaluable`); findings may add a `step_index` and reason. Mapping
+receipts do not change the audit verdict. See the
+[trusted-route guide](../guides/trusted-route-operations.md) for details.
 
-Each node-specific finding can include an additive `occurrence_path` (zero-based
-child indices from the route root) and, for a decomposing node, a preorder
-`step_index` into the report's `steps` array. Route-wide parse failures have no
-invented location. Existing consumers that ignore these optional fields remain
-compatible.
-
-Each serialized audited step has its own required `occurrence_path`. For a
-`forward_validation_not_evaluable` finding, additive `reason` repeats the
-step's forward-validation reason so a flat finding consumer can distinguish
-missing evidence from unsupported input without joining against `steps`.
-
-Each audited step also has an `atom_mapping` receipt. It reports only mapping
-evidence as `valid`, `invalid`, or `not_evaluable`, including duplicate or
-product-only map labels and, on non-root steps, an optional
-`producer_consumer` check against the parent step. This receipt never changes
-the pre-existing audit `pass`/`fail`/`partial` result.
-
-The live playground provides cancellation by terminating and respawning its
-Worker. That discards the interrupted WASM operation; it is not an in-module
-cancel signal. See [Trusted Route Operations](../guides/trusted-route-operations.md)
-for the cross-binding and browser-operation boundary.
+The playground cancels by terminating and respawning its Worker; the WASM
+module has no cooperative cancellation API.
 
 ## `audit_route`
 
@@ -211,11 +114,8 @@ for the cross-binding and browser-operation boundary.
 function audit_route(content: string, format: string, stockText: string): string
 ```
 
-The original (v0.28.0) 3-argument export, kept unchanged for backward
-compatibility — a thin `policy: "standard"` wrapper around
-[`audit_route_v2`](#audit_route_v2). New code should call `audit_route_v2`
-directly; `audit_route` exists only so a build predating v0.29.0's policy
-parameter keeps working exactly as before.
+The older three-argument export uses `policy: "standard"`. New code should
+use [`audit_route_v2`](#audit_route_v2).
 
 ## `version`
 
@@ -223,56 +123,13 @@ parameter keeps working exactly as before.
 function version(): string
 ```
 
-Returns the RENKIN version string (for example, `"1.0.13"` for the current
-release).
+Returns the RENKIN version string.
 
 ## Minimal Node.js Example (CI-verified)
 
-This example runs against a package built locally with
-`wasm-pack build --target nodejs` — a different build target from the
-published npm package (`--target web`, browser/bundler only; see
-[Browser and bundler usage](#browser-and-bundler-usage) above). It's the
-from-source path for using RENKIN's WASM bindings in a plain Node.js
-script; `npm install renkin` alone does not give you this.
-
-`examples/quickstart.mjs` is run against a `wasm-pack build --target nodejs`
-output as part of CI, so this call shape can't silently drift from the real API:
+This CI-run example uses a locally built `wasm-pack --target nodejs` package,
+not the published browser-targeted npm package:
 
 ```javascript
 --8<-- "examples/quickstart.mjs"
-```
-
-## Live Playground
-
-An interactive playground is available at [RENKIN Playground](https://kent-tokyo.github.io/renkin/playground/){ target="_blank" }.
-
-The playground runs entirely in WebAssembly in your browser — no network calls, no server.
-
-## Example: React Integration
-
-```jsx
-import { useEffect, useState } from 'react';
-
-function RetrosynthesisWidget({ smiles }) {
-  const [routes, setRoutes] = useState(null);
-  const [wasmReady, setWasmReady] = useState(false);
-  
-  useEffect(() => {
-    import('renkin').then(async (mod) => {
-      await mod.default();
-      setWasmReady(true);
-    });
-  }, []);
-  
-  useEffect(() => {
-    if (!wasmReady || !smiles) return;
-    import('renkin').then((mod) => {
-      const raw = mod.find_routes(smiles, 5, 3, 0);
-      setRoutes(JSON.parse(raw));
-    });
-  }, [wasmReady, smiles]);
-  
-  if (!routes) return <div>Loading...</div>;
-  return <div>Found {routes.routes_found} routes</div>;
-}
 ```

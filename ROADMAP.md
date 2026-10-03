@@ -1,7 +1,7 @@
 # RENKIN Roadmap
 
-更新日: **2026-09-26**
-基準リリース: **v1.0.9**（`v1.0.9`）
+更新日: **2026-10-03**
+基準リリース: **v1.0.13**（`v1.0.13`）
 
 RENKINは、routeを見つけるだけでなく、どのstock・policy・検証根拠で
 採用または棄却されたかを再現可能にするCASP基盤である。探索性能、化学的な
@@ -17,9 +17,10 @@ RENKINは、routeを見つけるだけでなく、どのstock・policy・検証�
 
 | 証拠 | 確認できること | 主張しないこと |
 | --- | --- | --- |
-| Phase 55 r2 独立TEST | 固定した690 target、shared stock、asset、budgetでRENKIN 481/690、AiZynthFinder 4.4.1 32/690。paired差 +65.07 pp（95% CI +61.45〜+68.55） | v1.0.9の再測定、普遍的優位性、実験的成功、whole-cohort速度優位性 |
+| Phase 55 r2 独立TEST | 固定した690 target、shared stock、asset、budgetでRENKIN 481/690、AiZynthFinder 4.4.1 32/690。paired差 +65.07 pp（95% CI +61.45〜+68.55） | v1.0.13の再測定、普遍的優位性、実験的成功、whole-cohort速度優位性 |
 | 旧VAL-200 | 保存済みnative endpointは134/200対134/200 | 新releaseの結果、同時実行された優位性検定 |
 | O8 / v1.0.9 | typed route diagnostics、atom-map receipt、CLI/Python/WASM/MCP capability contract | map補完、汎用route repair、MCPによる任意外部route import |
+| v1.0.11–1.0.13 | 時間・探索予算、単段展開、SynPlanner形式の入出力、HTML route report、batch planning | Phase 55 r2の再測定、モデル品質や実験成功の保証 |
 
 Phase 55のRSSとtime-to-first-routeは`not_measured`のままである。coverageの
 結果を、後から速度比較へ読み替えない。

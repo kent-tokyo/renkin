@@ -74,7 +74,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
 ```
 
-For architecture and contribution rules, see [AGENTS.md](AGENTS.md), [CONTRIBUTING.md](CONTRIBUTING.md), and the current [ROADMAP.md](ROADMAP.md). Full release history remains in [CHANGELOG.md](CHANGELOG.md).
+For contribution rules, see [CONTRIBUTING.md](CONTRIBUTING.md); for priorities, see [ROADMAP.md](ROADMAP.md). Release history is in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

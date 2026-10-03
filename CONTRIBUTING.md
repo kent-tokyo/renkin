@@ -39,7 +39,7 @@ library/WASM paths. The repository's default stock data is
 - Keep model output, audit findings, and experimental claims separate.
 - Do not replace a registered benchmark result with a more favorable run; record changed assets, stock, budgets, and endpoints.
 
-See [AGENTS.md](AGENTS.md) for implementation constraints and
+See the source and tests for implementation constraints, and the
 [docs](https://kent-tokyo.github.io/renkin/) for public API contracts.
 
 ## Security and license

@@ -377,14 +377,22 @@ impl DownstreamReachabilityReranker {
         // Once the bounded budget is exhausted, fail closed to "not known
         // reachable". This preserves the legacy candidate ordering tie-break
         // instead of allowing the optional selector to dominate runtime.
-        if self
-            .remaining_lookaheads
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
-                remaining.checked_sub(1)
-            })
-            .is_err()
-        {
-            return false;
+        // A CAS loop keeps the budget exact under concurrent calls without
+        // relying on AtomicUsize::try_update (newer than our Rust 1.85 floor).
+        let mut remaining = self.remaining_lookaheads.load(Ordering::Relaxed);
+        loop {
+            if remaining == 0 {
+                return false;
+            }
+            match self.remaining_lookaheads.compare_exchange_weak(
+                remaining,
+                remaining - 1,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(actual) => remaining = actual,
+            }
         }
 
         let resolved = mol_from_smiles(smiles).is_ok_and(|mol| {

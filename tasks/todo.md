@@ -1,7 +1,7 @@
 # RENKIN Workboard
 
 更新日: **2026-10-03**
-基準リリース: **v1.0.13**
+基準リリース: **v1.0.14**
 
 この台帳は未完了の作業と、今後の判断に必要な完了済み証拠だけを置く。過去の
 phase別進捗、micro-release、失敗分析はGit履歴、[CHANGELOG.md](../CHANGELOG.md)、

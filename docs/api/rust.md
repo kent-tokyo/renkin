@@ -91,10 +91,11 @@ let precursor_sets = apply_retro(&mol, ester_rule); // Vec<Vec<PrecursorMol>>
 ```
 
 `RetroRule` has 5 fields: `name`, `template_id` (`rule:<name>` for hand-crafted
-rules, `smirks-sha256:<hex>` for extracted templates — see [Template Evidence
-Metadata](https://github.com/kent-tokyo/renkin#template-evidence-metadata)),
-`smirks`, `weight`, `required_elements`. A hand-written `RetroRule { .. }`
-literal needs `..Default::default()` for any field you don't set explicitly.
+rules, `smirks-sha256:<hex>` for extracted templates), `smirks`, `weight`, and
+`required_elements`. A hand-written literal should use
+`..Default::default()` for omitted fields. See
+[Reaction Evidence Metadata](../guides/reaction-evidence.md) for template IDs
+and sidecars.
 
 ## Molecule Utilities
 

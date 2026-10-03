@@ -98,61 +98,26 @@ key — nothing is fabricated. See the [Reaction Evidence Metadata
 guide](reaction-evidence.md) for the sidecar format and what `evidence` is
 (and isn't).
 
-## Reading the Result
+## Reading the result
 
-Real output for aspirin at `depth=1` (hand-crafted rules only, one route shown):
-
-```python
-{
-  "depth": 1,
-  "score": 1.099087,
-  "confidence": 1.0,
-  "success_probability": 1.0,
-  "route_cost": 8.298266666666667,
-  "building_blocks": ["OC(=O)C", "c1cccc(c1O)C(O)=O"],
-  "steps": [
-    {
-      "target": "OC(=O)c1ccccc1OC(=O)C",
-      "rule": "ester_cleavage",
-      "template_id": "rule:ester_cleavage",
-      "precursors": ["OC(=O)C", "c1cccc(c1O)C(O)=O"],
-      "step_confidence": 1.0,
-      "atom_economy": 90.90950376941474,
-      "atom_economy_raw_percent": 90.90950376941474,
-      "atom_economy_status": "normal",
-      "reaction_family": "esterification",
-      "conditions": {"catalyst": "NaOH or LiOH (2 eq)", "solvent": "THF/H₂O (2:1)", "temperature": "rt → 60 °C"},
-      "procedure_hint": "Dissolve in THF/H₂O, add NaOH (2 eq), stir at 60 °C, acidify to pH 2.",
-      "metadata_source": "handcrafted_default",
-      "metadata_scope": "reaction_family"
-      # evidence appears only when a --template-metadata sidecar matches this template_id
-    }
-  ]
-}
-```
-
-`step_confidence`/`success_probability` are template-frequency-derived
-search-ranking scores (here 1.0 because, with only hand-crafted rules loaded,
-every rule has equal weight) — not a measured or predicted experimental
-yield. `conditions`/`procedure_hint` are rule-author-supplied defaults for
-hand-crafted rules (`metadata_source: "handcrafted_default"`), not a literature
-citation — see [Reaction Evidence Metadata](reaction-evidence.md) for the
-distinction and how to attach real cited evidence.
+Each route has `steps` and `building_blocks`; each step identifies its
+`target`, `precursors`, and `template_id`. See the [Python API](../api/python.md)
+for the current return contract instead of relying on a copied result snapshot.
+`step_confidence` and `success_probability` rank search results; neither is a
+measured yield. Hand-crafted `conditions` and `procedure_hint` are defaults,
+not citations. Attach literature evidence through a validated sidecar as
+described in [Reaction Evidence Metadata](reaction-evidence.md).
 
 ## Current Limitations
 
-- The default stock (402 compounds when running from a repo checkout, 152
-  otherwise — see [Building Blocks](../api/python.md#building-blocks)) and 24
-  hand-crafted rules cover common pharmaceutical disconnections well, but broader reaction space needs
-  the larger extracted-template files or your own stock.
+- Default stock is 402 compounds from the repository file when found, or 152
+  compiled-in compounds otherwise. The 24 hand-crafted rules do not cover
+  every reaction; supply explicit stock and templates for your use case.
 - No literature/patent auto-search, no automatic side-reaction prediction, no
   yield prediction — see [Reaction Evidence Metadata](reaction-evidence.md)
   for exactly what curated evidence is and isn't.
-- Historical benchmark numbers on this repo predate a validator-accuracy fix
-  and are invalidated — see the frozen [Benchmark page](../benchmark.md) for
-  the corrected historical baseline, or the
-  the benchmark page for the scope and limitations of published measurements.
-  guide for current, matched-condition results, before citing a success rate.
+- Benchmark claims depend on the exact cohort, stock, assets, and budget. Check
+  the [benchmark overview](../benchmark.md) before citing a success rate.
 
 ## Next Steps
 

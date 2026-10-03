@@ -598,7 +598,7 @@ class AuditReport:
             "'isolated'/'assay' are never inferred.",
             "no_template_match may conflate a genuinely different reaction with "
             "a canonicalization-tie-breaking artifact of the underlying SMILES "
-            "engine (see AGENTS.md); it is not proof the reaction type is absent "
+            "engine; it is not proof the reaction type is absent "
             "from the loaded template set.",
             "Accepted examples are only guaranteed to resolve as an exact-substrate "
             "match at route-display time (match_kind: exact_substrate, not "

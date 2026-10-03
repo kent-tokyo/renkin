@@ -69,7 +69,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
 ```
 
-設計・貢献・現行計画は[AGENTS.md](AGENTS.md)、[CONTRIBUTING.md](CONTRIBUTING.md)、[ROADMAP.md](ROADMAP.md)を参照してください。完全なrelease履歴は[CHANGELOG.md](CHANGELOG.md)に残します。
+貢献方法は[CONTRIBUTING.md](CONTRIBUTING.md)、優先課題は[ROADMAP.md](ROADMAP.md)、変更履歴は[CHANGELOG.md](CHANGELOG.md)を参照してください。
 
 ## ライセンス
 

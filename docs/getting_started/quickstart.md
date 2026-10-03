@@ -11,27 +11,9 @@ description: "A minimal, CI-tested working example of RENKIN's find_routes API i
 --8<-- "examples/quickstart.py"
 ```
 
-Output, captured from an actual run of the example above (CI executes the
-example on every change to confirm it still runs without error, but does not
-diff its output against the text below):
-```
-Routes found: 3
-Route (depth 1):
-  CC(Oc1ccccc1C(=O)O)=O -> CC=O + c1cccc(C(O)=O)c1O
-  via co_aliphatic_cleavage
-Route (depth 1):
-  CC(Oc1ccccc1C(=O)O)=O -> CC(O)=O + c1cccc(C(O)=O)c1O
-  via ester_cleavage
-Route (depth 2):
-  CC(Oc1ccccc1C(=O)O)=O -> CC=O + c1cccc(C(O)=O)c1O
-  via co_aliphatic_cleavage
-  CC=O -> C + O=C
-  via cc_single_cleavage
-```
-
-`find_routes` returns a **JSON string** — always `json.loads()` it before
-accessing fields; see [Python API](../api/python.md) for the full parameter
-list (custom templates, evidence metadata, constraints, pricing, etc.).
+The included example is executed in CI. `find_routes` returns a JSON string;
+call `json.loads()` before accessing fields. Route counts can change with the
+stock and rules. See the [Python API](../api/python.md) for options and output.
 
 ## Custom Building Blocks
 
@@ -54,8 +36,6 @@ result = json.loads(renkin.find_routes(
     depth=3,
 ))
 print(f"Routes found: {result['routes_found']}")
-# Routes found: 1 (bromobenzene + benzene via suzuki_retro, the only rule
-# this small 5-compound stock can support)
 ```
 
 ## Rust

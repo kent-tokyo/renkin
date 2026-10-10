@@ -4,12 +4,15 @@ Rustで実装した、ローカル実行の逆合成計画・route監査ツー�
 
 [English](README.md) · [中文](README_zh.md) · [ドキュメント](https://kent-tokyo.github.io/renkin/) · [Playground](https://kent-tokyo.github.io/renkin/playground/)
 
+[![Rust coverage](https://codecov.io/gh/kent-tokyo/renkin/branch/main/graph/badge.svg?flag=rust)](https://app.codecov.io/gh/kent-tokyo/renkin)
+[![Ask DeepWiki](docs/assets/ask-deepwiki.svg)](https://deepwiki.com/kent-tokyo/renkin)
+
 RENKINには2つの役割があります。
 
 - **Planner**：target SMILESから、指定したbuilding blockまでの逆合成routeを探索します。
 - **Bridge**：RENKIN、AiZynthFinder、Syntheseus、SynPlannerのrouteを、同じ決定論的な検査で監査します。
 
-現行リリースは **v1.0.14**。CLI、Rust crate、Python、MCP、ブラウザWASMを提供し、core chemistryにC/C++依存はありません。
+現行リリースは **v1.0.15**。CLI、Rust crate、Python、MCP、ブラウザWASMを提供し、core chemistryにC/C++依存はありません。
 標準plannerは24のhand-crafted ruleを持ちます。repository内のstock fileは402化合物、
 WASMとfileを見つけられない環境では152化合物のcompiled-in fallbackを使います。stockが
 重要なrunでは明示的に指定してください。
@@ -68,6 +71,8 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
 ```
+
+カバレッジのバッジは、標準機能で実行するRust workspace（CLIを含む）の行カバレッジです。PythonとWASMはこの値に含みません。
 
 貢献方法は[CONTRIBUTING.md](CONTRIBUTING.md)、優先課題は[ROADMAP.md](ROADMAP.md)、変更履歴は[CHANGELOG.md](CHANGELOG.md)を参照してください。
 

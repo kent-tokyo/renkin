@@ -3,6 +3,8 @@
 Local retrosynthesis planning and route auditing in Rust.
 
 [![CI](https://github.com/kent-tokyo/renkin/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/kent-tokyo/renkin/actions/workflows/ci.yml)
+[![Rust coverage](https://codecov.io/gh/kent-tokyo/renkin/branch/main/graph/badge.svg?flag=rust)](https://app.codecov.io/gh/kent-tokyo/renkin)
+[![Ask DeepWiki](docs/assets/ask-deepwiki.svg)](https://deepwiki.com/kent-tokyo/renkin)
 [![Crates.io](https://img.shields.io/crates/v/renkin.svg)](https://crates.io/crates/renkin)
 [![PyPI](https://img.shields.io/pypi/v/renkin.svg)](https://pypi.org/project/renkin/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -14,7 +16,7 @@ RENKIN has two complementary jobs:
 - **Plan:** search retrosynthetic routes from target SMILES to declared building blocks.
 - **Audit:** apply the same deterministic structural, stock, forward-replay, and provenance checks to routes from RENKIN, AiZynthFinder, Syntheseus, or SynPlanner.
 
-Current release: **v1.0.14**. Core chemistry is pure Rust; the project ships a CLI, Rust crate, Python package, MCP server, and browser WebAssembly module.
+Current release: **v1.0.15**. Core chemistry is pure Rust; the project ships a CLI, Rust crate, Python package, MCP server, and browser WebAssembly module.
 The default planner has 24 hand-crafted rules. Repository-backed runs use the
 402-compound stock file; WASM and installations without that file use a
 compiled-in 152-compound fallback. Supply stock explicitly when it matters.
@@ -72,7 +74,12 @@ The registered Phase 55 shared-stock TEST found strict routes for RENKIN on 481/
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
+cargo llvm-cov --workspace --lib --bins --tests --fail-under-lines 90
 ```
+
+The coverage badge and 90% gate measure default-feature native Rust workspace
+tests, including CLI binaries. Python and WASM are tested separately and are not
+part of this percentage.
 
 For contribution rules, see [CONTRIBUTING.md](CONTRIBUTING.md); for priorities, see [ROADMAP.md](ROADMAP.md). Release history is in [CHANGELOG.md](CHANGELOG.md).
 

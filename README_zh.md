@@ -4,12 +4,15 @@
 
 [English](README.md) · [日本語](README_ja.md) · [文档](https://kent-tokyo.github.io/renkin/) · [Playground](https://kent-tokyo.github.io/renkin/playground/)
 
+[![Rust coverage](https://codecov.io/gh/kent-tokyo/renkin/branch/main/graph/badge.svg?flag=rust)](https://app.codecov.io/gh/kent-tokyo/renkin)
+[![Ask DeepWiki](docs/assets/ask-deepwiki.svg)](https://deepwiki.com/kent-tokyo/renkin)
+
 RENKIN 有两项互补工作：
 
 - **Planner：** 从 target SMILES 搜索至指定 building block 的逆合成路线。
 - **Bridge：** 用相同的确定性检查审计 RENKIN、AiZynthFinder、Syntheseus 和 SynPlanner 的路线。
 
-当前版本为 **v1.0.14**。提供 CLI、Rust crate、Python、MCP 和浏览器 WASM；核心化学层没有 C/C++ 依赖。
+当前版本为 **v1.0.15**。提供 CLI、Rust crate、Python、MCP 和浏览器 WASM；核心化学层没有 C/C++ 依赖。
 默认 planner 包含 24 条手工规则。仓库 stock 文件含 402 个化合物；WASM 和找不到该文件的
 安装环境使用内置的 152 个化合物 fallback。stock 会影响结论时，请显式指定。
 
@@ -67,6 +70,8 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
 ```
+
+覆盖率徽章表示默认功能下 Rust workspace（含 CLI）的行覆盖率，不包含单独测试的 Python 和 WASM。
 
 贡献方式见 [CONTRIBUTING.md](CONTRIBUTING.md)，开发优先级见 [ROADMAP.md](ROADMAP.md)，版本记录见 [CHANGELOG.md](CHANGELOG.md)。
 

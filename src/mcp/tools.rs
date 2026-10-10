@@ -1643,4 +1643,129 @@ mod tests {
             assert_eq!(required, vec!["routes_found"]);
         }
     }
+
+    #[test]
+    fn analytical_tools_report_a_stock_route_without_expanding_it() {
+        let args = json!({"depth": 0, "max_routes": 1});
+        for name in [
+            "explain_route",
+            "find_pareto_routes",
+            "plan_with_constraints",
+            "validate_route",
+            "estimate_diversity",
+            "diagnose_failure",
+        ] {
+            let outcome = (find(name).unwrap().handler)("CCO", &args);
+            assert!(!outcome.is_error, "{name}: {}", outcome.text);
+            assert!(!outcome.text.contains("No routes found"), "{name}");
+            if matches!(
+                name,
+                "validate_route" | "estimate_diversity" | "diagnose_failure"
+            ) {
+                assert_eq!(outcome.structured.unwrap()["routes_found"], 1, "{name}");
+            }
+        }
+    }
+
+    #[test]
+    fn analytical_tools_report_no_route_at_zero_depth() {
+        const TARGET: &str = "CC(=O)Oc1ccccc1C(=O)O";
+        let args = json!({"depth": 0, "max_routes": 1});
+        for name in [
+            "explain_route",
+            "find_pareto_routes",
+            "plan_with_constraints",
+            "validate_route",
+            "estimate_diversity",
+            "diagnose_failure",
+        ] {
+            let outcome = (find(name).unwrap().handler)(TARGET, &args);
+            assert!(!outcome.is_error, "{name}: {}", outcome.text);
+            if name == "diagnose_failure" {
+                assert!(outcome.text.contains("Diagnosis for:"));
+                assert_eq!(outcome.structured.unwrap()["routes_found"], 0);
+            } else {
+                assert!(outcome.text.contains("No routes found"), "{name}");
+                if matches!(name, "validate_route" | "estimate_diversity") {
+                    assert_eq!(outcome.structured.unwrap()["routes_found"], 0);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn constrained_planning_distinguishes_allowed_and_blocked_stock() {
+        const TARGET: &str = "CC(=O)OC";
+        let (routes, _) = search_engine()
+            .find_routes(
+                TARGET,
+                &SearchConfig {
+                    max_depth: 2,
+                    max_routes: 1,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(routes.len(), 1, "fixture must have a synthesis route");
+        assert!(!routes[0].building_blocks.is_empty());
+        let building_block = &routes[0].building_blocks[0];
+        let allowed = handle_plan_with_constraints(
+            TARGET,
+            &json!({
+                "depth": 2,
+                "max_routes": 1,
+                "max_steps": 1,
+                "max_route_cost": 100.0,
+                "min_confidence": 0.0,
+                "min_success_probability": 0.0,
+                "avoid_building_blocks": "never-present",
+                "require_building_blocks": building_block,
+                "avoid_reaction_families": "never-present",
+                "prefer_reaction_families": "never-present"
+            }),
+        );
+        assert!(!allowed.is_error, "{}", allowed.text);
+        assert!(allowed.text.contains("Routes after constraints: 1"));
+
+        let blocked = handle_plan_with_constraints(
+            TARGET,
+            &json!({"depth": 2, "max_routes": 1, "avoid_building_blocks": building_block}),
+        );
+        assert!(!blocked.is_error);
+        assert!(blocked.text.contains("No routes found"));
+
+        let missing_family = handle_plan_with_constraints(
+            TARGET,
+            &json!({"depth": 2, "max_routes": 1, "require_reaction_families": "never-present"}),
+        );
+        assert!(!missing_family.is_error);
+        assert!(missing_family.text.contains("No routes found"));
+    }
+
+    #[test]
+    fn diversity_and_pareto_helpers_keep_distinct_route_semantics() {
+        let (routes, _) = search_engine()
+            .find_routes(
+                "CCO",
+                &SearchConfig {
+                    max_depth: 0,
+                    max_routes: 1,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let mut alternative = routes[0].clone();
+        alternative.building_blocks = vec!["CO".to_string()];
+        alternative.route_cost += 1.0;
+        let pair = vec![routes[0].clone(), alternative];
+        assert_eq!(route_diversity(&pair), 1.0);
+        assert_eq!(mcp_pareto_front(&pair, &[(0, true)]), vec![0]);
+        assert_eq!(mcp_obj_compare(true, None, Some(1.0)), (true, false));
+        assert_eq!(mcp_obj_compare(false, Some(1.0), None), (false, true));
+        assert_eq!(mcp_obj_compare(true, None, None), (false, false));
+        assert_eq!(
+            mcp_parse_objectives("cost:min,success:max,atom_economy:max"),
+            vec![(0, true), (1, false), (6, false)]
+        );
+    }
 }

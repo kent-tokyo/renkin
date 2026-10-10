@@ -224,9 +224,11 @@ jobs:
         run: |
           FACTS=$(cargo run --quiet --example doc_facts)
           echo "$FACTS"
-          echo "rule_count=$(echo "$FACTS" | grep -oP 'HAND_CRAFTED_RULE_COUNT=\K\d+')" >> "$GITHUB_OUTPUT"
-          echo "bb_file_count=$(echo "$FACTS" | grep -oP 'BUILDING_BLOCK_FILE_COUNT=\K\d+')" >> "$GITHUB_OUTPUT"
-          echo "bb_fallback_count=$(echo "$FACTS" | grep -oP 'BUILDING_BLOCK_FALLBACK_COUNT=\K\d+')" >> "$GITHUB_OUTPUT"
+          {
+            echo "rule_count=$(echo "$FACTS" | grep -oP 'HAND_CRAFTED_RULE_COUNT=\K\d+')"
+            echo "bb_file_count=$(echo "$FACTS" | grep -oP 'BUILDING_BLOCK_FILE_COUNT=\K\d+')"
+            echo "bb_fallback_count=$(echo "$FACTS" | grep -oP 'BUILDING_BLOCK_FALLBACK_COUNT=\K\d+')"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Check docs/README against live facts
         run: python3 scripts/check_docs_facts.py "${{ steps.facts.outputs.rule_count }}" "${{ steps.facts.outputs.bb_file_count }}" "${{ steps.facts.outputs.bb_fallback_count }}"

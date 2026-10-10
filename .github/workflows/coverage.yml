@@ -1,0 +1,64 @@
+name: Rust coverage
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  rust-coverage:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov@0.8.7
+          fallback: none
+      - name: Test the native Rust workspace and produce LCOV
+        run: cargo llvm-cov --workspace --lib --bins --tests --lcov --output-path target/lcov.info --fail-under-lines 90 -- --quiet
+      - name: Enforce 90% on the report uploaded to Codecov
+        run: |
+          awk -F: '
+            /^LF:/ { total += $2 }
+            /^LH:/ { hit += $2 }
+            END {
+              if (total == 0) { print "Empty LCOV report"; exit 1 }
+              printf "LCOV line coverage: %d/%d (%.2f%%)\n", hit, total, 100 * hit / total
+              if (hit * 100 < total * 90) exit 1
+            }
+          ' target/lcov.info
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rust-lcov
+          path: target/lcov.info
+          if-no-files-found: error
+          retention-days: 1
+
+  codecov-upload:
+    needs: rust-coverage
+    # Fork PRs run the coverage gate without receiving an OIDC token.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v4
+        with:
+          name: rust-lcov
+          path: target
+      - name: Upload Rust coverage to Codecov
+        uses: codecov/codecov-action@v6
+        with:
+          files: ./target/lcov.info
+          disable_search: true
+          flags: rust
+          use_oidc: true
+          fail_ci_if_error: true

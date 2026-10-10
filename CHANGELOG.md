@@ -8,6 +8,19 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.15] - 2026-10-10 "Rust Coverage and Documentation"
+
+### Documentation
+
+- Add an Ask DeepWiki badge to the English, Japanese, and Chinese READMEs.
+
+### Testing
+
+- Add canonicalizer, doctor, pool-generator, benchmark CLI, and MCP-tool
+  regression tests. Native Rust workspace line coverage rose from 88.27% to
+  90.41% in local LCOV; require at least 90% in CI and upload the report to
+  Codecov for the README badge. Python and WASM are outside this measurement.
+
 ## [1.0.14] - 2026-10-03 "chematic 1.0.31 and Documentation Refresh"
 
 ### Changed
@@ -2954,7 +2967,8 @@ Initial public release. Published to [crates.io](https://crates.io/crates/renkin
 
 ---
 
-[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v1.0.14...HEAD
+[Unreleased]: https://github.com/kent-tokyo/renkin/compare/v1.0.15...HEAD
+[1.0.15]: https://github.com/kent-tokyo/renkin/compare/v1.0.14...v1.0.15
 [1.0.14]: https://github.com/kent-tokyo/renkin/compare/v1.0.13...v1.0.14
 [1.0.13]: https://github.com/kent-tokyo/renkin/compare/v1.0.12...v1.0.13
 [1.0.12]: https://github.com/kent-tokyo/renkin/compare/v1.0.11...v1.0.12

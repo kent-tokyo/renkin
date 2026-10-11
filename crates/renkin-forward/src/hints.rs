@@ -812,7 +812,10 @@ fn apply_atom_primitive(p: &AtomPrimitive, acc: &mut AtomFeatureAccumulator) {
         AtomPrimitive::RingSize(_)
         | AtomPrimitive::MinRingSize(_)
         | AtomPrimitive::RingBondCount(_)
-        | AtomPrimitive::TotalConnectivity(_) => acc.has_unsummarized_primitive = true,
+        | AtomPrimitive::TotalConnectivity(_)
+        | AtomPrimitive::HeteroNeighborCount(_)
+        | AtomPrimitive::AliphaticHeteroNeighborCount(_)
+        | AtomPrimitive::HeavyDegree(_) => acc.has_unsummarized_primitive = true,
         AtomPrimitive::RingCount(n) => acc.ring_count = Some(*n),
     }
 }
@@ -964,26 +967,32 @@ fn describe_bond_order(q: &BondQuery) -> String {
         BondQuery::Primitive(BondPrimitive::Single) => "single".to_string(),
         BondQuery::Primitive(BondPrimitive::Double) => "double".to_string(),
         BondQuery::Primitive(BondPrimitive::Triple) => "triple".to_string(),
+        BondQuery::Primitive(BondPrimitive::Quadruple) => "quadruple".to_string(),
         BondQuery::Primitive(BondPrimitive::Aromatic) => "aromatic".to_string(),
         BondQuery::Primitive(BondPrimitive::Any) => "any".to_string(),
         BondQuery::Primitive(BondPrimitive::Ring) => "ring".to_string(),
         BondQuery::Primitive(BondPrimitive::Up) => "up".to_string(),
         BondQuery::Primitive(BondPrimitive::Down) => "down".to_string(),
+        BondQuery::Primitive(BondPrimitive::DativeForward) => "dative_forward".to_string(),
+        BondQuery::Primitive(BondPrimitive::DativeBackward) => "dative_backward".to_string(),
         BondQuery::Any => "any".to_string(),
         BondQuery::And(..) | BondQuery::Or(..) | BondQuery::Not(..) => "complex".to_string(),
     }
 }
 
 /// Like [`describe_bond_order`], but fails closed on a directional
-/// `Up`/`Down` bond whose orientation isn't trusted (see
+/// `Up`/`Down` or dative bond whose orientation isn't trusted (see
 /// [`mapped_bond_signature`]): reports `"directional_unspecified"` rather
-/// than a possibly-wrong `"up"`/`"down"`. Every other bond kind is
+/// than a possibly-wrong directional label. Every non-directional bond kind is
 /// unaffected by `orientation_trusted`.
 fn describe_bond_order_for_hint(q: &BondQuery, orientation_trusted: bool) -> String {
     if !orientation_trusted
         && matches!(
             q,
-            BondQuery::Primitive(BondPrimitive::Up) | BondQuery::Primitive(BondPrimitive::Down)
+            BondQuery::Primitive(BondPrimitive::Up)
+                | BondQuery::Primitive(BondPrimitive::Down)
+                | BondQuery::Primitive(BondPrimitive::DativeForward)
+                | BondQuery::Primitive(BondPrimitive::DativeBackward)
         )
     {
         return "directional_unspecified".to_string();
@@ -996,12 +1005,12 @@ fn describe_bond_order_for_hint(q: &BondQuery, orientation_trusted: bool) -> Str
 /// one side of a reversed template.
 ///
 /// Sorting the key doesn't renormalize a directional `BondPrimitive::Up`/
-/// `Down` query (`/`/`\`, e.g. E/Z stereo-bond markers) to match: if the
+/// `Down` or dative query (`/`/`\`, `->`/`<-`) to match: if the
 /// smaller atom-map number was the second atom in the original bond, the
 /// direction is relative to the wrong left/right atom after sorting.
 /// `orientation_trusted` is `false` exactly when that swap happened on a
 /// directional bond, so callers can fail closed (never emit a possibly-
-/// wrong "up"/"down") instead of speculatively inverting it without a
+/// wrong directional label) instead of speculatively inverting it without a
 /// confirmed-correct reference semantics to invert against --
 /// `query_smarts`/`product_query_smarts` remain the authoritative
 /// representation regardless.
@@ -1018,6 +1027,8 @@ fn mapped_bond_signature(components: &[QuerySlot]) -> BTreeMap<(u16, u16), (Bond
                     bond.query,
                     BondQuery::Primitive(BondPrimitive::Up)
                         | BondQuery::Primitive(BondPrimitive::Down)
+                        | BondQuery::Primitive(BondPrimitive::DativeForward)
+                        | BondQuery::Primitive(BondPrimitive::DativeBackward)
                 );
                 let orientation_trusted = !(swapped && is_directional);
                 sig.insert(key, (bond.query.clone(), orientation_trusted));
@@ -2292,6 +2303,17 @@ mod tests {
     }
 
     #[test]
+    fn new_neighbor_count_primitives_are_not_silently_summarized() {
+        for smarts in ["[z2]", "[Z2]", "[d2]"] {
+            let f = features_of(smarts);
+            assert!(
+                !f.summary_complete,
+                "{smarts} is not represented by a hint field"
+            );
+        }
+    }
+
+    #[test]
     fn bond_or_and_any_bond_are_never_misrepresented_as_a_single_type() {
         // Any-bond (`~`) and a compound bond OR/AND/NOT must never be
         // described as one of the concrete single/double/triple/aromatic
@@ -2302,6 +2324,33 @@ mod tests {
             Box::new(BondQuery::Primitive(BondPrimitive::Double)),
         );
         assert_eq!(describe_bond_order(&compound), "complex");
+    }
+
+    #[test]
+    fn new_bond_primitives_keep_their_distinct_labels() {
+        for (bond, expected) in [
+            (BondPrimitive::Quadruple, "quadruple"),
+            (BondPrimitive::DativeForward, "dative_forward"),
+            (BondPrimitive::DativeBackward, "dative_backward"),
+        ] {
+            assert_eq!(describe_bond_order(&BondQuery::Primitive(bond)), expected);
+        }
+    }
+
+    #[test]
+    fn dative_bond_direction_fails_closed_after_atom_map_sort() {
+        let swapped = smarts::parse_smarts("[N:2]->[Fe:1]").unwrap();
+        let sig = mapped_bond_signature(&[QuerySlot {
+            index: 0,
+            source_smarts: String::new(),
+            query: swapped,
+        }]);
+        let (q, trusted) = sig.get(&(1, 2)).expect("mapped dative bond");
+        assert!(!trusted);
+        assert_eq!(
+            describe_bond_order_for_hint(q, *trusted),
+            "directional_unspecified"
+        );
     }
 
     /// Real directional-SMARTS fixture (confirmed via the chematic-smarts

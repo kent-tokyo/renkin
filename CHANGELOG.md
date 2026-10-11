@@ -8,6 +8,21 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Update the `chematic` facade, optional `chematic-rxn`, and `renkin-forward`
+  dependency to 1.1.1. Adapt SMARTS hint handling for the new atom and bond
+  primitives without collapsing unsupported predicates into misleading hints.
+- Keep invalid reaction products fail-closed when CheMatic now rejects them
+  before RENKIN's own integrity checks. Regression tests check the native
+  rejection reason and independently exercise RENKIN's fallback guard.
+- Rebaseline synthetic forward-benchmark fixtures for the changed product
+  sanitization and stereochemical candidate ordering. The frozen extracted
+  alcohol-to-ketone templates with implicit product hydrogen currently yield
+  no accepted product under 1.1.1; repairing those templates would change
+  their IDs and requires separate provenance and coverage measurement. No
+  search-success or speed equivalence with earlier releases is claimed.
+
 ## [1.0.15] - 2026-10-10 "Rust Coverage and Documentation"
 
 ### Documentation

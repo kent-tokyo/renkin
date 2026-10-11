@@ -1072,6 +1072,17 @@ mod tests {
             "extracted_109",
             "[C:2]-[CH:1](-[NH:5]-[C:4])-[C:3]>>O=[C:1](-[C:2])-[C:3].[C:4]-[NH2:5]",
         );
+        if crate::chem_env::apply_retro(&target, &rule).is_empty() {
+            assert_eq!(
+                crate::chem_env::assert_native_rejection(
+                    &rule.smirks,
+                    &target,
+                    chematic::rxn::ProductRejectionReason::Valence,
+                ),
+                2
+            );
+            return;
+        }
         let sig = first_match_signature(&rule, &target);
         let verdicts = gate_candidates(&target, &rule, &[sig]);
         assert!(

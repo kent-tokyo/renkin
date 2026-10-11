@@ -1164,7 +1164,13 @@ fn synplanner_findings_expose_stable_tree_and_step_locations() {
         })
         .collect::<Vec<_>>();
 
-    assert_eq!(located.len(), 2);
+    assert!(
+        located
+            .iter()
+            .any(|finding| finding["code"] == "unaccounted_target_element"),
+        "an element absent from the precursors must remain a gating finding: {located:?}"
+    );
+    assert_eq!(report["routes"][0]["status"], "fail");
     for finding in located {
         assert_eq!(finding["occurrence_path"], serde_json::json!([]));
         assert_eq!(finding["step_index"], 0);

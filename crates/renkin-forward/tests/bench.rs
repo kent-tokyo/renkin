@@ -503,15 +503,15 @@ fn benchmark_fixture_corpus_counts_and_failure_reasons_match_expectations() {
     let mut expected: BTreeMap<&str, &str> = BTreeMap::new();
     expected.insert("hit-top1-ester-formation", "hit_top1");
     expected.insert("hit-top5-not-top1-amine-acylation", "hit_top5");
-    expected.insert("hit-top10-not-top5-phenol-acylation", "hit_top10");
-    expected.insert("hit-beyond-10-diacylation", "hit_beyond_10");
-    // Was "stereochemistry-hit-top10" / "hit_top10" before v0.36.0's
-    // negishi_retro/grignard_addition_retro removal shifted this
-    // fixture's candidate rank from 6 to 4 (same underlying reaction as
-    // compute_row_predicts_from_reactants_original_not_reactants_canonical
-    // in src/bench.rs) -- renamed here and in the fixture corpus file to
-    // match, rather than leaving a name that no longer describes what it
-    // tests.
+    // chematic 1.1.1 sanitization changes the candidate order for this
+    // fixture: the accepted phenol-acylation product now ranks in the top 5.
+    expected.insert("hit-top10-not-top5-phenol-acylation", "hit_top5");
+    // The fixture's accepted product assigns both OH and an acyl group to
+    // one aromatic carbon; chematic 1.1.1 no longer returns it as valid.
+    expected.insert("hit-beyond-10-diacylation", "correct_absent_nonempty_pool");
+    // The synthetic accepted-product stereo assignments were rechecked
+    // against the 1.1.1 product semantics; the hit and mismatch remain
+    // independent fixtures.
     expected.insert("stereochemistry-hit-top5", "hit_top5");
     expected.insert("stereo-mismatch-diagnostic", "correct_absent_nonempty_pool");
     expected.insert(

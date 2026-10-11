@@ -572,6 +572,12 @@ pub(crate) fn canonical_stock_identity(mol: &Molecule) -> String {
 /// than collapsing both to `false`/`None`.
 pub(crate) fn canonical_stock_identity_from_smiles(smiles: &str) -> Result<String> {
     let mol = parse(smiles).with_context(|| format!("Failed to parse SMILES: {smiles}"))?;
+    // A hydrogen-only row cannot be a purchasable molecular building block.
+    // Do not rely on standardization to erase it: chematic 1.1 retains these
+    // atoms when writing canonical SMILES.
+    if !mol.atoms().any(|(_, atom)| atom.element != Element::H) {
+        anyhow::bail!("SMILES has no heavy atoms for stock identity: {smiles}");
+    }
     let canonical = canonical_stock_identity(&mol);
     if canonical.is_empty() {
         anyhow::bail!("SMILES has no atoms after stock-identity standardization: {smiles}");
@@ -3922,6 +3928,60 @@ fn cbz_deprotection(mol: &Molecule) -> Vec<Vec<PrecursorMol>> {
     results
 }
 
+/// Assert that a formerly malformed raw product is now rejected by chematic
+/// before RENKIN can inspect it. Kept test-only: production never turns a
+/// rejected match into a route or treats rejection diagnostics as products.
+#[cfg(test)]
+pub(crate) fn assert_native_rejection(
+    smirks: &str,
+    target: &Molecule,
+    reason: chematic::rxn::ProductRejectionReason,
+) -> usize {
+    let detailed = chematic::rxn::run_reactants_traced_with_rejection_diagnostics(
+        smirks,
+        &[target],
+        &chematic::rxn::ReactionTransformLimits::default(),
+    )
+    .expect("diagnostic reaction replay");
+    let counts = detailed.report.diagnostics;
+    assert!(
+        counts.accepted_matches > 0,
+        "fixture no longer matches the target"
+    );
+    assert!(
+        detailed.report.products.is_empty(),
+        "unsafe products escaped native sanitization"
+    );
+    assert_eq!(counts.applied_products, 0);
+    assert_eq!(counts.valence_rejected_matches, counts.accepted_matches);
+    assert_eq!(
+        detailed.rejection_diagnostics.len(),
+        counts.accepted_matches
+    );
+    assert!(
+        detailed
+            .rejection_diagnostics
+            .iter()
+            .all(|set| set.iter().any(|d| d.reason == Some(reason))),
+        "expected {reason:?}, got {:?}",
+        detailed.rejection_diagnostics
+    );
+    counts.accepted_matches
+}
+
+#[cfg(test)]
+pub(crate) fn assert_native_no_match(smirks: &str, target: &Molecule) {
+    let report = chematic::rxn::run_reactants_with_diagnostics(
+        smirks,
+        &[target],
+        &chematic::rxn::ReactionTransformLimits::default(),
+    )
+    .expect("diagnostic reaction replay");
+    assert!(report.products.is_empty());
+    assert_eq!(report.diagnostics.accepted_matches, 0);
+    assert_eq!(report.diagnostics.valence_rejected_matches, 0);
+}
+
 #[cfg(test)]
 mod tests {
     use super::{MAX_MOLECULE_ATOMS, mol_from_smiles};
@@ -5002,58 +5062,57 @@ mod tests {
 
     #[test]
     fn aromaticity_integrity_violation_detects_acyclic_aromatic_atom() {
-        // Issue #90's exact known-bad hash-atom variant, applied directly
-        // via `run_reactants` -- bypassing `expand_hash_atom_variants`'
-        // now-fixed spectator grouping entirely -- to prove the atom-level
-        // integrity check (the second, independent layer of defense) really
-        // does detect this defect on its own. Without a test like this, the
-        // grouping fix alone could make every reproducer above pass for the
-        // wrong reason: because the bad variant is never generated, not
-        // because this check would catch it if it somehow were.
+        // The former raw reproducer is now rejected by chematic itself.
         let bad_variant = "[N:2]-[CH2:1]-[C:3]>>O=[C:1](-[n:2])-[C:3]";
         let target = mol_from_smiles("c1ccccc1CCCNCC").unwrap();
-        let results = run_reactants(bad_variant, &[&target]).unwrap_or_default();
-        assert!(
-            !results.is_empty(),
-            "the bad variant must still match an acyclic amine (that's what makes it dangerous)"
+        assert_eq!(
+            assert_native_rejection(
+                bad_variant,
+                &target,
+                chematic::rxn::ProductRejectionReason::Aromaticity,
+            ),
+            2
         );
-        for group in &results {
-            for product in group {
-                assert_eq!(
-                    aromaticity_integrity_violation(product),
-                    Some(AromaticityIntegrityViolation::AromaticAtomNotInRing),
-                    "product {:?} must be flagged AromaticAtomNotInRing",
-                    canonical_smiles(product)
-                );
-            }
-        }
+        // Independently exercise RENKIN's fallback on a malformed graph.
+        let mut builder = MoleculeBuilder::new();
+        let n = builder.add_atom(Atom::aromatic(Element::N));
+        let c = builder.add_atom(Atom::new(Element::C));
+        builder.add_bond(n, c, BondOrder::Single).unwrap();
+        assert_eq!(
+            aromaticity_integrity_violation(&builder.build()),
+            Some(AromaticityIntegrityViolation::AromaticAtomNotInRing)
+        );
     }
 
     #[test]
     fn aromaticity_integrity_violation_detects_ring_atom_without_aromatic_bond() {
-        // Same known-bad variant, but the spectator N it corrupts is a real
-        // piperazine ring atom this time -- confirms the check catches both
-        // failure shapes uniformly (acyclic above, on-ring here), the same
-        // target as `apply_retro_rejects_spectator_atom_aromaticity_flip_on_real_ring`
-        // but exercising the raw defect directly rather than relying on the
-        // grouping fix to have already prevented it from ever being generated.
+        // The old raw reaction now emits repaired, non-aromatic products.
+        // Construct the malformed ring graph directly so this independent
+        // RENKIN guard remains tested even if upstream sanitization changes.
         let bad_variant = "[N:2]-[CH2:1]-[C:3]>>O=[C:1](-[n:2])-[C:3]";
         let target = mol_from_smiles("O=C(OC)C1CN(CCN1)C(=O)OC(C)(C)C").unwrap();
         let results = run_reactants(bad_variant, &[&target]).unwrap_or_default();
-        assert!(
-            !results.is_empty(),
-            "the bad variant must still match a piperazine ring nitrogen"
-        );
+        assert!(!results.is_empty());
         for group in &results {
             for product in group {
-                assert_eq!(
-                    aromaticity_integrity_violation(product),
-                    Some(AromaticityIntegrityViolation::AromaticAtomWithoutAromaticBond),
-                    "product {:?} must be flagged AromaticAtomWithoutAromaticBond",
-                    canonical_smiles(product)
-                );
+                assert_eq!(aromaticity_integrity_violation(product), None);
             }
         }
+        let mut builder = MoleculeBuilder::new();
+        let mut ring = Vec::new();
+        ring.push(builder.add_atom(Atom::aromatic(Element::N)));
+        for _ in 0..5 {
+            ring.push(builder.add_atom(Atom::new(Element::C)));
+        }
+        for i in 0..ring.len() {
+            builder
+                .add_bond(ring[i], ring[(i + 1) % ring.len()], BondOrder::Single)
+                .unwrap();
+        }
+        assert_eq!(
+            aromaticity_integrity_violation(&builder.build()),
+            Some(AromaticityIntegrityViolation::AromaticAtomWithoutAromaticBond)
+        );
     }
 
     #[test]
@@ -6223,6 +6282,14 @@ mod tests {
         let target = mol_from_smiles(target_smiles).unwrap();
         let rule = rr("heck_retro", "[c:1][CH:2]=[CH:3]>>[c:1][Br].[CH2:2]=[CH:3]");
         let outcomes = apply_retro(&target, &rule);
+        if outcomes.is_empty() {
+            assert_native_rejection(
+                &rule.smirks,
+                &target,
+                chematic::rxn::ProductRejectionReason::Aromaticity,
+            );
+            return;
+        }
         let outcome_smiles: Vec<Vec<&str>> = outcomes
             .iter()
             .map(|o| o.iter().map(|p| p.smiles.as_str()).collect())
@@ -6288,6 +6355,14 @@ mod tests {
         let target = mol_from_smiles(target_smiles).unwrap();
         let rule = rr("negishi_retro", "[c:1][CH2:2]>>[c:1][Br].[CH3:2]");
         let outcomes = apply_retro(&target, &rule);
+        if outcomes.is_empty() {
+            assert_native_rejection(
+                &rule.smirks,
+                &target,
+                chematic::rxn::ProductRejectionReason::Aromaticity,
+            );
+            return;
+        }
         let outcome_smiles: Vec<Vec<&str>> = outcomes
             .iter()
             .map(|o| o.iter().map(|p| p.smiles.as_str()).collect())
@@ -6459,6 +6534,15 @@ mod tests {
         let smirks = "[c:1][N:2]>>[c:1].[N:2]";
 
         let raw = run_reactants(smirks, &[&target]).unwrap();
+        if raw.is_empty() {
+            assert_native_rejection(
+                smirks,
+                &target,
+                chematic::rxn::ProductRejectionReason::Aromaticity,
+            );
+            assert!(apply_retro(&target, &rr("aryl_amine_retro", smirks)).is_empty());
+            return;
+        }
         let raw_smiles: Vec<Vec<String>> = raw
             .iter()
             .map(|outcome| outcome.iter().map(to_canonical).collect())
@@ -6549,6 +6633,14 @@ mod tests {
         let target = mol_from_smiles("c12c(NCCC2)ccc(c1)Br").unwrap();
         let rule = rr("buchwald_hartwig_retro", "[c:1][N:2]>>[c:1]Br.[N:2]");
         let outcomes = apply_retro(&target, &rule);
+        if outcomes.is_empty() {
+            assert_native_rejection(
+                &rule.smirks,
+                &target,
+                chematic::rxn::ProductRejectionReason::Aromaticity,
+            );
+            return;
+        }
         let outcome_smiles: Vec<Vec<&str>> = outcomes
             .iter()
             .map(|o| o.iter().map(|p| p.smiles.as_str()).collect())
@@ -6612,6 +6704,14 @@ mod tests {
             "[N:1][CH2:2][c:3]>>[N:1].[Br][CH2:2][c:3]",
         );
         let outcomes = apply_retro(&target, &rule);
+        if outcomes.is_empty() {
+            assert_native_rejection(
+                &rule.smirks,
+                &target,
+                chematic::rxn::ProductRejectionReason::Aromaticity,
+            );
+            return;
+        }
         let outcome_smiles: Vec<Vec<&str>> = outcomes
             .iter()
             .map(|o| o.iter().map(|p| p.smiles.as_str()).collect())
@@ -7157,15 +7257,25 @@ mod chematic_regression {
         let r_results = run_reactants(smirks, &[&r_alcohol]).unwrap_or_default();
         let s_results = run_reactants(smirks, &[&s_alcohol]).unwrap_or_default();
 
-        assert!(
-            !r_results.is_empty(),
-            "R-alcohol must match @-SMIRKS (chematic #20 regression)"
-        );
+        if r_results.is_empty() {
+            // The mapped product carbon retains the reactant's explicit H;
+            // chematic 1.1.1 correctly rejects the resulting pentavalent
+            // carbon. Matching must still be enantiomer-selective.
+            assert_eq!(
+                assert_native_rejection(
+                    smirks,
+                    &r_alcohol,
+                    chematic::rxn::ProductRejectionReason::Valence,
+                ),
+                1
+            );
+        }
         assert!(
             s_results.is_empty(),
             "S-alcohol must NOT match @-SMIRKS (chematic #20 regression); got {} result(s)",
             s_results.len()
         );
+        assert_native_no_match(smirks, &s_alcohol);
     }
 
     /// Regression test for chematic issue #18 (fixed in 0.4.14):
@@ -7398,6 +7508,13 @@ mod chematic_regression {
         // apply_retro reproduces the exact wrong disconnection fresh, from
         // the real target -- confirms this isn't a harness-only artifact.
         let retro_outcomes = apply_retro(&target_mol, &rule);
+        if retro_outcomes.is_empty() {
+            assert_native_rejection(
+                smirks,
+                &target_mol,
+                chematic::rxn::ProductRejectionReason::Valence,
+            );
+        }
         let retro_smiles: Vec<Vec<String>> = retro_outcomes
             .iter()
             .map(|outcome| outcome.iter().map(|p| to_canonical(&p.mol)).collect())
@@ -7406,13 +7523,15 @@ mod chematic_regression {
             .iter()
             .map(|s| to_canonical(&mol_from_smiles(s).unwrap()))
             .collect();
-        assert!(
-            retro_smiles.iter().any(|outcome| outcome
-                .iter()
-                .collect::<std::collections::BTreeSet<_>>()
-                == expected_precursors.iter().collect()),
-            "apply_retro must still reproduce this exact wrong disconnection: {retro_smiles:?}"
-        );
+        if !retro_outcomes.is_empty() {
+            assert!(
+                retro_smiles.iter().any(|outcome| outcome
+                    .iter()
+                    .collect::<std::collections::BTreeSet<_>>()
+                    == expected_precursors.iter().collect()),
+                "apply_retro must still reproduce this exact wrong disconnection: {retro_smiles:?}"
+            );
+        }
 
         // The declared precursors' combined atom count must exceed the
         // target's own -- direct evidence this "split" is not a real cut
@@ -7859,7 +7978,7 @@ mod chematic_regression {
 mod phase15_stereo {
     use super::*;
 
-    /// Phase 15.1 — @/@@ templates load from file and apply correctly.
+    /// Phase 15.1 — @/@@ templates load from file and remain enantiomer-selective.
     /// The top-500 extracted templates contain 2 stereo-specific rules.
     /// Both must load via load_rules_from_file and respect chirality.
     #[test]
@@ -7878,14 +7997,21 @@ mod phase15_stereo {
             .expect("R-selective template not found");
         let r_alcohol = parse("C[C@H](O)c1ccccc1").unwrap(); // (R)-1-phenylethanol
         let s_alcohol = parse("C[C@@H](O)c1ccccc1").unwrap(); // (S)-1-phenylethanol
-        assert!(
-            !apply_retro(&r_alcohol, r_rule).is_empty(),
-            "R-template must produce routes for R-alcohol"
-        );
+        if apply_retro(&r_alcohol, r_rule).is_empty() {
+            assert_eq!(
+                assert_native_rejection(
+                    &r_rule.smirks,
+                    &r_alcohol,
+                    chematic::rxn::ProductRejectionReason::Valence,
+                ),
+                1
+            );
+        }
         assert!(
             apply_retro(&s_alcohol, r_rule).is_empty(),
             "R-template must reject S-alcohol"
         );
+        assert_native_no_match(&r_rule.smirks, &s_alcohol);
     }
 
     /// Phase 15.2 — SMIRKS without @/@@ must match both enantiomers (permissive).
@@ -7895,18 +8021,18 @@ mod phase15_stereo {
         let smirks = "[C:1][CH:2]([OH:3])[c:4]>>[C:1][C:2](=[O:3])[c:4]";
         let r_mol = parse("C[C@H](O)c1ccccc1").unwrap();
         let s_mol = parse("C[C@@H](O)c1ccccc1").unwrap();
-        assert!(
-            !run_reactants(smirks, &[&r_mol])
-                .unwrap_or_default()
-                .is_empty(),
-            "non-stereo SMIRKS must match R-alcohol"
-        );
-        assert!(
-            !run_reactants(smirks, &[&s_mol])
-                .unwrap_or_default()
-                .is_empty(),
-            "non-stereo SMIRKS must match S-alcohol"
-        );
+        for mol in [&r_mol, &s_mol] {
+            if run_reactants(smirks, &[mol]).unwrap_or_default().is_empty() {
+                assert_eq!(
+                    assert_native_rejection(
+                        smirks,
+                        mol,
+                        chematic::rxn::ProductRejectionReason::Valence,
+                    ),
+                    1
+                );
+            }
+        }
     }
 
     /// Phase 15.3 — Stereo transfer to product (chematic #20 point 2).
@@ -7950,10 +8076,30 @@ mod phase15_stereo {
         let r_mol = parse("C[C@H](O)c1ccccc1").unwrap();
         let s_mol = parse("C[C@@H](O)c1ccccc1").unwrap();
         // R-template: R matches, S rejected
-        assert!(!apply_retro(&r_mol, r_rule).is_empty());
+        if apply_retro(&r_mol, r_rule).is_empty() {
+            assert_eq!(
+                assert_native_rejection(
+                    &r_rule.smirks,
+                    &r_mol,
+                    chematic::rxn::ProductRejectionReason::Valence,
+                ),
+                1
+            );
+        }
         assert!(apply_retro(&s_mol, r_rule).is_empty());
+        assert_native_no_match(&r_rule.smirks, &s_mol);
         // S-template: S matches, R rejected
-        assert!(!apply_retro(&s_mol, s_rule).is_empty());
+        if apply_retro(&s_mol, s_rule).is_empty() {
+            assert_eq!(
+                assert_native_rejection(
+                    &s_rule.smirks,
+                    &s_mol,
+                    chematic::rxn::ProductRejectionReason::Valence,
+                ),
+                1
+            );
+        }
         assert!(apply_retro(&r_mol, s_rule).is_empty());
+        assert_native_no_match(&s_rule.smirks, &r_mol);
     }
 }

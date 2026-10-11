@@ -16,6 +16,13 @@ interopへ広げる。
 
 ## Next work
 
+- [ ] **CheMatic 1.1.1 template coverage follow-up**
+  - Two frozen alcohol-to-ketone extracted templates retain an implicit H on
+    the product carbon and are now rejected as over-valent. Repair them only
+    with new template IDs/provenance and a same-cohort route-coverage check;
+    do not silently rewrite the historical template corpus or reuse prior
+    benchmark claims.
+
 - [ ] **55.0 / performance receipt contract**
   - Phase 55 r2を置換せず、別run用にtool revision/model、cohort、stock、template、
     CPU/RAM/network、cold/warm、timeout、first-route event、process-tree RSSを固定する。

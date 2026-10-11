@@ -12,6 +12,7 @@
 //! numbering (1-20), plus "Additional" tests for behavior found by reading
 //! the merged code that the checklist didn't enumerate by name.
 
+use chematic::smiles::{canonical_smiles, parse};
 use renkin::chem_env::RetroRule;
 use renkin::evidence::{ExampleMatch, ReactionExample, ResolvedReactionExample, StepEvidence};
 use renkin::search::{AtomEconomyStatus, ReactionStep, Route};
@@ -29,6 +30,10 @@ use renkin::validation::StepValidationStatus;
 
 fn no_rules() -> Vec<RetroRule> {
     vec![]
+}
+
+fn canonical_leaf(smiles: &str) -> String {
+    canonical_smiles(&parse(smiles).expect("fixture leaf must parse"))
 }
 
 fn step(rule: &str, template_id: &str, target: &str, precursors: &[&str]) -> ReactionStep {
@@ -277,7 +282,7 @@ fn issue71_pentadiene_false_positive_is_not_in_stock() {
     );
     assert!(result.route_assessments[0].hard_failures.contains(
         &HardFailure::StockTerminalMismatch {
-            leaf: "C=C/C/C=C".to_string()
+            leaf: canonical_leaf("C=C/C/C=C")
         }
     ));
     assert_eq!(result.status, AssessmentStatus::RoutesFoundButRejected);
@@ -311,7 +316,7 @@ fn issue71_glyoxylic_acid_false_positive_is_not_in_stock() {
     );
     assert!(result.route_assessments[0].hard_failures.contains(
         &HardFailure::StockTerminalMismatch {
-            leaf: "O=C/C(=O)O".to_string()
+            leaf: canonical_leaf("O=C/C(=O)O")
         }
     ));
     assert_eq!(result.status, AssessmentStatus::RoutesFoundButRejected);
@@ -1011,12 +1016,12 @@ fn issue71_style_mismatch_surfaces_correctly_when_leaf_is_not_the_top_level_targ
     );
     assert!(result.route_assessments[0].hard_failures.contains(
         &HardFailure::StockTerminalMismatch {
-            leaf: "C=C/C/C=C".to_string()
+            leaf: canonical_leaf("C=C/C/C=C")
         }
     ));
     assert!(!result.route_assessments[0].hard_failures.contains(
         &HardFailure::StockTerminalMismatch {
-            leaf: "O=C/C(=O)O".to_string()
+            leaf: canonical_leaf("O=C/C(=O)O")
         }
     ));
     // The flagged leaf is not the top-level target -- this is the whole

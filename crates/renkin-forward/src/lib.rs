@@ -1854,10 +1854,30 @@ mod tests {
         let bad_variant = "[N:2]-[CH2:1]-[C:3]>>O=[C:1](-[n:2])-[C:3]";
         let target = mol_from_smiles("c1ccccc1CCCNCC").unwrap();
         let results = chematic::rxn::run_reactants(bad_variant, &[&target]).unwrap_or_default();
-        let group = results
-            .first()
-            .expect("the bad variant must still match the acyclic amine");
-        let err = canonicalize_outcome(group)
+        if results.is_empty() {
+            let detailed = chematic::rxn::run_reactants_traced_with_rejection_diagnostics(
+                bad_variant,
+                &[&target],
+                &chematic::rxn::ReactionTransformLimits::default(),
+            )
+            .unwrap();
+            assert_eq!(detailed.report.diagnostics.accepted_matches, 2);
+            assert!(
+                detailed.rejection_diagnostics.iter().flatten().all(|d| {
+                    d.reason == Some(chematic::rxn::ProductRejectionReason::Aromaticity)
+                })
+            );
+        }
+
+        // Independently verify this layer's guard, even when chematic rejects
+        // the old raw reproducer before RENKIN can observe its product.
+        let mut builder = chematic::core::MoleculeBuilder::new();
+        let n = builder.add_atom(chematic::core::Atom::aromatic(chematic::core::Element::N));
+        let c = builder.add_atom(chematic::core::Atom::new(chematic::core::Element::C));
+        builder
+            .add_bond(n, c, chematic::core::BondOrder::Single)
+            .unwrap();
+        let err = canonicalize_outcome(&[builder.build()])
             .expect_err("must reject an aromaticity-integrity violation");
         assert_eq!(err, "aromatic_atom_not_in_ring");
     }

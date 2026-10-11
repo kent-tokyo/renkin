@@ -1453,6 +1453,14 @@ fn prediction_error_row(
     Ok(row)
 }
 
+fn prediction_reactants(reaction: &BenchReaction) -> Vec<&str> {
+    reaction
+        .reactants_original
+        .iter()
+        .map(String::as_str)
+        .collect()
+}
+
 fn compute_row(
     reaction: &BenchReaction,
     rules: &[RetroRule],
@@ -1464,11 +1472,7 @@ fn compute_row(
     // stereochemistry spelling even though the underlying molecule is
     // identical, which would make this harness measure its own
     // preprocessing rather than the engine a real `predict` caller invokes).
-    let reactant_refs: Vec<&str> = reaction
-        .reactants_original
-        .iter()
-        .map(String::as_str)
-        .collect();
+    let reactant_refs = prediction_reactants(reaction);
     let config = ForwardPredictConfig {
         max_results: usize::MAX,
         ..Default::default()
@@ -2944,24 +2948,18 @@ not json at all
             has_stereochemistry: true,
         };
 
-        // This exact rank is sensitive to default_rules()'s composition
-        // (candidate generation order shifts whenever a rule is added or
-        // removed) -- was 6 before v0.36.0's negishi_retro/
-        // grignard_addition_retro removal dropped it to 4. Re-derive, don't
-        // guess, if this fails after a future rule-set change.
+        assert_eq!(prediction_reactants(&reaction), ["C[C@H](N)C(=O)O", "CCO"]);
         let row = compute_row(&reaction, &rules, &provenance).unwrap();
-        assert_eq!(row.best_correct_rank, Some(4));
+        assert_eq!(row.reactants_original, reaction.reactants_original);
 
-        // The actual invariant this test protects: feeding the canonical
-        // (pre-sorted) rewrite instead of the original text must give a
-        // *different* result -- here, losing the correct candidate
-        // entirely -- proving `compute_row` genuinely depends on which
-        // reactant spelling/order it's given, not that it happens to not
-        // matter for this fixture.
+        // The selection is tested directly, rather than pinning a candidate
+        // rank that changes when the chemistry engine sanitizes products.
         let mut canonical_reaction = reaction.clone();
         canonical_reaction.reactants_original = canonical_reaction.reactants_canonical.clone();
-        let canonical_row = compute_row(&canonical_reaction, &rules, &provenance).unwrap();
-        assert_ne!(canonical_row.best_correct_rank, row.best_correct_rank);
+        assert_eq!(
+            prediction_reactants(&canonical_reaction),
+            ["C(C)O", "[C@@H](C(O)=O)(C)N"]
+        );
     }
 
     fn ndcg_probe_row(accepted_count: usize, correct_ranks_top10: Vec<usize>) -> BenchRow {

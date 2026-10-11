@@ -380,10 +380,13 @@ mod tests {
             .map(|m| canonical_smiles(&m))
             .collect();
 
-        let stereo_free_correct_connectivity =
-            canonical_smiles(&mol_from_smiles("C1CC[C@H](C)NCC1C").unwrap());
+        let stereo_free =
+            |smiles: &str| canonical_smiles(&mol_from_smiles(&smiles.replace('@', "")).unwrap());
+        let target_connectivity = stereo_free(target);
         assert!(
-            products.contains(&stereo_free_correct_connectivity),
+            products
+                .iter()
+                .any(|p| stereo_free(p) == target_connectivity),
             "the rule's reversal must still find the right regiochemistry \
              (just missing the newly-formed center's stereo): {products:?}"
         );

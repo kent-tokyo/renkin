@@ -1,15 +1,29 @@
 name: Rust coverage
 
+# Path-skipped workflows remain pending if configured as required checks.
+# Replace this filter with a job-level skip before requiring rust-coverage.
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'CITATION.cff'
   pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'CITATION.cff'
+  workflow_dispatch:
 
 jobs:
   rust-coverage:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -33,28 +47,9 @@ jobs:
               if (hit * 100 < total * 90) exit 1
             }
           ' target/lcov.info
-      - uses: actions/upload-artifact@v4
-        with:
-          name: rust-lcov
-          path: target/lcov.info
-          if-no-files-found: error
-          retention-days: 1
-
-  codecov-upload:
-    needs: rust-coverage
-    # Fork PRs run the coverage gate without receiving an OIDC token.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v4
-        with:
-          name: rust-lcov
-          path: target
       - name: Upload Rust coverage to Codecov
+        # Fork PRs still run the 90% gate, but cannot request an OIDC token.
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         uses: codecov/codecov-action@v6
         with:
           files: ./target/lcov.info

@@ -50,7 +50,7 @@ jobs:
       - name: Upload Rust coverage to Codecov
         # Fork PRs still run the 90% gate, but cannot request an OIDC token.
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           files: ./target/lcov.info
           disable_search: true

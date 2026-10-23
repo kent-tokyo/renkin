@@ -5,7 +5,7 @@ use renkin::coverage_mode::run_coverage_mode;
 use renkin::search::{SearchConfig, find_routes};
 
 #[test]
-fn one_search_parses_each_smirks_once_even_across_multiple_expansions() {
+fn one_search_compiles_each_smirks_once_even_across_multiple_expansions() {
     let smirks = "[C:1]-[C:2]>>[C:1].[C:2]";
     let rules = vec![RetroRule {
         name: "test_cc_cleavage".to_string(),
@@ -21,14 +21,9 @@ fn one_search_parses_each_smirks_once_even_across_multiple_expansions() {
         ..SearchConfig::default()
     };
 
-    let target = chematic::smiles::parse("CCCCC").unwrap();
-    chematic_rxn::perf_counters::reset();
-    for _ in 0..8 {
-        let _ = chematic_rxn::run_reactants(smirks, &[&target]).unwrap();
-    }
-    let legacy = chematic_rxn::perf_counters::snapshot();
-    assert_eq!(legacy.reaction_parse_calls, 8);
-
+    // The upstream free function has a process-wide prepared-template cache;
+    // repeated calls no longer model an uncached search. Measure RENKIN's
+    // explicit preparation directly instead.
     chematic_rxn::perf_counters::reset();
     let _ = find_routes("CCCCC", &env, &rules, &config).unwrap();
     let counters = chematic_rxn::perf_counters::snapshot();

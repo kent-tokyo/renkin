@@ -11,6 +11,15 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - Update the `chematic` facade, optional `chematic-rxn`, and `renkin-forward`
+  dependency from 1.2.0 to 1.2.1, keeping the CheMatic-family lockfile entries
+  aligned. No route-coverage or search-speed change is claimed without a fixed
+  benchmark cohort.
+- Update the `chematic` facade, optional `chematic-rxn`, and `renkin-forward`
+  dependency from 1.1.1 to 1.2.0, with all CheMatic-family crates aligned in
+  `Cargo.lock`. The workspace regression suite and native, Python, WASM, and
+  perf-instrumentation build checks pass. This does not establish unchanged
+  route coverage or search speed on a fixed benchmark cohort.
+- Update the `chematic` facade, optional `chematic-rxn`, and `renkin-forward`
   dependency to 1.1.1. Adapt SMARTS hint handling for the new atom and bond
   primitives without collapsing unsupported predicates into misleading hints.
 - Keep invalid reaction products fail-closed when CheMatic now rejects them

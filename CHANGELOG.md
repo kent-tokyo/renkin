@@ -11,6 +11,10 @@ RENKIN adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - Update the `chematic` facade, optional `chematic-rxn`, and `renkin-forward`
+  dependency from 1.2.0 to 1.2.1, keeping the CheMatic-family lockfile entries
+  aligned. No route-coverage or search-speed change is claimed without a fixed
+  benchmark cohort.
+- Update the `chematic` facade, optional `chematic-rxn`, and `renkin-forward`
   dependency from 1.1.1 to 1.2.0, with all CheMatic-family crates aligned in
   `Cargo.lock`. The workspace regression suite and native, Python, WASM, and
   perf-instrumentation build checks pass. This does not establish unchanged

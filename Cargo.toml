@@ -130,7 +130,7 @@ smallvec = { version = "1", features = ["union"] }
 sha2 = "0.11"
 
 # PyO3: Python bindings (optional)
-pyo3 = { version = "0.29", optional = true }
+pyo3 = { version = "0.30", optional = true }
 
 # tract-onnx: Pure Rust ONNX inference (no C/C++ dependency)
 tract-onnx = { version = "0.23", optional = true }
